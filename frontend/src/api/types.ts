@@ -81,3 +81,43 @@ export interface ErrorResponse {
   detail: string
   field?: string
 }
+
+export interface ProgressInfo {
+  node_id: string
+  row: number
+  total_rows: number
+}
+
+export interface ExecutionResult {
+  success: boolean
+  errors: unknown[]
+  node_statuses: Record<string, NodeStatus>
+}
+
+export interface ExecutionStatus {
+  state: 'running' | 'idle'
+  last_result: ExecutionResult | null
+  progress: ProgressInfo | null
+}
+
+export interface OMEROInstance {
+  name?: string | null
+  host: string
+  port?: number
+  username: string
+}
+
+export interface Settings {
+  deployment_mode: 'desktop' | 'webapp'
+  external_editor?: string | null
+  napari_env_path?: string | null
+  omero_instances?: OMEROInstance[]
+  output_data_folder: string
+  tool_store_path?: string
+  update_mode?: string
+  execution_engine?: 'sequential' | 'parsl'
+  cache_max_executions?: number | null
+  cache_max_age?: string | null
+  keyboard_shortcuts?: Record<string, string>
+  dev_mode?: boolean
+}
