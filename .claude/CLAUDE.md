@@ -1,0 +1,1 @@
+The bioimageflow/ symlink points to the bioimageflow library (/Users/amasson/Travail/bioimageflow) and must be used and read to understand how the library works.

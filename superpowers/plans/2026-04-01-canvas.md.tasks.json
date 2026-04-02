@@ -1,0 +1,96 @@
+{
+  "planPath": "superpowers/plans/2026-04-01-canvas.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Node ID Generator Utility",
+      "status": "pending",
+      "description": "Implement generateNodeId and generateNodeName utilities that convert CamelCase class names to snake_case IDs with unique numeric suffixes, and produce human-readable display names with uniqueness. Includes tests for conversion, stripping, incrementing, empty fallback, and name generation.\n\n```json:metadata\n{\"blockedBy\":[]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Type Colors Utility",
+      "status": "pending",
+      "description": "Implement getTypeColor utility that maps data type names (ImagePath, ImageShared, Path, scalars) to hex colors for pin dots and edge strokes, with a default gray fallback for unknown types. Includes tests for each known type and the default.\n\n```json:metadata\n{\"blockedBy\":[]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Undo/Redo Composable",
+      "status": "pending",
+      "description": "Implement useUndoRedo generic composable with push/undo/redo/clear operations, snapshot isolation via structuredClone, max stack size eviction, and computed canUndo/canRedo refs. Includes tests for all state transitions and edge cases.\n\n```json:metadata\n{\"blockedBy\":[]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Graph Sync Composable (Debounced Validation)",
+      "status": "pending",
+      "description": "Implement useGraphSync composable with 300ms debounced PUT /api/v1/graph, request superseding via incrementing IDs, flushNow for immediate sends, patchParameters for lightweight PATCH updates, and reactive validationResult/isPending refs. Includes tests with mocked API and fake timers.\n\n```json:metadata\n{\"blockedBy\":[]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Clipboard Utility (Copy/Paste Serialization)",
+      "status": "pending",
+      "description": "Implement serializeSelection and deserializeSelection utilities for copy/paste of nodes and edges, with deep cloning, ID regeneration, edge remapping, position offsetting, cross-workflow version warnings, and missing tool handling. Includes tests for selection filtering, ID uniqueness, and edge remapping.\n\n```json:metadata\n{\"blockedBy\":[]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: CanvasView Core — Vue Flow Setup",
+      "status": "pending",
+      "description": "Build the main CanvasView wrapper component with VueFlow, MiniMap, Controls, custom node/edge type registration (tool, column_ref, positional), onConnect/onSelectionChange hooks, and fitViewOnInit. Includes tests for rendering, type registration, and event emission.\n\n```json:metadata\n{\"blockedBy\":[0,1,2,3,4,9,10,11,12]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 7: CanvasView — Drop Handling + Node Creation",
+      "status": "pending",
+      "description": "Add drop handling to CanvasView with onDrop/onDragOver handlers that read the bioimageflow-tool MIME type, compute flow coordinates via project(), look up tool metadata, generate unique IDs/names, and create nodes with default parameters. Includes tests for node creation and MIME validation.\n\n```json:metadata\n{\"blockedBy\":[5]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 8: CanvasView — Selection + Keyboard Shortcuts",
+      "status": "pending",
+      "description": "Add selection management and keyboard shortcuts to CanvasView: deleteSelected, copySelected, pasteFromClipboard, selectAll, undo/redo bindings, box selection via shift-drag, and cross-workflow paste warnings. Includes tests for deletion, copy/paste, and missing tool handling.\n\n```json:metadata\n{\"blockedBy\":[4,5]}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 9: Status Reconciliation Composable",
+      "status": "pending",
+      "description": "Implement useStatusReconciliation composable managing provisional vs authoritative node status layers, with desaturated colors during debounce windows, validation response reconciliation, WebSocket node_state message handling, and priority ordering. Includes tests for all reconciliation scenarios.\n\n```json:metadata\n{\"blockedBy\":[3]}\n```"
+    },
+    {
+      "id": 9,
+      "subject": "Task 10: InputPin Component",
+      "status": "pending",
+      "description": "Build InputPin component rendering a Vue Flow Handle (type=target, position=left) with colored dot from getTypeColor, connected/disconnected states, field name or source label display, and type tooltip. Includes tests using wrapWithVueFlow helper.\n\n```json:metadata\n{\"blockedBy\":[1]}\n```"
+    },
+    {
+      "id": 10,
+      "subject": "Task 11: OutputPin Component",
+      "status": "pending",
+      "description": "Build OutputPin component rendering a Vue Flow Handle (type=source, position=right) with field name, type badge chip, colored dot from getTypeColor, and right-aligned layout. Includes tests using wrapWithVueFlow helper.\n\n```json:metadata\n{\"blockedBy\":[1]}\n```"
+    },
+    {
+      "id": 11,
+      "subject": "Task 12: ToolNode Component",
+      "status": "pending",
+      "description": "Build ToolNode component with draggable header, collapse toggle, InputPin/OutputPin rendering for connectable fields, status border color classes, disabled opacity, provisional desaturation filter, GPU badge, and context menu emission. Includes tests using wrapWithVueFlow helper.\n\n```json:metadata\n{\"blockedBy\":[9,10]}\n```"
+    },
+    {
+      "id": 12,
+      "subject": "Task 13: Custom Edge Components",
+      "status": "pending",
+      "description": "Build ColumnRefEdge (bezier path with type-based stroke color) and PositionalEdge (dashed gray bezier path) custom edge components, plus edge validation feedback with temporary red flash on invalid connections. Includes tests for SVG rendering, stroke colors, and dash arrays.\n\n```json:metadata\n{\"blockedBy\":[1]}\n```"
+    },
+    {
+      "id": 13,
+      "subject": "Task 14: Node Context Menu",
+      "status": "pending",
+      "description": "Build NodeContextMenu floating menu component with Enable/Disable toggle, Create Sub-workflow, and Delete items, positioned absolutely at mouse coordinates, closing on click-outside or Escape. Includes tests for rendering, toggle labels, event emission, and keyboard dismissal.\n\n```json:metadata\n{\"blockedBy\":[]}\n```"
+    },
+    {
+      "id": 14,
+      "subject": "Task 15: Integration Test — Canvas E2E",
+      "status": "pending",
+      "description": "Write a Playwright E2E test covering the full canvas workflow: rendering verification, drag-and-drop node creation, node selection, edge drawing between pins, undo/redo of edges, multi-select deletion, and console error monitoring. Uses mock toolRegistryStore if tools panel is not yet available.\n\n```json:metadata\n{\"blockedBy\":[5,6,7,8]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-04-02T00:00:00Z"
+}

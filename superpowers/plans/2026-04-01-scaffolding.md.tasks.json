@@ -1,0 +1,83 @@
+{
+  "planPath": "superpowers/plans/2026-04-01-scaffolding.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Backend Python Package Setup",
+      "status": "pending",
+      "blockedBy": [],
+      "description": "Set up the backend Python package structure with pyproject.toml (hatchling build, FastAPI/uvicorn/pydantic dependencies, dev deps for testing), create the bioimageflow_server package with __init__.py, __main__.py entrypoint, and empty sub-packages (models, routers, services, ws). Install with uv sync and verify the import works.\n\n```json:metadata\n{\n  \"files\": [\"backend/pyproject.toml\", \"backend/src/bioimageflow_server/__init__.py\", \"backend/src/bioimageflow_server/__main__.py\", \"backend/src/bioimageflow_server/models/__init__.py\", \"backend/src/bioimageflow_server/routers/__init__.py\", \"backend/src/bioimageflow_server/services/__init__.py\", \"backend/src/bioimageflow_server/ws/__init__.py\"],\n  \"verifyCommand\": \"cd backend && uv sync --all-extras && uv run python -c \\\"import bioimageflow_server; print('OK')\\\"\",\n  \"acceptanceCriteria\": \"uv sync succeeds, import prints OK, pyproject.toml has all specified dependencies\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Backend — Minimal FastAPI App with Health Endpoint",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Create the FastAPI application factory (create_app) with CORS middleware, a health router returning JSON with status and version at GET /api/v1/health, test fixtures with httpx AsyncClient, and verify the endpoint returns 200 with the expected payload using TDD.\n\n```json:metadata\n{\n  \"files\": [\"backend/src/bioimageflow_server/app.py\", \"backend/src/bioimageflow_server/routers/health.py\", \"backend/tests/conftest.py\", \"backend/tests/__init__.py\", \"backend/tests/test_routers/__init__.py\", \"backend/tests/test_routers/test_health.py\", \"backend/tests/test_models/__init__.py\", \"backend/tests/test_services/__init__.py\"],\n  \"verifyCommand\": \"cd backend && uv run pytest tests/test_routers/test_health.py -v\",\n  \"acceptanceCriteria\": \"Health endpoint test passes, GET /api/v1/health returns 200 with status ok and version\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Backend — Error Response Format",
+      "status": "pending",
+      "blockedBy": [1],
+      "description": "Implement a consistent error response format with an ErrorResponse Pydantic model (error, detail, field) and custom exception handlers for HTTPException and RequestValidationError in the FastAPI app. Tests verify the model fields and that HTTP errors and validation errors return the standardized JSON format.\n\n```json:metadata\n{\n  \"files\": [\"backend/src/bioimageflow_server/models/errors.py\", \"backend/tests/test_models/test_errors.py\", \"backend/tests/test_routers/test_error_handler.py\", \"backend/src/bioimageflow_server/app.py\"],\n  \"verifyCommand\": \"cd backend && uv run pytest tests/test_models/test_errors.py tests/test_routers/test_error_handler.py -v\",\n  \"acceptanceCriteria\": \"Error model tests pass, HTTP and validation exception handlers return standardized error JSON\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Frontend — Vite + Vue 3 + TypeScript Scaffold",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Scaffold the frontend project with package.json (Vue 3, Pinia, PrimeVue, Vue Flow, Dockview, axios, and dev tooling), Vite config with Vue plugin and API proxy, TypeScript solution-style tsconfig files, index.html SPA shell, main.ts app entry with Pinia and PrimeVue plugins, and a minimal App.vue. Verify with bun install and bun run build.\n\n```json:metadata\n{\n  \"files\": [\"frontend/package.json\", \"frontend/vite.config.ts\", \"frontend/tsconfig.json\", \"frontend/tsconfig.app.json\", \"frontend/tsconfig.node.json\", \"frontend/env.d.ts\", \"frontend/index.html\", \"frontend/src/main.ts\", \"frontend/src/App.vue\"],\n  \"verifyCommand\": \"cd frontend && bun install && bun run build\",\n  \"acceptanceCriteria\": \"bun install and bun run build both succeed without errors\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Frontend — Vitest Configuration",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Create the Vitest configuration with Vue plugin, jsdom environment, globals enabled, and path aliases. Add a smoke unit test with a trivial assertion to verify the test runner works. Confirm bun run test:unit passes.\n\n```json:metadata\n{\n  \"files\": [\"frontend/vitest.config.ts\", \"frontend/tests/unit/smoke.test.ts\"],\n  \"verifyCommand\": \"cd frontend && bun run test:unit\",\n  \"acceptanceCriteria\": \"Vitest runs and the smoke test passes\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: Frontend — Playwright Configuration",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Create the Playwright config with e2e test directory, parallel execution, base URL on localhost:5173, trace on first retry, and webServer command for bun run dev. Write an E2E smoke test verifying the app div is visible with BioImageFlow text. Install Chromium browser.\n\n```json:metadata\n{\n  \"files\": [\"frontend/playwright.config.ts\", \"frontend/tests/e2e/smoke.spec.ts\"],\n  \"verifyCommand\": \"cd frontend && bun run test:e2e\",\n  \"acceptanceCriteria\": \"Playwright smoke E2E test passes against the dev server\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 7: Frontend — API Client",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Create an axios-based API client module exporting an axios instance configured with JSON content type and no explicit baseURL (relies on Vite proxy in dev). Write a unit test verifying the client is an axios instance with standard HTTP methods available.\n\n```json:metadata\n{\n  \"files\": [\"frontend/src/api/client.ts\", \"frontend/tests/unit/api/client.test.ts\"],\n  \"verifyCommand\": \"cd frontend && bun run test:unit -- --grep 'api client'\",\n  \"acceptanceCriteria\": \"API client test passes, axios instance is exported with correct config\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 8: OpenAPI Type Generation Script",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Create a bash script that fetches the backend OpenAPI schema and generates TypeScript types via openapi-typescript. Write placeholder type interfaces (ToolMetadata, InputFieldSchema, OutputFieldSchema, PackageInfo, NodeState, Edge, GraphState, NodeStatus, GraphValidationError, ValidationResult, ErrorResponse) that will be overwritten once generation runs against a live backend. Verify type-check passes.\n\n```json:metadata\n{\n  \"files\": [\"frontend/scripts/generate-types.sh\", \"frontend/src/api/types.ts\"],\n  \"verifyCommand\": \"cd frontend && bun run type-check\",\n  \"acceptanceCriteria\": \"type-check passes, generate-types.sh is executable, placeholder types compile\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 9: Backend — Verify Full Test Suite Runs",
+      "status": "pending",
+      "blockedBy": [0, 1, 2, 3, 4, 5, 6, 7],
+      "description": "Run the complete backend test suite, ruff linter, and ruff formatter to verify everything passes and code style is consistent. Fix and commit any formatting issues found. This is a verification-only task with no new files.\n\n```json:metadata\n{\n  \"files\": [],\n  \"verifyCommand\": \"cd backend && uv run pytest -v && uv run ruff check src/ tests/ && uv run ruff format --check src/ tests/\",\n  \"acceptanceCriteria\": \"All backend tests pass, ruff check and format report no issues\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 9,
+      "subject": "Task 10: Frontend — Verify Full Test Suite & Dev Server",
+      "status": "pending",
+      "blockedBy": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      "description": "Run all frontend unit tests, type-check, and verify the Vite dev server starts and serves the SPA HTML shell. Fix and commit any issues found. This is a verification-only task with no new files.\n\n```json:metadata\n{\n  \"files\": [],\n  \"verifyCommand\": \"cd frontend && bun run test:unit && bun run type-check\",\n  \"acceptanceCriteria\": \"All unit tests pass, type-check clean, dev server serves HTML with #app div\",\n  \"requiresUserVerification\": false\n}\n```"
+    },
+    {
+      "id": 10,
+      "subject": "Task 11: Integration Test — Full Stack Smoke",
+      "status": "pending",
+      "blockedBy": [9],
+      "description": "Write a Playwright E2E test that verifies the full stack works together by starting both the backend and frontend via Playwright's webServer config, navigating to /, checking #bioimageflow-app is visible with BioImageFlow text, fetching /api/v1/health via the Vite proxy and verifying status ok, and confirming no console errors in the browser.\n\n```json:metadata\n{\n  \"files\": [\"frontend/tests/e2e/full-stack-smoke.spec.ts\"],\n  \"verifyCommand\": \"cd frontend && bun run test:e2e -- --grep 'full stack'\",\n  \"acceptanceCriteria\": \"Full stack smoke E2E test passes with both backend and frontend running\",\n  \"requiresUserVerification\": false\n}\n```"
+    }
+  ],
+  "lastUpdated": "2026-04-02T00:00:00Z"
+}

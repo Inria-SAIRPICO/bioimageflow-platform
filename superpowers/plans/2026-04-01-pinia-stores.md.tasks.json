@@ -1,0 +1,42 @@
+{
+  "planPath": "superpowers/plans/2026-04-01-pinia-stores.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Execution Store",
+      "status": "pending",
+      "description": "Create the execution Pinia store and its unit tests following TDD. The store manages execution state (running/idle), progress tracking, and last result. It exposes actions for fetching status, running/stopping execution, clearing nodes, and applying WebSocket-driven progress and completion updates. All API interactions go through the shared API client.\n\n```json:metadata\n{\"files\":[\"frontend/src/stores/execution.ts\",\"frontend/tests/unit/stores/execution.test.ts\"],\"commit\":\"feat(frontend): add execution Pinia store\"}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Settings Store",
+      "status": "pending",
+      "description": "Create the settings Pinia store and its unit tests following TDD. The store fetches application settings from GET /api/v1/settings and allows partial updates via PATCH. It exposes computed properties for deployment mode detection (isDesktop, isWebapp) and handles API errors gracefully by capturing them in an error ref without crashing.\n\n```json:metadata\n{\"files\":[\"frontend/src/stores/settings.ts\",\"frontend/tests/unit/stores/settings.test.ts\"],\"commit\":\"feat(frontend): add settings Pinia store\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: UI State Store",
+      "status": "pending",
+      "description": "Create the UI state Pinia store and its unit tests following TDD. This is a pure client-side store with no API calls. It manages node selection, active workflow name, unsaved changes tracking, execution lock state, panel visibility toggles, and a computed browser tab title that reflects the workflow name and dirty state.\n\n```json:metadata\n{\"files\":[\"frontend/src/stores/ui.ts\",\"frontend/tests/unit/stores/ui.test.ts\"],\"commit\":\"feat(frontend): add UI state Pinia store\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Add Types to Frontend Types",
+      "status": "pending",
+      "description": "Ensure all TypeScript types needed by the stores are exported from the shared types module. Check existing types in the scaffolding and only add what is missing: OMEROInstance, Settings, ProgressInfo, ExecutionResult, and ExecutionStatus. A type-checking test validates that all types exist and are correctly structured.\n\n```json:metadata\n{\"files\":[\"frontend/src/api/types.ts\",\"frontend/tests/unit/stores/settings-types.test.ts\"],\"commit\":\"feat(frontend): ensure Settings and execution types in API types\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Verify All Stores Work Together",
+      "status": "pending",
+      "description": "Write an integration test that instantiates all three stores (execution, settings, ui) in a single Pinia instance and verifies they coexist without conflict. Tests cover cross-store state propagation (execution lock reflected in UI), correct initial states, and that the UI store tab title computation works end-to-end with workflow name and dirty flag.\n\n```json:metadata\n{\"files\":[\"frontend/tests/unit/stores/integration.test.ts\"],\"commit\":\"test(frontend): add stores integration test\",\"blockedBy\":[0,1,2,3]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: Integration Test — Stores E2E Verification",
+      "status": "pending",
+      "description": "Write a Playwright E2E test that navigates to the running application, verifies Pinia is installed on the Vue app instance, checks for absence of console errors during store initialization, and asserts no unexpected failed network requests (no 404s or 500s on API calls). This validates that all stores load correctly in a real browser environment.\n\n```json:metadata\n{\"files\":[\"frontend/tests/e2e/stores-integration.spec.ts\"],\"commit\":\"test(frontend): add stores E2E integration test\",\"blockedBy\":[4]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-04-02T00:00:00Z"
+}
