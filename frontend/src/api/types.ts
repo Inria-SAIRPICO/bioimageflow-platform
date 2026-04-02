@@ -81,3 +81,21 @@ export interface ErrorResponse {
   detail: string
   field?: string
 }
+
+export interface ProgressInfo {
+  node_id: string
+  row: number
+  total_rows: number
+}
+
+export interface ExecutionResult {
+  success: boolean
+  errors: unknown[]
+  node_statuses: Record<string, NodeStatus>
+}
+
+export interface ExecutionStatus {
+  state: 'running' | 'idle'
+  last_result: ExecutionResult | null
+  progress: ProgressInfo | null
+}
