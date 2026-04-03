@@ -1,5 +1,7 @@
 """FastAPI application factory."""
 
+from __future__ import annotations
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +9,16 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from bioimageflow_server.models.errors import ErrorResponse
+from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.health import router as health_router
+from bioimageflow_server.routers.tools import (
+    get_deployment_mode,
+    get_package_installer,
+    get_tool_registry,
+    get_workflow_root,
+    router as tools_router,
+)
+from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 _STATUS_TO_ERROR: dict[int, str] = {
     400: "bad_request",
@@ -17,11 +28,14 @@ _STATUS_TO_ERROR: dict[int, str] = {
     405: "method_not_allowed",
     409: "conflict",
     422: "validation_error",
+    423: "locked",
     500: "internal_server_error",
 }
 
 
-def create_app(settings=None) -> FastAPI:
+def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
+    if config is None:
+        config = AppConfig()
     app = FastAPI(title="BioImageFlow Server", version="0.1.0")
 
     app.add_middleware(
@@ -58,6 +72,19 @@ def create_app(settings=None) -> FastAPI:
         )
         return JSONResponse(status_code=422, content=body.model_dump())
 
-    app.include_router(health_router)
+    app.include_router(health_router, prefix="/api/v1")
+    app.include_router(tools_router, prefix="/api/v1")
+
+    # ---- Wire dependency overrides from config ----
+    registry = config.tool_registry or ToolRegistryService()
+    app.dependency_overrides[get_tool_registry] = lambda: registry
+
+    if config.workflow_root is not None:
+        app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root
+
+    app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
+
+    if config.package_installer is not None:
+        app.dependency_overrides[get_package_installer] = lambda: config.package_installer
 
     return app

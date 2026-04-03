@@ -1,0 +1,83 @@
+import { describe, it, expect, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+import ColumnRefEdge from '../ColumnRefEdge.vue'
+import PositionalEdge from '../PositionalEdge.vue'
+
+vi.mock('@vue-flow/core', () => ({
+  getBezierPath: () => ['M 0 0 C 50 0 50 100 100 100', 50, 50, 0, 0],
+  Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
+}))
+
+const baseEdgeProps = {
+  id: 'edge-1',
+  sourceX: 0,
+  sourceY: 0,
+  targetX: 100,
+  targetY: 100,
+  sourcePosition: 'right',
+  targetPosition: 'left',
+}
+
+describe('ColumnRefEdge', () => {
+  it('renders an SVG path element', () => {
+    const w = mount(ColumnRefEdge, {
+      props: { ...baseEdgeProps, data: { type: 'ImagePath' } } as any,
+    })
+    const path = w.find('path')
+    expect(path.exists()).toBe(true)
+    expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
+  })
+
+  it('applies stroke color from getTypeColor for ImagePath', () => {
+    const w = mount(ColumnRefEdge, {
+      props: { ...baseEdgeProps, data: { type: 'ImagePath' } } as any,
+    })
+    expect(w.find('path').attributes('stroke')).toBe('#4A90D9')
+  })
+
+  it('applies default stroke color for unknown type', () => {
+    const w = mount(ColumnRefEdge, {
+      props: { ...baseEdgeProps, data: { type: 'Unknown' } } as any,
+    })
+    expect(w.find('path').attributes('stroke')).toBe('#8E8E93')
+  })
+
+  it('uses stroke-width 2', () => {
+    const w = mount(ColumnRefEdge, {
+      props: { ...baseEdgeProps, data: { type: 'str' } } as any,
+    })
+    expect(w.find('path').attributes('stroke-width')).toBe('2')
+  })
+})
+
+describe('PositionalEdge', () => {
+  it('renders an SVG path element', () => {
+    const w = mount(PositionalEdge, {
+      props: baseEdgeProps as any,
+    })
+    const path = w.find('path')
+    expect(path.exists()).toBe(true)
+    expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
+  })
+
+  it('uses gray stroke color', () => {
+    const w = mount(PositionalEdge, {
+      props: baseEdgeProps as any,
+    })
+    expect(w.find('path').attributes('stroke')).toBe('#8E8E93')
+  })
+
+  it('has dashed stroke', () => {
+    const w = mount(PositionalEdge, {
+      props: baseEdgeProps as any,
+    })
+    expect(w.find('path').attributes('stroke-dasharray')).toBe('5 3')
+  })
+
+  it('uses stroke-width 2', () => {
+    const w = mount(PositionalEdge, {
+      props: baseEdgeProps as any,
+    })
+    expect(w.find('path').attributes('stroke-width')).toBe('2')
+  })
+})

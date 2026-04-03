@@ -4,7 +4,7 @@ import importlib.metadata
 
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/api/v1")
+router = APIRouter()
 
 
 def _get_version() -> str:

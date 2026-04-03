@@ -36,6 +36,8 @@ export const useExecutionStore = defineStore('execution', () => {
     try {
       state.value = 'running'
       error.value = null
+      lastResult.value = null
+      progress.value = null
       await api.post('/api/v1/execution/run', { graph, nodes })
     } catch (e: unknown) {
       state.value = 'idle'
@@ -50,7 +52,8 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   async function clear(nodeIds: string[]) {
-    await api.post('/api/v1/execution/clear', { nodes: nodeIds })
+    const { data } = await api.post('/api/v1/execution/clear', { nodes: nodeIds })
+    return data
   }
 
   function applyProgress(p: ProgressInfo) {

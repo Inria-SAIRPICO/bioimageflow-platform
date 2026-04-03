@@ -57,6 +57,14 @@ class TestGraphValidationError:
         assert err.edge_id == "e1"
         assert err.field == "param"
 
+    def test_minimal_fields(self) -> None:
+        err = GraphValidationError(type="cycle_detected", detail="Cycle found")
+        assert err.type == "cycle_detected"
+        assert err.detail == "Cycle found"
+        assert err.node is None
+        assert err.edge_id is None
+        assert err.field is None
+
     def test_all_types(self) -> None:
         types = (
             "cycle_detected",
