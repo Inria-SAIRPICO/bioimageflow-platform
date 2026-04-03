@@ -208,7 +208,7 @@ Helpers needed: `_name_to_snake(name)` (CamelCase -> snake_case), `_name_to_disp
 
 Endpoints:
 - `POST /tools/packages/{package_name}/install` -- accepts `{"version": "1.2.0"}`, delegates to installer
-- `DELETE /tools/packages/{package_name}` -- accepts optional `?version=` query param, delegates to installer
+- `DELETE /tools/packages/{package_name}` -- accepts body `{"version": "1.2.0"}` (optional), delegates to installer
 
 Wire `get_package_installer` dependency from `AppConfig`.
 
@@ -320,21 +320,42 @@ Dialog with:
 **Files:** Modify `ToolsPanel.vue`, test in `__tests__/ToolsPanel.test.ts`
 
 Add to ToolsPanel:
-- `getVersionRows(packageName) -> {version, installed}[]` -- merges `installed_versions` and `available_versions`, sorted, with an `installed` boolean flag
+- `getVersionRows(packageName) -> {version, installed, activeInWorkflow}[]` -- merges `installed_versions` and `available_versions`, sorted, with `installed` boolean and `activeInWorkflow` boolean flags
 - `installVersion(packageName, version)` -- calls POST install endpoint, then refreshes packages
 - `uninstallVersion(packageName, version)` -- calls DELETE endpoint, then refreshes packages
-- Template: expandable version list inside package rows showing install/uninstall buttons per version
+- `useVersionInWorkflow(packageName, version)` -- sets the active version for the current workflow. If the workflow already uses a different version of this package, shows a confirmation dialog: "Changing {package} from {old_version} to {new_version} will mark {N} nodes as out-of-date. Continue?" On confirm, updates the active version and marks affected nodes as out-of-date.
+- Template: expandable version list inside package rows showing install/uninstall buttons per version and a "Use in workflow" button for installed versions with an active indicator (checkmark) on the currently used version.
 
 **Tests to write (on the computed/method logic):**
 - [ ] `getVersionRows` merges installed and available, marks installed correctly
 - [ ] `getVersionRows` for unknown package returns empty array
 - [ ] `installVersion` calls correct API endpoint
 - [ ] `uninstallVersion` calls correct API endpoint
+- [ ] `useVersionInWorkflow` updates active version for the workflow
+- [ ] `useVersionInWorkflow` shows confirmation when switching versions
 - [ ] Commit
 
 ---
 
-### Task 15: Environment Controls
+### Task 15: Info and Open-in-Editor Buttons
+
+**Files:** Modify `ToolsPanel.vue`, test in `__tests__/ToolsPanel.test.ts`
+
+Add to tool/package rows:
+- **Info button** (`data-testid="tool-info-{name}"`) on tool or package rows -- shows detailed documentation in a modal or expandable row. For tools, displays `tool.documentation`. For packages, displays installed versions and tool list.
+- **Open in editor button** (`data-testid="tool-edit-{name}"`) on tool rows -- calls `GET /api/v1/tools/{tool_name}/source` to get the source path, then `POST /api/v1/editor/open` with the path. Only shown in desktop mode (hidden when `deployment_mode === "webapp"`).
+
+**Tests to write:**
+- [ ] Info button renders on tool rows
+- [ ] Info button click shows documentation content
+- [ ] Open in editor button renders in desktop mode
+- [ ] Open in editor button hidden in webapp mode
+- [ ] Open in editor calls correct API endpoints
+- [ ] Commit
+
+---
+
+### Task 16: Environment Controls
 
 **Files:** Modify `ToolsPanel.vue`, test in `__tests__/ToolsPanel.test.ts`
 
@@ -368,7 +389,7 @@ Frontend store tests should also verify:
 
 ---
 
-### Task 16: Integration Test — Tools Panel E2E
+### Task 17: Integration Test — Tools Panel E2E
 
 **Files:** Create `frontend/tests/e2e/tools-panel.spec.ts`
 

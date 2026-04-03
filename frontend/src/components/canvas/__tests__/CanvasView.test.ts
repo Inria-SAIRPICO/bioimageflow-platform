@@ -72,7 +72,7 @@ vi.mock('@vue-flow/core', () => {
       getNodes: computed(() => mockNodes),
       getEdges: computed(() => mockEdges),
       onConnect: (handler: any) => { connectHandler = handler },
-      onSelectionChange: (handler: any) => { selectionHandler = handler },
+      onNodesChange: (handler: any) => { selectionHandler = handler },
       fitView: vi.fn(),
     }),
     Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -438,6 +438,64 @@ describe('CanvasView', () => {
       expect(pasted.position.y).toBe(70) // 20 + 50
       expect(pasted.data.status).toBe('unexecuted')
       expect(w.emitted('graph-changed')).toBeTruthy()
+      w.unmount()
+    })
+
+    it('Delete key triggers deleteSelected', () => {
+      mockNodes = [
+        { id: 'a', selected: true, data: { name: 'A' }, position: { x: 0, y: 0 } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      w.find('.canvas-view').trigger('keydown', { key: 'Delete' })
+
+      expect(mockNodes.find((n: any) => n.id === 'a')).toBeUndefined()
+      w.unmount()
+    })
+
+    it('Backspace key triggers deleteSelected', () => {
+      mockNodes = [
+        { id: 'a', selected: true, data: { name: 'A' }, position: { x: 0, y: 0 } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      w.find('.canvas-view').trigger('keydown', { key: 'Backspace' })
+
+      expect(mockNodes.find((n: any) => n.id === 'a')).toBeUndefined()
+      w.unmount()
+    })
+
+    it('Ctrl+C triggers copySelected', () => {
+      mockNodes = [
+        {
+          id: 'a',
+          selected: true,
+          data: { name: 'A', toolName: 'gaussian_blur', parameters: {} },
+          position: { x: 0, y: 0 },
+        },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      w.find('.canvas-view').trigger('keydown', { key: 'c', ctrlKey: true })
+
+      const vm = w.vm as any
+      expect(vm.clipboardData).not.toBeNull()
+      w.unmount()
+    })
+
+    it('Ctrl+A selects all nodes via keydown', () => {
+      mockNodes = [
+        { id: 'a', selected: false, data: {}, position: { x: 0, y: 0 } },
+        { id: 'b', selected: false, data: {}, position: { x: 100, y: 0 } },
+      ]
+
+      const w = mountCanvas()
+      w.find('.canvas-view').trigger('keydown', { key: 'a', ctrlKey: true })
+
+      expect(mockNodes.every((n: any) => n.selected)).toBe(true)
       w.unmount()
     })
 

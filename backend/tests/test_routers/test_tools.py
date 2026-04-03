@@ -361,3 +361,36 @@ async def test_get_source_not_found(workflow_root: Path):
     async for client in _client(config):
         resp = await client.get("/api/v1/tools/Ghost/source")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /tools/packages/{package_name}/use
+# ---------------------------------------------------------------------------
+
+
+async def test_use_package_version_success(populated_client: httpx.AsyncClient):
+    resp = await populated_client.post(
+        "/api/v1/tools/packages/cellpose/use",
+        json={"version": "2.0"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["package"] == "cellpose"
+    assert data["version"] == "2.0"
+    assert data["status"] == "active"
+
+
+async def test_use_package_version_not_found(empty_client: httpx.AsyncClient):
+    resp = await empty_client.post(
+        "/api/v1/tools/packages/nonexistent/use",
+        json={"version": "1.0"},
+    )
+    assert resp.status_code == 404
+
+
+async def test_use_package_version_not_installed(populated_client: httpx.AsyncClient):
+    resp = await populated_client.post(
+        "/api/v1/tools/packages/cellpose/use",
+        json={"version": "9.9.9"},
+    )
+    assert resp.status_code == 400

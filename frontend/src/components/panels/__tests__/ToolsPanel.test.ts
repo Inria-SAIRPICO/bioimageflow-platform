@@ -388,6 +388,86 @@ describe('ToolsPanel', () => {
     )
   })
 
+  // --- Versions column test ---
+
+  it('treeNodes includes version data from packages', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as {
+      treeNodes: Array<{ key: string; data: { versions: string }; children?: Array<{ data: { versions: string } }> }>
+    }
+    const nodes = vm.treeNodes
+
+    // Package row should show installed versions
+    const coreNode = nodes.find((n) => n.key === 'bioimageflow-core')
+    expect(coreNode).toBeDefined()
+    expect(coreNode!.data.versions).toBe('0.1.0')
+
+    // Tool child rows should show their package_version
+    const toolNode = coreNode!.children![0]
+    expect(toolNode.data.versions).toBe('0.1.0')
+  })
+
+  // --- Error handling tests ---
+
+  it('installVersion sets error on failure', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.post.mockRejectedValueOnce(new Error('Install failed'))
+
+    const vm = wrapper.vm as unknown as {
+      installVersion: (name: string, version: string) => Promise<void>
+    }
+    await vm.installVersion('bioimageflow-core', '0.2.0')
+
+    const store = useToolRegistryStore()
+    expect(store.error).toBe('Install failed')
+  })
+
+  it('uninstallVersion sets error on failure', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.delete.mockRejectedValueOnce(new Error('Uninstall failed'))
+
+    const vm = wrapper.vm as unknown as {
+      uninstallVersion: (name: string, version: string) => Promise<void>
+    }
+    await vm.uninstallVersion('bioimageflow-core', '0.1.0')
+
+    const store = useToolRegistryStore()
+    expect(store.error).toBe('Uninstall failed')
+  })
+
+  it('toggleEnvironment sets error on failure', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.post.mockRejectedValueOnce(new Error('Env toggle failed'))
+
+    const vm = wrapper.vm as unknown as {
+      toggleEnvironment: (name: string) => Promise<void>
+    }
+    await vm.toggleEnvironment('bioimageflow-cellpose')
+
+    const store = useToolRegistryStore()
+    expect(store.error).toBe('Env toggle failed')
+  })
+
   it('toggleEnvironment refreshes packages after toggle', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {

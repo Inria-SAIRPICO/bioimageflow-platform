@@ -33,7 +33,9 @@ describe('execution store', () => {
     const result: ExecutionResult = {
       success: true,
       errors: [],
-      node_statuses: { n1: 'success' },
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'executed', cached: false },
+      },
     }
     mockedApi.get.mockResolvedValueOnce({
       data: { state: 'running', last_result: result, progress: null },
@@ -48,11 +50,21 @@ describe('execution store', () => {
     expect(store.progress).toBeNull()
   })
 
-  it('run sends POST and sets running', async () => {
+  it('run sends POST and sets running, clears lastResult and progress', async () => {
     const graph = { nodes: [], edges: [] }
     mockedApi.post.mockResolvedValueOnce({ data: {} })
 
     const store = useExecutionStore()
+    // Pre-populate to verify they get cleared
+    store.lastResult = {
+      success: true,
+      errors: [],
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'executed', cached: false },
+      },
+    }
+    store.progress = { node_id: 'n1', row: 5, total_rows: 10 }
+
     await store.run(graph)
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/run', {
@@ -60,6 +72,8 @@ describe('execution store', () => {
       nodes: undefined,
     })
     expect(store.state).toBe('running')
+    expect(store.lastResult).toBeNull()
+    expect(store.progress).toBeNull()
   })
 
   it('run with nodes passes node list', async () => {
@@ -87,15 +101,17 @@ describe('execution store', () => {
     expect(store.state).toBe('idle')
   })
 
-  it('clear sends POST /execution/clear with nodes', async () => {
-    mockedApi.post.mockResolvedValueOnce({ data: {} })
+  it('clear sends POST /execution/clear with nodes and returns data', async () => {
+    const responseData = { cleared: ['n1', 'n2'] }
+    mockedApi.post.mockResolvedValueOnce({ data: responseData })
 
     const store = useExecutionStore()
-    await store.clear(['n1', 'n2'])
+    const result = await store.clear(['n1', 'n2'])
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/clear', {
       nodes: ['n1', 'n2'],
     })
+    expect(result).toEqual(responseData)
   })
 
   it('applyProgress updates progress', () => {
@@ -113,7 +129,9 @@ describe('execution store', () => {
     const result: ExecutionResult = {
       success: true,
       errors: [],
-      node_statuses: { n1: 'success' },
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'executed', cached: false },
+      },
     }
     store.applyExecutionComplete(result)
 

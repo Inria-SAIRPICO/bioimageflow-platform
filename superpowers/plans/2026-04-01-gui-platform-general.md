@@ -32,11 +32,11 @@ The platform is split into the following independent components, each with its o
 
 | # | Component | Description | Specific Plan | Plan Status |
 |---|-----------|-------------|---------------|-------------|
-| 4 | **Tools Panel** | Left sidebar — tool/package table, search, drag-to-canvas, version management, env controls, create tool | `2026-04-01-tools-panel.md` | Written |
-| 5 | **Canvas (Node Programming Interface)** | Central DAG editor — nodes, edges, pins, selection, copy/paste, undo/redo, canvas controls, status reconciliation, execution order indication | `2026-04-01-canvas.md` | Written |
+| 4 | **Tools Panel** | Left sidebar — tool/package table, search, drag-to-canvas, version management, env controls | `2026-04-01-tools-panel.md` | Written |
+| 5 | **Canvas (Node Programming Interface)** | Central DAG editor — nodes, edges, pins, selection, copy/paste, undo/redo, canvas controls, status reconciliation | `2026-04-01-canvas.md` | Written |
 | 6 | **Node Panel** | Right sidebar — parameter editing, output fields, resource config, node logs, action bar | `2026-04-01-node-panel.md` | Pending |
 
-**Parallelization:** Components 4 and 5 are independent (both depend on Pinia Stores). Two agents can work on Tools Panel and Canvas simultaneously. Node Panel (6) must wait for Canvas (5).
+**Parallelization:** Components 4 and 5 are independent (both depend on Pinia Stores). Two agents can work on Tools Panel and Canvas simultaneously. Node Panel (6) must wait for Canvas (5). **Note:** Canvas (5) depends on `toolRegistryStore` which is defined in Tools Panel plan Task 11. This task must be completed before Canvas work can begin, or the store definition must be extracted and completed as part of Pinia Stores (3).
 
 ### Phase 3: Validation & Execution
 
@@ -52,41 +52,29 @@ The platform is split into the following independent components, each with its o
 
 | # | Component | Description | Specific Plan | Plan Status |
 |---|-----------|-------------|---------------|-------------|
-| 10 | **Data Table** | Bottom panel tab 1 — output DataFrames, pagination, sorting, image thumbnails, summary DataFrame, multi-node stacking | `2026-04-01-data-table.md` | Pending |
+| 10 | **Data Table** | Bottom panel tab 1 — output DataFrames, pagination, sorting, image thumbnails, multi-node stacking | `2026-04-01-data-table.md` | Pending |
 | 11 | **Logger Panel** | Bottom panel tab 2 — real-time logs, level/node filter, search, auto-scroll | `2026-04-01-logger-panel.md` | Pending |
-| 12 | **Image Viewer** | Desktop: Napari integration (NapariLauncher, /napari/* endpoints). Webapp: Viv in-browser viewer, /nodes/{id}/image endpoint | `2026-04-01-image-viewer.md` | Pending |
+| 12 | **Image Viewer** | Napari integration (NapariLauncher, /napari/* endpoints) | `2026-04-01-image-viewer.md` | Pending |
 
 **Parallelization:** All three components (10, 11, 12) are independent of each other. Data Table and Logger Panel depend on Backend Core (2) — they are bottom panels that consume API data independently, not on Canvas. Image Viewer (12) depends on Execution (8) for result data. Up to three agents can work on these in parallel once their respective dependencies are met.
 
-### Phase 5: Workflow Management
+### Phase 5: Workflow Management & Settings
 
 | # | Component | Description | Specific Plan | Plan Status |
 |---|-----------|-------------|---------------|-------------|
-| 13 | **Workflow CRUD** | /workflows endpoints, save/load/export/import, missing package resolution, auto-save to IndexedDB, startup recovery, tab-level locking | `2026-04-01-workflow-crud.md` | Pending |
-| 14 | **Sub-Workflows** | SubWorkflowNode creation from selection, drag from Workflow Panel, tab editing, publish toggles, nesting | `2026-04-01-sub-workflows.md` | Pending |
+| 13 | **Workflow CRUD** | /workflows endpoints, save/load, missing package resolution, auto-save to IndexedDB, startup recovery | `2026-04-01-workflow-crud.md` | Pending |
+| 14 | **Settings Panel** | /settings endpoints, editor/Napari/execution/storage config | `2026-04-01-settings.md` | Pending |
+| 15 | **Tool Hot-Reload** | File watcher (watchdog), tool_reload WS message, frontend schema update, parameter re-validation | `2026-04-01-hot-reload.md` | Pending |
 
-**Parallelization:** Workflow CRUD (13) depends on Backend Core (2). Sub-Workflows (14) depends on Canvas (5). These two can be developed in parallel by independent agents.
+**Parallelization:** All three components are independent. Workflow CRUD (13) depends on Backend Core (2). Settings Panel (14) depends on Backend Core (2) + Pinia Stores (3). Hot-Reload (15) depends on Backend Core (2) + WebSocket (9). Up to three agents can work in parallel.
 
-### Phase 6: Settings & Integrations
-
-| # | Component | Description | Specific Plan | Plan Status |
-|---|-----------|-------------|---------------|-------------|
-| 15 | **Settings Panel** | /settings endpoints, editor/Napari/OMERO/update/storage/shortcuts config | `2026-04-01-settings.md` | Pending |
-| 16 | **Code Editor Integration** | code-server iframe, /editor/* endpoints, external editor fallback | `2026-04-01-code-editor.md` | Pending |
-| 17 | **Tool Hot-Reload** | File watcher (watchdog), tool_reload WS message, frontend schema update, parameter re-validation | `2026-04-01-hot-reload.md` | Pending |
-| 18 | **Dataset Browser (Webapp)** | /datasets endpoints, upload modal, file selection for Path parameters | `2026-04-01-dataset-browser.md` | Pending |
-
-**Parallelization:** All four components are independent of each other. Settings Panel (15) depends on Backend Core (2) + Pinia Stores (3). Code Editor (16), Hot-Reload (17), and Dataset Browser (18) each have their own backend dependencies but no inter-dependencies. Up to four agents can work in parallel.
-
-### Phase 7: Polish & Security
+### Phase 6: Polish
 
 | # | Component | Description | Specific Plan | Plan Status |
 |---|-----------|-------------|---------------|-------------|
-| 19 | **Keyboard Shortcuts** | Customizable shortcut system, defaults table, settings integration | `2026-04-01-keyboard-shortcuts.md` | Pending |
-| 20 | **Error Handling System** | 3-level errors (validation inline, execution in Node Panel, system in global indicator), error history panel | `2026-04-01-error-handling.md` | Pending |
-| 21 | **Security (Webapp)** | Auth middleware, desktop-only endpoint gating, rate limiting, upload validation, known packages list | `2026-04-01-security.md` | Pending |
+| 16 | **Error Handling System** | 3-level errors (validation inline, execution in Node Panel, system in global indicator), error history panel | `2026-04-01-error-handling.md` | Pending |
 
-**Parallelization:** All three components are independent. Three agents can work in parallel.
+**Parallelization:** Independent of other Phase 6 work. Depends on Execution (8) and Node Panel (6) being complete.
 
 ---
 
@@ -99,7 +87,7 @@ The following plans should be written next, in this order. Rationale is based on
 3. **WebSocket Layer (9)** — Pervasive real-time feature that touches many components (logs, progress, hot-reload). Early specification prevents integration surprises.
 4. **Node Panel (6)** — Needed immediately after Canvas. The parameter editing UX drives many backend contracts.
 5. **Workflow CRUD (13)** — Gates save/load functionality. Without it, all work is ephemeral.
-6. **Image Viewer (12)** — Dual architecture (Napari desktop vs Viv webapp) makes this high-risk. Early planning reduces late surprises.
+6. **Image Viewer (12)** — Napari integration via Wetlands requires careful design (IPC, process lifecycle).
 
 ---
 
@@ -107,7 +95,7 @@ The following plans should be written next, in this order. Rationale is based on
 
 These are not separate components but constraints applied across all plans:
 
-- **Deployment modes:** Every feature must account for desktop vs webapp mode. Use `deployment_mode` from settings to gate features.
+- **Desktop-only MVP:** This plan covers the desktop-only MVP. Webapp mode (sessions, auth, dataset browser, code-server iframe, security middleware) is deferred to a future version.
 - **Type generation:** Backend Pydantic models -> OpenAPI -> `openapi-typescript` -> frontend types. No hand-written duplicate types.
 - **Testing strategy:**
   - Backend: pytest + httpx async test client. Unit tests for models/services, integration tests for endpoints.
@@ -149,7 +137,6 @@ bioimageflow-platform/
 │   │   │   ├── canvas/             # Canvas (Vue Flow wrapper, custom nodes/edges)
 │   │   │   │   ├── CanvasView.vue
 │   │   │   │   ├── ToolNode.vue    # Custom node component
-│   │   │   │   ├── SubWorkflowNode.vue
 │   │   │   │   ├── InputPin.vue
 │   │   │   │   ├── OutputPin.vue
 │   │   │   │   └── EdgeRenderer.vue
@@ -195,7 +182,6 @@ bioimageflow-platform/
 │   │       │   ├── workflows.py
 │   │       │   ├── nodes.py
 │   │       │   ├── settings.py
-│   │       │   ├── datasets.py
 │   │       │   ├── napari.py
 │   │       │   ├── editor.py
 │   │       │   ├── filesystem.py
@@ -234,15 +220,14 @@ Scaffolding (1)
     │       ├── Workflow CRUD (13)
     │       ├── Data Table (10)
     │       ├── Logger Panel (11)
-    │       └── Settings Panel (15) ←── also needs Pinia Stores (3)
+    │       └── Settings Panel (14) ←── also needs Pinia Stores (3)
     └── Pinia Stores (3)
             ├── Tools Panel (4)
-            ├── Canvas (5)
-            │       ├── Node Panel (6)
-            │       └── Sub-Workflows (14)
+            ├── Canvas (5) ←── also needs toolRegistryStore from Tools Panel (4) Task 11
+            │       └── Node Panel (6)
             ├── Graph Validation (7) ←── also needs Backend Core (2)
-            ├── Settings Panel (15) ←── also needs Backend Core (2)
-            └── Error Handling (20)
+            ├── Settings Panel (14) ←── also needs Backend Core (2)
+            └── Error Handling (16)
 ```
 
 Components sharing the same parent level can be developed in parallel. Each specific plan is self-contained and produces working, testable software independently. Where a component has two parents (e.g., Graph Validation needs both Backend Core and Pinia Stores), both must be complete before work begins.

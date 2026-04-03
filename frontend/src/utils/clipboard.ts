@@ -62,7 +62,9 @@ export function deserializeSelection(
     allIds.push(newId)
     idMap.set(node.id, newId)
 
-    const newName = generateNodeName(node.tool_name, allNames, node.name)
+    // Strip trailing numeric suffix to avoid double-numbering (e.g., "Blur 1" -> "Blur")
+    const baseName = node.name.replace(/\s+\d+$/, '') || node.name
+    const newName = generateNodeName(node.tool_name, allNames, baseName)
     allNames.push(newName)
 
     return {

@@ -110,4 +110,36 @@ describe('deserializeSelection', () => {
     // Should have a numeric suffix
     expect(result.nodes[0].name).toMatch(/.+ \d+$/)
   })
+
+  it('strips trailing number from name to avoid double suffix', () => {
+    const node: ClipboardNode = {
+      id: 'blur_1',
+      name: 'Gaussian Blur 1',
+      tool_name: 'GaussianBlur',
+      position: [0, 0],
+      parameters: {},
+    }
+    const clipboard = { nodes: [node], edges: [] }
+
+    const result = deserializeSelection(clipboard, [], [])
+
+    // Should produce "Gaussian Blur 1", not "Gaussian Blur 1 1"
+    expect(result.nodes[0].name).toBe('Gaussian Blur 1')
+    expect(result.nodes[0].name).not.toMatch(/\d+\s+\d+$/)
+  })
+
+  it('strips trailing number and increments when base name conflicts', () => {
+    const node: ClipboardNode = {
+      id: 'blur_1',
+      name: 'Gaussian Blur 1',
+      tool_name: 'GaussianBlur',
+      position: [0, 0],
+      parameters: {},
+    }
+    const clipboard = { nodes: [node], edges: [] }
+
+    const result = deserializeSelection(clipboard, [], ['Gaussian Blur 1'])
+
+    expect(result.nodes[0].name).toBe('Gaussian Blur 2')
+  })
 })

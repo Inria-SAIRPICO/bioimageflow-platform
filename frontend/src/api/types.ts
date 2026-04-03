@@ -24,56 +24,80 @@ export interface ToolMetadata {
   name: string
   display_name: string
   package: string
+  package_version: string
   tool_type: string
   documentation: string
   tags: string[]
   categories: string[]
   inputs: Record<string, InputFieldSchema>
   outputs: Record<string, OutputFieldSchema>
-  environment: string
+  environment: Record<string, unknown> | null
 }
 
 export interface PackageInfo {
   name: string
   installed_versions: string[]
   available_versions: string[]
-  tools: Record<string, ToolMetadata>
+  tools: Record<string, string[]>
   environment_status: string
 }
 
 export interface NodeState {
   id: string
-  type: string
+  name: string
   tool_name: string
-  position: { x: number; y: number }
+  position: [number, number]
   parameters: Record<string, unknown>
+  resources?: Record<string, unknown>
+  output_templates?: Record<string, string>
+  enabled?: boolean
+  collapsed?: boolean
 }
 
-export interface Edge {
+export interface ColumnRefEdge {
+  type: 'column_ref'
   id: string
-  source: string
-  sourceHandle: string
-  target: string
-  targetHandle: string
+  source_node: string
+  target_node: string
+  source_output: string
+  target_input: string
 }
+
+export interface PositionalEdge {
+  type: 'positional'
+  id: string
+  source_node: string
+  target_node: string
+  positional_index: number
+}
+
+export type Edge = ColumnRefEdge | PositionalEdge
 
 export interface GraphState {
   nodes: NodeState[]
   edges: Edge[]
 }
 
-export type NodeStatus = 'idle' | 'running' | 'success' | 'error' | 'outdated'
+export interface NodeStatus {
+  node_id: string
+  status: 'unexecuted' | 'executed' | 'out_of_date' | 'disabled' | 'running' | 'failed'
+  cached: boolean
+  error?: string | null
+  traceback?: string | null
+}
 
 export interface GraphValidationError {
-  nodeId: string
-  field?: string
-  message: string
-  severity: string
+  type: 'cycle_detected' | 'type_incompatible' | 'parameter_invalid' | 'missing_tool' | 'missing_connection' | 'missing_package' | 'invalid_node_id' | 'invalid_edge_id'
+  detail: string
+  node?: string | null
+  edge_id?: string | null
+  field?: string | null
 }
 
 export interface ValidationResult {
   valid: boolean
-  errors: GraphValidationError[]
+  node_statuses?: Record<string, NodeStatus>
+  errors?: GraphValidationError[]
 }
 
 export interface ErrorResponse {

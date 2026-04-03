@@ -27,6 +27,7 @@ export interface TreeNode {
     display_name: string
     categories: string
     tags: string
+    versions: string
     tool?: ToolMetadata
   }
   children?: TreeNode[]
@@ -41,25 +42,32 @@ const treeNodes = computed<TreeNode[]>(() => {
     grouped[tool.package].push(tool)
   }
 
-  return Object.entries(grouped).map(([pkg, tools]) => ({
-    key: pkg,
-    data: {
-      name: pkg,
-      display_name: pkg,
-      categories: '',
-      tags: '',
-    },
-    children: tools.map((tool) => ({
-      key: tool.name,
+  return Object.entries(grouped).map(([pkg, tools]) => {
+    const pkgInfo = toolRegistry.packages.find((p) => p.name === pkg)
+    const versions = pkgInfo ? pkgInfo.installed_versions.join(', ') : ''
+
+    return {
+      key: pkg,
       data: {
-        name: tool.name,
-        display_name: tool.display_name,
-        categories: tool.categories.join(', '),
-        tags: tool.tags.join(', '),
-        tool,
+        name: pkg,
+        display_name: pkg,
+        categories: '',
+        tags: '',
+        versions,
       },
-    })),
-  }))
+      children: tools.map((tool) => ({
+        key: tool.name,
+        data: {
+          name: tool.name,
+          display_name: tool.display_name,
+          categories: tool.categories.join(', '),
+          tags: tool.tags.join(', '),
+          versions: tool.package_version,
+          tool,
+        },
+      })),
+    }
+  })
 })
 
 function onToolDragStart(event: DragEvent, tool: ToolMetadata) {
@@ -91,19 +99,31 @@ function getVersionRows(packageName: string): VersionRow[] {
 }
 
 async function installVersion(packageName: string, version: string) {
-  await api.post(`/api/v1/tools/packages/${packageName}/install`, { version })
-  await toolRegistry.fetchPackages()
+  try {
+    await api.post(`/api/v1/tools/packages/${packageName}/install`, { version })
+    await toolRegistry.fetchPackages()
+  } catch (e: unknown) {
+    toolRegistry.error = e instanceof Error ? e.message : String(e)
+  }
 }
 
 async function uninstallVersion(packageName: string, version: string) {
-  await api.delete(`/api/v1/tools/packages/${packageName}`, { params: { version } })
-  await toolRegistry.fetchPackages()
+  try {
+    await api.delete(`/api/v1/tools/packages/${packageName}`, { params: { version } })
+    await toolRegistry.fetchPackages()
+  } catch (e: unknown) {
+    toolRegistry.error = e instanceof Error ? e.message : String(e)
+  }
 }
 
 async function useVersionInWorkflow(packageName: string, version: string) {
   if (confirm(`Switch ${packageName} to version ${version} in the current workflow?`)) {
-    await api.post(`/api/v1/tools/packages/${packageName}/use`, { version })
-    await toolRegistry.fetchTools()
+    try {
+      await api.post(`/api/v1/tools/packages/${packageName}/use`, { version })
+      await toolRegistry.fetchTools()
+    } catch (e: unknown) {
+      toolRegistry.error = e instanceof Error ? e.message : String(e)
+    }
   }
 }
 
@@ -122,8 +142,12 @@ function toggleDocumentation(toolName: string) {
 
 async function openInEditor(toolName: string) {
   if (!settingsStore.isDesktop) return
-  const { data } = await api.get<{ source: string }>(`/api/v1/tools/${toolName}/source`)
-  await api.post('/api/v1/editor/open', { file_path: data.source })
+  try {
+    const { data } = await api.get<{ source: string }>(`/api/v1/tools/${toolName}/source`)
+    await api.post('/api/v1/editor/open', { file_path: data.source })
+  } catch (e: unknown) {
+    toolRegistry.error = e instanceof Error ? e.message : String(e)
+  }
 }
 
 // --- Environment controls (Task 16) ---
@@ -134,13 +158,17 @@ function getEnvStatus(packageName: string): string {
 }
 
 async function toggleEnvironment(packageName: string) {
-  const status = getEnvStatus(packageName)
-  if (status === 'running') {
-    await api.post(`/api/v1/tools/environments/${packageName}/stop`)
-  } else {
-    await api.post(`/api/v1/tools/environments/${packageName}/start`)
+  try {
+    const status = getEnvStatus(packageName)
+    if (status === 'running') {
+      await api.post(`/api/v1/tools/environments/${packageName}/stop`)
+    } else {
+      await api.post(`/api/v1/tools/environments/${packageName}/start`)
+    }
+    await toolRegistry.fetchPackages()
+  } catch (e: unknown) {
+    toolRegistry.error = e instanceof Error ? e.message : String(e)
   }
-  await toolRegistry.fetchPackages()
 }
 
 onMounted(async () => {
@@ -183,30 +211,32 @@ defineExpose({
       <Column field="display_name" header="Name" expander />
       <Column field="categories" header="Categories" />
       <Column field="tags" header="Tags" />
+      <Column field="versions" header="Versions" />
       <Column header="Actions">
         <template #body="{ node }">
           <template v-if="node.data.tool">
-            <Button
-              icon="pi pi-info-circle"
-              text
-              size="small"
-              :data-testid="`tool-info-${node.data.name}`"
-              @click="toggleDocumentation(node.data.name)"
-            />
-            <Button
-              v-if="settingsStore.isDesktop"
-              icon="pi pi-pencil"
-              text
-              size="small"
-              :data-testid="`tool-edit-${node.data.name}`"
-              @click="openInEditor(node.data.name)"
-            />
             <div
-              draggable="true"
               class="tool-row"
+              draggable="true"
               @dragstart="onToolDragStart($event, node.data.tool)"
               @click="onToolClick(node.data.name)"
-            />
+            >
+              <Button
+                icon="pi pi-info-circle"
+                text
+                size="small"
+                :data-testid="`tool-info-${node.data.name}`"
+                @click.stop="toggleDocumentation(node.data.name)"
+              />
+              <Button
+                v-if="settingsStore.isDesktop"
+                icon="pi pi-pencil"
+                text
+                size="small"
+                :data-testid="`tool-edit-${node.data.name}`"
+                @click.stop="openInEditor(node.data.name)"
+              />
+            </div>
           </template>
           <template v-else>
             <span

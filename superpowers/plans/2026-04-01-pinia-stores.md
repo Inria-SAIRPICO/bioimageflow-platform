@@ -173,7 +173,7 @@ Create `frontend/src/stores/ui.ts` using `defineStore("ui", () => {...})`.
 
 **Reactive state:** `selectedNodeIds` (ref string[]), `activeWorkflowName` (ref string | null), `hasUnsavedChanges` (ref boolean), `isExecutionLocked` (ref boolean), `panels` (reactive object with boolean flags: tools, nodePanel, dataTable, logger — all default true).
 
-**Computed:** `hasSelection`, `isSingleSelection`, `isMultiSelection` (derived from selectedNodeIds length). `tabTitle` — "BioImageFlow" base, append " -- {name}" if workflow set, append " *" if dirty.
+**Computed:** `hasSelection`, `isSingleSelection`, `isMultiSelection` (derived from selectedNodeIds length). `tabTitle` — "BioImageFlow" base, append " — {name}" (em dash, U+2014) if workflow set, append " *" if dirty. Must match spec: `"BioImageFlow — {workflow_display_name} *"`.
 
 **Actions:** `setSelectedNodes(ids)`, `clearSelection()`, `setActiveWorkflow(name)`, `markDirty()`, `markClean()`, `setExecutionLocked(locked)`, `togglePanel(panel)`.
 
@@ -196,7 +196,7 @@ Stage `frontend/src/stores/ui.ts` and `frontend/tests/unit/stores/ui.test.ts`. C
 - Modify: `frontend/src/api/types.ts`
 - Test: `frontend/tests/unit/stores/settings-types.test.ts`
 
-> **Important:** Before adding types, check if they already exist in the scaffolding plan's placeholder types.ts. Only add what's missing. Do not duplicate.
+> **Important:** First verify that all existing placeholder types in types.ts match the gui spec's Pydantic model definitions exactly (field names, types, structure). Fix any that are wrong — the scaffolding placeholder types may have diverged from the spec. Then add what's missing. Do not duplicate.
 
 - [ ] **Step 1: Write failing test that imports types**
 
@@ -209,7 +209,7 @@ Expected: FAIL if any type is missing from types.ts
 
 - [ ] **Step 3: Add missing types to types.ts**
 
-Check what already exists in `frontend/src/api/types.ts`. Only add what is missing from:
+Check what already exists in `frontend/src/api/types.ts`. Verify existing types match the gui spec — fix `NodeState`, `Edge` (must be discriminated union of `ColumnRefEdge | PositionalEdge`), `NodeStatus` (must be an object, not a string union), `GraphValidationError`, and `ValidationResult` if they diverge from the spec's Pydantic models. Then add what is missing from:
 
 - `OMEROInstance` — host (string), port (number, optional), username (string), name (string | null, optional)
 - `Settings` — deployment_mode ("desktop" | "webapp"), output_data_folder (string), plus optional fields: external_editor, napari_env_path, omero_instances, tool_store_path, update_mode, execution_engine ("sequential" | "parsl"), cache_max_executions, cache_max_age, keyboard_shortcuts, dev_mode

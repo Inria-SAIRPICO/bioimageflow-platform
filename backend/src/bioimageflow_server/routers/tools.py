@@ -213,6 +213,24 @@ async def delete_tool(
 # ---------------------------------------------------------------------------
 
 
+@router.post("/packages/{package_name}/use")
+async def use_package_version(
+    package_name: str,
+    body: dict[str, str] | None = None,
+    registry: ToolRegistryService = Depends(get_tool_registry),
+) -> dict[str, str]:
+    version = body.get("version") if body else None
+    pkg = registry.get_package(package_name)
+    if pkg is None:
+        raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
+    if version and version not in pkg.installed_versions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Version '{version}' is not installed for '{package_name}'",
+        )
+    return {"package": package_name, "version": version or "", "status": "active"}
+
+
 @router.post("/packages/{package_name}/install")
 async def install_package(
     package_name: str,

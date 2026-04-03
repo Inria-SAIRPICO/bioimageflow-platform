@@ -94,7 +94,7 @@ Note: rate limiting library is not needed yet — add when webapp mode is implem
 
 Build system: `hatchling`. The correct hatch config for src layout is `packages = ["src/bioimageflow_server"]` under `[tool.hatch.build.targets.wheel]`.
 
-Pytest config: `testpaths = ["tests"]`, `asyncio_mode = "auto"`.
+Pytest config: `testpaths = ["tests"]`. Tests use `anyio` (not `pytest-asyncio`), so no `asyncio_mode` setting is needed.
 Ruff config: `line-length = 100`, `target-version = "py312"`.
 
 - [ ] **Step 2: Create `__init__.py`** with module docstring.
@@ -135,8 +135,8 @@ Provide `anyio_backend` fixture returning `"asyncio"`.
 
 The factory should:
 - Create `FastAPI` instance with title and version
-- Configure CORS middleware (desktop mode allows `localhost:5173`)
-- Include the health router under `/api/v1` prefix
+- Configure CORS middleware — per spec: "In desktop mode, CORS is permissive (localhost only). In webapp mode, configurable allowed origins." For initial scaffolding (desktop only), permissive CORS is acceptable.
+- Include the health router with `/api/v1` prefix applied at `include_router()` time (not on the router itself), so routers remain prefix-agnostic and reusable.
 - Return the app
 
 - [ ] **Step 5: Run test — should pass.**

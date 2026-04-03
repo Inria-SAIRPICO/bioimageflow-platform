@@ -323,7 +323,7 @@ class ValidationResult(BaseModel):
     errors: list[GraphValidationError] = []
 ```
 
-**Node `id` vs `name`:** The `id` is the URL-safe, unique, special-character-free identifier used in API endpoints (e.g., `/nodes/{id}/data`) and edge references (`source_node`, `target_node`). The `name` is the human-readable display name shown on the canvas and in the Node Panel. The `id` is auto-generated from the `name` by lowercasing, replacing spaces with underscores, stripping non-alphanumeric/underscore characters, and appending a numeric suffix for uniqueness (e.g., name `"Cellpose Segmenter"` → id `"cellpose_segmenter_1"`). The `id` is stable once assigned — renaming the `name` does not change the `id`. All API endpoints and WebSocket messages use `id` (not `name`). The `name` is used only in UI display contexts.
+**Node `id` vs `name`:** The `id` is the URL-safe, unique, special-character-free identifier used in API endpoints (e.g., `/nodes/{id}/data`) and edge references (`source_node`, `target_node`). The `name` is the human-readable display name shown on the canvas and in the Node Panel. The `id` is auto-generated from the tool's **class name** by converting CamelCase to snake_case and appending a numeric suffix for uniqueness (e.g., class `CellposeSegmenter` → id `"cellpose_segmenter_1"`). The `id` is stable once assigned — renaming the `name` does not change the `id`. All API endpoints and WebSocket messages use `id` (not `name`). The `name` is used only in UI display contexts.
 
 **Node ID validation:** The backend validates node ID uniqueness and format in `PUT /graph`. Duplicate or malformed IDs produce a `GraphValidationError` of type `"invalid_node_id"`.
 
@@ -802,18 +802,13 @@ Input and output pins are the connection points on nodes.
 
 For **DataFrameTool** nodes: positional upstream connections appear as numbered input pins ("1", "2", ...) on the left side. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap (e.g., removing pin 1 causes pin 2 to become pin 1). Positional pin order can be changed by disconnecting and reconnecting edges in the desired order.
 
-#### 3.3.4 Execution Order Indication
-
-Hovering over the "Run Workflow" button (before execution) shows a **tooltip with the execution order**: each node displays a small numbered badge showing its position in the topological sort.
-
-#### 3.3.5 Canvas Controls
+#### 3.3.4 Canvas Controls
 
 - **Pan:** Middle-click drag, or scroll wheel + Shift
 - **Zoom:** Scroll wheel, or pinch gesture
 - **Fit view:** Button or shortcut to fit all nodes in view
 - **Minimap:** Optional overview in corner
 - **Undo/Redo:** Ctrl+Z / Ctrl+Shift+Z (client-side, instant). See [Section 4.6](#46-undoredo).
-- **Grid snap:** Optional, toggled via View menu
 
 ### 3.4 Tools Panel (Left Sidebar)
 

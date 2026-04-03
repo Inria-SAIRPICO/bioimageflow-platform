@@ -44,7 +44,7 @@ const {
   getNodes,
   getEdges,
   onConnect,
-  onSelectionChange,
+  onNodesChange,
   fitView,
 } = useVueFlow()
 
@@ -69,8 +69,14 @@ onConnect((connection) => {
   emitGraphChanged()
 })
 
-onSelectionChange(({ nodes }) => {
-  emit('node-selected', nodes.map((n: any) => n.id))
+onNodesChange((changes) => {
+  const hasSelectionChange = changes.some((c: any) => c.type === 'select')
+  if (hasSelectionChange) {
+    const selectedIds = getNodes.value
+      .filter((n: any) => n.selected)
+      .map((n: any) => n.id)
+    emit('node-selected', selectedIds)
+  }
 })
 
 // --- Validation ---
@@ -229,21 +235,25 @@ function copySelected() {
   )
   if (selectedIds.size === 0) return
 
-  const nodesForClip = getNodes.value.map((n: any) => ({
-    id: n.id,
-    name: n.data?.name ?? '',
-    tool_name: n.data?.toolName ?? '',
-    position: [n.position?.x ?? 0, n.position?.y ?? 0] as [number, number],
-    parameters: n.data?.parameters ?? {},
-  }))
+  const nodesForClip = getNodes.value
+    .filter((n: any) => selectedIds.has(n.id))
+    .map((n: any) => ({
+      id: n.id,
+      name: n.data?.name ?? '',
+      tool_name: n.data?.toolName ?? '',
+      position: [n.position?.x ?? 0, n.position?.y ?? 0] as [number, number],
+      parameters: n.data?.parameters ?? {},
+    }))
 
-  const edgesForClip = getEdges.value.map((e: any) => ({
-    id: e.id,
-    source_node: e.source,
-    target_node: e.target,
-    source_output: e.sourceHandle ?? '',
-    target_input: e.targetHandle ?? '',
-  }))
+  const edgesForClip = getEdges.value
+    .filter((e: any) => selectedIds.has(e.source) && selectedIds.has(e.target))
+    .map((e: any) => ({
+      id: e.id,
+      source_node: e.source,
+      target_node: e.target,
+      source_output: e.sourceHandle ?? '',
+      target_input: e.targetHandle ?? '',
+    }))
 
   clipboardData.value = serializeSelection(nodesForClip, edgesForClip, selectedIds)
 }
