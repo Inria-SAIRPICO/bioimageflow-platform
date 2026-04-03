@@ -63,8 +63,10 @@ def _name_to_display(name: str) -> str:
 _PROCESSING_TEMPLATE = '''\
 """Auto-generated ProcessingTool: {display_name}."""
 
+from bioimageflow_core.tool import ProcessingTool
 
-class {class_name}:
+
+class {class_name}(ProcessingTool):
     """Processing tool that operates on individual rows."""
 
     display_name = "{display_name}"
@@ -76,8 +78,10 @@ class {class_name}:
 _DATAFRAME_TEMPLATE = '''\
 """Auto-generated DataFrameTool: {display_name}."""
 
+from bioimageflow.dataframe_tool import DataFrameTool
 
-class {class_name}:
+
+class {class_name}(DataFrameTool):
     """DataFrame tool that transforms an entire dataframe."""
 
     display_name = "{display_name}"
@@ -114,15 +118,19 @@ async def list_packages(
 @router.get("/{tool_name}/source")
 async def get_tool_source(
     tool_name: str,
+    registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_root: Path | None = Depends(get_workflow_root),
 ) -> dict[str, str]:
-    if workflow_root is None:
-        raise HTTPException(status_code=404, detail="No workflow root configured")
-    snake = _name_to_snake(tool_name)
-    path = workflow_root / "tools" / f"{snake}.py"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Source for '{tool_name}' not found")
-    return {"path": str(path)}
+    tool = registry.get_tool(tool_name)
+    if tool is not None:
+        return {"tool_name": tool_name, "path": f"<package:{tool.package}>/{tool.name}"}
+    # Fallback: check user-created tools in workflow_root
+    if workflow_root is not None:
+        snake = _name_to_snake(tool_name)
+        path = workflow_root / "tools" / f"{snake}.py"
+        if path.exists():
+            return {"tool_name": tool_name, "path": str(path)}
+    raise HTTPException(status_code=404, detail=f"Source for '{tool_name}' not found")
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +161,7 @@ async def create_tool(
     template = _TEMPLATES[body.tool_type]
     dest.write_text(template.format(class_name=body.name, display_name=display))
 
-    return {"path": str(dest)}
+    return {"name": body.name, "tool_type": body.tool_type, "path": str(dest)}
 
 
 @router.patch("/{tool_name}")
@@ -163,6 +171,8 @@ async def rename_tool(
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
 ) -> dict[str, str]:
+    if mode == "webapp":
+        raise HTTPException(status_code=403, detail="Tool renaming disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
 
@@ -184,6 +194,8 @@ async def delete_tool(
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
 ) -> dict[str, str]:
+    if mode == "webapp":
+        raise HTTPException(status_code=403, detail="Tool deletion disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
 
@@ -204,12 +216,14 @@ async def delete_tool(
 @router.post("/packages/{package_name}/install")
 async def install_package(
     package_name: str,
+    body: dict[str, str] | None = None,
     installer: Any = Depends(get_package_installer),
 ) -> dict[str, str]:
     if installer is None:
         raise HTTPException(status_code=500, detail="Package installer not configured")
+    version = body.get("version") if body else None
     try:
-        await installer.install(package_name)
+        await installer.install(package_name, version=version)
     except PackageNotFoundError:
         raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
     except PackageNetworkError as exc:
@@ -220,12 +234,13 @@ async def install_package(
 @router.delete("/packages/{package_name}")
 async def uninstall_package(
     package_name: str,
+    version: str | None = None,
     installer: Any = Depends(get_package_installer),
 ) -> dict[str, str]:
     if installer is None:
         raise HTTPException(status_code=500, detail="Package installer not configured")
     try:
-        await installer.uninstall(package_name)
+        await installer.uninstall(package_name, version=version)
     except PackageNotFoundError:
         raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
     except PackageNetworkError as exc:

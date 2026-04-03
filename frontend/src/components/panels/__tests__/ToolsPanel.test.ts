@@ -245,7 +245,8 @@ describe('ToolsPanel', () => {
     await vm.uninstallVersion('bioimageflow-core', '0.1.0')
 
     expect(mockedApi.delete).toHaveBeenCalledWith(
-      '/api/v1/tools/packages/bioimageflow-core/versions/0.1.0',
+      '/api/v1/tools/packages/bioimageflow-core',
+      { params: { version: '0.1.0' } },
     )
   })
 
@@ -363,7 +364,7 @@ describe('ToolsPanel', () => {
     await vm.toggleEnvironment('bioimageflow-core')
 
     expect(mockedApi.post).toHaveBeenCalledWith(
-      '/api/v1/tools/packages/bioimageflow-core/environment/stop',
+      '/api/v1/tools/environments/bioimageflow-core/stop',
     )
   })
 
@@ -383,7 +384,7 @@ describe('ToolsPanel', () => {
     await vm.toggleEnvironment('bioimageflow-cellpose')
 
     expect(mockedApi.post).toHaveBeenCalledWith(
-      '/api/v1/tools/packages/bioimageflow-cellpose/environment/start',
+      '/api/v1/tools/environments/bioimageflow-cellpose/start',
     )
   })
 

@@ -28,6 +28,18 @@ export function generateNodeId(className: string, existingIds: string[]): string
 }
 
 /**
+ * Convert CamelCase to space-separated display name.
+ */
+function toDisplayName(name: string): string {
+  if (!name) return 'Node'
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+}
+
+/**
  * Generate a unique display name with an incrementing numeric suffix.
  */
 export function generateNodeName(
@@ -35,7 +47,7 @@ export function generateNodeName(
   existingNames: string[],
   displayName?: string,
 ): string {
-  const base = displayName ?? className
+  const base = displayName ?? toDisplayName(className)
   const existing = new Set(existingNames)
   let counter = 1
   while (existing.has(`${base} ${counter}`)) {

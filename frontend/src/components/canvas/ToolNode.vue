@@ -23,6 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'context-menu': [event: MouseEvent]
+  'toggle-collapse': [id: string]
 }>()
 
 const connectableInputs = computed(() => {
@@ -60,7 +61,7 @@ const hasGpu = computed(() => {
 })
 
 function toggleCollapse() {
-  props.data.collapsed = !props.data.collapsed
+  emit('toggle-collapse', props.id)
 }
 
 function onContextMenu(event: MouseEvent) {

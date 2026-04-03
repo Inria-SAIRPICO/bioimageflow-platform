@@ -264,7 +264,7 @@ async def test_install_package_success():
     async for client in _client(config):
         resp = await client.post("/api/v1/tools/packages/cellpose/install")
     assert resp.status_code == 200
-    installer.install.assert_awaited_once_with("cellpose")
+    installer.install.assert_awaited_once_with("cellpose", version=None)
 
 
 async def test_install_package_not_found():
@@ -300,7 +300,7 @@ async def test_uninstall_package_success():
     async for client in _client(config):
         resp = await client.delete("/api/v1/tools/packages/cellpose")
     assert resp.status_code == 200
-    installer.uninstall.assert_awaited_once_with("cellpose")
+    installer.uninstall.assert_awaited_once_with("cellpose", version=None)
 
 
 async def test_uninstall_package_not_found():

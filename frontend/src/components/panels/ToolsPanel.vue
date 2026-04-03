@@ -96,7 +96,7 @@ async function installVersion(packageName: string, version: string) {
 }
 
 async function uninstallVersion(packageName: string, version: string) {
-  await api.delete(`/api/v1/tools/packages/${packageName}/versions/${version}`)
+  await api.delete(`/api/v1/tools/packages/${packageName}`, { params: { version } })
   await toolRegistry.fetchPackages()
 }
 
@@ -136,9 +136,9 @@ function getEnvStatus(packageName: string): string {
 async function toggleEnvironment(packageName: string) {
   const status = getEnvStatus(packageName)
   if (status === 'running') {
-    await api.post(`/api/v1/tools/packages/${packageName}/environment/stop`)
+    await api.post(`/api/v1/tools/environments/${packageName}/stop`)
   } else {
-    await api.post(`/api/v1/tools/packages/${packageName}/environment/start`)
+    await api.post(`/api/v1/tools/environments/${packageName}/start`)
   }
   await toolRegistry.fetchPackages()
 }

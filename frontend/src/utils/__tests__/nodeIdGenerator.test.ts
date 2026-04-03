@@ -36,12 +36,12 @@ describe('generateNodeId', () => {
 })
 
 describe('generateNodeName', () => {
-  it('generates space-separated display name with number', () => {
-    expect(generateNodeName('CellposeSegmenter', [])).toBe('CellposeSegmenter 1')
+  it('generates space-separated display name from CamelCase with number', () => {
+    expect(generateNodeName('CellposeSegmenter', [])).toBe('Cellpose Segmenter 1')
   })
 
   it('increments when name exists', () => {
-    expect(generateNodeName('CellposeSegmenter', ['CellposeSegmenter 1'])).toBe('CellposeSegmenter 2')
+    expect(generateNodeName('CellposeSegmenter', ['Cellpose Segmenter 1'])).toBe('Cellpose Segmenter 2')
   })
 
   it('uses provided displayName', () => {
@@ -59,8 +59,8 @@ describe('generateNodeName', () => {
     ])).toBe('Threshold 3')
   })
 
-  it('falls back for empty className', () => {
-    expect(generateNodeName('', [])).toBe(' 1')
+  it('falls back to Node for empty className', () => {
+    expect(generateNodeName('', [])).toBe('Node 1')
   })
 
   it('uses displayName even when className is empty', () => {

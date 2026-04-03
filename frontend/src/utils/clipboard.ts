@@ -6,6 +6,9 @@ export interface ClipboardNode {
   tool_name: string
   position: [number, number]
   parameters: Record<string, unknown>
+  tool_package?: string
+  tool_package_version?: string
+  missing?: boolean
 }
 
 export interface ClipboardEdge {

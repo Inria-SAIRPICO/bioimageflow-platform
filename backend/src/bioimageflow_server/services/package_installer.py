@@ -14,8 +14,8 @@ class PackageNetworkError(Exception):
 class PackageInstallerService:
     """Stub installer — subclass or mock for real behaviour."""
 
-    async def install(self, package_name: str) -> None:
+    async def install(self, package_name: str, version: str | None = None) -> None:
         raise NotImplementedError
 
-    async def uninstall(self, package_name: str) -> None:
+    async def uninstall(self, package_name: str, version: str | None = None) -> None:
         raise NotImplementedError

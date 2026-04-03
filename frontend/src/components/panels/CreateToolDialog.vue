@@ -20,8 +20,7 @@ const toolType = ref('ProcessingTool')
 
 const toolTypeOptions = [
   { label: 'Processing Tool', value: 'ProcessingTool' },
-  { label: 'Source Tool', value: 'SourceTool' },
-  { label: 'Sink Tool', value: 'SinkTool' },
+  { label: 'DataFrame Tool', value: 'DataFrameTool' },
 ]
 
 const createDisabled = computed(() => !toolName.value.trim())

@@ -1,7 +1,12 @@
 import { computed, shallowRef } from 'vue'
 
 function deepClone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value))
+  try {
+    return structuredClone(value)
+  } catch {
+    // Fallback for non-cloneable objects (e.g., Vue reactive proxies in tests)
+    return JSON.parse(JSON.stringify(value))
+  }
 }
 
 export function useUndoRedo<T>(maxSize = 50) {
