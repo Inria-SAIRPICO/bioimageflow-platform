@@ -14,7 +14,7 @@ test.describe('stores integration', () => {
 
     // Verify Pinia is installed on the Vue app instance
     const hasPinia = await page.evaluate(() => {
-      const app = document.querySelector('#bioimageflow-app')
+      const app = document.querySelector('#app')
       if (!app) return false
       const vue = (app as any).__vue_app__
       if (!vue) return false

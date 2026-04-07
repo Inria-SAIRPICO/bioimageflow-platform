@@ -14,7 +14,7 @@ test.describe('full stack smoke', () => {
 
     // Verify the app shell renders
     await expect(page.locator('#bioimageflow-app')).toBeVisible();
-    await expect(page.getByText('BioImageFlow')).toBeVisible();
+    await expect(page.locator('[data-testid="app-menubar"]')).toBeVisible();
 
     // Fetch health endpoint through Vite proxy
     const health = await page.evaluate(() =>

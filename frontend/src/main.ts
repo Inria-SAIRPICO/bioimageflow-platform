@@ -9,6 +9,7 @@ import 'primeicons/primeicons.css'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
+import 'dockview-core/dist/styles/dockview.css'
 
 import App from './App.vue'
 
