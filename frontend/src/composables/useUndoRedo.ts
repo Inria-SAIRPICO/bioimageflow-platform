@@ -9,7 +9,7 @@ function deepClone<T>(value: T): T {
   }
 }
 
-export function useUndoRedo<T>(maxSize = 50) {
+export function useUndoRedo<T>(maxSize = 100) {
   const undoStack = shallowRef<T[]>([])
   const redoStack = shallowRef<T[]>([])
 
