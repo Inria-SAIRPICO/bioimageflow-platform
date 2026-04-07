@@ -79,8 +79,8 @@ vi.mock('@vue-flow/core', () => {
   }
 })
 
-vi.mock('@vue-flow/minimap', () => ({
-  MiniMap: defineComponent({ name: 'MiniMap', template: '<div />' }),
+vi.mock('@vue-flow/background', () => ({
+  Background: defineComponent({ name: 'Background', template: '<div />' }),
 }))
 
 vi.mock('@vue-flow/controls', () => ({

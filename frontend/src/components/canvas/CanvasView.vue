@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, markRaw, toRef } from 'vue'
 import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
-import { MiniMap } from '@vue-flow/minimap'
+import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import ToolNode from './ToolNode.vue'
 import ColumnRefEdge from './ColumnRefEdge.vue'
@@ -354,6 +354,13 @@ function handleKeydown(event: KeyboardEvent) {
     flushNow()
     return
   }
+
+  if (event.key === 'f' || event.key === 'F') {
+    if (!meta && !event.shiftKey && !event.altKey) {
+      fitView()
+      return
+    }
+  }
 }
 
 // --- Graph change emission ---
@@ -398,7 +405,7 @@ defineExpose({
       :selection-key-code="'Shift'"
       fit-view-on-init
     >
-      <MiniMap />
+      <Background :variant="'dots'" :gap="16" :size="1" />
       <Controls />
     </VueFlow>
   </div>
