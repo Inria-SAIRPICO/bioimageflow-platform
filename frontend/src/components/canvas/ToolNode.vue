@@ -124,12 +124,13 @@ function onContextMenu(event: MouseEvent) {
 
 <style scoped>
 .tool-node {
-  background: #1e1e1e;
-  border: 2px solid #444;
+  background: #ffffff;
+  border: 2px solid #dee2e6;
   border-radius: 8px;
   min-width: 160px;
-  font-family: sans-serif;
-  color: #eee;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: #334155;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .node-header {
@@ -137,9 +138,11 @@ function onContextMenu(event: MouseEvent) {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  border-bottom: 1px solid #444;
+  border-bottom: 1px solid #e2e8f0;
   cursor: pointer;
   user-select: none;
+  background: #f8fafc;
+  border-radius: 6px 6px 0 0;
 }
 
 .node-name {
@@ -204,5 +207,6 @@ function onContextMenu(event: MouseEvent) {
 
 .collapsed .node-header {
   border-bottom: none;
+  border-radius: 6px;
 }
 </style>
