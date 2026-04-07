@@ -14,11 +14,6 @@ import { useGraphSync } from '@/composables/useGraphSync'
 import type { ClipboardData } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
 
-const props = defineProps<{
-  nodes: any[]
-  edges: any[]
-}>()
-
 const emit = defineEmits<{
   'graph-changed': [payload: { nodes: any[]; edges: any[] }]
   'node-selected': [nodeIds: string[]]
@@ -397,12 +392,10 @@ defineExpose({
     tabindex="0"
   >
     <VueFlow
-      :nodes="props.nodes"
-      :edges="props.edges"
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
       :is-valid-connection="isValidConnection"
-      :selection-key-code="'Shift'"
+      :selection-key-code="null"
       fit-view-on-init
     >
       <Background :variant="'dots'" :gap="16" :size="1" />

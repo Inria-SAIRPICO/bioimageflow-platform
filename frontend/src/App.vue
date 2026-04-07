@@ -47,14 +47,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
   const api = event.api
   dockviewApi.value = api
 
-  api.addPanel({
-    id: 'tools',
-    component: 'tools',
-    title: 'Tools',
-    initialWidth: 320,
-    position: { direction: 'left' },
-  })
-
+  // Canvas first — it becomes the root group that others dock relative to
   api.addPanel({
     id: 'canvas',
     component: 'canvasView',
@@ -62,11 +55,19 @@ function onDockviewReady(event: DockviewReadyEvent) {
   })
 
   api.addPanel({
+    id: 'tools',
+    component: 'tools',
+    title: 'Tools',
+    initialWidth: 320,
+    position: { referencePanel: 'canvas', direction: 'left' },
+  })
+
+  api.addPanel({
     id: 'nodePanel',
     component: 'nodePanel',
     title: 'Node Panel',
     initialWidth: 320,
-    position: { direction: 'right' },
+    position: { referencePanel: 'canvas', direction: 'right' },
   })
 
   api.addPanel({
@@ -74,7 +75,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
     component: 'dataTable',
     title: 'Data Table',
     initialHeight: 250,
-    position: { direction: 'below' },
+    position: { referencePanel: 'canvas', direction: 'below' },
   })
 
   api.addPanel({
