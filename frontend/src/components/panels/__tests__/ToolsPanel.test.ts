@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
+import ConfirmationService from 'primevue/confirmationservice'
+import PrimeVue from 'primevue/config'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -85,14 +87,17 @@ function mountPanel() {
     return Promise.resolve({ data: {} })
   })
 
+  const pinia = createPinia()
   return mount(ToolsPanel, {
     global: {
-      plugins: [createPinia()],
+      plugins: [pinia, PrimeVue, ConfirmationService],
       stubs: {
         TreeTable: true,
         Column: true,
         InputText: true,
         Button: true,
+        CreateToolDialog: true,
+        ConfirmDialog: true,
       },
     },
   })
@@ -246,7 +251,7 @@ describe('ToolsPanel', () => {
 
     expect(mockedApi.delete).toHaveBeenCalledWith(
       '/api/v1/tools/packages/bioimageflow-core',
-      { params: { version: '0.1.0' } },
+      { data: { version: '0.1.0' } },
     )
   })
 
