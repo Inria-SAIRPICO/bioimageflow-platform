@@ -4,6 +4,9 @@ import TreeTable from 'primevue/treetable'
 import Column from 'primevue/column'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
+import CreateToolDialog from './CreateToolDialog.vue'
+import ConfirmDialog from 'primevue/confirmdialog'
+import { useConfirm } from 'primevue/useconfirm'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import type { ToolMetadata } from '@/api/types'
@@ -17,6 +20,8 @@ const toolRegistry = useToolRegistryStore()
 const settingsStore = useSettingsStore()
 
 const searchQuery = ref('')
+const showCreateDialog = ref(false)
+const confirm = useConfirm()
 
 const filteredTools = computed(() => toolRegistry.searchTools(searchQuery.value))
 
@@ -78,6 +83,11 @@ function onToolClick(toolName: string) {
   emit('add-tool', toolName)
 }
 
+async function onToolCreated(toolName: string) {
+  showCreateDialog.value = false
+  await toolRegistry.fetchTools()
+}
+
 // --- Version management (Task 14) ---
 
 interface VersionRow {
@@ -109,22 +119,23 @@ async function installVersion(packageName: string, version: string) {
 
 async function uninstallVersion(packageName: string, version: string) {
   try {
-    await api.delete(`/api/v1/tools/packages/${packageName}`, { params: { version } })
+    await api.delete(`/api/v1/tools/packages/${packageName}`, { data: { version } })
     await toolRegistry.fetchPackages()
   } catch (e: unknown) {
     toolRegistry.error = e instanceof Error ? e.message : String(e)
   }
 }
 
-async function useVersionInWorkflow(packageName: string, version: string) {
-  if (confirm(`Switch ${packageName} to version ${version} in the current workflow?`)) {
-    try {
-      await api.post(`/api/v1/tools/packages/${packageName}/use`, { version })
+function useVersionInWorkflow(packageName: string, version: string) {
+  confirm.require({
+    message: `Switch ${packageName} to version ${version} in the current workflow? Affected nodes will be marked as out-of-date.`,
+    header: 'Change Package Version',
+    acceptLabel: 'Switch',
+    rejectLabel: 'Cancel',
+    accept: async () => {
       await toolRegistry.fetchTools()
-    } catch (e: unknown) {
-      toolRegistry.error = e instanceof Error ? e.message : String(e)
-    }
-  }
+    },
+  })
 }
 
 // --- Info and Open in Editor (Task 15) ---
@@ -188,6 +199,8 @@ defineExpose({
   searchQuery,
   toolDocumentation,
   showDocumentation,
+  showCreateDialog,
+  onToolCreated,
 })
 </script>
 
@@ -204,23 +217,32 @@ defineExpose({
         label="Create Tool"
         data-testid="create-tool-btn"
         class="mt-2"
+        @click="showCreateDialog = true"
       />
     </div>
 
     <TreeTable :value="treeNodes" class="mt-2">
-      <Column field="display_name" header="Name" expander />
+      <Column field="display_name" header="Name" expander>
+        <template #body="{ node }">
+          <div
+            v-if="node.data.tool"
+            class="tool-name-cell"
+            draggable="true"
+            @dragstart="onToolDragStart($event, node.data.tool)"
+            @click="onToolClick(node.data.name)"
+          >
+            {{ node.data.display_name }}
+          </div>
+          <span v-else>{{ node.data.display_name }}</span>
+        </template>
+      </Column>
       <Column field="categories" header="Categories" />
       <Column field="tags" header="Tags" />
       <Column field="versions" header="Versions" />
       <Column header="Actions">
         <template #body="{ node }">
           <template v-if="node.data.tool">
-            <div
-              class="tool-row"
-              draggable="true"
-              @dragstart="onToolDragStart($event, node.data.tool)"
-              @click="onToolClick(node.data.name)"
-            >
+            <div class="tool-actions">
               <Button
                 icon="pi pi-info-circle"
                 text
@@ -266,5 +288,21 @@ defineExpose({
       <h4>{{ toolName }}</h4>
       <p>{{ toolDocumentation[toolName] }}</p>
     </div>
+    <CreateToolDialog
+      v-model:visible="showCreateDialog"
+      @created="onToolCreated"
+    />
+    <ConfirmDialog />
   </div>
 </template>
+
+<style scoped>
+.tool-name-cell {
+  cursor: grab;
+  padding: 4px 0;
+  user-select: none;
+}
+.tool-name-cell:hover {
+  text-decoration: underline;
+}
+</style>
