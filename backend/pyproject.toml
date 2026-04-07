@@ -9,6 +9,8 @@ dependencies = [
     "websockets>=15.0",
     "python-multipart>=0.0.20",
     "watchdog>=6.0",
+    "bioimageflow-core",
+    "bioimageflow",
 ]
 
 [project.optional-dependencies]
@@ -32,3 +34,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.uv.sources]
+bioimageflow-core = { path = "../bioimageflow/packages/bioimageflow-core", editable = true }
+bioimageflow = { path = "../bioimageflow/packages/bioimageflow", editable = true }

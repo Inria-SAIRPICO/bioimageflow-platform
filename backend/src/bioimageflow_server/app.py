@@ -82,6 +82,8 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
 
     # ---- Wire dependency overrides from config ----
     registry = config.tool_registry or ToolRegistryService()
+    if config.tool_registry is None:
+        registry.scan_tool_store()
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
 
