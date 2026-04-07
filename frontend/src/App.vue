@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watchEffect } from 'vue'
 import ToolsPanel from './components/panels/ToolsPanel.vue'
 import CanvasView from './components/canvas/CanvasView.vue'
+import { useUIStore } from './stores/ui'
+
+const uiStore = useUIStore()
+
+// Sync document.title with uiStore.tabTitle
+watchEffect(() => {
+  document.title = uiStore.tabTitle
+})
 
 const canvasRef = ref<InstanceType<typeof CanvasView> | null>(null)
 const nodes = ref<any[]>([])
@@ -40,6 +48,7 @@ html, body, #app, #bioimageflow-app {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 #bioimageflow-app {
