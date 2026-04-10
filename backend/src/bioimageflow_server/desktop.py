@@ -28,7 +28,8 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
     server_thread.start()
 
     # Wait for the server to be ready
-    health_url = f"http://{host}:{port}/api/v1/health"
+    poll_host = "127.0.0.1" if host == "0.0.0.0" else host
+    health_url = f"http://{poll_host}:{port}/api/v1/health"
     _wait_for_server(health_url)
 
     webview.create_window("BioImageFlow", f"http://{host}:{port}")

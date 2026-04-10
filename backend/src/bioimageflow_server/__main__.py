@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> None:
             factory=True,
             host=args.host,
             port=args.port,
-            reload=args.dev,
+            reload=True,
         )
 
 
