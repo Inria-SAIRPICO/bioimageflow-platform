@@ -576,6 +576,101 @@ class TestDesktopApiSetTitle:
         api.set_title("Title")
 
 
+class TestStartDesktopDevUrl:
+    """Tests for dev-mode URL routing in start_desktop."""
+
+    @patch("bioimageflow_server.desktop.webview")
+    @patch("bioimageflow_server.desktop.uvicorn")
+    @patch("bioimageflow_server.app.create_app")
+    @patch("bioimageflow_server.desktop.threading.Thread")
+    @patch("bioimageflow_server.desktop.urllib.request.urlopen")
+    def test_dev_true_uses_vite_url(
+        self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+    ):
+        """dev=True points the window at the Vite dev server."""
+        from bioimageflow_server.desktop import start_desktop
+
+        _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+        start_desktop(host="127.0.0.1", port=8000, dev=True)
+
+        args, _ = mock_webview.create_window.call_args
+        assert args[1] == "http://localhost:5173"
+
+    @patch("bioimageflow_server.desktop.webview")
+    @patch("bioimageflow_server.desktop.uvicorn")
+    @patch("bioimageflow_server.app.create_app")
+    @patch("bioimageflow_server.desktop.threading.Thread")
+    @patch("bioimageflow_server.desktop.urllib.request.urlopen")
+    def test_dev_false_uses_fastapi_url(
+        self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+    ):
+        """dev=False points the window at the FastAPI server."""
+        from bioimageflow_server.desktop import start_desktop
+
+        _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+        start_desktop(host="127.0.0.1", port=8000, dev=False)
+
+        args, _ = mock_webview.create_window.call_args
+        assert args[1] == "http://127.0.0.1:8000"
+
+    @patch("bioimageflow_server.desktop.webview")
+    @patch("bioimageflow_server.desktop.uvicorn")
+    @patch("bioimageflow_server.app.create_app")
+    @patch("bioimageflow_server.desktop.threading.Thread")
+    @patch("bioimageflow_server.desktop.urllib.request.urlopen")
+    def test_dev_false_custom_host_port(
+        self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+    ):
+        """dev=False with custom host/port builds the correct URL."""
+        from bioimageflow_server.desktop import start_desktop
+
+        _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+        start_desktop(host="0.0.0.0", port=9000, dev=False)
+
+        args, _ = mock_webview.create_window.call_args
+        assert args[1] == "http://0.0.0.0:9000"
+
+    @patch("bioimageflow_server.desktop.webview")
+    @patch("bioimageflow_server.desktop.uvicorn")
+    @patch("bioimageflow_server.app.create_app")
+    @patch("bioimageflow_server.desktop.threading.Thread")
+    @patch("bioimageflow_server.desktop.urllib.request.urlopen")
+    def test_dev_true_ignores_host_port_for_window_url(
+        self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+    ):
+        """dev=True always uses localhost:5173 regardless of host/port args."""
+        from bioimageflow_server.desktop import start_desktop
+
+        _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+        start_desktop(host="0.0.0.0", port=9000, dev=True)
+
+        args, _ = mock_webview.create_window.call_args
+        assert args[1] == "http://localhost:5173"
+
+    @patch("bioimageflow_server.desktop.webview")
+    @patch("bioimageflow_server.desktop.uvicorn")
+    @patch("bioimageflow_server.app.create_app")
+    @patch("bioimageflow_server.desktop.threading.Thread")
+    @patch("bioimageflow_server.desktop.urllib.request.urlopen")
+    def test_dev_true_still_starts_fastapi_server(
+        self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+    ):
+        """dev=True still starts the FastAPI backend (needed for the API)."""
+        from bioimageflow_server.desktop import start_desktop
+
+        _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+        start_desktop(dev=True)
+
+        mock_uvicorn.Config.assert_called_once()
+        mock_uvicorn.Server.assert_called_once()
+        mock_thread_cls.return_value.start.assert_called_once()
+
+
 class TestStartDesktopJsApi:
     """Tests that start_desktop wires the JS API correctly."""
 

@@ -127,10 +127,20 @@ class DesktopApi:
 def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) -> None:
     """Start the FastAPI server in a background thread and open a pywebview window.
 
+    When *dev* is ``True`` the window loads the Vite dev server at
+    ``http://localhost:5173`` so that frontend changes are reflected
+    instantly via HMR.  When *dev* is ``False`` (the default, used in
+    production), the window loads the FastAPI server which serves the
+    pre-built frontend assets.
+
+    The FastAPI backend is always started regardless of *dev* because
+    the frontend needs the API endpoints.
+
     Args:
-        host: The host to bind the server to.
-        port: The port to bind the server to.
-        dev: Whether to enable development mode.
+        host: The host to bind the FastAPI server to.
+        port: The port to bind the FastAPI server to.
+        dev: If ``True``, point the window at the Vite dev server
+            (``http://localhost:5173``) for hot-module-replacement.
     """
     from bioimageflow_server.app import create_app
 
@@ -152,9 +162,12 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
 
     api = DesktopApi()
 
+    window_url = "http://localhost:5173" if dev else f"http://{host}:{port}"
+    logger.info("Window URL: %s (dev=%s)", window_url, dev)
+
     window = webview.create_window(
         "BioImageFlow",
-        f"http://{host}:{port}",
+        window_url,
         width=1440,
         height=900,
         min_size=(1280, 720),
