@@ -6,6 +6,7 @@ import {
   selectFolder,
   saveFile,
   setTitle,
+  updateWindowTitle,
   revealPath,
 } from '../nativeDialogs'
 
@@ -175,6 +176,77 @@ describe('setTitle', () => {
 
   it('does not throw in browser mode', async () => {
     await expect(setTitle('Title')).resolves.toBeUndefined()
+  })
+})
+
+describe('updateWindowTitle', () => {
+  afterEach(() => {
+    // @ts-expect-error -- cleanup
+    delete window.pywebview
+  })
+
+  it('sets title to "BioImageFlow" when no workflow name', async () => {
+    const api = mockPywebviewApi()
+    api.set_title.mockResolvedValue(undefined)
+    window.pywebview = { api: api as any }
+
+    await updateWindowTitle()
+
+    expect(api.set_title).toHaveBeenCalledWith('BioImageFlow')
+  })
+
+  it('sets title to "BioImageFlow" when workflow name is null', async () => {
+    const api = mockPywebviewApi()
+    api.set_title.mockResolvedValue(undefined)
+    window.pywebview = { api: api as any }
+
+    await updateWindowTitle(null)
+
+    expect(api.set_title).toHaveBeenCalledWith('BioImageFlow')
+  })
+
+  it('includes workflow name in title', async () => {
+    const api = mockPywebviewApi()
+    api.set_title.mockResolvedValue(undefined)
+    window.pywebview = { api: api as any }
+
+    await updateWindowTitle('My Workflow')
+
+    expect(api.set_title).toHaveBeenCalledWith('BioImageFlow \u2014 My Workflow')
+  })
+
+  it('appends * when there are unsaved changes', async () => {
+    const api = mockPywebviewApi()
+    api.set_title.mockResolvedValue(undefined)
+    window.pywebview = { api: api as any }
+
+    await updateWindowTitle('My Workflow', true)
+
+    expect(api.set_title).toHaveBeenCalledWith('BioImageFlow \u2014 My Workflow *')
+  })
+
+  it('does not append * when hasUnsavedChanges is false', async () => {
+    const api = mockPywebviewApi()
+    api.set_title.mockResolvedValue(undefined)
+    window.pywebview = { api: api as any }
+
+    await updateWindowTitle('My Workflow', false)
+
+    expect(api.set_title).toHaveBeenCalledWith('BioImageFlow \u2014 My Workflow')
+  })
+
+  it('ignores unsaved changes flag when no workflow name', async () => {
+    const api = mockPywebviewApi()
+    api.set_title.mockResolvedValue(undefined)
+    window.pywebview = { api: api as any }
+
+    await updateWindowTitle(undefined, true)
+
+    expect(api.set_title).toHaveBeenCalledWith('BioImageFlow')
+  })
+
+  it('silently skipped in browser mode (no pywebview)', async () => {
+    await expect(updateWindowTitle('My Workflow', true)).resolves.toBeUndefined()
   })
 })
 

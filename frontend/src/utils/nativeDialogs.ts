@@ -92,6 +92,31 @@ export async function setTitle(title: string): Promise<void> {
 }
 
 /**
+ * Update the window title based on the current workflow name and unsaved
+ * changes state.
+ *
+ * Format:
+ * - No workflow: `"BioImageFlow"`
+ * - With workflow: `"BioImageFlow — My Workflow"`
+ * - With unsaved changes: `"BioImageFlow — My Workflow *"`
+ *
+ * Silently skipped in browser mode (no pywebview).
+ */
+export async function updateWindowTitle(
+  workflowName?: string | null,
+  hasUnsavedChanges?: boolean,
+): Promise<void> {
+  let title = 'BioImageFlow'
+  if (workflowName) {
+    title = `BioImageFlow \u2014 ${workflowName}`
+    if (hasUnsavedChanges) {
+      title += ' *'
+    }
+  }
+  await setTitle(title)
+}
+
+/**
  * Reveal a path in the system file browser. No-op in browser mode.
  */
 export async function revealPath(path: string): Promise<void> {
