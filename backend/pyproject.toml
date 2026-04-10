@@ -20,6 +20,9 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.9",
 ]
+desktop = [
+    "pywebview>=5.0",
+]
 
 [build-system]
 requires = ["hatchling"]
