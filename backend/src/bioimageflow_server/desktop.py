@@ -28,12 +28,16 @@ class DesktopApi:
     # ---- File dialogs ----
 
     def select_file(self, title: str = "Select File", file_types: list[str] | None = None) -> str | None:
-        """Open a native file picker and return the selected path, or None."""
+        """Open a native file picker and return the selected path, or None.
+
+        ``title`` is part of the API contract but not supported by pywebview's
+        native dialogs -- it is accepted for forward-compatibility only.
+        """
         if self._window is None:
             return None
         file_types = file_types or []
         result = self._window.create_file_dialog(
-            webview.OPEN_DIALOG,
+            webview.FileDialog.OPEN,
             allow_multiple=False,
             file_types=tuple(file_types) if file_types else (),
         )
@@ -42,12 +46,16 @@ class DesktopApi:
         return None
 
     def select_files(self, title: str = "Select Files", file_types: list[str] | None = None) -> list[str]:
-        """Open a native file picker allowing multiple selection."""
+        """Open a native file picker allowing multiple selection.
+
+        ``title`` is part of the API contract but not supported by pywebview's
+        native dialogs -- it is accepted for forward-compatibility only.
+        """
         if self._window is None:
             return []
         file_types = file_types or []
         result = self._window.create_file_dialog(
-            webview.OPEN_DIALOG,
+            webview.FileDialog.OPEN,
             allow_multiple=True,
             file_types=tuple(file_types) if file_types else (),
         )
@@ -56,11 +64,15 @@ class DesktopApi:
         return []
 
     def select_folder(self, title: str = "Select Folder") -> str | None:
-        """Open a native folder picker."""
+        """Open a native folder picker.
+
+        ``title`` is part of the API contract but not supported by pywebview's
+        native dialogs -- it is accepted for forward-compatibility only.
+        """
         if self._window is None:
             return None
         result = self._window.create_file_dialog(
-            webview.FOLDER_DIALOG,
+            webview.FileDialog.FOLDER,
         )
         if result and len(result) > 0:
             return str(result[0])
@@ -72,12 +84,16 @@ class DesktopApi:
         file_types: list[str] | None = None,
         default_name: str = "",
     ) -> str | None:
-        """Open a native save dialog and return the chosen path, or None."""
+        """Open a native save dialog and return the chosen path, or None.
+
+        ``title`` is part of the API contract but not supported by pywebview's
+        native dialogs -- it is accepted for forward-compatibility only.
+        """
         if self._window is None:
             return None
         file_types = file_types or []
         result = self._window.create_file_dialog(
-            webview.SAVE_DIALOG,
+            webview.FileDialog.SAVE,
             save_filename=default_name,
             file_types=tuple(file_types) if file_types else (),
         )

@@ -321,7 +321,7 @@ class TestDesktopApiSelectFile:
 
         assert result == "/some/file.tif"
         mock_window.create_file_dialog.assert_called_once_with(
-            mock_webview.OPEN_DIALOG,
+            mock_webview.FileDialog.OPEN,
             allow_multiple=False,
             file_types=("*.tif",),
         )
@@ -380,7 +380,7 @@ class TestDesktopApiSelectFiles:
 
         assert result == ["/a.tif", "/b.tif"]
         mock_window.create_file_dialog.assert_called_once_with(
-            mock_webview.OPEN_DIALOG,
+            mock_webview.FileDialog.OPEN,
             allow_multiple=True,
             file_types=("*.tif",),
         )
@@ -429,7 +429,7 @@ class TestDesktopApiSelectFolder:
 
         assert result == "/some/folder"
         mock_window.create_file_dialog.assert_called_once_with(
-            mock_webview.FOLDER_DIALOG,
+            mock_webview.FileDialog.FOLDER,
         )
 
     def test_returns_none_on_cancel(self):
@@ -465,7 +465,7 @@ class TestDesktopApiSaveFile:
 
         assert result == "/save/here.tif"
         mock_window.create_file_dialog.assert_called_once_with(
-            mock_webview.SAVE_DIALOG,
+            mock_webview.FileDialog.SAVE,
             save_filename="output.tif",
             file_types=("*.tif",),
         )
