@@ -24,6 +24,9 @@ desktop = [
     "pywebview>=5.0",
 ]
 
+[project.scripts]
+bioimageflow-gui = "bioimageflow_server.desktop:main_desktop"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

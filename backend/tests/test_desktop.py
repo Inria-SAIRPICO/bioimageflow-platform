@@ -916,3 +916,33 @@ class TestShutdownConstants:
         from bioimageflow_server.desktop import _EXECUTION_STOP_TIMEOUT
 
         assert _EXECUTION_STOP_TIMEOUT == 10.0
+
+
+class TestEntryPoint:
+    """Tests for the bioimageflow-gui console script entry point."""
+
+    def test_bioimageflow_gui_entry_point(self):
+        """The bioimageflow-gui console_scripts entry point resolves correctly."""
+        from importlib.metadata import entry_points
+
+        eps = entry_points(group="console_scripts")
+        matches = [ep for ep in eps if ep.name == "bioimageflow-gui"]
+        assert len(matches) == 1
+        assert matches[0].value == "bioimageflow_server.desktop:main_desktop"
+
+    def test_main_desktop_exists_and_callable(self):
+        """main_desktop is importable and callable with no arguments."""
+        from bioimageflow_server.desktop import main_desktop
+
+        assert callable(main_desktop)
+        sig = inspect.signature(main_desktop)
+        # main_desktop takes no parameters
+        assert len(sig.parameters) == 0
+
+    def test_main_desktop_calls_start_desktop(self):
+        """main_desktop delegates to start_desktop with default arguments."""
+        with patch("bioimageflow_server.desktop.start_desktop") as mock_start:
+            from bioimageflow_server.desktop import main_desktop
+
+            main_desktop()
+            mock_start.assert_called_once_with()

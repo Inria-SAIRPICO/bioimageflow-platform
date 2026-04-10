@@ -124,6 +124,16 @@ class DesktopApi:
             self._window.set_title(title)
 
 
+def main_desktop() -> None:
+    """Console-script entry point for ``bioimageflow-gui``.
+
+    Launches the desktop application with default settings.  This is the
+    target of the ``[project.scripts]`` entry point so that users can
+    simply run ``bioimageflow-gui`` from the command line.
+    """
+    start_desktop()
+
+
 def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) -> None:
     """Start the FastAPI server in a background thread and open a pywebview window.
 
