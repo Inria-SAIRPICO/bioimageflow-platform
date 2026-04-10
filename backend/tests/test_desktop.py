@@ -160,7 +160,7 @@ def test_webview_window_custom_host_port(
 
     mock_webview.create_window.assert_called_once_with(
         "BioImageFlow",
-        "http://0.0.0.0:3000",
+        "http://127.0.0.1:3000",
         width=1440,
         height=900,
         min_size=(1280, 720),
@@ -631,7 +631,7 @@ class TestStartDesktopDevUrl:
         start_desktop(host="0.0.0.0", port=9000, dev=False)
 
         args, _ = mock_webview.create_window.call_args
-        assert args[1] == "http://0.0.0.0:9000"
+        assert args[1] == "http://127.0.0.1:9000"
 
     @patch("bioimageflow_server.desktop.webview")
     @patch("bioimageflow_server.desktop.uvicorn")

@@ -188,7 +188,8 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
 
     api = DesktopApi()
 
-    window_url = "http://localhost:5173" if dev else f"http://{host}:{port}"
+    display_host = "127.0.0.1" if host == "0.0.0.0" else host
+    window_url = "http://localhost:5173" if dev else f"http://{display_host}:{port}"
     logger.info("Window URL: %s (dev=%s)", window_url, dev)
 
     window = webview.create_window(

@@ -107,9 +107,16 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
             app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static-assets")
 
         index_html = static_dir / "index.html"
+        if index_html.is_file():
 
-        @app.get("/{full_path:path}")
-        async def spa_fallback(full_path: str) -> FileResponse:
-            return FileResponse(str(index_html))
+            @app.get("/{full_path:path}")
+            async def spa_fallback(full_path: str) -> FileResponse:
+                return FileResponse(str(index_html))
+        else:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "index.html not found at %s; SPA fallback disabled", index_html
+            )
 
     return app
