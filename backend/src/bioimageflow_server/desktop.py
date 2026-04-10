@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import urllib.request
@@ -9,6 +10,8 @@ import urllib.error
 
 import uvicorn
 import webview
+
+logger = logging.getLogger(__name__)
 
 
 class DesktopApi:
@@ -133,8 +136,11 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
 
     app = create_app()
 
+    config = uvicorn.Config(app, host=host, port=port)
+    server = uvicorn.Server(config)
+
     server_thread = threading.Thread(
-        target=lambda: uvicorn.run(app, host=host, port=port),
+        target=server.run,
         daemon=True,
     )
     server_thread.start()
@@ -157,7 +163,76 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
         js_api=api,
     )
     api.set_window(window)
+
+    window.events.closing += _on_closing
+
     webview.start()
+
+    # Window has been closed -- run shutdown sequence
+    _shutdown(server, server_thread)
+
+
+def _on_closing() -> bool:
+    """Handle the pywebview ``closing`` event.
+
+    Returning ``False`` prevents the window from closing (e.g. when there are
+    unsaved changes and the user cancels).  Returning ``True`` allows the close
+    to proceed.
+
+    .. note::
+
+       Checking the frontend for unsaved changes is not yet implemented.
+       This handler currently always allows the close.
+    """
+    # TODO: query the frontend for unsaved changes via the JS API and, if
+    # present, show a native confirmation dialog.  For now, always allow close.
+    logger.debug("Window closing event received — allowing close")
+    return True
+
+
+_SERVER_THREAD_JOIN_TIMEOUT = 5.0
+_EXECUTION_STOP_TIMEOUT = 10.0
+
+
+def _shutdown(
+    server: uvicorn.Server,
+    server_thread: threading.Thread,
+) -> None:
+    """Run the full shutdown sequence after the pywebview window closes.
+
+    Steps executed in order:
+
+    1. Stop any running execution (placeholder).
+    2. Terminate the Napari process if running (placeholder).
+    3. Clean up shared memory segments (placeholder).
+    4. Save pending settings (placeholder).
+    5. Signal the uvicorn server to exit and wait for the thread to finish.
+    """
+    logger.info("Shutting down...")
+
+    # 1. Stop running execution (placeholder)
+    logger.debug("Shutdown step 1/5: stopping execution (no-op placeholder)")
+
+    # 2. Terminate Napari (placeholder)
+    logger.debug("Shutdown step 2/5: terminating Napari (no-op placeholder)")
+
+    # 3. Clean up shared memory (placeholder)
+    logger.debug("Shutdown step 3/5: cleaning shared memory (no-op placeholder)")
+
+    # 4. Save settings (placeholder)
+    logger.debug("Shutdown step 4/5: saving settings (no-op placeholder)")
+
+    # 5. Signal uvicorn to stop and wait for the server thread
+    logger.debug("Shutdown step 5/5: stopping uvicorn server")
+    server.should_exit = True
+    server_thread.join(timeout=_SERVER_THREAD_JOIN_TIMEOUT)
+    if server_thread.is_alive():
+        logger.warning(
+            "Server thread did not terminate within %.1fs",
+            _SERVER_THREAD_JOIN_TIMEOUT,
+        )
+
+    logger.info("Shutdown complete")
 
 
 def _wait_for_server(url: str, timeout: float = 10.0, interval: float = 0.1) -> None:
