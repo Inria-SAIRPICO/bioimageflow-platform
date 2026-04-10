@@ -154,6 +154,11 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
         static_dir = project_root / "frontend" / "dist"
         if static_dir.is_dir():
             app_config.static_dir = static_dir
+        else:
+            logger.warning(
+                "Frontend dist directory not found at %s; static serving disabled",
+                static_dir,
+            )
 
     app = create_app(config=app_config)
 
