@@ -792,19 +792,16 @@ class TestStartDesktopShutdownIntegration:
         self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn,
         mock_webview, mock_shutdown,
     ):
-        """Even if webview.start() raises, the caller would see the exception.
-
-        Note: webview.start() returning normally means the window was closed.
-        We verify that _shutdown is called in the normal flow.
-        """
+        """_shutdown is called even if webview.start() raises an exception."""
         from bioimageflow_server.desktop import start_desktop
 
         mock_server, _, _ = _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
-        mock_webview.start.return_value = None  # normal return
+        mock_webview.start.side_effect = Exception("crash")
 
-        start_desktop()
+        with pytest.raises(Exception, match="crash"):
+            start_desktop()
 
-        mock_shutdown.assert_called_once()
+        mock_shutdown.assert_called_once_with(mock_server, mock_thread_cls.return_value)
 
 
 class TestShutdownConstants:

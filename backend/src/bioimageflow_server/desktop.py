@@ -166,10 +166,11 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
 
     window.events.closing += _on_closing
 
-    webview.start()
-
-    # Window has been closed -- run shutdown sequence
-    _shutdown(server, server_thread)
+    try:
+        webview.start()
+    finally:
+        # Window has been closed (or start() raised) -- run shutdown sequence
+        _shutdown(server, server_thread)
 
 
 def _on_closing() -> bool:
