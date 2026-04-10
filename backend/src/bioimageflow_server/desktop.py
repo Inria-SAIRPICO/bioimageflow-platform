@@ -32,7 +32,15 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
     health_url = f"http://{poll_host}:{port}/api/v1/health"
     _wait_for_server(health_url)
 
-    webview.create_window("BioImageFlow", f"http://{host}:{port}")
+    webview.create_window(
+        "BioImageFlow",
+        f"http://{host}:{port}",
+        width=1440,
+        height=900,
+        min_size=(1280, 720),
+        resizable=True,
+        confirm_close=True,
+    )
     webview.start()
 
 

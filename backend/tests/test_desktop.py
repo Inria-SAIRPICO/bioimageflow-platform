@@ -100,7 +100,13 @@ def test_webview_window_created_with_correct_url(
     start_desktop(host="127.0.0.1", port=8000)
 
     mock_webview.create_window.assert_called_once_with(
-        "BioImageFlow", "http://127.0.0.1:8000"
+        "BioImageFlow",
+        "http://127.0.0.1:8000",
+        width=1440,
+        height=900,
+        min_size=(1280, 720),
+        resizable=True,
+        confirm_close=True,
     )
     mock_webview.start.assert_called_once()
 
@@ -122,8 +128,91 @@ def test_webview_window_custom_host_port(
     start_desktop(host="0.0.0.0", port=3000)
 
     mock_webview.create_window.assert_called_once_with(
-        "BioImageFlow", "http://0.0.0.0:3000"
+        "BioImageFlow",
+        "http://0.0.0.0:3000",
+        width=1440,
+        height=900,
+        min_size=(1280, 720),
+        resizable=True,
+        confirm_close=True,
     )
+
+
+@patch("bioimageflow_server.desktop.webview")
+@patch("bioimageflow_server.desktop.uvicorn")
+@patch("bioimageflow_server.desktop.create_app")
+@patch("bioimageflow_server.desktop.threading.Thread")
+@patch("bioimageflow_server.desktop.urllib.request.urlopen")
+def test_window_default_size(
+    mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+):
+    """Window opens at 1440x900 default size."""
+    from bioimageflow_server.desktop import start_desktop
+
+    mock_thread_cls.return_value = MagicMock()
+
+    start_desktop()
+
+    _, kwargs = mock_webview.create_window.call_args
+    assert kwargs["width"] == 1440
+    assert kwargs["height"] == 900
+
+
+@patch("bioimageflow_server.desktop.webview")
+@patch("bioimageflow_server.desktop.uvicorn")
+@patch("bioimageflow_server.desktop.create_app")
+@patch("bioimageflow_server.desktop.threading.Thread")
+@patch("bioimageflow_server.desktop.urllib.request.urlopen")
+def test_window_min_size(
+    mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+):
+    """Window min_size is (1280, 720)."""
+    from bioimageflow_server.desktop import start_desktop
+
+    mock_thread_cls.return_value = MagicMock()
+
+    start_desktop()
+
+    _, kwargs = mock_webview.create_window.call_args
+    assert kwargs["min_size"] == (1280, 720)
+
+
+@patch("bioimageflow_server.desktop.webview")
+@patch("bioimageflow_server.desktop.uvicorn")
+@patch("bioimageflow_server.desktop.create_app")
+@patch("bioimageflow_server.desktop.threading.Thread")
+@patch("bioimageflow_server.desktop.urllib.request.urlopen")
+def test_window_resizable(
+    mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+):
+    """Window is resizable."""
+    from bioimageflow_server.desktop import start_desktop
+
+    mock_thread_cls.return_value = MagicMock()
+
+    start_desktop()
+
+    _, kwargs = mock_webview.create_window.call_args
+    assert kwargs["resizable"] is True
+
+
+@patch("bioimageflow_server.desktop.webview")
+@patch("bioimageflow_server.desktop.uvicorn")
+@patch("bioimageflow_server.desktop.create_app")
+@patch("bioimageflow_server.desktop.threading.Thread")
+@patch("bioimageflow_server.desktop.urllib.request.urlopen")
+def test_window_confirm_close(
+    mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+):
+    """Window has confirm_close enabled."""
+    from bioimageflow_server.desktop import start_desktop
+
+    mock_thread_cls.return_value = MagicMock()
+
+    start_desktop()
+
+    _, kwargs = mock_webview.create_window.call_args
+    assert kwargs["confirm_close"] is True
 
 
 class TestMainDesktopFlag:
