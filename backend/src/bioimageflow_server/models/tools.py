@@ -80,3 +80,4 @@ class AppConfig:
     workflow_root: Path | None = None
     deployment_mode: str = "desktop"
     package_installer: PackageInstallerService | None = None
+    static_dir: Path | None = None

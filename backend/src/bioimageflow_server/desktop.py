@@ -142,9 +142,20 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
         dev: If ``True``, point the window at the Vite dev server
             (``http://localhost:5173``) for hot-module-replacement.
     """
-    from bioimageflow_server.app import create_app
+    from pathlib import Path
 
-    app = create_app()
+    from bioimageflow_server.app import create_app
+    from bioimageflow_server.models.tools import AppConfig
+
+    app_config = AppConfig()
+    if not dev:
+        # In production mode, serve the pre-built frontend from frontend/dist/
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        static_dir = project_root / "frontend" / "dist"
+        if static_dir.is_dir():
+            app_config.static_dir = static_dir
+
+    app = create_app(config=app_config)
 
     config = uvicorn.Config(app, host=host, port=port)
     server = uvicorn.Server(config)

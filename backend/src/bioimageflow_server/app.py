@@ -7,6 +7,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
+from starlette.responses import FileResponse
+from starlette.staticfiles import StaticFiles
 
 from bioimageflow_server.models.errors import ErrorResponse
 from bioimageflow_server.models.tools import AppConfig
@@ -96,5 +98,18 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
 
     if config.package_installer is not None:
         app.dependency_overrides[get_package_installer] = lambda: config.package_installer
+
+    # ---- Static file serving (production desktop mode) ----
+    if config.static_dir is not None:
+        static_dir = config.static_dir
+        assets_dir = static_dir / "assets"
+        if assets_dir.is_dir():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="static-assets")
+
+        index_html = static_dir / "index.html"
+
+        @app.get("/{full_path:path}")
+        async def spa_fallback(full_path: str) -> FileResponse:
+            return FileResponse(str(index_html))
 
     return app
