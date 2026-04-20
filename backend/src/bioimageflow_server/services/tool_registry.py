@@ -131,7 +131,7 @@ class ToolRegistryService:
         inputs: dict[str, InputFieldSchema] = {}
         inputs_cls = getattr(tool_cls, "Inputs", None)
         if inputs_cls is not None:
-            from bioimageflow_core.types import extract_gui_meta
+            from bioimageflow_core.types import Connectable, extract_gui_meta
 
             annotations: dict[str, Any] = {}
             for klass in reversed(inputs_cls.__mro__):
@@ -143,7 +143,7 @@ class ToolRegistryService:
                 is_optional = _is_optional_type(annotation)
 
                 gui_meta = extract_gui_meta(annotation)
-                connectable = gui_meta.connectable if gui_meta else True
+                connectable = gui_meta.connectable is not Connectable.NEVER if gui_meta else True
                 min_val = gui_meta.min if gui_meta else None
                 max_val = gui_meta.max if gui_meta else None
                 step_val = gui_meta.step if gui_meta else None
