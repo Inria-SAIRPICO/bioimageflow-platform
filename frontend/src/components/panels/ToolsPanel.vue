@@ -6,7 +6,6 @@ import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Tag from 'primevue/tag'
-import Select from 'primevue/select'
 import CreateToolDialog from './CreateToolDialog.vue'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
@@ -26,9 +25,6 @@ const searchQuery = ref('')
 const showCreateDialog = ref(false)
 const showManageDialog = ref(false)
 const confirm = useConfirm()
-
-/** Currently selected version in the version dropdown per package */
-const selectedVersion = ref<Record<string, string>>({})
 
 const filteredTools = computed(() => toolRegistry.searchTools(searchQuery.value))
 
@@ -219,7 +215,6 @@ defineExpose({
   manageActiveDoc,
   showCreateDialog,
   showManageDialog,
-  selectedVersion,
   onToolCreated,
 })
 </script>
@@ -351,49 +346,42 @@ defineExpose({
         <Column field="tags" header="Tags" />
         <Column header="Versions">
           <template #body="{ node }">
-            <!-- Package row: version dropdown with install/uninstall -->
+            <!-- Package row: one row per version, each with its own install/uninstall toggle -->
             <template v-if="!node.data.tool">
-              <div class="version-management">
-                <Select
-                  :model-value="selectedVersion[node.data.name]"
-                  :options="getVersionRows(node.data.name)"
-                  option-label="version"
-                  option-value="version"
-                  placeholder="Select version"
-                  :data-testid="`version-select-${node.data.name}`"
-                  class="version-select"
-                  @update:model-value="selectedVersion[node.data.name] = $event"
+              <ul class="version-list" :data-testid="`version-list-${node.data.name}`">
+                <li
+                  v-for="row in getVersionRows(node.data.name)"
+                  :key="row.version"
+                  class="version-row"
                 >
-                  <template #option="{ option }">
-                    <span>{{ option.version }}</span>
-                    <Tag
-                      v-if="option.installed"
-                      value="installed"
-                      severity="success"
-                      class="version-tag"
-                    />
-                  </template>
-                </Select>
-                <Button
-                  v-if="selectedVersion[node.data.name] && !getVersionRows(node.data.name).find(r => r.version === selectedVersion[node.data.name])?.installed"
-                  icon="pi pi-download"
-                  text
-                  size="small"
-                  title="Install version"
-                  :data-testid="`install-version-${node.data.name}`"
-                  @click="installVersion(node.data.name, selectedVersion[node.data.name])"
-                />
-                <Button
-                  v-if="selectedVersion[node.data.name] && getVersionRows(node.data.name).find(r => r.version === selectedVersion[node.data.name])?.installed"
-                  icon="pi pi-trash"
-                  text
-                  size="small"
-                  severity="danger"
-                  title="Uninstall version"
-                  :data-testid="`uninstall-version-${node.data.name}`"
-                  @click="uninstallVersion(node.data.name, selectedVersion[node.data.name])"
-                />
-              </div>
+                  <span class="version-label">{{ row.version }}</span>
+                  <Tag
+                    v-if="row.installed"
+                    value="installed"
+                    severity="success"
+                    class="version-tag"
+                  />
+                  <Button
+                    v-if="!row.installed"
+                    icon="pi pi-download"
+                    text
+                    size="small"
+                    title="Install this version"
+                    :data-testid="`install-version-${node.data.name}-${row.version}`"
+                    @click="installVersion(node.data.name, row.version)"
+                  />
+                  <Button
+                    v-else
+                    icon="pi pi-trash"
+                    text
+                    size="small"
+                    severity="danger"
+                    title="Uninstall this version"
+                    :data-testid="`uninstall-version-${node.data.name}-${row.version}`"
+                    @click="uninstallVersion(node.data.name, row.version)"
+                  />
+                </li>
+              </ul>
             </template>
             <!-- Tool row: just show version string -->
             <template v-else>
@@ -600,19 +588,27 @@ defineExpose({
 }
 
 /* --- Version management --- */
-.version-management {
+.version-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.version-select {
-  min-width: 120px;
+.version-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.version-label {
   font-size: 12px;
+  font-family: var(--font-family-mono, monospace);
 }
 
 .version-tag {
-  margin-left: 6px;
   font-size: 9px;
   padding: 0 4px;
 }
