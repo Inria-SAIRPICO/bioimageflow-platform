@@ -261,6 +261,67 @@ describe('ToolsPanel', () => {
     })
   })
 
+  // --- Version dropdown collapse/expand ---
+
+  it('version list is collapsed for each package by default', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as {
+      isVersionsExpanded: (name: string) => boolean
+    }
+    expect(vm.isVersionsExpanded('bioimageflow-core')).toBe(false)
+    expect(vm.isVersionsExpanded('bioimageflow-cellpose')).toBe(false)
+  })
+
+  it('toggleVersionsExpanded flips state independently per package', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as {
+      isVersionsExpanded: (name: string) => boolean
+      toggleVersionsExpanded: (name: string) => void
+    }
+
+    vm.toggleVersionsExpanded('bioimageflow-core')
+    expect(vm.isVersionsExpanded('bioimageflow-core')).toBe(true)
+    // Other package stays collapsed
+    expect(vm.isVersionsExpanded('bioimageflow-cellpose')).toBe(false)
+
+    vm.toggleVersionsExpanded('bioimageflow-core')
+    expect(vm.isVersionsExpanded('bioimageflow-core')).toBe(false)
+  })
+
+  it('installVersion keeps the dropdown open so multiple versions can be toggled', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.post.mockResolvedValueOnce({ data: {} })
+    mockedApi.get.mockResolvedValueOnce({ data: mockPackages })
+
+    const vm = wrapper.vm as unknown as {
+      isVersionsExpanded: (name: string) => boolean
+      toggleVersionsExpanded: (name: string) => void
+      installVersion: (name: string, version: string) => Promise<void>
+    }
+
+    vm.toggleVersionsExpanded('bioimageflow-core')
+    expect(vm.isVersionsExpanded('bioimageflow-core')).toBe(true)
+
+    await vm.installVersion('bioimageflow-core', '0.2.0')
+
+    expect(vm.isVersionsExpanded('bioimageflow-core')).toBe(true)
+  })
+
   it('uninstallVersion calls DELETE and refreshes packages', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {

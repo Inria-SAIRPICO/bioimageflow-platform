@@ -99,6 +99,24 @@ interface VersionRow {
   available: boolean
 }
 
+/** Packages whose version list is currently revealed (set-backed per-package,
+ * so install/uninstall actions inside a row don't collapse the list). */
+const expandedVersions = ref(new Set<string>())
+
+function isVersionsExpanded(packageName: string): boolean {
+  return expandedVersions.value.has(packageName)
+}
+
+function toggleVersionsExpanded(packageName: string) {
+  const next = new Set(expandedVersions.value)
+  if (next.has(packageName)) {
+    next.delete(packageName)
+  } else {
+    next.add(packageName)
+  }
+  expandedVersions.value = next
+}
+
 function getVersionRows(packageName: string): VersionRow[] {
   const pkg = toolRegistry.packages.find((p) => p.name === packageName)
   if (!pkg) return []
@@ -210,6 +228,8 @@ defineExpose({
   openInEditor,
   getEnvStatus,
   toggleEnvironment,
+  isVersionsExpanded,
+  toggleVersionsExpanded,
   searchQuery,
   activeDoc,
   manageActiveDoc,
@@ -347,42 +367,65 @@ defineExpose({
         <Column field="tags" header="Tags" />
         <Column header="Versions">
           <template #body="{ node }">
-            <!-- Package row: one row per version, each with its own install/uninstall toggle -->
+            <!-- Package row: dropdown-style toggle reveals the version list.
+                 Install/uninstall clicks do NOT collapse the list — users can
+                 change several versions in one go. -->
             <template v-if="!node.data.tool">
-              <ul class="version-list" :data-testid="`version-list-${node.data.name}`">
-                <li
-                  v-for="row in getVersionRows(node.data.name)"
-                  :key="row.version"
-                  class="version-row"
+              <div class="version-dropdown">
+                <button
+                  type="button"
+                  class="version-dropdown-toggle"
+                  :aria-expanded="isVersionsExpanded(node.data.name)"
+                  :data-testid="`version-toggle-${node.data.name}`"
+                  @click="toggleVersionsExpanded(node.data.name)"
                 >
-                  <span class="version-label">{{ row.version }}</span>
-                  <Tag
-                    v-if="row.installed"
-                    value="installed"
-                    severity="success"
-                    class="version-tag"
+                  <span class="version-dropdown-summary">
+                    {{ node.data.versions || 'No versions installed' }}
+                  </span>
+                  <i
+                    class="pi version-dropdown-chevron"
+                    :class="isVersionsExpanded(node.data.name) ? 'pi-chevron-up' : 'pi-chevron-down'"
                   />
-                  <Button
-                    v-if="!row.installed"
-                    icon="pi pi-download"
-                    text
-                    size="small"
-                    title="Install this version"
-                    :data-testid="`install-version-${node.data.name}-${row.version}`"
-                    @click="installVersion(node.data.name, row.version)"
-                  />
-                  <Button
-                    v-else
-                    icon="pi pi-trash"
-                    text
-                    size="small"
-                    severity="danger"
-                    title="Uninstall this version"
-                    :data-testid="`uninstall-version-${node.data.name}-${row.version}`"
-                    @click="uninstallVersion(node.data.name, row.version)"
-                  />
-                </li>
-              </ul>
+                </button>
+                <ul
+                  v-if="isVersionsExpanded(node.data.name)"
+                  class="version-list"
+                  :data-testid="`version-list-${node.data.name}`"
+                >
+                  <li
+                    v-for="row in getVersionRows(node.data.name)"
+                    :key="row.version"
+                    class="version-row"
+                  >
+                    <span class="version-label">{{ row.version }}</span>
+                    <Tag
+                      v-if="row.installed"
+                      value="installed"
+                      severity="success"
+                      class="version-tag"
+                    />
+                    <Button
+                      v-if="!row.installed"
+                      icon="pi pi-download"
+                      text
+                      size="small"
+                      title="Install this version"
+                      :data-testid="`install-version-${node.data.name}-${row.version}`"
+                      @click="installVersion(node.data.name, row.version)"
+                    />
+                    <Button
+                      v-else
+                      icon="pi pi-trash"
+                      text
+                      size="small"
+                      severity="danger"
+                      title="Uninstall this version"
+                      :data-testid="`uninstall-version-${node.data.name}-${row.version}`"
+                      @click="uninstallVersion(node.data.name, row.version)"
+                    />
+                  </li>
+                </ul>
+              </div>
             </template>
             <!-- Tool row: just show version string -->
             <template v-else>
@@ -591,6 +634,42 @@ defineExpose({
 }
 
 /* --- Version management --- */
+.version-dropdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.version-dropdown-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--p-surface-0);
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--p-text-color);
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.version-dropdown-toggle:hover {
+  background: var(--p-surface-100);
+}
+
+.version-dropdown-summary {
+  font-family: var(--font-family-mono, monospace);
+}
+
+.version-dropdown-chevron {
+  font-size: 11px;
+  color: var(--p-text-muted-color);
+}
+
 .version-list {
   list-style: none;
   margin: 0;
