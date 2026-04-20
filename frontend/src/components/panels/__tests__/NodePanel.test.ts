@@ -180,8 +180,7 @@ describe('NodePanel', () => {
       data.pinnedInputs = { image: true }
       const w = mountPanel(data)
       const pinToggle = w.find('[data-testid="pin-toggle"]')
-      const checkbox = pinToggle.findComponent({ name: 'Checkbox' })
-      await checkbox.vm.$emit('update:modelValue', false)
+      await pinToggle.trigger('click')
       await w.vm.$nextTick()
       expect(data.pinnedInputs.image).toBe(false)
     })

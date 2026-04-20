@@ -206,6 +206,16 @@ function isSliderField(field: InputFieldSchema): boolean {
           class="param-row"
         >
           <div class="param-header">
+            <!-- Pin visibility toggle (icon-only, before the label) -->
+            <Button
+              v-if="(field as InputFieldSchema).connectable"
+              :icon="isPinned(key) ? 'pi pi-times' : 'pi pi-arrow-right-arrow-left'"
+              class="p-button-text p-button-sm param-action-btn pin-toggle-btn"
+              :title="isPinned(key) ? 'Remove input pin' : 'Add input pin'"
+              :aria-pressed="isPinned(key)"
+              @click="togglePinned(key)"
+              data-testid="pin-toggle"
+            />
             <label>{{ key }}</label>
             <span class="param-actions">
               <!-- Fix 18: Help toggle button -->
@@ -237,33 +247,16 @@ function isSliderField(field: InputFieldSchema): boolean {
             {{ (field as InputFieldSchema).description }}
           </small>
 
-          <!-- Fix 16 + 17: Optional toggle and Connectable checkbox row -->
-          <div class="param-toggles">
-            <!-- Fix 16: None toggle for Optional fields -->
-            <label
-              v-if="(field as InputFieldSchema).optional"
-              class="toggle-label"
-              data-testid="none-toggle"
-            >
+          <!-- None toggle for Optional fields (Pin toggle is now an icon
+               button in the param header — see above) -->
+          <div v-if="(field as InputFieldSchema).optional" class="param-toggles">
+            <label class="toggle-label" data-testid="none-toggle">
               <Checkbox
                 :model-value="isFieldNulled(key)"
                 binary
                 @update:model-value="toggleNull(key)"
               />
               <span>None</span>
-            </label>
-            <!-- Fix 17: Connectable/Pin checkbox -->
-            <label
-              v-if="(field as InputFieldSchema).connectable"
-              class="toggle-label"
-              data-testid="pin-toggle"
-            >
-              <Checkbox
-                :model-value="isPinned(key)"
-                binary
-                @update:model-value="togglePinned(key)"
-              />
-              <span>Pin</span>
             </label>
           </div>
 
@@ -500,13 +493,18 @@ h4 {
 .param-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 4px;
 }
 
 .param-header label {
   font-weight: 500;
   font-size: 12px;
   color: var(--p-text-color);
+  flex: 1;
+}
+
+.pin-toggle-btn[aria-pressed='true'] {
+  color: var(--p-red-500);
 }
 
 .param-actions {

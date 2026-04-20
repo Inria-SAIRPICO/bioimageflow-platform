@@ -826,10 +826,10 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 
 | Element | Description |
 |---------|-------------|
+| **Pin toggle button** | Icon-only button placed **before** the label, only rendered if the input is `connectable`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` decides whether the button appears; the button itself decides whether the pin is shown. |
 | **Label** | Field name (human-readable) |
 | **Default button** | Resets the field to its default value |
 | **None toggle** | Two-state button (only shown if the field is `Optional`). When active, the value is `None` and the input field is hidden. |
-| **Connectable checkbox** | Only shown if the input is `connectable`. Tells whether the input pin is visible or not. Important note: GUIMeta.connectable is a field which says if this checkbox should appear, and this checkbox says if the pin should be visible or not. |
 | **Input field** | The actual value editor (hidden when connected or None). Type depends on the field annotation (see below). |
 | **Help text** | Collapsible description from field metadata |
 
