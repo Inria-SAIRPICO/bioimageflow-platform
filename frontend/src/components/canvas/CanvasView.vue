@@ -44,6 +44,8 @@ const {
   setEdges,
   onConnect,
   onNodesChange,
+  onEdgeUpdate,
+  onEdgeUpdateEnd,
   onNodeDragStart,
   onNodeDragStop,
   fitView,
@@ -159,9 +161,11 @@ watch(getNodes, (nodes) => {
 
 /**
  * Detach the edge targeting (nodeId, targetHandle). Called by InputPin when a
- * user grabs a connected input pin — the pin itself is the only drag handle,
- * so removing the edge here lets Vue Flow's connection gesture take over from
- * the upstream source with the cursor as the new endpoint.
+ * user grabs a connected input pin — removing the edge lets Vue Flow's
+ * connection gesture take over from the upstream source with the cursor as
+ * the new endpoint. Vue Flow's default edges-updatable mechanism (grab near
+ * the edge endpoint) is still enabled so users have both paths to redirect a
+ * connection.
  */
 function disconnectEdgeByInput(edgeId: string) {
   const edge = getEdges.value.find((e: any) => e.id === edgeId)
@@ -172,6 +176,63 @@ function disconnectEdgeByInput(edgeId: string) {
 }
 
 provide('bioimageflow:disconnectEdge', disconnectEdgeByInput)
+
+// Edges whose endpoint was successfully moved during the current update
+// gesture. Used by onEdgeUpdateEnd to distinguish "moved to another pin" from
+// "dropped on empty space".
+const updatedEdgeIds = new Set<string>()
+
+onEdgeUpdate(({ edge, connection }) => {
+  updatedEdgeIds.add(edge.id)
+
+  const newTarget = connection.target ?? edge.target
+  const newTargetHandle = connection.targetHandle ?? edge.targetHandle ?? ''
+  const newSource = connection.source ?? edge.source
+  const newSourceHandle = connection.sourceHandle ?? edge.sourceHandle ?? ''
+
+  // Clean up old connectedInputs entry before rewriting
+  cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+
+  // Enforce single incoming edge on the new target input
+  clearExistingIncomingEdge(newTarget, newTargetHandle)
+
+  // Rewrite the edge: remove the old one, add a rebuilt one with new endpoints
+  removeEdges([edge.id])
+  const isPositional = newTargetHandle.startsWith('__positional_')
+  const replacement = {
+    id: `e-${newSource}-${newSourceHandle}-${newTarget}-${newTargetHandle}`,
+    source: newSource,
+    target: newTarget,
+    sourceHandle: newSourceHandle,
+    targetHandle: newTargetHandle,
+    type: isPositional ? 'positional' : 'column_ref',
+  }
+  addEdges([replacement])
+
+  // Update connectedInputs on the new target node
+  const targetNode = getNodes.value.find((n: any) => n.id === newTarget)
+  if (targetNode) {
+    const sourceNode = getNodes.value.find((n: any) => n.id === newSource)
+    const sourceLabel = sourceNode
+      ? `${sourceNode.data?.name ?? sourceNode.id}.${newSourceHandle || 'output'}`
+      : ''
+    targetNode.data.connectedInputs = {
+      ...targetNode.data.connectedInputs,
+      [newTargetHandle]: sourceLabel,
+    }
+  }
+
+  emitGraphChanged()
+})
+
+// Edge disconnect: dragging a connected handle to empty space (no onEdgeUpdate
+// fired for this gesture).
+onEdgeUpdateEnd(({ edge }) => {
+  if (updatedEdgeIds.delete(edge.id)) return
+  removeEdges([edge.id])
+  cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+  emitGraphChanged()
+})
 
 // --- Connected-input bookkeeping ---
 
@@ -615,7 +676,7 @@ defineExpose({
       :edge-types="edgeTypes"
       :is-valid-connection="isValidConnection"
       :selection-key-code="'Shift'"
-      :edges-updatable="false"
+      :edges-updatable="true"
       fit-view-on-init
     >
       <Background :variant="'dots'" :gap="16" :size="1" />
