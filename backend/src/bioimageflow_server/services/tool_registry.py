@@ -131,7 +131,7 @@ class ToolRegistryService:
         inputs: dict[str, InputFieldSchema] = {}
         inputs_cls = getattr(tool_cls, "Inputs", None)
         if inputs_cls is not None:
-            from bioimageflow_core.types import extract_gui_meta
+            from bioimageflow_core.types import Connectable, extract_gui_meta
 
             annotations: dict[str, Any] = {}
             for klass in reversed(inputs_cls.__mro__):
@@ -143,7 +143,7 @@ class ToolRegistryService:
                 is_optional = _is_optional_type(annotation)
 
                 gui_meta = extract_gui_meta(annotation)
-                connectable = gui_meta.connectable if gui_meta else True
+                connectable = gui_meta.connectable is not Connectable.NEVER if gui_meta else True
                 min_val = gui_meta.min if gui_meta else None
                 max_val = gui_meta.max if gui_meta else None
                 step_val = gui_meta.step if gui_meta else None
@@ -170,10 +170,9 @@ class ToolRegistryService:
             annotations = getattr(outputs_cls, "__annotations__", {})
             for field_name, annotation in annotations.items():
                 default_val = getattr(outputs_cls, field_name, None)
-                default_str = default_val if isinstance(default_val, str) else None
                 outputs[field_name] = OutputFieldSchema(
                     type=_type_display_name(annotation),
-                    default=default_str,
+                    default=_output_default_str(default_val),
                 )
 
         # Extract environment info
@@ -223,6 +222,19 @@ class ToolRegistryService:
 
     def list_packages(self) -> list[PackageInfo]:
         return list(self._packages.values())
+
+
+def _output_default_str(default_val: Any) -> str | None:
+    """Serialize a tool Output field default to the path-template string sent
+    to the GUI. Tool authors typically declare defaults as ``Path("...")``
+    (e.g. ``Path("{input_image.stem}_mask{ext}")``) — fall back to ``str()``
+    for any object that's not ``None``.
+    """
+    if default_val is None:
+        return None
+    if isinstance(default_val, str):
+        return default_val
+    return str(default_val)
 
 
 def _is_optional_type(annotation: Any) -> bool:

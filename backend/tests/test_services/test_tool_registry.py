@@ -1,5 +1,7 @@
 """Tests for ToolRegistryService."""
 
+from pathlib import Path
+
 import pytest
 
 from bioimageflow_server.models.tools import (
@@ -8,7 +10,10 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
-from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.tool_registry import (
+    ToolRegistryService,
+    _output_default_str,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -83,3 +88,26 @@ def test_register_multiple_packages_and_list():
     reg.register_package("b", _make_package("b"))
     names = {p.name for p in reg.list_packages()}
     assert names == {"a", "b"}
+
+
+# --- Output default serialization ---
+
+
+def test_output_default_str_none():
+    assert _output_default_str(None) is None
+
+
+def test_output_default_str_passthrough_for_str():
+    assert _output_default_str("{input_image.stem}_mask{ext}") == (
+        "{input_image.stem}_mask{ext}"
+    )
+
+
+def test_output_default_str_converts_path():
+    # Tools typically declare output defaults as Path("template") — they must
+    # still arrive at the GUI as a plain template string so the node-panel
+    # template input is populated.
+    assert (
+        _output_default_str(Path("{input_image.stem}_detections{ext}"))
+        == "{input_image.stem}_detections{ext}"
+    )
