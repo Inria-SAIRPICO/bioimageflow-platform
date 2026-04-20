@@ -570,15 +570,31 @@ h4 {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Keep the slider handle from hugging the left edge of the row. The handle
+     is centered on the track endpoint, so half of it would overflow without
+     inline padding. */
+  padding-inline: 7px;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .slider-input {
   flex: 1;
+  min-width: 0;
 }
 
 .slider-number {
-  width: 80px;
+  width: 72px;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+/* PrimeVue's InputNumber wraps an inner .p-inputtext that defaults to its
+   intrinsic width; force it to fill the parent so it stays inside. */
+.slider-number :deep(.p-inputtext) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .output-row {
