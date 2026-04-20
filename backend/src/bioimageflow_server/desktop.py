@@ -181,10 +181,7 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
     )
     server_thread.start()
 
-    # Wait for the server to be ready
-    poll_host = "127.0.0.1" if host == "0.0.0.0" else host
-    health_url = f"http://{poll_host}:{port}/api/v1/health"
-    _wait_for_server(health_url)
+    _wait_for_server(server, server_thread)
 
     api = DesktopApi()
 
@@ -276,13 +273,28 @@ def _shutdown(
     logger.info("Shutdown complete")
 
 
-def _wait_for_server(url: str, timeout: float = 10.0, interval: float = 0.1) -> None:
-    """Poll a URL until it responds or the timeout is reached."""
+def _wait_for_server(
+    server: uvicorn.Server,
+    server_thread: threading.Thread,
+    timeout: float = 10.0,
+    interval: float = 0.1,
+) -> None:
+    """Wait until uvicorn has started, or raise if the thread died first.
+
+    Watches ``server.started`` and fails fast if the uvicorn thread exits
+    before the server is ready -- the most common cause is a port-in-use
+    error, which otherwise manifests as a silent hang or, worse, a window
+    that unknowingly connects to a different server bound to the same port.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        try:
-            urllib.request.urlopen(url, timeout=1)
+        if server.started:
             return
-        except (urllib.error.URLError, OSError):
-            time.sleep(interval)
-    raise TimeoutError(f"Server did not become ready at {url} within {timeout}s")
+        if not server_thread.is_alive():
+            raise RuntimeError(
+                "Backend server failed to start. The uvicorn thread exited "
+                "before the server became ready -- the address is likely "
+                "already in use. Try a different --port."
+            )
+        time.sleep(interval)
+    raise TimeoutError(f"Server did not become ready within {timeout}s")
