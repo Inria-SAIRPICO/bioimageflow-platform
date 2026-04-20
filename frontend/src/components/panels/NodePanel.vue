@@ -5,7 +5,6 @@ import InputNumber from 'primevue/inputnumber'
 import Checkbox from 'primevue/checkbox'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Button from 'primevue/button'
-import Panel from 'primevue/panel'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
@@ -29,6 +28,9 @@ const nulledFields = ref<Record<string, boolean>>({})
 
 /** Track which parameter help sections are expanded */
 const expandedHelp = ref<Record<string, boolean>>({})
+
+/** Documentation section collapsed state (open by default) */
+const docCollapsed = ref(false)
 
 function startEditName() {
   if (!nodeData.value) return
@@ -184,18 +186,6 @@ function isSliderField(field: InputFieldSchema): boolean {
           {{ nodeData.tool.package }} v{{ nodeData.tool.package_version }}
         </div>
       </div>
-
-      <!-- Fix 14: Collapsible documentation section -->
-      <Panel
-        v-if="nodeData.tool?.documentation"
-        header="Documentation"
-        toggleable
-        :collapsed="true"
-        class="doc-panel"
-        data-testid="doc-panel"
-      >
-        <p class="doc-text">{{ nodeData.tool.documentation }}</p>
-      </Panel>
 
       <!-- Parameters section -->
       <div v-if="nodeData.tool" class="parameters-section">
@@ -360,6 +350,24 @@ function isSliderField(field: InputFieldSchema): boolean {
           />
         </div>
       </div>
+
+      <!-- Documentation section, docked at the bottom, open by default.
+           Chevron is rendered before the "Documentation" label and toggles
+           the section. -->
+      <section v-if="nodeData.tool?.documentation" class="doc-panel" data-testid="doc-panel">
+        <button
+          type="button"
+          class="doc-panel-header"
+          :aria-expanded="!docCollapsed"
+          @click="docCollapsed = !docCollapsed"
+        >
+          <i :class="docCollapsed ? 'pi pi-chevron-right' : 'pi pi-chevron-down'" />
+          <span class="p-panel-title doc-panel-title">Documentation</span>
+        </button>
+        <div v-show="!docCollapsed" class="doc-panel-body">
+          <p class="doc-text">{{ nodeData.tool.documentation }}</p>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -457,9 +465,38 @@ function isSliderField(field: InputFieldSchema): boolean {
   color: var(--p-red-700);
 }
 
-/* Fix 14: Documentation panel */
+/* Documentation panel (bottom, open by default, chevron before title) */
 .doc-panel {
-  margin-bottom: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--p-content-border-color);
+  padding-top: 8px;
+}
+
+.doc-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  color: inherit;
+  width: 100%;
+  text-align: left;
+}
+
+.doc-panel-header .pi {
+  font-size: 12px;
+  color: var(--p-text-muted-color);
+}
+
+.doc-panel-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.doc-panel-body {
+  padding: 4px 0 8px;
 }
 
 .doc-text {

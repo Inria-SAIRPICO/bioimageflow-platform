@@ -808,7 +808,8 @@ Displays details and parameters for the currently selected node(s).
 - **Tool name** (read-only, links to source)
 - **Package + version** (read-only, e.g., "bioimageflow-cellpose 1.2.0")
 - **Enable/Disable** toggle button
-- **Documentation** (collapsible help text from `tool.documentation`)
+
+(Tool documentation lives at the bottom of the Node Panel — see §3.5.6.)
 
 #### 3.5.2 Action Bar
 
@@ -889,6 +890,10 @@ A collapsible section at the bottom of the Node Panel that displays execution ou
 - **Error display:** For failed nodes, the error message and traceback are displayed prominently at the top of this section with a red background. The `node_state` WebSocket message for failed nodes includes `error` and `traceback` fields (see `NodeStatus` model in Section 2.4.3).
 - **Level filter buttons:** DEBUG / INFO / WARNING / ERROR, defaulting to INFO+.
 - Logs are kept in memory for the duration of the session and cleared on new execution.
+
+#### 3.5.6 Documentation
+
+A collapsible section at the bottom of the Node Panel that shows the tool's documentation (from `tool.documentation`). **Open by default** so users see the docs without extra interaction. The toggle is a chevron icon rendered **before** the "Documentation" label (right-pointing when collapsed, down-pointing when expanded).
 
 ### 3.6 Data Table (Bottom Panel, Tab 1)
 
