@@ -104,5 +104,3 @@ cd frontend && bun run test:e2e
 
 - `specs.md` -- BioImageFlow library specifications
 - `platform_specs_v1.md` -- MVP platform specifications
-- `docs/superpowers/specs/` -- Design specs for individual components
-- `docs/superpowers/plans/` -- Implementation plans (including `2026-04-10-pywebview-desktop.md`)

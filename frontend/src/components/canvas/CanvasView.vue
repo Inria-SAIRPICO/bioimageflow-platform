@@ -42,6 +42,7 @@ const {
   getEdges,
   setNodes,
   setEdges,
+  updateEdge,
   onConnect,
   onNodesChange,
   onEdgeUpdate,
@@ -193,21 +194,23 @@ onEdgeUpdate(({ edge, connection }) => {
   // Clean up old connectedInputs entry before rewriting
   cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
 
-  // Enforce single incoming edge on the new target input
-  clearExistingIncomingEdge(newTarget, newTargetHandle)
+  // Enforce single incoming edge on the new target input. Skip when the edge
+  // is being updated into the same slot (the edge itself is the existing one).
+  if (edge.target !== newTarget || edge.targetHandle !== newTargetHandle) {
+    clearExistingIncomingEdge(newTarget, newTargetHandle)
+  }
 
-  // Rewrite the edge: remove the old one, add a rebuilt one with new endpoints
-  removeEdges([edge.id])
-  const isPositional = newTargetHandle.startsWith('__positional_')
-  const replacement = {
-    id: `e-${newSource}-${newSourceHandle}-${newTarget}-${newTargetHandle}`,
+  // Update the edge in place so Vue Flow's EdgeWrapper keeps tracking the
+  // same record through pointerup. Removing + re-adding here makes
+  // `edge.value` go undefined, which makes onEdgeUpdateEnd receive an
+  // undefined edge and throw — Vue Flow then skips its own endConnection
+  // cleanup and a pending connection line keeps following the cursor.
+  updateEdge(edge, {
     source: newSource,
     target: newTarget,
     sourceHandle: newSourceHandle,
     targetHandle: newTargetHandle,
-    type: isPositional ? 'positional' : 'column_ref',
-  }
-  addEdges([replacement])
+  }, false)
 
   // Update connectedInputs on the new target node
   const targetNode = getNodes.value.find((n: any) => n.id === newTarget)
@@ -228,6 +231,7 @@ onEdgeUpdate(({ edge, connection }) => {
 // Edge disconnect: dragging a connected handle to empty space (no onEdgeUpdate
 // fired for this gesture).
 onEdgeUpdateEnd(({ edge }) => {
+  if (!edge) return
   if (updatedEdgeIds.delete(edge.id)) return
   removeEdges([edge.id])
   cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')

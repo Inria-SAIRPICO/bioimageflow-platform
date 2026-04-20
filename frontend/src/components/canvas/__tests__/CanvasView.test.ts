@@ -73,6 +73,12 @@ vi.mock('@vue-flow/core', () => {
       },
       setNodes: (nodes: any[]) => { mockNodes = [...nodes] },
       setEdges: (edges: any[]) => { mockEdges = [...edges] },
+      updateEdge: (oldEdge: any, conn: any) => {
+        const idx = mockEdges.findIndex((e: any) => e.id === oldEdge.id)
+        if (idx < 0) return false
+        mockEdges[idx] = { ...mockEdges[idx], ...conn }
+        return mockEdges[idx]
+      },
       getNodes: computed(() => mockNodes),
       getEdges: computed(() => mockEdges),
       onConnect: (handler: any) => { connectHandler = handler },
