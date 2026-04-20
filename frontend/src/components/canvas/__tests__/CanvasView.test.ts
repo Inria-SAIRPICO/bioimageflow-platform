@@ -77,6 +77,7 @@ vi.mock('@vue-flow/core', () => {
       getEdges: computed(() => mockEdges),
       onConnect: (handler: any) => { connectHandler = handler },
       onNodesChange: (handler: any) => { selectionHandler = handler },
+      onEdgeUpdate: vi.fn(),
       onEdgeUpdateEnd: vi.fn(),
       onNodeDragStart: (handler: any) => { dragStartHandler = handler },
       onNodeDragStop: (handler: any) => { dragStopHandler = handler },
@@ -170,6 +171,58 @@ describe('CanvasView', () => {
       expect(mockEdges[0].source).toBe('node_a')
       expect(mockEdges[0].target).toBe('node_b')
       expect(w.emitted('graph-changed')).toBeTruthy()
+      w.unmount()
+    })
+
+    it('connecting to an already-connected input replaces the old edge', () => {
+      mockNodes = [
+        { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', connectedInputs: {} } },
+        { id: 'b', data: { toolName: 'gaussian_blur', name: 'b', connectedInputs: {} } },
+        { id: 'c', data: { toolName: 'gaussian_blur', name: 'c', connectedInputs: { image: 'a.result' } } },
+      ]
+      mockEdges = [
+        { id: 'e_a_c', source: 'a', target: 'c', sourceHandle: 'result', targetHandle: 'image' },
+      ]
+
+      const w = mountCanvas()
+      expect(connectHandler).not.toBeNull()
+
+      // User drags from c's already-connected `image` input to b's output
+      connectHandler!({
+        source: 'b',
+        target: 'c',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+      })
+
+      // Only one edge remains on c.image, and it's the new one
+      const incoming = mockEdges.filter((e: any) => e.target === 'c' && e.targetHandle === 'image')
+      expect(incoming).toHaveLength(1)
+      expect(incoming[0].source).toBe('b')
+      w.unmount()
+    })
+
+    it('positional inputs allow multiple incoming edges', () => {
+      mockNodes = [
+        { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', connectedInputs: {} } },
+        { id: 'b', data: { toolName: 'gaussian_blur', name: 'b', connectedInputs: {} } },
+        { id: 'c', data: { toolName: 'gaussian_blur', name: 'c', connectedInputs: { __positional_0: 'a.result' } } },
+      ]
+      mockEdges = [
+        { id: 'e_a_c', source: 'a', target: 'c', sourceHandle: 'result', targetHandle: '__positional_0' },
+      ]
+
+      const w = mountCanvas()
+
+      // Connecting to __positional_1 must not remove __positional_0
+      connectHandler!({
+        source: 'b',
+        target: 'c',
+        sourceHandle: 'result',
+        targetHandle: '__positional_1',
+      })
+
+      expect(mockEdges.filter((e: any) => e.target === 'c')).toHaveLength(2)
       w.unmount()
     })
 

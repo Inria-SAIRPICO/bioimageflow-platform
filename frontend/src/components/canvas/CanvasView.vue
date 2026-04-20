@@ -44,6 +44,7 @@ const {
   setEdges,
   onConnect,
   onNodesChange,
+  onEdgeUpdate,
   onEdgeUpdateEnd,
   onNodeDragStart,
   onNodeDragStop,
@@ -93,8 +94,28 @@ onNodeDragStop(({ nodes }) => {
 
 // --- Connection handling ---
 
+/**
+ * Remove any edge already targeting (nodeId, targetHandle) so that the input
+ * pin is left with at most one incoming connection. Positional inputs don't
+ * have this constraint — each positional index is its own pin.
+ */
+function clearExistingIncomingEdge(nodeId: string, targetHandle: string) {
+  if (targetHandle.startsWith('__positional_')) return
+  const existing = getEdges.value.filter(
+    (e: any) => e.target === nodeId && e.targetHandle === targetHandle,
+  )
+  if (existing.length === 0) return
+  removeEdges(existing.map((e: any) => e.id))
+  cleanupDisconnectedInput(nodeId, targetHandle)
+}
+
 onConnect((connection) => {
   const targetHandle = connection.targetHandle ?? ''
+  // Enforce one incoming edge per (non-positional) input. When users drag from
+  // an already-connected input pin, Vue Flow issues a fresh connect rather than
+  // an edge-update; this keeps the graph consistent either way.
+  clearExistingIncomingEdge(connection.target, targetHandle)
+
   const isPositional = targetHandle.startsWith('__positional_')
   const newEdge = {
     id: `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${targetHandle}`,
@@ -138,8 +159,58 @@ watch(getNodes, (nodes) => {
   uiStore.setGraphNodes(nodes)
 }, { deep: true })
 
-// Edge disconnect: dragging a connected handle to empty space
+// Edges whose endpoint was successfully moved during the current update
+// gesture. Used by onEdgeUpdateEnd to distinguish "moved to another pin" from
+// "dropped on empty space".
+const updatedEdgeIds = new Set<string>()
+
+onEdgeUpdate(({ edge, connection }) => {
+  updatedEdgeIds.add(edge.id)
+
+  const newTarget = connection.target ?? edge.target
+  const newTargetHandle = connection.targetHandle ?? edge.targetHandle ?? ''
+  const newSource = connection.source ?? edge.source
+  const newSourceHandle = connection.sourceHandle ?? edge.sourceHandle ?? ''
+
+  // Clean up old connectedInputs entry before rewriting
+  cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+
+  // Enforce single incoming edge on the new target input
+  clearExistingIncomingEdge(newTarget, newTargetHandle)
+
+  // Rewrite the edge: remove the old one, add a rebuilt one with new endpoints
+  removeEdges([edge.id])
+  const isPositional = newTargetHandle.startsWith('__positional_')
+  const replacement = {
+    id: `e-${newSource}-${newSourceHandle}-${newTarget}-${newTargetHandle}`,
+    source: newSource,
+    target: newTarget,
+    sourceHandle: newSourceHandle,
+    targetHandle: newTargetHandle,
+    type: isPositional ? 'positional' : 'column_ref',
+  }
+  addEdges([replacement])
+
+  // Update connectedInputs on the new target node
+  const targetNode = getNodes.value.find((n: any) => n.id === newTarget)
+  if (targetNode) {
+    const sourceNode = getNodes.value.find((n: any) => n.id === newSource)
+    const sourceLabel = sourceNode
+      ? `${sourceNode.data?.name ?? sourceNode.id}.${newSourceHandle || 'output'}`
+      : ''
+    targetNode.data.connectedInputs = {
+      ...targetNode.data.connectedInputs,
+      [newTargetHandle]: sourceLabel,
+    }
+  }
+
+  emitGraphChanged()
+})
+
+// Edge disconnect: dragging a connected handle to empty space (no onEdgeUpdate
+// fired for this gesture).
 onEdgeUpdateEnd(({ edge }) => {
+  if (updatedEdgeIds.delete(edge.id)) return
   removeEdges([edge.id])
   cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
   emitGraphChanged()
