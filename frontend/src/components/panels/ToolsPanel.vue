@@ -277,14 +277,10 @@ defineExpose({
               text
               size="small"
               class="tool-list-power-btn"
-              :data-testid="`tool-power-${tool.name}`"
-              @click.stop="toggleEnvironment(tool.package)"
-            />
-            <span
-              class="env-dot"
               :class="`env-${toolRegistry.getEnvStatusForTool(tool.name)}`"
-              :data-testid="`env-dot-${tool.name}`"
+              :data-testid="`tool-power-${tool.name}`"
               :title="toolRegistry.getEnvStatusForTool(tool.name)"
+              @click.stop="toggleEnvironment(tool.package)"
             />
           </span>
         </div>
@@ -568,26 +564,7 @@ defineExpose({
   text-align: center;
 }
 
-/* --- Environment status dot --- */
-.env-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--p-surface-400);
-}
-.env-dot.env-stopped {
-  background-color: var(--p-surface-400);
-}
-.env-dot.env-creating {
-  background-color: var(--p-yellow-500);
-}
-.env-dot.env-running,
-.env-dot.env-ready {
-  background-color: var(--p-green-500);
-}
-
-/* --- Manage dialog TreeTable badges --- */
+/* --- Environment status: color on power button + badge --- */
 .env-badge {
   font-size: 11px;
   font-weight: 600;
@@ -599,7 +576,20 @@ defineExpose({
 .env-creating {
   color: var(--p-yellow-500);
 }
-.env-running {
+.env-running,
+.env-ready {
+  color: var(--p-green-500);
+}
+
+/* Force PrimeVue text Button to inherit the env color */
+.tool-list-power-btn.env-stopped :deep(.p-button-icon) {
+  color: var(--p-surface-400);
+}
+.tool-list-power-btn.env-creating :deep(.p-button-icon) {
+  color: var(--p-yellow-500);
+}
+.tool-list-power-btn.env-running :deep(.p-button-icon),
+.tool-list-power-btn.env-ready :deep(.p-button-icon) {
   color: var(--p-green-500);
 }
 
