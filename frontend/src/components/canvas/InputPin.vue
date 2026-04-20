@@ -31,11 +31,9 @@ const label = computed(() => {
       type="target"
       :position="Position.Left"
       :id="fieldName"
-    />
-    <span
-      class="pin-dot"
+      class="pin-handle"
       :class="{ connected }"
-      :style="{ backgroundColor: color }"
+      :style="{ backgroundColor: connected ? color : 'transparent', borderColor: color }"
     />
     <span class="pin-label">{{ label }}</span>
   </div>
@@ -45,24 +43,25 @@ const label = computed(() => {
 .input-pin {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   position: relative;
   padding: 2px 0;
 }
 
-.pin-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.pin-dot.connected {
-  box-shadow: 0 0 4px currentColor;
+.pin-handle {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  border: 2px solid !important;
+  background: transparent !important;
+  position: relative !important;
+  left: -7px !important;
+  transform: none !important;
 }
 
 .pin-label {
   font-size: 12px;
   white-space: nowrap;
+  margin-left: 0px;
 }
 </style>

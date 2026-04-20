@@ -27,15 +27,15 @@ describe('OutputPin', () => {
     expect(w.find('.type-badge').text()).toBe('ImagePath')
   })
 
-  it('applies correct dot color', () => {
+  it('applies correct handle color', () => {
     const w = factory({ fieldName: 'result', fieldType: 'ImagePath' })
-    expect(w.find('.pin-dot').attributes('style')).toContain('background-color: rgb(74, 144, 217)')
+    expect(w.find('.pin-handle').attributes('style')).toContain('background-color: rgb(74, 144, 217)')
   })
 
   it('uses default color for unknown types', () => {
     const w = factory({ fieldName: 'out', fieldType: 'UnknownType' })
     // #8E8E93 = rgb(142, 142, 147)
-    expect(w.find('.pin-dot').attributes('style')).toContain('background-color: rgb(142, 142, 147)')
+    expect(w.find('.pin-handle').attributes('style')).toContain('background-color: rgb(142, 142, 147)')
   })
 
   it('shows type in tooltip', () => {

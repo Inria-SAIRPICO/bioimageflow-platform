@@ -107,9 +107,10 @@ class ToolRegistryService:
         from bioimageflow_core.tool import BaseTool
 
         display_name = getattr(tool_cls, "display_name", None) or class_name
-        documentation = getattr(tool_cls, "__doc__", "") or ""
+        documentation = getattr(tool_cls, "documentation", "") or getattr(tool_cls, "__doc__", "") or ""
         tags = list(getattr(tool_cls, "tags", []))
-        categories = list(getattr(tool_cls, "categories", []))
+        category = getattr(tool_cls, "category", None)
+        categories = [category.value] if category is not None else []
 
         # Determine tool type
         try:
@@ -130,16 +131,36 @@ class ToolRegistryService:
         inputs: dict[str, InputFieldSchema] = {}
         inputs_cls = getattr(tool_cls, "Inputs", None)
         if inputs_cls is not None:
-            annotations = getattr(inputs_cls, "__annotations__", {})
+            from bioimageflow_core.types import extract_gui_meta
+
+            annotations: dict[str, Any] = {}
+            for klass in reversed(inputs_cls.__mro__):
+                annotations.update(getattr(klass, "__annotations__", {}))
             for field_name, annotation in annotations.items():
                 type_name = _type_display_name(annotation)
                 has_default = hasattr(inputs_cls, field_name)
                 default = getattr(inputs_cls, field_name, None) if has_default else None
+                is_optional = _is_optional_type(annotation)
+
+                gui_meta = extract_gui_meta(annotation)
+                connectable = gui_meta.connectable if gui_meta else True
+                min_val = gui_meta.min if gui_meta else None
+                max_val = gui_meta.max if gui_meta else None
+                step_val = gui_meta.step if gui_meta else None
+                group_val = gui_meta.group if gui_meta else None
+                choices_val = _extract_choices(annotation)
+
                 inputs[field_name] = InputFieldSchema(
                     type=type_name,
-                    connectable=True,
+                    connectable=connectable,
                     default=default,
                     description="",
+                    optional=is_optional,
+                    min=min_val,
+                    max=max_val,
+                    step=step_val,
+                    group=group_val,
+                    choices=choices_val,
                 )
 
         # Extract output schema
@@ -148,8 +169,11 @@ class ToolRegistryService:
         if outputs_cls is not None:
             annotations = getattr(outputs_cls, "__annotations__", {})
             for field_name, annotation in annotations.items():
+                default_val = getattr(outputs_cls, field_name, None)
+                default_str = default_val if isinstance(default_val, str) else None
                 outputs[field_name] = OutputFieldSchema(
-                    type=_type_display_name(annotation)
+                    type=_type_display_name(annotation),
+                    default=default_str,
                 )
 
         # Extract environment info
@@ -199,6 +223,52 @@ class ToolRegistryService:
 
     def list_packages(self) -> list[PackageInfo]:
         return list(self._packages.values())
+
+
+def _is_optional_type(annotation: Any) -> bool:
+    """Return True if the annotation is Optional[X] (i.e. X | None)."""
+    from typing import get_origin, get_args, Annotated, Union
+    import types
+
+    # Unwrap Annotated first
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+
+    origin = get_origin(annotation)
+    # Python 3.10+ unions use types.UnionType
+    if origin is Union or isinstance(annotation, types.UnionType):
+        args = get_args(annotation)
+        return type(None) in args
+
+    return False
+
+
+def _extract_choices(annotation: Any) -> list[str] | None:
+    """Extract choices from Literal or Enum type annotations."""
+    import enum
+    import types
+    from typing import Annotated, Literal, Union, get_args, get_origin
+
+    # Unwrap Annotated
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+
+    # Unwrap Optional (Union[X, None])
+    origin = get_origin(annotation)
+    if origin is Union or isinstance(annotation, types.UnionType):
+        args = [a for a in get_args(annotation) if a is not type(None)]
+        if len(args) == 1:
+            annotation = args[0]
+
+    # Handle Literal["a", "b", "c"]
+    if get_origin(annotation) is Literal:
+        return [str(v) for v in get_args(annotation)]
+
+    # Handle Enum subclasses
+    if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+        return [str(member.value) for member in annotation]
+
+    return None
 
 
 def _type_display_name(annotation: Any) -> str:

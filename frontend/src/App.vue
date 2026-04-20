@@ -2,16 +2,13 @@
 import { defineComponent, h } from 'vue'
 import ToolsPanel from './components/panels/ToolsPanel.vue'
 import CanvasView from './components/canvas/CanvasView.vue'
+import NodePanel from './components/panels/NodePanel.vue'
 
 export default defineComponent({
   components: {
     tools: ToolsPanel,
     canvasView: CanvasView,
-    nodePanel: defineComponent({
-      render() {
-        return h('div', { 'data-testid': 'panel-nodePanel', style: 'padding: 8px' }, 'Node Panel (placeholder)')
-      },
-    }),
+    nodePanel: NodePanel,
     dataTable: defineComponent({
       render() {
         return h('div', { 'data-testid': 'panel-dataTable', style: 'padding: 8px' }, 'Data Table (placeholder)')
@@ -65,7 +62,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
   api.addPanel({
     id: 'nodePanel',
     component: 'nodePanel',
-    title: 'Node Panel',
+    title: 'Nodes',
     initialWidth: 320,
     position: { referencePanel: 'canvas', direction: 'right' },
   })
@@ -121,7 +118,7 @@ function getPanelAddOptions(key: string) {
     case 'tools':
       return { id: 'tools', component: 'tools', title: 'Tools', initialWidth: 320, position: { direction: 'left' as const } }
     case 'nodePanel':
-      return { id: 'nodePanel', component: 'nodePanel', title: 'Node Panel', initialWidth: 320, position: { direction: 'right' as const } }
+      return { id: 'nodePanel', component: 'nodePanel', title: 'Nodes', initialWidth: 320, position: { direction: 'right' as const } }
     case 'dataTable':
       return { id: 'dataTable', component: 'dataTable', title: 'Data Table', initialHeight: 250, position: { direction: 'below' as const } }
     case 'logger': {
@@ -144,7 +141,7 @@ defineExpose({ dockviewApi })
     <MenuBar />
     <div class="dockview-wrapper">
       <DockviewVue
-        class-name="dockview-theme-light"
+        class-name="dockview-theme-abyss"
         @ready="onDockviewReady"
       />
     </div>

@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 
 export const useUIStore = defineStore('ui', () => {
   const selectedNodeIds = ref<string[]>([])
+  const graphNodes = ref<any[]>([])
   const activeWorkflowName = ref<string | null>(null)
   const hasUnsavedChanges = ref(false)
   const isExecutionLocked = ref(false)
@@ -37,6 +38,10 @@ export const useUIStore = defineStore('ui', () => {
     selectedNodeIds.value = []
   }
 
+  function setGraphNodes(nodes: any[]) {
+    graphNodes.value = nodes
+  }
+
   function setActiveWorkflow(name: string | null) {
     activeWorkflowName.value = name
   }
@@ -59,6 +64,7 @@ export const useUIStore = defineStore('ui', () => {
 
   return {
     selectedNodeIds,
+    graphNodes,
     activeWorkflowName,
     hasUnsavedChanges,
     isExecutionLocked,
@@ -69,6 +75,7 @@ export const useUIStore = defineStore('ui', () => {
     tabTitle,
     setSelectedNodes,
     clearSelection,
+    setGraphNodes,
     setActiveWorkflow,
     markDirty,
     markClean,

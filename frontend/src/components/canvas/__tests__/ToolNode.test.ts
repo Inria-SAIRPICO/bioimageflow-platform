@@ -45,6 +45,8 @@ function makeData(overrides: Record<string, unknown> = {}) {
     collapsed: false,
     enabled: true,
     connectedInputs: {} as Record<string, string>,
+    pinnedInputs: { image: true } as Record<string, boolean>,
+    output_templates: {} as Record<string, string>,
     ...overrides,
   }
 }
@@ -119,6 +121,20 @@ describe('ToolNode', () => {
     expect(w.emitted('context-menu')).toBeTruthy()
   })
 
+  it('synthesizes a default output pin for DataFrameTool with empty outputs', () => {
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      inputs: {},
+      outputs: {},
+    })
+    const data = makeData({ tool })
+    const w = factory(data)
+    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    expect(outputPins).toHaveLength(1)
+    expect(outputPins[0].props('fieldName')).toBe('result')
+    expect(outputPins[0].props('fieldType')).toBe('DataFrame')
+  })
+
   it('renders DataFrameTool positional pins', () => {
     const tool = makeTool({
       tool_type: 'DataFrameTool',
@@ -150,5 +166,60 @@ describe('ToolNode', () => {
   it('does not show GPU badge without gpu resource', () => {
     const w = factory()
     expect(w.find('.gpu-badge').exists()).toBe(false)
+  })
+
+  // --- Category badge ---
+
+  it('shows category badge when categories are present', () => {
+    const tool = makeTool({ categories: ['Filtering', 'Enhancement'] })
+    const w = factory(makeData({ tool }))
+    expect(w.find('.category-badge').exists()).toBe(true)
+    expect(w.find('.category-badge').text()).toBe('Filtering')
+  })
+
+  it('does not show category badge when categories are empty', () => {
+    const w = factory()
+    expect(w.find('.category-badge').exists()).toBe(false)
+  })
+
+  // --- Dynamic positional pin compaction ---
+
+  it('shows correct number of positional pins with gaps compacted', () => {
+    // After reindexing, __positional_0 and __positional_2 become 0 and 1
+    // positionalInputCount = connected count + 1 spare
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      inputs: {},
+    })
+    const data = makeData({
+      tool,
+      connectedInputs: {
+        __positional_0: 'A.output',
+        __positional_1: 'B.output',
+      },
+    })
+    const w = factory(data)
+    const positionalPins = w
+      .findAllComponents({ name: 'InputPin' })
+      .filter((p) => p.props('positional') === true)
+    // 2 connected + 1 spare = 3
+    expect(positionalPins).toHaveLength(3)
+  })
+
+  it('shows single spare pin when no positional inputs connected', () => {
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      inputs: {},
+    })
+    const data = makeData({
+      tool,
+      connectedInputs: {},
+    })
+    const w = factory(data)
+    const positionalPins = w
+      .findAllComponents({ name: 'InputPin' })
+      .filter((p) => p.props('positional') === true)
+    // 0 connected + 1 spare = 1
+    expect(positionalPins).toHaveLength(1)
   })
 })

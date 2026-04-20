@@ -15,14 +15,12 @@ const color = computed(() => getTypeColor(props.fieldType))
   <div class="output-pin" :title="fieldType">
     <span class="pin-label">{{ fieldName }}</span>
     <span class="type-badge">{{ fieldType }}</span>
-    <span
-      class="pin-dot"
-      :style="{ backgroundColor: color }"
-    />
     <Handle
       type="source"
       :position="Position.Right"
       :id="fieldName"
+      class="pin-handle"
+      :style="{ backgroundColor: color, borderColor: color }"
     />
   </div>
 </template>
@@ -49,10 +47,13 @@ const color = computed(() => getTypeColor(props.fieldType))
   background: rgba(128, 128, 128, 0.2);
 }
 
-.pin-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.pin-handle {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  border: 2px solid !important;
+  position: relative !important;
+  right: -7px !important;
+  transform: none !important;
 }
 </style>

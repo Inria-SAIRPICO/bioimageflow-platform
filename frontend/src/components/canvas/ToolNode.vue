@@ -13,6 +13,8 @@ export interface NodeData {
   collapsed: boolean
   enabled: boolean
   connectedInputs: Record<string, string>
+  pinnedInputs: Record<string, boolean>
+  output_templates: Record<string, string>
   provisional?: boolean
 }
 
@@ -28,7 +30,7 @@ const emit = defineEmits<{
 
 const connectableInputs = computed(() => {
   return Object.entries(props.data.tool.inputs).filter(
-    ([, field]) => field.connectable,
+    ([name, field]) => field.connectable && (props.data.pinnedInputs[name] !== false),
   )
 })
 
@@ -46,7 +48,11 @@ const positionalInputCount = computed(() => {
 })
 
 const outputs = computed(() => {
-  return Object.entries(props.data.tool.outputs)
+  const toolOutputs = props.data.tool.outputs
+  if (isDataFrameTool.value && Object.keys(toolOutputs).length === 0) {
+    return [['result', { type: 'DataFrame' }]]
+  }
+  return Object.entries(toolOutputs)
 })
 
 const statusClass = computed(() => {
@@ -85,6 +91,7 @@ function onContextMenu(event: MouseEvent) {
   >
     <div class="node-header" @dblclick="toggleCollapse">
       <span class="node-name">{{ data.name }}</span>
+      <span class="category-badge" v-if="data.tool?.categories?.length">{{ data.tool.categories[0] }}</span>
       <span v-if="hasGpu" class="gpu-badge">GPU</span>
     </div>
 
@@ -124,12 +131,12 @@ function onContextMenu(event: MouseEvent) {
 
 <style scoped>
 .tool-node {
-  background: #ffffff;
-  border: 2px solid #dee2e6;
+  background: var(--p-surface-0);
+  border: 2px solid var(--p-content-border-color);
   border-radius: 8px;
   min-width: 160px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  color: #334155;
+  color: var(--p-text-color);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
@@ -138,10 +145,10 @@ function onContextMenu(event: MouseEvent) {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--p-surface-200);
   cursor: pointer;
   user-select: none;
-  background: #f8fafc;
+  background: var(--p-surface-50);
   border-radius: 6px 6px 0 0;
 }
 
@@ -150,12 +157,21 @@ function onContextMenu(event: MouseEvent) {
   font-size: 13px;
 }
 
+.category-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--p-primary-50);
+  color: var(--p-primary-color);
+  margin-left: 4px;
+}
+
 .gpu-badge {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: #ff9500;
-  color: #000;
+  background: var(--p-orange-500);
+  color: var(--p-surface-0);
   font-weight: 700;
 }
 
@@ -176,20 +192,20 @@ function onContextMenu(event: MouseEvent) {
 
 /* Status */
 .status-unexecuted {
-  border-color: #4A90D9;
+  border-color: var(--p-blue-500);
 }
 .status-executed {
-  border-color: #34C759;
+  border-color: var(--p-green-500);
 }
 .status-out-of-date {
-  border-color: #FF9500;
+  border-color: var(--p-orange-500);
 }
 .status-running {
-  border-color: #4A90D9;
+  border-color: var(--p-blue-500);
   animation: pulse 1.5s ease-in-out infinite;
 }
 .status-failed {
-  border-color: #FF3B30;
+  border-color: var(--p-red-500);
 }
 
 @keyframes pulse {
@@ -208,5 +224,12 @@ function onContextMenu(event: MouseEvent) {
 .collapsed .node-header {
   border-bottom: none;
   border-radius: 6px;
+}
+</style>
+
+<style>
+.vue-flow__node-tool.selected .tool-node {
+  border-color: var(--p-primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-primary-color) 25%, transparent);
 }
 </style>

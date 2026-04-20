@@ -9,6 +9,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'enable-toggle': []
+  'rename': []
   'delete': []
   'create-sub-workflow': []
   'close': []
@@ -46,6 +47,9 @@ onUnmounted(() => {
     :style="{ left: `${position.x}px`, top: `${position.y}px` }"
   >
     <ul>
+      <li @click="emit('rename')">
+        Rename
+      </li>
       <li @click="emit('enable-toggle')">
         {{ enabled ? 'Disable' : 'Enable' }}
       </li>
@@ -62,13 +66,13 @@ onUnmounted(() => {
 <style scoped>
 .node-context-menu {
   position: absolute;
-  background: #2a2a2a;
-  border: 1px solid #555;
-  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   padding: 4px 0;
   z-index: 100;
   min-width: 160px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 ul {
@@ -81,10 +85,10 @@ li {
   padding: 6px 14px;
   cursor: pointer;
   font-size: 13px;
-  color: #eee;
+  color: #334155;
 }
 
 li:hover {
-  background: #444;
+  background: #f1f5f9;
 }
 </style>

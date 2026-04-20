@@ -13,47 +13,58 @@ describe('NodeContextMenu', () => {
     })
   }
 
-  it('renders three menu items', () => {
+  it('renders four menu items', () => {
     const w = factory()
     const items = w.findAll('li')
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(4)
+  })
+
+  it('shows "Rename" as first item', () => {
+    const w = factory()
+    expect(w.findAll('li')[0].text()).toBe('Rename')
   })
 
   it('shows "Disable" when enabled', () => {
     const w = factory(true)
-    expect(w.findAll('li')[0].text()).toBe('Disable')
+    expect(w.findAll('li')[1].text()).toBe('Disable')
   })
 
   it('shows "Enable" when disabled', () => {
     const w = factory(false)
-    expect(w.findAll('li')[0].text()).toBe('Enable')
+    expect(w.findAll('li')[1].text()).toBe('Enable')
   })
 
   it('shows "Create Sub-workflow" item', () => {
     const w = factory()
-    expect(w.findAll('li')[1].text()).toBe('Create Sub-workflow')
+    expect(w.findAll('li')[2].text()).toBe('Create Sub-workflow')
   })
 
   it('shows "Delete" item', () => {
     const w = factory()
-    expect(w.findAll('li')[2].text()).toBe('Delete')
+    expect(w.findAll('li')[3].text()).toBe('Delete')
   })
 
-  it('emits enable-toggle on first item click', async () => {
+  it('emits rename on first item click', async () => {
     const w = factory()
     await w.findAll('li')[0].trigger('click')
+    expect(w.emitted('rename')).toBeTruthy()
+  })
+
+  it('emits enable-toggle on second item click', async () => {
+    const w = factory()
+    await w.findAll('li')[1].trigger('click')
     expect(w.emitted('enable-toggle')).toBeTruthy()
   })
 
-  it('emits create-sub-workflow on second item click', async () => {
+  it('emits create-sub-workflow on third item click', async () => {
     const w = factory()
-    await w.findAll('li')[1].trigger('click')
+    await w.findAll('li')[2].trigger('click')
     expect(w.emitted('create-sub-workflow')).toBeTruthy()
   })
 
-  it('emits delete on third item click', async () => {
+  it('emits delete on fourth item click', async () => {
     const w = factory()
-    await w.findAll('li')[2].trigger('click')
+    await w.findAll('li')[3].trigger('click')
     expect(w.emitted('delete')).toBeTruthy()
   })
 

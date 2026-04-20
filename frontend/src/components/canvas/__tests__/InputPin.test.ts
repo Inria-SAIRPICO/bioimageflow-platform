@@ -29,12 +29,12 @@ describe('InputPin', () => {
 
   it('adds .connected class when connected', () => {
     const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: true })
-    expect(w.find('.pin-dot').classes()).toContain('connected')
+    expect(w.find('.pin-handle').classes()).toContain('connected')
   })
 
   it('does not add .connected class when disconnected', () => {
     const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
-    expect(w.find('.pin-dot').classes()).not.toContain('connected')
+    expect(w.find('.pin-handle').classes()).not.toContain('connected')
   })
 
   it('shows sourceLabel when connected', () => {
@@ -47,10 +47,22 @@ describe('InputPin', () => {
     expect(w.find('.pin-label').text()).toBe('Loader.output')
   })
 
-  it('applies correct background-color from getTypeColor', () => {
+  it('applies correct border-color from getTypeColor', () => {
     const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
-    const dot = w.find('.pin-dot')
-    expect(dot.attributes('style')).toContain('background-color: rgb(74, 144, 217)')
+    const handle = w.find('.pin-handle')
+    expect(handle.attributes('style')).toContain('border-color: rgb(74, 144, 217)')
+  })
+
+  it('fills background when connected', () => {
+    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: true })
+    const handle = w.find('.pin-handle')
+    expect(handle.attributes('style')).toContain('background-color: rgb(74, 144, 217)')
+  })
+
+  it('transparent background when disconnected', () => {
+    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
+    const handle = w.find('.pin-handle')
+    expect(handle.attributes('style')).toContain('background-color: transparent')
   })
 
   it('shows positional index number in positional mode', () => {

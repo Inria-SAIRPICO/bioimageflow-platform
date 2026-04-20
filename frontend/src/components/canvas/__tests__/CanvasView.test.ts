@@ -48,6 +48,8 @@ let mockNodes: any[] = []
 let mockEdges: any[] = []
 let connectHandler: ((connection: any) => void) | null = null
 let selectionHandler: ((params: any) => void) | null = null
+let dragStartHandler: ((event: any) => void) | null = null
+let dragStopHandler: ((event: any) => void) | null = null
 
 vi.mock('@vue-flow/core', () => {
   const VueFlow = defineComponent({
@@ -69,10 +71,15 @@ vi.mock('@vue-flow/core', () => {
         const idSet = new Set(ids)
         mockEdges = mockEdges.filter((e: any) => !idSet.has(e.id))
       },
+      setNodes: (nodes: any[]) => { mockNodes = [...nodes] },
+      setEdges: (edges: any[]) => { mockEdges = [...edges] },
       getNodes: computed(() => mockNodes),
       getEdges: computed(() => mockEdges),
       onConnect: (handler: any) => { connectHandler = handler },
       onNodesChange: (handler: any) => { selectionHandler = handler },
+      onEdgeUpdateEnd: vi.fn(),
+      onNodeDragStart: (handler: any) => { dragStartHandler = handler },
+      onNodeDragStop: (handler: any) => { dragStopHandler = handler },
       fitView: vi.fn(),
     }),
     Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -92,6 +99,7 @@ vi.mock('@/composables/useGraphSync', () => ({
     syncGraph: vi.fn(),
     flushNow: vi.fn(),
     patchParameters: vi.fn(),
+    loadWorkflow: vi.fn().mockResolvedValue(null),
     validationResult: ref(null),
     isPending: ref(false),
   }),
@@ -118,6 +126,8 @@ describe('CanvasView', () => {
     mockEdges = []
     connectHandler = null
     selectionHandler = null
+    dragStartHandler = null
+    dragStopHandler = null
   })
 
   // --- Task 6: Core Vue Flow Setup ---
@@ -268,6 +278,8 @@ describe('CanvasView', () => {
       expect(node.data.collapsed).toBe(false)
       expect(node.data.enabled).toBe(true)
       expect(node.data.connectedInputs).toEqual({})
+      expect(node.data.pinnedInputs).toEqual({ image: true })  // ImagePath + required => true
+      expect(node.data.output_templates).toEqual({ result: '' })  // no default on output
       w.unmount()
     })
 
@@ -510,6 +522,78 @@ describe('CanvasView', () => {
       vm.selectAll()
 
       expect(mockNodes.every((n: any) => n.selected)).toBe(true)
+      w.unmount()
+    })
+  })
+
+  // --- Task 7/8: Node drag undo ---
+
+  describe('node drag undo', () => {
+    it('registers drag start and stop handlers', () => {
+      const w = mountCanvas()
+      expect(dragStartHandler).not.toBeNull()
+      expect(dragStopHandler).not.toBeNull()
+      w.unmount()
+    })
+
+    it('emits graph-changed when a node is moved', () => {
+      mockNodes = [
+        { id: 'a', selected: false, data: { name: 'A', toolName: 'gaussian_blur' }, position: { x: 0, y: 0 } },
+      ]
+
+      const w = mountCanvas()
+
+      // Simulate drag start
+      dragStartHandler!({ nodes: [{ id: 'a', position: { x: 0, y: 0 } }] })
+
+      // Simulate drag stop with new position
+      dragStopHandler!({ nodes: [{ id: 'a', position: { x: 50, y: 50 } }] })
+
+      expect(w.emitted('graph-changed')).toBeTruthy()
+      w.unmount()
+    })
+
+    it('does not emit graph-changed when position unchanged', () => {
+      mockNodes = [
+        { id: 'a', selected: false, data: { name: 'A', toolName: 'gaussian_blur' }, position: { x: 10, y: 20 } },
+      ]
+
+      const w = mountCanvas()
+
+      dragStartHandler!({ nodes: [{ id: 'a', position: { x: 10, y: 20 } }] })
+      dragStopHandler!({ nodes: [{ id: 'a', position: { x: 10, y: 20 } }] })
+
+      // graph-changed should NOT have been emitted by drag (only by initial setup if any)
+      expect(w.emitted('graph-changed')).toBeFalsy()
+      w.unmount()
+    })
+
+    it('handles multi-node drag as single undo step', () => {
+      mockNodes = [
+        { id: 'a', selected: true, data: { name: 'A' }, position: { x: 0, y: 0 } },
+        { id: 'b', selected: true, data: { name: 'B' }, position: { x: 100, y: 0 } },
+      ]
+
+      const w = mountCanvas()
+
+      dragStartHandler!({
+        nodes: [
+          { id: 'a', position: { x: 0, y: 0 } },
+          { id: 'b', position: { x: 100, y: 0 } },
+        ],
+      })
+
+      dragStopHandler!({
+        nodes: [
+          { id: 'a', position: { x: 50, y: 50 } },
+          { id: 'b', position: { x: 150, y: 50 } },
+        ],
+      })
+
+      // Should emit exactly one graph-changed event for the multi-node drag
+      const events = w.emitted('graph-changed')
+      expect(events).toBeTruthy()
+      expect(events!.length).toBe(1)
       w.unmount()
     })
   })

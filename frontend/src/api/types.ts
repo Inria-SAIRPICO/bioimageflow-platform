@@ -10,14 +10,17 @@ export interface InputFieldSchema {
   connectable: boolean
   default?: unknown
   description?: string
+  optional?: boolean
   min?: number
   max?: number
   step?: number
   group?: string
+  choices?: string[] | null
 }
 
 export interface OutputFieldSchema {
   type: string
+  default?: string
 }
 
 export interface ToolMetadata {

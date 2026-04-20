@@ -1,0 +1,87 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import PrimeVue from 'primevue/config'
+import Aura from '@primevue/themes/aura'
+import MenuBar from '../MenuBar.vue'
+import { useUIStore } from '@/stores/ui'
+
+// PrimeVue Menubar uses matchMedia for responsive behavior
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+})
+
+let pinia: ReturnType<typeof createPinia>
+
+function mountMenuBar() {
+  return mount(MenuBar, {
+    global: {
+      plugins: [pinia, [PrimeVue, { theme: { preset: Aura } }]],
+    },
+  })
+}
+
+describe('MenuBar', () => {
+  beforeEach(() => {
+    pinia = createPinia()
+    setActivePinia(pinia)
+  })
+
+  it('renders a menubar element', () => {
+    const wrapper = mountMenuBar()
+    expect(wrapper.find('[data-testid="app-menubar"]').exists()).toBe(true)
+  })
+
+  it('has 5 top-level menu items', () => {
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+    expect(vm.menuItems).toHaveLength(5)
+    const labels = vm.menuItems.map((item: any) => item.label)
+    expect(labels).toEqual(['Workflow', 'Edit', 'Execution', 'View', 'Help'])
+  })
+
+  it('View menu has 4 panel toggle items', () => {
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+    const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
+    expect(viewMenu.items).toHaveLength(4)
+    const toggleLabels = viewMenu.items.map((item: any) => item.label)
+    expect(toggleLabels).toEqual(['Tools Panel', 'Nodes', 'Data Table', 'Logger'])
+  })
+
+  it('View toggle items reflect uiStore.panels state', () => {
+    const store = useUIStore()
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+    const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
+    const toolsToggle = viewMenu.items.find((item: any) => item.label === 'Tools Panel')
+
+    expect(toolsToggle.icon).toBe('pi pi-check')
+    store.togglePanel('tools')
+    const viewMenuAfter = vm.menuItems.find((item: any) => item.label === 'View')
+    const toolsToggleAfter = viewMenuAfter.items.find((item: any) => item.label === 'Tools Panel')
+    expect(toolsToggleAfter.icon).toBeUndefined()
+  })
+
+  it('View toggle item calls uiStore.togglePanel', () => {
+    const store = useUIStore()
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+    const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
+    const toolsToggle = viewMenu.items.find((item: any) => item.label === 'Tools Panel')
+
+    expect(store.panels.tools).toBe(true)
+    toolsToggle.command()
+    expect(store.panels.tools).toBe(false)
+  })
+})

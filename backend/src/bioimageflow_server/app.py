@@ -17,6 +17,10 @@ from bioimageflow_server.routers.dev import (
     router as dev_router,
 )
 from bioimageflow_server.routers.filesystem import router as filesystem_router
+from bioimageflow_server.routers.graph import (
+    get_tool_registry as graph_get_tool_registry,
+    router as graph_router,
+)
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
@@ -83,6 +87,7 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
     app.include_router(tools_router, prefix="/api/v1")
     app.include_router(dev_router, prefix="/api/v1")
     app.include_router(filesystem_router, prefix="/api/v1")
+    app.include_router(graph_router, prefix="/api/v1")
 
     # ---- Wire dependency overrides from config ----
     registry = config.tool_registry or ToolRegistryService()
@@ -90,6 +95,7 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
         registry.scan_tool_store()
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
+    app.dependency_overrides[graph_get_tool_registry] = lambda: registry
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

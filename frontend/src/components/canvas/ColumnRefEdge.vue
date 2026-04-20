@@ -33,6 +33,13 @@ const strokeColor = computed(() => {
 
 <template>
   <path
+    :d="path"
+    stroke="transparent"
+    stroke-width="12"
+    fill="none"
+    class="vue-flow__edge-interaction"
+  />
+  <path
     :id="id"
     class="vue-flow__edge-path"
     :d="path"

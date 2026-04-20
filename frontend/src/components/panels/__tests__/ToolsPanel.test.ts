@@ -96,6 +96,8 @@ function mountPanel() {
         Column: true,
         InputText: true,
         Button: true,
+        Dialog: true,
+        Tag: true,
         CreateToolDialog: true,
         ConfirmDialog: true,
       },
@@ -119,6 +121,31 @@ describe('ToolsPanel', () => {
   it('renders create tool button', () => {
     const wrapper = mountPanel()
     expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(true)
+  })
+
+  it('renders manage tools button', () => {
+    const wrapper = mountPanel()
+    expect(wrapper.find('[data-testid="manage-tools-btn"]').exists()).toBe(true)
+  })
+
+  it('showManageDialog toggles via manage tools button', async () => {
+    const wrapper = mountPanel()
+    const vm = wrapper.vm as unknown as { showManageDialog: boolean }
+    expect(vm.showManageDialog).toBe(false)
+    vm.showManageDialog = true
+    await wrapper.vm.$nextTick()
+    expect(vm.showManageDialog).toBe(true)
+  })
+
+  it('renders tool list items for each tool', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as { filteredTools: ToolMetadata[] }
+    expect(vm.filteredTools).toHaveLength(3)
   })
 
   it('treeNodes groups tools by package', async () => {
@@ -266,17 +293,17 @@ describe('ToolsPanel', () => {
 
     const vm = wrapper.vm as unknown as {
       toggleDocumentation: (name: string) => void
-      showDocumentation: Record<string, boolean>
-      toolDocumentation: Record<string, string>
+      activeDoc: string | null
+      getDocumentation: (name: string) => string
     }
 
     vm.toggleDocumentation('threshold')
-    expect(vm.showDocumentation['threshold']).toBe(true)
-    expect(vm.toolDocumentation['threshold']).toBe('Apply threshold to an image')
+    expect(vm.activeDoc).toBe('threshold')
+    expect(vm.getDocumentation('threshold')).toBe('Apply threshold to an image')
 
     // Toggle off
     vm.toggleDocumentation('threshold')
-    expect(vm.showDocumentation['threshold']).toBe(false)
+    expect(vm.activeDoc).toBeNull()
   })
 
   it('openInEditor calls source and editor APIs in desktop mode', async () => {

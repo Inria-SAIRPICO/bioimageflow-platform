@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { GraphState, ValidationResult } from '@/api/types'
+import type { ValidationResult } from '@/api/types'
 
 vi.mock('@/api/client', () => ({
   api: {
@@ -9,13 +9,45 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { api } from '@/api/client'
-import { useGraphSync } from '../useGraphSync'
+import { useGraphSync, serializeGraph } from '../useGraphSync'
 
 const mockedPut = vi.mocked(api.put)
 const mockedPatch = vi.mocked(api.patch)
 
-const makeGraph = (id = '1'): GraphState => ({
-  nodes: [{ id, name: 'n', tool_name: 't', position: [0, 0], parameters: {} }],
+/**
+ * Build a Vue Flow-shaped graph (the format emitGraphChanged produces).
+ */
+const makeVueFlowGraph = (id = '1') => ({
+  nodes: [{
+    id,
+    type: 'tool',
+    position: { x: 10, y: 20 },
+    data: {
+      name: 'n',
+      toolName: 't',
+      parameters: {},
+      enabled: true,
+      collapsed: false,
+      output_templates: {},
+    },
+  }],
+  edges: [],
+})
+
+/**
+ * The backend-format graph that the serializer should produce from makeVueFlowGraph.
+ */
+const expectedBackendGraph = (id = '1') => ({
+  nodes: [{
+    id,
+    name: 'n',
+    tool_name: 't',
+    position: [10, 20],
+    parameters: {},
+    output_templates: {},
+    enabled: true,
+    collapsed: false,
+  }],
   edges: [],
 })
 
@@ -40,17 +72,17 @@ describe('useGraphSync', () => {
     mockedPut.mockResolvedValue({ data: makeValidation() })
     const { syncGraph } = useGraphSync()
 
-    syncGraph(makeGraph('1'))
-    syncGraph(makeGraph('2'))
-    syncGraph(makeGraph('3'))
+    syncGraph(makeVueFlowGraph('1'))
+    syncGraph(makeVueFlowGraph('2'))
+    syncGraph(makeVueFlowGraph('3'))
 
     expect(mockedPut).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(300)
 
     expect(mockedPut).toHaveBeenCalledTimes(1)
-    // Should use the last graph passed
-    expect(mockedPut).toHaveBeenCalledWith('/api/v1/graph', makeGraph('3'))
+    // Should serialize the last graph to backend format
+    expect(mockedPut).toHaveBeenCalledWith('/api/v1/graph', expectedBackendGraph('3'))
   })
 
   it('supersedes in-flight requests', async () => {
@@ -64,12 +96,12 @@ describe('useGraphSync', () => {
     const { syncGraph, validationResult } = useGraphSync()
 
     // First call
-    syncGraph(makeGraph('1'))
+    syncGraph(makeVueFlowGraph('1'))
     await vi.advanceTimersByTimeAsync(300)
     expect(mockedPut).toHaveBeenCalledTimes(1)
 
     // Second call while first is in-flight
-    syncGraph(makeGraph('2'))
+    syncGraph(makeVueFlowGraph('2'))
     await vi.advanceTimersByTimeAsync(300)
     expect(mockedPut).toHaveBeenCalledTimes(2)
 
@@ -89,7 +121,7 @@ describe('useGraphSync', () => {
     mockedPut.mockResolvedValue({ data: makeValidation(true) })
     const { syncGraph, validationResult } = useGraphSync()
 
-    syncGraph(makeGraph())
+    syncGraph(makeVueFlowGraph())
     await vi.advanceTimersByTimeAsync(300)
 
     expect(validationResult.value).toEqual(makeValidation(true))
@@ -99,7 +131,7 @@ describe('useGraphSync', () => {
     mockedPut.mockResolvedValue({ data: makeValidation() })
     const { syncGraph, flushNow } = useGraphSync()
 
-    syncGraph(makeGraph())
+    syncGraph(makeVueFlowGraph())
     expect(mockedPut).not.toHaveBeenCalled()
 
     await flushNow()
@@ -114,7 +146,7 @@ describe('useGraphSync', () => {
 
     expect(isPending.value).toBe(false)
 
-    syncGraph(makeGraph())
+    syncGraph(makeVueFlowGraph())
     flushNow() // fire immediately, don't await
 
     await vi.advanceTimersByTimeAsync(0)
@@ -135,5 +167,96 @@ describe('useGraphSync', () => {
       '/api/v1/graph/nodes/node_1/parameters',
       { threshold: 0.5 },
     )
+  })
+})
+
+describe('serializeGraph', () => {
+  it('converts Vue Flow node position {x,y} to backend [x,y]', () => {
+    const result = serializeGraph({
+      nodes: [{
+        id: 'n1',
+        position: { x: 100, y: 200 },
+        data: {
+          name: 'My Node',
+          toolName: 'threshold',
+          parameters: { level: 0.5 },
+          enabled: true,
+          collapsed: false,
+          output_templates: { mask: '{input}_mask' },
+        },
+      }],
+      edges: [],
+    })
+    expect(result.nodes).toEqual([{
+      id: 'n1',
+      name: 'My Node',
+      tool_name: 'threshold',
+      position: [100, 200],
+      parameters: { level: 0.5 },
+      output_templates: { mask: '{input}_mask' },
+      enabled: true,
+      collapsed: false,
+    }])
+  })
+
+  it('serializes column_ref edges', () => {
+    const result = serializeGraph({
+      nodes: [],
+      edges: [{
+        id: 'e1',
+        source: 'n1',
+        target: 'n2',
+        sourceHandle: 'image',
+        targetHandle: 'input_image',
+        type: 'column_ref',
+      }],
+    })
+    expect(result.edges).toEqual([{
+      type: 'column_ref',
+      id: 'e1',
+      source_node: 'n1',
+      target_node: 'n2',
+      source_output: 'image',
+      target_input: 'input_image',
+    }])
+  })
+
+  it('serializes positional edges, extracting index from handle name', () => {
+    const result = serializeGraph({
+      nodes: [],
+      edges: [{
+        id: 'e2',
+        source: 'n1',
+        target: 'n2',
+        sourceHandle: 'output',
+        targetHandle: '__positional_3',
+        type: 'positional',
+      }],
+    })
+    expect(result.edges).toEqual([{
+      type: 'positional',
+      id: 'e2',
+      source_node: 'n1',
+      target_node: 'n2',
+      positional_index: 3,
+    }])
+  })
+
+  it('defaults positional_index to 0 when handle has no valid index', () => {
+    const result = serializeGraph({
+      nodes: [],
+      edges: [{
+        id: 'e3',
+        source: 'n1',
+        target: 'n2',
+        sourceHandle: null,
+        targetHandle: null,
+        type: 'positional',
+      }],
+    })
+    expect(result.edges[0]).toMatchObject({
+      type: 'positional',
+      positional_index: 0,
+    })
   })
 })

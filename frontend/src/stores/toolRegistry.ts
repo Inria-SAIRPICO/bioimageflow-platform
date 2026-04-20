@@ -34,15 +34,25 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
 
   function searchTools(query: string): ToolMetadata[] {
     if (!query) return tools.value
-    const q = query.toLowerCase()
+    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean)
     return tools.value.filter((t) => {
-      return (
-        t.name.toLowerCase().includes(q) ||
-        t.display_name.toLowerCase().includes(q) ||
-        t.tags.some((tag) => tag.toLowerCase().includes(q)) ||
-        t.categories.some((cat) => cat.toLowerCase().includes(q))
-      )
+      const haystack = [
+        t.name,
+        t.display_name,
+        ...t.tags,
+        ...t.categories,
+      ]
+        .join(' ')
+        .toLowerCase()
+      return tokens.every((token) => haystack.includes(token))
     })
+  }
+
+  function getEnvStatusForTool(toolName: string): string {
+    const tool = tools.value.find((t) => t.name === toolName)
+    if (!tool) return 'unknown'
+    const pkg = packages.value.find((p) => p.name === tool.package)
+    return pkg?.environment_status ?? 'unknown'
   }
 
   return {
@@ -53,5 +63,6 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     fetchPackages,
     getToolByName,
     searchTools,
+    getEnvStatusForTool,
   }
 })

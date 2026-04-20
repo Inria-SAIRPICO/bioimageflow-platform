@@ -23,7 +23,7 @@ describe('ColumnRefEdge', () => {
     const w = mount(ColumnRefEdge, {
       props: { ...baseEdgeProps, data: { type: 'ImagePath' } } as any,
     })
-    const path = w.find('path')
+    const path = w.find('.vue-flow__edge-path')
     expect(path.exists()).toBe(true)
     expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
   })
@@ -32,21 +32,31 @@ describe('ColumnRefEdge', () => {
     const w = mount(ColumnRefEdge, {
       props: { ...baseEdgeProps, data: { type: 'ImagePath' } } as any,
     })
-    expect(w.find('path').attributes('stroke')).toBe('#4A90D9')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke')).toBe('#4A90D9')
   })
 
   it('applies default stroke color for unknown type', () => {
     const w = mount(ColumnRefEdge, {
       props: { ...baseEdgeProps, data: { type: 'Unknown' } } as any,
     })
-    expect(w.find('path').attributes('stroke')).toBe('#8E8E93')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke')).toBe('#8E8E93')
   })
 
   it('uses stroke-width 2', () => {
     const w = mount(ColumnRefEdge, {
       props: { ...baseEdgeProps, data: { type: 'str' } } as any,
     })
-    expect(w.find('path').attributes('stroke-width')).toBe('2')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke-width')).toBe('2')
+  })
+
+  it('renders an invisible interaction path for easier clicking', () => {
+    const w = mount(ColumnRefEdge, {
+      props: { ...baseEdgeProps, data: { type: 'str' } } as any,
+    })
+    const interaction = w.find('.vue-flow__edge-interaction')
+    expect(interaction.exists()).toBe(true)
+    expect(interaction.attributes('stroke-width')).toBe('12')
+    expect(interaction.attributes('stroke')).toBe('transparent')
   })
 })
 
@@ -55,7 +65,7 @@ describe('PositionalEdge', () => {
     const w = mount(PositionalEdge, {
       props: baseEdgeProps as any,
     })
-    const path = w.find('path')
+    const path = w.find('.vue-flow__edge-path')
     expect(path.exists()).toBe(true)
     expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
   })
@@ -64,20 +74,29 @@ describe('PositionalEdge', () => {
     const w = mount(PositionalEdge, {
       props: baseEdgeProps as any,
     })
-    expect(w.find('path').attributes('stroke')).toBe('#8E8E93')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke')).toBe('#8E8E93')
   })
 
   it('has dashed stroke', () => {
     const w = mount(PositionalEdge, {
       props: baseEdgeProps as any,
     })
-    expect(w.find('path').attributes('stroke-dasharray')).toBe('5 3')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke-dasharray')).toBe('5 3')
   })
 
   it('uses stroke-width 2', () => {
     const w = mount(PositionalEdge, {
       props: baseEdgeProps as any,
     })
-    expect(w.find('path').attributes('stroke-width')).toBe('2')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke-width')).toBe('2')
+  })
+
+  it('renders an invisible interaction path for easier clicking', () => {
+    const w = mount(PositionalEdge, {
+      props: baseEdgeProps as any,
+    })
+    const interaction = w.find('.vue-flow__edge-interaction')
+    expect(interaction.exists()).toBe(true)
+    expect(interaction.attributes('stroke-width')).toBe('12')
   })
 })

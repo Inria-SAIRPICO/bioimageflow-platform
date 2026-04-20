@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, markRaw, toRef } from 'vue'
+import { ref, watch, markRaw, onMounted } from 'vue'
 import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -7,6 +7,7 @@ import ToolNode from './ToolNode.vue'
 import ColumnRefEdge from './ColumnRefEdge.vue'
 import PositionalEdge from './PositionalEdge.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
+import { useUIStore } from '@/stores/ui'
 import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
 import { serializeSelection, deserializeSelection } from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
@@ -29,6 +30,7 @@ const edgeTypes = {
 }
 
 const toolRegistryStore = useToolRegistryStore()
+const uiStore = useUIStore()
 
 const {
   project,
@@ -38,29 +40,85 @@ const {
   removeEdges,
   getNodes,
   getEdges,
+  setNodes,
+  setEdges,
   onConnect,
   onNodesChange,
+  onEdgeUpdateEnd,
+  onNodeDragStart,
+  onNodeDragStop,
   fitView,
 } = useVueFlow()
 
-const { syncGraph, flushNow } = useGraphSync()
+const { syncGraph, flushNow, loadWorkflow } = useGraphSync()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
 
 const clipboardData = ref<ClipboardData | null>(null)
 const canvasRef = ref<HTMLDivElement | null>(null)
+const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
+
+// --- Restore persisted workflow on mount ---
+
+onMounted(async () => {
+  const saved = await loadWorkflow()
+  if (saved && saved.nodes.length > 0) {
+    setNodes(saved.nodes)
+    setEdges(saved.edges)
+    syncGraph({ nodes: saved.nodes, edges: saved.edges })
+  }
+})
+
+// --- Node drag tracking (undo support) ---
+
+onNodeDragStart(({ nodes }) => {
+  const positions: Record<string, { x: number; y: number }> = {}
+  for (const node of nodes) {
+    positions[node.id] = { x: node.position.x, y: node.position.y }
+  }
+  dragStartPositions.value = positions
+})
+
+onNodeDragStop(({ nodes }) => {
+  const start = dragStartPositions.value
+  const moved = nodes.some((node) => {
+    const prev = start[node.id]
+    if (!prev) return true
+    return prev.x !== node.position.x || prev.y !== node.position.y
+  })
+  if (moved) {
+    emitGraphChanged()
+  }
+  dragStartPositions.value = {}
+})
 
 // --- Connection handling ---
 
 onConnect((connection) => {
+  const targetHandle = connection.targetHandle ?? ''
+  const isPositional = targetHandle.startsWith('__positional_')
   const newEdge = {
-    id: `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`,
+    id: `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${targetHandle}`,
     source: connection.source,
     target: connection.target,
     sourceHandle: connection.sourceHandle,
-    targetHandle: connection.targetHandle,
-    type: 'column_ref',
+    targetHandle,
+    type: isPositional ? 'positional' : 'column_ref',
   }
   addEdges([newEdge])
+
+  // Update connectedInputs on target node
+  const targetNode = getNodes.value.find((n: any) => n.id === connection.target)
+  if (targetNode) {
+    const sourceNode = getNodes.value.find((n: any) => n.id === connection.source)
+    const sourceLabel = sourceNode
+      ? `${sourceNode.data?.name ?? sourceNode.id}.${connection.sourceHandle ?? 'output'}`
+      : ''
+    targetNode.data.connectedInputs = {
+      ...targetNode.data.connectedInputs,
+      [targetHandle]: sourceLabel,
+    }
+  }
+
   emitGraphChanged()
 })
 
@@ -70,9 +128,87 @@ onNodesChange((changes) => {
     const selectedIds = getNodes.value
       .filter((n: any) => n.selected)
       .map((n: any) => n.id)
+    uiStore.setSelectedNodes(selectedIds)
     emit('node-selected', selectedIds)
   }
 })
+
+// Sync graph nodes to UI store for NodePanel
+watch(getNodes, (nodes) => {
+  uiStore.setGraphNodes(nodes)
+}, { deep: true })
+
+// Edge disconnect: dragging a connected handle to empty space
+onEdgeUpdateEnd(({ edge }) => {
+  removeEdges([edge.id])
+  cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+  emitGraphChanged()
+})
+
+// --- Connected-input bookkeeping ---
+
+/**
+ * After an edge targeting `targetHandle` on `nodeId` is removed,
+ * remove that key from connectedInputs and, for positional inputs,
+ * reindex the remaining entries so there are no gaps.
+ */
+function cleanupDisconnectedInput(nodeId: string, targetHandle: string) {
+  const node = getNodes.value.find((n: any) => n.id === nodeId)
+  if (!node) return
+
+  const ci = { ...node.data.connectedInputs }
+  delete ci[targetHandle]
+
+  if (targetHandle.startsWith('__positional_')) {
+    reindexPositionalInputs(node, ci)
+  } else {
+    node.data.connectedInputs = ci
+  }
+}
+
+/**
+ * Compact positional entries so they are numbered 0..N-1 without gaps.
+ * Also updates the targetHandle on the corresponding edges.
+ */
+function reindexPositionalInputs(
+  node: any,
+  ci: Record<string, string>,
+) {
+  // Collect currently connected positional entries, sorted by old index
+  const positionalEntries = Object.entries(ci)
+    .filter(([k]) => k.startsWith('__positional_'))
+    .sort(([a], [b]) => {
+      const ai = parseInt(a.replace('__positional_', ''), 10)
+      const bi = parseInt(b.replace('__positional_', ''), 10)
+      return ai - bi
+    })
+
+  // Remove all old positional keys
+  for (const key of Object.keys(ci)) {
+    if (key.startsWith('__positional_')) {
+      delete ci[key]
+    }
+  }
+
+  // Re-insert with compact indices and update edges
+  positionalEntries.forEach(([oldKey, label], newIndex) => {
+    const newKey = `__positional_${newIndex}`
+    ci[newKey] = label
+
+    if (oldKey !== newKey) {
+      // Update the corresponding edge's targetHandle
+      const edge = getEdges.value.find(
+        (e: any) => e.target === node.id && e.targetHandle === oldKey,
+      )
+      if (edge) {
+        edge.targetHandle = newKey
+        edge.id = `e-${edge.source}-${edge.sourceHandle}-${edge.target}-${newKey}`
+      }
+    }
+  })
+
+  node.data.connectedInputs = ci
+}
 
 // --- Validation ---
 
@@ -180,6 +316,25 @@ function onAddNode({
     }
   }
 
+  // Build default pinned state from connectable inputs
+  // Only default to pinned (true) for required Path-type fields
+  const pinnedInputs: Record<string, boolean> = {}
+  for (const [key, field] of Object.entries(tool.inputs)) {
+    if (field.connectable) {
+      const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
+      const isRequired = !field.optional
+      pinnedInputs[key] = isPathType && isRequired
+    }
+  }
+
+  // Build default output templates for path-typed outputs
+  const output_templates: Record<string, string> = {}
+  for (const [key, field] of Object.entries(tool.outputs)) {
+    if (['Path', 'ImagePath', 'MaskPath'].includes(field.type)) {
+      output_templates[key] = field.default || ''
+    }
+  }
+
   const newNode = {
     id,
     type: 'tool',
@@ -193,6 +348,8 @@ function onAddNode({
       collapsed: false,
       enabled: true,
       connectedInputs: {},
+      pinnedInputs,
+      output_templates,
     },
   }
 
@@ -208,6 +365,10 @@ function deleteSelected() {
     // Delete selected edges
     const selectedEdges = getEdges.value.filter((e: any) => e.selected)
     if (selectedEdges.length === 0) return
+    // Clean up connectedInputs for each removed edge
+    for (const edge of selectedEdges) {
+      cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+    }
     removeEdges(selectedEdges.map((e: any) => e.id))
     emitGraphChanged()
     return
@@ -219,6 +380,14 @@ function deleteSelected() {
   const edgesToRemove = getEdges.value.filter(
     (e: any) => selectedNodeIds.has(e.source) || selectedNodeIds.has(e.target),
   )
+
+  // Clean up connectedInputs on surviving target nodes
+  for (const edge of edgesToRemove) {
+    if (!selectedNodeIds.has(edge.target)) {
+      cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+    }
+  }
+
   removeEdges(edgesToRemove.map((e: any) => e.id))
   removeNodes(selectedNodes.map((n: any) => n.id))
   emitGraphChanged()
@@ -268,6 +437,22 @@ function pasteFromClipboard() {
   // Create Vue Flow nodes from deserialized data
   const newNodes = deserialized.nodes.map((n) => {
     const tool = toolRegistryStore.getToolByName(n.tool_name)
+    const pinnedInputs: Record<string, boolean> = {}
+    const output_templates: Record<string, string> = {}
+    if (tool) {
+      for (const [key, field] of Object.entries(tool.inputs)) {
+        if (field.connectable) {
+          const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
+          const isRequired = !field.optional
+          pinnedInputs[key] = isPathType && isRequired
+        }
+      }
+      for (const [key, field] of Object.entries(tool.outputs)) {
+        if (['Path', 'ImagePath', 'MaskPath'].includes(field.type)) {
+          output_templates[key] = field.default || ''
+        }
+      }
+    }
     return {
       id: n.id,
       type: 'tool',
@@ -281,6 +466,8 @@ function pasteFromClipboard() {
         collapsed: false,
         enabled: true,
         connectedInputs: {},
+        pinnedInputs,
+        output_templates,
       },
     }
   })
@@ -332,7 +519,9 @@ function handleKeydown(event: KeyboardEvent) {
   if (meta && event.shiftKey && (event.key === 'z' || event.key === 'Z')) {
     const state = undoRedo.redo()
     if (state) {
-      emit('graph-changed', state)
+      setNodes(state.nodes)
+      setEdges(state.edges)
+      syncGraph(state as any)
     }
     return
   }
@@ -340,7 +529,9 @@ function handleKeydown(event: KeyboardEvent) {
   if (meta && event.key === 'z') {
     const state = undoRedo.undo()
     if (state) {
-      emit('graph-changed', state)
+      setNodes(state.nodes)
+      setEdges(state.edges)
+      syncGraph(state as any)
     }
     return
   }
@@ -395,7 +586,8 @@ defineExpose({
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
       :is-valid-connection="isValidConnection"
-      :selection-key-code="null"
+      :selection-key-code="'Shift'"
+      :edges-updatable="true"
       fit-view-on-init
     >
       <Background :variant="'dots'" :gap="16" :size="1" />

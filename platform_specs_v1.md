@@ -126,7 +126,7 @@ The backend calls `get_inputs_schema(tool)` (from `bioimageflow.validation`) to 
 
 The `connectable`, `min`, `max`, `step`, and `group` fields come from `GUIMeta` annotations on the tool's `Inputs` fields. Fields without `GUIMeta` default to `connectable: true` (backward-compatible). See `bioimageflow_core.tool.GUIMeta`.
 
-**Endpoint roles:** `GET /tools` returns tool-level metadata (inputs schema, outputs, environment) for graph construction and the Node Panel. `GET /tools/packages` returns package-level metadata (installed/available versions, environment status) for the Tools Panel table. The data intentionally overlaps (both include package name and version) for convenience — the frontend uses `GET /tools/packages` to populate the Tools Panel, and `GET /tools` to resolve tool schemas when building nodes.
+**Endpoint roles:** `GET /tools` returns tool-level metadata (inputs schema, outputs, environment) for graph construction and the Node Panel. `GET /tools/packages` returns package-level metadata (installed/available versions, environment status) for the Tools Panel tool list and Manage Tools dialog. The data intentionally overlaps (both include package name and version) for convenience — the frontend uses `GET /tools/packages` to populate the Tools Panel, and `GET /tools` to resolve tool schemas when building nodes.
 
 **Example tool definition with GUIMeta:**
 ```python
@@ -634,6 +634,7 @@ Unsaved workflow changes are not auto-saved to disk on shutdown. The frontend au
 - **DAG Editor:** Vue Flow
 - **Layout:** Dockview (dockable, resizable panels)
 - **UI Components:** PrimeVue
+- **Styling:** The entire styles of the app should be managed by a PrimeVue theme, and almost no custom CSS should be added concerning styles. Use PrimeVue CSS variables (e.g., `--p-surface-*`, `--p-text-color`, `--p-primary-color`) for any custom styling that is absolutely necessary.
 - **State management:** Vue Flow owns graph state (nodes, edges). Pinia for non-graph state (settings, tool registry, execution status). Graph state is not duplicated in Pinia.
 
 ### 3.2 Layout
@@ -742,46 +743,58 @@ For **DataFrameTool** nodes: positional upstream connections appear as numbered 
 
 ### 3.4 Tools Panel (Left Sidebar)
 
-Displays the available tools in a PrimeVue table.
+Displays the available tools in a two-tier layout: a minimalist tool list for everyday use, and a full management dialog for package/version administration.
 
-**Layout (top to bottom):**
-1. **Search bar:** Fuzzy search filtering by name, tags, categories, and keywords.
-2. **Tool table:** A hierarchical table where Python packages are parent rows and individual tools are children.
+**Panel layout (top to bottom):**
 
-**Columns:**
+1. **Search bar** (with margins): Fuzzy search filtering by name, tags, categories, and keywords. This is not simple substring matching — it uses fuzzy matching so that partial or approximate terms still surface relevant results.
 
-| Column | Content |
-|--------|---------|
-| **Package / Name** | Package name on parent row, tool name on child rows |
-| **Categories** | Tool categories |
-| **Tags** | Tool tags |
-| **Versions** | Package versions (on parent row). Expandable version list (see below). |
-| **Actions** | Icon buttons (see below) |
+2. **Tool list:** A flat, scrollable list of tools. Each row contains:
 
-**Version management (on package parent row):**
+   | Element | Description |
+   |---------|-------------|
+   | **Tool display_name** | Primary label. The row is **draggable** onto the canvas and **clickable** to create a node at a default position. |
+   | **Info icon-button** | Opens detailed documentation for the tool (modal). |
+   | **Env status dot** | Colored indicator for the tool's environment state: stopped (gray), creating (yellow), running (green). |
+   | **Category label** | Shown below the tool name. |
+   | **Tags labels** | Shown below the tool name, next to category. |
 
-Expanding the package row reveals a **version list** showing all known versions (installed and available). Each version row contains:
+   **Important:** Environments are per-tool, not per-package. Each tool row shows its own environment indicator and start/stop toggle, even if multiple tools share the same underlying environment.
+
+3. **"Manage tools" button** in the panel header: Opens a PrimeVue **Dialog** (modal) containing the full tool management interface (see below).
+
+4. **"Create tool" button** at the bottom of the panel (with margins): Opens the tool creation workflow.
+
+**Manage Tools Dialog:**
+
+The dialog presents a hierarchical **TreeTable** with package rows (parents) and tool rows (children).
+
+**Package rows (parent):**
 
 | Element | Description |
 |---------|-------------|
-| **Version number** | e.g., "1.2.0" |
-| **Install/Uninstall toggle** | Install button for uninstalled versions, Uninstall button for installed versions. Shows spinning icon during installation. Installation can be interrupted (stop button). |
-| **Use in workflow** button | Sets this version as the active version for the current workflow. Only available for installed versions. When clicked, if the workflow already uses a different version of this package, a confirmation dialog is shown: "Changing {package} from {old_version} to {new_version} will mark {N} nodes as out-of-date. Their cached results will need re-execution. Continue?" |
-| **Active indicator** | Checkmark icon shown on the version currently used by the active workflow |
+| **Package name** | The package identifier |
+| **Categories** | Package-level categories |
+| **Tags** | Package-level tags |
+| **Version dropdown** | Lists all known versions (installed and available). Each version entry has an **Install/Uninstall toggle** — install button for uninstalled versions, uninstall button for installed ones. Shows spinning icon during installation. Installation can be interrupted (stop button). |
+| **"Use in workflow" button** | Sets the selected version as the active version for the current workflow. Only available for installed versions. When clicked, if the workflow already uses a different version of this package, a confirmation dialog is shown: "Changing {package} from {old_version} to {new_version} will mark {N} nodes as out-of-date. Their cached results will need re-execution. Continue?" |
 
 Multiple versions of the same package can be installed simultaneously. Each workflow uses **one version per package**, selected via the "Use in workflow" button.
 
-**Action buttons:**
+**Tool rows (children):**
 
-| Button | Scope | Description |
-|--------|-------|-------------|
-| **Info** | Tool or package | Show detailed documentation (modal or expandable row) |
-| **Open in editor** | Tool | Open the tool's source in the external editor |
-| **Start/Stop env** | Package | Start or stop the Wetlands environment. Button color/label reflects state: stopped (gray) / creating (yellow) / running (green). |
+| Element | Description |
+|---------|-------------|
+| **Tool name** | The tool's display name |
+| **Info button** | Show detailed documentation (modal) |
+| **Env status indicator** | Colored dot: stopped (gray) / creating (yellow) / running (green) |
+| **Start/Stop toggle** | Start or stop the tool's Wetlands environment |
 
-**Drag and drop:** Tools can be dragged from the table onto the canvas to create nodes.
+**Important:** Environments are per-tool, not per-package. Each tool row in the TreeTable shows its own env indicator and start/stop toggle, even if multiple tools share the same underlying environment.
 
 ### 3.5 Node Panel (Right Sidebar)
+
+Title: Nodes.
 
 Displays details and parameters for the currently selected node(s).
 
@@ -816,6 +829,7 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | **Label** | Field name (human-readable) |
 | **Default button** | Resets the field to its default value |
 | **None toggle** | Two-state button (only shown if the field is `Optional`). When active, the value is `None` and the input field is hidden. |
+| **Connectable checkbox** | Only shown if the input is `connectable`. Tells whether the input pin is visible or not. Important note: GUIMeta.connectable is a field which says if this checkbox should appear, and this checkbox says if the pin should be visible or not. |
 | **Input field** | The actual value editor (hidden when connected or None). Type depends on the field annotation (see below). |
 | **Help text** | Collapsible description from field metadata |
 
@@ -1181,11 +1195,11 @@ On load, the server reports missing packages in the load response. The frontend 
 |---|--------|----------|-----------|
 | 1 | `GET` | `/api/v1/tools` | Startup; after package install/uninstall |
 | 2 | `GET` | `/api/v1/tools/{tool_name}/source` | "Open in editor" button in Tools Panel |
-| 3 | `GET` | `/api/v1/tools/packages` | Startup; Tools Panel package list |
-| 4 | `POST` | `/api/v1/tools/packages/{name}/install` | Install button in Tools Panel; version change |
-| 5 | `DELETE` | `/api/v1/tools/packages/{name}` | Uninstall button in Tools Panel |
-| 6 | `POST` | `/api/v1/tools/environments/{name}/start` | Start env button in Tools Panel; pre-warming |
-| 7 | `POST` | `/api/v1/tools/environments/{name}/stop` | Stop env button in Tools Panel; freeing resources |
+| 3 | `GET` | `/api/v1/tools/packages` | Startup; Tools Panel tool list and Manage Tools dialog |
+| 4 | `POST` | `/api/v1/tools/packages/{name}/install` | Install button in Manage Tools dialog; version change |
+| 5 | `DELETE` | `/api/v1/tools/packages/{name}` | Uninstall button in Manage Tools dialog |
+| 6 | `POST` | `/api/v1/tools/environments/{name}/start` | Start env toggle in Tools Panel / Manage Tools dialog; pre-warming |
+| 7 | `POST` | `/api/v1/tools/environments/{name}/stop` | Stop env toggle in Tools Panel / Manage Tools dialog; freeing resources |
 | 8 | `GET` | `/api/v1/workflows` | Startup; "Open workflow" menu |
 | 9 | `POST` | `/api/v1/workflows` | "New workflow" menu; startup (if no existing workflow) |
 | 10 | `GET` | `/api/v1/workflows/{name}` | Opening a saved workflow |

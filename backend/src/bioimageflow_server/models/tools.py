@@ -21,14 +21,17 @@ class InputFieldSchema(BaseModel):
     connectable: bool = True
     default: Any = None
     description: str = ""
+    optional: bool = False
     min: float | None = None
     max: float | None = None
     step: float | None = None
     group: str | None = None
+    choices: list[str] | None = None
 
 
 class OutputFieldSchema(BaseModel):
     type: str
+    default: str | None = None
 
 
 # --- Tool metadata ---
