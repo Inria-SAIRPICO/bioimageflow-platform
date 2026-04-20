@@ -334,9 +334,10 @@ defineExpose({
       header="Manage Tools"
       modal
       :style="{ width: '80vw' }"
+      content-class="manage-tools-dialog-content"
       data-testid="manage-tools-dialog"
     >
-      <TreeTable :value="treeNodes" class="mt-2">
+      <TreeTable :value="treeNodes" class="manage-tools-tree mt-2">
         <Column field="display_name" header="Name" expander>
           <template #body="{ node }">
             <span>{{ node.data.display_name }}</span>
@@ -431,25 +432,27 @@ defineExpose({
         </Column>
       </TreeTable>
 
-      <!-- Documentation panel inside dialog -->
-      <div
-        v-if="manageActiveDoc"
-        :data-testid="`manage-tool-doc-${manageActiveDoc}`"
-        class="tool-documentation manage-tool-documentation"
-      >
-        <div class="tool-documentation-header">
-          <h4>{{ manageActiveDoc }}</h4>
-          <Button
-            icon="pi pi-times"
-            text
-            size="small"
-            class="tool-doc-close-btn"
-            data-testid="manage-tool-doc-close"
-            @click="manageActiveDoc = null"
-          />
+      <!-- Documentation panel docked at the bottom of the modal, always visible -->
+      <template #footer>
+        <div
+          v-if="manageActiveDoc"
+          :data-testid="`manage-tool-doc-${manageActiveDoc}`"
+          class="tool-documentation manage-tool-documentation"
+        >
+          <div class="tool-documentation-header">
+            <h4>{{ manageActiveDoc }}</h4>
+            <Button
+              icon="pi pi-times"
+              text
+              size="small"
+              class="tool-doc-close-btn"
+              data-testid="manage-tool-doc-close"
+              @click="manageActiveDoc = null"
+            />
+          </div>
+          <p>{{ getDocumentation(manageActiveDoc) }}</p>
         </div>
-        <p>{{ getDocumentation(manageActiveDoc) }}</p>
-      </div>
+      </template>
     </Dialog>
 
     <CreateToolDialog
@@ -642,6 +645,21 @@ defineExpose({
 }
 
 .manage-tool-documentation {
-  margin-top: 8px;
+  margin: 0;
+  width: 100%;
+}
+
+/* Constrain the dialog content so the footer (info panel) stays visible
+   and only the TreeTable scrolls. */
+:global(.manage-tools-dialog-content) {
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+  overflow: hidden;
+}
+:global(.manage-tools-dialog-content .manage-tools-tree) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 </style>
