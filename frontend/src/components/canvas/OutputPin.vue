@@ -53,7 +53,6 @@ const color = computed(() => getTypeColor(props.fieldType))
   border-radius: 50% !important;
   border: 2px solid !important;
   position: relative !important;
-  right: -7px !important;
   transform: none !important;
 }
 </style>

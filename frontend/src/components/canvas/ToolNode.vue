@@ -100,6 +100,7 @@ function onContextMenu(event: MouseEvent) {
         <InputPin
           v-for="[name, field] in connectableInputs"
           :key="name"
+          :node-id="id"
           :field-name="name"
           :field-type="field.type"
           :connected="name in data.connectedInputs"
@@ -109,6 +110,7 @@ function onContextMenu(event: MouseEvent) {
           v-if="isDataFrameTool"
           v-for="i in positionalInputCount"
           :key="`__positional_${i - 1}`"
+          :node-id="id"
           :field-name="`__positional_${i - 1}`"
           field-type="DataFrame"
           :connected="`__positional_${i - 1}` in data.connectedInputs"
@@ -150,6 +152,7 @@ function onContextMenu(event: MouseEvent) {
   user-select: none;
   background: var(--p-surface-50);
   border-radius: 6px 6px 0 0;
+  margin: 0.5px;
 }
 
 .node-name {
@@ -176,7 +179,7 @@ function onContextMenu(event: MouseEvent) {
 }
 
 .node-body {
-  padding: 6px 10px;
+  padding: 6px 6px;
 }
 
 .inputs,

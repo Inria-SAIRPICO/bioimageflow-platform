@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Handle, Position } from '@vue-flow/core'
+import { computed, inject } from 'vue'
+import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { getTypeColor } from '@/utils/typeColors'
 
 const props = defineProps<{
+  nodeId: string
   fieldName: string
   fieldType: string
   connected: boolean
@@ -11,6 +12,12 @@ const props = defineProps<{
   positional?: boolean
   positionalIndex?: number
 }>()
+
+const { getEdges } = useVueFlow()
+const disconnectEdge = inject<((edgeId: string) => void) | undefined>(
+  'bioimageflow:disconnectEdge',
+  undefined,
+)
 
 const color = computed(() => getTypeColor(props.fieldType))
 
@@ -23,10 +30,52 @@ const label = computed(() => {
   }
   return props.fieldName
 })
+
+/**
+ * Grabbing a connected input pin detaches the edge and re-starts the
+ * connection drag from the upstream source, so the edge follows the cursor.
+ * Dropping on another input pin reconnects; dropping on empty canvas deletes.
+ * Unconnected pins fall through to Vue Flow's default (start a new connection
+ * from the target side).
+ */
+function onPointerDown(event: PointerEvent) {
+  const target = event.target as HTMLElement | null
+  if (!target?.closest('.vue-flow__handle')) return
+  if (!props.connected) return
+
+  const existing = getEdges.value.find(
+    (e: any) => e.target === props.nodeId && e.targetHandle === props.fieldName,
+  )
+  if (!existing) return
+
+  const sourceEl = document.querySelector<HTMLElement>(
+    `.vue-flow__node[data-id="${existing.source}"] ` +
+      `.vue-flow__handle[data-handleid="${existing.sourceHandle}"]`,
+  )
+  if (!sourceEl) return
+
+  event.stopPropagation()
+
+  disconnectEdge?.(existing.id)
+
+  sourceEl.dispatchEvent(
+    new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      pointerId: event.pointerId,
+      button: event.button,
+      buttons: event.buttons,
+      pointerType: event.pointerType,
+      isPrimary: event.isPrimary,
+    }),
+  )
+}
 </script>
 
 <template>
-  <div class="input-pin" :title="fieldType">
+  <div class="input-pin" :title="fieldType" @pointerdown.capture="onPointerDown">
     <Handle
       type="target"
       :position="Position.Left"
@@ -43,7 +92,7 @@ const label = computed(() => {
 .input-pin {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   position: relative;
   padding: 2px 0;
 }
@@ -55,7 +104,6 @@ const label = computed(() => {
   border: 2px solid !important;
   background: transparent !important;
   position: relative !important;
-  left: -7px !important;
   transform: none !important;
 }
 

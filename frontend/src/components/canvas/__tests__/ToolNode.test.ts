@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, computed } from 'vue'
 import ToolNode from '../ToolNode.vue'
 import type { ToolMetadata } from '@/api/types'
 
@@ -8,9 +8,12 @@ vi.mock('@vue-flow/core', () => ({
   Handle: defineComponent({
     name: 'Handle',
     props: ['type', 'position', 'id'],
-    template: '<div class="mock-handle" />',
+    template: '<div class="mock-handle vue-flow__handle" />',
   }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
+  useVueFlow: () => ({
+    getEdges: computed(() => []),
+  }),
 }))
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
@@ -69,6 +72,7 @@ describe('ToolNode', () => {
     const pins = w.findAllComponents({ name: 'InputPin' })
     expect(pins).toHaveLength(1)
     expect(pins[0].props('fieldName')).toBe('image')
+    expect(pins[0].props('nodeId')).toBe('node-1')
   })
 
   it('renders output pins for all outputs', () => {

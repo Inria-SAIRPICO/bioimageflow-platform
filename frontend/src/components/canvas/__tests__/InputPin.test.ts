@@ -1,20 +1,36 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, computed } from 'vue'
 import InputPin from '../InputPin.vue'
+
+let mockEdges: any[] = []
 
 vi.mock('@vue-flow/core', () => ({
   Handle: defineComponent({
     name: 'Handle',
     props: ['type', 'position', 'id'],
-    template: '<div class="mock-handle" />',
+    template: '<div class="mock-handle vue-flow__handle" />',
   }),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
+  useVueFlow: () => ({
+    getEdges: computed(() => mockEdges),
+  }),
 }))
 
 describe('InputPin', () => {
-  function factory(props: Record<string, unknown>) {
-    return mount(InputPin, { props: props as any })
+  beforeEach(() => {
+    mockEdges = []
+  })
+
+  function factory(props: Record<string, unknown>, disconnectEdge?: (id: string) => void) {
+    return mount(InputPin, {
+      props: { nodeId: 'node-1', ...props } as any,
+      global: {
+        provide: disconnectEdge
+          ? { 'bioimageflow:disconnectEdge': disconnectEdge }
+          : undefined,
+      },
+    })
   }
 
   it('renders field name as label when disconnected', () => {
@@ -85,5 +101,78 @@ describe('InputPin', () => {
       positionalIndex: 3,
     })
     expect(w.find('.pin-label').text()).toBe('4')
+  })
+
+  // --- Drag-to-disconnect gesture ---
+
+  describe('pointerdown gesture', () => {
+    it('disconnects the incoming edge when a connected handle is grabbed', async () => {
+      mockEdges = [
+        {
+          id: 'e_src_node-1',
+          source: 'src',
+          target: 'node-1',
+          sourceHandle: 'output',
+          targetHandle: 'image',
+        },
+      ]
+      // Provide a fake source handle the component can find and dispatch onto
+      const sourceNode = document.createElement('div')
+      sourceNode.className = 'vue-flow__node'
+      sourceNode.setAttribute('data-id', 'src')
+      const sourceHandle = document.createElement('div')
+      sourceHandle.className = 'vue-flow__handle'
+      sourceHandle.setAttribute('data-handleid', 'output')
+      sourceNode.appendChild(sourceHandle)
+      document.body.appendChild(sourceNode)
+
+      const disconnectEdge = vi.fn()
+      const w = factory(
+        {
+          fieldName: 'image',
+          fieldType: 'ImagePath',
+          connected: true,
+          sourceLabel: 'Src.output',
+        },
+        disconnectEdge,
+      )
+
+      const handleEl = w.find('.pin-handle').element as HTMLElement
+      handleEl.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 50,
+          clientY: 50,
+          pointerId: 1,
+          isPrimary: true,
+        }),
+      )
+
+      expect(disconnectEdge).toHaveBeenCalledWith('e_src_node-1')
+      document.body.removeChild(sourceNode)
+    })
+
+    it('does not call disconnect when the pin is not connected', () => {
+      const disconnectEdge = vi.fn()
+      const w = factory(
+        { fieldName: 'image', fieldType: 'ImagePath', connected: false },
+        disconnectEdge,
+      )
+
+      const handleEl = w.find('.pin-handle').element as HTMLElement
+      handleEl.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 50,
+          clientY: 50,
+          pointerId: 1,
+          isPrimary: true,
+        }),
+      )
+
+      expect(disconnectEdge).not.toHaveBeenCalled()
+    })
   })
 })
