@@ -66,8 +66,8 @@ onUnmounted(() => {
 <style scoped>
 .node-context-menu {
   position: absolute;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--p-content-background);
+  border: 1px solid var(--p-content-border-color);
   border-radius: 8px;
   padding: 4px 0;
   z-index: 100;
@@ -85,10 +85,10 @@ li {
   padding: 6px 14px;
   cursor: pointer;
   font-size: 13px;
-  color: #334155;
+  color: var(--p-text-color);
 }
 
 li:hover {
-  background: #f1f5f9;
+  background: var(--p-surface-100);
 }
 </style>

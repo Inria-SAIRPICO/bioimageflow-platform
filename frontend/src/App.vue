@@ -26,6 +26,7 @@ export default defineComponent({
 <script setup lang="ts">
 import { watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
+import { themeLight } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import { useUIStore } from './stores/ui'
 
@@ -141,7 +142,7 @@ defineExpose({ dockviewApi })
     <MenuBar />
     <div class="dockview-wrapper">
       <DockviewVue
-        class-name="dockview-theme-abyss"
+        :theme="themeLight"
         @ready="onDockviewReady"
       />
     </div>
