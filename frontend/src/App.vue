@@ -31,6 +31,7 @@ import MenuBar from './components/layout/MenuBar.vue'
 import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetBrowserStore } from './stores/datasetBrowser'
+import { useFileDrop } from './composables/useFileDrop'
 
 const uiStore = useUIStore()
 const datasetBrowserStore = useDatasetBrowserStore()
@@ -39,6 +40,15 @@ const datasetBrowserStore = useDatasetBrowserStore()
 // the client-side pre-upload size check in DatasetBrowser. The authoritative
 // cap lives on the server — the component adds 10% headroom.
 const DEFAULT_SERVER_CAP = 2 * 1024 ** 3
+
+// Window-level file drop → Dataset Browser (browser mode) or direct Files
+// node creation (desktop mode). The canvas listens for `bif:drop-paths` to
+// actually add the node at the viewport center.
+useFileDrop({
+  onPaths: (paths) => {
+    window.dispatchEvent(new CustomEvent('bif:drop-paths', { detail: paths }))
+  },
+})
 
 // Sync document.title with uiStore.tabTitle
 watchEffect(() => {
