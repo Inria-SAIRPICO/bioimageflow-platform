@@ -113,3 +113,13 @@ def test_app_config_defaults():
     assert cfg.workflow_root is None
     assert cfg.deployment_mode == "desktop"
     assert cfg.package_installer is None
+    assert cfg.datasets_root is None
+    assert cfg.max_upload_size is None
+
+
+def test_app_config_dataset_overrides():
+    from pathlib import Path as _P
+
+    cfg = AppConfig(datasets_root=_P("/tmp/datasets"), max_upload_size=1_000_000)
+    assert cfg.datasets_root == _P("/tmp/datasets")
+    assert cfg.max_upload_size == 1_000_000

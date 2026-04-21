@@ -84,3 +84,5 @@ class AppConfig:
     deployment_mode: str = "desktop"
     package_installer: PackageInstallerService | None = None
     static_dir: Path | None = None
+    datasets_root: Path | None = None
+    max_upload_size: int | None = None

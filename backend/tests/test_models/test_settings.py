@@ -95,3 +95,37 @@ class TestSettings:
     def test_update_mode_accepts_version_string(self):
         s = Settings(deployment_mode="desktop", output_data_folder="/out", update_mode="1.5.0")
         assert s.update_mode == "1.5.0"
+
+    def test_datasets_root_defaults_to_none(self):
+        s = Settings(deployment_mode="desktop", output_data_folder="/out")
+        assert s.datasets_root is None
+
+    def test_datasets_root_accepts_explicit_path(self):
+        s = Settings(
+            deployment_mode="desktop",
+            output_data_folder="/out",
+            datasets_root="/data/datasets",
+        )
+        assert s.datasets_root == "/data/datasets"
+
+    def test_max_upload_size_default(self):
+        s = Settings(deployment_mode="desktop", output_data_folder="/out")
+        assert s.max_upload_size == 2 * 1024**3
+
+    def test_max_upload_size_override(self):
+        s = Settings(
+            deployment_mode="desktop", output_data_folder="/out", max_upload_size=500_000
+        )
+        assert s.max_upload_size == 500_000
+
+    def test_resolved_datasets_root_uses_output_folder_by_default(self):
+        s = Settings(deployment_mode="desktop", output_data_folder="/data/output")
+        assert s.resolved_datasets_root() == "/data/output/datasets"
+
+    def test_resolved_datasets_root_honors_explicit_value(self):
+        s = Settings(
+            deployment_mode="desktop",
+            output_data_folder="/data/output",
+            datasets_root="/elsewhere/datasets",
+        )
+        assert s.resolved_datasets_root() == "/elsewhere/datasets"
