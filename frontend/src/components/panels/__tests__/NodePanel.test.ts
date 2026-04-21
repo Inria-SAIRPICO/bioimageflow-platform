@@ -274,11 +274,22 @@ describe('NodePanel', () => {
       expect(w.find('.null-indicator').exists()).toBe(false)
     })
 
-    it('renders both file and folder buttons for plain Path', () => {
+    it('renders both file and folder buttons for plain Path in desktop mode', () => {
+      // @ts-expect-error -- install the pywebview desktop stub
+      window.pywebview = { api: mockPywebviewApi() }
+
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
       const w = mountPanel(data)
       expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(true)
       expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(true)
+    })
+
+    it('hides the folder button for plain Path in browser mode', () => {
+      // No window.pywebview — browser mode.
+      const data = makeNodeData({ tool: makePathTool(), parameters: {} })
+      const w = mountPanel(data)
+      expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(false)
     })
 
     it('renders only a file button for ImagePath (no folder button)', () => {
@@ -318,6 +329,44 @@ describe('NodePanel', () => {
 
       expect(api.select_folder).toHaveBeenCalledTimes(1)
       expect(data.parameters.work_dir).toBe('/absolute/chosen/dir')
+    })
+
+    it('passes image extensions to the native dialog for ImagePath fields', async () => {
+      const api = mockPywebviewApi()
+      api.select_file.mockResolvedValue('/chosen.tif')
+      // @ts-expect-error -- install the pywebview desktop stub
+      window.pywebview = { api }
+
+      const data = makeNodeData({
+        tool: makePathTool(),
+        parameters: {},
+        pinnedInputs: { input_image: true },
+      })
+      const w = mountPanel(data)
+
+      await w.find('[data-testid="select-file-input_image"]').trigger('click')
+      await flushPromises()
+
+      const [, fileTypes] = api.select_file.mock.calls[0]
+      expect(fileTypes).toEqual(
+        expect.arrayContaining(['*.tif', '*.tiff', '*.png', '*.jpg']),
+      )
+    })
+
+    it('passes no filter for plain Path fields', async () => {
+      const api = mockPywebviewApi()
+      api.select_file.mockResolvedValue('/chosen')
+      // @ts-expect-error -- install the pywebview desktop stub
+      window.pywebview = { api }
+
+      const data = makeNodeData({ tool: makePathTool(), parameters: {} })
+      const w = mountPanel(data)
+
+      await w.find('[data-testid="select-file-work_dir"]').trigger('click')
+      await flushPromises()
+
+      const [, fileTypes] = api.select_file.mock.calls[0]
+      expect(fileTypes).toEqual([])
     })
 
     it('does not overwrite the parameter when the user cancels the native dialog', async () => {

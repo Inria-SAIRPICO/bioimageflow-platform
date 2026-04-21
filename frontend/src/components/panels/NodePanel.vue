@@ -8,8 +8,19 @@ import Button from 'primevue/button'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
-import { selectFile, selectFolder } from '@/utils/nativeDialogs'
+import { usePathPicker } from '@/composables/usePathPicker'
 import type { InputFieldSchema, OutputFieldSchema } from '@/api/types'
+
+const { pickFile: pickFileNative, pickFolder: pickFolderNative, isDesktop } = usePathPicker()
+
+const IMAGE_EXTS = ['*.tif', '*.tiff', '*.png', '*.jpg', '*.jpeg', '*.czi', '*.lsm', '*.nd2', '*.ome.tif', '*.ome.tiff']
+const MASK_EXTS = ['*.tif', '*.tiff', '*.png']
+
+function fileTypesForField(type: string): string[] {
+  if (type === 'ImagePath') return IMAGE_EXTS
+  if (type === 'MaskPath') return MASK_EXTS
+  return []
+}
 
 const uiStore = useUIStore()
 
@@ -141,15 +152,18 @@ function isSliderField(field: InputFieldSchema): boolean {
   return field.type === 'float' && field.min != null && field.max != null && field.step != null
 }
 
-async function pickFile(key: string) {
-  const path = await selectFile(`Select ${key}`)
+async function pickFile(key: string, type: string) {
+  const path = await pickFileNative({
+    parameterName: key,
+    fileTypes: fileTypesForField(type),
+  })
   if (path !== null) {
     updateParameter(key, path)
   }
 }
 
 async function pickFolder(key: string) {
-  const path = await selectFolder(`Select ${key}`)
+  const path = await pickFolderNative({ parameterName: key })
   if (path !== null) {
     updateParameter(key, path)
   }
@@ -349,10 +363,10 @@ async function pickFolder(key: string) {
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select file"
                 :data-testid="`select-file-${key}`"
-                @click="pickFile(key)"
+                @click="pickFile(key, (field as InputFieldSchema).type)"
               />
               <Button
-                v-if="(field as InputFieldSchema).type === 'Path'"
+                v-if="(field as InputFieldSchema).type === 'Path' && isDesktop()"
                 icon="pi pi-folder-open"
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select folder"
