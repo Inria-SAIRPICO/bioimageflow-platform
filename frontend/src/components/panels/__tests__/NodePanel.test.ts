@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
@@ -231,6 +231,125 @@ describe('NodePanel', () => {
       const w = mountPanel(makeNodeData({ tool, output_templates: {} }))
       const templateInputs = w.findAll('[data-testid="output-template"]')
       expect(templateInputs.length).toBe(0)
+    })
+  })
+
+  // --- Path input: file/folder pickers (pywebview bridge) ---
+
+  describe('path input widgets', () => {
+    function mockPywebviewApi() {
+      return {
+        select_file: vi.fn(),
+        select_files: vi.fn(),
+        select_folder: vi.fn(),
+        save_file: vi.fn(),
+        set_title: vi.fn(),
+        reveal_path: vi.fn(),
+      }
+    }
+
+    afterEach(() => {
+      // @ts-expect-error -- cleanup the pywebview stub we installed
+      delete window.pywebview
+      vi.restoreAllMocks()
+    })
+
+    function makePathTool(): ToolMetadata {
+      return makeTool({
+        inputs: {
+          input_image: { type: 'ImagePath', connectable: true, description: 'Image file' },
+          work_dir: { type: 'Path', connectable: false, description: 'Working directory' },
+        },
+        outputs: { result: { type: 'ImagePath' } },
+      })
+    }
+
+    it('renders a text input and file button for ImagePath (non-optional, no default)', () => {
+      const data = makeNodeData({ tool: makePathTool(), parameters: {}, pinnedInputs: { input_image: true } })
+      const w = mountPanel(data)
+      // The widget must render — previously this rendered the "null" label
+      // because an undefined parameter was treated as nulled.
+      expect(w.find('[data-testid="path-input-input_image"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-file-input_image"]').exists()).toBe(true)
+      expect(w.find('.null-indicator').exists()).toBe(false)
+    })
+
+    it('renders both file and folder buttons for plain Path', () => {
+      const data = makeNodeData({ tool: makePathTool(), parameters: {} })
+      const w = mountPanel(data)
+      expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(true)
+    })
+
+    it('renders only a file button for ImagePath (no folder button)', () => {
+      const data = makeNodeData({ tool: makePathTool(), parameters: {}, pinnedInputs: { input_image: true } })
+      const w = mountPanel(data)
+      expect(w.find('[data-testid="select-file-input_image"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-folder-input_image"]').exists()).toBe(false)
+    })
+
+    it('calls the pywebview select_file bridge and stores the chosen path', async () => {
+      const api = mockPywebviewApi()
+      api.select_file.mockResolvedValue('/absolute/chosen/image.tif')
+      // @ts-expect-error -- install the pywebview desktop stub
+      window.pywebview = { api }
+
+      const data = makeNodeData({ tool: makePathTool(), parameters: {}, pinnedInputs: { input_image: true } })
+      const w = mountPanel(data)
+
+      await w.find('[data-testid="select-file-input_image"]').trigger('click')
+      await flushPromises()
+
+      expect(api.select_file).toHaveBeenCalledTimes(1)
+      expect(data.parameters.input_image).toBe('/absolute/chosen/image.tif')
+    })
+
+    it('calls the pywebview select_folder bridge and stores the chosen path', async () => {
+      const api = mockPywebviewApi()
+      api.select_folder.mockResolvedValue('/absolute/chosen/dir')
+      // @ts-expect-error -- install the pywebview desktop stub
+      window.pywebview = { api }
+
+      const data = makeNodeData({ tool: makePathTool(), parameters: {} })
+      const w = mountPanel(data)
+
+      await w.find('[data-testid="select-folder-work_dir"]').trigger('click')
+      await flushPromises()
+
+      expect(api.select_folder).toHaveBeenCalledTimes(1)
+      expect(data.parameters.work_dir).toBe('/absolute/chosen/dir')
+    })
+
+    it('does not overwrite the parameter when the user cancels the native dialog', async () => {
+      const api = mockPywebviewApi()
+      api.select_file.mockResolvedValue(null)
+      // @ts-expect-error -- install the pywebview desktop stub
+      window.pywebview = { api }
+
+      const data = makeNodeData({
+        tool: makePathTool(),
+        parameters: { input_image: '/existing/path.tif' },
+        pinnedInputs: { input_image: true },
+      })
+      const w = mountPanel(data)
+
+      await w.find('[data-testid="select-file-input_image"]').trigger('click')
+      await flushPromises()
+
+      expect(data.parameters.input_image).toBe('/existing/path.tif')
+    })
+
+    it('shows the current parameter value in the text input', () => {
+      const data = makeNodeData({
+        tool: makePathTool(),
+        parameters: { input_image: '/preset/image.tif' },
+        pinnedInputs: { input_image: true },
+      })
+      const w = mountPanel(data)
+      const input = w
+        .find('[data-testid="path-input-input_image"]')
+        .find('input')
+      expect((input.element as HTMLInputElement).value).toBe('/preset/image.tif')
     })
   })
 
