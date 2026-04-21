@@ -43,6 +43,7 @@ _STATUS_TO_ERROR: dict[int, str] = {
     404: "not_found",
     405: "method_not_allowed",
     409: "conflict",
+    413: "file_too_large",
     422: "validation_error",
     423: "locked",
     500: "internal_server_error",
@@ -64,11 +65,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-        error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
-        body = ErrorResponse(
-            error=error_code,
-            detail=str(exc.detail),
-        )
+        # Routers may pass `detail` as a dict {"error": "<code>", "detail": "..."}
+        # to override the default code mapping (e.g., "path_traversal" on 400).
+        if isinstance(exc.detail, dict) and "error" in exc.detail:
+            body = ErrorResponse(
+                error=exc.detail["error"],
+                detail=str(exc.detail.get("detail", "")),
+                field=exc.detail.get("field"),
+            )
+        else:
+            error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
+            body = ErrorResponse(
+                error=error_code,
+                detail=str(exc.detail),
+            )
         return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
     @app.exception_handler(RequestValidationError)
