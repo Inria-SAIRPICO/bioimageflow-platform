@@ -134,6 +134,35 @@ export interface OMEROInstance {
   username: string
 }
 
+export interface Dataset {
+  id: string
+  original_filename: string
+  path: string
+  size: number
+  upload_date: string
+  content_type: string | null
+}
+
+export interface UploadedFile {
+  id: string
+  original_filename: string
+  path: string
+  size: number
+  upload_date: string
+  content_type: string | null
+}
+
+export interface UploadError {
+  filename: string
+  error: string
+  detail: string
+}
+
+export interface UploadResponse {
+  uploaded: UploadedFile[]
+  errors: UploadError[]
+}
+
 export interface Settings {
   deployment_mode: 'desktop' | 'webapp'
   external_editor?: string | null
