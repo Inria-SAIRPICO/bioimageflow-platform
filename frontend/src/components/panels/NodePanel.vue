@@ -8,6 +8,7 @@ import Button from 'primevue/button'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
+import { selectFile, selectFolder } from '@/utils/nativeDialogs'
 import type { InputFieldSchema, OutputFieldSchema } from '@/api/types'
 
 const uiStore = useUIStore()
@@ -89,8 +90,12 @@ function toggleNull(key: string) {
 }
 
 function isFieldNulled(key: string): boolean {
-  if (nulledFields.value[key]) return true
   if (!nodeData.value) return false
+  const field = nodeData.value.tool?.inputs[key] as InputFieldSchema | undefined
+  // Non-optional fields are never in a "null" state — an undefined value just
+  // means "not yet set" and the widget should render so the user can set it.
+  if (!field?.optional) return false
+  if (nulledFields.value[key]) return true
   return nodeData.value.parameters[key] === null || nodeData.value.parameters[key] === undefined
 }
 
@@ -134,6 +139,20 @@ function hasChoices(field: InputFieldSchema): boolean {
 
 function isSliderField(field: InputFieldSchema): boolean {
   return field.type === 'float' && field.min != null && field.max != null && field.step != null
+}
+
+async function pickFile(key: string) {
+  const path = await selectFile(`Select ${key}`)
+  if (path !== null) {
+    updateParameter(key, path)
+  }
+}
+
+async function pickFolder(key: string) {
+  const path = await selectFolder(`Select ${key}`)
+  if (path !== null) {
+    updateParameter(key, path)
+  }
 }
 </script>
 
@@ -314,9 +333,36 @@ function isSliderField(field: InputFieldSchema): boolean {
               show-buttons
               @update:model-value="updateParameter(key, $event)"
             />
-            <!-- Text / path / non-connectable string input -->
+            <!-- Path-typed input: text input + native file/folder picker buttons -->
+            <div
+              v-else-if="isPathType((field as InputFieldSchema).type)"
+              class="path-input-row"
+              :data-testid="`path-input-${key}`"
+            >
+              <InputText
+                :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
+                class="path-input"
+                @update:model-value="updateParameter(key, $event)"
+              />
+              <Button
+                icon="pi pi-file"
+                class="p-button-text p-button-sm path-picker-btn"
+                title="Select file"
+                :data-testid="`select-file-${key}`"
+                @click="pickFile(key)"
+              />
+              <Button
+                v-if="(field as InputFieldSchema).type === 'Path'"
+                icon="pi pi-folder-open"
+                class="p-button-text p-button-sm path-picker-btn"
+                title="Select folder"
+                :data-testid="`select-folder-${key}`"
+                @click="pickFolder(key)"
+              />
+            </div>
+            <!-- Text / non-connectable string input -->
             <InputText
-              v-else-if="!(field as InputFieldSchema).connectable || (field as InputFieldSchema).type === 'str' || (field as InputFieldSchema).type === 'Path'"
+              v-else-if="!(field as InputFieldSchema).connectable || (field as InputFieldSchema).type === 'str'"
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               @update:model-value="updateParameter(key, $event)"
             />
@@ -660,6 +706,30 @@ h4 {
 /* Fix 19: Output template input */
 .output-template-input {
   width: 100%;
+  font-size: 12px;
+}
+
+/* Path input row: text + picker buttons */
+.path-input-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.path-picker-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.path-picker-btn .pi {
   font-size: 12px;
 }
 </style>
