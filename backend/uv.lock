@@ -57,7 +57,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "../bioimageflow/packages/bioimageflow" }
 dependencies = [
     { name = "bioimageflow-core" },
@@ -89,8 +89,11 @@ dependencies = [
     { name = "bioimageflow" },
     { name = "bioimageflow-core" },
     { name = "fastapi" },
+    { name = "httpx" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "python-multipart" },
+    { name = "send2trash" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchdog" },
     { name = "websockets" },
@@ -113,12 +116,15 @@ requires-dist = [
     { name = "bioimageflow", editable = "../bioimageflow/packages/bioimageflow" },
     { name = "bioimageflow-core", editable = "../bioimageflow/packages/bioimageflow-core" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "packaging", specifier = ">=24.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "pywebview", marker = "extra == 'desktop'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
+    { name = "send2trash", specifier = ">=1.8" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
     { name = "watchdog", specifier = ">=6.0" },
     { name = "websockets", specifier = ">=15.0" },

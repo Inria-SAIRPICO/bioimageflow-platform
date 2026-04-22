@@ -28,6 +28,7 @@ import { watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
 import { themeLight } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
+import Toast from 'primevue/toast'
 import { useUIStore } from './stores/ui'
 
 const uiStore = useUIStore()
@@ -146,6 +147,7 @@ defineExpose({ dockviewApi })
         @ready="onDockviewReady"
       />
     </div>
+    <Toast position="bottom-right" />
   </div>
 </template>
 

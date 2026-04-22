@@ -223,6 +223,37 @@ class ToolRegistryService:
     def list_packages(self) -> list[PackageInfo]:
         return list(self._packages.values())
 
+    def forget_package(self, name: str, version: str | None = None) -> None:
+        """Drop a package (or a single version) from the in-memory registry.
+
+        Removes the matching entry from ``_packages`` and any tools whose
+        :attr:`ToolMetadata.package` (+ version, if provided) matches. A noop
+        for unknown packages.
+        """
+        pkg = self._packages.get(name)
+        if pkg is None:
+            return
+
+        if version is None:
+            del self._packages[name]
+            self._tools = {
+                class_name: meta
+                for class_name, meta in self._tools.items()
+                if meta.package != name
+            }
+            return
+
+        if version in pkg.installed_versions:
+            pkg.installed_versions = [v for v in pkg.installed_versions if v != version]
+        pkg.tools.pop(version, None)
+        if not pkg.installed_versions:
+            del self._packages[name]
+        self._tools = {
+            class_name: meta
+            for class_name, meta in self._tools.items()
+            if not (meta.package == name and meta.package_version == version)
+        }
+
 
 def _output_default_str(default_val: Any) -> str | None:
     """Serialize a tool Output field default to the path-template string sent

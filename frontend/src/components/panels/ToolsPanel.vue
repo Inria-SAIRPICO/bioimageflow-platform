@@ -9,6 +9,7 @@ import Tag from 'primevue/tag'
 import CreateToolDialog from './CreateToolDialog.vue'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
+import { useToast } from 'primevue/usetoast'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import type { ToolMetadata } from '@/api/types'
@@ -25,6 +26,26 @@ const searchQuery = ref('')
 const showCreateDialog = ref(false)
 const showManageDialog = ref(false)
 const confirm = useConfirm()
+const toast = useToast()
+
+/** Per-row in-flight keys, ``${pkg}@${version}``. Replaced (not mutated)
+ * on change so the ref stays reactive. */
+const busy = ref(new Set<string>())
+
+function busyKey(packageName: string, version: string): string {
+  return `${packageName}@${version}`
+}
+
+function isBusy(packageName: string, version: string): boolean {
+  return busy.value.has(busyKey(packageName, version))
+}
+
+function markBusy(key: string, on: boolean) {
+  const next = new Set(busy.value)
+  if (on) next.add(key)
+  else next.delete(key)
+  busy.value = next
+}
 
 const filteredTools = computed(() => toolRegistry.searchTools(searchQuery.value))
 
@@ -50,9 +71,24 @@ const treeNodes = computed<TreeNode[]>(() => {
     grouped[tool.package].push(tool)
   }
 
-  return Object.entries(grouped).map(([pkg, tools]) => {
+  // Seed from the union of known packages and grouped tools so
+  // known-but-not-installed packages still appear as tree nodes (the user
+  // needs them to install from a clean tool store).
+  //
+  // While a search query is active, hide package rows that have no tool
+  // children — the user is looking for a tool, not browsing packages.
+  const searchActive = searchQuery.value.trim().length > 0
+  const names = new Set<string>(Object.keys(grouped))
+  if (!searchActive) {
+    for (const pkg of toolRegistry.packages) {
+      names.add(pkg.name)
+    }
+  }
+
+  return Array.from(names).map((pkg) => {
     const pkgInfo = toolRegistry.packages.find((p) => p.name === pkg)
     const versions = pkgInfo ? pkgInfo.installed_versions.join(', ') : ''
+    const tools = grouped[pkg] ?? []
 
     return {
       key: pkg,
@@ -130,20 +166,66 @@ function getVersionRows(packageName: string): VersionRow[] {
 }
 
 async function installVersion(packageName: string, version: string) {
+  const key = busyKey(packageName, version)
+  markBusy(key, true)
+  toast.add({
+    severity: 'info',
+    summary: 'Installing',
+    detail: `${packageName}==${version}`,
+    life: 3000,
+  })
   try {
     await api.post(`/api/v1/tools/packages/${packageName}/install`, { version })
-    await toolRegistry.fetchPackages()
+    await Promise.all([toolRegistry.fetchPackages(), toolRegistry.fetchTools()])
+    toast.add({
+      severity: 'success',
+      summary: 'Installed',
+      detail: `${packageName}==${version}`,
+      life: 3000,
+    })
   } catch (e: unknown) {
-    toolRegistry.error = e instanceof Error ? e.message : String(e)
+    const message = e instanceof Error ? e.message : String(e)
+    toolRegistry.error = message
+    toast.add({
+      severity: 'error',
+      summary: 'Install failed',
+      detail: `${packageName}==${version}: ${message}`,
+      life: 5000,
+    })
+  } finally {
+    markBusy(key, false)
   }
 }
 
 async function uninstallVersion(packageName: string, version: string) {
+  const key = busyKey(packageName, version)
+  markBusy(key, true)
+  toast.add({
+    severity: 'info',
+    summary: 'Uninstalling',
+    detail: `${packageName}==${version}`,
+    life: 3000,
+  })
   try {
-    await api.delete(`/api/v1/tools/packages/${packageName}`, { data: { version } })
-    await toolRegistry.fetchPackages()
+    await api.delete(`/api/v1/tools/packages/${packageName}`, { params: { version } })
+    await Promise.all([toolRegistry.fetchPackages(), toolRegistry.fetchTools()])
+    toast.add({
+      severity: 'success',
+      summary: 'Uninstalled',
+      detail: `${packageName}==${version}`,
+      life: 3000,
+    })
   } catch (e: unknown) {
-    toolRegistry.error = e instanceof Error ? e.message : String(e)
+    const message = e instanceof Error ? e.message : String(e)
+    toolRegistry.error = message
+    toast.add({
+      severity: 'error',
+      summary: 'Uninstall failed',
+      detail: `${packageName}==${version}: ${message}`,
+      life: 5000,
+    })
+  } finally {
+    markBusy(key, false)
   }
 }
 
@@ -230,6 +312,7 @@ defineExpose({
   toggleEnvironment,
   isVersionsExpanded,
   toggleVersionsExpanded,
+  isBusy,
   searchQuery,
   activeDoc,
   manageActiveDoc,
@@ -410,6 +493,8 @@ defineExpose({
                       text
                       size="small"
                       title="Install this version"
+                      :loading="isBusy(node.data.name, row.version)"
+                      :disabled="isBusy(node.data.name, row.version)"
                       :data-testid="`install-version-${node.data.name}-${row.version}`"
                       @click="installVersion(node.data.name, row.version)"
                     />
@@ -420,6 +505,8 @@ defineExpose({
                       size="small"
                       severity="danger"
                       title="Uninstall this version"
+                      :loading="isBusy(node.data.name, row.version)"
+                      :disabled="isBusy(node.data.name, row.version)"
                       :data-testid="`uninstall-version-${node.data.name}-${row.version}`"
                       @click="uninstallVersion(node.data.name, row.version)"
                     />

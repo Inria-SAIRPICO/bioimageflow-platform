@@ -40,6 +40,10 @@ def get_package_installer() -> Any:  # pragma: no cover
     return None
 
 
+def get_package_catalog() -> Any:  # pragma: no cover
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -111,8 +115,24 @@ async def list_tools(
 @router.get("/packages")
 async def list_packages(
     registry: ToolRegistryService = Depends(get_tool_registry),
+    catalog: Any = Depends(get_package_catalog),
 ) -> list[PackageInfo]:
+    if catalog is not None:
+        return catalog.list_packages()
     return registry.list_packages()
+
+
+@router.post("/packages/refresh")
+async def refresh_packages(
+    catalog: Any = Depends(get_package_catalog),
+) -> dict[str, str]:
+    if catalog is None:
+        raise HTTPException(status_code=500, detail="Package catalog not configured")
+    try:
+        await catalog.refresh()
+    except PackageNetworkError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"status": "refreshed"}
 
 
 @router.get("/{tool_name}/source")
@@ -236,6 +256,7 @@ async def install_package(
     package_name: str,
     body: dict[str, str] | None = None,
     installer: Any = Depends(get_package_installer),
+    catalog: Any = Depends(get_package_catalog),
 ) -> dict[str, str]:
     if installer is None:
         raise HTTPException(status_code=500, detail="Package installer not configured")
@@ -246,6 +267,12 @@ async def install_package(
         raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
     except PackageNetworkError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+    if catalog is not None:
+        try:
+            await catalog.refresh()
+        except PackageNetworkError:
+            # Install succeeded; refresh is best-effort.
+            pass
     return {"status": "installed"}
 
 
@@ -254,6 +281,7 @@ async def uninstall_package(
     package_name: str,
     version: str | None = None,
     installer: Any = Depends(get_package_installer),
+    catalog: Any = Depends(get_package_catalog),
 ) -> dict[str, str]:
     if installer is None:
         raise HTTPException(status_code=500, detail="Package installer not configured")
@@ -263,6 +291,11 @@ async def uninstall_package(
         raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
     except PackageNetworkError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+    if catalog is not None:
+        try:
+            await catalog.refresh()
+        except PackageNetworkError:
+            pass
     return {"status": "uninstalled"}
 
 

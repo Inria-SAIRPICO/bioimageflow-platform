@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,11 +27,19 @@ from bioimageflow_server.routers.graph import (
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
+    get_package_catalog,
     get_package_installer,
     get_tool_registry,
     get_workflow_root,
     router as tools_router,
 )
+from bioimageflow_server.services.known_packages import KnownPackagesService
+from bioimageflow_server.services.package_catalog import PackageCatalogService
+from bioimageflow_server.services.package_installer import (
+    PackageNetworkError,
+    PypiPackageInstaller,
+)
+from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 _STATUS_TO_ERROR: dict[int, str] = {
@@ -47,7 +58,52 @@ _STATUS_TO_ERROR: dict[int, str] = {
 def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
     if config is None:
         config = AppConfig()
-    app = FastAPI(title="BioImageFlow Server", version="0.1.0")
+
+    # Build the package services graph up front so the lifespan hook can
+    # close owned resources (e.g. the PyPI httpx client).
+    registry = config.tool_registry or ToolRegistryService()
+    if config.tool_registry is None:
+        registry.scan_tool_store()
+
+    known = config.known_packages or KnownPackagesService.default()
+    pypi = config.pypi_versions or PyPIVersionService()
+    _owns_pypi = config.pypi_versions is None
+
+    if config.package_installer is not None:
+        installer = config.package_installer
+    else:
+        from bioimageflow.paths import get_tool_store_path
+
+        installer = PypiPackageInstaller(
+            tool_store=get_tool_store_path(),
+            registry=registry,
+            pypi=pypi,
+        )
+
+    catalog = config.package_catalog or PackageCatalogService(
+        registry=registry, known=known, pypi=pypi
+    )
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        try:
+            await catalog.refresh()
+        except PackageNetworkError as exc:
+            logging.getLogger(__name__).warning(
+                "Initial PyPI refresh failed (%s); package list falls back to installed-only",
+                exc,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "Initial PyPI refresh crashed: %r", exc
+            )
+        try:
+            yield
+        finally:
+            if _owns_pypi:
+                await pypi.aclose()
+
+    app = FastAPI(title="BioImageFlow Server", version="0.1.0", lifespan=_lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -90,9 +146,6 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
 
     # ---- Wire dependency overrides from config ----
-    registry = config.tool_registry or ToolRegistryService()
-    if config.tool_registry is None:
-        registry.scan_tool_store()
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
@@ -101,9 +154,8 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root
 
     app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
-
-    if config.package_installer is not None:
-        app.dependency_overrides[get_package_installer] = lambda: config.package_installer
+    app.dependency_overrides[get_package_installer] = lambda: installer
+    app.dependency_overrides[get_package_catalog] = lambda: catalog
 
     # ---- Static file serving (production desktop mode) ----
     if config.static_dir is not None:
@@ -119,8 +171,6 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
             async def spa_fallback(full_path: str) -> FileResponse:
                 return FileResponse(str(index_html))
         else:
-            import logging
-
             logging.getLogger(__name__).warning(
                 "index.html not found at %s; SPA fallback disabled", index_html
             )

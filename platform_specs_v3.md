@@ -86,9 +86,9 @@ Tool packages can still be installed from the **known packages list** (see Secti
 
 ### 2.5 Available Package Versions and Known Packages Registry
 
-Tool packages are published on **PyPI**. The server queries PyPI's JSON API (`https://pypi.org/pypi/{package_name}/json`) to retrieve available versions. The response's `releases` field lists all published versions. The server caches this response for 1 hour per package.
+Tool packages are published on **PyPI**. The server queries PyPI's JSON API (`https://pypi.org/pypi/{package_name}/json`) to retrieve available versions. The response's `releases` field lists all published versions. Version lists are fetched at server startup, refreshed after each successful install, and refreshable on demand via `POST /tools/packages/refresh`. Responses are not time-cached.
 
-The list of known BioImageFlow tool packages is maintained in a configuration file (`~/.bioimageflow/known_packages.txt`) that is updated at startup from a central registry URL.
+The list of known BioImageFlow tool packages is maintained in a configuration file (`~/.bioimageflow/known_packages.txt`) that is updated at startup from a central registry URL. The central registry URL fetch is planned but not yet implemented; until then, the bundled default is authoritative and the user file at `~/.bioimageflow/known_packages.txt` is honored if present.
 
 **Registry requirements:**
 - The URL must use HTTPS.
@@ -786,6 +786,7 @@ The following table lists all endpoints that are **new or modified** in v3. Endp
 | 3 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Webapp | Delete button in Dataset Browser modal |
 | 4 | `GET` | `/api/v1/nodes/{node_id}/image` | Both | Full image file for Viv viewer (webapp primary, desktop fallback) |
 | 5 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Data Table |
+| 6 | `POST` | `/api/v1/tools/packages/refresh` | Both | Re-fetch available versions from PyPI for all known+installed packages (§2.5) |
 
 ### 11.2 Modified Endpoints
 
