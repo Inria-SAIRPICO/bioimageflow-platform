@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from bioimageflow.paths import get_home
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +14,7 @@ from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 
 from bioimageflow_server.models.errors import ErrorResponse
+from bioimageflow_server.models.settings import _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.dev import (
     get_tool_registry as dev_get_tool_registry,
@@ -121,10 +125,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.package_installer is not None:
         app.dependency_overrides[get_package_installer] = lambda: config.package_installer
 
-    if config.datasets_root is not None:
-        app.dependency_overrides[get_datasets_root] = lambda: config.datasets_root
-    if config.max_upload_size is not None:
-        app.dependency_overrides[get_max_upload_size] = lambda: config.max_upload_size
+    # Datasets router needs both values present; fall back to Settings-derived
+    # defaults when AppConfig leaves them unset so bare `create_app()` (e.g.
+    # `uvicorn ... --factory`) produces a working server.
+    datasets_root = config.datasets_root if config.datasets_root is not None else get_home() / "datasets"
+    max_upload_size = config.max_upload_size if config.max_upload_size is not None else _DEFAULT_MAX_UPLOAD_SIZE
+    app.dependency_overrides[get_datasets_root] = lambda: datasets_root
+    app.dependency_overrides[get_max_upload_size] = lambda: max_upload_size
 
     # ---- Static file serving (production desktop mode) ----
     if config.static_dir is not None:
