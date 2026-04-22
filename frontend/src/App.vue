@@ -28,6 +28,7 @@ import { watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
 import { themeLight } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
+import Toast from 'primevue/toast'
 import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetBrowserStore } from './stores/datasetBrowser'
@@ -164,6 +165,7 @@ defineExpose({ dockviewApi })
         @ready="onDockviewReady"
       />
     </div>
+    <Toast position="bottom-right" />
     <DatasetBrowser
       v-if="datasetBrowserStore.isOpen && datasetBrowserStore.options"
       :visible="datasetBrowserStore.isOpen"

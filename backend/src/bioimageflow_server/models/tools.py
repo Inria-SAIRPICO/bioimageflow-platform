@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    from bioimageflow_server.services.known_packages import KnownPackagesService
+    from bioimageflow_server.services.package_catalog import PackageCatalogService
     from bioimageflow_server.services.package_installer import PackageInstallerService
+    from bioimageflow_server.services.pypi_versions import PyPIVersionService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
@@ -83,6 +86,9 @@ class AppConfig:
     workflow_root: Path | None = None
     deployment_mode: str = "desktop"
     package_installer: PackageInstallerService | None = None
+    known_packages: KnownPackagesService | None = None
+    pypi_versions: PyPIVersionService | None = None
+    package_catalog: PackageCatalogService | None = None
     static_dir: Path | None = None
     datasets_root: Path | None = None
     max_upload_size: int | None = None

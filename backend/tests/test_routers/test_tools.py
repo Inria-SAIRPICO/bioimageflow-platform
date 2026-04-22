@@ -18,11 +18,14 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
+from bioimageflow_server.services.known_packages import KnownPackagesService
+from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
     PackageNetworkError,
     PackageNotFoundError,
 )
+from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 pytestmark = pytest.mark.anyio
@@ -394,3 +397,103 @@ async def test_use_package_version_not_installed(populated_client: httpx.AsyncCl
         json={"version": "9.9.9"},
     )
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Catalog-backed GET /packages + POST /packages/refresh (plan Task 6)
+# ---------------------------------------------------------------------------
+
+
+class _FakeCatalog:
+    """Stand-in catalog that records refresh calls and returns a fixed snapshot."""
+
+    def __init__(self, packages: list[PackageInfo]):
+        self._packages = packages
+        self.refresh_calls = 0
+
+    async def refresh(self) -> None:
+        self.refresh_calls += 1
+
+    def list_packages(self) -> list[PackageInfo]:
+        return list(self._packages)
+
+
+async def test_get_packages_returns_catalog_snapshot():
+    # A known-but-not-installed package is present in the catalog but not the registry.
+    reg = ToolRegistryService()
+    catalog_packages = [
+        PackageInfo(
+            name="bioimageflow_core",
+            installed_versions=[],
+            available_versions=["0.1.0", "0.1.1"],
+        ),
+    ]
+    config = AppConfig(
+        tool_registry=reg,
+        package_catalog=_FakeCatalog(catalog_packages),
+    )
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools/packages")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "bioimageflow_core"
+    assert data[0]["installed_versions"] == []
+    assert data[0]["available_versions"] == ["0.1.0", "0.1.1"]
+
+
+async def test_refresh_endpoint_triggers_catalog_refresh():
+    catalog = _FakeCatalog([])
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_catalog=catalog,
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/packages/refresh")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "refreshed"}
+    assert catalog.refresh_calls == 1
+
+
+async def test_install_triggers_catalog_refresh():
+    installer = AsyncMock(spec=PackageInstallerService)
+    catalog = _FakeCatalog([])
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        package_catalog=catalog,
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/packages/bioimageflow_core/install")
+    assert resp.status_code == 200
+    installer.install.assert_awaited_once_with("bioimageflow_core", version=None)
+    assert catalog.refresh_calls == 1
+
+
+async def test_uninstall_triggers_catalog_refresh():
+    installer = AsyncMock(spec=PackageInstallerService)
+    catalog = _FakeCatalog([])
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        package_catalog=catalog,
+    )
+    async for client in _client(config):
+        resp = await client.delete("/api/v1/tools/packages/bioimageflow_core")
+    assert resp.status_code == 200
+    installer.uninstall.assert_awaited_once_with("bioimageflow_core", version=None)
+    assert catalog.refresh_calls == 1
+
+
+async def test_refresh_endpoint_network_error_returns_502():
+    class _BrokenCatalog(_FakeCatalog):
+        async def refresh(self) -> None:
+            raise PackageNetworkError("pypi unreachable")
+
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_catalog=_BrokenCatalog([]),
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/packages/refresh")
+    assert resp.status_code == 502
