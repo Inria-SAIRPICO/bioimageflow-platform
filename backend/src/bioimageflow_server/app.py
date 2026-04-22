@@ -19,6 +19,11 @@ from bioimageflow_server.routers.dev import (
     get_tool_registry as dev_get_tool_registry,
     router as dev_router,
 )
+from bioimageflow_server.routers.datasets import (
+    get_datasets_root,
+    get_max_upload_size,
+    router as datasets_router,
+)
 from bioimageflow_server.routers.filesystem import router as filesystem_router
 from bioimageflow_server.routers.graph import (
     get_tool_registry as graph_get_tool_registry,
@@ -49,13 +54,14 @@ _STATUS_TO_ERROR: dict[int, str] = {
     404: "not_found",
     405: "method_not_allowed",
     409: "conflict",
+    413: "file_too_large",
     422: "validation_error",
     423: "locked",
     500: "internal_server_error",
 }
 
 
-def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
+def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
         config = AppConfig()
 
@@ -115,11 +121,20 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-        error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
-        body = ErrorResponse(
-            error=error_code,
-            detail=str(exc.detail),
-        )
+        # Routers may pass `detail` as a dict {"error": "<code>", "detail": "..."}
+        # to override the default code mapping (e.g., "path_traversal" on 400).
+        if isinstance(exc.detail, dict) and "error" in exc.detail:
+            body = ErrorResponse(
+                error=exc.detail["error"],
+                detail=str(exc.detail.get("detail", "")),
+                field=exc.detail.get("field"),
+            )
+        else:
+            error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
+            body = ErrorResponse(
+                error=error_code,
+                detail=str(exc.detail),
+            )
         return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
     @app.exception_handler(RequestValidationError)
@@ -144,6 +159,7 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
     app.include_router(dev_router, prefix="/api/v1")
     app.include_router(filesystem_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
+    app.include_router(datasets_router, prefix="/api/v1")
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
@@ -156,6 +172,11 @@ def create_app(config: AppConfig | None = None, settings=None) -> FastAPI:
     app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
     app.dependency_overrides[get_package_installer] = lambda: installer
     app.dependency_overrides[get_package_catalog] = lambda: catalog
+
+    if config.datasets_root is not None:
+        app.dependency_overrides[get_datasets_root] = lambda: config.datasets_root
+    if config.max_upload_size is not None:
+        app.dependency_overrides[get_max_upload_size] = lambda: config.max_upload_size
 
     # ---- Static file serving (production desktop mode) ----
     if config.static_dir is not None:

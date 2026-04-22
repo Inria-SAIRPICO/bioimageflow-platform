@@ -10,6 +10,13 @@ The BioImageFlow GUI is a desktop application for building, executing, and inspe
 
 **Architecture:** The GUI follows a client-server model. The backend is a Python server (FastAPI) that wraps the BioImageFlow library and exposes a REST + WebSocket API. The frontend is a Vue SPA that communicates with the backend exclusively through this API. The application is packaged with pywebview, giving access to native file dialogs.
 
+**Desktop vs. browser runtime detection.** The same frontend bundle runs in two environments:
+
+- **Inside pywebview (desktop).** The frontend detects this at runtime by checking for `window.pywebview` (injected by pywebview into the page). Path selection uses the native OS file dialogs exposed via `window.pywebview.api` (`select_file`, `select_files`, `select_folder`, `save_file`). Drag-and-dropped files are treated as local filesystem paths — the user's machine and the server share the same filesystem.
+- **In a plain browser.** When `window.pywebview` is absent (e.g., the user pointed a browser at the FastAPI server for testing, or this is the basis for a future webapp deployment), the server's filesystem is not directly accessible from the client. Path selection instead uses the **Dataset Browser modal** (Section 3.14), which lets the user upload files to the server and select from previously uploaded datasets. Drag-and-drop opens the same modal in upload mode.
+
+Dataset management endpoints (Section 2.4.10) are available in both environments — they are the only way for a non-pywebview client to get bytes onto the server. In pywebview mode they are unused by the standard flows but still reachable.
+
 **Multi-user:** The MVP is single-user. The session system is deferred to a future version — it can be added as a middleware layer without breaking the API.
 
 **Language:** English only (no i18n for now).
@@ -523,7 +530,7 @@ class Settings(BaseModel):
 |--------|----------|-------------|
 | `POST` | `/fs/reveal` | Open a path in the system file browser |
 
-Path selection uses native file dialogs via pywebview. No server-side browse endpoint is needed.
+In pywebview mode, path selection uses native file dialogs — no server-side browse endpoint is needed. In plain-browser mode, path selection is handled by the Dataset Browser modal backed by the endpoints in Section 2.4.10.
 
 #### 2.4.8 Image Viewer Integration
 
@@ -541,6 +548,79 @@ The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in
 | `POST` | `/editor/open` | Open a file/folder in the user's external editor |
 
 The user specifies an external editor command (e.g., `code {file_path}` for VS Code) in Settings (Section 3.13.1). The `{file_path}` token is replaced with the actual path. If no external editor is configured, "Open in editor" copies the path to clipboard with a toast: "Path copied — open in your editor."
+
+#### 2.4.10 Dataset Management
+
+Dataset management provides server-side file storage for clients that cannot access the server's filesystem directly (primarily plain-browser mode, but also useful for testing and for workflows that share inputs across machines). Datasets are uploaded via HTTP, stored under a dedicated server directory, and referenced by absolute path in node parameters.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/datasets` | List available datasets |
+| `POST` | `/datasets/upload` | Upload one or more datasets (multipart form data) |
+| `DELETE` | `/datasets/{dataset_id}` | Delete a dataset |
+
+**Dataset storage layout (v1, single-user):**
+
+```
+{datasets_root}/{timestamp}_{sanitized_filename}.{ext}
+```
+
+- `{datasets_root}` defaults to `<output_data_folder>/datasets/` and is configurable in Settings (Section 3.12.4).
+- `{timestamp}` is the upload time in ISO 8601 compact format (e.g., `20260421T143022`).
+- `{sanitized_filename}` is the original filename after sanitization (see below).
+
+The `dataset_id` is a stable string derived from the stored filename (e.g., `d_20260421T143022_cells_tif`) and is URL-safe.
+
+**`GET /datasets` response:**
+
+```json
+[
+  {
+    "id": "d_20260421T143022_cells_tif",
+    "filename": "cells.tif",
+    "original_filename": "cells.tif",
+    "size": 52428800,
+    "upload_date": "2026-04-21T14:30:22Z",
+    "path": "/abs/path/to/datasets/20260421T143022_cells.tif",
+    "content_type": "image/tiff"
+  }
+]
+```
+
+The `path` field is the absolute server-side path. This is the value that gets written into `NodeState.parameters` for Path-typed inputs when a dataset is selected.
+
+**`POST /datasets/upload` request:** Multipart form data with one or more `files` parts. Multi-file upload is supported in a single request.
+
+**`POST /datasets/upload` response:**
+
+```json
+{
+  "uploaded": [
+    {
+      "id": "d_20260421T143022_cells_tif",
+      "filename": "cells.tif",
+      "path": "/abs/path/to/datasets/20260421T143022_cells.tif",
+      "size": 52428800
+    }
+  ],
+  "errors": [
+    {"filename": "too_big.tif", "error": "file_too_large", "detail": "Exceeds 2GB limit"}
+  ]
+}
+```
+
+Per-file errors are returned in the `errors` array so that a partially successful multi-file upload still reports the successes.
+
+**`DELETE /datasets/{dataset_id}` response:** HTTP 204 No Content on success. HTTP 404 Not Found if the dataset does not exist. Deleting a dataset does not invalidate any node that previously consumed it — the node simply fails on next execution with a "file not found" error.
+
+**Upload validation:**
+
+- **Filename sanitization.** Path separators (`/`, `\`) are stripped. Only alphanumerics, hyphens, underscores, and dots are kept; any other character is replaced with `_`. The extension is preserved. Names longer than 255 characters are truncated while preserving the extension. The original filename is retained in the `original_filename` metadata field.
+- **File size limit.** Configurable per deployment, default **2 GB** per file. The authoritative per-file cap is enforced **mid-stream**: as each file in the multipart body is streamed to disk, a running byte counter aborts the upload (HTTP 413 for single-file requests, or a `file_too_large` entry in `errors[]` for multi-file requests) as soon as the cap is exceeded, and the partially-written file is `unlink`ed. `Content-Length` is additionally used as a coarse DoS guard: a request whose declared body size clearly exceeds `max_upload_size * MAX_FILES_PER_REQUEST` (e.g., 2 GB × 32 = 64 GB) is rejected up-front with HTTP 413, before any body is read. It is **not** used as a per-file cap, because a multi-file body legitimately contains multiple files plus multipart boundaries and form fields — a valid N-file upload can have a total size exceeding the per-file cap.
+- **Path traversal prevention.** The server resolves the final storage path with `Path.resolve()` and verifies it starts with the configured `{datasets_root}`. Any escape attempt is rejected with HTTP 400 `{"error": "path_traversal", "detail": "Invalid filename"}`. This is defensive programming — sanitization already prevents path separators, but resolve-then-check is the authoritative gate.
+- **Content type.** No enforcement in v1. The `content_type` field is informational, derived from the extension.
+
+**Single-user note.** v1 is single-user (see Section 1), so datasets are shared across all sessions on the machine. Multi-user scoping (per-user directories, auth-based access control) is added in v3.
 
 ### 2.5 WebSocket API
 
@@ -843,9 +923,9 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `float` | Number input or slider | `min`, `max`, `step` from GUIMeta. If all three are set, render as slider. |
 | `bool` | Checkbox | -- |
 | `Enum` or `Literal[...]` | Dropdown | -- |
-| `Path` (file) | Text input + "Select File" button | Uses native file dialog |
-| `Path` (directory) | Text input + "Select Folder" button | Uses native file dialog |
-| `ImagePath` | Text input + "Select File" button (filtered by format spec) | Same as Path |
+| `Path` (file) | Text input + "Select File" button | In pywebview: native file dialog. In browser: Dataset Browser modal (Section 3.14). |
+| `Path` (directory) | Text input + "Select Folder" button | In pywebview: native folder dialog. In browser: folder selection is not offered — the button is hidden and only manual text entry or drag-and-drop is available. |
+| `ImagePath` | Text input + "Select File" button (filtered by format spec) | Same dual behavior as `Path` (file). File-type filter applies to both the native dialog and the Dataset Browser search filter. |
 | `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable=True`, not user-editable. |
 | `tuple`, `list` | Inline list editor | -- |
 
@@ -1019,7 +1099,42 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 ### 3.13 Drag and Drop (File Import)
 
-Users can drag and drop files (images, CSVs, etc.) onto the application window. Dropping files creates a "Files" DataFrameTool source node on the canvas, pre-configured to list the dropped file paths. The paths are local filesystem paths.
+Users can drag and drop files (images, CSVs, etc.) onto the application window.
+
+- **In pywebview mode.** The drop event exposes local filesystem paths. Dropping files creates a "Files" DataFrameTool source node on the canvas, pre-configured with the dropped paths.
+- **In browser mode.** The drop event exposes `File` objects, not filesystem paths. The frontend opens the Dataset Browser modal (Section 3.14) in upload mode, with the dropped files queued for upload. Once the user confirms, the server-side paths of the uploaded datasets are used to create the "Files" DataFrameTool source node.
+
+### 3.14 Dataset Browser Modal
+
+A PrimeVue **Dialog** that replaces native file/folder dialogs in browser mode. Shown when:
+
+- The user clicks **Select File** on a Path parameter in the Node Panel (browser mode only; in pywebview mode the native dialog opens directly).
+- The user drags and drops files onto the application window (browser mode only).
+- A workflow is being imported or otherwise requires selecting server-side input paths.
+
+**Modal layout:**
+
+- **Title bar:** `"Select dataset for: {parameter_name}"` (or `"Upload datasets"` when opened in upload mode via drag-and-drop).
+- **Search/filter bar:** Text input at the top, filters the dataset table by filename. The file-type filter from the calling Path parameter (e.g., `*.tif`) seeds this box.
+- **Dataset table:** Single-selection, columns:
+
+  | Column | Content |
+  |--------|---------|
+  | **Filename** | Original filename |
+  | **Size** | Human-readable (e.g., "50 MB") |
+  | **Upload date** | Formatted date/time |
+
+  Clicking a row selects it.
+
+- **Upload button.** Opens the browser's native `<input type="file">` picker (multi-file). Each selected file is dispatched as its **own POST** to `/datasets/upload` (one file per request), so axios's `onUploadProgress` gives genuine per-file progress and per-file error retry falls out for free. Uploaded files appear as pending rows in the table immediately with a per-row progress bar; on completion the bar is replaced with the final file size from the backend response. Files exceeding `serverCap * 1.1` (10% client-side headroom over the server's authoritative cap — avoids blocking legitimate uploads when the cap has been raised but the cached frontend hasn't reloaded) are rejected client-side before upload with a toast: `"File '{filename}' exceeds the {limit} size limit."`
+- **Delete button.** Removes the selected dataset via `DELETE /datasets/{dataset_id}`. Confirmation dialog: `"Delete '{filename}'? This cannot be undone."` Disabled when no row is selected.
+- **Footer actions:**
+  - **Cancel.** Closes the modal without selecting.
+  - **Select.** Writes the chosen dataset's `path` (server-side absolute path) into the calling parameter and closes the modal. Disabled until a row is selected.
+
+**Drag-and-drop upload mode.** When the modal is opened by a file drop, the dropped files are auto-queued for upload and the **Select** button is pre-targeted at the first successfully uploaded file. On successful upload, the action bar adds a **"Create Files node"** button (in addition to Select) that creates the "Files" DataFrameTool source node on the canvas with the uploaded paths and closes the modal.
+
+**Error handling.** Per-file upload errors from the server (`errors` array in the upload response) are shown inline on the corresponding row with a **Retry** button. Network failures show a toast with a Retry action.
 
 ---
 
@@ -1228,8 +1343,11 @@ On load, the server reports missing packages in the load response. The frontend 
 | 28 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
 | 29 | `POST` | `/api/v1/editor/open` | "Open in editor" from Tools Panel or Data Table |
 | 30 | `GET` | `/api/v1/health` | Health check |
+| 31 | `GET` | `/api/v1/datasets` | Dataset Browser modal — populate list (browser mode) |
+| 32 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal — upload button; drag-and-drop in browser mode |
+| 33 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Dataset Browser modal — delete button |
 
-Total: 30 endpoints.
+Total: 33 endpoints.
 
 ---
 

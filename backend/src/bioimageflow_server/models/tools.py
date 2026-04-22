@@ -90,3 +90,5 @@ class AppConfig:
     pypi_versions: PyPIVersionService | None = None
     package_catalog: PackageCatalogService | None = None
     static_dir: Path | None = None
+    datasets_root: Path | None = None
+    max_upload_size: int | None = None

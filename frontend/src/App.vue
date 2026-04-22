@@ -29,9 +29,27 @@ import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview
 import { themeLight } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
+import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import { useUIStore } from './stores/ui'
+import { useDatasetBrowserStore } from './stores/datasetBrowser'
+import { useFileDrop } from './composables/useFileDrop'
 
 const uiStore = useUIStore()
+const datasetBrowserStore = useDatasetBrowserStore()
+
+// Server-side upload cap default (2 GB, matches backend default). Used for
+// the client-side pre-upload size check in DatasetBrowser. The authoritative
+// cap lives on the server — the component adds 10% headroom.
+const DEFAULT_SERVER_CAP = 2 * 1024 ** 3
+
+// Window-level file drop → Dataset Browser (browser mode) or direct Files
+// node creation (desktop mode). The canvas listens for `bif:drop-paths` to
+// actually add the node at the viewport center.
+useFileDrop({
+  onPaths: (paths) => {
+    window.dispatchEvent(new CustomEvent('bif:drop-paths', { detail: paths }))
+  },
+})
 
 // Sync document.title with uiStore.tabTitle
 watchEffect(() => {
@@ -148,6 +166,19 @@ defineExpose({ dockviewApi })
       />
     </div>
     <Toast position="bottom-right" />
+    <DatasetBrowser
+      v-if="datasetBrowserStore.isOpen && datasetBrowserStore.options"
+      :visible="datasetBrowserStore.isOpen"
+      :parameter-name="datasetBrowserStore.options.parameterName"
+      :mode="datasetBrowserStore.options.mode"
+      :file-type-filter="datasetBrowserStore.options.fileTypeFilter"
+      :initial-files="datasetBrowserStore.options.initialFiles"
+      :server-cap="DEFAULT_SERVER_CAP"
+      @select="datasetBrowserStore.onSelect"
+      @close="datasetBrowserStore.onClose"
+      @create-files-node="datasetBrowserStore.onCreateFilesNode"
+      @update:visible="(v: boolean) => { if (!v) datasetBrowserStore.onClose() }"
+    />
   </div>
 </template>
 

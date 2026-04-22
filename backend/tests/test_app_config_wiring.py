@@ -1,4 +1,9 @@
-"""Tests for default service wiring in create_app (plan Task 7)."""
+"""Tests for default service wiring in create_app.
+
+Covers both:
+- Known-packages / package-installer / catalog wiring (plan Task 7).
+- Dataset root and upload-size wiring.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,10 @@ from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.routers.datasets import (
+    get_datasets_root,
+    get_max_upload_size,
+)
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
@@ -206,3 +215,21 @@ async def test_lifespan_swallows_network_error_from_refresh(
         async with app.router.lifespan_context(app):
             pass  # startup ran; network error should have been logged
     assert any("refresh" in rec.message.lower() for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Dataset deps wiring
+# ---------------------------------------------------------------------------
+
+
+def test_dataset_deps_unwired_by_default():
+    app = create_app()
+    assert get_datasets_root not in app.dependency_overrides
+    assert get_max_upload_size not in app.dependency_overrides
+
+
+def test_app_config_wires_datasets_root(tmp_path: Path):
+    cfg = AppConfig(datasets_root=tmp_path, max_upload_size=1_000_000)
+    app = create_app(config=cfg)
+    assert app.dependency_overrides[get_datasets_root]() == tmp_path
+    assert app.dependency_overrides[get_max_upload_size]() == 1_000_000
