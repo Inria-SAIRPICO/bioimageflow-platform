@@ -9,8 +9,8 @@ dependencies = [
     "websockets>=15.0",
     "python-multipart>=0.0.20",
     "watchdog>=6.0",
-    "bioimageflow-core",
-    "bioimageflow",
+    "bioimageflow-core>=0.1.0",
+    "bioimageflow>=0.1.1",
 ]
 
 [project.optional-dependencies]

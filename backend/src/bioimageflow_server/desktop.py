@@ -204,7 +204,7 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
     window.events.closing += _on_closing
 
     try:
-        webview.start()
+        webview.start(debug=True)
     finally:
         # Window has been closed (or start() raised) -- run shutdown sequence
         _shutdown(server, server_thread)
@@ -298,3 +298,6 @@ def _wait_for_server(
             )
         time.sleep(interval)
     raise TimeoutError(f"Server did not become ready within {timeout}s")
+
+if __name__ == "__main__":
+    main_desktop()
