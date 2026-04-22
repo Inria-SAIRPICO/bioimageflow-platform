@@ -86,7 +86,7 @@ Tool packages can still be installed from the **known packages list** (see Secti
 
 ### 2.5 Available Package Versions and Known Packages Registry
 
-Tool packages are published on **PyPI**. The server queries PyPI's JSON API (`https://pypi.org/pypi/{package_name}/json`) to retrieve available versions. The response's `releases` field lists all published versions. The server caches this response for 1 hour per package.
+Tool packages are published on **PyPI**. The server queries PyPI's JSON API (`https://pypi.org/pypi/{package_name}/json`) to retrieve available versions. The response's `releases` field lists all published versions.
 
 The list of known BioImageFlow tool packages is maintained in a configuration file (`~/.bioimageflow/known_packages.txt`) that is updated at startup from a central registry URL.
 
@@ -110,126 +110,37 @@ bioimageflow-omero
 
 ---
 
-## 3. Dataset Management
+## 3. Dataset Management — Multi-User Extensions
 
-### 3.1 Overview
+Base dataset management (endpoints, Dataset Browser modal, drag-and-drop upload, filename sanitization, file size limit, path traversal prevention) is specified in **v1 Section 2.4.10 and Section 3.14** and is available in both deployment modes. v3 extends it for multi-user operation.
 
-In webapp mode, users cannot access the server's filesystem directly. Datasets (input images, CSVs, and other files) are managed through a dedicated upload/browse system. The Dataset Browser replaces native file dialogs for all path selection in the GUI.
+### 3.1 Per-User Storage Scoping
 
-### 3.2 Dataset Storage
-
-Datasets are stored on the server in a dedicated folder, organized by user:
+In webapp mode, datasets are partitioned by user:
 
 ```
 datasets/{user_id}/{timestamp}_{sanitized_filename}.{ext}
 ```
 
-- `{user_id}` is derived from the authenticated session.
-- `{timestamp}` is the upload time in ISO 8601 compact format (e.g., `20260403T143022`).
-- `{sanitized_filename}` is the original filename after sanitization (see Section 3.6).
+- `{user_id}` is derived from the authenticated session token.
+- The per-user directory replaces v1's single shared `datasets_root/` directory.
+- Each user can only see and use their own datasets. The `GET /datasets` listing, the `POST /datasets/upload` target directory, and the `DELETE /datasets/{dataset_id}` authorization check are all scoped to the caller's `user_id`.
+- `DELETE /datasets/{dataset_id}` returns HTTP 404 Not Found if the dataset exists but belongs to another user (same response as "not found", to avoid leaking IDs across users).
+- No quota system is implemented in v3.
 
-Each user can only see and use their own datasets. No quota system is implemented in v3.
+Desktop mode is unchanged: storage remains single-user and uses the v1 layout.
 
-### 3.3 Dataset Management Endpoints
+### 3.2 Path Traversal Gate (Multi-User)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/datasets` | List available datasets for the current user |
-| `POST` | `/api/v1/datasets/upload` | Upload a dataset (multipart form data) |
-| `DELETE` | `/api/v1/datasets/{dataset_id}` | Delete a dataset |
+v1's path traversal gate (`Path.resolve()` + prefix check) still applies, with the allowed prefix now `datasets/{user_id}/` rather than the shared `datasets_root/`. This ensures that even a forged `dataset_id` cannot escape into another user's directory.
 
-**`GET /datasets` response:**
+### 3.3 Authenticated Access
 
-```json
-[
-  {
-    "id": "d_20260403T143022_cells_tif",
-    "filename": "cells.tif",
-    "original_filename": "cells.tif",
-    "size": 52428800,
-    "upload_date": "2026-04-03T14:30:22Z",
-    "path": "/data/datasets/user1/20260403T143022_cells.tif",
-    "content_type": "image/tiff"
-  }
-]
-```
+All dataset endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE /datasets/{dataset_id}`) require an `Authorization: Bearer <token>` header in webapp mode (Section 2). Unauthenticated requests receive HTTP 401.
 
-**`POST /datasets/upload` request:** Multipart form data with one or more files. Supports multi-file selection. Each uploaded file is validated (see Section 3.6) and stored in the user's dataset directory.
+### 3.4 Dataset Browser — Webapp-Only Behavior
 
-**`POST /datasets/upload` response:**
-
-```json
-{
-  "uploaded": [
-    {
-      "id": "d_20260403T143022_cells_tif",
-      "filename": "cells.tif",
-      "path": "/data/datasets/user1/20260403T143022_cells.tif",
-      "size": 52428800
-    }
-  ],
-  "errors": []
-}
-```
-
-**`DELETE /datasets/{dataset_id}` response:** HTTP 204 No Content on success. HTTP 404 Not Found if the dataset does not exist or belongs to another user.
-
-### 3.4 Dataset Browser (Modal)
-
-A **modal dialog** for managing and selecting datasets. Shown in webapp mode when the user clicks "Select File" or "Select Folder" on a Path parameter in the Node Panel. Not shown in desktop mode (which uses native file dialogs).
-
-**Modal layout:**
-
-- **Title bar:** `"Select dataset for: {parameter_name}"`
-- **Search/filter bar:** Text input at the top, filters the dataset table by filename.
-- **Dataset table:** Lists all datasets for the current user.
-
-  | Column | Content |
-  |--------|---------|
-  | **Filename** | Original filename |
-  | **Size** | Human-readable file size (e.g., "50 MB") |
-  | **Upload date** | Formatted date/time |
-
-  Single-selection mode. Clicking a row selects it (highlighted).
-
-- **Upload button:** Opens the browser's native file picker for uploading new files. Supports multi-file selection. Uploaded files appear in the table immediately with a progress bar on each row. On upload completion, the progress bar is replaced with the file size.
-- **Delete button:** Removes the selected dataset from the server. Shows a confirmation: `"Delete '{filename}'? This cannot be undone."` Disabled when no row is selected.
-- **Action buttons (bottom):**
-  - **Cancel:** Closes the modal without selecting.
-  - **Select:** Sets the selected dataset's server-side path as the parameter value and closes the modal. Disabled until a row is selected.
-
-### 3.5 Drag and Drop (Webapp Behavior)
-
-In webapp mode, dropping files onto the application window:
-
-1. Opens the Dataset Browser modal automatically.
-2. Starts uploading the dropped files immediately (upload progress is shown per file in the table).
-3. Once upload completes, the user selects the uploaded dataset from the table.
-4. On "Select", a "Files" DataFrameTool source node is created on the canvas with the server-side paths.
-
-**File size limit:** Configurable, default 2GB per file. Files exceeding the limit are rejected before upload begins with a toast: `"File '{filename}' exceeds the 2GB size limit."` Upload progress is shown per file. On timeout or network failure, an error toast is shown with a "Retry" button.
-
-### 3.6 Dataset Upload Validation
-
-The `POST /api/v1/datasets/upload` endpoint enforces the following validation rules:
-
-**Filename sanitization:**
-- Path separators (`/`, `\`) are stripped.
-- Filenames are limited to 255 characters. Longer names are truncated (preserving the extension).
-- Only alphanumeric characters, hyphens (`-`), underscores (`_`), and dots (`.`) are allowed. All other characters are replaced with underscores.
-- The original filename is stored as metadata (`original_filename` field) but the file is saved under the sanitized name.
-
-**File size limit:**
-- Configurable per deployment, default 2GB per file.
-- The server checks `Content-Length` before reading the body. If the header is missing or exceeds the limit, the request is rejected with HTTP 413 Payload Too Large.
-- The server also enforces the limit during streaming read — if the body exceeds the limit mid-transfer, the connection is closed with HTTP 413.
-
-**Path traversal prevention:**
-- Uploaded files are always stored in the user's dedicated datasets directory (`datasets/{user_id}/`).
-- The server resolves the final path using `Path.resolve()` and verifies it starts with the allowed directory prefix. If the resolved path escapes the allowed directory, the request is rejected with HTTP 400 Bad Request and `{"error": "path_traversal", "detail": "Invalid filename"}`.
-
-**Content type validation:**
-- No content type enforcement in v3 (users may upload any file type). The `content_type` field in the dataset metadata is informational only, derived from the file extension.
+The Dataset Browser modal UI is specified in v1 Section 3.14. In webapp mode it is the **only** path-selection mechanism (native file dialogs are unreachable — there is no pywebview runtime), so the v1 behavior of "shown in browser mode, bypassed in pywebview mode" collapses to "always shown" in webapp deployments. The UI itself is unchanged.
 
 ---
 
@@ -781,11 +692,10 @@ The following table lists all endpoints that are **new or modified** in v3. Endp
 
 | # | Method | Endpoint | Mode | When Used |
 |---|--------|----------|------|-----------|
-| 1 | `GET` | `/api/v1/datasets` | Webapp | Opening Dataset Browser modal |
-| 2 | `POST` | `/api/v1/datasets/upload` | Webapp | Upload button in Dataset Browser modal |
-| 3 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Webapp | Delete button in Dataset Browser modal |
-| 4 | `GET` | `/api/v1/nodes/{node_id}/image` | Both | Full image file for Viv viewer (webapp primary, desktop fallback) |
-| 5 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Data Table |
+| 1 | `GET` | `/api/v1/nodes/{node_id}/image` | Both | Full image file for Viv viewer (webapp primary, desktop fallback) |
+| 2 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Data Table |
+
+Dataset management endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE /datasets/{dataset_id}`) are defined in v1 Section 2.4.10. v3 extends them with per-user scoping and authentication (Section 3 above).
 
 ### 11.2 Modified Endpoints
 
