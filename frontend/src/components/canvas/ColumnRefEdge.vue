@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { getBezierPath, Position } from '@vue-flow/core'
 import { getTypeColor } from '@/utils/typeColors'
 
+defineOptions({ inheritAttrs: false })
+
 const props = defineProps<{
   id: string
   sourceX: number

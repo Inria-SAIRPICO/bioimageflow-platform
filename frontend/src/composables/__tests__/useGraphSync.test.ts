@@ -44,6 +44,7 @@ const expectedBackendGraph = (id = '1') => ({
     tool_name: 't',
     position: [10, 20],
     parameters: {},
+    resources: {},
     output_templates: {},
     enabled: true,
     collapsed: false,
@@ -82,7 +83,11 @@ describe('useGraphSync', () => {
 
     expect(mockedPut).toHaveBeenCalledTimes(1)
     // Should serialize the last graph to backend format
-    expect(mockedPut).toHaveBeenCalledWith('/api/v1/graph', expectedBackendGraph('3'))
+    expect(mockedPut).toHaveBeenCalledWith(
+      '/api/v1/graph',
+      expectedBackendGraph('3'),
+      expect.objectContaining({ signal: expect.anything() }),
+    )
   })
 
   it('supersedes in-flight requests', async () => {
@@ -157,16 +162,110 @@ describe('useGraphSync', () => {
     expect(isPending.value).toBe(false)
   })
 
-  it('patchParameters uses PATCH endpoint', async () => {
-    mockedPatch.mockResolvedValue({ data: {} })
+  it('patchParameters sends {parameters} wrapper and tool_name query param', async () => {
+    mockedPatch.mockResolvedValue({ data: { valid: true, node_statuses: {}, errors: [] } })
     const { patchParameters } = useGraphSync()
 
-    await patchParameters('node_1', { threshold: 0.5 })
+    await patchParameters('node_1', 'MyTool', { threshold: 0.5 })
 
     expect(mockedPatch).toHaveBeenCalledWith(
       '/api/v1/graph/nodes/node_1/parameters',
-      { threshold: 0.5 },
+      { parameters: { threshold: 0.5 } },
+      { params: { tool_name: 'MyTool' } },
     )
+  })
+
+  it('patchParameters merges single-node status without clobbering others', async () => {
+    // Seed validationResult with two nodes via PUT first
+    mockedPut.mockResolvedValue({
+      data: {
+        valid: true,
+        node_statuses: {
+          a: { node_id: 'a', status: 'unexecuted', cached: false },
+          b: { node_id: 'b', status: 'unexecuted', cached: false },
+        },
+        errors: [],
+      },
+    })
+    const { syncGraph, patchParameters, validationResult } = useGraphSync()
+    syncGraph(makeVueFlowGraph('a'))
+    await vi.advanceTimersByTimeAsync(300)
+
+    mockedPatch.mockResolvedValue({
+      data: {
+        valid: true,
+        node_statuses: {
+          a: { node_id: 'a', status: 'out_of_date', cached: false },
+        },
+        errors: [],
+      },
+    })
+    await patchParameters('a', 'MyTool', { x: 1 })
+
+    // a updated, b preserved
+    expect(validationResult.value?.node_statuses?.a.status).toBe('out_of_date')
+    expect(validationResult.value?.node_statuses?.b.status).toBe('unexecuted')
+  })
+
+  it('syncState is "pending" while PUT in flight and "idle" on success', async () => {
+    let resolve!: (v: unknown) => void
+    mockedPut.mockReturnValue(new Promise(r => { resolve = r }))
+
+    const { syncGraph, syncState, flushNow } = useGraphSync()
+    expect(syncState.value).toBe('idle')
+
+    syncGraph(makeVueFlowGraph())
+    flushNow() // fire immediately
+    await vi.advanceTimersByTimeAsync(0)
+    expect(syncState.value).toBe('pending')
+
+    resolve({ data: makeValidation() })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(syncState.value).toBe('idle')
+  })
+
+  it('syncState transitions to "error" on PUT failure; validationResult is preserved', async () => {
+    // First successful result
+    mockedPut.mockResolvedValueOnce({ data: makeValidation(true) })
+    const { syncGraph, flushNow, syncState, validationResult } = useGraphSync()
+    syncGraph(makeVueFlowGraph())
+    await vi.advanceTimersByTimeAsync(300)
+    const previous = validationResult.value
+
+    // Second call fails
+    mockedPut.mockRejectedValueOnce({ message: 'network boom', response: { status: 500 } })
+    syncGraph(makeVueFlowGraph('2'))
+    await flushNow()
+
+    expect(syncState.value).toBe('error')
+    // Previous result is kept visible
+    expect(validationResult.value).toEqual(previous)
+  })
+
+  it('errorStore.report is called on network failure', async () => {
+    const report = vi.fn()
+    mockedPut.mockRejectedValueOnce({ message: 'boom' })
+    const { syncGraph, flushNow } = useGraphSync({ report })
+    syncGraph(makeVueFlowGraph())
+    await flushNow()
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'graph_sync_error' }),
+    )
+  })
+
+  it('serializeNode round-trips the resources field', () => {
+    const result = serializeGraph({
+      nodes: [{
+        id: 'n1',
+        position: { x: 0, y: 0 },
+        data: {
+          name: 'n', toolName: 't', parameters: {},
+          resources: { cpu: 4, gpu: 1 },
+        },
+      }],
+      edges: [],
+    })
+    expect(result.nodes[0].resources).toEqual({ cpu: 4, gpu: 1 })
   })
 })
 
@@ -193,6 +292,7 @@ describe('serializeGraph', () => {
       tool_name: 'threshold',
       position: [100, 200],
       parameters: { level: 0.5 },
+      resources: {},
       output_templates: { mask: '{input}_mask' },
       enabled: true,
       collapsed: false,

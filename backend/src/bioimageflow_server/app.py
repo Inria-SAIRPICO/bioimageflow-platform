@@ -29,6 +29,9 @@ from bioimageflow_server.routers.datasets import (
 )
 from bioimageflow_server.routers.filesystem import router as filesystem_router
 from bioimageflow_server.routers.graph import (
+    get_dev_mode as graph_get_dev_mode,
+    get_execution_manager as graph_get_execution_manager,
+    get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
     router as graph_router,
 )
@@ -168,6 +171,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
+    app.dependency_overrides[graph_get_storage_path] = lambda: config.storage_path
+    app.dependency_overrides[graph_get_execution_manager] = (
+        lambda: config.execution_manager
+    )
+    _dev_mode = (
+        config.settings.dev_mode if config.settings is not None else True
+    )
+    app.dependency_overrides[graph_get_dev_mode] = lambda: _dev_mode
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

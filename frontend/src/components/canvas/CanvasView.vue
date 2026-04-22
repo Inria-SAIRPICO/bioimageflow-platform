@@ -12,6 +12,8 @@ import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
 import { serializeSelection, deserializeSelection } from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
+import type { NodeState } from '@/api/types'
 import type { ClipboardData } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
 
@@ -52,8 +54,22 @@ const {
   fitView,
 } = useVueFlow()
 
-const { syncGraph, flushNow, loadWorkflow } = useGraphSync()
+const { syncGraph, flushNow, patchParameters, loadWorkflow, validationResult, syncState } = useGraphSync()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
+
+// Status reconciliation: mark nodes provisional during debounce; clear when
+// the authoritative validation response arrives.
+const reconciliationNodes = ref<NodeState[]>([])
+const wsMessages = ref<NodeStateMessage[]>([])
+const {
+  reconciledStatuses,
+  markProvisional,
+  applyValidationResult,
+} = useStatusReconciliation(reconciliationNodes, validationResult, wsMessages)
+
+watch(validationResult, (result) => {
+  applyValidationResult(result)
+})
 
 const clipboardData = ref<ClipboardData | null>(null)
 const canvasRef = ref<HTMLDivElement | null>(null)
@@ -650,6 +666,19 @@ function emitGraphChanged() {
     edges: getEdges.value.map((e: any) => ({ ...e })),
   }
   undoRedo.push(state)
+  // Update the reconciliation node list to match the current graph.
+  reconciliationNodes.value = state.nodes.map((n: any) => ({
+    id: n.id,
+    name: n.data?.name ?? n.id,
+    tool_name: n.data?.toolName ?? '',
+    position: [n.position?.x ?? 0, n.position?.y ?? 0],
+    parameters: n.data?.parameters ?? {},
+  })) as NodeState[]
+  // Mark all nodes provisional during the debounce window so the UI can
+  // render a desaturated status indicator until the server response lands.
+  for (const n of state.nodes) {
+    markProvisional(n.id, 'unexecuted')
+  }
   syncGraph(state as any)
   emit('graph-changed', state)
 }
@@ -663,6 +692,9 @@ defineExpose({
   selectAll,
   isValidConnection,
   clipboardData,
+  patchParameters,
+  reconciledStatuses,
+  syncState,
 })
 </script>
 
@@ -679,7 +711,6 @@ defineExpose({
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
       :is-valid-connection="isValidConnection"
-      :selection-key-code="'Shift'"
       :edges-updatable="true"
       fit-view-on-init
     >

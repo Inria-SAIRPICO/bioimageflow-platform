@@ -89,5 +89,29 @@ export function useStatusReconciliation(
     }
   }
 
-  return { reconciledStatuses, isReconciling, markProvisional }
+  /**
+   * Apply a validation result to the reconciliation state: clear any
+   * provisional flag for nodes present in the result, and the computed
+   * `reconciledStatuses` will pick up the authoritative status directly
+   * from `validationResult.value.node_statuses`.
+   *
+   * The `validationResult` passed to the composable is expected to be
+   * updated by the caller (e.g. via useGraphSync) — this method then
+   * only needs to clear provisional flags.
+   */
+  function applyValidationResult(result: ValidationResult | null): void {
+    if (!result?.node_statuses) return
+    const next = { ...provisionalStatuses.value }
+    for (const nodeId of Object.keys(result.node_statuses)) {
+      delete next[nodeId]
+    }
+    provisionalStatuses.value = next
+  }
+
+  return {
+    reconciledStatuses,
+    isReconciling,
+    markProvisional,
+    applyValidationResult,
+  }
 }

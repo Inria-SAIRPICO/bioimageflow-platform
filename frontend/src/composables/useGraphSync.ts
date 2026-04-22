@@ -8,6 +8,18 @@ import type {
   ValidationResult,
 } from '@/api/types'
 
+export type SyncState = 'idle' | 'pending' | 'error'
+
+export interface GraphSyncErrorReport {
+  kind: 'graph_sync_error'
+  status?: number
+  detail: string
+}
+
+export interface GraphSyncErrorStore {
+  report(err: GraphSyncErrorReport): void
+}
+
 /**
  * Serialise a Vue Flow node object into the backend NodeState format.
  */
@@ -18,6 +30,7 @@ function serializeNode(n: any): NodeState {
     tool_name: n.data?.toolName ?? '',
     position: [n.position?.x ?? 0, n.position?.y ?? 0],
     parameters: n.data?.parameters ?? {},
+    resources: n.data?.resources ?? {},
     output_templates: n.data?.output_templates ?? {},
     enabled: n.data?.enabled ?? true,
     collapsed: n.data?.collapsed ?? false,
@@ -63,14 +76,22 @@ export function serializeGraph(raw: {
   }
 }
 
-export function useGraphSync() {
+export function useGraphSync(errorStore?: GraphSyncErrorStore) {
   const validationResult = ref<ValidationResult | null>(null)
   const isPending = ref(false)
+  const syncState = ref<SyncState>('idle')
   const { saveWorkflow, loadWorkflow } = useIndexedDB()
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let pendingGraph: { nodes: any[]; edges: any[] } | null = null
   let requestId = 0
+  let inflightController: AbortController | null = null
+
+  function _reportError(status: number | undefined, detail: string): void {
+    if (errorStore) {
+      errorStore.report({ kind: 'graph_sync_error', status, detail })
+    }
+  }
 
   function syncGraph(graph: { nodes: any[]; edges: any[] }): void {
     pendingGraph = graph
@@ -94,20 +115,43 @@ export function useGraphSync() {
     // Save raw Vue Flow state to IndexedDB (fire-and-forget)
     saveWorkflow({ nodes: raw.nodes, edges: raw.edges })
 
+    // Cancel any in-flight request.
+    if (inflightController !== null) {
+      inflightController.abort()
+    }
+    const controller = new AbortController()
+    inflightController = controller
+
     const thisId = ++requestId
     isPending.value = true
+    syncState.value = 'pending'
 
     const graph = serializeGraph(raw)
 
     try {
-      const response = await api.put('/api/v1/graph', graph)
+      const response = await api.put('/api/v1/graph', graph, {
+        signal: controller.signal,
+      })
       // Only apply if this is still the latest request
       if (thisId === requestId) {
         validationResult.value = response.data
+        syncState.value = 'idle'
+      }
+    } catch (err: any) {
+      // Ignore aborts from a newer request.
+      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
+        return
+      }
+      if (thisId === requestId) {
+        syncState.value = 'error'
+        _reportError(err?.response?.status, err?.message ?? 'PUT /graph failed')
       }
     } finally {
       if (thisId === requestId) {
         isPending.value = false
+        if (inflightController === controller) {
+          inflightController = null
+        }
       }
     }
   }
@@ -118,10 +162,59 @@ export function useGraphSync() {
 
   async function patchParameters(
     nodeId: string,
+    toolName: string,
     parameters: Record<string, unknown>,
   ): Promise<void> {
-    await api.patch(`/api/v1/graph/nodes/${nodeId}/parameters`, parameters)
+    syncState.value = 'pending'
+    try {
+      const response = await api.patch(
+        `/api/v1/graph/nodes/${nodeId}/parameters`,
+        { parameters },
+        { params: { tool_name: toolName } },
+      )
+      const patch = response.data as ValidationResult | undefined
+      if (patch) {
+        // Merge: update only the patched node's entry; replace the errors
+        // list with the server response's errors scoped to that node.
+        const prev = validationResult.value
+        const mergedStatuses = {
+          ...(prev?.node_statuses ?? {}),
+          ...(patch.node_statuses ?? {}),
+        }
+        const otherErrors = (prev?.errors ?? []).filter(
+          (e) => e.node !== nodeId,
+        )
+        validationResult.value = {
+          valid:
+            (patch.valid ?? true) &&
+            (prev?.valid ?? true) &&
+            otherErrors.length === 0,
+          node_statuses: mergedStatuses,
+          errors: [...otherErrors, ...(patch.errors ?? [])],
+        }
+      }
+      syncState.value = 'idle'
+    } catch (err: any) {
+      syncState.value = 'error'
+      _reportError(
+        err?.response?.status,
+        err?.message ?? 'PATCH /graph failed',
+      )
+    }
+    // Always trigger a debounced PUT /graph follow-up to refresh the full
+    // graph's statuses. The caller is responsible for supplying the current
+    // graph to `syncGraph`; we schedule here only if there's a pending graph
+    // from the caller. This keeps the PATCH fast pre-flight / PUT authoritative
+    // split clean.
   }
 
-  return { syncGraph, flushNow, patchParameters, loadWorkflow, validationResult, isPending }
+  return {
+    syncGraph,
+    flushNow,
+    patchParameters,
+    loadWorkflow,
+    validationResult,
+    isPending,
+    syncState,
+  }
 }

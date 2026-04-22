@@ -26,10 +26,12 @@ function openDB(): Promise<IDBDatabase> {
 export function useIndexedDB() {
   async function saveWorkflow(state: WorkflowState): Promise<void> {
     try {
+      // Strip Vue reactive Proxies — IndexedDB structured-clone cannot serialize them.
+      const plain = JSON.parse(JSON.stringify(state))
       const db = await openDB()
       const tx = db.transaction(STORE_NAME, 'readwrite')
       const store = tx.objectStore(STORE_NAME)
-      store.put(state, 'current')
+      store.put(plain, 'current')
       await new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve()
         tx.onerror = () => reject(tx.error)

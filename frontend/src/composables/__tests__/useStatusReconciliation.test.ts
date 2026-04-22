@@ -120,6 +120,28 @@ describe('useStatusReconciliation', () => {
     expect(isReconciling.value).toBe(true)
   })
 
+  it('applyValidationResult clears provisional flags for nodes it covers', () => {
+    const nodes = ref<NodeState[]>([
+      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
+      { id: 'b', name: 'B', tool_name: 't', position: [0, 0], parameters: {} },
+    ])
+    const validation = ref<ValidationResult | null>(null)
+    const ws = ref<NodeStateMessage[]>([])
+
+    const { reconciledStatuses, markProvisional, applyValidationResult } =
+      useStatusReconciliation(nodes, validation, ws)
+
+    markProvisional('a', 'out_of_date')
+    markProvisional('b', 'out_of_date')
+
+    // Apply a result that only covers 'a'
+    applyValidationResult(makeValidation({ a: makeNodeStatus('a', 'executed') }))
+
+    // a cleared (b remains provisional)
+    expect(reconciledStatuses.value.a.provisional).toBe(false)
+    expect(reconciledStatuses.value.b.provisional).toBe(true)
+  })
+
   it('handles multiple rapid edits', async () => {
     const nodes = ref<NodeState[]>([
       { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },

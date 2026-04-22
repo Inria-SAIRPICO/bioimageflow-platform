@@ -21,6 +21,7 @@ class ToolRegistryService:
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolMetadata] = {}
+        self._tool_classes: dict[str, type] = {}
         self._packages: dict[str, PackageInfo] = {}
 
     def scan_tool_store(self, store_path: Path | None = None) -> None:
@@ -75,6 +76,7 @@ class ToolRegistryService:
                         self._register_tool_from_class(
                             obj, attr_name, package_name, version
                         )
+                        self._tool_classes[attr_name] = obj
 
                 tools_by_version[version] = tool_names
 
@@ -203,11 +205,41 @@ class ToolRegistryService:
 
     # -- tools --
 
-    def register_tool(self, class_name: str, metadata: ToolMetadata) -> None:
+    def register_tool(
+        self,
+        class_name: str,
+        metadata: ToolMetadata,
+        tool_class: type | None = None,
+    ) -> None:
         self._tools[class_name] = metadata
+        if tool_class is not None:
+            self._tool_classes[class_name] = tool_class
 
     def get_tool(self, class_name: str) -> ToolMetadata | None:
         return self._tools.get(class_name)
+
+    def get_tool_class(self, class_name: str) -> type | None:
+        """Return the tool class if registered, or attempt to resolve it from
+        the installed tool store. Returns ``None`` if the package/version is
+        not installed."""
+        cls = self._tool_classes.get(class_name)
+        if cls is not None:
+            return cls
+        metadata = self._tools.get(class_name)
+        if metadata is None:
+            return None
+        try:
+            from bioimageflow.tool_loader import load_versioned_package
+
+            module = load_versioned_package(
+                metadata.package, metadata.package_version
+            )
+            resolved = getattr(module, class_name, None)
+            if resolved is not None:
+                self._tool_classes[class_name] = resolved
+            return resolved
+        except Exception:
+            return None
 
     def list_tools(self) -> list[ToolMetadata]:
         return list(self._tools.values())

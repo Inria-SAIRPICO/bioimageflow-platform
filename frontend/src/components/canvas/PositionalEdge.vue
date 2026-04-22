@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { getBezierPath, Position } from '@vue-flow/core'
 
+defineOptions({ inheritAttrs: false })
+
 const props = defineProps<{
   id: string
   sourceX: number

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    from bioimageflow_server.models.settings import Settings
     from bioimageflow_server.services.known_packages import KnownPackagesService
     from bioimageflow_server.services.package_catalog import PackageCatalogService
     from bioimageflow_server.services.package_installer import PackageInstallerService
@@ -92,3 +93,6 @@ class AppConfig:
     static_dir: Path | None = None
     datasets_root: Path | None = None
     max_upload_size: int | None = None
+    storage_path: Path | None = None
+    execution_manager: Any | None = None
+    settings: Settings | None = None

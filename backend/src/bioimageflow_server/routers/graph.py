@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import (
-    GraphValidationError,
-    NodeStatus,
+    ParameterPatchRequest,
     ValidationResult,
+)
+from bioimageflow_server.services.graph_validator import (
+    validate_graph as _validate_graph,
+    validate_parameters as _validate_parameters,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
@@ -19,33 +25,83 @@ def get_tool_registry() -> ToolRegistryService:  # pragma: no cover
     raise RuntimeError("tool_registry dependency not configured")
 
 
-@router.put("")
-async def validate_graph(
-    graph: GraphState,
-    registry: ToolRegistryService = Depends(get_tool_registry),
-) -> ValidationResult:
-    errors: list[GraphValidationError] = []
-    node_statuses: dict[str, NodeStatus] = {}
+def get_storage_path() -> Path | None:
+    return None
 
-    for node in graph.nodes:
-        tool = registry.get_tool(node.tool_name)
-        if tool is None:
-            errors.append(
-                GraphValidationError(
-                    type="missing_tool",
-                    detail=f"Tool '{node.tool_name}' not found in registry",
-                    node=node.id,
-                )
-            )
-            continue
-        node_statuses[node.id] = NodeStatus(
-            node_id=node.id,
-            status="unexecuted",
-            cached=False,
+
+def get_execution_manager() -> Any | None:
+    return None
+
+
+def get_dev_mode() -> bool:
+    return True
+
+
+def _ensure_unlocked(execution_manager: Any | None) -> None:
+    if execution_manager is None:
+        return
+    if getattr(execution_manager, "is_running", False):
+        raise HTTPException(
+            status_code=423,
+            detail="Graph editing is locked while execution is in progress",
         )
 
-    return ValidationResult(
-        valid=len(errors) == 0,
-        node_statuses=node_statuses,
-        errors=errors,
+
+def _contains_binding(value: Any) -> bool:
+    """Detect dicts that look like ``ColumnRef`` bindings (constants-only check)."""
+    if isinstance(value, dict):
+        if "node_id" in value and "output" in value:
+            return True
+        return any(_contains_binding(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_binding(v) for v in value)
+    return False
+
+
+@router.put("")
+async def validate_graph_endpoint(
+    graph: GraphState,
+    registry: ToolRegistryService = Depends(get_tool_registry),
+    storage_path: Path | None = Depends(get_storage_path),
+    execution_manager: Any | None = Depends(get_execution_manager),
+    dev_mode: bool = Depends(get_dev_mode),
+) -> ValidationResult:
+    _ensure_unlocked(execution_manager)
+    return _validate_graph(
+        graph, registry, storage_path=storage_path, dev_mode=dev_mode
+    )
+
+
+@router.patch("/nodes/{node_id}/parameters")
+async def patch_node_parameters(
+    node_id: str,
+    body: ParameterPatchRequest,
+    tool_name: str | None = None,
+    registry: ToolRegistryService = Depends(get_tool_registry),
+    storage_path: Path | None = Depends(get_storage_path),
+    execution_manager: Any | None = Depends(get_execution_manager),
+    dev_mode: bool = Depends(get_dev_mode),
+) -> ValidationResult:
+    _ensure_unlocked(execution_manager)
+    if tool_name is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required query parameter: tool_name",
+        )
+    for _, value in body.parameters.items():
+        if _contains_binding(value):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "PATCH accepts constant parameters only; "
+                    "use PUT /graph to modify connections"
+                ),
+            )
+    return _validate_parameters(
+        node_id,
+        tool_name,
+        body.parameters,
+        registry,
+        storage_path=storage_path,
+        dev_mode=dev_mode,
     )
