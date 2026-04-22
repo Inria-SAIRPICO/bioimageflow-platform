@@ -14,12 +14,13 @@ describe('API client', () => {
     expect(api.interceptors.response).toBeDefined()
   })
 
-  it('sets default Content-Type header to application/json', () => {
+  it('does not hardcode a Content-Type default (lets axios auto-detect FormData vs JSON)', () => {
     const headers = api.defaults.headers
     const contentType = headers['Content-Type']
       ?? headers.common?.['Content-Type']
-      ?? headers.post?.['Content-Type']
-    expect(contentType).toBe('application/json')
+    // axios's built-in post default is application/x-www-form-urlencoded, which
+    // it correctly overrides to multipart/... when the body is a FormData.
+    expect(contentType).toBeUndefined()
   })
 
   it('does not set a baseURL', () => {
