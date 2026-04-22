@@ -30,12 +30,19 @@ import { themeLight } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
 import DatasetBrowser from './components/panels/DatasetBrowser.vue'
+import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetBrowserStore } from './stores/datasetBrowser'
 import { useFileDrop } from './composables/useFileDrop'
+import { useExecutionLock } from './composables/useExecutionLock'
 
 const uiStore = useUIStore()
 const datasetBrowserStore = useDatasetBrowserStore()
+
+// Initialize once at the root so uiStore.isExecutionLocked reflects
+// executionStore.isRunning anywhere in the tree. The composable has a
+// side-effectful watch; the return values are unused here.
+useExecutionLock()
 
 // Server-side upload cap default (2 GB, matches backend default). Used for
 // the client-side pre-upload size check in DatasetBrowser. The authoritative
@@ -159,6 +166,7 @@ defineExpose({ dockviewApi })
 <template>
   <div id="bioimageflow-app">
     <MenuBar />
+    <ExecutionBanner />
     <div class="dockview-wrapper">
       <DockviewVue
         :theme="themeLight"

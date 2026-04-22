@@ -35,6 +35,11 @@ from bioimageflow_server.routers.graph import (
     get_tool_registry as graph_get_tool_registry,
     router as graph_router,
 )
+from bioimageflow_server.routers.execution import (
+    get_execution_manager as execution_get_manager,
+    get_storage_path as execution_get_storage_path,
+    router as execution_router,
+)
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
@@ -166,6 +171,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(filesystem_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
+    app.include_router(execution_router, prefix="/api/v1")
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
@@ -175,6 +181,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_execution_manager] = (
         lambda: config.execution_manager
     )
+    app.dependency_overrides[execution_get_manager] = (
+        lambda: config.execution_manager
+    )
+    app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
     _dev_mode = (
         config.settings.dev_mode if config.settings is not None else True
     )

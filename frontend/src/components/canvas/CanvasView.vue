@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, markRaw, onMounted, provide } from 'vue'
+import { ref, watch, markRaw, nextTick, onMounted, provide } from 'vue'
 import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -12,7 +12,9 @@ import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
 import { serializeSelection, deserializeSelection } from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
+import { useExecutionStore } from '@/stores/execution'
 import type { NodeState } from '@/api/types'
 import type { ClipboardData } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
@@ -56,6 +58,8 @@ const {
 
 const { syncGraph, flushNow, patchParameters, loadWorkflow, validationResult, syncState } = useGraphSync()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
+const { isLocked } = useExecutionLock()
+const executionStore = useExecutionStore()
 
 // Status reconciliation: mark nodes provisional during debounce; clear when
 // the authoritative validation response arrives.
@@ -70,6 +74,23 @@ const {
 watch(validationResult, (result) => {
   applyValidationResult(result)
 })
+
+// Live per-node status from the execution store — takes precedence over the
+// validation-result status while an execution is running so nodes turn green
+// (executed) or pulse blue (running) in real time as events arrive.
+watch(
+  () => executionStore.nodeStatuses,
+  (statuses) => {
+    if (!statuses) return
+    for (const node of getNodes.value) {
+      const s = statuses[node.id]
+      if (s && node.data && node.data.status !== s.status) {
+        node.data.status = s.status
+      }
+    }
+  },
+  { deep: true },
+)
 
 const clipboardData = ref<ClipboardData | null>(null)
 const canvasRef = ref<HTMLDivElement | null>(null)
@@ -127,6 +148,7 @@ function clearExistingIncomingEdge(nodeId: string, targetHandle: string) {
 }
 
 onConnect((connection) => {
+  if (isLocked.value) return
   const targetHandle = connection.targetHandle ?? ''
   // Enforce one incoming edge per (non-positional) input. When users drag from
   // an already-connected input pin, Vue Flow issues a fresh connect rather than
@@ -380,6 +402,7 @@ function hasPath(from: string, to: string): boolean {
 
 function onDrop(event: DragEvent) {
   event.preventDefault()
+  if (isLocked.value) return
   const toolName = event.dataTransfer?.getData('application/bioimageflow-tool')
   if (!toolName) return
 
@@ -408,6 +431,7 @@ function onAddNode({
   toolName: string
   position?: { x: number; y: number }
 }) {
+  if (isLocked.value) return
   const tool = toolRegistryStore.getToolByName(toolName)
   if (!tool) return
 
@@ -469,6 +493,7 @@ function onAddNode({
 // --- Selection + Keyboard ---
 
 function deleteSelected() {
+  if (isLocked.value) return
   const selectedNodes = getNodes.value.filter((n: any) => n.selected)
   if (selectedNodes.length === 0) {
     // Delete selected edges
@@ -503,6 +528,7 @@ function deleteSelected() {
 }
 
 function copySelected() {
+  if (isLocked.value) return
   const selectedIds = new Set(
     getNodes.value.filter((n: any) => n.selected).map((n: any) => n.id),
   )
@@ -532,6 +558,7 @@ function copySelected() {
 }
 
 function pasteFromClipboard() {
+  if (isLocked.value) return
   if (!clipboardData.value) return
 
   const existingIds = getNodes.value.map((n: any) => n.id)
@@ -603,29 +630,42 @@ function selectAll() {
 
 function handleKeydown(event: KeyboardEvent) {
   const meta = event.metaKey || event.ctrlKey
+  const locked = isLocked.value
 
   if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (locked) return
     deleteSelected()
     return
   }
 
   if (meta && event.key === 'c') {
+    if (locked) return
     copySelected()
     return
   }
 
   if (meta && event.key === 'v') {
+    if (locked) return
     pasteFromClipboard()
     return
   }
 
   if (meta && event.key === 'a') {
+    if (locked) return
     event.preventDefault()
     selectAll()
     return
   }
 
+  if (meta && event.key === 's') {
+    if (locked) {
+      event.preventDefault()
+    }
+    return
+  }
+
   if (meta && event.shiftKey && (event.key === 'z' || event.key === 'Z')) {
+    if (locked) return
     const state = undoRedo.redo()
     if (state) {
       setNodes(state.nodes)
@@ -636,6 +676,7 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   if (meta && event.key === 'z') {
+    if (locked) return
     const state = undoRedo.undo()
     if (state) {
       setNodes(state.nodes)
