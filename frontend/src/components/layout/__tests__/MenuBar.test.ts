@@ -84,4 +84,54 @@ describe('MenuBar', () => {
     toolsToggle.command()
     expect(store.panels.tools).toBe(false)
   })
+
+  describe('Execution menu', () => {
+    it('exposes Run Workflow / Execute Selected / Stop entries', () => {
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const exec = vm.menuItems.find((item: any) => item.label === 'Execution')
+      expect(exec.items.map((i: any) => i.label)).toEqual([
+        'Run Workflow',
+        'Execute Selected',
+        'Stop',
+      ])
+    })
+
+    it('Run Workflow is enabled when idle', () => {
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const exec = vm.menuItems.find((item: any) => item.label === 'Execution')
+      const run = exec.items.find((i: any) => i.label === 'Run Workflow')
+      expect(run.disabled).toBe(false)
+    })
+
+    it('Execute Selected is disabled when no nodes selected', () => {
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const exec = vm.menuItems.find((item: any) => item.label === 'Execution')
+      const executeSelected = exec.items.find(
+        (i: any) => i.label === 'Execute Selected',
+      )
+      expect(executeSelected.disabled).toBe(true)
+    })
+
+    it('Execute Selected is enabled when nodes are selected', async () => {
+      const store = useUIStore()
+      store.setSelectedNodes(['n1'])
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const exec = vm.menuItems.find((item: any) => item.label === 'Execution')
+      const executeSelected = exec.items.find(
+        (i: any) => i.label === 'Execute Selected',
+      )
+      expect(executeSelected.disabled).toBe(false)
+    })
+
+    it('renders RunButton in the end slot', () => {
+      const wrapper = mountMenuBar()
+      expect(
+        wrapper.find('[data-testid="run-button-group"]').exists(),
+      ).toBe(true)
+    })
+  })
 })

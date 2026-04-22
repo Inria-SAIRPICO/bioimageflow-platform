@@ -102,6 +102,11 @@ onMounted(async () => {
   const saved = await loadWorkflow()
   if (saved && saved.nodes.length > 0) {
     setNodes(saved.nodes)
+    // Wait for node components (and their <Handle> DOM elements) to mount
+    // before setting edges — Vue Flow resolves edge endpoints against live
+    // handle elements, so edges added in the same tick as nodes render with
+    // no visible path.
+    await nextTick()
     setEdges(saved.edges)
     syncGraph({ nodes: saved.nodes, edges: saved.edges })
   }
