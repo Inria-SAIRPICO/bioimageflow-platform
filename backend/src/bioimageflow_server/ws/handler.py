@@ -14,10 +14,12 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
-if TYPE_CHECKING:
-    from fastapi import FastAPI, WebSocket  # pragma: no cover
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from pydantic import TypeAdapter, ValidationError
+
+from bioimageflow_server.models.ws import ClientMessage, SubscribeLogsMessage
 
 
 _logger = logging.getLogger("bioimageflow_server.ws")
@@ -434,11 +436,6 @@ def register_ws(app: FastAPI, manager: ConnectionManager) -> None:
     Accepts client connections, parses incoming messages against ``ClientMessage``,
     handles ``subscribe_logs`` (with optional ack), and cleans up on disconnect.
     """
-    from fastapi import WebSocket, WebSocketDisconnect
-    from pydantic import TypeAdapter, ValidationError
-
-    from bioimageflow_server.models.ws import ClientMessage, SubscribeLogsMessage
-
     adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 
     @app.websocket("/ws")

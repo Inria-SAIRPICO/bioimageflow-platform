@@ -576,3 +576,170 @@ async def test_disconnect_stops_sender_task() -> None:
         if task.done():
             break
     assert task.done()
+
+
+# ---- /ws endpoint integration (Task 3) --------------------------------------
+# These use FastAPI TestClient (sync context manager, which runs its own loop).
+
+
+def _make_app_with_ws():
+    from contextlib import asynccontextmanager
+
+    from fastapi import FastAPI
+
+    from bioimageflow_server.ws.handler import ConnectionManager, register_ws
+
+    manager = ConnectionManager()
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        manager._loop = asyncio.get_running_loop()  # type: ignore[attr-defined]
+        yield
+        manager._loop = None  # type: ignore[attr-defined]
+
+    app = FastAPI(lifespan=_lifespan)
+    register_ws(app, manager)
+    return app, manager
+
+
+def test_endpoint_connect_no_initial_message() -> None:
+    from fastapi.testclient import TestClient
+
+    app, _ = _make_app_with_ws()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            # No immediate server-pushed message; receive_json with a short
+            # timeout should not surface anything. We can't easily test "no
+            # message"; instead, round-trip a subscribe_logs and assert only
+            # the ack comes back.
+            ws.send_json({"type": "subscribe_logs", "message_id": "m1"})
+            msg = ws.receive_json()
+            assert msg == {"type": "ack", "ref": "m1"}
+
+
+def test_endpoint_subscribe_logs_without_message_id_no_ack() -> None:
+    from fastapi.testclient import TestClient
+
+    app, manager = _make_app_with_ws()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json(
+                {"type": "subscribe_logs", "node_id": "n1", "level": "INFO"}
+            )
+            # To assert no ack is sent, trigger a broadcast and verify it is
+            # the first thing we receive (not an ack).
+            # Drive the broadcast via the manager's public API on the server loop.
+            # The simplest way is to send another message; manager has processed
+            # the subscribe_logs, then we confirm no ack was queued by sending
+            # a subscribe_logs WITH an id and seeing that ack is the only ack.
+            ws.send_json({"type": "subscribe_logs", "message_id": "m2"})
+            msg = ws.receive_json()
+            assert msg == {"type": "ack", "ref": "m2"}
+
+
+def test_endpoint_invalid_payload_returns_error() -> None:
+    from fastapi.testclient import TestClient
+
+    app, _ = _make_app_with_ws()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "bogus"})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert msg["code"] == "invalid_payload"
+            assert msg["ref"] is None
+
+
+def test_endpoint_invalid_payload_preserves_message_id_ref() -> None:
+    from fastapi.testclient import TestClient
+
+    app, _ = _make_app_with_ws()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "bogus", "message_id": "caller-1"})
+            msg = ws.receive_json()
+            assert msg["type"] == "error"
+            assert msg["ref"] == "caller-1"
+
+
+def test_endpoint_subscribe_and_receive_filtered_log() -> None:
+    """subscribe_logs sets a filter; a subsequent broadcast_log respects it."""
+    from fastapi.testclient import TestClient
+
+    app, manager = _make_app_with_ws()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json(
+                {
+                    "type": "subscribe_logs",
+                    "message_id": "m1",
+                    "node_id": "target",
+                }
+            )
+            ack = ws.receive_json()
+            assert ack["type"] == "ack"
+
+            # Drive broadcast_log from the server's event loop.
+            loop = manager._loop  # type: ignore[attr-defined]
+            assert loop is not None
+
+            async def _emit() -> None:
+                await manager.broadcast_log("INFO", "skip", "other", 0.0)
+                await manager.broadcast_log("INFO", "keep", "target", 0.0)
+
+            fut = asyncio.run_coroutine_threadsafe(_emit(), loop)
+            fut.result(timeout=1.0)
+
+            msg = ws.receive_json()
+            assert msg["type"] == "log"
+            assert msg["message"] == "keep"
+            assert msg["node_id"] == "target"
+
+
+def test_endpoint_clean_disconnect() -> None:
+    """Closing the client does not crash the server."""
+    from fastapi.testclient import TestClient
+
+    app, manager = _make_app_with_ws()
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            pass  # close immediately
+        # After closing, the server-side should have removed the connection.
+        # Give the loop a moment to process the disconnect.
+        import time
+
+        for _ in range(20):
+            if not manager.connections:
+                break
+            time.sleep(0.01)
+        assert manager.connections == []
+
+
+def test_endpoint_multiple_concurrent_clients_all_receive_broadcast() -> None:
+    from fastapi.testclient import TestClient
+
+    app, manager = _make_app_with_ws()
+    with TestClient(app) as client:
+        with (
+            client.websocket_connect("/ws") as ws1,
+            client.websocket_connect("/ws") as ws2,
+        ):
+            # Wait until both connections are registered on the server side.
+            import time
+
+            for _ in range(20):
+                if len(manager.connections) == 2:
+                    break
+                time.sleep(0.01)
+            assert len(manager.connections) == 2
+
+            loop = manager._loop  # type: ignore[attr-defined]
+            fut = asyncio.run_coroutine_threadsafe(
+                manager.broadcast_progress("n1", "running", 1, 5, 0.0), loop
+            )
+            fut.result(timeout=1.0)
+
+            m1 = ws1.receive_json()
+            m2 = ws2.receive_json()
+            assert m1["type"] == "progress"
+            assert m2["type"] == "progress"
