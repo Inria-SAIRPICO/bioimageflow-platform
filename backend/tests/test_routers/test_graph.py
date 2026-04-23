@@ -21,56 +21,65 @@ def anyio_backend() -> str:
 
 
 # ---- Mock tool fixtures -----------------------------------------------------
+# Tool classes must be defined at module level so ``Workflow.from_dict``
+# can re-import them via the module's ``__name__``.
+
+from bioimageflow.dataframe_tool import DataFrameTool
+from bioimageflow_core.environment import EnvironmentSpec
+from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.types import ImagePath, Semantic
 
 
-def _build_mock_tool_classes() -> dict[str, type]:
-    from bioimageflow.dataframe_tool import DataFrameTool
-    from bioimageflow_core.environment import EnvironmentSpec
-    from bioimageflow_core.tool import IOModel, ProcessingTool
-    from bioimageflow_core.types import ImagePath, Semantic
+class _ProcInputs(IOModel):
+    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    diameter: float = 30.0
 
-    class ProcInputs(IOModel):
-        input_image: ImagePath(semantics={Semantic.INTENSITY})
-        diameter: float = 30.0
 
-    class ProcOutputs(IOModel):
-        mask: ImagePath(semantics={Semantic.LABEL})
+class _ProcOutputs(IOModel):
+    mask: ImagePath(semantics={Semantic.LABEL})
 
-    class MockProcessingTool(ProcessingTool):
-        environment = EnvironmentSpec(name="test", dependencies={})
-        Inputs = ProcInputs
-        Outputs = ProcOutputs
 
-        def process_row(self, arguments: Any) -> Any:
-            return {}
+class MockProcessingTool(ProcessingTool):
+    environment = EnvironmentSpec(name="test", dependencies={})
+    Inputs = _ProcInputs
+    Outputs = _ProcOutputs
 
-    class DFInputs(IOModel):
-        threshold: float = 0.5
+    def process_row(self, arguments: Any) -> Any:
+        return {}
 
-    class MockDataFrameTool(DataFrameTool):
-        Inputs = DFInputs
 
-    class IntInputs(IOModel):
-        n: int = 1
+class _DFInputs(IOModel):
+    threshold: float = 0.5
 
-    class IntTool(ProcessingTool):
-        environment = EnvironmentSpec(name="test", dependencies={})
-        Inputs = IntInputs
-        Outputs = ProcOutputs
 
-        def process_row(self, arguments: Any) -> Any:
-            return {}
+class MockDataFrameTool(DataFrameTool):
+    Inputs = _DFInputs
 
-    return {
-        "MockProcessingTool": MockProcessingTool,
-        "MockDataFrameTool": MockDataFrameTool,
-        "IntTool": IntTool,
-    }
+
+class _IntInputs(IOModel):
+    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    n: int = 1
+
+
+class IntTool(ProcessingTool):
+    environment = EnvironmentSpec(name="test", dependencies={})
+    Inputs = _IntInputs
+    Outputs = _ProcOutputs
+
+    def process_row(self, arguments: Any) -> Any:
+        return {}
+
+
+_TOOL_CLASSES: dict[str, type] = {
+    "MockProcessingTool": MockProcessingTool,
+    "MockDataFrameTool": MockDataFrameTool,
+    "IntTool": IntTool,
+}
 
 
 def _test_registry() -> ToolRegistryService:
     reg = ToolRegistryService()
-    for name, cls in _build_mock_tool_classes().items():
+    for name, cls in _TOOL_CLASSES.items():
         reg.register_tool(
             name,
             ToolMetadata(
