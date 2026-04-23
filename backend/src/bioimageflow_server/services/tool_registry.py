@@ -6,9 +6,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from bioimageflow.validation import (
+    SchemaSerializationError,
+    serialize_input_schema,
+    serialize_output_schema,
+)
+
 from bioimageflow_server.models.tools import (
-    InputFieldSchema,
-    OutputFieldSchema,
     PackageInfo,
     ToolMetadata,
 )
@@ -106,8 +110,6 @@ class ToolRegistryService:
         version: str,
     ) -> None:
         """Extract metadata from a tool class and register it."""
-        from bioimageflow_core.tool import BaseTool
-
         display_name = getattr(tool_cls, "display_name", None) or class_name
         documentation = getattr(tool_cls, "documentation", "") or getattr(tool_cls, "__doc__", "") or ""
         tags = list(getattr(tool_cls, "tags", []))
@@ -129,53 +131,17 @@ class ToolRegistryService:
             else:
                 tool_type = "BaseTool"
 
-        # Extract input schema
-        inputs: dict[str, InputFieldSchema] = {}
-        inputs_cls = getattr(tool_cls, "Inputs", None)
-        if inputs_cls is not None:
-            from bioimageflow_core.types import Connectable, extract_gui_meta
+        try:
+            inputs_dict = serialize_input_schema(tool_cls)
+        except SchemaSerializationError as exc:
+            logger.warning("Failed to serialize inputs for %s: %s", class_name, exc)
+            inputs_dict = {}
 
-            annotations: dict[str, Any] = {}
-            for klass in reversed(inputs_cls.__mro__):
-                annotations.update(getattr(klass, "__annotations__", {}))
-            for field_name, annotation in annotations.items():
-                type_name = _type_display_name(annotation)
-                has_default = hasattr(inputs_cls, field_name)
-                default = getattr(inputs_cls, field_name, None) if has_default else None
-                is_optional = _is_optional_type(annotation)
-
-                gui_meta = extract_gui_meta(annotation)
-                connectable = gui_meta.connectable is not Connectable.NEVER if gui_meta else True
-                min_val = gui_meta.min if gui_meta else None
-                max_val = gui_meta.max if gui_meta else None
-                step_val = gui_meta.step if gui_meta else None
-                group_val = gui_meta.group if gui_meta else None
-                choices_val = _extract_choices(annotation)
-
-                inputs[field_name] = InputFieldSchema(
-                    type=type_name,
-                    connectable=connectable,
-                    default=default,
-                    description="",
-                    optional=is_optional,
-                    min=min_val,
-                    max=max_val,
-                    step=step_val,
-                    group=group_val,
-                    choices=choices_val,
-                )
-
-        # Extract output schema
-        outputs: dict[str, OutputFieldSchema] = {}
-        outputs_cls = getattr(tool_cls, "Outputs", None)
-        if outputs_cls is not None:
-            annotations = getattr(outputs_cls, "__annotations__", {})
-            for field_name, annotation in annotations.items():
-                default_val = getattr(outputs_cls, field_name, None)
-                outputs[field_name] = OutputFieldSchema(
-                    type=_type_display_name(annotation),
-                    default=_output_default_str(default_val),
-                )
+        try:
+            outputs_dict = serialize_output_schema(tool_cls)
+        except SchemaSerializationError as exc:
+            logger.warning("Failed to serialize outputs for %s: %s", class_name, exc)
+            outputs_dict = {}
 
         # Extract environment info
         env_spec = getattr(tool_cls, "environment", None)
@@ -197,8 +163,8 @@ class ToolRegistryService:
                 documentation=documentation.strip(),
                 tags=tags,
                 categories=categories,
-                inputs=inputs,
-                outputs=outputs,
+                inputs=inputs_dict,
+                outputs=outputs_dict,
                 environment=environment,
             ),
         )
@@ -287,72 +253,3 @@ class ToolRegistryService:
         }
 
 
-def _output_default_str(default_val: Any) -> str | None:
-    """Serialize a tool Output field default to the path-template string sent
-    to the GUI. Tool authors typically declare defaults as ``Path("...")``
-    (e.g. ``Path("{input_image.stem}_mask{ext}")``) — fall back to ``str()``
-    for any object that's not ``None``.
-    """
-    if default_val is None:
-        return None
-    if isinstance(default_val, str):
-        return default_val
-    return str(default_val)
-
-
-def _is_optional_type(annotation: Any) -> bool:
-    """Return True if the annotation is Optional[X] (i.e. X | None)."""
-    from typing import get_origin, get_args, Annotated, Union
-    import types
-
-    # Unwrap Annotated first
-    if get_origin(annotation) is Annotated:
-        annotation = get_args(annotation)[0]
-
-    origin = get_origin(annotation)
-    # Python 3.10+ unions use types.UnionType
-    if origin is Union or isinstance(annotation, types.UnionType):
-        args = get_args(annotation)
-        return type(None) in args
-
-    return False
-
-
-def _extract_choices(annotation: Any) -> list[str] | None:
-    """Extract choices from Literal or Enum type annotations."""
-    import enum
-    import types
-    from typing import Annotated, Literal, Union, get_args, get_origin
-
-    # Unwrap Annotated
-    if get_origin(annotation) is Annotated:
-        annotation = get_args(annotation)[0]
-
-    # Unwrap Optional (Union[X, None])
-    origin = get_origin(annotation)
-    if origin is Union or isinstance(annotation, types.UnionType):
-        args = [a for a in get_args(annotation) if a is not type(None)]
-        if len(args) == 1:
-            annotation = args[0]
-
-    # Handle Literal["a", "b", "c"]
-    if get_origin(annotation) is Literal:
-        return [str(v) for v in get_args(annotation)]
-
-    # Handle Enum subclasses
-    if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
-        return [str(member.value) for member in annotation]
-
-    return None
-
-
-def _type_display_name(annotation: Any) -> str:
-    """Convert a type annotation to a human-readable string."""
-    from typing import get_origin, get_args, Annotated
-
-    if get_origin(annotation) is Annotated:
-        annotation = get_args(annotation)[0]
-
-    if isinstance(annotation, type):
-        return annotation.__name__
-    return str(annotation)

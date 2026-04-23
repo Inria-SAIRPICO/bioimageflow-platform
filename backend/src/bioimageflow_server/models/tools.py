@@ -22,22 +22,30 @@ if TYPE_CHECKING:
 
 class InputFieldSchema(BaseModel):
     type: str
-    connectable: bool = True
+    required: bool
+    connectable: Literal["never", "not_by_default", "by_default"]
     default: Any = None
-    description: str = ""
-    optional: bool = False
+    display_name: str | None = None
+    description: str | None = None
+    group: str | None = None
     min: float | None = None
     max: float | None = None
     step: float | None = None
-    group: str | None = None
     choices: list[str] | None = None
+    image_spec: dict[str, list[str]] | None = None
 
 
 class OutputFieldSchema(BaseModel):
     type: str
-    default: str | None = None
+    default: Any = None
+    image_spec: dict[str, list[str]] | None = None
 
 
+# Passthrough marker for DataFrameTool outputs that inherit upstream columns.
+# When present, `ToolMetadata.outputs` is ``{"_passthrough": True}`` instead of
+# a per-field dict. Modelled as ``dict[str, Any]`` to keep OpenAPI generation
+# straightforward.
+#
 # --- Tool metadata ---
 
 
@@ -51,7 +59,7 @@ class ToolMetadata(BaseModel):
     tags: list[str] = []
     categories: list[str] = []
     inputs: dict[str, InputFieldSchema] = {}
-    outputs: dict[str, OutputFieldSchema] = {}
+    outputs: dict[str, Any] = {}
     environment: dict[str, Any] | None = None
 
 

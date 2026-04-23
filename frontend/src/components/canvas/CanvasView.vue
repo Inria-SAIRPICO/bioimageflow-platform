@@ -359,12 +359,15 @@ function isValidConnection(connection: {
   const targetNode = getNodes.value.find((n: any) => n.id === connection.target)
   if (!sourceNode || !targetNode) return false
 
-  const sourceTool: ToolMetadata | undefined = toolRegistryStore.getToolByName(
-    sourceNode.data?.toolName,
-  )
-  const targetTool: ToolMetadata | undefined = toolRegistryStore.getToolByName(
-    targetNode.data?.toolName,
-  )
+  // Prefer the tool metadata carried on the node itself — the registry may
+  // not be populated yet during restore-on-mount (fetch is async), and a
+  // missing tool here would silently fail every edge with EDGE_INVALID.
+  const sourceTool: ToolMetadata | undefined =
+    (sourceNode.data?.tool as ToolMetadata | undefined) ??
+    toolRegistryStore.getToolByName(sourceNode.data?.toolName)
+  const targetTool: ToolMetadata | undefined =
+    (targetNode.data?.tool as ToolMetadata | undefined) ??
+    toolRegistryStore.getToolByName(targetNode.data?.toolName)
   if (!sourceTool || !targetTool) return false
 
   if (connection.sourceHandle && connection.targetHandle) {
@@ -458,10 +461,9 @@ function onAddNode({
   // Only default to pinned (true) for required Path-type fields
   const pinnedInputs: Record<string, boolean> = {}
   for (const [key, field] of Object.entries(tool.inputs)) {
-    if (field.connectable) {
+    if (field.connectable !== 'never') {
       const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
-      const isRequired = !field.optional
-      pinnedInputs[key] = isPathType && isRequired
+      pinnedInputs[key] = isPathType && field.required
     }
   }
 
@@ -582,10 +584,9 @@ function pasteFromClipboard() {
     const output_templates: Record<string, string> = {}
     if (tool) {
       for (const [key, field] of Object.entries(tool.inputs)) {
-        if (field.connectable) {
+        if (field.connectable !== 'never') {
           const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
-          const isRequired = !field.optional
-          pinnedInputs[key] = isPathType && isRequired
+          pinnedInputs[key] = isPathType && field.required
         }
       }
       for (const [key, field] of Object.entries(tool.outputs)) {

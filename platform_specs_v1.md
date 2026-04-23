@@ -87,7 +87,32 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 
 **Tool metadata response (from `GET /tools`):**
 
-The backend calls `get_inputs_schema(tool)` (from `bioimageflow.validation`) to produce the input schema. This function reads `GUIMeta` annotations from tool `Inputs` fields.
+The input/output schemas are the library's canonical wire format, produced by `bioimageflow.validation.serialize_input_schema` and `serialize_output_schema`. The platform does not transform them — see the library spec (§2.4 / §3.4) for the authoritative definition.
+
+Per-field `InputFieldSchema`:
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `type` | `string` | Display name (e.g. `"float"`, `"int"`, `"str"`, `"bool"`, `"Path"`, `"ImagePath"`, `"ImageShared"`). |
+| `required` | `boolean` | `true` when no class-level default is set on `Inputs`. |
+| `connectable` | `"never" \| "not_by_default" \| "by_default"` | Three-state. `"never"` hides the pin; the other two mean the field can accept an upstream binding. |
+| `default` | `any` | JSON-safe default (or `null` when `required: true`). |
+| `display_name` | `string \| null` | From `GUIMeta.display_name`. |
+| `description` | `string \| null` | From `GUIMeta.description`. |
+| `group` | `string \| null` | From `GUIMeta.group`. |
+| `min` / `max` / `step` | `number \| null` | From `GUIMeta`. |
+| `choices` | `string[] \| null` | Populated for `Literal[...]` and `Enum` fields. |
+| `image_spec` | `object \| null` | `{semantics, layouts, dtypes, formats}` each as `string[]`, populated for `ImagePath` / `ImageShared` fields. |
+
+Per-field `OutputFieldSchema`:
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `type` | `string` | Display name. |
+| `default` | `any` | Path-template string for `Path`-typed outputs (e.g. `"{input_image.stem}_mask{ext}"`), or `null`. |
+| `image_spec` | `object \| null` | Same shape as on inputs. |
+
+**Passthrough outputs (`DataFrameTool`):** when the tool's `Outputs` class subclasses `bioimageflow.Passthrough`, the `outputs` dict on `ToolMetadata` is the marker `{"_passthrough": true}` instead of a per-field dict — frontends render "inherits columns from upstream."
 
 ```json
 {
@@ -102,36 +127,48 @@ The backend calls `get_inputs_schema(tool)` (from `bioimageflow.validation`) to 
   "inputs": {
     "input_image": {
       "type": "ImagePath",
-      "connectable": true,
+      "required": true,
+      "connectable": "by_default",
       "default": null,
-      "description": "Input intensity image"
+      "display_name": "Input image",
+      "description": "Input intensity image",
+      "group": null,
+      "min": null, "max": null, "step": null,
+      "choices": null,
+      "image_spec": {"semantics": ["intensity"], "layouts": ["YX", "CYX"], "dtypes": [], "formats": []}
     },
     "diameter": {
       "type": "float",
-      "connectable": false,
+      "required": false,
+      "connectable": "not_by_default",
       "default": 30.0,
-      "min": 1.0,
-      "max": 500.0,
-      "step": 0.5,
+      "display_name": "Cell diameter",
+      "description": "Expected cell diameter in pixels",
       "group": "general",
-      "description": "Expected cell diameter in pixels"
+      "min": 1.0, "max": 500.0, "step": 0.5,
+      "choices": null,
+      "image_spec": null
     },
     "model_type": {
-      "type": "Literal['cyto', 'cyto2', 'nuclei']",
-      "connectable": false,
+      "type": "str",
+      "required": false,
+      "connectable": "not_by_default",
       "default": "cyto2",
-      "description": "Cellpose model to use"
+      "display_name": "Model",
+      "description": "Cellpose model to use",
+      "group": null,
+      "min": null, "max": null, "step": null,
+      "choices": ["cyto", "cyto2", "nuclei"],
+      "image_spec": null
     }
   },
   "outputs": {
-    "mask": {"type": "ImagePath"},
-    "cell_count": {"type": "int"}
+    "mask": {"type": "ImagePath", "default": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
+    "cell_count": {"type": "int", "default": null, "image_spec": null}
   },
   "environment": {"python": "3.11", "conda": ["cellpose"], "pip": []}
 }
 ```
-
-The `connectable`, `min`, `max`, `step`, and `group` fields come from `GUIMeta` annotations on the tool's `Inputs` fields. Fields without `GUIMeta` default to `connectable: true` (backward-compatible). See `bioimageflow_core.tool.GUIMeta`.
 
 **Endpoint roles:** `GET /tools` returns tool-level metadata (inputs schema, outputs, environment) for graph construction and the Node Panel. `GET /tools/packages` returns package-level metadata (installed/available versions, environment status) for the Tools Panel tool list and Manage Tools dialog. The data intentionally overlaps (both include package name and version) for convenience — the frontend uses `GET /tools/packages` to populate the Tools Panel, and `GET /tools` to resolve tool schemas when building nodes.
 
@@ -810,7 +847,7 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 Input and output pins are the connection points on nodes.
 
 - **Output pins** (right side): One per field in `Outputs`. Label shows the field name. Tooltip shows the type.
-- **Input pins** (left side): Only for inputs where `connectable` is `true` (declared by the tool author via `GUIMeta`). Fields without `GUIMeta` default to `connectable: true`. When a connectable input is connected, the corresponding parameter field in the Node Panel shows the source (e.g., `"cellpose_segmenter_1.mask"`) and the input widget is hidden.
+- **Input pins** (left side): Only for inputs where `connectable` is `"by_default"` or `"not_by_default"` (i.e. not `"never"`; declared by the tool author via `GUIMeta`). Fields without `GUIMeta` default to `"not_by_default"`. When a connectable input is connected, the corresponding parameter field in the Node Panel shows the source (e.g., `"cellpose_segmenter_1.mask"`) and the input widget is hidden.
 
 For **DataFrameTool** nodes: positional upstream connections appear as numbered input pins ("1", "2", ...) on the left side. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap (e.g., removing pin 1 causes pin 2 to become pin 1). Positional pin order can be changed by disconnecting and reconnecting edges in the desired order.
 
@@ -907,10 +944,10 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 
 | Element | Description |
 |---------|-------------|
-| **Pin toggle button** | Icon-only button placed **before** the label, only rendered if the input is `connectable`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` decides whether the button appears; the button itself decides whether the pin is shown. |
+| **Pin toggle button** | Icon-only button placed **before** the label, only rendered when `connectable != "never"`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` (three-state: `"never" \| "not_by_default" \| "by_default"`) decides whether the button appears; the button itself decides whether the pin is shown. Current behaviour is to treat both `"not_by_default"` and `"by_default"` identically (pin visible) — a richer UX that hides pins by default for `"not_by_default"` fields is a separate plan. |
 | **Label** | Field name (human-readable) |
 | **Default button** | Resets the field to its default value |
-| **None toggle** | Two-state button (only shown if the field is `Optional`). When active, the value is `None` and the input field is hidden. |
+| **None toggle** | Two-state button (only shown when `required` is `false` on the field schema, i.e. the field has a default). When active, the value is `None` and the input field is hidden. |
 | **Input field** | The actual value editor (hidden when connected or None). Type depends on the field annotation (see below). |
 | **Help text** | Collapsible description from field metadata |
 
@@ -926,7 +963,7 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `Path` (file) | Text input + "Select File" button | In pywebview: native file dialog. In browser: Dataset Browser modal (Section 3.14). |
 | `Path` (directory) | Text input + "Select Folder" button | In pywebview: native folder dialog. In browser: folder selection is not offered — the button is hidden and only manual text entry or drag-and-drop is available. |
 | `ImagePath` | Text input + "Select File" button (filtered by format spec) | Same dual behavior as `Path` (file). File-type filter applies to both the native dialog and the Dataset Browser search filter. |
-| `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable=True`, not user-editable. |
+| `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable != "never"`, not user-editable. |
 | `tuple`, `list` | Inline list editor | -- |
 
 When a connectable input is **connected** (pin has an edge), the input field is replaced by a read-only label showing the source: `"segmenter_1.mask"`.
@@ -1035,7 +1072,7 @@ Accessed via the menu bar or a dedicated toolbar area.
 
 **Buttons:**
 - **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" **Disabled** when a validation request is pending or the debounce timer is active. If clicked during the debounce window, the frontend flushes the debounce (sends `PUT /graph` immediately), waits for the validation response, and only then proceeds with execution. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
-- **Execute Selected:** Execute only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
+- **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
 **During execution — Non-Modal Execution Banner:**
@@ -1332,7 +1369,7 @@ On load, the server reports missing packages in the load response. The frontend 
 | 17 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
 | 18 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
 | 19 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
-| 20 | `POST` | `/api/v1/execution/run` | "Run" / "Execute Selected" buttons |
+| 20 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
 | 21 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
 | 22 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
 | 23 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |

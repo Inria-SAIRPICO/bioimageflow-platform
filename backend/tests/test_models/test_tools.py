@@ -31,6 +31,8 @@ def test_tool_metadata_full_construction():
         inputs={
             "diameter": InputFieldSchema(
                 type="float",
+                required=True,
+                connectable="not_by_default",
                 description="Cell diameter",
                 min=0.0,
                 max=500.0,
@@ -67,9 +69,10 @@ def test_tool_metadata_defaults():
     assert meta.environment is None
 
 
-def test_input_field_schema_connectable_default():
-    field = InputFieldSchema(type="float")
-    assert field.connectable is True
+def test_input_field_schema_connectable_three_state():
+    field = InputFieldSchema(type="float", required=True, connectable="not_by_default")
+    assert field.connectable == "not_by_default"
+    assert field.required is True
 
 
 # --- Task 2 tests ---

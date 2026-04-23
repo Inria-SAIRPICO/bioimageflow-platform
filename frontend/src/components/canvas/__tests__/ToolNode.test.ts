@@ -27,8 +27,8 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImagePath', connectable: true },
-      sigma: { type: 'float', connectable: false, default: 1.0 },
+      image: { type: 'ImagePath', required: true, connectable: 'by_default' },
+      sigma: { type: 'float', required: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -143,7 +143,7 @@ describe('ToolNode', () => {
     const tool = makeTool({
       tool_type: 'DataFrameTool',
       inputs: {
-        column: { type: 'str', connectable: true },
+        column: { type: 'str', required: true, connectable: 'by_default' },
       },
     })
     const data = makeData({

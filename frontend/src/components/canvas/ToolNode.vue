@@ -30,7 +30,7 @@ const emit = defineEmits<{
 
 const connectableInputs = computed(() => {
   return Object.entries(props.data.tool.inputs).filter(
-    ([name, field]) => field.connectable && (props.data.pinnedInputs[name] !== false),
+    ([name, field]) => field.connectable !== 'never' && (props.data.pinnedInputs[name] !== false),
   )
 })
 

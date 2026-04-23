@@ -11,7 +11,25 @@ import { useUIStore } from '@/stores/ui'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useValidationErrors } from '@/composables/useValidationErrors'
-import type { InputFieldSchema, OutputFieldSchema } from '@/api/types'
+import type { InputFieldSchema } from '@/api/types'
+
+// `OutputFieldSchema` is not exposed in the generated OpenAPI types because
+// `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
+// `{"_passthrough": true}` Passthrough marker for DataFrame tools). Mirror
+// the library's wire shape here.
+interface OutputFieldSchema {
+  type: string
+  default: unknown
+  image_spec: Record<string, string[]> | null
+}
+
+// Connectable is a three-state string: `"never" | "not_by_default" | "by_default"`.
+// For this PR we treat every non-`"never"` value as "pin visible"; the richer
+// three-state UX (`not_by_default` → hidden pin with a reveal toggle) is a
+// separate plan.
+function canConnect(field: InputFieldSchema): boolean {
+  return field.connectable !== 'never'
+}
 
 const { pickFile: pickFileNative, pickFolder: pickFolderNative, isDesktop } = usePathPicker()
 
@@ -113,9 +131,9 @@ function toggleNull(key: string) {
 function isFieldNulled(key: string): boolean {
   if (!nodeData.value) return false
   const field = nodeData.value.tool?.inputs[key] as InputFieldSchema | undefined
-  // Non-optional fields are never in a "null" state — an undefined value just
+  // Required fields are never in a "null" state — an undefined value just
   // means "not yet set" and the widget should render so the user can set it.
-  if (!field?.optional) return false
+  if (!field || field.required) return false
   if (nulledFields.value[key]) return true
   return nodeData.value.parameters[key] === null || nodeData.value.parameters[key] === undefined
 }
@@ -259,7 +277,7 @@ async function pickFolder(key: string) {
           <div class="param-header">
             <!-- Pin visibility toggle (icon-only, before the label) -->
             <Button
-              v-if="(field as InputFieldSchema).connectable"
+              v-if="canConnect(field as InputFieldSchema)"
               :icon="isPinned(key) ? 'pi pi-times' : 'pi pi-arrow-right-arrow-left'"
               class="p-button-text p-button-sm param-action-btn pin-toggle-btn"
               :title="isPinned(key) ? 'Remove input pin' : 'Add input pin'"
@@ -300,7 +318,7 @@ async function pickFolder(key: string) {
 
           <!-- None toggle for Optional fields (Pin toggle is now an icon
                button in the param header — see above) -->
-          <div v-if="(field as InputFieldSchema).optional" class="param-toggles">
+          <div v-if="!(field as InputFieldSchema).required" class="param-toggles">
             <label class="toggle-label" data-testid="none-toggle">
               <Checkbox
                 :model-value="isFieldNulled(key)"
@@ -404,7 +422,7 @@ async function pickFolder(key: string) {
             </div>
             <!-- Text / non-connectable string input -->
             <InputText
-              v-else-if="!(field as InputFieldSchema).connectable || (field as InputFieldSchema).type === 'str'"
+              v-else-if="!canConnect(field as InputFieldSchema) || (field as InputFieldSchema).type === 'str'"
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               @update:model-value="updateParameter(key, $event)"
             />

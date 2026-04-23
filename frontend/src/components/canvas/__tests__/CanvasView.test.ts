@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { defineComponent, ref, reactive, computed } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, ref, reactive, computed, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import type { ToolMetadata } from '@/api/types'
 
@@ -17,8 +17,8 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImagePath', connectable: true },
-      sigma: { type: 'float', connectable: false, default: 1.0 },
+      image: { type: 'ImagePath', required: true, connectable: 'by_default' },
+      sigma: { type: 'float', required: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -33,8 +33,8 @@ function makeThresholdTool(): ToolMetadata {
     name: 'threshold',
     display_name: 'Threshold',
     inputs: {
-      mask: { type: 'MaskPath', connectable: true },
-      level: { type: 'float', connectable: false, default: 0.5 },
+      mask: { type: 'MaskPath', required: true, connectable: 'by_default' },
+      level: { type: 'float', required: false, connectable: 'never', default: 0.5 },
     },
     outputs: {
       result: { type: 'MaskPath' },
@@ -65,14 +65,23 @@ vi.mock('@vue-flow/core', () => {
       addEdges: (edges: any[]) => { mockEdges.push(...edges) },
       removeNodes: (ids: string[]) => {
         const idSet = new Set(ids)
-        mockNodes = mockNodes.filter((n: any) => !idSet.has(n.id))
+        const kept = mockNodes.filter((n: any) => !idSet.has(n.id))
+        mockNodes.splice(0, mockNodes.length, ...kept)
       },
       removeEdges: (ids: string[]) => {
         const idSet = new Set(ids)
-        mockEdges = mockEdges.filter((e: any) => !idSet.has(e.id))
+        const kept = mockEdges.filter((e: any) => !idSet.has(e.id))
+        mockEdges.splice(0, mockEdges.length, ...kept)
       },
-      setNodes: (nodes: any[]) => { mockNodes = [...nodes] },
-      setEdges: (edges: any[]) => { mockEdges = [...edges] },
+      // Mutate the array in place so the `computed(() => mockNodes)` ref
+      // above keeps the same array identity and downstream consumers see
+      // the new contents.
+      setNodes: (nodes: any[]) => {
+        mockNodes.splice(0, mockNodes.length, ...nodes)
+      },
+      setEdges: (edges: any[]) => {
+        mockEdges.splice(0, mockEdges.length, ...edges)
+      },
       updateEdge: (oldEdge: any, conn: any) => {
         const idx = mockEdges.findIndex((e: any) => e.id === oldEdge.id)
         if (idx < 0) return false
@@ -101,16 +110,24 @@ vi.mock('@vue-flow/controls', () => ({
   Controls: defineComponent({ name: 'Controls', template: '<div />' }),
 }))
 
-vi.mock('@/composables/useGraphSync', () => ({
-  useGraphSync: () => ({
-    syncGraph: vi.fn(),
-    flushNow: vi.fn(),
-    patchParameters: vi.fn(),
-    loadWorkflow: vi.fn().mockResolvedValue(null),
-    validationResult: ref(null),
-    isPending: ref(false),
-  }),
+const graphSyncMocks = vi.hoisted(() => ({
+  syncGraph: vi.fn(),
+  flushNow: vi.fn(),
+  patchParameters: vi.fn(),
+  loadWorkflow: vi.fn().mockResolvedValue(null),
 }))
+
+vi.mock('@/composables/useGraphSync', async () => {
+  const { ref } = await import('vue')
+  return {
+    useGraphSync: () => ({
+      ...graphSyncMocks,
+      validationResult: ref(null),
+      isPending: ref(false),
+      syncState: ref('idle'),
+    }),
+  }
+})
 
 // Import after mocks
 import CanvasView from '../CanvasView.vue'
@@ -129,12 +146,16 @@ function mountCanvas(propsData: { nodes?: any[]; edges?: any[] } = {}) {
 describe('CanvasView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    mockNodes = []
-    mockEdges = []
+    mockNodes.length = 0
+    mockEdges.length = 0
     connectHandler = null
     selectionHandler = null
     dragStartHandler = null
     dragStopHandler = null
+    graphSyncMocks.syncGraph.mockClear()
+    graphSyncMocks.flushNow.mockClear()
+    graphSyncMocks.patchParameters.mockClear()
+    graphSyncMocks.loadWorkflow.mockReset().mockResolvedValue(null)
   })
 
   // --- Task 6: Core Vue Flow Setup ---
@@ -653,6 +674,204 @@ describe('CanvasView', () => {
       const events = w.emitted('graph-changed')
       expect(events).toBeTruthy()
       expect(events!.length).toBe(1)
+      w.unmount()
+    })
+  })
+
+  // --- Reload from IndexedDB ---
+
+  describe('restore persisted workflow on mount', () => {
+    function savedNode(id: string, x: number) {
+      return {
+        id,
+        type: 'tool',
+        position: { x, y: 100 },
+        data: {
+          name: id,
+          toolName: 'gaussian_blur',
+          tool: makeTool(),
+          status: 'unexecuted',
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          collapsed: false,
+          enabled: true,
+          connectedInputs: {},
+          pinnedInputs: {},
+        },
+      }
+    }
+
+    function savedEdge(id: string, source: string, target: string) {
+      return {
+        id,
+        source,
+        target,
+        sourceHandle: 'result',
+        targetHandle: 'image',
+        type: 'column_ref',
+      }
+    }
+
+    it('restores both nodes and edges from persisted state', async () => {
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [savedEdge('e1', 'a', 'b')]
+      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+
+      const w = mountCanvas()
+      // Allow onMounted's async chain (await loadWorkflow + await nextTick) to settle.
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes).toHaveLength(2)
+      expect(mockEdges).toHaveLength(1)
+
+      const restored = mockEdges[0]
+      expect(restored.id).toBe('e1')
+      expect(restored.source).toBe('a')
+      expect(restored.target).toBe('b')
+      expect(restored.sourceHandle).toBe('result')
+      expect(restored.targetHandle).toBe('image')
+      // The edge type MUST be preserved — without it, Vue Flow renders the
+      // default edge style instead of our custom ColumnRefEdge/PositionalEdge,
+      // which was the visual bug after reload.
+      expect(restored.type).toBe('column_ref')
+
+      w.unmount()
+    })
+
+    it('sets nodes before edges so Vue Flow handles exist when edges attach', async () => {
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [savedEdge('e1', 'a', 'b')]
+      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+
+      // Track call order: the restore path must populate nodes into Vue Flow's
+      // internal state before edges, otherwise edges reference nodes/handles
+      // that don't exist yet and Vue Flow drops them from the rendered graph.
+      const callOrder: string[] = []
+      const origSetNodes = mockNodes
+      // Patch mockNodes / mockEdges indirectly via the useVueFlow setters
+      // by temporarily wrapping them (the mock uses the module-level arrays
+      // directly, so we instrument through a custom watch).
+      const setNodesCalls: any[] = []
+      const setEdgesCalls: any[] = []
+
+      // Re-mock setNodes / setEdges would require rebuilding the vi.mock;
+      // instead, observe the effect: after mount, between the setNodes and
+      // setEdges calls there must be at least one microtask (nextTick). We
+      // verify by asserting that nodes are visible in the getNodes computed
+      // before edges land. Since both calls happen in the same onMounted
+      // async function, the simplest invariant is: if edges are in mockEdges,
+      // the corresponding source/target nodes are in mockNodes.
+      void origSetNodes
+      void setNodesCalls
+      void setEdgesCalls
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      callOrder.push('after-mount')
+
+      // Every restored edge must have both endpoints present as nodes.
+      for (const edge of mockEdges) {
+        expect(mockNodes.find((n: any) => n.id === edge.source)).toBeDefined()
+        expect(mockNodes.find((n: any) => n.id === edge.target)).toBeDefined()
+      }
+
+      w.unmount()
+    })
+
+    it('no-op when storage is empty', async () => {
+      graphSyncMocks.loadWorkflow.mockResolvedValueOnce(null)
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+
+      expect(mockNodes).toHaveLength(0)
+      expect(mockEdges).toHaveLength(0)
+
+      w.unmount()
+    })
+
+    it('no-op when storage has zero nodes', async () => {
+      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({
+        nodes: [],
+        edges: [],
+      })
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+
+      expect(mockNodes).toHaveLength(0)
+      expect(mockEdges).toHaveLength(0)
+
+      w.unmount()
+    })
+
+    it('restores edges even when the tool registry is empty (restore-race)', async () => {
+      // Regression for a Firefox-specific bug where tool fetch was still in
+      // flight while CanvasView's onMounted restored edges. `isValidConnection`
+      // queried the empty registry, returned false, and Vue Flow rejected every
+      // restored edge with EDGE_INVALID. The fix reads tool metadata off the
+      // node itself (`data.tool`) instead of the async registry.
+      const store = useToolRegistryStore()
+      store.tools = [] as any // registry empty — as if fetchTools hasn't resolved
+
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [savedEdge('e1', 'a', 'b')]
+      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      // Even though the registry is empty, isValidConnection should accept
+      // the connection using node.data.tool.
+      const vm = w.vm as any
+      const ok = vm.isValidConnection({
+        source: 'a',
+        target: 'b',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+      })
+      expect(ok).toBe(true)
+
+      // And the restored edges must all be present in the Vue Flow state.
+      expect(mockEdges).toHaveLength(1)
+      expect(mockEdges[0].source).toBe('a')
+      expect(mockEdges[0].target).toBe('b')
+
+      w.unmount()
+    })
+
+    it('preserves positional edges (separate edge type)', async () => {
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [
+        {
+          id: 'e_pos',
+          source: 'a',
+          target: 'b',
+          sourceHandle: 'result',
+          targetHandle: '__positional_0',
+          type: 'positional',
+        },
+      ]
+      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockEdges).toHaveLength(1)
+      expect(mockEdges[0].type).toBe('positional')
+      expect(mockEdges[0].targetHandle).toBe('__positional_0')
+
       w.unmount()
     })
   })

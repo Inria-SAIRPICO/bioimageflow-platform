@@ -18,9 +18,9 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: ['Filtering'],
     inputs: {
-      image: { type: 'ImagePath', connectable: true, description: 'Input image path' },
-      sigma: { type: 'float', connectable: false, default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
-      threshold: { type: 'float', connectable: false, default: 0.5, optional: true, description: 'Optional threshold' },
+      image: { type: 'ImagePath', required: true, connectable: 'by_default', description: 'Input image path' },
+      sigma: { type: 'float', required: true, connectable: 'never', default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
+      threshold: { type: 'float', required: false, connectable: 'never', default: 0.5, description: 'Optional threshold' },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -186,6 +186,47 @@ describe('NodePanel', () => {
       await w.vm.$nextTick()
       expect(data.pinnedInputs.image).toBe(false)
     })
+
+    it('treats both by_default and not_by_default as connectable (pin visible)', () => {
+      const tool = makeTool({
+        inputs: {
+          a: { type: 'float', required: true, connectable: 'by_default' },
+          b: { type: 'float', required: true, connectable: 'not_by_default' },
+          c: { type: 'float', required: true, connectable: 'never' },
+        },
+      })
+      const data = makeNodeData({ tool, pinnedInputs: { a: true, b: true } })
+      const w = mountPanel(data)
+      // Per the T6 decision: treat both by_default and not_by_default as
+      // connectable and always show the pin. `never` hides it.
+      expect(w.findAll('[data-testid="pin-toggle"]').length).toBe(2)
+    })
+  })
+
+  describe('new wire-format fields', () => {
+    it('accepts image_spec and new field shape', () => {
+      const tool = makeTool({
+        inputs: {
+          mask: {
+            type: 'ImagePath',
+            required: true,
+            connectable: 'by_default',
+            display_name: 'Input mask',
+            description: 'Binary mask',
+            image_spec: {
+              semantics: ['binary'],
+              layouts: ['YX', 'ZYX'],
+              dtypes: [],
+              formats: [],
+            },
+          },
+        },
+      })
+      const data = makeNodeData({ tool, pinnedInputs: { mask: true } })
+      const w = mountPanel(data)
+      // Field renders with a pin toggle (connectable !== 'never').
+      expect(w.findAll('[data-testid="pin-toggle"]').length).toBe(1)
+    })
   })
 
   // --- Fix 18: Collapsible help text ---
@@ -259,8 +300,8 @@ describe('NodePanel', () => {
     function makePathTool(): ToolMetadata {
       return makeTool({
         inputs: {
-          input_image: { type: 'ImagePath', connectable: true, description: 'Image file' },
-          work_dir: { type: 'Path', connectable: false, description: 'Working directory' },
+          input_image: { type: 'ImagePath', required: true, connectable: 'by_default', description: 'Image file' },
+          work_dir: { type: 'Path', required: true, connectable: 'never', description: 'Working directory' },
         },
         outputs: { result: { type: 'ImagePath' } },
       })

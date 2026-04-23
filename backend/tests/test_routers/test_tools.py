@@ -43,7 +43,14 @@ def _make_tool(name: str = "Cellpose") -> ToolMetadata:
         package="pkg",
         package_version="1.0",
         tool_type="ProcessingTool",
-        inputs={"diameter": InputFieldSchema(type="float", min=0.0)},
+        inputs={
+            "diameter": InputFieldSchema(
+                type="float",
+                required=True,
+                connectable="not_by_default",
+                min=0.0,
+            )
+        },
         outputs={"masks": OutputFieldSchema(type="image")},
     )
 

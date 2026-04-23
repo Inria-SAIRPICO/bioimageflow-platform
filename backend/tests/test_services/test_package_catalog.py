@@ -26,7 +26,9 @@ def _meta(name: str, package: str, version: str) -> ToolMetadata:
         package=package,
         package_version=version,
         tool_type="ProcessingTool",
-        inputs={"x": InputFieldSchema(type="int")},
+        inputs={
+            "x": InputFieldSchema(type="int", required=True, connectable="not_by_default")
+        },
         outputs={"y": OutputFieldSchema(type="int")},
     )
 
