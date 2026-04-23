@@ -41,7 +41,7 @@ const runTooltip = computed(() => {
   return ''
 })
 
-const executeSelectedDisabled = computed(
+const runSelectedDisabled = computed(
   () => runDisabled.value || ui.selectedNodeIds.length === 0,
 )
 
@@ -135,7 +135,7 @@ async function onRun() {
   await runCore()
 }
 
-async function onExecuteSelected() {
+async function onRunSelected() {
   const selected = [...ui.selectedNodeIds]
   if (selected.length === 0) return
   await runCore(selected)
@@ -147,14 +147,14 @@ async function onStop() {
 
 defineExpose({
   onRun,
-  onExecuteSelected,
+  onRunSelected,
   onStop,
   confirmOpen,
   pendingOutOfDateNodes,
   resolveConfirm,
   runDisabled,
   runTooltip,
-  executeSelectedDisabled,
+  runSelectedDisabled,
 })
 </script>
 
@@ -172,11 +172,11 @@ defineExpose({
     <Button
       v-if="!exec.isRunning"
       icon="pi pi-play"
-      label="Execute Selected"
-      :disabled="executeSelectedDisabled"
-      data-testid="execute-selected-button"
+      label="Run Selected"
+      :disabled="runSelectedDisabled"
+      data-testid="run-selected-button"
       severity="secondary"
-      @click="onExecuteSelected"
+      @click="onRunSelected"
     />
     <Button
       v-if="exec.isRunning"

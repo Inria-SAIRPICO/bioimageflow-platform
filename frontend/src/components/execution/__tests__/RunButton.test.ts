@@ -74,20 +74,20 @@ describe('RunButton', () => {
     expect(btn.attributes('title')).toMatch(/validation/i)
   })
 
-  it('Execute Selected is disabled when no nodes selected', () => {
+  it('Run Selected is disabled when no nodes selected', () => {
     const { wrapper } = mountButton()
-    const btn = wrapper.find('[data-testid="execute-selected-button"]')
+    const btn = wrapper.find('[data-testid="run-selected-button"]')
     expect(btn.attributes('disabled')).toBeDefined()
   })
 
-  it('Execute Selected passes selected node IDs to run', async () => {
+  it('Run Selected passes selected node IDs to run', async () => {
     const { wrapper } = mountButton()
     const exec = useExecutionStore()
     const ui = useUIStore()
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
     ui.setSelectedNodes(['n1', 'n2'])
     await nextTick()
-    await wrapper.find('[data-testid="execute-selected-button"]').trigger('click')
+    await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
     await nextTick()
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'])
   })

@@ -75,11 +75,11 @@ const menuItems = computed<MenuItem[]>(() => [
         command: () => runButtonRef.value?.onRun(),
       },
       {
-        label: 'Execute Selected',
+        label: 'Run Selected',
         icon: 'pi pi-forward',
         disabled:
           runDisabledReason() !== null || uiStore.selectedNodeIds.length === 0,
-        command: () => runButtonRef.value?.onExecuteSelected(),
+        command: () => runButtonRef.value?.onRunSelected(),
       },
       {
         label: 'Stop',
