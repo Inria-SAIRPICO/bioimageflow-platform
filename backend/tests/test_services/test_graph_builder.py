@@ -1,4 +1,7 @@
 """Tests for :mod:`bioimageflow_server.services.graph_builder`."""
+# pyright: reportInvalidTypeForm=false
+# Rationale: library factory types like ``ImagePath(semantics={...})`` return
+# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
 
 from typing import Any
 

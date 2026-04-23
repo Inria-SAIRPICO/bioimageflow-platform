@@ -13,6 +13,7 @@ from bioimageflow.validation import (
 )
 
 from bioimageflow_server.models.tools import (
+    InputFieldSchema,
     PackageInfo,
     ToolMetadata,
 )
@@ -132,7 +133,11 @@ class ToolRegistryService:
                 tool_type = "BaseTool"
 
         try:
-            inputs_dict = serialize_input_schema(tool_cls)
+            inputs_raw = serialize_input_schema(tool_cls)
+            inputs_dict: dict[str, InputFieldSchema] = {
+                name: InputFieldSchema.model_validate(spec)
+                for name, spec in inputs_raw.items()
+            }
         except SchemaSerializationError as exc:
             logger.warning("Failed to serialize inputs for %s: %s", class_name, exc)
             inputs_dict = {}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 
 from bioimageflow.paths import get_home
 from fastapi import FastAPI, Request
@@ -134,12 +135,21 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
         # Routers may pass `detail` as a dict {"error": "<code>", "detail": "..."}
         # to override the default code mapping (e.g., "path_traversal" on 400).
-        if isinstance(exc.detail, dict) and "error" in exc.detail:
-            body = ErrorResponse(
-                error=exc.detail["error"],
-                detail=str(exc.detail.get("detail", "")),
-                field=exc.detail.get("field"),
-            )
+        detail_obj: object = exc.detail
+        if isinstance(detail_obj, dict):
+            detail_dict = cast(dict[str, Any], detail_obj)
+            if "error" in detail_dict:
+                body = ErrorResponse(
+                    error=detail_dict["error"],
+                    detail=str(detail_dict.get("detail", "")),
+                    field=detail_dict.get("field"),
+                )
+            else:
+                error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
+                body = ErrorResponse(
+                    error=error_code,
+                    detail=str(exc.detail),
+                )
         else:
             error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
             body = ErrorResponse(

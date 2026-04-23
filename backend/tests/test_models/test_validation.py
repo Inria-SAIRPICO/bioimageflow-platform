@@ -39,7 +39,9 @@ class TestNodeStatus:
 
     def test_invalid_status_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            NodeStatus(node_id="n", status="unknown", cached=False)
+            NodeStatus.model_validate(
+                {"node_id": "n", "status": "unknown", "cached": False}
+            )
 
 
 class TestGraphValidationError:
@@ -82,7 +84,7 @@ class TestGraphValidationError:
 
     def test_invalid_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            GraphValidationError(type="bad_type", detail="d")
+            GraphValidationError.model_validate({"type": "bad_type", "detail": "d"})
 
 
 class TestValidationResult:

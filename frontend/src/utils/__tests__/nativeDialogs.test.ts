@@ -23,7 +23,6 @@ function mockPywebviewApi() {
 
 describe('isDesktop', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
   })
 
@@ -39,7 +38,6 @@ describe('isDesktop', () => {
 
 describe('selectFile', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
     vi.restoreAllMocks()
   })
@@ -74,7 +72,6 @@ describe('selectFile', () => {
 
 describe('selectFiles', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
   })
 
@@ -98,7 +95,6 @@ describe('selectFiles', () => {
 
 describe('selectFolder', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
     vi.restoreAllMocks()
   })
@@ -125,7 +121,6 @@ describe('selectFolder', () => {
 
 describe('saveFile', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
     vi.restoreAllMocks()
   })
@@ -160,7 +155,6 @@ describe('saveFile', () => {
 
 describe('setTitle', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
   })
 
@@ -181,7 +175,6 @@ describe('setTitle', () => {
 
 describe('updateWindowTitle', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
   })
 
@@ -252,7 +245,6 @@ describe('updateWindowTitle', () => {
 
 describe('revealPath', () => {
   afterEach(() => {
-    // @ts-expect-error -- cleanup
     delete window.pywebview
   })
 

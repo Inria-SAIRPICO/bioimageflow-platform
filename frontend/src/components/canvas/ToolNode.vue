@@ -47,8 +47,8 @@ const positionalInputCount = computed(() => {
   return connected + 1
 })
 
-const outputs = computed(() => {
-  const toolOutputs = props.data.tool.outputs
+const outputs = computed<Array<[string, { type: string }]>>(() => {
+  const toolOutputs = props.data.tool.outputs as Record<string, { type: string }>
   if (isDataFrameTool.value && Object.keys(toolOutputs).length === 0) {
     return [['result', { type: 'DataFrame' }]]
   }

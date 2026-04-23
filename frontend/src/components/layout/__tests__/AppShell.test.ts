@@ -111,7 +111,8 @@ describe('AppShell', () => {
     const toolsCall = mockDockviewApi.addPanel.mock.calls.find(
       (call: any) => call[0].id === 'tools',
     )
-    expect(toolsCall[0].initialWidth).toBe(320)
+    expect(toolsCall).toBeDefined()
+    expect(toolsCall![0].initialWidth).toBe(320)
   })
 
   it('nodePanel has initialWidth of 320', async () => {
@@ -120,7 +121,8 @@ describe('AppShell', () => {
     const nodePanelCall = mockDockviewApi.addPanel.mock.calls.find(
       (call: any) => call[0].id === 'nodePanel',
     )
-    expect(nodePanelCall[0].initialWidth).toBe(320)
+    expect(nodePanelCall).toBeDefined()
+    expect(nodePanelCall![0].initialWidth).toBe(320)
   })
 
   // Task 3: Panel Visibility Sync tests

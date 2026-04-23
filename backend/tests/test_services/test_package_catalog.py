@@ -95,7 +95,7 @@ class _FakeKnown(KnownPackagesService):
         return list(self._names)
 
 
-class _FakePypi:
+class _FakePypi(PyPIVersionService):
     def __init__(
         self,
         releases: dict[str, list[str]] | None = None,
@@ -105,16 +105,16 @@ class _FakePypi:
         self._errors = errors or {}
         self.get_versions_calls: list[str] = []
 
-    async def get_versions(self, name: str) -> list[str]:
-        self.get_versions_calls.append(name)
-        if name in self._errors:
-            raise self._errors[name]
-        return list(self._releases.get(name, []))
+    async def get_versions(self, package_name: str) -> list[str]:
+        self.get_versions_calls.append(package_name)
+        if package_name in self._errors:
+            raise self._errors[package_name]
+        return list(self._releases.get(package_name, []))
 
-    async def get_latest_stable(self, name: str) -> str:
-        if name in self._errors:
-            raise self._errors[name]
-        return self._releases.get(name, [])[-1]
+    async def get_latest_stable(self, package_name: str) -> str:
+        if package_name in self._errors:
+            raise self._errors[package_name]
+        return self._releases.get(package_name, [])[-1]
 
     async def aclose(self) -> None:
         pass

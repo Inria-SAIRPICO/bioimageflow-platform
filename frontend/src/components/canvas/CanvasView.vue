@@ -24,14 +24,17 @@ const emit = defineEmits<{
   'node-selected': [nodeIds: string[]]
 }>()
 
+// Vue Flow's NodeTypesObject/EdgeTypesObject uses very strict component
+// constraints that Vue's SFC-inferred types don't satisfy. The runtime
+// contract (`key -> component`) is what VueFlow actually uses.
 const nodeTypes = {
   tool: markRaw(ToolNode),
-}
+} as unknown as Record<string, object>
 
 const edgeTypes = {
   column_ref: markRaw(ColumnRefEdge),
   positional: markRaw(PositionalEdge),
-}
+} as unknown as Record<string, object>
 
 const toolRegistryStore = useToolRegistryStore()
 const uiStore = useUIStore()
@@ -351,8 +354,8 @@ function reindexPositionalInputs(
 function isValidConnection(connection: {
   source: string
   target: string
-  sourceHandle: string | null
-  targetHandle: string | null
+  sourceHandle?: string | null
+  targetHandle?: string | null
 }): boolean {
   // 1. Type compatibility check
   const sourceNode = getNodes.value.find((n: any) => n.id === connection.source)
@@ -371,7 +374,9 @@ function isValidConnection(connection: {
   if (!sourceTool || !targetTool) return false
 
   if (connection.sourceHandle && connection.targetHandle) {
-    const sourceOutput = sourceTool.outputs[connection.sourceHandle]
+    const sourceOutput = sourceTool.outputs[connection.sourceHandle] as
+      | { type?: string }
+      | undefined
     const targetInput = targetTool.inputs[connection.targetHandle]
     if (sourceOutput && targetInput && sourceOutput.type !== targetInput.type) {
       return false
@@ -469,8 +474,9 @@ function onAddNode({
 
   // Build default output templates for path-typed outputs
   const output_templates: Record<string, string> = {}
-  for (const [key, field] of Object.entries(tool.outputs)) {
-    if (['Path', 'ImagePath', 'MaskPath'].includes(field.type)) {
+  for (const [key, rawField] of Object.entries(tool.outputs)) {
+    const field = rawField as { type?: string; default?: string } | undefined
+    if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
       output_templates[key] = field.default || ''
     }
   }
@@ -589,8 +595,9 @@ function pasteFromClipboard() {
           pinnedInputs[key] = isPathType && field.required
         }
       }
-      for (const [key, field] of Object.entries(tool.outputs)) {
-        if (['Path', 'ImagePath', 'MaskPath'].includes(field.type)) {
+      for (const [key, rawField] of Object.entries(tool.outputs)) {
+        const field = rawField as { type?: string; default?: string } | undefined
+        if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
           output_templates[key] = field.default || ''
         }
       }

@@ -1,4 +1,7 @@
 """Tests for :mod:`bioimageflow_server.services.graph_translator`."""
+# pyright: reportInvalidTypeForm=false
+# Rationale: library factory types like ``ImagePath(semantics={...})`` return
+# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
 
 from typing import Any
 
@@ -166,11 +169,11 @@ def test_unknown_tool_emits_missing_tool(registry: ToolRegistryService) -> None:
 
 def test_error_kind_mapping() -> None:
     """Every library ``ValidationErrorKind`` maps to a platform type."""
-    from bioimageflow import ValidationError
+    from bioimageflow import ValidationError, ValidationErrorKind
 
     edge_map = {("a", "b", "x"): "edge-id-1"}
 
-    cases = [
+    cases: list[tuple[ValidationErrorKind, str]] = [
         ("cycle", "cycle_detected"),
         ("type_mismatch", "type_incompatible"),
         ("column_not_found", "type_incompatible"),

@@ -1,4 +1,7 @@
 """Integration tests for the graph router."""
+# pyright: reportInvalidTypeForm=false
+# Rationale: library factory types like ``ImagePath(semantics={...})`` return
+# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
 
 from collections.abc import AsyncIterator
 from pathlib import Path

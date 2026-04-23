@@ -13,7 +13,7 @@ delegating to the library:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import (
@@ -43,7 +43,7 @@ def _status_from_disk(
     storage_path: Path | None,
     node_id: str,
     sig_hash: str,
-) -> str:
+) -> Literal["unexecuted", "out_of_date"]:
     """Decide ``out_of_date`` vs ``unexecuted`` based on cache presence.
 
     Returns ``"unexecuted"`` when no storage path is configured or the

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
@@ -322,6 +322,16 @@ def lib_validation_error_to_graph_error(
         scope = "/".join(err.path)
         detail = f"in sub-workflow '{scope}': {detail}"
 
+    error_type: Literal[
+        "cycle_detected",
+        "type_incompatible",
+        "parameter_invalid",
+        "missing_tool",
+        "missing_connection",
+        "missing_package",
+        "invalid_node_id",
+        "invalid_edge_id",
+    ]
     if kind == "unknown_tool":
         # Heuristic: if the message mentions the package is not installed
         # / cannot be loaded, surface as ``missing_package``; else
@@ -333,7 +343,19 @@ def lib_validation_error_to_graph_error(
         else:
             error_type = "missing_tool"
     else:
-        error_type = _KIND_TO_TYPE.get(kind, "parameter_invalid")
+        error_type = cast(
+            Literal[
+                "cycle_detected",
+                "type_incompatible",
+                "parameter_invalid",
+                "missing_tool",
+                "missing_connection",
+                "missing_package",
+                "invalid_node_id",
+                "invalid_edge_id",
+            ],
+            _KIND_TO_TYPE.get(kind, "parameter_invalid"),
+        )
 
     edge_id: str | None = None
     if err.edge is not None:

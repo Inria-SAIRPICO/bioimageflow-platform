@@ -129,7 +129,7 @@ async function onToolCreated(toolName: string) {
 
 // --- Version management (Task 14) ---
 
-interface VersionRow {
+export interface VersionRow {
   version: string
   installed: boolean
   available: boolean

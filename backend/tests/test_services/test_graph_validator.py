@@ -1,4 +1,7 @@
 """Tests for :mod:`bioimageflow_server.services.graph_validator`."""
+# pyright: reportInvalidTypeForm=false
+# Rationale: library factory types like ``ImagePath(semantics={...})`` return
+# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
 
 from pathlib import Path
 from typing import Any
@@ -302,6 +305,7 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
     )
 
     build = build_workflow(graph, registry, storage_path=tmp_path)
+    assert build.workflow is not None
     plans = build.workflow.plan(dev_mode=True)
     sig = plans["n1"].sig_hash
 

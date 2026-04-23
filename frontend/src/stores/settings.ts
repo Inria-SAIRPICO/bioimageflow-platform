@@ -1,7 +1,30 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
-import type { Settings } from '@/api/types'
+
+// Mirrors bioimageflow_server.models.settings.Settings. Not auto-generated
+// because there's no /settings endpoint producing an OpenAPI schema yet.
+export interface OMEROInstance {
+  host: string
+  username: string
+}
+
+export interface Settings {
+  deployment_mode: 'desktop' | 'webapp'
+  external_editor?: string | null
+  napari_env_path?: string | null
+  omero_instances?: OMEROInstance[]
+  output_data_folder: string
+  tool_store_path?: string
+  update_mode?: 'auto' | 'manual' | string
+  execution_engine?: 'sequential' | 'parsl'
+  cache_max_executions?: number | null
+  cache_max_age?: string | null
+  keyboard_shortcuts?: Record<string, string>
+  dev_mode?: boolean
+  datasets_root?: string | null
+  max_upload_size?: number
+}
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Settings | null>(null)

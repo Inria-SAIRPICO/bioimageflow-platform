@@ -2,11 +2,14 @@ import { ref } from 'vue'
 import { api } from '@/api/client'
 import { useIndexedDB } from '@/composables/useIndexedDB'
 import type {
+  ColumnRefEdge,
   GraphState,
   NodeState,
-  Edge,
+  PositionalEdge,
   ValidationResult,
 } from '@/api/types'
+
+type Edge = ColumnRefEdge | PositionalEdge
 
 export type SyncState = 'idle' | 'pending' | 'error'
 

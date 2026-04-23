@@ -52,10 +52,10 @@ class _FakePypi(PyPIVersionService):
     def __init__(self) -> None:
         pass
 
-    async def get_versions(self, name: str) -> list[str]:
+    async def get_versions(self, package_name: str) -> list[str]:
         return []
 
-    async def get_latest_stable(self, name: str) -> str:
+    async def get_latest_stable(self, package_name: str) -> str:
         raise AssertionError("not used")
 
     async def aclose(self) -> None:

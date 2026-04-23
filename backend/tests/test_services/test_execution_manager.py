@@ -142,7 +142,9 @@ def _settings(dev_mode: bool = True) -> Settings:
     )
 
 
-def _graph_with(nodes: list[tuple[str, bool]] = ()) -> GraphState:
+def _graph_with(nodes: list[tuple[str, bool]] | None = None) -> GraphState:
+    if nodes is None:
+        nodes = []
     return GraphState(
         nodes=[
             NodeState(
@@ -542,7 +544,7 @@ class TestExecutionManagerStatus:
         assert status.state == "idle"
         assert status.last_result is not None
         assert hasattr(status, "node_statuses")
-        assert "n1" in status.node_statuses
+        assert "n1" in getattr(status, "node_statuses")
 
 
 class TestExecutionManagerIsRunning:

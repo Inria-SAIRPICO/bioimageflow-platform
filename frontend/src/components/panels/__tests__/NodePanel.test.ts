@@ -292,7 +292,6 @@ describe('NodePanel', () => {
     }
 
     afterEach(() => {
-      // @ts-expect-error -- cleanup the pywebview stub we installed
       delete window.pywebview
       vi.restoreAllMocks()
     })
@@ -318,7 +317,6 @@ describe('NodePanel', () => {
     })
 
     it('renders both file and folder buttons for plain Path in desktop mode', () => {
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api: mockPywebviewApi() }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
@@ -345,7 +343,6 @@ describe('NodePanel', () => {
     it('calls the pywebview select_file bridge and stores the chosen path', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue('/absolute/chosen/image.tif')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {}, pinnedInputs: { input_image: true } })
@@ -361,7 +358,6 @@ describe('NodePanel', () => {
     it('calls the pywebview select_folder bridge and stores the chosen path', async () => {
       const api = mockPywebviewApi()
       api.select_folder.mockResolvedValue('/absolute/chosen/dir')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
@@ -377,7 +373,6 @@ describe('NodePanel', () => {
     it('passes image extensions to the native dialog for ImagePath fields', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue('/chosen.tif')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({
@@ -399,7 +394,6 @@ describe('NodePanel', () => {
     it('passes no filter for plain Path fields', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue('/chosen')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
@@ -415,7 +409,6 @@ describe('NodePanel', () => {
     it('does not overwrite the parameter when the user cancels the native dialog', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue(null)
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({

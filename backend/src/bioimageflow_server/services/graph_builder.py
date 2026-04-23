@@ -65,7 +65,7 @@ def build_workflow(
     )
     errors: list[GraphValidationError] = list(translation.errors)
 
-    workflow, lib_errors = Workflow.from_dict(
+    from_dict_result = Workflow.from_dict(
         translation.lib_dict,
         collect_errors=True,
         storage_path_override=storage_path,
@@ -73,6 +73,9 @@ def build_workflow(
         use_wetlands=False,
         auto_install=False,
     )
+    # collect_errors=True guarantees a (workflow, errors) tuple
+    assert isinstance(from_dict_result, tuple)
+    workflow, lib_errors = from_dict_result
 
     errors.extend(
         lib_validation_error_to_graph_error(e, translation.edge_id_by_key)

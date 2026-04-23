@@ -9,6 +9,9 @@ while execution recomputed (or vice versa). Now both paths go through
 ``Workflow.plan()`` / ``compute()`` which share a single hash
 implementation. These tests guard against regressions.
 """
+# pyright: reportInvalidTypeForm=false
+# Rationale: library factory types like ``ImagePath(semantics={...})`` return
+# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
 
 from pathlib import Path
 from typing import Any
@@ -98,6 +101,7 @@ def _seed_cache(storage_path: Path, registry: ToolRegistryService,
                 graph: GraphState, dev_mode: bool) -> None:
     """Populate the cache for every node using ``plan()``'s sig hash."""
     build = build_workflow(graph, registry, storage_path=storage_path)
+    assert build.workflow is not None
     plans = build.workflow.plan(dev_mode=dev_mode)
     for nid, node_plan in plans.items():
         if node_plan.skipped or not node_plan.sig_hash:

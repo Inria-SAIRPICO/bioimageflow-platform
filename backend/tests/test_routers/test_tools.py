@@ -1,4 +1,10 @@
 """Tests for the tools router (Tasks 4-9)."""
+# pyright: reportPossiblyUnboundVariable=false, reportArgumentType=false
+# Rationale: ``async for client in _client(config):`` always yields once (the
+# helper is a single-yield async generator), so ``resp`` is bound at the
+# assertions — pyright can't prove that statically. Fake service stand-ins
+# (``_FakeCatalog``, ``_BrokenCatalog``) deliberately bypass the concrete
+# service class; tests only exercise the protocol surface.
 
 from __future__ import annotations
 

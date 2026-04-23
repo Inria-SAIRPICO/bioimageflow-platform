@@ -6,6 +6,9 @@ regression where the frontend sent ``version`` in the request body, FastAPI
 silently dropped it, and ``version=None`` reached
 ``PypiPackageInstaller.uninstall``, wiping every installed version.
 """
+# pyright: reportPossiblyUnboundVariable=false
+# Rationale: the ``async for client in _client(...):`` helper is a single-yield
+# generator; ``resp`` is bound at the assertions.
 
 from __future__ import annotations
 

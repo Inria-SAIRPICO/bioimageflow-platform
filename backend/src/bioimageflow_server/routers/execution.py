@@ -46,11 +46,11 @@ class ClearRequest(BaseModel):
     nodes: list[str]
 
 
-@router.post("/run", status_code=202)
+@router.post("/run", status_code=202, response_model=None)
 async def run_execution(
     body: ExecutionRequest,
     execution_manager: ExecutionManager | None = Depends(get_execution_manager),
-) -> dict:
+) -> dict | JSONResponse:
     if execution_manager is None:
         raise HTTPException(
             status_code=503,

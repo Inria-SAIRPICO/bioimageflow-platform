@@ -67,7 +67,7 @@ class TestWorkflowUpdate:
 
     def test_invalid_action_rejected(self):
         with pytest.raises(ValidationError):
-            WorkflowUpdate(action="delete")
+            WorkflowUpdate.model_validate({"action": "delete"})
 
 
 class TestWorkflowFile:

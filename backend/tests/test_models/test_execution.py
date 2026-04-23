@@ -73,7 +73,7 @@ class TestExecutionStatus:
 
     def test_invalid_state(self) -> None:
         with pytest.raises(ValidationError):
-            ExecutionStatus(state="paused")
+            ExecutionStatus.model_validate({"state": "paused"})
 
     def test_roundtrip(self) -> None:
         p = ProgressInfo(node_id="n1", row=1, total_rows=5)
