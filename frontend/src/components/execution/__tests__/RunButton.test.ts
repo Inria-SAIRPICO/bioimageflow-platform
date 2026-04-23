@@ -197,4 +197,56 @@ describe('RunButton', () => {
     expect(toasts).toBeTruthy()
     expect(toasts![0][0]).toMatchObject({ severity: 'error' })
   })
+
+  it('enriches the validation toast with node/field details and auto-selects the first offender', async () => {
+    // lockForExecution throws 'Validation errors found…' when validationResult.valid === false.
+    // We arrange that state via the validationResult ref supplied to the button.
+    const { wrapper } = mountButton({
+      validationResult: {
+        valid: false,
+        node_statuses: {},
+        errors: [
+          {
+            type: 'parameter_invalid',
+            detail: "Input is not a valid path",
+            node: 'files_1',
+            edge_id: null,
+            field: 'path',
+          },
+          {
+            type: 'missing_connection',
+            detail: 'Required input',
+            node: 'atlas_1',
+            edge_id: null,
+            field: 'input_image',
+          },
+        ],
+      },
+    })
+    const exec = useExecutionStore()
+    // Spy shouldn't even be called — lockForExecution aborts first.
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+    const ui = useUIStore()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(runSpy).not.toHaveBeenCalled()
+    const toasts = wrapper.emitted('toast')
+    expect(toasts).toBeTruthy()
+    const payload = toasts![0][0] as {
+      severity: string
+      summary: string
+      detail?: string
+    }
+    expect(payload.severity).toBe('error')
+    expect(payload.summary).toContain('(2)')
+    expect(payload.detail).toContain('files_1.path')
+    expect(payload.detail).toContain('Input is not a valid path')
+    expect(payload.detail).toContain('atlas_1.input_image')
+
+    // First offending node auto-selected.
+    expect(ui.selectedNodeIds).toEqual(['files_1'])
+  })
 })

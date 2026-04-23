@@ -214,4 +214,10 @@ html, body, #app, #bioimageflow-app {
 .dockview-wrapper > div {
   height: 100%;
 }
+
+/* Preserve newlines in toast detail (used by the run-button validation
+ * summary so errors appear as a bullet list). */
+:global(.p-toast-detail) {
+  white-space: pre-line;
+}
 </style>

@@ -110,11 +110,13 @@ function onRunButtonToast(payload: {
   detail?: string
 }) {
   if (!toast) return
+  // Errors stay open until the user dismisses them (so they have time to
+  // read a multi-line validation summary); warnings auto-dismiss.
   toast.add({
     severity: payload.severity,
     summary: payload.summary,
     detail: payload.detail,
-    life: 5000,
+    life: payload.severity === 'error' ? undefined : 5000,
   })
 }
 

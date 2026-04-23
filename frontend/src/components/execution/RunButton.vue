@@ -89,11 +89,37 @@ async function runCore(nodes?: string[]) {
       })
       return
     }
-    if (status === 422) {
+    if (status === 422 || /validation/i.test(err?.message ?? '')) {
+      // Pull the fresh validation result so we can enumerate errors. The
+      // pre-run flushNow has just refreshed it.
+      const errs = props.graphSync.validationResult.value?.errors ?? []
+      const firstBadNode = errs.find((e) => e.node)?.node
+      if (firstBadNode) {
+        ui.setSelectedNodes([firstBadNode])
+      }
+      const summary =
+        errs.length > 0
+          ? `Validation errors (${errs.length}) — fix them before running`
+          : 'Validation errors found — fix them before running'
+      const detail =
+        errs.length > 0
+          ? errs
+              .slice(0, 5)
+              .map((e) => {
+                const loc = e.node
+                  ? e.field
+                    ? `${e.node}.${e.field}`
+                    : e.node
+                  : e.edge_id ?? ''
+                return loc ? `• ${loc}: ${e.detail}` : `• ${e.detail}`
+              })
+              .join('\n') +
+            (errs.length > 5 ? `\n…and ${errs.length - 5} more` : '')
+          : 'Fix them before running'
       emit('toast', {
         severity: 'error',
-        summary: 'Validation errors found',
-        detail: 'Fix them before running',
+        summary,
+        detail,
       })
       return
     }

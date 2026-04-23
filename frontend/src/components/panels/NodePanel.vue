@@ -9,6 +9,8 @@ import Select from 'primevue/select'
 import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
 import { usePathPicker } from '@/composables/usePathPicker'
+import { useGraphSync } from '@/composables/useGraphSync'
+import { useValidationErrors } from '@/composables/useValidationErrors'
 import type { InputFieldSchema, OutputFieldSchema } from '@/api/types'
 
 const { pickFile: pickFileNative, pickFolder: pickFolderNative, isDesktop } = usePathPicker()
@@ -23,6 +25,14 @@ function fileTypesForField(type: string): string[] {
 }
 
 const uiStore = useUIStore()
+const { validationResult } = useGraphSync()
+const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
+
+const selectedNodeErrors = computed(() => {
+  const nodeId = uiStore.selectedNodeIds[0]
+  if (!nodeId) return []
+  return nodeErrors.value[nodeId] ?? []
+})
 
 const selectedNode = computed(() => {
   if (!uiStore.isSingleSelection) return null
@@ -181,6 +191,24 @@ async function pickFolder(key: string) {
     </div>
 
     <div v-else-if="nodeData" class="node-details">
+      <!-- Validation errors -->
+      <div
+        v-if="selectedNodeErrors.length > 0"
+        class="node-validation-errors"
+        data-testid="node-validation-errors"
+      >
+        <div class="node-validation-errors__title">
+          <i class="pi pi-exclamation-triangle" />
+          Validation errors
+        </div>
+        <ul>
+          <li v-for="(err, i) in selectedNodeErrors" :key="i">
+            <strong v-if="err.field">{{ err.field }}:</strong>
+            {{ err.detail }}
+          </li>
+        </ul>
+      </div>
+
       <!-- Header -->
       <div class="node-panel-header">
         <div class="node-name-row">
@@ -445,6 +473,30 @@ async function pickFolder(key: string) {
   color: var(--p-text-muted-color);
   text-align: center;
   padding: 40px 20px;
+}
+
+.node-validation-errors {
+  background: color-mix(in srgb, var(--p-red-500, #dc2626) 10%, transparent);
+  border: 1px solid var(--p-red-500, #dc2626);
+  color: var(--p-red-700, #b91c1c);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.node-validation-errors__title {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 4px;
+}
+.node-validation-errors ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+.node-validation-errors li {
+  margin: 2px 0;
 }
 
 .node-panel-header {

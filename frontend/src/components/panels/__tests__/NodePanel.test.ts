@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
+import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
 import type { ToolMetadata, InputFieldSchema } from '@/api/types'
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
@@ -68,6 +69,7 @@ function mountPanel(nodeData: ReturnType<typeof makeNodeData> | null = null) {
 describe('NodePanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    _resetGraphSyncForTest()
   })
 
   // --- Empty state ---
@@ -418,5 +420,76 @@ describe('NodePanel', () => {
     })
     expect(w.find('.multi-select').exists()).toBe(true)
     expect(w.find('.multi-select').text()).toContain('2 nodes selected')
+  })
+
+  describe('validation errors', () => {
+    it('renders no error banner when validationResult is null', () => {
+      const w = mountPanel(makeNodeData())
+      expect(
+        w.find('[data-testid="node-validation-errors"]').exists(),
+      ).toBe(false)
+    })
+
+    it('renders error list scoped to the selected node', () => {
+      // Mount first (creates pinia), then push a validation result into
+      // the shared useGraphSync singleton so NodePanel can see it.
+      const w = mountPanel(makeNodeData())
+      const { validationResult } = useGraphSync()
+      validationResult.value = {
+        valid: false,
+        node_statuses: {},
+        errors: [
+          {
+            type: 'parameter_invalid',
+            detail: "Input is not a valid path",
+            node: 'node-1',
+            edge_id: null,
+            field: 'path',
+          },
+          {
+            // Error on a different node — must be excluded.
+            type: 'parameter_invalid',
+            detail: 'other',
+            node: 'other',
+            edge_id: null,
+            field: 'x',
+          },
+        ],
+      }
+      return w.vm.$nextTick().then(() => {
+        const banner = w.find('[data-testid="node-validation-errors"]')
+        expect(banner.exists()).toBe(true)
+        expect(banner.text()).toContain('path')
+        expect(banner.text()).toContain('Input is not a valid path')
+        expect(banner.text()).not.toContain('other')
+      })
+    })
+
+    it('banner disappears once errors are cleared', async () => {
+      const w = mountPanel(makeNodeData())
+      const { validationResult } = useGraphSync()
+      validationResult.value = {
+        valid: false,
+        node_statuses: {},
+        errors: [
+          {
+            type: 'missing_connection',
+            detail: 'nope',
+            node: 'node-1',
+            edge_id: null,
+            field: 'image',
+          },
+        ],
+      }
+      await w.vm.$nextTick()
+      expect(
+        w.find('[data-testid="node-validation-errors"]').exists(),
+      ).toBe(true)
+      validationResult.value = { valid: true, node_statuses: {}, errors: [] }
+      await w.vm.$nextTick()
+      expect(
+        w.find('[data-testid="node-validation-errors"]').exists(),
+      ).toBe(false)
+    })
   })
 })
