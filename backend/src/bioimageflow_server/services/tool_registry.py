@@ -1,4 +1,14 @@
-"""In-memory tool and package registry with filesystem scanning."""
+"""In-memory tool and package registry backed by the library's ToolRegistry.
+
+The library's :class:`bioimageflow.ToolRegistry` handles package loading
+and tool class indexing. This service wraps it with:
+
+- The platform's :class:`ToolMetadata` wire format (richer than the
+  library's ``ToolMetadata`` — includes ``tool_type``, ``documentation``,
+  ``categories``, ``environment``).
+- Package-level bookkeeping (:class:`PackageInfo`) for the frontend.
+- A ``get_tool_class`` method that delegates to the library registry.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from bioimageflow import ToolRegistry as LibToolRegistry
 from bioimageflow.validation import (
     SchemaSerializationError,
     serialize_input_schema,
@@ -22,27 +33,37 @@ logger = logging.getLogger(__name__)
 
 
 class ToolRegistryService:
-    """Dict-backed registry of tools and packages."""
+    """Dict-backed registry of tools and packages.
+
+    Delegates tool class resolution and package scanning to the library's
+    :class:`ToolRegistry`. The platform layer enriches tool metadata with
+    fields the library does not carry (``tool_type``, ``documentation``,
+    ``categories``, ``environment``).
+    """
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolMetadata] = {}
-        self._tool_classes: dict[str, type] = {}
+        self._lib_registry = LibToolRegistry()
         self._packages: dict[str, PackageInfo] = {}
 
     def scan_tool_store(self, store_path: Path | None = None) -> None:
-        """Scan the tool store directory and register all discovered tools."""
-        from bioimageflow.tool_loader import load_versioned_package
+        """Scan the tool store directory and register all discovered tools.
+
+        Uses the library's :meth:`ToolRegistry.register_package` for
+        package loading (never triggers network installs on the hot path).
+        """
         from bioimageflow.paths import get_tool_store_path
-        from bioimageflow_core.tool import BaseTool
 
-        if store_path is None:
-            store_path = get_tool_store_path()
+        if store_path is not None:
+            self._lib_registry = LibToolRegistry(store_path=store_path)
 
-        if not store_path.exists():
-            logger.warning("Tool store not found: %s", store_path)
+        actual_store = store_path if store_path is not None else get_tool_store_path()
+
+        if not actual_store.exists():
+            logger.warning("Tool store not found: %s", actual_store)
             return
 
-        for pkg_dir in sorted(store_path.iterdir()):
+        for pkg_dir in sorted(actual_store.iterdir()):
             if not pkg_dir.is_dir() or pkg_dir.name.startswith("."):
                 continue
             package_name = pkg_dir.name
@@ -56,7 +77,9 @@ class ToolRegistryService:
                 installed_versions.append(version)
 
                 try:
-                    mod = load_versioned_package(package_name, version, store_path)
+                    lib_metas = self._lib_registry.register_package(
+                        package_name, version,
+                    )
                 except Exception:
                     logger.exception(
                         "Failed to load %s==%s", package_name, version
@@ -64,24 +87,15 @@ class ToolRegistryService:
                     continue
 
                 tool_names: list[str] = []
-                for attr_name in dir(mod):
-                    try:
-                        obj = getattr(mod, attr_name)
-                    except Exception:
-                        continue
-                    if (
-                        not isinstance(obj, type)
-                        or not issubclass(obj, BaseTool)
-                        or obj is BaseTool
-                    ):
-                        continue
-
-                    tool_names.append(attr_name)
-                    if attr_name not in self._tools:
-                        self._register_tool_from_class(
-                            obj, attr_name, package_name, version
-                        )
-                        self._tool_classes[attr_name] = obj
+                for lib_meta in lib_metas:
+                    class_name = lib_meta.class_name
+                    tool_names.append(class_name)
+                    if class_name not in self._tools:
+                        tool_cls = self._lib_registry.get_class(class_name)
+                        if tool_cls is not None:
+                            self._register_tool_from_class(
+                                tool_cls, class_name, package_name, version,
+                            )
 
                 tools_by_version[version] = tool_names
 
@@ -184,7 +198,7 @@ class ToolRegistryService:
     ) -> None:
         self._tools[class_name] = metadata
         if tool_class is not None:
-            self._tool_classes[class_name] = tool_class
+            self._lib_registry._classes[class_name] = tool_class
 
     def get_tool(self, class_name: str) -> ToolMetadata | None:
         return self._tools.get(class_name)
@@ -193,9 +207,10 @@ class ToolRegistryService:
         """Return the tool class if registered, or attempt to resolve it from
         the installed tool store. Returns ``None`` if the package/version is
         not installed."""
-        cls = self._tool_classes.get(class_name)
+        cls = self._lib_registry.get_class(class_name)
         if cls is not None:
             return cls
+        # Fall back to lazy loading via the platform metadata.
         metadata = self._tools.get(class_name)
         if metadata is None:
             return None
@@ -207,7 +222,7 @@ class ToolRegistryService:
             )
             resolved = getattr(module, class_name, None)
             if resolved is not None:
-                self._tool_classes[class_name] = resolved
+                self._lib_registry._classes[class_name] = resolved
             return resolved
         except Exception:
             return None
@@ -239,11 +254,10 @@ class ToolRegistryService:
 
         if version is None:
             del self._packages[name]
-            self._tools = {
-                class_name: meta
-                for class_name, meta in self._tools.items()
-                if meta.package != name
-            }
+            for class_name, meta in list(self._tools.items()):
+                if meta.package == name:
+                    del self._tools[class_name]
+                    self._lib_registry.forget(class_name)
             return
 
         if version in pkg.installed_versions:
@@ -251,10 +265,7 @@ class ToolRegistryService:
         pkg.tools.pop(version, None)
         if not pkg.installed_versions:
             del self._packages[name]
-        self._tools = {
-            class_name: meta
-            for class_name, meta in self._tools.items()
-            if not (meta.package == name and meta.package_version == version)
-        }
-
-
+        for class_name, meta in list(self._tools.items()):
+            if meta.package == name and meta.package_version == version:
+                del self._tools[class_name]
+                self._lib_registry.forget(class_name)
