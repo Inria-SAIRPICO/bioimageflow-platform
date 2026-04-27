@@ -110,9 +110,8 @@ def test_column_ref_edge_emitted(registry: ToolRegistryService) -> None:
     result = graph_state_to_lib_dict(graph, registry)
     edges = result.lib_dict["edges"]
     assert edges == [
-        {"from": "src", "to": "dst", "column": "mask", "field": "input_image"},
+        {"id": "e", "from": "src", "to": "dst", "column": "mask", "field": "input_image"},
     ]
-    assert result.edge_id_by_key[("src", "dst", "input_image")] == "e"
 
 
 def test_positional_edges_sorted_and_normalised(registry: ToolRegistryService) -> None:
@@ -171,8 +170,6 @@ def test_error_kind_mapping() -> None:
     """Every library ``ValidationErrorKind`` maps to a platform type."""
     from bioimageflow import ValidationError, ValidationErrorKind
 
-    edge_map = {("a", "b", "x"): "edge-id-1"}
-
     cases: list[tuple[ValidationErrorKind, str]] = [
         ("cycle", "cycle_detected"),
         ("type_mismatch", "type_incompatible"),
@@ -185,7 +182,7 @@ def test_error_kind_mapping() -> None:
     ]
     for kind, expected_type in cases:
         err = ValidationError(kind=kind, message="m", node="a", field="x")
-        out = lib_validation_error_to_graph_error(err, edge_map)
+        out = lib_validation_error_to_graph_error(err)
         assert out.type == expected_type, f"{kind} → {out.type}, expected {expected_type}"
 
 
@@ -202,20 +199,20 @@ def test_unknown_tool_kind_splits_on_message() -> None:
         message="Attribute not found on module",
         node="n",
     )
-    assert lib_validation_error_to_graph_error(pkg_err, {}).type == "missing_package"
-    assert lib_validation_error_to_graph_error(tool_err, {}).type == "missing_tool"
+    assert lib_validation_error_to_graph_error(pkg_err).type == "missing_package"
+    assert lib_validation_error_to_graph_error(tool_err).type == "missing_tool"
 
 
 def test_error_edge_attribution() -> None:
     from bioimageflow import ValidationError
 
-    edge_map = {("src", "dst", "input_image"): "my-edge-id"}
     err = ValidationError(
         kind="type_mismatch", message="bad",
         node="dst", field="input_image",
         edge=("src", "dst", "input_image"),
+        edge_id="my-edge-id",
     )
-    out = lib_validation_error_to_graph_error(err, edge_map)
+    out = lib_validation_error_to_graph_error(err)
     assert out.edge_id == "my-edge-id"
     assert out.node == "dst"
     assert out.field == "input_image"
@@ -231,6 +228,6 @@ def test_error_path_flattened_into_detail() -> None:
         field="n",
         path=("outer_sw", "inner_sw"),
     )
-    out = lib_validation_error_to_graph_error(err, {})
+    out = lib_validation_error_to_graph_error(err)
     assert "outer_sw/inner_sw" in out.detail
     assert "n must be >= 0" in out.detail

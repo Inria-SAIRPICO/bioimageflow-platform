@@ -25,7 +25,7 @@ from bioimageflow_server.models.validation import GraphValidationError
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
-# Key used for positional edges in ``edge_id_by_key``.
+# Key used for positional edges in the library wire format.
 POSITIONAL_KEY = "__positional__"
 
 
@@ -35,32 +35,10 @@ class TranslationResult:
 
     ``lib_dict`` is the serialized dict ready to feed to
     :meth:`bioimageflow.Workflow.from_dict`.
-
-    ``edge_id_by_key`` maps ``(source_node, target_node, field)`` to the
-    frontend-generated edge ID. The library's ``ValidationError.edge``
-    uses this triple; the platform's :class:`GraphValidationError.edge_id`
-    needs the original edge UUID.
     """
 
     lib_dict: dict[str, Any]
     errors: list[GraphValidationError] = field(default_factory=list)
-    edge_id_by_key: dict[tuple[str, str, str], str] = field(default_factory=dict)
-
-
-def build_edge_id_map(graph: GraphState) -> dict[tuple[str, str, str], str]:
-    """Construct the ``(source, target, field) → edge_id`` lookup.
-
-    For positional edges, ``field`` is :data:`POSITIONAL_KEY`. First
-    occurrence wins for duplicates (same key, same semantic edge).
-    """
-    mapping: dict[tuple[str, str, str], str] = {}
-    for edge in graph.edges:
-        if isinstance(edge, ColumnRefEdge):
-            key = (edge.source_node, edge.target_node, edge.target_input)
-        else:
-            key = (edge.source_node, edge.target_node, POSITIONAL_KEY)
-        mapping.setdefault(key, edge.id)
-    return mapping
 
 
 def graph_state_to_lib_dict(
@@ -180,11 +158,6 @@ def graph_state_to_lib_dict(
             continue
         valid_edges.append(edge)
 
-    # --- Build the edge-id reverse lookup (covers ALL edges in GraphState,
-    #     not just the ones we emit; library errors may reference dropped
-    #     edges via the original IDs in the graph). ---
-    edge_id_by_key = build_edge_id_map(graph)
-
     # --- Sort and re-index positional edges per target. ---
     positional_by_target: dict[str, list[PositionalEdge]] = {}
     column_edges: list[ColumnRefEdge] = []
@@ -236,6 +209,7 @@ def graph_state_to_lib_dict(
     for edge in column_edges:
         edges_data.append(
             {
+                "id": edge.id,
                 "from": edge.source_node,
                 "to": edge.target_node,
                 "column": edge.source_output,
@@ -246,6 +220,7 @@ def graph_state_to_lib_dict(
         for edge in positional_by_target[target]:
             edges_data.append(
                 {
+                    "id": edge.id,
                     "from": edge.source_node,
                     "to": edge.target_node,
                     "column": POSITIONAL_KEY,
@@ -268,7 +243,6 @@ def graph_state_to_lib_dict(
     return TranslationResult(
         lib_dict=lib_dict,
         errors=errors,
-        edge_id_by_key=edge_id_by_key,
     )
 
 
@@ -291,12 +265,12 @@ _KIND_TO_TYPE = {
 
 def lib_validation_error_to_graph_error(
     err: Any,
-    edge_id_by_key: dict[tuple[str, str, str], str],
 ) -> GraphValidationError:
     """Map a library :class:`bioimageflow.ValidationError` to the platform shape.
 
-    ``err.edge`` (``(from, to, field)``) is looked up in
-    ``edge_id_by_key`` to recover the frontend-generated edge UUID.
+    ``err.edge_id`` is read directly — the library now round-trips the
+    platform-supplied edge ID through ``from_dict`` / ``to_dict`` and
+    copies it onto every ``ValidationError``.
     ``err.path`` (sub-workflow scope) is flattened into the detail
     string — the platform's error shape has no ``path`` field.
     """
@@ -342,14 +316,10 @@ def lib_validation_error_to_graph_error(
             _KIND_TO_TYPE.get(kind, "parameter_invalid"),
         )
 
-    edge_id: str | None = None
-    if err.edge is not None:
-        edge_id = edge_id_by_key.get(tuple(err.edge))
-
     return GraphValidationError(
         type=error_type,
         detail=detail,
         node=err.node,
         field=err.field,
-        edge_id=edge_id,
+        edge_id=getattr(err, "edge_id", None),
     )

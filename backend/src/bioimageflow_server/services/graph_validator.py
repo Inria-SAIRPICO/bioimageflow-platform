@@ -86,7 +86,7 @@ def validate_graph(
             if err.kind == "cycle":
                 has_cycle = True
             errors.append(
-                lib_validation_error_to_graph_error(err, build.edge_id_by_key)
+                lib_validation_error_to_graph_error(err)
             )
 
         # Skip plan() on cyclic graphs — the library returns all-skipped
@@ -186,7 +186,7 @@ def validate_parameters(
         if tool_class is not None:
             for err in lib_validate_parameters(tool_class, parameters, node=node_id):
                 errors.append(
-                    lib_validation_error_to_graph_error(err, {})
+                    lib_validation_error_to_graph_error(err)
                 )
 
     status_label = _status_from_disk(storage_path, node_id, "")
