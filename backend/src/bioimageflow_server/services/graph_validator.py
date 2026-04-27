@@ -7,16 +7,17 @@ delegating to :class:`SessionManager` and its underlying
 * The session manager translates ``GraphState`` to the library dict
   and catches structural errors (duplicate IDs, missing tools, dangling
   edges).
-* :meth:`WorkflowSession.validate` for domain-level checks (cycle,
-  type compatibility, missing required inputs, constant Pydantic
-  validation, sub-workflow recursion).
-* :meth:`WorkflowSession.plan` for per-node cache status — signature
-  hashes are produced by the same code path as execution.
+* ``Workflow.validate`` for domain-level checks (cycle, type
+  compatibility, missing required inputs, constant Pydantic validation,
+  sub-workflow recursion).
+* ``Workflow.plan`` for per-node cache status — signature hashes are
+  produced by the same code path as execution.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -35,37 +36,6 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 logger = logging.getLogger(__name__)
 
 
-def _is_binding_shape(value: Any) -> bool:
-    """Return True if *value* looks like a serialised ``ColumnRef`` binding.
-
-    Binding shape is ``{"node_id": ..., "output": ...}``. PATCH endpoints
-    reject this because parameter-only patches must carry constants only.
-    """
-    if not isinstance(value, dict):
-        return False
-    return "node_id" in value and "output" in value
-
-
-def _status_from_disk(
-    storage_path: Path | None,
-    node_id: str,
-) -> Literal["unexecuted", "out_of_date"]:
-    """Decide ``out_of_date`` vs ``unexecuted`` based on cache presence.
-
-    Used only by :func:`validate_parameters` (the PATCH handler) which
-    has no workflow context to call ``plan()``.  For full-graph
-    validation, :func:`validate_graph` uses ``NodePlanStatus`` directly.
-    """
-    if storage_path is None:
-        return "unexecuted"
-    from bioimageflow.storage import get_node_dir
-
-    node_dir = get_node_dir(storage_path, node_id)
-    if node_dir.exists() and any(node_dir.iterdir()):
-        return "out_of_date"
-    return "unexecuted"
-
-
 # Map library NodePlanStatus string values to the platform's status labels.
 _PLAN_STATUS_MAP: dict[str, tuple[str, bool]] = {
     "cached": ("executed", True),
@@ -79,41 +49,29 @@ _PLAN_STATUS_MAP: dict[str, tuple[str, bool]] = {
 }
 
 
-def validate_graph(
-    graph: GraphState,
-    registry: ToolRegistryService,
+def _build_validation_result(
     session_manager: SessionManager,
-    storage_path: Path | None = None,
-    dev_mode: bool = True,
+    all_node_ids: Iterable[str],
+    dev_mode: bool,
 ) -> ValidationResult:
-    """Run full validation on ``graph`` via the session manager.
+    """Shared validation logic used by both full-graph and PATCH paths.
 
-    Loads the graph into the session (replacing any prior session),
-    then reads errors and plan from the cached session. Structural
-    errors from the translator are merged with domain-level errors
-    from the library.
+    Reads errors, plan, and disabled-node state from the session manager
+    and its underlying :class:`WorkflowSession`.
     """
     from bioimageflow import CycleInWorkflowError
 
-    translation_errors = session_manager.load(
-        graph, registry, storage_path=storage_path,
-    )
-    errors: list[GraphValidationError] = list(translation_errors)
-    disabled_node_ids = session_manager.disabled_node_ids
+    errors: list[GraphValidationError] = list(session_manager.translation_errors)
 
     node_statuses: dict[str, NodeStatus] = {}
-    for nid in disabled_node_ids:
+    for nid in session_manager.disabled_node_ids:
         node_statuses[nid] = NodeStatus(node_id=nid, status="disabled", cached=False)
 
     session = session_manager.session
     if session is not None:
-        # Use to_workflow() from the session (cached across non-structural
-        # edits), then call validate/plan directly with dev_mode — the
-        # session's own validate()/plan() don't accept dev_mode.
         wf = session.to_workflow()
 
-        # Merge build-time errors from Workflow.errors (captured during
-        # from_dict) and domain-level errors from validate().
+        # Merge build-time errors and domain-level errors; deduplicate.
         lib_errors = list(wf.errors) + list(wf.validate(dev_mode=dev_mode))
         has_cycle = False
         seen_keys: set[tuple] = set()
@@ -124,20 +82,13 @@ def validate_graph(
             seen_keys.add(key)
             if err.kind == "cycle":
                 has_cycle = True
-            errors.append(
-                lib_validation_error_to_graph_error(err)
-            )
+            errors.append(lib_validation_error_to_graph_error(err))
 
-        # plan() raises CycleInWorkflowError on cyclic graphs; skip it
-        # when validate() already reported a cycle.
         if not has_cycle:
             try:
                 plans = wf.plan(dev_mode=dev_mode)
             except CycleInWorkflowError:
-                # Defensive: validate() should have caught this, but
-                # guard against race / edge cases.
                 plans = {}
-
             for nid, node_plan in plans.items():
                 if nid in node_statuses:
                     continue
@@ -149,19 +100,38 @@ def validate_graph(
                     node_id=nid, status=status_label, cached=cached,
                 )
 
-    # Fill in ``unexecuted`` for nodes that failed to build or for any
-    # node not covered above (e.g., cyclic graphs).
-    for node in graph.nodes:
-        if node.id in node_statuses:
+    # Fill in ``unexecuted`` for nodes not covered above.
+    for nid in all_node_ids:
+        if nid in node_statuses:
             continue
-        node_statuses[node.id] = NodeStatus(
-            node_id=node.id, status="unexecuted", cached=False,
+        node_statuses[nid] = NodeStatus(
+            node_id=nid, status="unexecuted", cached=False,
         )
 
     return ValidationResult(
         valid=not errors,
         node_statuses=node_statuses,
         errors=errors,
+    )
+
+
+def validate_graph(
+    graph: GraphState,
+    registry: ToolRegistryService,
+    session_manager: SessionManager,
+    storage_path: Path | None = None,
+    dev_mode: bool = True,
+) -> ValidationResult:
+    """Run full validation on ``graph`` via the session manager.
+
+    Loads the graph into the session (replacing any prior session),
+    then reads errors and plan from the cached session.
+    """
+    session_manager.load(graph, registry, storage_path=storage_path)
+    return _build_validation_result(
+        session_manager,
+        all_node_ids=[n.id for n in graph.nodes],
+        dev_mode=dev_mode,
     )
 
 
@@ -174,15 +144,8 @@ def patch_session_constants(
     """Apply constant edits via the session and return full validation.
 
     Uses :meth:`WorkflowSession.set_constant` for each field — a
-    non-structural edit that does NOT trigger tool re-resolution. Then
-    re-validates using the session's cached :class:`Workflow`.
-
-    Returns a full-graph ``ValidationResult`` (not just the edited node),
-    since the constant change may affect downstream validation and plan
-    status.
+    non-structural edit that does NOT trigger tool re-resolution.
     """
-    from bioimageflow import CycleInWorkflowError
-
     session = session_manager.session
     if session is None:
         raise RuntimeError("No active session")
@@ -190,55 +153,37 @@ def patch_session_constants(
     for field_name, value in parameters.items():
         session.set_constant(node_id, field_name, value)
 
-    errors: list[GraphValidationError] = list(session_manager.translation_errors)
-    disabled_node_ids = session_manager.disabled_node_ids
-
-    node_statuses: dict[str, NodeStatus] = {}
-    for nid in disabled_node_ids:
-        node_statuses[nid] = NodeStatus(node_id=nid, status="disabled", cached=False)
-
-    wf = session.to_workflow()
-    lib_errors = list(wf.errors) + list(wf.validate(dev_mode=dev_mode))
-    has_cycle = False
-    seen_keys: set[tuple] = set()
-    for err in lib_errors:
-        key = (err.path, err.node, err.field, err.kind, err.message, err.edge_id)
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
-        if err.kind == "cycle":
-            has_cycle = True
-        errors.append(lib_validation_error_to_graph_error(err))
-
-    if not has_cycle:
-        try:
-            plans = wf.plan(dev_mode=dev_mode)
-        except CycleInWorkflowError:
-            plans = {}
-        for nid, node_plan in plans.items():
-            if nid in node_statuses:
-                continue
-            status_str = str(node_plan.status.value)
-            status_label, cached = _PLAN_STATUS_MAP.get(
-                status_str, ("unexecuted", False),
-            )
-            node_statuses[nid] = NodeStatus(
-                node_id=nid, status=status_label, cached=cached,
-            )
-
-    # Fill in remaining nodes.
-    for name in session.nodes:
-        if name in node_statuses:
-            continue
-        node_statuses[name] = NodeStatus(
-            node_id=name, status="unexecuted", cached=False,
-        )
-
-    return ValidationResult(
-        valid=not errors,
-        node_statuses=node_statuses,
-        errors=errors,
+    return _build_validation_result(
+        session_manager,
+        all_node_ids=list(session.nodes.keys()),
+        dev_mode=dev_mode,
     )
+
+
+def _is_binding_shape(value: Any) -> bool:
+    """Return True if *value* looks like a serialised ``ColumnRef`` binding."""
+    if not isinstance(value, dict):
+        return False
+    return "node_id" in value and "output" in value
+
+
+def _status_from_disk(
+    storage_path: Path | None,
+    node_id: str,
+) -> Literal["unexecuted", "out_of_date"]:
+    """Decide ``out_of_date`` vs ``unexecuted`` based on cache presence.
+
+    Used only by :func:`validate_parameters` (the PATCH fallback) which
+    has no workflow context to call ``plan()``.
+    """
+    if storage_path is None:
+        return "unexecuted"
+    from bioimageflow.storage import get_node_dir
+
+    node_dir = get_node_dir(storage_path, node_id)
+    if node_dir.exists() and any(node_dir.iterdir()):
+        return "out_of_date"
+    return "unexecuted"
 
 
 def validate_parameters(
@@ -249,18 +194,17 @@ def validate_parameters(
     storage_path: Path | None = None,
     dev_mode: bool = True,
 ) -> ValidationResult:
-    """Validate a single node's parameters in isolation (PATCH handler).
+    """Validate a single node's parameters in isolation (PATCH fallback).
 
-    Uses :func:`bioimageflow.validation.validate_parameters` for the
-    per-field Pydantic checks. Cache status is computed conservatively
-    from disk presence only — the upstream context needed for a
-    signature hash is not available in a PATCH request.
+    Used when no session is loaded. Uses
+    :func:`bioimageflow.validation.validate_parameters` for per-field
+    Pydantic checks. Cache status is computed conservatively from disk
+    presence only.
     """
     from bioimageflow.validation import validate_parameters as lib_validate_parameters
 
     errors: list[GraphValidationError] = []
 
-    # Reject binding-shaped values (constants only for PATCH).
     binding_rejected = False
     for field_name, value in parameters.items():
         if _is_binding_shape(value):
