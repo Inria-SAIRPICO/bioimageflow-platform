@@ -36,8 +36,6 @@ class GraphBuildResult:
     node_map: dict[str, Any] = field(default_factory=dict)
     errors: list[GraphValidationError] = field(default_factory=list)
     disabled_node_ids: set[str] = field(default_factory=set)
-    tool_classes: dict[str, type] = field(default_factory=dict)
-    tool_instances: dict[str, Any] = field(default_factory=dict)
     # Exposed for the validator so error mapping can attribute library
     # errors back to GUI edge UUIDs.
     edge_id_by_key: dict[tuple[str, str, str], str] = field(default_factory=dict)
@@ -83,13 +81,7 @@ def build_workflow(
         for e in lib_errors
     )
 
-    node_map: dict[str, Any] = dict(workflow._nodes) if workflow is not None else {}
-    tool_classes: dict[str, type] = {
-        name: type(node.tool) for name, node in node_map.items()
-    }
-    tool_instances: dict[str, Any] = {
-        name: node.tool for name, node in node_map.items()
-    }
+    node_map: dict[str, Any] = dict(workflow.nodes)
     disabled = {n.id for n in graph.nodes if not n.enabled}
 
     return GraphBuildResult(
@@ -97,7 +89,5 @@ def build_workflow(
         node_map=node_map,
         errors=errors,
         disabled_node_ids=disabled,
-        tool_classes=tool_classes,
-        tool_instances=tool_instances,
         edge_id_by_key=translation.edge_id_by_key,
     )
