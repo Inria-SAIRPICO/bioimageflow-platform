@@ -204,6 +204,12 @@ onConnect((connection) => {
     }
   }
 
+  // A new positional edge into a dynamic_outputs node changes its resolved
+  // schema (e.g. CrossJoin's column union depends on the upstream tables).
+  if (targetHandle.startsWith('__positional_')) {
+    refreshIfDynamicOutputs(connection.target)
+  }
+
   emitGraphChanged()
 })
 
@@ -245,23 +251,41 @@ watch(
   { deep: true },
 )
 
-// Debounced refresh of resolved outputs when parameters change on dynamic_outputs nodes.
+// Debounced refresh of resolved outputs when parameters change on
+// dynamic_outputs nodes. Edge connect/disconnect events refresh explicitly
+// (see refreshIfDynamicOutputs) — Vue's deep watcher doesn't reliably notice
+// in-place edge mutations on the underlying graph store.
 watch(
   () => getNodes.value
     .filter((n: any) => n.data?.tool?.dynamic_outputs === true)
     .map((n: any) => ({ id: n.id, parameters: n.data?.parameters })),
   (entries) => {
-    const getGraph = () => ({ nodes: getNodes.value, edges: getEdges.value })
-    const getToolForNode = (nodeId: string): ToolMetadata | undefined => {
-      const node = getNodes.value.find((n: any) => n.id === nodeId)
-      return node?.data?.tool ?? toolRegistryStore.getToolByName(node?.data?.toolName)
-    }
     for (const entry of entries) {
-      resolvedOutputsStore.refreshResolvedOutputs(entry.id, getGraph, getToolForNode)
+      refreshIfDynamicOutputs(entry.id)
     }
   },
   { deep: true },
 )
+
+/**
+ * Trigger a debounced resolved-output refresh on `nodeId` if the node has
+ * `dynamic_outputs === true`. The store will additionally walk downstream
+ * along positional edges and refresh any other dynamic_outputs node
+ * reachable from this one.
+ */
+function refreshIfDynamicOutputs(nodeId: string): void {
+  const node = getNodes.value.find((n: any) => n.id === nodeId)
+  const tool: ToolMetadata | undefined =
+    (node?.data?.tool as ToolMetadata | undefined) ??
+    toolRegistryStore.getToolByName(node?.data?.toolName)
+  if (tool?.dynamic_outputs !== true) return
+  const getGraph = () => ({ nodes: getNodes.value, edges: getEdges.value })
+  const getToolForNode = (id: string): ToolMetadata | undefined => {
+    const n = getNodes.value.find((nn: any) => nn.id === id)
+    return n?.data?.tool ?? toolRegistryStore.getToolByName(n?.data?.toolName)
+  }
+  resolvedOutputsStore.refreshResolvedOutputs(nodeId, getGraph, getToolForNode)
+}
 
 /**
  * Detach the edge targeting (nodeId, targetHandle). Called by InputPin when a
@@ -274,8 +298,13 @@ watch(
 function disconnectEdgeByInput(edgeId: string) {
   const edge = getEdges.value.find((e: any) => e.id === edgeId)
   if (!edge) return
-  cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+  const targetHandle = edge.targetHandle ?? ''
+  const target = edge.target
+  cleanupDisconnectedInput(target, targetHandle)
   removeEdges([edgeId])
+  if (targetHandle.startsWith('__positional_')) {
+    refreshIfDynamicOutputs(target)
+  }
   emitGraphChanged()
 }
 
@@ -328,6 +357,15 @@ onEdgeUpdate(({ edge, connection }) => {
     }
   }
 
+  // Refresh schemas on either side of a positional re-route — both the old
+  // and the new targets may have dynamic_outputs schemas to recompute.
+  if ((edge.targetHandle ?? '').startsWith('__positional_')) {
+    refreshIfDynamicOutputs(edge.target)
+  }
+  if (newTargetHandle.startsWith('__positional_')) {
+    refreshIfDynamicOutputs(newTarget)
+  }
+
   emitGraphChanged()
 })
 
@@ -336,8 +374,13 @@ onEdgeUpdate(({ edge, connection }) => {
 onEdgeUpdateEnd(({ edge }) => {
   if (!edge) return
   if (updatedEdgeIds.delete(edge.id)) return
+  const targetHandle = edge.targetHandle ?? ''
+  const target = edge.target
   removeEdges([edge.id])
-  cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+  cleanupDisconnectedInput(target, targetHandle)
+  if (targetHandle.startsWith('__positional_')) {
+    refreshIfDynamicOutputs(target)
+  }
   emitGraphChanged()
 })
 
@@ -624,10 +667,17 @@ function deleteSelected() {
     const selectedEdges = getEdges.value.filter((e: any) => e.selected)
     if (selectedEdges.length === 0) return
     // Clean up connectedInputs for each removed edge
+    const positionalTargets = new Set<string>()
     for (const edge of selectedEdges) {
       cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+      if ((edge.targetHandle ?? '').startsWith('__positional_')) {
+        positionalTargets.add(edge.target)
+      }
     }
     removeEdges(selectedEdges.map((e: any) => e.id))
+    for (const id of positionalTargets) {
+      refreshIfDynamicOutputs(id)
+    }
     emitGraphChanged()
     return
   }
@@ -640,14 +690,21 @@ function deleteSelected() {
   )
 
   // Clean up connectedInputs on surviving target nodes
+  const survivingPositionalTargets = new Set<string>()
   for (const edge of edgesToRemove) {
     if (!selectedNodeIds.has(edge.target)) {
       cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
+      if ((edge.targetHandle ?? '').startsWith('__positional_')) {
+        survivingPositionalTargets.add(edge.target)
+      }
     }
   }
 
   removeEdges(edgesToRemove.map((e: any) => e.id))
   removeNodes(selectedNodes.map((n: any) => n.id))
+  for (const id of survivingPositionalTargets) {
+    refreshIfDynamicOutputs(id)
+  }
   emitGraphChanged()
 }
 

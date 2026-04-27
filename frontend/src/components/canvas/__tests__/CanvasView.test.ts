@@ -1397,4 +1397,164 @@ describe('CanvasView', () => {
       w.unmount()
     })
   })
+
+  // --- Resolved-outputs refresh on positional edge changes ---
+
+  describe('resolved outputs — refresh on positional edge changes', () => {
+    function makeJoinTool(): ToolMetadata {
+      return makeTool({
+        name: 'cross_join',
+        display_name: 'CrossJoin',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: true,
+        dynamic_outputs: true,
+        inputs: {},
+        outputs: {},
+      })
+    }
+
+    function makeFilesTool(): ToolMetadata {
+      return makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+        dynamic_outputs: false,
+        inputs: {},
+        outputs: { path: { type: 'Path' } },
+      })
+    }
+
+    it('connecting a positional edge into a dynamic_outputs node triggers a refresh', async () => {
+      const store = useToolRegistryStore()
+      const filesTool = makeFilesTool()
+      const joinTool = makeJoinTool()
+      store.tools = [filesTool, joinTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', tool: filesTool, name: 'Files 1', connectedInputs: {} } },
+        { id: 'join_1', data: { toolName: 'cross_join', tool: joinTool, name: 'CrossJoin 1', connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const resolvedStore = useResolvedOutputsStore()
+      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+
+      connectHandler!({
+        source: 'files_1',
+        target: 'join_1',
+        sourceHandle: '__dataframe_out',
+        targetHandle: '__positional_0',
+      })
+
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      const calls = (resolvedStore.refreshResolvedOutputs as any).mock.calls
+      const calledForJoin = calls.some((c: any[]) => c[0] === 'join_1')
+      expect(calledForJoin).toBe(true)
+      w.unmount()
+    })
+
+    it('selecting and deleting a positional edge into a dynamic_outputs node triggers a refresh', async () => {
+      const store = useToolRegistryStore()
+      const filesTool = makeFilesTool()
+      const joinTool = makeJoinTool()
+      store.tools = [filesTool, joinTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', tool: filesTool, name: 'Files 1', connectedInputs: {} } },
+        {
+          id: 'join_1',
+          data: {
+            toolName: 'cross_join',
+            tool: joinTool,
+            name: 'CrossJoin 1',
+            connectedInputs: { __positional_0: 'files_1.__dataframe_out' },
+          },
+        },
+      ]
+      mockEdges = [
+        {
+          id: 'e1',
+          source: 'files_1',
+          target: 'join_1',
+          sourceHandle: '__dataframe_out',
+          targetHandle: '__positional_0',
+          type: 'positional',
+          selected: true,
+        },
+      ]
+
+      const resolvedStore = useResolvedOutputsStore()
+      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+
+      const vm = w.vm as any
+      vm.deleteSelected()
+
+      await flushPromises()
+      await nextTick()
+
+      const calls = (resolvedStore.refreshResolvedOutputs as any).mock.calls
+      const calledForJoin = calls.some((c: any[]) => c[0] === 'join_1')
+      expect(calledForJoin).toBe(true)
+      w.unmount()
+    })
+
+    it('does not refresh when a positional edge targets a non-dynamic node', async () => {
+      const store = useToolRegistryStore()
+      const filesTool = makeFilesTool()
+      const passthroughTool = makeTool({
+        name: 'filter_rows',
+        display_name: 'Filter',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: true,
+        dynamic_outputs: false,
+        inputs: {},
+        outputs: {},
+      })
+      store.tools = [filesTool, passthroughTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', tool: filesTool, name: 'Files 1', connectedInputs: {} } },
+        { id: 'filter_1', data: { toolName: 'filter_rows', tool: passthroughTool, name: 'Filter 1', connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const resolvedStore = useResolvedOutputsStore()
+      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+
+      connectHandler!({
+        source: 'files_1',
+        target: 'filter_1',
+        sourceHandle: '__dataframe_out',
+        targetHandle: '__positional_0',
+      })
+
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      const calls = (resolvedStore.refreshResolvedOutputs as any).mock.calls
+      const calledForFilter = calls.some((c: any[]) => c[0] === 'filter_1')
+      expect(calledForFilter).toBe(false)
+      w.unmount()
+    })
+  })
 })
