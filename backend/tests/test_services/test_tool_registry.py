@@ -138,3 +138,37 @@ def test_processing_tool_atlas_has_correct_type_and_accepts_upstream():
     assert meta.accepts_upstream is True
 
 
+def test_scan_tool_store_registers_common_tools():
+    """End-to-end regression: scanning the real tool store must surface
+    every tool re-exported from bioimageflow_common_tools' __init__.py.
+
+    Caught a class of bug where the package's __init__.py used absolute
+    imports — _stamp_tool_classes skipped every class, register_package
+    filtered them all out, and the GUI's tool list came up empty with
+    no diagnostic. If this test goes red with a count mismatch, check
+    that the package __init__.py uses relative imports
+    (`from .X import Y`), not absolute (`from pkg.X import Y`).
+    """
+    from bioimageflow.paths import get_tool_store_path
+    store_path = get_tool_store_path()
+    common_tools_dir = store_path / "bioimageflow_common_tools"
+    if not common_tools_dir.exists():
+        pytest.skip("bioimageflow_common_tools not installed in tool store")
+
+    reg = ToolRegistryService()
+    reg.scan_tool_store()
+
+    expected = {
+        "Files", "Generate", "ConvertImage", "ExtractChannel", "Atlas",
+        "ConnectedComponents", "CellposeSAM", "LabelOverlaps",
+        "InnerJoin", "CrossJoin", "JoinOnColumn", "Concat", "Collect",
+        "Mosaic",
+    }
+    found = {t.name for t in reg.list_tools()}
+    missing = expected - found
+    assert not missing, (
+        f"common-tools registration regression: {missing} not registered. "
+        f"Likely cause: package __init__.py uses absolute imports."
+    )
+
+
