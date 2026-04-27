@@ -39,6 +39,7 @@ from bioimageflow_server.routers.graph import (
 from bioimageflow_server.routers.execution import (
     get_execution_manager as execution_get_manager,
     get_storage_path as execution_get_storage_path,
+    get_tool_registry as execution_get_tool_registry,
     router as execution_router,
 )
 from bioimageflow_server.routers.health import router as health_router
@@ -195,6 +196,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         lambda: config.execution_manager
     )
     app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
+    app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     _dev_mode = (
         config.settings.dev_mode if config.settings is not None else True
     )

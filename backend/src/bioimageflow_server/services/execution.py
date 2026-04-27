@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
 import traceback
-from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -459,49 +457,49 @@ class ExecutionManager:
 def clear_node_cache(
     node_ids: list[str],
     graph: GraphState,
+    registry: ToolRegistryService,
     storage_path: Path | None,
 ) -> dict[str, NodeStatus]:
     """Clear cache directories for ``node_ids`` and compute downstream impact.
 
-    Returns a dict keyed by node ID. Cleared nodes are returned with
-    status ``"unexecuted"``; their transitive downstream receives
-    status ``"out_of_date"``. Idempotent — missing cache directories
-    and unknown node IDs are silently skipped.
+    Builds a :class:`Workflow` from ``graph`` and delegates cache removal
+    to :meth:`Workflow.invalidate`. Returns a dict keyed by node ID.
+    Cleared nodes get status ``"unexecuted"``; their transitive downstream
+    receives ``"out_of_date"``. Unknown node IDs are silently skipped.
     """
-    # Build node lookup and reverse adjacency.
-    node_ids_set = {n.id for n in graph.nodes}
-    downstream: dict[str, set[str]] = {n.id: set() for n in graph.nodes}
-    for edge in graph.edges:
-        if edge.source_node in downstream and edge.target_node in node_ids_set:
-            downstream[edge.source_node].add(edge.target_node)
+    build_result = build_workflow(graph, registry, storage_path=storage_path)
+    workflow = build_result.workflow
+    if workflow is None:
+        return {}
+
+    # Filter to valid node IDs known to the workflow.
+    known = set(workflow.nodes.keys())
+    valid_ids = [nid for nid in node_ids if nid in known]
+    if not valid_ids:
+        return {}
+
+    # Invalidate without cascade first to identify directly cleared nodes.
+    directly_cleared = workflow.invalidate(valid_ids, cascade=False)
+
+    # Collect transitive downstream of each requested node.
+    downstream: set[str] = set()
+    for nid in valid_ids:
+        downstream.update(workflow.downstream_of(nid))
+
+    # Invalidate downstream nodes (the direct ones are already cleared).
+    downstream -= directly_cleared
+    downstream -= set(valid_ids)
+    if downstream:
+        workflow.invalidate(list(downstream), cascade=False)
 
     result: dict[str, NodeStatus] = {}
 
-    # Mark cleared nodes.
-    cleared: set[str] = set()
-    for nid in node_ids:
-        if nid not in node_ids_set:
-            continue
-        cleared.add(nid)
-        # Remove the node's cache directory if it exists.
-        if storage_path is not None:
-            node_dir = Path(storage_path) / "data" / nid
-            if node_dir.exists() and node_dir.is_dir():
-                shutil.rmtree(node_dir, ignore_errors=True)
+    # Directly requested nodes → unexecuted.
+    for nid in valid_ids:
         result[nid] = NodeStatus(node_id=nid, status="unexecuted", cached=False)
 
-    # BFS to collect transitive downstream.
-    queue = deque(cleared)
-    affected_downstream: set[str] = set()
-    while queue:
-        nid = queue.popleft()
-        for succ in downstream.get(nid, set()):
-            if succ in cleared or succ in affected_downstream:
-                continue
-            affected_downstream.add(succ)
-            queue.append(succ)
-
-    for nid in affected_downstream:
+    # Downstream nodes → out_of_date.
+    for nid in downstream:
         result[nid] = NodeStatus(node_id=nid, status="out_of_date", cached=False)
 
     return result

@@ -1,4 +1,7 @@
 """Tests for the execution router."""
+# pyright: reportInvalidTypeForm=false
+# Rationale: library factory types like ``ImagePath(semantics={...})`` return
+# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
 
 from __future__ import annotations
 
@@ -11,18 +14,75 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
+from bioimageflow_core.environment import EnvironmentSpec
+from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.types import ImagePath, Semantic
+
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.execution import (
     ExecutionResult,
     ExecutionStatus,
     ProgressInfo,
 )
-from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     WorkflowBuildError,
 )
+from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+
+# ---- Mock tool classes (module-level so from_dict can re-import) -----------
+
+
+class _SrcInputs(IOModel):
+    input_image: ImagePath(semantics={Semantic.INTENSITY})
+
+
+class _SrcOutputs(IOModel):
+    mask: ImagePath(semantics={Semantic.LABEL})
+
+
+class SrcTool(ProcessingTool):
+    environment = EnvironmentSpec(name="test", dependencies={})
+    Inputs = _SrcInputs
+    Outputs = _SrcOutputs
+
+    def process_row(self, arguments: Any) -> Any:
+        return {}
+
+
+class _DstInputs(IOModel):
+    mask_input: ImagePath(semantics={Semantic.LABEL})
+
+
+class _DstOutputs(IOModel):
+    result: ImagePath(semantics={Semantic.LABEL})
+
+
+class DstTool(ProcessingTool):
+    environment = EnvironmentSpec(name="test", dependencies={})
+    Inputs = _DstInputs
+    Outputs = _DstOutputs
+
+    def process_row(self, arguments: Any) -> Any:
+        return {}
+
+
+def _make_registry() -> ToolRegistryService:
+    reg = ToolRegistryService()
+    for name, cls in [("SrcTool", SrcTool), ("DstTool", DstTool)]:
+        reg.register_tool(
+            name,
+            ToolMetadata(
+                name=name, display_name=name,
+                package="test-pkg", package_version="1.0.0",
+                tool_type="ProcessingTool",
+            ),
+            tool_class=cls,
+        )
+    return reg
 
 pytestmark = pytest.mark.anyio
 
@@ -30,6 +90,15 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def _clear_active_workflow() -> Any:
+    from bioimageflow.node import set_active_workflow
+
+    set_active_workflow(None)
+    yield
+    set_active_workflow(None)
 
 
 def _minimal_graph() -> dict:
@@ -74,10 +143,12 @@ class _FakeExecutionManager:
 async def _make_client(
     tmp_path: Path,
     execution_manager: Any = None,
+    tool_registry: ToolRegistryService | None = None,
 ) -> httpx.AsyncClient:
     config = AppConfig(
         storage_path=tmp_path,
         execution_manager=execution_manager,
+        tool_registry=tool_registry,
     )
     app = create_app(config)
     transport = ASGITransport(app=app)
@@ -160,16 +231,24 @@ async def test_stop_returns_200(idle_client) -> None:
 
 async def test_clear_returns_node_statuses(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
-    c = await _make_client(tmp_path, execution_manager=em)
+    reg = _make_registry()
+    graph = {
+        "nodes": [
+            {"id": "a", "name": "a", "tool_name": "SrcTool", "position": [0, 0],
+             "parameters": {"input_image": "/a"}},
+        ],
+        "edges": [],
+    }
+    c = await _make_client(tmp_path, execution_manager=em, tool_registry=reg)
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": _minimal_graph(), "nodes": ["n1"]},
+            json={"graph": graph, "nodes": ["a"]},
         )
     assert resp.status_code == 200
     body = resp.json()
     assert "node_statuses" in body
-    assert body["node_statuses"]["n1"]["status"] == "unexecuted"
+    assert body["node_statuses"]["a"]["status"] == "unexecuted"
 
 
 async def test_clear_without_graph_returns_422(tmp_path: Path) -> None:
@@ -182,24 +261,34 @@ async def test_clear_without_graph_returns_422(tmp_path: Path) -> None:
     assert resp.status_code == 422
 
 
-async def test_clear_while_running_returns_423(tmp_path: Path) -> None:
+async def test_clear_while_running_returns_409(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=True)
-    c = await _make_client(tmp_path, execution_manager=em)
+    reg = _make_registry()
+    graph = {
+        "nodes": [
+            {"id": "a", "name": "a", "tool_name": "SrcTool", "position": [0, 0],
+             "parameters": {"input_image": "/a"}},
+        ],
+        "edges": [],
+    }
+    c = await _make_client(tmp_path, execution_manager=em, tool_registry=reg)
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": _minimal_graph(), "nodes": ["n1"]},
+            json={"graph": graph, "nodes": ["a"]},
         )
-    assert resp.status_code == 423
+    assert resp.status_code == 409
 
 
 async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
-    c = await _make_client(tmp_path, execution_manager=em)
+    reg = _make_registry()
     graph = {
         "nodes": [
-            {"id": "a", "name": "a", "tool_name": "T", "position": [0, 0], "parameters": {}},
-            {"id": "b", "name": "b", "tool_name": "T", "position": [0, 0], "parameters": {}},
+            {"id": "a", "name": "a", "tool_name": "SrcTool", "position": [0, 0],
+             "parameters": {"input_image": "/a"}},
+            {"id": "b", "name": "b", "tool_name": "DstTool", "position": [0, 0],
+             "parameters": {}},
         ],
         "edges": [
             {
@@ -207,11 +296,12 @@ async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
                 "id": "e",
                 "source_node": "a",
                 "target_node": "b",
-                "source_output": "out",
-                "target_input": "in",
+                "source_output": "mask",
+                "target_input": "mask_input",
             }
         ],
     }
+    c = await _make_client(tmp_path, execution_manager=em, tool_registry=reg)
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear", json={"graph": graph, "nodes": ["a"]}
