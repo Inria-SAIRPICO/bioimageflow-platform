@@ -67,13 +67,14 @@ def build_workflow(
 
     from_dict_result = Workflow.from_dict(
         translation.lib_dict,
-        collect_errors=True,
+        validate_only=True,
+        partial=True,
         storage_path_override=storage_path,
         on_progress=on_progress,
         use_wetlands=False,
         auto_install=False,
     )
-    # collect_errors=True guarantees a (workflow, errors) tuple
+    # validate_only=True guarantees a (workflow, errors) tuple
     assert isinstance(from_dict_result, tuple)
     workflow, lib_errors = from_dict_result
 
