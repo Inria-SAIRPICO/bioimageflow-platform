@@ -32,6 +32,7 @@ from bioimageflow_server.routers.filesystem import router as filesystem_router
 from bioimageflow_server.routers.graph import (
     get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
+    get_session_manager as graph_get_session_manager,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
     router as graph_router,
@@ -52,6 +53,7 @@ from bioimageflow_server.routers.tools import (
     router as tools_router,
 )
 from bioimageflow_server.services.known_packages import KnownPackagesService
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
     PackageNetworkError,
@@ -83,6 +85,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     registry = config.tool_registry or ToolRegistryService()
     if config.tool_registry is None:
         registry.scan_tool_store()
+
+    session_manager = SessionManager()
 
     known = config.known_packages or KnownPackagesService.default()
     pypi = config.pypi_versions or PyPIVersionService()
@@ -188,6 +192,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
+    app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[graph_get_execution_manager] = (
         lambda: config.execution_manager

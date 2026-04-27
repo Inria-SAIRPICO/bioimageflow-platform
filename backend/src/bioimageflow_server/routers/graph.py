@@ -16,6 +16,7 @@ from bioimageflow_server.services.graph_validator import (
     validate_graph as _validate_graph,
     validate_parameters as _validate_parameters,
 )
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 router = APIRouter(prefix="/graph", tags=["graph"])
@@ -35,6 +36,10 @@ def get_execution_manager() -> Any | None:
 
 def get_dev_mode() -> bool:
     return True
+
+
+def get_session_manager() -> SessionManager:  # pragma: no cover
+    raise RuntimeError("session_manager dependency not configured")
 
 
 def _ensure_unlocked(execution_manager: Any | None) -> None:
@@ -65,10 +70,12 @@ async def validate_graph_endpoint(
     storage_path: Path | None = Depends(get_storage_path),
     execution_manager: Any | None = Depends(get_execution_manager),
     dev_mode: bool = Depends(get_dev_mode),
+    session_manager: SessionManager = Depends(get_session_manager),
 ) -> ValidationResult:
     _ensure_unlocked(execution_manager)
     return _validate_graph(
-        graph, registry, storage_path=storage_path, dev_mode=dev_mode
+        graph, registry, session_manager,
+        storage_path=storage_path, dev_mode=dev_mode,
     )
 
 

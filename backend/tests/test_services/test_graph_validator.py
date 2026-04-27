@@ -23,6 +23,7 @@ from bioimageflow_server.services.graph_validator import (
     validate_graph,
     validate_parameters,
 )
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
@@ -139,10 +140,15 @@ def _clear_active_workflow() -> Any:
     set_active_workflow(None)
 
 
+@pytest.fixture
+def session_manager() -> SessionManager:
+    return SessionManager()
+
+
 # ---- validate_graph -------------------------------------------------------
 
 
-def test_valid_graph(registry: ToolRegistryService) -> None:
+def test_valid_graph(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(
@@ -155,14 +161,14 @@ def test_valid_graph(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     assert result.valid is True
     assert "n1" in result.node_statuses
     assert result.node_statuses["n1"].status == "unexecuted"
     assert result.errors == []
 
 
-def test_cycle_detected(registry: ToolRegistryService) -> None:
+def test_cycle_detected(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(id="a", name="a", tool_name="MockProcessingTool",
@@ -177,12 +183,12 @@ def test_cycle_detected(registry: ToolRegistryService) -> None:
                           source_output="result", target_input="input_image"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     cycle_errors = [e for e in result.errors if e.type == "cycle_detected"]
     assert len(cycle_errors) >= 1
 
 
-def test_self_loop_detected(registry: ToolRegistryService) -> None:
+def test_self_loop_detected(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(id="a", name="a", tool_name="MockProcessingTool",
@@ -193,12 +199,12 @@ def test_self_loop_detected(registry: ToolRegistryService) -> None:
                           source_output="mask", target_input="input_image"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     cycle_errors = [e for e in result.errors if e.type == "cycle_detected"]
     assert len(cycle_errors) >= 1
 
 
-def test_type_incompatible(registry: ToolRegistryService) -> None:
+def test_type_incompatible(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(id="src", name="src", tool_name="MockProcessingTool",
@@ -211,13 +217,13 @@ def test_type_incompatible(registry: ToolRegistryService) -> None:
                           source_output="mask", target_input="img"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     type_errs = [e for e in result.errors if e.type == "type_incompatible"]
     assert len(type_errs) >= 1
     assert any(e.edge_id == "e1" for e in type_errs)
 
 
-def test_parameter_invalid(registry: ToolRegistryService) -> None:
+def test_parameter_invalid(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(
@@ -230,13 +236,13 @@ def test_parameter_invalid(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     param_errs = [e for e in result.errors if e.type == "parameter_invalid"]
     assert len(param_errs) >= 1
     assert any(e.field == "n" and e.node == "n1" for e in param_errs)
 
 
-def test_missing_connection(registry: ToolRegistryService) -> None:
+def test_missing_connection(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
@@ -244,12 +250,12 @@ def test_missing_connection(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     missing = [e for e in result.errors if e.type == "missing_connection"]
     assert any(e.field == "input_image" and e.node == "n1" for e in missing)
 
 
-def test_connected_input_skips_parameter_validation(registry: ToolRegistryService) -> None:
+def test_connected_input_skips_parameter_validation(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     """A field that has an incoming edge should NOT be validated as a constant."""
     graph = GraphState(
         nodes=[
@@ -263,7 +269,7 @@ def test_connected_input_skips_parameter_validation(registry: ToolRegistryServic
                           source_output="mask", target_input="mask_input"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     param_errs = [
         e for e in result.errors
         if e.type == "parameter_invalid" and e.node == "dst"
@@ -271,7 +277,7 @@ def test_connected_input_skips_parameter_validation(registry: ToolRegistryServic
     assert param_errs == []
 
 
-def test_disabled_node_status(registry: ToolRegistryService) -> None:
+def test_disabled_node_status(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
@@ -279,11 +285,11 @@ def test_disabled_node_status(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     assert result.node_statuses["n1"].status == "disabled"
 
 
-def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None:
+def test_cache_hit_status(registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path) -> None:
     """A node with a matching cache directory gets status=executed.
 
     Seeds the cache with a real parquet file using the same
@@ -311,12 +317,12 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
     node_dir = get_node_dir(tmp_path, "n1")
     cache_save(node_dir, sig, pd.DataFrame({"x": [1]}))
 
-    result = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
+    result = validate_graph(graph, registry, session_manager, storage_path=tmp_path, dev_mode=True)
     assert result.node_statuses["n1"].status == "executed"
     assert result.node_statuses["n1"].cached is True
 
 
-def test_cache_out_of_date(registry: ToolRegistryService, tmp_path: Path) -> None:
+def test_cache_out_of_date(registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path) -> None:
     """A previously executed node whose parameters changed is out_of_date."""
     from bioimageflow.storage import create_hash_dir, get_node_dir
 
@@ -332,11 +338,11 @@ def test_cache_out_of_date(registry: ToolRegistryService, tmp_path: Path) -> Non
     node_dir = get_node_dir(tmp_path, "n1")
     create_hash_dir(node_dir, "0" * 64)
 
-    result = validate_graph(graph, registry, storage_path=tmp_path)
+    result = validate_graph(graph, registry, session_manager, storage_path=tmp_path)
     assert result.node_statuses["n1"].status == "out_of_date"
 
 
-def test_cache_unexecuted(registry: ToolRegistryService, tmp_path: Path) -> None:
+def test_cache_unexecuted(registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path) -> None:
     graph = GraphState(
         nodes=[
             NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
@@ -345,11 +351,11 @@ def test_cache_unexecuted(registry: ToolRegistryService, tmp_path: Path) -> None
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry, storage_path=tmp_path)
+    result = validate_graph(graph, registry, session_manager, storage_path=tmp_path)
     assert result.node_statuses["n1"].status == "unexecuted"
 
 
-def test_missing_package_surfaced() -> None:
+def test_missing_package_surfaced(session_manager: SessionManager) -> None:
     reg = ToolRegistryService()
     reg.register_tool(
         "Missing",
@@ -366,11 +372,11 @@ def test_missing_package_surfaced() -> None:
                          position=(0, 0), parameters={})],
         edges=[],
     )
-    result = validate_graph(graph, reg)
+    result = validate_graph(graph, reg, session_manager)
     assert any(e.type == "missing_package" for e in result.errors)
 
 
-def test_multiple_errors_not_short_circuited(registry: ToolRegistryService) -> None:
+def test_multiple_errors_not_short_circuited(registry: ToolRegistryService, session_manager: SessionManager) -> None:
     graph = GraphState(
         nodes=[
             NodeState(id="n1", name="n1", tool_name="IntParamTool",
@@ -381,14 +387,14 @@ def test_multiple_errors_not_short_circuited(registry: ToolRegistryService) -> N
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     types = {e.type for e in result.errors}
     assert "parameter_invalid" in types
     assert "missing_connection" in types
 
 
 def test_dataframe_producer_without_outputs_skips_type_check(
-    registry: ToolRegistryService,
+    registry: ToolRegistryService, session_manager: SessionManager,
 ) -> None:
     """DataFrameTool with no Outputs should not trigger type_incompatible."""
     graph = GraphState(
@@ -403,7 +409,7 @@ def test_dataframe_producer_without_outputs_skips_type_check(
                           source_output="anything", target_input="mask_input"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, session_manager)
     assert not any(e.type == "type_incompatible" for e in result.errors)
 
 

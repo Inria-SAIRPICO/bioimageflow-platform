@@ -1,13 +1,17 @@
 """Graph validation orchestration.
 
 Thin wrapper that turns a ``GraphState`` into a ``ValidationResult`` by
-delegating to the library:
+delegating to :class:`SessionManager` and its underlying
+:class:`WorkflowSession`:
 
-* :meth:`bioimageflow.Workflow.validate` for domain-level checks
-  (cycle, type compatibility, missing required inputs, constant
-  Pydantic validation, sub-workflow recursion).
-* :meth:`bioimageflow.Workflow.plan` for per-node cache status —
-  signature hashes are produced by the same code path as execution.
+* The session manager translates ``GraphState`` to the library dict
+  and catches structural errors (duplicate IDs, missing tools, dangling
+  edges).
+* :meth:`WorkflowSession.validate` for domain-level checks (cycle,
+  type compatibility, missing required inputs, constant Pydantic
+  validation, sub-workflow recursion).
+* :meth:`WorkflowSession.plan` for per-node cache status — signature
+  hashes are produced by the same code path as execution.
 """
 
 from __future__ import annotations
@@ -22,10 +26,10 @@ from bioimageflow_server.models.validation import (
     NodeStatus,
     ValidationResult,
 )
-from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 logger = logging.getLogger(__name__)
@@ -78,28 +82,46 @@ _PLAN_STATUS_MAP: dict[str, tuple[str, bool]] = {
 def validate_graph(
     graph: GraphState,
     registry: ToolRegistryService,
+    session_manager: SessionManager,
     storage_path: Path | None = None,
     dev_mode: bool = True,
 ) -> ValidationResult:
-    """Run full validation on ``graph``.
+    """Run full validation on ``graph`` via the session manager.
 
-    Errors and node statuses come from the library. The platform only
-    adds structural errors (duplicate IDs, unknown edge endpoints,
-    unresolved tools), which the translator surfaces.
+    Loads the graph into the session (replacing any prior session),
+    then reads errors and plan from the cached session. Structural
+    errors from the translator are merged with domain-level errors
+    from the library.
     """
     from bioimageflow import CycleInWorkflowError
 
-    build = build_workflow(graph, registry, storage_path=storage_path)
-    errors: list[GraphValidationError] = list(build.errors)
+    translation_errors = session_manager.load(
+        graph, registry, storage_path=storage_path,
+    )
+    errors: list[GraphValidationError] = list(translation_errors)
+    disabled_node_ids = session_manager.disabled_node_ids
 
     node_statuses: dict[str, NodeStatus] = {}
-    for nid in build.disabled_node_ids:
+    for nid in disabled_node_ids:
         node_statuses[nid] = NodeStatus(node_id=nid, status="disabled", cached=False)
 
-    if build.workflow is not None:
-        lib_errors = build.workflow.validate(dev_mode=dev_mode)
+    session = session_manager.session
+    if session is not None:
+        # Use to_workflow() from the session (cached across non-structural
+        # edits), then call validate/plan directly with dev_mode — the
+        # session's own validate()/plan() don't accept dev_mode.
+        wf = session.to_workflow()
+
+        # Merge build-time errors from Workflow.errors (captured during
+        # from_dict) and domain-level errors from validate().
+        lib_errors = list(wf.errors) + list(wf.validate(dev_mode=dev_mode))
         has_cycle = False
+        seen_keys: set[tuple] = set()
         for err in lib_errors:
+            key = (err.path, err.node, err.field, err.kind, err.message, err.edge_id)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
             if err.kind == "cycle":
                 has_cycle = True
             errors.append(
@@ -110,7 +132,7 @@ def validate_graph(
         # when validate() already reported a cycle.
         if not has_cycle:
             try:
-                plans = build.workflow.plan(dev_mode=dev_mode)
+                plans = wf.plan(dev_mode=dev_mode)
             except CycleInWorkflowError:
                 # Defensive: validate() should have caught this, but
                 # guard against race / edge cases.

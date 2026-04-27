@@ -33,6 +33,7 @@ from bioimageflow_server.models.graph import (
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.graph_validator import validate_graph
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
@@ -97,6 +98,11 @@ def _clear_active_workflow() -> Any:
     set_active_workflow(None)
 
 
+@pytest.fixture
+def session_manager() -> SessionManager:
+    return SessionManager()
+
+
 def _seed_cache(storage_path: Path, registry: ToolRegistryService,
                 graph: GraphState, dev_mode: bool) -> None:
     """Populate the cache for every node using ``plan()``'s sig hash."""
@@ -128,10 +134,10 @@ def _chain_graph() -> GraphState:
 
 @pytest.mark.parametrize("dev_mode", [True, False])
 def test_empty_cache_reports_unexecuted(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path, dev_mode: bool,
 ) -> None:
     graph = _chain_graph()
-    result = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(graph, registry, session_manager, storage_path=tmp_path, dev_mode=dev_mode)
     assert result.valid is True
     for nid in ("src", "mid"):
         status = result.node_statuses[nid]
@@ -141,14 +147,14 @@ def test_empty_cache_reports_unexecuted(
 
 @pytest.mark.parametrize("dev_mode", [True, False])
 def test_seeded_cache_reports_executed(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path, dev_mode: bool,
 ) -> None:
     """After seeding the cache via the engine's own hash, every node
     must be reported as ``executed``/``cached=True`` by the validator."""
     graph = _chain_graph()
     _seed_cache(tmp_path, registry, graph, dev_mode)
 
-    result = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(graph, registry, session_manager, storage_path=tmp_path, dev_mode=dev_mode)
     for nid in ("src", "mid"):
         status = result.node_statuses[nid]
         assert status.status == "executed", f"{nid}: {status}"
@@ -157,7 +163,7 @@ def test_seeded_cache_reports_executed(
 
 @pytest.mark.parametrize("dev_mode", [True, False])
 def test_constant_change_invalidates_downstream(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path, dev_mode: bool,
 ) -> None:
     """Changing a constant on ``src`` must flip both ``src`` and ``mid``
     off ``cached``; an unchanged chain stays fully cached."""
@@ -177,7 +183,7 @@ def test_constant_change_invalidates_downstream(
         edges=graph.edges,
     )
 
-    result = validate_graph(modified, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(modified, registry, session_manager, storage_path=tmp_path, dev_mode=dev_mode)
     assert result.node_statuses["src"].cached is False
     assert result.node_statuses["mid"].cached is False
     # ``src`` previously had a hash dir on disk → out_of_date.
@@ -186,7 +192,7 @@ def test_constant_change_invalidates_downstream(
 
 @pytest.mark.parametrize("dev_mode", [True, False])
 def test_unrelated_node_stays_cached(
-    registry: ToolRegistryService, tmp_path: Path, dev_mode: bool,
+    registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path, dev_mode: bool,
 ) -> None:
     """Changing a downstream node must NOT invalidate its upstream."""
     graph = _chain_graph()
@@ -204,7 +210,7 @@ def test_unrelated_node_stays_cached(
         edges=graph.edges,
     )
 
-    result = validate_graph(modified, registry, storage_path=tmp_path, dev_mode=dev_mode)
+    result = validate_graph(modified, registry, session_manager, storage_path=tmp_path, dev_mode=dev_mode)
     assert result.node_statuses["src"].status == "executed"
     assert result.node_statuses["src"].cached is True
     assert result.node_statuses["mid"].cached is False
