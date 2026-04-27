@@ -112,11 +112,10 @@ def _clear_active_workflow() -> Any:
 
 
 def test_empty_graph(registry: ToolRegistryService) -> None:
-    result = build_workflow(GraphState(nodes=[], edges=[]), registry)
-    assert result.errors == []
-    assert result.node_map == {}
-    assert result.disabled_node_ids == set()
-    assert result.workflow is not None
+    workflow, errors, disabled = build_workflow(GraphState(nodes=[], edges=[]), registry)
+    assert errors == []
+    assert workflow.nodes == {}
+    assert disabled == set()
 
 
 def test_single_valid_node(registry: ToolRegistryService) -> None:
@@ -132,10 +131,10 @@ def test_single_valid_node(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = build_workflow(graph, registry)
-    assert result.errors == []
-    assert "n1" in result.node_map
-    assert result.node_map["n1"].name == "n1"
+    workflow, errors, _disabled = build_workflow(graph, registry)
+    assert errors == []
+    assert "n1" in workflow.nodes
+    assert workflow.nodes["n1"].name == "n1"
 
 
 def test_missing_tool_error(registry: ToolRegistryService) -> None:
@@ -151,10 +150,10 @@ def test_missing_tool_error(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = build_workflow(graph, registry)
-    assert len(result.errors) == 1
-    assert result.errors[0].type == "missing_tool"
-    assert result.errors[0].node == "n1"
+    _workflow, errors, _disabled = build_workflow(graph, registry)
+    assert len(errors) == 1
+    assert errors[0].type == "missing_tool"
+    assert errors[0].node == "n1"
 
 
 def test_missing_package_error() -> None:
@@ -182,10 +181,10 @@ def test_missing_package_error() -> None:
         ],
         edges=[],
     )
-    result = build_workflow(graph, reg)
-    assert len(result.errors) == 1
-    assert result.errors[0].type == "missing_package"
-    assert result.errors[0].node == "n1"
+    _workflow, errors, _disabled = build_workflow(graph, reg)
+    assert len(errors) == 1
+    assert errors[0].type == "missing_package"
+    assert errors[0].node == "n1"
 
 
 def test_disabled_node_excluded(registry: ToolRegistryService) -> None:
@@ -209,9 +208,9 @@ def test_disabled_node_excluded(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = build_workflow(graph, registry)
-    assert result.disabled_node_ids == {"n1"}
-    assert result.errors == []
+    _workflow, errors, disabled = build_workflow(graph, registry)
+    assert disabled == {"n1"}
+    assert errors == []
 
 
 def test_column_ref_edge(registry: ToolRegistryService) -> None:
@@ -242,10 +241,10 @@ def test_column_ref_edge(registry: ToolRegistryService) -> None:
             )
         ],
     )
-    result = build_workflow(graph, registry)
-    assert result.errors == []
-    assert set(result.node_map.keys()) == {"src", "dst"}
-    dst = result.node_map["dst"]
+    workflow, errors, _disabled = build_workflow(graph, registry)
+    assert errors == []
+    assert set(workflow.nodes.keys()) == {"src", "dst"}
+    dst = workflow.nodes["dst"]
     assert "mask_input" in dst._column_bindings
     assert dst._column_bindings["mask_input"].column == "mask"
 
@@ -289,9 +288,9 @@ def test_positional_edge_reindexing(registry: ToolRegistryService) -> None:
             PositionalEdge(id="e3", source_node="s3", target_node="df", positional_index=5),
         ],
     )
-    result = build_workflow(graph, registry)
-    assert result.errors == []
-    df = result.node_map["df"]
+    workflow, errors, _disabled = build_workflow(graph, registry)
+    assert errors == []
+    df = workflow.nodes["df"]
     arg_names = [a.name for a in df._args]
     assert arg_names == ["s2", "s1", "s3"]
 
@@ -316,8 +315,8 @@ def test_duplicate_node_ids(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = build_workflow(graph, registry)
-    types = [e.type for e in result.errors]
+    _workflow, errors, _disabled = build_workflow(graph, registry)
+    types = [e.type for e in errors]
     assert "invalid_node_id" in types
 
 
@@ -336,8 +335,8 @@ def test_duplicate_edge_ids(registry: ToolRegistryService) -> None:
                           source_output="mask", target_input="mask_input"),
         ],
     )
-    result = build_workflow(graph, registry)
-    types = [e.type for e in result.errors]
+    _workflow, errors, _disabled = build_workflow(graph, registry)
+    types = [e.type for e in errors]
     assert "invalid_edge_id" in types
 
 
@@ -352,8 +351,8 @@ def test_edge_references_unknown_node(registry: ToolRegistryService) -> None:
                           source_output="mask", target_input="x"),
         ],
     )
-    result = build_workflow(graph, registry)
-    types = [e.type for e in result.errors]
+    _workflow, errors, _disabled = build_workflow(graph, registry)
+    types = [e.type for e in errors]
     assert "invalid_edge_id" in types
 
 
@@ -370,7 +369,7 @@ def test_mixed_graph(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = build_workflow(graph, registry)
-    assert "good" in result.node_map
-    assert "disabled" in result.disabled_node_ids
-    assert any(e.type == "missing_tool" and e.node == "missing" for e in result.errors)
+    workflow, errors, disabled = build_workflow(graph, registry)
+    assert "good" in workflow.nodes
+    assert "disabled" in disabled
+    assert any(e.type == "missing_tool" and e.node == "missing" for e in errors)

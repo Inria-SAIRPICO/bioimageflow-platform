@@ -223,27 +223,19 @@ class ExecutionManager:
                 ]
             ) from exc
 
-        workflow = build_result.workflow
-        errors = list(getattr(build_result, "errors", []) or [])
-        if workflow is None or errors:
+        workflow, errors, _disabled = build_result
+        if errors:
             self.state = "idle"
-            if not errors:
-                errors = [
-                    GraphValidationError(
-                        type="parameter_invalid",
-                        detail="Workflow build produced no workflow",
-                    )
-                ]
             raise WorkflowBuildError(errors)
 
         self._workflow = workflow
 
         # Resolve execution targets. If caller passed an explicit subset,
-        # look them up on the built node_map; otherwise pass none and let
+        # look them up on workflow.nodes; otherwise pass none and let
         # the library auto-detect terminal nodes.
         targets: tuple[Any, ...] = ()
         if nodes:
-            node_map = getattr(build_result, "node_map", {}) or {}
+            node_map = dict(workflow.nodes)
             resolved: list[Any] = []
             for nid in nodes:
                 if nid in node_map:
@@ -467,10 +459,9 @@ def clear_node_cache(
     Cleared nodes get status ``"unexecuted"``; their transitive downstream
     receives ``"out_of_date"``. Unknown node IDs are silently skipped.
     """
-    build_result = build_workflow(graph, registry, storage_path=storage_path)
-    workflow = build_result.workflow
-    if workflow is None:
-        return {}
+    workflow, _errors, _disabled = build_workflow(
+        graph, registry, storage_path=storage_path,
+    )
 
     # Filter to valid node IDs known to the workflow.
     known = set(workflow.nodes.keys())

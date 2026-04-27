@@ -100,9 +100,8 @@ def _clear_active_workflow() -> Any:
 def _seed_cache(storage_path: Path, registry: ToolRegistryService,
                 graph: GraphState, dev_mode: bool) -> None:
     """Populate the cache for every node using ``plan()``'s sig hash."""
-    build = build_workflow(graph, registry, storage_path=storage_path)
-    assert build.workflow is not None
-    plans = build.workflow.plan(dev_mode=dev_mode)
+    workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=storage_path)
+    plans = workflow.plan(dev_mode=dev_mode)
     for nid, node_plan in plans.items():
         if node_plan.skipped or not node_plan.sig_hash:
             continue

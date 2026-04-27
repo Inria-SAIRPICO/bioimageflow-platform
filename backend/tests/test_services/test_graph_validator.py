@@ -304,9 +304,8 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
         edges=[],
     )
 
-    build = build_workflow(graph, registry, storage_path=tmp_path)
-    assert build.workflow is not None
-    plans = build.workflow.plan(dev_mode=True)
+    workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=tmp_path)
+    plans = workflow.plan(dev_mode=True)
     sig = plans["n1"].sig_hash
 
     node_dir = get_node_dir(tmp_path, "n1")

@@ -166,18 +166,19 @@ def _install_fake_builder(
     workflow: _FakeWorkflow | None,
     errors: list | None = None,
 ) -> MagicMock:
-    """Replace ``graph_builder.build_workflow`` with a fake returning ``workflow``."""
-    result = MagicMock()
-    result.workflow = workflow
-    result.errors = errors or []
-    result.disabled_node_ids = set()
+    """Replace ``graph_builder.build_workflow`` with a fake returning ``BuildOutput``."""
+    from bioimageflow_server.services.graph_builder import BuildOutput
 
     def _builder(graph, registry, storage_path=None, on_progress=None):
         # Wire the progress callback into the fake workflow so scripted
         # events are delivered through it.
         if workflow is not None:
             workflow.on_progress = on_progress
-        return result
+        return BuildOutput(
+            workflow=workflow,
+            errors=errors or [],
+            disabled_node_ids=set(),
+        )
 
     mock = MagicMock(side_effect=_builder)
     monkeypatch.setattr(execution_module, "build_workflow", mock)

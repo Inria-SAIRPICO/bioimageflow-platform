@@ -2,7 +2,7 @@
 
 Thin adapter over :func:`graph_state_to_lib_dict` +
 :meth:`bioimageflow.Workflow.from_dict`. The platform is not responsible
-for graph semantics — cycle detection, type compatibility, missing
+for graph semantics -- cycle detection, type compatibility, missing
 required inputs, and signature hashing all live in the library. See
 :mod:`graph_translator` for the wire-format translation.
 """
@@ -10,9 +10,8 @@ required inputs, and signature hashing all live in the library. See
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import GraphValidationError
@@ -23,19 +22,12 @@ from bioimageflow_server.services.graph_translator import (
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
-@dataclass
-class GraphBuildResult:
-    """Output of :func:`build_workflow`.
+class BuildOutput(NamedTuple):
+    """Return type of :func:`build_workflow`."""
 
-    ``workflow`` is the library ``Workflow`` (always present, even when
-    partially wired — some nodes may have been skipped). ``node_map``
-    maps GUI node IDs to their library ``Node`` objects.
-    """
-
-    workflow: Any | None
-    node_map: dict[str, Any] = field(default_factory=dict)
-    errors: list[GraphValidationError] = field(default_factory=list)
-    disabled_node_ids: set[str] = field(default_factory=set)
+    workflow: Any
+    errors: list[GraphValidationError]
+    disabled_node_ids: set[str]
 
 
 def build_workflow(
@@ -43,15 +35,11 @@ def build_workflow(
     registry: ToolRegistryService,
     storage_path: Path | None = None,
     on_progress: Callable[[Any], None] | None = None,
-) -> GraphBuildResult:
+) -> BuildOutput:
     """Translate ``graph`` into a library :class:`Workflow`.
 
-    Collects structural errors from the translator and node-construction
-    errors from :meth:`Workflow.from_dict` into a single error list.
-    The returned workflow is best-effort partially wired — nodes whose
-    tool class fails to resolve or construct are omitted, but the
-    container itself is always non-None so callers can continue to
-    drive validation and planning.
+    Returns a ``(workflow, errors, disabled_node_ids)`` tuple. The
+    workflow is always non-None (``validate_only=True, partial=True``).
     """
     from bioimageflow.workflow import Workflow
 
@@ -60,7 +48,7 @@ def build_workflow(
     )
     errors: list[GraphValidationError] = list(translation.errors)
 
-    from_dict_result = Workflow.from_dict(
+    result = Workflow.from_dict(
         translation.lib_dict,
         validate_only=True,
         partial=True,
@@ -69,21 +57,10 @@ def build_workflow(
         use_wetlands=False,
         auto_install=False,
     )
-    # validate_only=True guarantees a (workflow, errors) tuple
-    assert isinstance(from_dict_result, tuple)
-    workflow, lib_errors = from_dict_result
+    assert isinstance(result, tuple)
+    workflow, lib_errors = result
 
-    errors.extend(
-        lib_validation_error_to_graph_error(e)
-        for e in lib_errors
-    )
-
-    node_map: dict[str, Any] = dict(workflow.nodes)
+    errors.extend(lib_validation_error_to_graph_error(e) for e in lib_errors)
     disabled = {n.id for n in graph.nodes if not n.enabled}
 
-    return GraphBuildResult(
-        workflow=workflow,
-        node_map=node_map,
-        errors=errors,
-        disabled_node_ids=disabled,
-    )
+    return BuildOutput(workflow, errors, disabled)
