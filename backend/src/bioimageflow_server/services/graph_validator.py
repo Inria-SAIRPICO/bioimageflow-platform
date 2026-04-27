@@ -12,6 +12,7 @@ delegating to the library:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,6 +27,8 @@ from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+logger = logging.getLogger(__name__)
 
 
 def _is_binding_shape(value: Any) -> bool:
@@ -42,13 +45,12 @@ def _is_binding_shape(value: Any) -> bool:
 def _status_from_disk(
     storage_path: Path | None,
     node_id: str,
-    sig_hash: str,
 ) -> Literal["unexecuted", "out_of_date"]:
     """Decide ``out_of_date`` vs ``unexecuted`` based on cache presence.
 
-    Returns ``"unexecuted"`` when no storage path is configured or the
-    node directory is empty, ``"out_of_date"`` when the directory has
-    prior cache entries but no current hit.
+    Used only by :func:`validate_parameters` (the PATCH handler) which
+    has no workflow context to call ``plan()``.  For full-graph
+    validation, :func:`validate_graph` uses ``NodePlanStatus`` directly.
     """
     if storage_path is None:
         return "unexecuted"
@@ -58,6 +60,19 @@ def _status_from_disk(
     if node_dir.exists() and any(node_dir.iterdir()):
         return "out_of_date"
     return "unexecuted"
+
+
+# Map library NodePlanStatus string values to the platform's status labels.
+_PLAN_STATUS_MAP: dict[str, tuple[str, bool]] = {
+    "cached": ("executed", True),
+    "out_of_date": ("out_of_date", False),
+    "unexecuted": ("unexecuted", False),
+    # Skipped-but-not-disabled means downstream of a disabled node.
+    # Preserve the prior platform behavior of reporting these as
+    # ``unexecuted`` rather than ``disabled`` (which is reserved for
+    # explicit ``NodeState.enabled=False``).
+    "skipped": ("unexecuted", False),
+}
 
 
 def validate_graph(
@@ -72,6 +87,8 @@ def validate_graph(
     adds structural errors (duplicate IDs, unknown edge endpoints,
     unresolved tools), which the translator surfaces.
     """
+    from bioimageflow import CycleInWorkflowError
+
     build = build_workflow(graph, registry, storage_path=storage_path)
     errors: list[GraphValidationError] = list(build.errors)
 
@@ -79,9 +96,9 @@ def validate_graph(
     for nid in build.disabled_node_ids:
         node_statuses[nid] = NodeStatus(node_id=nid, status="disabled", cached=False)
 
-    has_cycle = False
     if build.workflow is not None:
         lib_errors = build.workflow.validate(dev_mode=dev_mode)
+        has_cycle = False
         for err in lib_errors:
             if err.kind == "cycle":
                 has_cycle = True
@@ -89,36 +106,26 @@ def validate_graph(
                 lib_validation_error_to_graph_error(err)
             )
 
-        # Skip plan() on cyclic graphs — the library returns all-skipped
-        # entries in that case, which would wrongly flatten every node's
-        # status. Fall back to the disk-based heuristic below.
+        # plan() raises CycleInWorkflowError on cyclic graphs; skip it
+        # when validate() already reported a cycle.
         if not has_cycle:
-            plans = build.workflow.plan(dev_mode=dev_mode)
+            try:
+                plans = build.workflow.plan(dev_mode=dev_mode)
+            except CycleInWorkflowError:
+                # Defensive: validate() should have caught this, but
+                # guard against race / edge cases.
+                plans = {}
+
             for nid, node_plan in plans.items():
-                # Already classified as explicitly disabled.
                 if nid in node_statuses:
                     continue
-                # Treat nodes that fail to build (plan has no entry for them)
-                # as ``unexecuted``; handled by the fill-in loop below.
-                if node_plan.skipped:
-                    # Skipped-but-not-disabled means downstream of a
-                    # disabled node. Preserve the prior platform behavior
-                    # of reporting these as ``unexecuted`` rather than
-                    # ``disabled`` (which is reserved for explicit
-                    # ``NodeState.enabled=False``).
-                    node_statuses[nid] = NodeStatus(
-                        node_id=nid, status="unexecuted", cached=False,
-                    )
-                    continue
-                if node_plan.cached:
-                    node_statuses[nid] = NodeStatus(
-                        node_id=nid, status="executed", cached=True,
-                    )
-                else:
-                    status = _status_from_disk(storage_path, nid, node_plan.sig_hash)
-                    node_statuses[nid] = NodeStatus(
-                        node_id=nid, status=status, cached=False,
-                    )
+                status_str = str(node_plan.status.value)
+                status_label, cached = _PLAN_STATUS_MAP.get(
+                    status_str, ("unexecuted", False),
+                )
+                node_statuses[nid] = NodeStatus(
+                    node_id=nid, status=status_label, cached=cached,
+                )
 
     # Fill in ``unexecuted`` for nodes that failed to build or for any
     # node not covered above (e.g., cyclic graphs).
@@ -189,7 +196,7 @@ def validate_parameters(
                     lib_validation_error_to_graph_error(err)
                 )
 
-    status_label = _status_from_disk(storage_path, node_id, "")
+    status_label = _status_from_disk(storage_path, node_id)
     return ValidationResult(
         valid=not errors,
         node_statuses={
