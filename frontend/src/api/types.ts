@@ -471,7 +471,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "cycle_detected" | "type_incompatible" | "parameter_invalid" | "missing_tool" | "missing_connection" | "missing_package" | "invalid_node_id" | "invalid_edge_id";
+            type: "cycle_detected" | "type_incompatible" | "parameter_invalid" | "missing_tool" | "missing_connection" | "missing_package" | "invalid_node_id" | "invalid_edge_id" | "source_tool_upstream";
             /** Detail */
             detail: string;
             /** Node */
@@ -666,8 +666,21 @@ export interface components {
             package: string;
             /** Package Version */
             package_version: string;
-            /** Tool Type */
-            tool_type: string;
+            /**
+             * Tool Type
+             * @enum {string}
+             */
+            tool_type: "ProcessingTool" | "DataFrameTool";
+            /**
+             * Accepts Upstream
+             * @default true
+             */
+            accepts_upstream: boolean;
+            /**
+             * Dynamic Outputs
+             * @default false
+             */
+            dynamic_outputs: boolean;
             /**
              * Documentation
              * @default
@@ -1450,9 +1463,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

@@ -22,7 +22,9 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     display_name: 'Gaussian Blur',
     package: 'core',
     package_version: '1.0.0',
-    tool_type: 'ImageTool',
+    tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
     documentation: '',
     tags: [],
     categories: [],
@@ -225,5 +227,61 @@ describe('ToolNode', () => {
       .filter((p) => p.props('positional') === true)
     // 0 connected + 1 spare = 1
     expect(positionalPins).toHaveLength(1)
+  })
+
+  // --- Source DataFrameTool (accepts_upstream === false) ---
+
+  it('source DataFrameTool (accepts_upstream=false) renders zero positional pins', () => {
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      accepts_upstream: false,
+      inputs: {
+        path: { type: 'Path', required: true, connectable: 'never' },
+      },
+      outputs: {
+        path: { type: 'Path' },
+        filename: { type: 'str' },
+      },
+    })
+    const data = makeData({ tool, connectedInputs: {} })
+    const w = factory(data)
+    const positionalPins = w
+      .findAllComponents({ name: 'InputPin' })
+      .filter((p) => p.props('positional') === true)
+    expect(positionalPins).toHaveLength(0)
+  })
+
+  it('DataFrameTool with accepts_upstream=true renders one spare positional pin', () => {
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      accepts_upstream: true,
+      inputs: {},
+      outputs: {},
+    })
+    const data = makeData({ tool, connectedInputs: {} })
+    const w = factory(data)
+    const positionalPins = w
+      .findAllComponents({ name: 'InputPin' })
+      .filter((p) => p.props('positional') === true)
+    expect(positionalPins).toHaveLength(1)
+  })
+
+  it('ProcessingTool renders zero positional pins regardless of accepts_upstream', () => {
+    const tool = makeTool({
+      tool_type: 'ProcessingTool',
+      accepts_upstream: true,
+      inputs: {
+        image: { type: 'ImagePath', required: true, connectable: 'by_default' },
+      },
+      outputs: {
+        result: { type: 'ImagePath' },
+      },
+    })
+    const data = makeData({ tool, connectedInputs: {} })
+    const w = factory(data)
+    const positionalPins = w
+      .findAllComponents({ name: 'InputPin' })
+      .filter((p) => p.props('positional') === true)
+    expect(positionalPins).toHaveLength(0)
   })
 })

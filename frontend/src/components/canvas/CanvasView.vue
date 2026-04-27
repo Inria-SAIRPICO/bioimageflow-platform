@@ -158,6 +158,18 @@ function clearExistingIncomingEdge(nodeId: string, targetHandle: string) {
 onConnect((connection) => {
   if (isLocked.value) return
   const targetHandle = connection.targetHandle ?? ''
+
+  // Reject positional edges into source DataFrameTools (accepts_upstream=false).
+  if (targetHandle.startsWith('__positional_')) {
+    const targetNode = getNodes.value.find((n: any) => n.id === connection.target)
+    const targetTool: ToolMetadata | undefined =
+      (targetNode?.data?.tool as ToolMetadata | undefined) ??
+      toolRegistryStore.getToolByName(targetNode?.data?.toolName)
+    if (targetTool?.accepts_upstream === false) {
+      return
+    }
+  }
+
   // Enforce one incoming edge per (non-positional) input. When users drag from
   // an already-connected input pin, Vue Flow issues a fresh connect rather than
   // an edge-update; this keeps the graph consistent either way.
@@ -205,6 +217,28 @@ onNodesChange((changes) => {
 watch(getNodes, (nodes) => {
   uiStore.setGraphNodes(nodes)
 }, { deep: true })
+
+// Persist in-place node-data edits made from NodePanel (parameters, rename,
+// enable/disable, pin toggles, output templates). Vue Flow's structural
+// events (drag, connect, add, delete) already call emitGraphChanged
+// themselves — but parameter edits mutate node.data directly with no
+// corresponding event, so without this watcher they never reach IndexedDB
+// or the backend. Watching only NodePanel-owned fields keeps drag/selection/
+// status/connectedInputs mutations from re-triggering a full sync.
+watch(
+  () => getNodes.value.map((n: any) => ({
+    id: n.id,
+    name: n.data?.name,
+    parameters: n.data?.parameters,
+    enabled: n.data?.enabled,
+    pinnedInputs: n.data?.pinnedInputs,
+    output_templates: n.data?.output_templates,
+  })),
+  () => {
+    emitGraphChanged()
+  },
+  { deep: true },
+)
 
 /**
  * Detach the edge targeting (nodeId, targetHandle). Called by InputPin when a
@@ -373,13 +407,27 @@ function isValidConnection(connection: {
     toolRegistryStore.getToolByName(targetNode.data?.toolName)
   if (!sourceTool || !targetTool) return false
 
+  // 1b. Reject positional edges into source DataFrameTools
+  const th = connection.targetHandle ?? ''
+  if (th.startsWith('__positional_') && targetTool.accepts_upstream === false) {
+    return false
+  }
+
   if (connection.sourceHandle && connection.targetHandle) {
     const sourceOutput = sourceTool.outputs[connection.sourceHandle] as
       | { type?: string }
       | undefined
     const targetInput = targetTool.inputs[connection.targetHandle]
-    if (sourceOutput && targetInput && sourceOutput.type !== targetInput.type) {
-      return false
+    if (sourceOutput?.type && targetInput?.type) {
+      // Path-family types (Path / ImagePath / MaskPath) all share the same
+      // runtime carrier (a filesystem path); the distinction is metadata
+      // (image_spec semantics, formats, layouts). Treat them as mutually
+      // compatible at the frontend pre-flight; the bioimageflow library
+      // performs the authoritative semantic check on graph validate.
+      const PATH_FAMILY = new Set(['Path', 'ImagePath', 'MaskPath'])
+      const same = sourceOutput.type === targetInput.type
+      const bothPath = PATH_FAMILY.has(sourceOutput.type) && PATH_FAMILY.has(targetInput.type)
+      if (!same && !bothPath) return false
     }
   }
 
@@ -472,12 +520,16 @@ function onAddNode({
     }
   }
 
-  // Build default output templates for path-typed outputs
+  // Build default output templates for path-typed outputs.
+  // ProcessingTool only — DataFrameTool Outputs are column declarations,
+  // not file paths, and must not get an output_templates entry.
   const output_templates: Record<string, string> = {}
-  for (const [key, rawField] of Object.entries(tool.outputs)) {
-    const field = rawField as { type?: string; default?: string } | undefined
-    if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
-      output_templates[key] = field.default || ''
+  if (tool.tool_type !== 'DataFrameTool') {
+    for (const [key, rawField] of Object.entries(tool.outputs)) {
+      const field = rawField as { type?: string; default?: string } | undefined
+      if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
+        output_templates[key] = field.default || ''
+      }
     }
   }
 
@@ -595,10 +647,13 @@ function pasteFromClipboard() {
           pinnedInputs[key] = isPathType && field.required
         }
       }
-      for (const [key, rawField] of Object.entries(tool.outputs)) {
-        const field = rawField as { type?: string; default?: string } | undefined
-        if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
-          output_templates[key] = field.default || ''
+      // ProcessingTool only — see comment in createNodeForTool.
+      if (tool.tool_type !== 'DataFrameTool') {
+        for (const [key, rawField] of Object.entries(tool.outputs)) {
+          const field = rawField as { type?: string; default?: string } | undefined
+          if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
+            output_templates[key] = field.default || ''
+          }
         }
       }
     }

@@ -54,7 +54,9 @@ class ToolMetadata(BaseModel):
     display_name: str
     package: str
     package_version: str
-    tool_type: str
+    tool_type: Literal["ProcessingTool", "DataFrameTool"]
+    accepts_upstream: bool = True
+    dynamic_outputs: bool = False
     documentation: str = ""
     tags: list[str] = []
     categories: list[str] = []

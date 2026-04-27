@@ -92,3 +92,49 @@ def test_register_multiple_packages_and_list():
     assert names == {"a", "b"}
 
 
+# --- accepts_upstream / dynamic_outputs via _register_tool_from_class ---
+
+
+def _load_common_tools_class(class_name: str) -> type:
+    """Load a tool class from bioimageflow_common_tools, skipping if unavailable."""
+    pytest.importorskip("bioimageflow.tool_loader")
+    from bioimageflow.tool_loader import load_versioned_package
+
+    package_name, version = "bioimageflow_common_tools", "0.1.1"
+    try:
+        mod = load_versioned_package(package_name, version)
+    except Exception as exc:
+        pytest.skip(f"{package_name}=={version} not installed: {exc}")
+    cls = getattr(mod, class_name, None)
+    if cls is None:
+        pytest.skip(f"{class_name} missing from {package_name}")
+    return cls
+
+
+def _register(class_name: str) -> ToolMetadata:
+    cls = _load_common_tools_class(class_name)
+    reg = ToolRegistryService()
+    reg._register_tool_from_class(cls, class_name, "bioimageflow_common_tools", "0.1.1")
+    meta = reg.get_tool(class_name)
+    assert meta is not None
+    return meta
+
+
+def test_files_accepts_upstream_is_false():
+    meta = _register("Files")
+    assert meta.tool_type == "DataFrameTool"
+    assert meta.accepts_upstream is False
+
+
+def test_inner_join_accepts_upstream_is_true():
+    meta = _register("InnerJoin")
+    assert meta.tool_type == "DataFrameTool"
+    assert meta.accepts_upstream is True
+
+
+def test_processing_tool_atlas_has_correct_type_and_accepts_upstream():
+    meta = _register("Atlas")
+    assert meta.tool_type == "ProcessingTool"
+    assert meta.accepts_upstream is True
+
+

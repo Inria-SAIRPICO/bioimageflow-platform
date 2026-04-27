@@ -21,6 +21,7 @@ from bioimageflow.validation import (
     SchemaSerializationError,
     serialize_input_schema,
     serialize_output_schema,
+    serialize_tool_metadata,
 )
 
 from bioimageflow_server.models.tools import (
@@ -131,20 +132,12 @@ class ToolRegistryService:
         category = getattr(tool_cls, "category", None)
         categories = [category.value] if category is not None else []
 
-        # Determine tool type
-        try:
-            from bioimageflow.dataframe_tool import DataFrameTool
-
-            tool_type = "DataFrameTool" if issubclass(tool_cls, DataFrameTool) else ""
-        except ImportError:
-            tool_type = ""
-        if not tool_type:
-            from bioimageflow_core.tool import ProcessingTool
-
-            if issubclass(tool_cls, ProcessingTool):
-                tool_type = "ProcessingTool"
-            else:
-                tool_type = "BaseTool"
+        # Determine tool type, accepts_upstream, and dynamic_outputs from the
+        # library's canonical serializer.
+        meta = serialize_tool_metadata(tool_cls)
+        tool_type = meta["tool_type"]
+        accepts_upstream = meta["accepts_upstream"]
+        dynamic_outputs = meta["dynamic_outputs"]
 
         try:
             inputs_raw = serialize_input_schema(tool_cls)
@@ -179,6 +172,8 @@ class ToolRegistryService:
                 package=package,
                 package_version=version,
                 tool_type=tool_type,
+                accepts_upstream=accepts_upstream,
+                dynamic_outputs=dynamic_outputs,
                 documentation=documentation.strip(),
                 tags=tags,
                 categories=categories,

@@ -1,9 +1,11 @@
 {
+  "accepts_upstream": true,
   "categories": [
     "segmentation"
   ],
   "display_name": "Cellpose SAM",
   "documentation": "Segment cells or nuclei using the Cellpose algorithm. Produces a labeled mask image.",
+  "dynamic_outputs": false,
   "inputs": {
     "cellprob_threshold": {
       "choices": null,

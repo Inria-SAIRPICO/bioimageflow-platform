@@ -114,6 +114,14 @@ Per-field `OutputFieldSchema`:
 
 **Passthrough outputs (`DataFrameTool`):** when the tool's `Outputs` class subclasses `bioimageflow.Passthrough`, the `outputs` dict on `ToolMetadata` is the marker `{"_passthrough": true}` instead of a per-field dict — frontends render "inherits columns from upstream."
 
+Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `tool_type` | `"ProcessingTool" \| "DataFrameTool"` | Discriminator for rendering and pin logic. |
+| `accepts_upstream` | `boolean` | `false` means the tool refuses positional upstream `DataFrameTool` connections. The canvas hides positional pins. |
+| `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits (see Phase 2). |
+
 ```json
 {
   "name": "CellposeSegmenter",
@@ -121,6 +129,8 @@ Per-field `OutputFieldSchema`:
   "package": "bioimageflow-cellpose",
   "package_version": "1.2.0",
   "tool_type": "ProcessingTool",
+  "accepts_upstream": true,
+  "dynamic_outputs": false,
   "documentation": "Segment cells using Cellpose models.",
   "tags": ["segmentation", "deep-learning"],
   "categories": ["Segmentation"],
@@ -851,6 +861,8 @@ Input and output pins are the connection points on nodes.
 
 For **DataFrameTool** nodes: positional upstream connections appear as numbered input pins ("1", "2", ...) on the left side. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap (e.g., removing pin 1 causes pin 2 to become pin 1). Positional pin order can be changed by disconnecting and reconnecting edges in the desired order.
 
+Source-only DataFrameTools (`accepts_upstream === false`, e.g. `Files`, `Generate`) render no positional input pins. Edge-creation onto a positional handle of such a tool is rejected client-side with a tooltip explaining the source-tool semantics. The backend additionally rejects any graph containing such an edge with a `source_tool_upstream` validation error.
+
 #### 3.3.4 Canvas Controls
 
 - **Pan:** Middle-click drag, or scroll wheel + Shift
@@ -970,12 +982,13 @@ When a connectable input is **connected** (pin has an edge), the input field is 
 
 #### 3.5.4 Output Fields
 
-Each output field from `Outputs` is displayed with editable path templates for path-typed outputs:
+Each output field from `Outputs` is displayed with editable path templates for path-typed outputs **on `ProcessingTool` nodes only**:
 
 - **Label:** Field name
 - **Type badge:** Visual indicator of the type (ImagePath, int, etc.)
-- **Path template editor:** For path-typed outputs (`Path`, `ImagePath`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
+- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImagePath`, `MaskPath`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
 - **Non-path outputs** (int, float, str, etc.) are shown read-only.
+- **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImagePath`/`MaskPath` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept (see `specs.md` Section 2080: *"DataFrameTool does not use output templating — it returns DataFrames directly."*). The tool's `tool_type` field on `ToolMetadata` is the gate.
 
 #### 3.5.4b Resource Configuration
 

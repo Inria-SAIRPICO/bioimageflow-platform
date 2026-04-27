@@ -68,3 +68,16 @@ def test_cellpose_sam_wire_format_snapshot(registry_with_cellpose: ToolRegistryS
         f"{FIXTURE_PATH.relative_to(Path.cwd())} intentionally and coordinate "
         "with frontend types + platform_specs_v1.md."
     )
+
+
+def test_no_basetool_type(registry_with_cellpose: ToolRegistryService):
+    """No registered tool should have tool_type == 'BaseTool'."""
+    meta = registry_with_cellpose.get_tool("CellposeSAM")
+    assert meta is not None
+    assert meta.tool_type != "BaseTool"
+    # The Literal type on ToolMetadata already excludes BaseTool, but
+    # verify no tool in the registry sneaked it through.
+    for tool in registry_with_cellpose.list_tools():
+        assert tool.tool_type in ("ProcessingTool", "DataFrameTool"), (
+            f"{tool.name} has unexpected tool_type={tool.tool_type!r}"
+        )

@@ -38,9 +38,14 @@ const isDataFrameTool = computed(() => {
   return props.data.tool.tool_type === 'DataFrameTool'
 })
 
+const showsPositionalPins = computed(() => {
+  return props.data.tool.tool_type === 'DataFrameTool'
+      && props.data.tool.accepts_upstream === true
+})
+
 const positionalInputCount = computed(() => {
-  // For DataFrameTools: number of connected positional inputs + 1 spare
-  if (!isDataFrameTool.value) return 0
+  // For DataFrameTools that accept upstream: number of connected positional inputs + 1 spare
+  if (!showsPositionalPins.value) return 0
   const connected = Object.keys(props.data.connectedInputs).filter((k) =>
     k.startsWith('__positional_'),
   ).length
@@ -107,7 +112,7 @@ function onContextMenu(event: MouseEvent) {
           :source-label="data.connectedInputs[name]"
         />
         <InputPin
-          v-if="isDataFrameTool"
+          v-if="showsPositionalPins"
           v-for="i in positionalInputCount"
           :key="`__positional_${i - 1}`"
           :node-id="id"

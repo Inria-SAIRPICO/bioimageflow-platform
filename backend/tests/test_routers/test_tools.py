@@ -102,6 +102,17 @@ async def test_get_tools_populated(populated_client: httpx.AsyncClient):
     assert data[0]["name"] == "Cellpose"
 
 
+async def test_get_tools_returns_new_metadata_fields(populated_client: httpx.AsyncClient):
+    """GET /tools must surface accepts_upstream and dynamic_outputs."""
+    resp = await populated_client.get("/api/v1/tools")
+    assert resp.status_code == 200
+    tool = resp.json()[0]
+    assert "accepts_upstream" in tool
+    assert "dynamic_outputs" in tool
+    assert tool["accepts_upstream"] is True
+    assert tool["dynamic_outputs"] is False
+
+
 async def test_get_tools_empty(empty_client: httpx.AsyncClient):
     resp = await empty_client.get("/api/v1/tools")
     assert resp.status_code == 200

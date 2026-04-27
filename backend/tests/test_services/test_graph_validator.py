@@ -17,6 +17,7 @@ from bioimageflow_server.models.graph import (
     ColumnRefEdge,
     GraphState,
     NodeState,
+    PositionalEdge,
 )
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.graph_validator import (
@@ -104,12 +105,23 @@ class MockDataFrameTool(DataFrameTool):
     Inputs = DFInputs
 
 
+class SourceDFInputs(IOModel):
+    path: str = "/tmp"
+
+
+class MockSourceDataFrameTool(DataFrameTool):
+    """A source-only DataFrameTool that refuses positional upstream args."""
+    accepts_upstream = False
+    Inputs = SourceDFInputs
+
+
 _TOOL_CLASSES: dict[str, type] = {
     "MockProcessingTool": MockProcessingTool,
     "CompatTool": CompatTool,
     "IncompatTool": IncompatTool,
     "IntParamTool": IntParamTool,
     "MockDataFrameTool": MockDataFrameTool,
+    "MockSourceDataFrameTool": MockSourceDataFrameTool,
 }
 
 
@@ -498,3 +510,25 @@ def test_validate_parameters_does_not_call_compute_signature_hash(
     )
     assert called["count"] == 0
     assert result is not None
+
+
+def test_positional_edge_into_source_tool_produces_source_tool_upstream_error(
+    registry: ToolRegistryService, session_manager: SessionManager,
+) -> None:
+    """Wiring a positional edge into a source DataFrameTool yields source_tool_upstream."""
+    graph = GraphState(
+        nodes=[
+            NodeState(id="upstream", name="upstream", tool_name="MockDataFrameTool",
+                      position=(0, 0), parameters={}),
+            NodeState(id="source", name="source", tool_name="MockSourceDataFrameTool",
+                      position=(100, 0), parameters={"path": "/tmp"}),
+        ],
+        edges=[
+            PositionalEdge(id="e_pos", source_node="upstream", target_node="source",
+                           positional_index=0),
+        ],
+    )
+    result = validate_graph(graph, registry, session_manager)
+    source_errs = [e for e in result.errors if e.type == "source_tool_upstream"]
+    assert len(source_errs) >= 1
+    assert any(e.edge_id == "e_pos" for e in source_errs)

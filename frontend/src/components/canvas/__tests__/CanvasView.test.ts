@@ -12,7 +12,9 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     display_name: 'Gaussian Blur',
     package: 'core',
     package_version: '1.0.0',
-    tool_type: 'ImageTool',
+    tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
     documentation: '',
     tags: [],
     categories: [],
@@ -253,31 +255,30 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('isValidConnection rejects incompatible types', () => {
+    it('isValidConnection rejects incompatible types (str output -> ImagePath input)', () => {
       const store = useToolRegistryStore()
-      store.tools = [makeTool(), makeThresholdTool()] as any
+      // A source tool that outputs `str`, and the regular blur which expects
+      // an ImagePath input. Path-family <-> non-path-family must be rejected.
+      const stringSource = makeTool({
+        name: 'string_source',
+        display_name: 'String Source',
+        outputs: { value: { type: 'str' } },
+      })
+      store.tools = [stringSource, makeTool()] as any
 
-      // Set up nodes in the mock
       mockNodes = [
-        {
-          id: 'blur_1',
-          data: { toolName: 'gaussian_blur' },
-        },
-        {
-          id: 'thresh_1',
-          data: { toolName: 'threshold' },
-        },
+        { id: 'src_1', data: { toolName: 'string_source' } },
+        { id: 'blur_1', data: { toolName: 'gaussian_blur' } },
       ]
 
       const w = mountCanvas()
       const vm = w.vm as any
 
-      // ImagePath output -> MaskPath input: incompatible
       const result = vm.isValidConnection({
-        source: 'blur_1',
-        target: 'thresh_1',
-        sourceHandle: 'result',
-        targetHandle: 'mask',
+        source: 'src_1',
+        target: 'blur_1',
+        sourceHandle: 'value',
+        targetHandle: 'image',
       })
       expect(result).toBe(false)
       w.unmount()
@@ -308,6 +309,170 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    // Path-family compatibility: Path / ImagePath / MaskPath share the same
+    // runtime carrier (filesystem path). The frontend pre-flight treats them
+    // as mutually compatible; the library catches semantic mismatches
+    // (image_spec semantics, formats, layouts) on graph validate.
+    describe('isValidConnection — path-family compatibility', () => {
+      function makeFilesTool(): ToolMetadata {
+        // Models the `Files` DataFrameTool: emits a `path: Path` column.
+        return makeTool({
+          name: 'files',
+          display_name: 'Files',
+          tool_type: 'DataFrameTool',
+          inputs: {
+            path: { type: 'Path', required: true, connectable: 'never' },
+            pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+          },
+          outputs: {
+            path: { type: 'Path' },
+            filename: { type: 'str' },
+          },
+        })
+      }
+
+      function makePathSink(): ToolMetadata {
+        // A tool with one input of each path-family flavor.
+        return makeTool({
+          name: 'path_sink',
+          display_name: 'Path Sink',
+          inputs: {
+            any_path: { type: 'Path', required: true, connectable: 'by_default' },
+            image: { type: 'ImagePath', required: true, connectable: 'by_default' },
+            mask: { type: 'MaskPath', required: true, connectable: 'by_default' },
+          },
+          outputs: {},
+        })
+      }
+
+      function makeMultiPathSource(): ToolMetadata {
+        // A tool with one output of each path-family flavor.
+        return makeTool({
+          name: 'multi_path_source',
+          display_name: 'Multi Path Source',
+          inputs: {
+            seed: { type: 'ImagePath', required: true, connectable: 'by_default' },
+          },
+          outputs: {
+            any_path: { type: 'Path' },
+            image: { type: 'ImagePath' },
+            mask: { type: 'MaskPath' },
+          },
+        })
+      }
+
+      function setup() {
+        const store = useToolRegistryStore()
+        store.tools = [makeFilesTool(), makePathSink(), makeMultiPathSource()] as any
+        mockNodes = [
+          { id: 'files_1', data: { toolName: 'files' } },
+          { id: 'multi_1', data: { toolName: 'multi_path_source' } },
+          { id: 'sink_1', data: { toolName: 'path_sink' } },
+        ]
+        const w = mountCanvas()
+        const vm = w.vm as any
+        return { w, vm }
+      }
+
+      it('accepts Path output -> ImagePath input (Files.path -> Atlas.input_image)', () => {
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'files_1',
+          target: 'sink_1',
+          sourceHandle: 'path',
+          targetHandle: 'image',
+        })
+        expect(result).toBe(true)
+        w.unmount()
+      })
+
+      it('accepts Path output -> MaskPath input', () => {
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'files_1',
+          target: 'sink_1',
+          sourceHandle: 'path',
+          targetHandle: 'mask',
+        })
+        expect(result).toBe(true)
+        w.unmount()
+      })
+
+      it('accepts Path output -> Path input', () => {
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'files_1',
+          target: 'sink_1',
+          sourceHandle: 'path',
+          targetHandle: 'any_path',
+        })
+        expect(result).toBe(true)
+        w.unmount()
+      })
+
+      it('accepts ImagePath output -> Path input', () => {
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'multi_1',
+          target: 'sink_1',
+          sourceHandle: 'image',
+          targetHandle: 'any_path',
+        })
+        expect(result).toBe(true)
+        w.unmount()
+      })
+
+      it('accepts ImagePath output -> MaskPath input', () => {
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'multi_1',
+          target: 'sink_1',
+          sourceHandle: 'image',
+          targetHandle: 'mask',
+        })
+        expect(result).toBe(true)
+        w.unmount()
+      })
+
+      it('accepts MaskPath output -> Path input', () => {
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'multi_1',
+          target: 'sink_1',
+          sourceHandle: 'mask',
+          targetHandle: 'any_path',
+        })
+        expect(result).toBe(true)
+        w.unmount()
+      })
+
+      it('accepts MaskPath output -> ImagePath input', () => {
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'multi_1',
+          target: 'sink_1',
+          sourceHandle: 'mask',
+          targetHandle: 'image',
+        })
+        expect(result).toBe(true)
+        w.unmount()
+      })
+
+      it('still rejects path-family <-> non-path-family (Path output -> str input would, str output -> Path input)', () => {
+        // makeFilesTool exposes a `pattern: str` input; connecting any path
+        // output to it must be rejected.
+        const { w, vm } = setup()
+        const result = vm.isValidConnection({
+          source: 'multi_1',
+          target: 'files_1',
+          sourceHandle: 'image',
+          targetHandle: 'pattern',
+        })
+        expect(result).toBe(false)
+        w.unmount()
+      })
+    })
+
     it('isValidConnection rejects cycles', () => {
       const store = useToolRegistryStore()
       store.tools = [makeTool()] as any
@@ -331,6 +496,39 @@ describe('CanvasView', () => {
         targetHandle: 'image',
       })
       expect(result).toBe(false)
+      w.unmount()
+    })
+
+    it('onConnect rejects positional edge into source DataFrameTool (accepts_upstream=false)', () => {
+      const filesTool = makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+        inputs: {},
+        outputs: { path: { type: 'Path' } },
+      })
+      const store = useToolRegistryStore()
+      store.tools = [makeTool(), filesTool] as any
+
+      mockNodes = [
+        { id: 'src', data: { toolName: 'gaussian_blur', name: 'src', tool: makeTool(), connectedInputs: {} } },
+        { id: 'files_1', data: { toolName: 'files', name: 'files_1', tool: filesTool, connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      expect(connectHandler).not.toBeNull()
+
+      connectHandler!({
+        source: 'src',
+        target: 'files_1',
+        sourceHandle: 'result',
+        targetHandle: '__positional_0',
+      })
+
+      // Edge should NOT have been created
+      expect(mockEdges).toHaveLength(0)
       w.unmount()
     })
   })
@@ -360,6 +558,36 @@ describe('CanvasView', () => {
       expect(node.data.connectedInputs).toEqual({})
       expect(node.data.pinnedInputs).toEqual({ image: true })  // ImagePath + required => true
       expect(node.data.output_templates).toEqual({ result: '' })  // no default on output
+      w.unmount()
+    })
+
+    it('does not populate output_templates for DataFrameTool nodes (column declarations, not file paths)', () => {
+      const filesTool = makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        inputs: {
+          path: { type: 'Path', required: true, connectable: 'never' },
+          pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+        },
+        outputs: {
+          path: { type: 'Path' },
+          filename: { type: 'str' },
+        },
+      })
+      const store = useToolRegistryStore()
+      store.tools = [filesTool] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      vm.onAddNode({ toolName: 'files', position: { x: 0, y: 0 } })
+
+      expect(mockNodes.length).toBe(1)
+      const node = mockNodes[0]
+      expect(node.data.toolName).toBe('files')
+      // DataFrameTool: no output templates even though `path` is Path-typed.
+      expect(node.data.output_templates).toEqual({})
       w.unmount()
     })
 

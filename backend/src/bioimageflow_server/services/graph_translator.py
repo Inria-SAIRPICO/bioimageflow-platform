@@ -258,6 +258,7 @@ _KIND_TO_TYPE = {
     "parameter_invalid": "parameter_invalid",
     "duplicate_name": "invalid_node_id",
     "construction_failed": "parameter_invalid",
+    "source_tool_upstream": "source_tool_upstream",
     # ``unknown_tool`` handled specially below — message decides
     # ``missing_tool`` vs ``missing_package``.
 }
@@ -290,6 +291,7 @@ def lib_validation_error_to_graph_error(
         "missing_package",
         "invalid_node_id",
         "invalid_edge_id",
+        "source_tool_upstream",
     ]
     if kind == "unknown_tool":
         # Heuristic: if the message mentions the package is not installed
@@ -312,6 +314,7 @@ def lib_validation_error_to_graph_error(
                 "missing_package",
                 "invalid_node_id",
                 "invalid_edge_id",
+                "source_tool_upstream",
             ],
             _KIND_TO_TYPE.get(kind, "parameter_invalid"),
         )
