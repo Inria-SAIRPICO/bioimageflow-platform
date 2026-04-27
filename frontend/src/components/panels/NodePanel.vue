@@ -168,6 +168,13 @@ function isPathType(type: string): boolean {
   return ['Path', 'ImagePath', 'MaskPath'].includes(type)
 }
 
+function isOutputTemplateApplicable(field: OutputFieldSchema): boolean {
+  // Path-template editing only applies to ProcessingTool outputs. DataFrameTool
+  // Outputs are column declarations, not files written to disk.
+  if (nodeData.value?.tool?.tool_type === 'DataFrameTool') return false
+  return isPathType(field.type)
+}
+
 function isImageSharedType(type: string): boolean {
   return ['ImageShared', 'SharedArray'].includes(type)
 }
@@ -445,9 +452,10 @@ async function pickFolder(key: string) {
             <span class="output-name">{{ key }}</span>
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
           </div>
-          <!-- Fix 19: Editable template for path-typed outputs -->
+          <!-- Editable path template — ProcessingTool outputs only.
+               DataFrameTool Outputs are column declarations, not file paths. -->
           <InputText
-            v-if="isPathType((field as OutputFieldSchema).type)"
+            v-if="isOutputTemplateApplicable(field as OutputFieldSchema)"
             :model-value="nodeData.output_templates?.[key] ?? ''"
             @update:model-value="updateOutputTemplate(key, $event as string)"
             placeholder="Output path template..."

@@ -275,6 +275,28 @@ describe('NodePanel', () => {
       const templateInputs = w.findAll('[data-testid="output-template"]')
       expect(templateInputs.length).toBe(0)
     })
+
+    it('does not render template input for DataFrameTool path outputs (column declarations)', () => {
+      // DataFrameTool Outputs are column declarations, not file paths.
+      // Files (a source DataFrameTool) declares `path: Path` to enable
+      // downstream column-ref validation — it must NOT render a template editor.
+      const tool = makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        inputs: {
+          path: { type: 'Path', required: true, connectable: 'never', description: 'Directory' },
+          pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+        },
+        outputs: {
+          path: { type: 'Path' },
+          filename: { type: 'str' },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, output_templates: {} }))
+      const templateInputs = w.findAll('[data-testid="output-template"]')
+      expect(templateInputs.length).toBe(0)
+    })
   })
 
   // --- Path input: file/folder pickers (pywebview bridge) ---
