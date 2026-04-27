@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from bioimageflow import serialize_constant
+
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
     GraphState,
@@ -25,23 +27,6 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 # Key used for positional edges in ``edge_id_by_key``.
 POSITIONAL_KEY = "__positional__"
-
-
-def _serialize_constant(value: Any) -> dict[str, Any]:
-    """Tag ``value`` with ``__type__`` metadata for lossless round-trip.
-
-    Mirrors :func:`bioimageflow.workflow._serialize_constant`. Duplicated
-    here so the platform does not depend on a private library symbol.
-    """
-    if isinstance(value, bool):
-        return {"__type__": "bool", "value": value}
-    if isinstance(value, int):
-        return {"__type__": "int", "value": value}
-    if isinstance(value, float):
-        return {"__type__": "float", "value": value}
-    if isinstance(value, (list, tuple)):
-        return {"__type__": type(value).__name__, "value": list(value)}
-    return {"__type__": "str", "value": str(value)}
 
 
 @dataclass
@@ -240,7 +225,7 @@ def graph_state_to_lib_dict(
             node_dict["enabled"] = False
 
         for key, value in node.parameters.items():
-            node_dict["constants"][key] = _serialize_constant(value)
+            node_dict["constants"][key] = serialize_constant(value)
 
         nodes_data.append(node_dict)
 
