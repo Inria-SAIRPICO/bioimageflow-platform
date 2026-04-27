@@ -31,6 +31,7 @@ from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.graph_builder import build_workflow
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 logger = logging.getLogger(__name__)
@@ -132,11 +133,13 @@ class ExecutionManager:
         tool_registry: ToolRegistryService,
         settings: Settings,
         storage_path: Path | None = None,
+        session_manager: SessionManager | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
         self.settings = settings
         self.storage_path = storage_path
+        self.session_manager = session_manager
 
         self.state: Literal["running", "idle"] = "idle"
         self.progress: ProgressInfo | None = None
@@ -205,28 +208,70 @@ class ExecutionManager:
 
         on_progress = self._make_progress_callback()
 
-        try:
-            build_result = build_workflow(
-                graph,
-                self.tool_registry,
-                storage_path=self.storage_path,
-                on_progress=on_progress,
-            )
-        except Exception as exc:
-            self.state = "idle"
-            raise WorkflowBuildError(
-                [
-                    GraphValidationError(
-                        type="parameter_invalid",
-                        detail=f"Workflow build failed: {exc}",
-                    )
-                ]
-            ) from exc
+        # Prefer the session's cached workflow — avoids a redundant
+        # build_workflow() call when validation already loaded the graph.
+        session = (
+            self.session_manager.session
+            if self.session_manager is not None
+            else None
+        )
+        if session is not None:
+            try:
+                workflow = session.to_workflow()
+                workflow.on_progress = on_progress
+            except Exception as exc:
+                self.state = "idle"
+                raise WorkflowBuildError(
+                    [
+                        GraphValidationError(
+                            type="parameter_invalid",
+                            detail=f"Workflow build failed: {exc}",
+                        )
+                    ]
+                ) from exc
 
-        workflow, errors, _disabled = build_result
-        if errors:
-            self.state = "idle"
-            raise WorkflowBuildError(errors)
+            # Check for translation-level errors from the session load.
+            translation_errors = (
+                self.session_manager.translation_errors
+                if self.session_manager is not None
+                else []
+            )
+            build_errors = list(translation_errors)
+            if workflow.errors:
+                from bioimageflow_server.services.graph_translator import (
+                    lib_validation_error_to_graph_error,
+                )
+
+                build_errors.extend(
+                    lib_validation_error_to_graph_error(e)
+                    for e in workflow.errors
+                )
+            if build_errors:
+                self.state = "idle"
+                raise WorkflowBuildError(build_errors)
+        else:
+            try:
+                build_result = build_workflow(
+                    graph,
+                    self.tool_registry,
+                    storage_path=self.storage_path,
+                    on_progress=on_progress,
+                )
+            except Exception as exc:
+                self.state = "idle"
+                raise WorkflowBuildError(
+                    [
+                        GraphValidationError(
+                            type="parameter_invalid",
+                            detail=f"Workflow build failed: {exc}",
+                        )
+                    ]
+                ) from exc
+
+            workflow, errors, _disabled = build_result
+            if errors:
+                self.state = "idle"
+                raise WorkflowBuildError(errors)
 
         self._workflow = workflow
 
@@ -451,17 +496,25 @@ def clear_node_cache(
     graph: GraphState,
     registry: ToolRegistryService,
     storage_path: Path | None,
+    session_manager: SessionManager | None = None,
 ) -> dict[str, NodeStatus]:
     """Clear cache directories for ``node_ids`` and compute downstream impact.
 
-    Builds a :class:`Workflow` from ``graph`` and delegates cache removal
-    to :meth:`Workflow.invalidate`. Returns a dict keyed by node ID.
-    Cleared nodes get status ``"unexecuted"``; their transitive downstream
-    receives ``"out_of_date"``. Unknown node IDs are silently skipped.
+    Uses the session's cached :class:`Workflow` when available to avoid
+    building a throwaway workflow. Falls back to :func:`build_workflow`
+    otherwise. Returns a dict keyed by node ID. Cleared nodes get
+    status ``"unexecuted"``; their transitive downstream receives
+    ``"out_of_date"``. Unknown node IDs are silently skipped.
     """
-    workflow, _errors, _disabled = build_workflow(
-        graph, registry, storage_path=storage_path,
+    session = (
+        session_manager.session if session_manager is not None else None
     )
+    if session is not None:
+        workflow = session.to_workflow()
+    else:
+        workflow, _errors, _disabled = build_workflow(
+            graph, registry, storage_path=storage_path,
+        )
 
     # Filter to valid node IDs known to the workflow.
     known = set(workflow.nodes.keys())

@@ -29,6 +29,7 @@ from bioimageflow_server.services.execution import (
     WorkflowBuildError,
     clear_node_cache,
 )
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -44,6 +45,10 @@ def get_storage_path() -> Path | None:
 
 def get_tool_registry() -> ToolRegistryService:  # pragma: no cover
     raise RuntimeError("tool_registry dependency not configured")
+
+
+def get_session_manager() -> SessionManager:  # pragma: no cover
+    raise RuntimeError("session_manager dependency not configured")
 
 
 class ClearRequest(BaseModel):
@@ -99,13 +104,17 @@ async def clear_execution(
     execution_manager: ExecutionManager | None = Depends(get_execution_manager),
     storage_path: Path | None = Depends(get_storage_path),
     registry: ToolRegistryService = Depends(get_tool_registry),
+    session_manager: SessionManager = Depends(get_session_manager),
 ) -> dict:
     if execution_manager is not None and execution_manager.is_running:
         raise HTTPException(
             status_code=409,
             detail="Cannot clear cache while execution is running",
         )
-    statuses = clear_node_cache(body.nodes, body.graph, registry, storage_path)
+    statuses = clear_node_cache(
+        body.nodes, body.graph, registry, storage_path,
+        session_manager=session_manager,
+    )
     return {
         "node_statuses": {nid: ns.model_dump() for nid, ns in statuses.items()}
     }
