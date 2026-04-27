@@ -236,3 +236,52 @@ def test_app_config_wires_datasets_root(tmp_path: Path):
     app = create_app(config=cfg)
     assert app.dependency_overrides[get_datasets_root]() == tmp_path
     assert app.dependency_overrides[get_max_upload_size]() == 1_000_000
+
+
+# ---------------------------------------------------------------------------
+# ExecutionManager default wiring
+# ---------------------------------------------------------------------------
+
+
+def test_default_app_provides_execution_manager():
+    """create_app() with no config must default-construct an ExecutionManager.
+
+    Regression test: previously both production entry points
+    (desktop and uvicorn factory) left config.execution_manager=None,
+    so POST /execution/run returned 503.
+    """
+    from bioimageflow_server.routers.execution import (
+        get_execution_manager as execution_get_manager,
+    )
+    from bioimageflow_server.routers.graph import (
+        get_execution_manager as graph_get_execution_manager,
+    )
+    from bioimageflow_server.services.execution import ExecutionManager
+
+    app = create_app()
+    em = app.dependency_overrides[execution_get_manager]()
+    assert em is not None
+    assert isinstance(em, ExecutionManager)
+    # Same instance must be shared with the graph router so the
+    # is_running lock observed there matches the running execution.
+    assert app.dependency_overrides[graph_get_execution_manager]() is em
+    assert em.is_running is False
+
+
+def test_appconfig_supplied_execution_manager_is_preserved():
+    """Caller-supplied ExecutionManager must win over the default.
+
+    Tests inject fakes via AppConfig.execution_manager; that contract
+    must not regress.
+    """
+    from bioimageflow_server.routers.execution import (
+        get_execution_manager as execution_get_manager,
+    )
+    from bioimageflow_server.routers.graph import (
+        get_execution_manager as graph_get_execution_manager,
+    )
+
+    sentinel = object()
+    app = create_app(AppConfig(execution_manager=sentinel))
+    assert app.dependency_overrides[execution_get_manager]() is sentinel
+    assert app.dependency_overrides[graph_get_execution_manager]() is sentinel

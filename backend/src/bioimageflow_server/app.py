@@ -17,7 +17,7 @@ from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 
 from bioimageflow_server.models.errors import ErrorResponse
-from bioimageflow_server.models.settings import _DEFAULT_MAX_UPLOAD_SIZE
+from bioimageflow_server.models.settings import Settings, _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.dev import (
     get_tool_registry as dev_get_tool_registry,
@@ -52,6 +52,10 @@ from bioimageflow_server.routers.tools import (
     get_tool_registry,
     get_workflow_root,
     router as tools_router,
+)
+from bioimageflow_server.services.execution import (
+    ExecutionManager,
+    NullEventBus,
 )
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.session_manager import SessionManager
@@ -88,6 +92,29 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         registry.scan_tool_store()
 
     session_manager = SessionManager()
+
+    # Resolve Settings once: caller-supplied wins, otherwise build a minimal
+    # default. Used for both the ExecutionManager and the dev_mode dependency.
+    _deployment_mode = (
+        config.deployment_mode
+        if config.deployment_mode in ("desktop", "webapp")
+        else "desktop"
+    )
+    resolved_settings: Settings = config.settings or Settings(
+        deployment_mode=_deployment_mode,
+        output_data_folder=str(get_home()),
+    )
+
+    if config.execution_manager is not None:
+        execution_manager: Any = config.execution_manager
+    else:
+        execution_manager = ExecutionManager(
+            event_bus=NullEventBus(),
+            tool_registry=registry,
+            settings=resolved_settings,
+            storage_path=config.storage_path,
+            session_manager=session_manager,
+        )
 
     known = config.known_packages or KnownPackagesService.default()
     pypi = config.pypi_versions or PyPIVersionService()
@@ -195,19 +222,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: config.storage_path
-    app.dependency_overrides[graph_get_execution_manager] = (
-        lambda: config.execution_manager
-    )
-    app.dependency_overrides[execution_get_manager] = (
-        lambda: config.execution_manager
-    )
+    app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[execution_get_manager] = lambda: execution_manager
     app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
-    _dev_mode = (
-        config.settings.dev_mode if config.settings is not None else True
-    )
-    app.dependency_overrides[graph_get_dev_mode] = lambda: _dev_mode
+    app.dependency_overrides[graph_get_dev_mode] = lambda: resolved_settings.dev_mode
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root
