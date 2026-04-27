@@ -832,6 +832,17 @@ export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
+/**
+ * NodeOutputSchemaResponse
+ * @description Response for ``POST /graph/nodes/{node_id}/output_schema``.
+ */
+export interface NodeOutputSchemaResponse {
+  /** Resolved */
+  resolved: boolean;
+  /** Columns */
+  columns: { [key: string]: unknown };
+}
+
 export type $defs = Record<string, never>;
 export interface operations {
     health_api_v1_health_get: {

@@ -15,6 +15,7 @@ import { useGraphSync } from '@/composables/useGraphSync'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
 import { useExecutionStore } from '@/stores/execution'
+import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import type { NodeState } from '@/api/types'
 import type { ClipboardData } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
@@ -38,6 +39,10 @@ const edgeTypes = {
 
 const toolRegistryStore = useToolRegistryStore()
 const uiStore = useUIStore()
+const resolvedOutputsStore = useResolvedOutputsStore()
+
+// Provide the resolved-outputs map so ToolNode can read it via inject.
+provide('bioimageflow:resolvedOutputs', resolvedOutputsStore.resolvedOutputsByNodeId)
 
 const {
   project,
@@ -240,6 +245,24 @@ watch(
   { deep: true },
 )
 
+// Debounced refresh of resolved outputs when parameters change on dynamic_outputs nodes.
+watch(
+  () => getNodes.value
+    .filter((n: any) => n.data?.tool?.dynamic_outputs === true)
+    .map((n: any) => ({ id: n.id, parameters: n.data?.parameters })),
+  (entries) => {
+    const getGraph = () => ({ nodes: getNodes.value, edges: getEdges.value })
+    const getToolForNode = (nodeId: string): ToolMetadata | undefined => {
+      const node = getNodes.value.find((n: any) => n.id === nodeId)
+      return node?.data?.tool ?? toolRegistryStore.getToolByName(node?.data?.toolName)
+    }
+    for (const entry of entries) {
+      resolvedOutputsStore.refreshResolvedOutputs(entry.id, getGraph, getToolForNode)
+    }
+  },
+  { deep: true },
+)
+
 /**
  * Detach the edge targeting (nodeId, targetHandle). Called by InputPin when a
  * user grabs a connected input pin — removing the edge lets Vue Flow's
@@ -417,17 +440,33 @@ function isValidConnection(connection: {
     const sourceOutput = sourceTool.outputs[connection.sourceHandle] as
       | { type?: string }
       | undefined
+
+    // Also check resolved outputs for dynamic-output tools.
+    let sourceType = sourceOutput?.type
+    if (!sourceType && sourceTool.dynamic_outputs) {
+      const resolved = resolvedOutputsStore.resolvedOutputsByNodeId[connection.source]
+      if (resolved?.resolved && resolved.columns) {
+        const col = (resolved.columns as Record<string, any>)[connection.sourceHandle!]
+        sourceType = col?.type
+      }
+    }
+
     const targetInput = targetTool.inputs[connection.targetHandle]
-    if (sourceOutput?.type && targetInput?.type) {
-      // Path-family types (Path / ImagePath / MaskPath) all share the same
-      // runtime carrier (a filesystem path); the distinction is metadata
-      // (image_spec semantics, formats, layouts). Treat them as mutually
-      // compatible at the frontend pre-flight; the bioimageflow library
-      // performs the authoritative semantic check on graph validate.
-      const PATH_FAMILY = new Set(['Path', 'ImagePath', 'MaskPath'])
-      const same = sourceOutput.type === targetInput.type
-      const bothPath = PATH_FAMILY.has(sourceOutput.type) && PATH_FAMILY.has(targetInput.type)
-      if (!same && !bothPath) return false
+    if (sourceType && targetInput?.type) {
+      // "any" type is compatible with any consumer input type.
+      if (sourceType === 'any') {
+        // Accept — skip type-mismatch rejection.
+      } else {
+        // Path-family types (Path / ImagePath / MaskPath) all share the same
+        // runtime carrier (a filesystem path); the distinction is metadata
+        // (image_spec semantics, formats, layouts). Treat them as mutually
+        // compatible at the frontend pre-flight; the bioimageflow library
+        // performs the authoritative semantic check on graph validate.
+        const PATH_FAMILY = new Set(['Path', 'ImagePath', 'MaskPath'])
+        const same = sourceType === targetInput.type
+        const bothPath = PATH_FAMILY.has(sourceType) && PATH_FAMILY.has(targetInput.type)
+        if (!same && !bothPath) return false
+      }
     }
   }
 

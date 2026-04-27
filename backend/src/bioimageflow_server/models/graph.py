@@ -48,3 +48,10 @@ class GraphState(BaseModel):
 
     nodes: list[NodeState]
     edges: list[Edge]
+
+
+class NodeOutputSchemaResponse(BaseModel):
+    """Response for ``POST /graph/nodes/{node_id}/output_schema``."""
+
+    resolved: bool
+    columns: dict[str, Any]

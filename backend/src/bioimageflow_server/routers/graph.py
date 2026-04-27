@@ -7,11 +7,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.graph import GraphState, NodeOutputSchemaResponse
 from bioimageflow_server.models.validation import (
     ParameterPatchRequest,
     ValidationResult,
 )
+from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.graph_validator import (
     patch_session_constants as _patch_session_constants,
     validate_graph as _validate_graph,
@@ -125,3 +126,48 @@ async def patch_node_parameters(
         storage_path=storage_path,
         dev_mode=dev_mode,
     )
+
+
+@router.post("/nodes/{node_id}/output_schema")
+async def resolve_node_output_schema(
+    node_id: str,
+    graph: GraphState,
+    registry: ToolRegistryService = Depends(get_tool_registry),
+    storage_path: Path | None = Depends(get_storage_path),
+) -> NodeOutputSchemaResponse:
+    """Return the resolved output column schema for a single node.
+
+    The full ``GraphState`` is required because schema resolution may
+    depend on upstream wiring (e.g. merge tools). Build failures return
+    ``{resolved: false, columns: {}}`` — input edits frequently produce
+    transiently invalid graph states.
+    """
+    from bioimageflow.validation import serialize_resolved_outputs
+
+    # 404 only when the node_id is not present in the request body at all.
+    node_ids_in_graph = {n.id for n in graph.nodes}
+    if node_id not in node_ids_in_graph:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Node {node_id!r} not found in graph",
+        )
+
+    try:
+        result = build_workflow(graph, registry, storage_path=storage_path)
+    except Exception:
+        # Transient invalid state — cycle, unknown tool, bad constant, etc.
+        return NodeOutputSchemaResponse(resolved=False, columns={})
+
+    workflow = result.workflow
+    node = workflow._nodes.get(node_id)
+    if node is None:
+        # Node was in the request but didn't make it into the workflow
+        # (e.g. unknown tool, missing package). Return unresolved.
+        return NodeOutputSchemaResponse(resolved=False, columns={})
+
+    try:
+        wire = serialize_resolved_outputs(node)
+    except Exception:
+        return NodeOutputSchemaResponse(resolved=False, columns={})
+
+    return NodeOutputSchemaResponse(**wire)

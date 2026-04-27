@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { ToolMetadata } from '@/api/types'
+import { computed, inject } from 'vue'
+import type { ToolMetadata, NodeOutputSchemaResponse } from '@/api/types'
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 
@@ -28,14 +28,19 @@ const emit = defineEmits<{
   'toggle-collapse': [id: string]
 }>()
 
+/**
+ * Injected by CanvasView — the reactive resolved-outputs map keyed by node id.
+ * Falls back to an empty object if not provided (e.g. in unit tests).
+ */
+const resolvedOutputsByNodeId = inject<Record<string, NodeOutputSchemaResponse>>(
+  'bioimageflow:resolvedOutputs',
+  {},
+)
+
 const connectableInputs = computed(() => {
   return Object.entries(props.data.tool.inputs).filter(
     ([name, field]) => field.connectable !== 'never' && (props.data.pinnedInputs[name] !== false),
   )
-})
-
-const isDataFrameTool = computed(() => {
-  return props.data.tool.tool_type === 'DataFrameTool'
 })
 
 const showsPositionalPins = computed(() => {
@@ -52,12 +57,51 @@ const positionalInputCount = computed(() => {
   return connected + 1
 })
 
-const outputs = computed<Array<[string, { type: string }]>>(() => {
-  const toolOutputs = props.data.tool.outputs as Record<string, { type: string }>
-  if (isDataFrameTool.value && Object.keys(toolOutputs).length === 0) {
-    return [['result', { type: 'DataFrame' }]]
+/**
+ * Output pin entries. For tools with `dynamic_outputs === true`, the
+ * resolved schema from the store replaces the static tool.outputs.
+ *
+ * Shape: `[name, { type }, placeholder?]`
+ */
+const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
+  const tool = props.data.tool
+
+  if (tool.dynamic_outputs !== true) {
+    // Static outputs — render tool.outputs directly (no fallback).
+    const toolOutputs = tool.outputs as Record<string, { type: string }>
+    return Object.entries(toolOutputs).map(([name, field]) => [name, field, false])
   }
-  return Object.entries(toolOutputs)
+
+  // Dynamic outputs — check the resolved-outputs store.
+  const entry = resolvedOutputsByNodeId[props.id]
+
+  if (!entry || entry.resolved !== true) {
+    // Unresolved or not yet fetched — render a single placeholder pin.
+    return [['...', { type: 'DataFrame' }, true]]
+  }
+
+  const columns = entry.columns as Record<string, { type?: string }>
+
+  // Passthrough marker: `{_passthrough: true, ...extra}`
+  const isPassthrough = '_passthrough' in columns && (columns as any)._passthrough === true
+
+  if (isPassthrough) {
+    const concreteEntries: Array<[string, { type: string }, boolean]> = []
+    for (const [key, spec] of Object.entries(columns)) {
+      if (key === '_passthrough') continue
+      concreteEntries.push([key, { type: (spec as any)?.type ?? 'any' }, false])
+    }
+    // Add a single placeholder for inherited columns.
+    concreteEntries.push(['(+ inherited columns)', { type: 'DataFrame' }, true])
+    return concreteEntries
+  }
+
+  // Normal resolved: one pin per column.
+  return Object.entries(columns).map(([name, spec]) => [
+    name,
+    { type: (spec as any)?.type ?? 'any' },
+    false,
+  ])
 })
 
 const statusClass = computed(() => {
@@ -126,10 +170,11 @@ function onContextMenu(event: MouseEvent) {
 
       <div class="outputs">
         <OutputPin
-          v-for="[name, field] in outputs"
+          v-for="[name, field, isPlaceholder] in outputs"
           :key="name"
           :field-name="name"
           :field-type="field.type"
+          :placeholder="isPlaceholder"
         />
       </div>
     </div>

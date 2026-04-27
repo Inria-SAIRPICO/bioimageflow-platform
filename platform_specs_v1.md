@@ -120,7 +120,9 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 |-----|------|-------|
 | `tool_type` | `"ProcessingTool" \| "DataFrameTool"` | Discriminator for rendering and pin logic. |
 | `accepts_upstream` | `boolean` | `false` means the tool refuses positional upstream `DataFrameTool` connections. The canvas hides positional pins. |
-| `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits (see Phase 2). |
+| `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits via `POST /graph/nodes/{node_id}/output_schema`. |
+
+**The `"any"` type.** The library reserves `"any"` (per library `specs.md` §2.4) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
 ```json
 {
@@ -509,6 +511,36 @@ For **parameter-only changes** (no structural change to edges/nodes), the fronte
 }
 ```
 
+#### 2.4.4b Node Output Schema Resolution
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/graph/nodes/{node_id}/output_schema` | Resolve the output column schema for a single node |
+
+**Request body:** a full `GraphState` (same format as `PUT /graph`). The full graph is required because schema resolution may depend on upstream wiring (e.g. merge tools propagate columns from their upstreams).
+
+**Response:** the library's `serialize_resolved_outputs(node)` wire shape verbatim. No `node_id` in the response body --- the URL carries it.
+
+```json
+{
+  "resolved": true,
+  "columns": {
+    "sensitivity": {"type": "any", "default": null, "image_spec": null}
+  }
+}
+```
+
+Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not yet set):
+
+```json
+{"resolved": false, "columns": {}}
+```
+
+**Error handling:**
+- **404:** only when the `node_id` is not present in the request body's `nodes` list.
+- **200 with `resolved: false`:** for all build/resolution failures (cycles, missing required kwargs, unknown tool). Input edits frequently produce transiently invalid graph states; the endpoint must respond cleanly so the GUI can keep polling.
+- The `columns` dict may contain a passthrough marker (`{"_passthrough": true, ...extra}`) when the tool declares `class Outputs(Passthrough)` without enough information to expand. The frontend renders `extra` keys as concrete pins plus a single "(+ inherited columns)" placeholder.
+
 #### 2.4.5 Execution
 
 | Method | Endpoint | Description |
@@ -863,6 +895,8 @@ For **DataFrameTool** nodes: positional upstream connections appear as numbered 
 
 Source-only DataFrameTools (`accepts_upstream === false`, e.g. `Files`, `Generate`) render no positional input pins. Edge-creation onto a positional handle of such a tool is rejected client-side with a tooltip explaining the source-tool semantics. The backend additionally rejects any graph containing such an edge with a `source_tool_upstream` validation error.
 
+For tools with `dynamic_outputs === true`, the output pin set is computed by `POST /graph/nodes/{node_id}/output_schema` and refetched whenever a parameter on the node changes, or whenever a parameter on any upstream node with `dynamic_outputs === true` changes (the change is propagated downstream along positional edges). While the schema is unresolvable (`resolved: false`), the canvas renders a single placeholder pin styled with a dashed outline and disabled drag-out. Columns with `type: "any"` use a neutral wildcard pin color and bypass type-compatibility checks at edge creation.
+
 #### 3.3.4 Canvas Controls
 
 - **Pan:** Middle-click drag, or scroll wheel + Shift
@@ -928,6 +962,8 @@ Title: Nodes.
 Displays details and parameters for the currently selected node(s).
 
 **Multi-selection:** When multiple nodes are selected, the Node Panel shows only bulk actions: Enable/Disable all, Delete all, Clear all. No parameter editing. The Data Table shows the outputs of all selected nodes.
+
+**Dynamic outputs refresh:** When an input field changes on a node whose tool has `dynamic_outputs === true`, a debounced (200ms) call to `POST /graph/nodes/{node_id}/output_schema` refreshes the node's resolved output pins. The refresh also propagates downstream along positional edges to any visited node with `dynamic_outputs === true`.
 
 **Single-node layout (top to bottom):**
 

@@ -127,18 +127,17 @@ describe('ToolNode', () => {
     expect(w.emitted('context-menu')).toBeTruthy()
   })
 
-  it('synthesizes a default output pin for DataFrameTool with empty outputs', () => {
+  it('DataFrameTool with empty outputs and dynamic_outputs=false renders no output pins', () => {
     const tool = makeTool({
       tool_type: 'DataFrameTool',
+      dynamic_outputs: false,
       inputs: {},
       outputs: {},
     })
     const data = makeData({ tool })
     const w = factory(data)
     const outputPins = w.findAllComponents({ name: 'OutputPin' })
-    expect(outputPins).toHaveLength(1)
-    expect(outputPins[0].props('fieldName')).toBe('result')
-    expect(outputPins[0].props('fieldType')).toBe('DataFrame')
+    expect(outputPins).toHaveLength(0)
   })
 
   it('renders DataFrameTool positional pins', () => {
@@ -283,5 +282,89 @@ describe('ToolNode', () => {
       .findAllComponents({ name: 'InputPin' })
       .filter((p) => p.props('positional') === true)
     expect(positionalPins).toHaveLength(0)
+  })
+
+  // --- Phase 2: dynamic outputs ---
+
+  it('dynamic_outputs=true with no resolved entry renders a placeholder pin', () => {
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      dynamic_outputs: true,
+      inputs: {},
+      outputs: {},
+    })
+    const data = makeData({ tool, connectedInputs: {} })
+    const w = factory(data)
+    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    expect(outputPins).toHaveLength(1)
+    expect(outputPins[0].props('fieldName')).toBe('...')
+    expect(outputPins[0].props('placeholder')).toBe(true)
+  })
+
+  it('dynamic_outputs=true with resolved entry renders per-column pins', () => {
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      dynamic_outputs: true,
+      inputs: {},
+      outputs: {},
+    })
+    const data = makeData({ tool, connectedInputs: {} })
+    // Provide resolved outputs via inject
+    const resolved = {
+      'node-1': {
+        resolved: true,
+        columns: {
+          sensitivity: { type: 'any', default: null, image_spec: null },
+        },
+      },
+    }
+    const w = mount(ToolNode, {
+      props: { id: 'node-1', data } as any,
+      global: {
+        provide: {
+          'bioimageflow:resolvedOutputs': resolved,
+        },
+      },
+    })
+    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    expect(outputPins).toHaveLength(1)
+    expect(outputPins[0].props('fieldName')).toBe('sensitivity')
+    expect(outputPins[0].props('fieldType')).toBe('any')
+    expect(outputPins[0].props('placeholder')).toBe(false)
+  })
+
+  it('dynamic_outputs=true with passthrough marker renders concrete pins plus inherited placeholder', () => {
+    const tool = makeTool({
+      tool_type: 'DataFrameTool',
+      dynamic_outputs: true,
+      inputs: {},
+      outputs: {},
+    })
+    const data = makeData({ tool, connectedInputs: {} })
+    const resolved = {
+      'node-1': {
+        resolved: true,
+        columns: {
+          _passthrough: true,
+          cell_count: { type: 'int', default: null, image_spec: null },
+        },
+      },
+    }
+    const w = mount(ToolNode, {
+      props: { id: 'node-1', data } as any,
+      global: {
+        provide: {
+          'bioimageflow:resolvedOutputs': resolved,
+        },
+      },
+    })
+    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    expect(outputPins).toHaveLength(2)
+    // First: concrete pin
+    expect(outputPins[0].props('fieldName')).toBe('cell_count')
+    expect(outputPins[0].props('placeholder')).toBe(false)
+    // Second: inherited placeholder
+    expect(outputPins[1].props('fieldName')).toBe('(+ inherited columns)')
+    expect(outputPins[1].props('placeholder')).toBe(true)
   })
 })

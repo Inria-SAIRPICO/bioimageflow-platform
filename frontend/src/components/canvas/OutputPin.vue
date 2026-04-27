@@ -3,18 +3,30 @@ import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { getTypeColor } from '@/utils/typeColors'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   fieldName: string
   fieldType: string
-}>()
+  placeholder?: boolean
+}>(), {
+  placeholder: false,
+})
 
 const color = computed(() => getTypeColor(props.fieldType))
+
+const tooltip = computed(() => {
+  if (props.fieldType === 'any') return '? (runtime-typed)'
+  return props.fieldType
+})
 </script>
 
 <template>
-  <div class="output-pin" :title="fieldType">
+  <div
+    class="output-pin"
+    :class="{ 'output-pin--placeholder': placeholder, 'output-pin--any': fieldType === 'any' }"
+    :title="tooltip"
+  >
     <span class="pin-label">{{ fieldName }}</span>
-    <span class="type-badge">{{ fieldType }}</span>
+    <span class="type-badge">{{ fieldType === 'any' ? '?' : fieldType }}</span>
     <Handle
       type="source"
       :position="Position.Right"
@@ -33,6 +45,20 @@ const color = computed(() => getTypeColor(props.fieldType))
   gap: 4px;
   position: relative;
   padding: 2px 0;
+}
+
+.output-pin--placeholder {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.output-pin--placeholder .pin-handle {
+  border-style: dashed !important;
+  background-color: transparent !important;
+}
+
+.output-pin--any .type-badge {
+  background: rgba(176, 160, 96, 0.2);
 }
 
 .pin-label {

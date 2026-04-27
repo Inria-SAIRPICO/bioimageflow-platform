@@ -326,3 +326,274 @@ async def test_patch_unknown_tool_surfaces_missing_tool(
     assert resp.status_code == 200
     data = resp.json()
     assert any(e["type"] == "missing_tool" for e in data["errors"])
+
+
+# ---- POST /graph/nodes/{node_id}/output_schema ----------------------------
+
+# Build a registry with real common-tools (Generate, Files, CrossJoin,
+# JoinOnColumn) so that serialize_resolved_outputs returns meaningful results.
+
+def _load_common_tools_class(class_name: str) -> type | None:
+    """Load a common-tools class, return None if unavailable."""
+    try:
+        from bioimageflow.tool_loader import load_versioned_package
+        mod = load_versioned_package("bioimageflow_common_tools", "0.1.1")
+    except Exception:
+        return None
+    return getattr(mod, class_name, None)
+
+
+def _common_tools_registry() -> ToolRegistryService:
+    reg = ToolRegistryService()
+    # Register the standard test tool classes
+    for name, cls in _TOOL_CLASSES.items():
+        reg.register_tool(
+            name,
+            ToolMetadata(
+                name=name,
+                display_name=name,
+                package="test-pkg",
+                package_version="1.0.0",
+                tool_type="ProcessingTool",
+            ),
+            tool_class=cls,
+        )
+    # Register real common-tools
+    for tool_name in ("Files", "Generate", "CrossJoin", "JoinOnColumn"):
+        cls = _load_common_tools_class(tool_name)
+        if cls is not None:
+            from bioimageflow.validation import serialize_tool_metadata
+            meta = serialize_tool_metadata(cls)
+            reg._register_tool_from_class(
+                cls, tool_name, "bioimageflow_common_tools", "0.1.1",
+            )
+    return reg
+
+
+async def _make_common_client(
+    tmp_path: Path,
+) -> httpx.AsyncClient:
+    config = AppConfig(
+        tool_registry=_common_tools_registry(),
+        storage_path=tmp_path,
+    )
+    app = create_app(config)
+    transport = ASGITransport(app=app)
+    return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+
+@pytest.fixture
+async def common_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
+    c = await _make_common_client(tmp_path=tmp_path)
+    async with c:
+        yield c
+
+
+def _skip_if_no_common_tools() -> None:
+    if _load_common_tools_class("Generate") is None:
+        pytest.skip("bioimageflow_common_tools not available")
+
+
+class TestOutputSchema:
+    """POST /graph/nodes/{node_id}/output_schema — parity with library tests."""
+
+    async def test_generate_resolved(self, common_client: httpx.AsyncClient) -> None:
+        _skip_if_no_common_tools()
+        body = {
+            "nodes": [
+                {
+                    "id": "gen_1",
+                    "name": "gen_1",
+                    "tool_name": "Generate",
+                    "position": [0, 0],
+                    "parameters": {"column_name": "sensitivity", "values": [1, 2]},
+                }
+            ],
+            "edges": [],
+        }
+        resp = await common_client.post(
+            "/api/v1/graph/nodes/gen_1/output_schema", json=body,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resolved"] is True
+        assert "sensitivity" in data["columns"]
+        assert data["columns"]["sensitivity"]["type"] == "any"
+
+    async def test_generate_unresolved_no_column_name(
+        self, common_client: httpx.AsyncClient,
+    ) -> None:
+        _skip_if_no_common_tools()
+        # Generate requires column_name; omitting it makes it unresolvable.
+        # However, Generate's column_name is a required param, so the graph
+        # build may fail. The endpoint should return resolved=false, not 4xx.
+        body = {
+            "nodes": [
+                {
+                    "id": "gen_1",
+                    "name": "gen_1",
+                    "tool_name": "Generate",
+                    "position": [0, 0],
+                    "parameters": {},
+                }
+            ],
+            "edges": [],
+        }
+        resp = await common_client.post(
+            "/api/v1/graph/nodes/gen_1/output_schema", json=body,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resolved"] is False
+        assert data["columns"] == {}
+
+    async def test_cross_join_four_columns(
+        self, common_client: httpx.AsyncClient, tmp_path: Path,
+    ) -> None:
+        _skip_if_no_common_tools()
+        body = {
+            "nodes": [
+                {
+                    "id": "files_1",
+                    "name": "files_1",
+                    "tool_name": "Files",
+                    "position": [0, 0],
+                    "parameters": {"path": str(tmp_path)},
+                },
+                {
+                    "id": "gen_sens",
+                    "name": "gen_sens",
+                    "tool_name": "Generate",
+                    "position": [100, 0],
+                    "parameters": {"column_name": "sensitivity", "values": [0.1, 0.2]},
+                },
+                {
+                    "id": "gen_size",
+                    "name": "gen_size",
+                    "tool_name": "Generate",
+                    "position": [200, 0],
+                    "parameters": {"column_name": "size", "values": [10, 20]},
+                },
+                {
+                    "id": "cross_1",
+                    "name": "cross_1",
+                    "tool_name": "CrossJoin",
+                    "position": [300, 0],
+                    "parameters": {},
+                },
+            ],
+            "edges": [
+                {"type": "positional", "id": "e1", "source_node": "files_1",
+                 "target_node": "cross_1", "positional_index": 0},
+                {"type": "positional", "id": "e2", "source_node": "gen_sens",
+                 "target_node": "cross_1", "positional_index": 1},
+                {"type": "positional", "id": "e3", "source_node": "gen_size",
+                 "target_node": "cross_1", "positional_index": 2},
+            ],
+        }
+        resp = await common_client.post(
+            "/api/v1/graph/nodes/cross_1/output_schema", json=body,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resolved"] is True
+        assert set(data["columns"].keys()) == {"path", "filename", "sensitivity", "size"}
+
+    async def test_join_on_column_unresolved_then_resolved(
+        self, common_client: httpx.AsyncClient, tmp_path: Path,
+    ) -> None:
+        _skip_if_no_common_tools()
+        # Two Files as left/right; JoinOnColumn without join_column -> unresolved
+        body_no_jc = {
+            "nodes": [
+                {
+                    "id": "files_l",
+                    "name": "files_l",
+                    "tool_name": "Files",
+                    "position": [0, 0],
+                    "parameters": {"path": str(tmp_path)},
+                },
+                {
+                    "id": "files_r",
+                    "name": "files_r",
+                    "tool_name": "Files",
+                    "position": [100, 0],
+                    "parameters": {"path": str(tmp_path)},
+                },
+                {
+                    "id": "joc_1",
+                    "name": "joc_1",
+                    "tool_name": "JoinOnColumn",
+                    "position": [200, 0],
+                    "parameters": {},
+                },
+            ],
+            "edges": [
+                {"type": "positional", "id": "e1", "source_node": "files_l",
+                 "target_node": "joc_1", "positional_index": 0},
+                {"type": "positional", "id": "e2", "source_node": "files_r",
+                 "target_node": "joc_1", "positional_index": 1},
+            ],
+        }
+        resp1 = await common_client.post(
+            "/api/v1/graph/nodes/joc_1/output_schema", json=body_no_jc,
+        )
+        assert resp1.status_code == 200
+        data1 = resp1.json()
+        assert data1["resolved"] is False
+        assert data1["columns"] == {}
+
+        # Now set join_column — should resolve
+        body_with_jc = {
+            **body_no_jc,
+            "nodes": [
+                *body_no_jc["nodes"][:2],
+                {
+                    **body_no_jc["nodes"][2],
+                    "parameters": {"join_column": "path"},
+                },
+            ],
+        }
+        resp2 = await common_client.post(
+            "/api/v1/graph/nodes/joc_1/output_schema", json=body_with_jc,
+        )
+        assert resp2.status_code == 200
+        data2 = resp2.json()
+        assert data2["resolved"] is True
+
+    async def test_unknown_node_id_returns_404(
+        self, common_client: httpx.AsyncClient,
+    ) -> None:
+        body = {"nodes": [], "edges": []}
+        resp = await common_client.post(
+            "/api/v1/graph/nodes/nonexistent/output_schema", json=body,
+        )
+        assert resp.status_code == 404
+
+    async def test_malformed_graph_returns_unresolved_not_4xx(
+        self, common_client: httpx.AsyncClient,
+    ) -> None:
+        """Build failures (missing tool, bad params) must return 200 + unresolved,
+        not a 4xx error — input edits frequently produce transiently invalid states."""
+        # Graph references a tool that doesn't exist in the registry.
+        body = {
+            "nodes": [
+                {
+                    "id": "bad_1",
+                    "name": "bad_1",
+                    "tool_name": "NoSuchTool",
+                    "position": [0, 0],
+                    "parameters": {},
+                },
+            ],
+            "edges": [],
+        }
+        resp = await common_client.post(
+            "/api/v1/graph/nodes/bad_1/output_schema", json=body,
+        )
+        # The node is not in the built workflow → 200 + unresolved
+        # (the endpoint catches build failures gracefully).
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resolved"] is False
+        assert data["columns"] == {}

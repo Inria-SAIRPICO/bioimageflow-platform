@@ -131,9 +131,24 @@ vi.mock('@/composables/useGraphSync', async () => {
   }
 })
 
+vi.mock('@/stores/resolvedOutputs', () => {
+  const { reactive } = require('vue')
+  const store = {
+    resolvedOutputsByNodeId: reactive({} as Record<string, any>),
+    refreshResolvedOutputs: vi.fn(),
+    refreshNow: vi.fn(),
+    removeNode: vi.fn(),
+    clear: vi.fn(),
+  }
+  return {
+    useResolvedOutputsStore: () => store,
+  }
+})
+
 // Import after mocks
 import CanvasView from '../CanvasView.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
+import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 
 function mountCanvas(propsData: { nodes?: any[]; edges?: any[] } = {}) {
   return mount(CanvasView, {
@@ -1100,6 +1115,84 @@ describe('CanvasView', () => {
       expect(mockEdges[0].type).toBe('positional')
       expect(mockEdges[0].targetHandle).toBe('__positional_0')
 
+      w.unmount()
+    })
+  })
+
+  // --- Phase 2: "any" type handling in isValidConnection ---
+
+  describe('isValidConnection — "any" type compatibility', () => {
+    function makeGenerateTool(): ToolMetadata {
+      return makeTool({
+        name: 'generate',
+        display_name: 'Generate',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+        dynamic_outputs: true,
+        inputs: {
+          column_name: { type: 'str', required: true, connectable: 'never' },
+        },
+        outputs: {},
+      })
+    }
+
+    it('accepts "any"-typed output into an ImagePath input', () => {
+      const store = useToolRegistryStore()
+      const genTool = makeGenerateTool()
+      const blurTool = makeTool()
+      store.tools = [genTool, blurTool] as any
+
+      mockNodes = [
+        { id: 'gen_1', data: { toolName: 'generate', tool: genTool } },
+        { id: 'blur_1', data: { toolName: 'gaussian_blur', tool: blurTool } },
+      ]
+
+      // Put resolved outputs for the Generate node.
+      const resolvedStore = useResolvedOutputsStore()
+      resolvedStore.resolvedOutputsByNodeId['gen_1'] = {
+        resolved: true,
+        columns: {
+          sensitivity: { type: 'any', default: null, image_spec: null },
+        },
+      }
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      const result = vm.isValidConnection({
+        source: 'gen_1',
+        target: 'blur_1',
+        sourceHandle: 'sensitivity',
+        targetHandle: 'image',
+      })
+      expect(result).toBe(true)
+      w.unmount()
+    })
+
+    it('still rejects typed (non-any) output into a different-type input', () => {
+      const store = useToolRegistryStore()
+      const stringSource = makeTool({
+        name: 'string_source',
+        display_name: 'String Source',
+        outputs: { value: { type: 'str' } },
+      })
+      store.tools = [stringSource, makeTool()] as any
+
+      mockNodes = [
+        { id: 'src_1', data: { toolName: 'string_source', tool: stringSource } },
+        { id: 'blur_1', data: { toolName: 'gaussian_blur', tool: makeTool() } },
+      ]
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      const result = vm.isValidConnection({
+        source: 'src_1',
+        target: 'blur_1',
+        sourceHandle: 'value',
+        targetHandle: 'image',
+      })
+      expect(result).toBe(false)
       w.unmount()
     })
   })

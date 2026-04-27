@@ -75,7 +75,7 @@ function onPointerDown(event: PointerEvent) {
 </script>
 
 <template>
-  <div class="input-pin" :title="fieldType" @pointerdown.capture="onPointerDown">
+  <div class="input-pin" :class="{ 'input-pin--any': fieldType === 'any' }" :title="fieldType === 'any' ? '? (runtime-typed)' : fieldType" @pointerdown.capture="onPointerDown">
     <Handle
       type="target"
       :position="Position.Left"
