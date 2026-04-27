@@ -42,4 +42,29 @@ describe('OutputPin', () => {
     const w = factory({ fieldName: 'result', fieldType: 'Path' })
     expect(w.find('.output-pin').attributes('title')).toBe('Path')
   })
+
+  // --- Phase 3: variant prop ---
+
+  describe('variant prop', () => {
+    it('defaults to body variant with round pin styling', () => {
+      const w = factory({ fieldName: 'result', fieldType: 'ImagePath' })
+      expect(w.find('.output-pin').classes()).not.toContain('output-pin--header')
+    })
+
+    it('header variant adds output-pin--header class', () => {
+      const w = factory({ fieldName: '__dataframe_out', fieldType: 'DataFrame', variant: 'header' })
+      expect(w.find('.output-pin').classes()).toContain('output-pin--header')
+    })
+
+    it('header variant renders square pin (no border-radius 50%)', () => {
+      const w = factory({ fieldName: '__dataframe_out', fieldType: 'DataFrame', variant: 'header' })
+      const handle = w.find('.pin-handle')
+      expect(handle.classes()).toContain('pin-handle--header')
+    })
+
+    it('body variant does not add header class', () => {
+      const w = factory({ fieldName: 'result', fieldType: 'ImagePath', variant: 'body' })
+      expect(w.find('.output-pin').classes()).not.toContain('output-pin--header')
+    })
+  })
 })

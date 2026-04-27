@@ -180,14 +180,14 @@ onConnect((connection) => {
   // an edge-update; this keeps the graph consistent either way.
   clearExistingIncomingEdge(connection.target, targetHandle)
 
-  const isPositional = targetHandle.startsWith('__positional_')
+  const edgeIsHeader = isHeaderHandle(targetHandle) || isHeaderHandle(connection.sourceHandle)
   const newEdge = {
     id: `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${targetHandle}`,
     source: connection.source,
     target: connection.target,
     sourceHandle: connection.sourceHandle,
     targetHandle,
-    type: isPositional ? 'positional' : 'column_ref',
+    type: edgeIsHeader ? 'positional' : 'column_ref',
   }
   addEdges([newEdge])
 
@@ -408,12 +408,29 @@ function reindexPositionalInputs(
 
 // --- Validation ---
 
+/**
+ * Determine whether a handle belongs to the header region (DataFrame-level)
+ * or the body region (column-level / field-level).
+ */
+function isHeaderHandle(handle: string | null | undefined): boolean {
+  if (!handle) return false
+  return handle.startsWith('__positional_') || handle === '__dataframe_out'
+}
+
 function isValidConnection(connection: {
   source: string
   target: string
   sourceHandle?: string | null
   targetHandle?: string | null
 }): boolean {
+  // 0. Cross-region rejection: header handles must connect to header,
+  //    body handles must connect to body.
+  const sourceIsHeader = isHeaderHandle(connection.sourceHandle)
+  const targetIsHeader = isHeaderHandle(connection.targetHandle)
+  if (sourceIsHeader !== targetIsHeader) {
+    return false
+  }
+
   // 1. Type compatibility check
   const sourceNode = getNodes.value.find((n: any) => n.id === connection.source)
   const targetNode = getNodes.value.find((n: any) => n.id === connection.target)
@@ -437,35 +454,38 @@ function isValidConnection(connection: {
   }
 
   if (connection.sourceHandle && connection.targetHandle) {
-    const sourceOutput = sourceTool.outputs[connection.sourceHandle] as
-      | { type?: string }
-      | undefined
+    // Skip type checks for header-to-header connections (DataFrame-level)
+    if (!sourceIsHeader) {
+      const sourceOutput = sourceTool.outputs[connection.sourceHandle] as
+        | { type?: string }
+        | undefined
 
-    // Also check resolved outputs for dynamic-output tools.
-    let sourceType = sourceOutput?.type
-    if (!sourceType && sourceTool.dynamic_outputs) {
-      const resolved = resolvedOutputsStore.resolvedOutputsByNodeId[connection.source]
-      if (resolved?.resolved && resolved.columns) {
-        const col = (resolved.columns as Record<string, any>)[connection.sourceHandle!]
-        sourceType = col?.type
+      // Also check resolved outputs for dynamic-output tools.
+      let sourceType = sourceOutput?.type
+      if (!sourceType && sourceTool.dynamic_outputs) {
+        const resolved = resolvedOutputsStore.resolvedOutputsByNodeId[connection.source]
+        if (resolved?.resolved && resolved.columns) {
+          const col = (resolved.columns as Record<string, any>)[connection.sourceHandle!]
+          sourceType = col?.type
+        }
       }
-    }
 
-    const targetInput = targetTool.inputs[connection.targetHandle]
-    if (sourceType && targetInput?.type) {
-      // "any" type is compatible with any consumer input type.
-      if (sourceType === 'any') {
-        // Accept — skip type-mismatch rejection.
-      } else {
-        // Path-family types (Path / ImagePath / MaskPath) all share the same
-        // runtime carrier (a filesystem path); the distinction is metadata
-        // (image_spec semantics, formats, layouts). Treat them as mutually
-        // compatible at the frontend pre-flight; the bioimageflow library
-        // performs the authoritative semantic check on graph validate.
-        const PATH_FAMILY = new Set(['Path', 'ImagePath', 'MaskPath'])
-        const same = sourceType === targetInput.type
-        const bothPath = PATH_FAMILY.has(sourceType) && PATH_FAMILY.has(targetInput.type)
-        if (!same && !bothPath) return false
+      const targetInput = targetTool.inputs[connection.targetHandle]
+      if (sourceType && targetInput?.type) {
+        // "any" type is compatible with any consumer input type.
+        if (sourceType === 'any') {
+          // Accept — skip type-mismatch rejection.
+        } else {
+          // Path-family types (Path / ImagePath / MaskPath) all share the same
+          // runtime carrier (a filesystem path); the distinction is metadata
+          // (image_spec semantics, formats, layouts). Treat them as mutually
+          // compatible at the frontend pre-flight; the bioimageflow library
+          // performs the authoritative semantic check on graph validate.
+          const PATH_FAMILY = new Set(['Path', 'ImagePath', 'MaskPath'])
+          const same = sourceType === targetInput.type
+          const bothPath = PATH_FAMILY.has(sourceType) && PATH_FAMILY.has(targetInput.type)
+          if (!same && !bothPath) return false
+        }
       }
     }
   }

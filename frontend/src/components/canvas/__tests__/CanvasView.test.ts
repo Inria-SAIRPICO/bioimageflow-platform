@@ -1119,6 +1119,207 @@ describe('CanvasView', () => {
     })
   })
 
+  // --- Phase 3: cross-region edge rejection ---
+
+  describe('Phase 3 — cross-region connection rules', () => {
+    function makeDataFrameTool(): ToolMetadata {
+      return makeTool({
+        name: 'cross_join',
+        display_name: 'CrossJoin',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: true,
+        dynamic_outputs: true,
+        inputs: {},
+        outputs: {},
+      })
+    }
+
+    function makeSourceTool(): ToolMetadata {
+      return makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+        dynamic_outputs: false,
+        inputs: {},
+        outputs: {
+          path: { type: 'Path' },
+          filename: { type: 'str' },
+        },
+      })
+    }
+
+    it('header -> header creates a PositionalEdge', () => {
+      const store = useToolRegistryStore()
+      const srcTool = makeSourceTool()
+      const dfTool = makeDataFrameTool()
+      store.tools = [srcTool, dfTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', name: 'Files 1', tool: srcTool, connectedInputs: {} } },
+        { id: 'join_1', data: { toolName: 'cross_join', name: 'CrossJoin 1', tool: dfTool, connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      connectHandler!({
+        source: 'files_1',
+        target: 'join_1',
+        sourceHandle: '__dataframe_out',
+        targetHandle: '__positional_0',
+      })
+
+      expect(mockEdges).toHaveLength(1)
+      expect(mockEdges[0].type).toBe('positional')
+      w.unmount()
+    })
+
+    it('body -> body creates a ColumnRefEdge', () => {
+      const store = useToolRegistryStore()
+      const srcTool = makeSourceTool()
+      const procTool = makeTool()
+      store.tools = [srcTool, procTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', name: 'Files 1', tool: srcTool, connectedInputs: {} } },
+        { id: 'blur_1', data: { toolName: 'gaussian_blur', name: 'Blur 1', tool: procTool, connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      connectHandler!({
+        source: 'files_1',
+        target: 'blur_1',
+        sourceHandle: 'path',
+        targetHandle: 'image',
+      })
+
+      expect(mockEdges).toHaveLength(1)
+      expect(mockEdges[0].type).toBe('column_ref')
+      w.unmount()
+    })
+
+    it('header -> body is rejected (cross-region)', () => {
+      const store = useToolRegistryStore()
+      const srcTool = makeSourceTool()
+      const procTool = makeTool()
+      store.tools = [srcTool, procTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', name: 'Files 1', tool: srcTool, connectedInputs: {} } },
+        { id: 'blur_1', data: { toolName: 'gaussian_blur', name: 'Blur 1', tool: procTool, connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      const result = vm.isValidConnection({
+        source: 'files_1',
+        target: 'blur_1',
+        sourceHandle: '__dataframe_out',
+        targetHandle: 'image',
+      })
+      expect(result).toBe(false)
+      w.unmount()
+    })
+
+    it('body -> header is rejected (cross-region)', () => {
+      const store = useToolRegistryStore()
+      const srcTool = makeSourceTool()
+      const dfTool = makeDataFrameTool()
+      store.tools = [srcTool, dfTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', name: 'Files 1', tool: srcTool, connectedInputs: {} } },
+        { id: 'join_1', data: { toolName: 'cross_join', name: 'CrossJoin 1', tool: dfTool, connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      const result = vm.isValidConnection({
+        source: 'files_1',
+        target: 'join_1',
+        sourceHandle: 'path',
+        targetHandle: '__positional_0',
+      })
+      expect(result).toBe(false)
+      w.unmount()
+    })
+
+    it('Phase 1 regression: source-tool positional rejection still fires', () => {
+      const store = useToolRegistryStore()
+      const srcTool = makeSourceTool()
+      const otherSrcTool = makeTool({
+        name: 'generate',
+        display_name: 'Generate',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+      })
+      store.tools = [srcTool, otherSrcTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files', name: 'Files 1', tool: srcTool, connectedInputs: {} } },
+        { id: 'gen_1', data: { toolName: 'generate', name: 'Generate 1', tool: otherSrcTool, connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      const result = vm.isValidConnection({
+        source: 'files_1',
+        target: 'gen_1',
+        sourceHandle: '__dataframe_out',
+        targetHandle: '__positional_0',
+      })
+      expect(result).toBe(false)
+      w.unmount()
+    })
+
+    it('Phase 2 regression: "any" type bypass still fires', () => {
+      const store = useToolRegistryStore()
+      const genTool = makeTool({
+        name: 'generate',
+        display_name: 'Generate',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+        dynamic_outputs: true,
+        inputs: {},
+        outputs: {},
+      })
+      const blurTool = makeTool()
+      store.tools = [genTool, blurTool] as any
+
+      mockNodes = [
+        { id: 'gen_1', data: { toolName: 'generate', tool: genTool } },
+        { id: 'blur_1', data: { toolName: 'gaussian_blur', tool: blurTool } },
+      ]
+
+      const resolvedStore = useResolvedOutputsStore()
+      resolvedStore.resolvedOutputsByNodeId['gen_1'] = {
+        resolved: true,
+        columns: {
+          sensitivity: { type: 'any', default: null, image_spec: null },
+        },
+      }
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      const result = vm.isValidConnection({
+        source: 'gen_1',
+        target: 'blur_1',
+        sourceHandle: 'sensitivity',
+        targetHandle: 'image',
+      })
+      expect(result).toBe(true)
+      w.unmount()
+    })
+  })
+
   // --- Phase 2: "any" type handling in isValidConnection ---
 
   describe('isValidConnection — "any" type compatibility', () => {

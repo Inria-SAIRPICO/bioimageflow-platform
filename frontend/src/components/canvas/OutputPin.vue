@@ -7,8 +7,10 @@ const props = withDefaults(defineProps<{
   fieldName: string
   fieldType: string
   placeholder?: boolean
+  variant?: 'header' | 'body'
 }>(), {
   placeholder: false,
+  variant: 'body',
 })
 
 const color = computed(() => getTypeColor(props.fieldType))
@@ -22,17 +24,18 @@ const tooltip = computed(() => {
 <template>
   <div
     class="output-pin"
-    :class="{ 'output-pin--placeholder': placeholder, 'output-pin--any': fieldType === 'any' }"
+    :class="{ 'output-pin--placeholder': placeholder, 'output-pin--any': fieldType === 'any', 'output-pin--header': variant === 'header' }"
     :title="tooltip"
   >
     <span class="pin-label">{{ fieldName }}</span>
-    <span class="type-badge">{{ fieldType === 'any' ? '?' : fieldType }}</span>
+    <span v-if="variant !== 'header'" class="type-badge">{{ fieldType === 'any' ? '?' : fieldType }}</span>
     <Handle
       type="source"
       :position="Position.Right"
       :id="fieldName"
       class="pin-handle"
-      :style="{ backgroundColor: color, borderColor: color }"
+      :class="{ 'pin-handle--header': variant === 'header' }"
+      :style="variant === 'header' ? { backgroundColor: '#7A7A80', borderColor: '#7A7A80' } : { backgroundColor: color, borderColor: color }"
     />
   </div>
 </template>
@@ -80,5 +83,14 @@ const tooltip = computed(() => {
   border: 2px solid !important;
   position: relative !important;
   transform: none !important;
+}
+
+.pin-handle--header {
+  border-radius: 2px !important;
+}
+
+.output-pin--header .pin-label {
+  font-size: 11px;
+  font-weight: 600;
 }
 </style>

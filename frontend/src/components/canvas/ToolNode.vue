@@ -43,10 +43,19 @@ const connectableInputs = computed(() => {
   )
 })
 
-const showsPositionalPins = computed(() => {
+const isDataFrameTool = computed(() => {
   return props.data.tool.tool_type === 'DataFrameTool'
-      && props.data.tool.accepts_upstream === true
 })
+
+const showsPositionalPins = computed(() => {
+  return isDataFrameTool.value && props.data.tool.accepts_upstream === true
+})
+
+/**
+ * Whether to show header pins (DataFrame-level).
+ * DataFrameTools get header pins; ProcessingTools do not.
+ */
+const showsHeaderPins = computed(() => isDataFrameTool.value)
 
 const positionalInputCount = computed(() => {
   // For DataFrameTools that accept upstream: number of connected positional inputs + 1 spare
@@ -139,22 +148,7 @@ function onContextMenu(event: MouseEvent) {
     @contextmenu="onContextMenu"
   >
     <div class="node-header" @dblclick="toggleCollapse">
-      <span class="node-name">{{ data.name }}</span>
-      <span class="category-badge" v-if="data.tool?.categories?.length">{{ data.tool.categories[0] }}</span>
-      <span v-if="hasGpu" class="gpu-badge">GPU</span>
-    </div>
-
-    <div v-show="!data.collapsed" class="node-body">
-      <div class="inputs">
-        <InputPin
-          v-for="[name, field] in connectableInputs"
-          :key="name"
-          :node-id="id"
-          :field-name="name"
-          :field-type="field.type"
-          :connected="name in data.connectedInputs"
-          :source-label="data.connectedInputs[name]"
-        />
+      <div class="header-inputs">
         <InputPin
           v-if="showsPositionalPins"
           v-for="i in positionalInputCount"
@@ -165,18 +159,51 @@ function onContextMenu(event: MouseEvent) {
           :connected="`__positional_${i - 1}` in data.connectedInputs"
           :positional="true"
           :positional-index="i - 1"
+          variant="header"
+        />
+      </div>
+      <span class="node-name">{{ data.name }}</span>
+      <span class="category-badge" v-if="data.tool?.categories?.length">{{ data.tool.categories[0] }}</span>
+      <div class="header-outputs">
+        <OutputPin
+          v-if="showsHeaderPins"
+          field-name="__dataframe_out"
+          field-type="DataFrame"
+          variant="header"
+        />
+      </div>
+    </div>
+
+    <div v-show="!data.collapsed" class="node-body">
+      <div class="body-inputs">
+        <InputPin
+          v-for="[name, field] in connectableInputs"
+          :key="name"
+          :node-id="id"
+          :field-name="name"
+          :field-type="field.type"
+          :connected="name in data.connectedInputs"
+          :source-label="data.connectedInputs[name]"
+          variant="body"
         />
       </div>
 
-      <div class="outputs">
+      <div class="body-outputs">
         <OutputPin
           v-for="[name, field, isPlaceholder] in outputs"
           :key="name"
           :field-name="name"
           :field-type="field.type"
           :placeholder="isPlaceholder"
+          variant="body"
         />
       </div>
+    </div>
+
+    <div class="node-footer">
+      <span class="status-indicator" :class="statusClass"></span>
+      <span v-if="hasGpu" class="gpu-badge">GPU</span>
+      <span v-if="data.provisional" class="provisional-indicator">provisional</span>
     </div>
   </div>
 </template>
@@ -203,6 +230,15 @@ function onContextMenu(event: MouseEvent) {
   background: var(--p-surface-50);
   border-radius: 6px 6px 0 0;
   margin: 0.5px;
+  gap: 4px;
+}
+
+.header-inputs,
+.header-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .node-name {
@@ -232,15 +268,42 @@ function onContextMenu(event: MouseEvent) {
   padding: 6px 6px;
 }
 
-.inputs,
-.outputs {
+.body-inputs,
+.body-outputs {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.outputs {
+.body-outputs {
   margin-top: 4px;
+}
+
+.node-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-top: 1px solid var(--p-surface-200);
+  font-size: 10px;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-indicator.status-unexecuted { background: var(--p-blue-500); }
+.status-indicator.status-executed { background: var(--p-green-500); }
+.status-indicator.status-out-of-date { background: var(--p-orange-500); }
+.status-indicator.status-running { background: var(--p-blue-500); animation: pulse 1.5s ease-in-out infinite; }
+.status-indicator.status-failed { background: var(--p-red-500); }
+
+.provisional-indicator {
+  color: var(--p-text-muted-color, #999);
+  font-style: italic;
 }
 
 /* Status */

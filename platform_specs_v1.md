@@ -822,12 +822,19 @@ The central canvas where users build the DAG visually.
 
 #### 3.3.1 Nodes
 
-A node represents an instance of a tool in the workflow. Each node displays:
+A node represents an instance of a tool in the workflow. The node template is divided into three regions:
 
-- **Header:** Tool name (or custom node name) + tool icon/category badge
-- **Input pins:** One pin per connectable input field (left side)
-- **Output pins:** One pin per output field (right side)
-- **Status indicator:** Color-coded border or badge
+- **Header:** Tool name, category badge, and **DataFrame-level pins** (header pins). DataFrameTool nodes render square header pins for positional DataFrame inputs (left) and a single DataFrame output (right). ProcessingTool nodes have no header pins.
+- **Body:** Per-column output pins and per-field input pins (body pins). Round, type-colored, matching the existing column/field semantics.
+- **Footer:** Status indicator (color-coded dot), GPU badge, provisional indicator.
+
+Per-tool-type header pin rules:
+
+| Tool type | Header input pins | Header output pin |
+|---|---|---|
+| Source DataFrameTool (`accepts_upstream: false`, e.g. `Files`, `Generate`) | None | `__dataframe_out` |
+| Merge / transform DataFrameTool (`accepts_upstream: true`, e.g. `CrossJoin`, `FilterRows`) | Positional (`__positional_0`, `__positional_1`, ..., auto-grow) | `__dataframe_out` |
+| ProcessingTool | None | None |
 
 **Node creation:**
 - Drag a tool from the Tools Panel onto the canvas
@@ -864,14 +871,16 @@ Disabled nodes are rendered at reduced opacity. Nodes downstream of a disabled n
 
 #### 3.3.2 Edges
 
-Edges represent data flow between nodes. There are two kinds of edges (see [Section 2.4.3](#243-graph-schema-and-validation)):
+Edges represent data flow between nodes. There are two kinds of edges (see [Section 2.4.3](#243-graph-schema-and-validation)), each visually distinct:
 
-- **Column reference edges** (`ColumnRefEdge`): Connect a specific output pin to a specific input pin. Represent `ColumnRef` bindings for `ProcessingTool` inputs.
-- **Positional edges** (`PositionalEdge`): Connect a node to a `DataFrameTool`'s positional input pin. Represent upstream arguments to `merge_dataframes`.
+- **Positional edges** (`PositionalEdge`): Connect a DataFrameTool's header DataFrame output pin (`__dataframe_out`) to another DataFrameTool's header positional input pin (`__positional_*`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves anchored on header-region pins.
+- **Column reference edges** (`ColumnRefEdge`): Connect a body output pin (column name) to a body input pin (field name). Represent `ColumnRef` bindings for `ProcessingTool` inputs. Rendered as **solid, type-colored, thinner (2px)** bezier curves anchored on body-region pins.
+
+**Cross-region rejection:** Header pins can only connect to header pins; body pins can only connect to body pins. Dragging a header output to a body input (or vice versa) is rejected client-side.
 
 **Edge creation:**
 - Drag from an output pin to an input pin (or vice versa).
-- The frontend performs lightweight client-side validation (cycle detection, basic type check) for instant feedback.
+- The frontend performs lightweight client-side validation (cycle detection, basic type check, cross-region rejection) for instant feedback.
 - Invalid connections show a visual rejection (red flash + tooltip with reason).
 - After creation, the full graph is sent to `PUT /graph` for authoritative server validation.
 
@@ -881,21 +890,33 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 
 **Edge visuals:**
 - Edges are drawn as curved lines (bezier curves).
-- Edge color matches the data type (e.g., ImagePath = blue, scalar = gray).
+- Positional edges: solid, neutral gray (#7A7A80), 2.5px stroke width.
+- Column reference edges: solid, type-colored (e.g., ImagePath = blue, scalar = gray), 2px stroke width.
 - Selected edges are highlighted.
 
 #### 3.3.3 Pins
 
-Input and output pins are the connection points on nodes.
+Pins are the connection points on nodes. They are divided into two visual categories corresponding to the two edge types:
 
-- **Output pins** (right side): One per field in `Outputs`. Label shows the field name. Tooltip shows the type.
+**Header pins (DataFrame-level)**
+
+Header pins appear in the node header region and carry whole-DataFrame connections (positional edges).
+
+- **Visual style:** Square (~14px), neutral gray fill (#7A7A80), distinct from the `"any"` wildcard color (#B0A060) and from body type-colored pins.
+- **DataFrame output pin** (`__dataframe_out`, right side): Present on all DataFrameTool nodes. Represents the tool's output DataFrame.
+- **Positional input pins** (`__positional_0`, `__positional_1`, ..., left side): Present on DataFrameTool nodes with `accepts_upstream === true`. Numbered "1", "2", etc. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap.
+- Source-only DataFrameTools (`accepts_upstream === false`, e.g. `Files`, `Generate`) render no positional input pins. Edge-creation onto a positional handle of such a tool is rejected client-side. The backend additionally rejects any graph containing such an edge with a `source_tool_upstream` validation error.
+- ProcessingTool nodes have **no header pins**.
+
+**Body pins (column-level / field-level)**
+
+Body pins appear in the node body region and carry per-column or per-field connections (column reference edges).
+
+- **Visual style:** Round (~10px), type-colored (matching the data type color palette).
+- **Output pins** (right side): One per output field or resolved column. Label shows the field/column name. Tooltip shows the type.
 - **Input pins** (left side): Only for inputs where `connectable` is `"by_default"` or `"not_by_default"` (i.e. not `"never"`; declared by the tool author via `GUIMeta`). Fields without `GUIMeta` default to `"not_by_default"`. When a connectable input is connected, the corresponding parameter field in the Node Panel shows the source (e.g., `"cellpose_segmenter_1.mask"`) and the input widget is hidden.
 
-For **DataFrameTool** nodes: positional upstream connections appear as numbered input pins ("1", "2", ...) on the left side. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap (e.g., removing pin 1 causes pin 2 to become pin 1). Positional pin order can be changed by disconnecting and reconnecting edges in the desired order.
-
-Source-only DataFrameTools (`accepts_upstream === false`, e.g. `Files`, `Generate`) render no positional input pins. Edge-creation onto a positional handle of such a tool is rejected client-side with a tooltip explaining the source-tool semantics. The backend additionally rejects any graph containing such an edge with a `source_tool_upstream` validation error.
-
-For tools with `dynamic_outputs === true`, the output pin set is computed by `POST /graph/nodes/{node_id}/output_schema` and refetched whenever a parameter on the node changes, or whenever a parameter on any upstream node with `dynamic_outputs === true` changes (the change is propagated downstream along positional edges). While the schema is unresolvable (`resolved: false`), the canvas renders a single placeholder pin styled with a dashed outline and disabled drag-out. Columns with `type: "any"` use a neutral wildcard pin color and bypass type-compatibility checks at edge creation.
+For tools with `dynamic_outputs === true`, the body output pin set is computed by `POST /graph/nodes/{node_id}/output_schema` and refetched whenever a parameter on the node changes, or whenever a parameter on any upstream node with `dynamic_outputs === true` changes (the change is propagated downstream along positional edges). While the schema is unresolvable (`resolved: false`), the canvas renders a single placeholder pin styled with a dashed outline and disabled drag-out. Columns with `type: "any"` use a neutral wildcard pin color (#B0A060) and bypass type-compatibility checks at edge creation.
 
 #### 3.3.4 Canvas Controls
 

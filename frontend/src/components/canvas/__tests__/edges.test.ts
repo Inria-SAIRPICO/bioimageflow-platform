@@ -70,25 +70,25 @@ describe('PositionalEdge', () => {
     expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
   })
 
-  it('uses gray stroke color', () => {
+  it('uses neutral gray stroke color (#7A7A80)', () => {
     const w = mount(PositionalEdge, {
       props: baseEdgeProps as any,
     })
-    expect(w.find('.vue-flow__edge-path').attributes('stroke')).toBe('#8E8E93')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke')).toBe('#7A7A80')
   })
 
-  it('has dashed stroke', () => {
+  it('has solid stroke (no dash array)', () => {
     const w = mount(PositionalEdge, {
       props: baseEdgeProps as any,
     })
-    expect(w.find('.vue-flow__edge-path').attributes('stroke-dasharray')).toBe('5 3')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke-dasharray')).toBeUndefined()
   })
 
-  it('uses stroke-width 2', () => {
+  it('uses thicker stroke-width 2.5', () => {
     const w = mount(PositionalEdge, {
       props: baseEdgeProps as any,
     })
-    expect(w.find('.vue-flow__edge-path').attributes('stroke-width')).toBe('2')
+    expect(w.find('.vue-flow__edge-path').attributes('stroke-width')).toBe('2.5')
   })
 
   it('renders an invisible interaction path for easier clicking', () => {
@@ -97,6 +97,6 @@ describe('PositionalEdge', () => {
     })
     const interaction = w.find('.vue-flow__edge-interaction')
     expect(interaction.exists()).toBe(true)
-    expect(interaction.attributes('stroke-width')).toBe('12')
+    expect(interaction.attributes('stroke-width')).toBe('14')
   })
 })

@@ -127,7 +127,7 @@ describe('ToolNode', () => {
     expect(w.emitted('context-menu')).toBeTruthy()
   })
 
-  it('DataFrameTool with empty outputs and dynamic_outputs=false renders no output pins', () => {
+  it('DataFrameTool with empty outputs and dynamic_outputs=false renders no body output pins', () => {
     const tool = makeTool({
       tool_type: 'DataFrameTool',
       dynamic_outputs: false,
@@ -136,7 +136,9 @@ describe('ToolNode', () => {
     })
     const data = makeData({ tool })
     const w = factory(data)
-    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    // Body outputs should be empty (header still has __dataframe_out)
+    const bodyOutputs = w.find('.body-outputs')
+    const outputPins = bodyOutputs.findAllComponents({ name: 'OutputPin' })
     expect(outputPins).toHaveLength(0)
   })
 
@@ -295,7 +297,9 @@ describe('ToolNode', () => {
     })
     const data = makeData({ tool, connectedInputs: {} })
     const w = factory(data)
-    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    // Query body-outputs only (excludes header __dataframe_out pin)
+    const bodyOutputs = w.find('.body-outputs')
+    const outputPins = bodyOutputs.findAllComponents({ name: 'OutputPin' })
     expect(outputPins).toHaveLength(1)
     expect(outputPins[0].props('fieldName')).toBe('...')
     expect(outputPins[0].props('placeholder')).toBe(true)
@@ -326,11 +330,172 @@ describe('ToolNode', () => {
         },
       },
     })
-    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    // Query body-outputs only (excludes header __dataframe_out pin)
+    const bodyOutputs = w.find('.body-outputs')
+    const outputPins = bodyOutputs.findAllComponents({ name: 'OutputPin' })
     expect(outputPins).toHaveLength(1)
     expect(outputPins[0].props('fieldName')).toBe('sensitivity')
     expect(outputPins[0].props('fieldType')).toBe('any')
     expect(outputPins[0].props('placeholder')).toBe(false)
+  })
+
+  // --- Phase 3: Header / Body / Footer layout ---
+
+  describe('Phase 3 layout — header / body / footer', () => {
+    it('Source DataFrameTool: header has DataFrame-out only, no header-in, body has per-column outputs', () => {
+      const tool = makeTool({
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+        dynamic_outputs: false,
+        inputs: {
+          path: { type: 'Path', required: true, connectable: 'never' },
+        },
+        outputs: {
+          path: { type: 'Path' },
+          filename: { type: 'str' },
+        },
+      })
+      const data = makeData({ tool, connectedInputs: {} })
+      const w = factory(data)
+
+      // Header region exists
+      expect(w.find('.node-header').exists()).toBe(true)
+      // Header has a DataFrame output pin
+      const headerOutputs = w.find('.header-outputs')
+      expect(headerOutputs.exists()).toBe(true)
+      const headerOutPins = headerOutputs.findAllComponents({ name: 'OutputPin' })
+      expect(headerOutPins).toHaveLength(1)
+      expect(headerOutPins[0].props('fieldName')).toBe('__dataframe_out')
+      expect(headerOutPins[0].props('variant')).toBe('header')
+
+      // No header input pins
+      const headerInputs = w.find('.header-inputs')
+      expect(headerInputs.findAllComponents({ name: 'InputPin' })).toHaveLength(0)
+
+      // Body has per-column output pins
+      const bodyOutputs = w.find('.body-outputs')
+      const bodyOutPins = bodyOutputs.findAllComponents({ name: 'OutputPin' })
+      expect(bodyOutPins).toHaveLength(2)
+      expect(bodyOutPins[0].props('fieldName')).toBe('path')
+      expect(bodyOutPins[1].props('fieldName')).toBe('filename')
+    })
+
+    it('Merge DataFrameTool: header has DataFrame-in (positional, auto-grow) + DataFrame-out, body has per-column outputs', () => {
+      const tool = makeTool({
+        tool_type: 'DataFrameTool',
+        accepts_upstream: true,
+        dynamic_outputs: true,
+        inputs: {},
+        outputs: {},
+      })
+      const data = makeData({
+        tool,
+        connectedInputs: { __positional_0: 'Source.output' },
+      })
+      const resolved = {
+        'node-1': {
+          resolved: true,
+          columns: {
+            col_a: { type: 'str' },
+            col_b: { type: 'int' },
+          },
+        },
+      }
+      const w = mount(ToolNode, {
+        props: { id: 'node-1', data } as any,
+        global: {
+          provide: { 'bioimageflow:resolvedOutputs': resolved },
+        },
+      })
+
+      // Header has positional input pins
+      const headerInputs = w.find('.header-inputs')
+      const headerInPins = headerInputs.findAllComponents({ name: 'InputPin' })
+      expect(headerInPins.length).toBeGreaterThanOrEqual(2) // 1 connected + 1 spare
+      expect(headerInPins[0].props('variant')).toBe('header')
+
+      // Header has DataFrame output
+      const headerOutputs = w.find('.header-outputs')
+      const headerOutPins = headerOutputs.findAllComponents({ name: 'OutputPin' })
+      expect(headerOutPins).toHaveLength(1)
+      expect(headerOutPins[0].props('fieldName')).toBe('__dataframe_out')
+
+      // Body has per-column output pins
+      const bodyOutputs = w.find('.body-outputs')
+      const bodyOutPins = bodyOutputs.findAllComponents({ name: 'OutputPin' })
+      expect(bodyOutPins).toHaveLength(2)
+    })
+
+    it('Transform DataFrameTool (e.g. FilterRows): same as merge — header pins + body column outputs', () => {
+      const tool = makeTool({
+        name: 'filter_rows',
+        display_name: 'FilterRows',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: true,
+        dynamic_outputs: true,
+        inputs: {
+          column: { type: 'str', required: true, connectable: 'never' },
+        },
+        outputs: {},
+      })
+      const data = makeData({ tool, connectedInputs: {} })
+      const w = factory(data)
+
+      // Header has positional pins (1 spare) and DataFrame out
+      const headerInputs = w.find('.header-inputs')
+      expect(headerInputs.findAllComponents({ name: 'InputPin' })).toHaveLength(1)
+      const headerOutputs = w.find('.header-outputs')
+      expect(headerOutputs.findAllComponents({ name: 'OutputPin' })).toHaveLength(1)
+    })
+
+    it('ProcessingTool: no header pins, body has per-field input + per-output-field output pins', () => {
+      const tool = makeTool({
+        tool_type: 'ProcessingTool',
+        inputs: {
+          image: { type: 'ImagePath', required: true, connectable: 'by_default' },
+          sigma: { type: 'float', required: false, connectable: 'never', default: 1.0 },
+        },
+        outputs: {
+          result: { type: 'ImagePath' },
+        },
+      })
+      const data = makeData({ tool, connectedInputs: {} })
+      const w = factory(data)
+
+      // No header input or output pins
+      const headerInputs = w.find('.header-inputs')
+      expect(headerInputs.findAllComponents({ name: 'InputPin' })).toHaveLength(0)
+      const headerOutputs = w.find('.header-outputs')
+      expect(headerOutputs.findAllComponents({ name: 'OutputPin' })).toHaveLength(0)
+
+      // Body has per-field input pins
+      const bodyInputs = w.find('.body-inputs')
+      expect(bodyInputs.findAllComponents({ name: 'InputPin' })).toHaveLength(1) // only 'image' is connectable
+
+      // Body has per-field output pins
+      const bodyOutputs = w.find('.body-outputs')
+      expect(bodyOutputs.findAllComponents({ name: 'OutputPin' })).toHaveLength(1)
+    })
+
+    it('status indicator and GPU badge are in the footer, not the header', () => {
+      const tool = makeTool({
+        environment: { resources: { gpu: 1 } },
+      })
+      const w = factory(makeData({ tool }))
+
+      // GPU badge in footer
+      expect(w.find('.node-footer .gpu-badge').exists()).toBe(true)
+      // GPU badge NOT in header
+      expect(w.find('.node-header .gpu-badge').exists()).toBe(false)
+
+      // Footer exists
+      expect(w.find('.node-footer').exists()).toBe(true)
+    })
+
+    it('footer has status indicator', () => {
+      const w = factory(makeData({ status: 'executed' }))
+      expect(w.find('.node-footer .status-indicator').exists()).toBe(true)
+    })
   })
 
   it('dynamic_outputs=true with passthrough marker renders concrete pins plus inherited placeholder', () => {
@@ -358,7 +523,9 @@ describe('ToolNode', () => {
         },
       },
     })
-    const outputPins = w.findAllComponents({ name: 'OutputPin' })
+    // Query body-outputs only (excludes header __dataframe_out pin)
+    const bodyOutputs = w.find('.body-outputs')
+    const outputPins = bodyOutputs.findAllComponents({ name: 'OutputPin' })
     expect(outputPins).toHaveLength(2)
     // First: concrete pin
     expect(outputPins[0].props('fieldName')).toBe('cell_count')
