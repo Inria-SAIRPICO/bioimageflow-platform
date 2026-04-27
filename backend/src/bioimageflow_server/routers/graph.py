@@ -13,6 +13,7 @@ from bioimageflow_server.models.validation import (
     ValidationResult,
 )
 from bioimageflow_server.services.graph_validator import (
+    patch_session_constants as _patch_session_constants,
     validate_graph as _validate_graph,
     validate_parameters as _validate_parameters,
 )
@@ -88,6 +89,7 @@ async def patch_node_parameters(
     storage_path: Path | None = Depends(get_storage_path),
     execution_manager: Any | None = Depends(get_execution_manager),
     dev_mode: bool = Depends(get_dev_mode),
+    session_manager: SessionManager = Depends(get_session_manager),
 ) -> ValidationResult:
     _ensure_unlocked(execution_manager)
     if tool_name is None:
@@ -104,6 +106,17 @@ async def patch_node_parameters(
                     "use PUT /graph to modify connections"
                 ),
             )
+
+    # Prefer the session path when the node is in the active session —
+    # set_constant is a non-structural edit that does not re-resolve tools.
+    session = session_manager.session
+    if session is not None and node_id in session.nodes:
+        return _patch_session_constants(
+            node_id, body.parameters, session_manager,
+            dev_mode=dev_mode,
+        )
+
+    # Fallback: isolated parameter validation (no session context).
     return _validate_parameters(
         node_id,
         tool_name,

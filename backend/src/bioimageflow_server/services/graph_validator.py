@@ -165,6 +165,82 @@ def validate_graph(
     )
 
 
+def patch_session_constants(
+    node_id: str,
+    parameters: dict[str, Any],
+    session_manager: SessionManager,
+    dev_mode: bool = True,
+) -> ValidationResult:
+    """Apply constant edits via the session and return full validation.
+
+    Uses :meth:`WorkflowSession.set_constant` for each field — a
+    non-structural edit that does NOT trigger tool re-resolution. Then
+    re-validates using the session's cached :class:`Workflow`.
+
+    Returns a full-graph ``ValidationResult`` (not just the edited node),
+    since the constant change may affect downstream validation and plan
+    status.
+    """
+    from bioimageflow import CycleInWorkflowError
+
+    session = session_manager.session
+    if session is None:
+        raise RuntimeError("No active session")
+
+    for field_name, value in parameters.items():
+        session.set_constant(node_id, field_name, value)
+
+    errors: list[GraphValidationError] = list(session_manager.translation_errors)
+    disabled_node_ids = session_manager.disabled_node_ids
+
+    node_statuses: dict[str, NodeStatus] = {}
+    for nid in disabled_node_ids:
+        node_statuses[nid] = NodeStatus(node_id=nid, status="disabled", cached=False)
+
+    wf = session.to_workflow()
+    lib_errors = list(wf.errors) + list(wf.validate(dev_mode=dev_mode))
+    has_cycle = False
+    seen_keys: set[tuple] = set()
+    for err in lib_errors:
+        key = (err.path, err.node, err.field, err.kind, err.message, err.edge_id)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        if err.kind == "cycle":
+            has_cycle = True
+        errors.append(lib_validation_error_to_graph_error(err))
+
+    if not has_cycle:
+        try:
+            plans = wf.plan(dev_mode=dev_mode)
+        except CycleInWorkflowError:
+            plans = {}
+        for nid, node_plan in plans.items():
+            if nid in node_statuses:
+                continue
+            status_str = str(node_plan.status.value)
+            status_label, cached = _PLAN_STATUS_MAP.get(
+                status_str, ("unexecuted", False),
+            )
+            node_statuses[nid] = NodeStatus(
+                node_id=nid, status=status_label, cached=cached,
+            )
+
+    # Fill in remaining nodes.
+    for name in session.nodes:
+        if name in node_statuses:
+            continue
+        node_statuses[name] = NodeStatus(
+            node_id=name, status="unexecuted", cached=False,
+        )
+
+    return ValidationResult(
+        valid=not errors,
+        node_statuses=node_statuses,
+        errors=errors,
+    )
+
+
 def validate_parameters(
     node_id: str,
     tool_name: str,

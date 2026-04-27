@@ -202,6 +202,78 @@ class TestSessionManagerLifecycle:
         assert "n1" in sm.disabled_node_ids
 
 
+class TestSetConstant:
+    """Verify keystroke-rate constant edits via set_constant."""
+
+    def test_set_constant_does_not_re_resolve_tools(
+        self, registry: ToolRegistryService, tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The load-bearing contract: after the initial to_workflow() build,
+        a set_constant + validate/plan cycle must NOT trigger any tool
+        class resolution."""
+        from bioimageflow_server.services.graph_validator import (
+            patch_session_constants,
+        )
+
+        graph = GraphState(
+            nodes=[
+                NodeState(
+                    id="n1", name="n1", tool_name="MockProcessingTool",
+                    position=(0, 0), parameters={"input_image": "/a"},
+                ),
+            ],
+            edges=[],
+        )
+        sm = SessionManager()
+        sm.load(graph, registry, storage_path=tmp_path)
+
+        # Force the initial workflow build so the cache is warm.
+        sm.session.to_workflow()
+
+        # Spy on tool resolution.
+        from bioimageflow import workflow as wf_mod
+
+        calls: list[tuple] = []
+        original = wf_mod.Workflow._resolve_tool_instance
+
+        def tracking(self_wf, *args, **kwargs):  # type: ignore[no-untyped-def]
+            calls.append((args, kwargs))
+            return original(self_wf, *args, **kwargs)
+
+        monkeypatch.setattr(
+            wf_mod.Workflow, "_resolve_tool_instance", tracking,
+        )
+
+        # Apply a constant edit through the session.
+        result = patch_session_constants(
+            "n1", {"diameter": 42.0}, sm, dev_mode=True,
+        )
+        assert result.valid is True
+        assert calls == [], (
+            "set_constant + validate should NOT trigger tool resolution; "
+            f"got {len(calls)} calls"
+        )
+
+    def test_set_constant_updates_session_state(
+        self, registry: ToolRegistryService, tmp_path: Path,
+    ) -> None:
+        graph = GraphState(
+            nodes=[
+                NodeState(
+                    id="n1", name="n1", tool_name="MockProcessingTool",
+                    position=(0, 0), parameters={"input_image": "/a"},
+                ),
+            ],
+            edges=[],
+        )
+        sm = SessionManager()
+        sm.load(graph, registry, storage_path=tmp_path)
+        sm.session.set_constant("n1", "diameter", 99.5)
+        node_data = sm.session.nodes["n1"]
+        assert node_data["constants"]["diameter"]["value"] == 99.5
+
+
 class TestSessionHydration:
     """Verify the session round-trips the graph through the translator."""
 
