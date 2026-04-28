@@ -151,6 +151,8 @@ function dispatch(raw: unknown) {
       if (!pending) return
       clearTimeout(pending.timeoutHandle)
       state.lastAppliedFilter = pending.filter
+      // Persist the just-applied filter so reconnect recovery can replay it.
+      useLoggerStore().setLastSubscription?.(pending.filter)
       state.pending.delete(ref)
       pending.resolve()
       break

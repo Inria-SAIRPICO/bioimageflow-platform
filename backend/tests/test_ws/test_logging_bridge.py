@@ -138,15 +138,42 @@ async def test_attach_to_bioimageflow_node_logger() -> None:
     mgr = _StubManager()
     loop = asyncio.get_running_loop()
 
+    node_logger = logging.getLogger("bioimageflow.node")
+    saved_level = node_logger.level
+    node_logger.setLevel(logging.NOTSET)
     handler = attach_ws_log_handler(mgr, loop)
     try:
-        node_logger = logging.getLogger("bioimageflow.node")
         assert handler in node_logger.handlers
         assert handler.level == logging.DEBUG
+        # Default-lowered to DEBUG when level was NOTSET so subscribers
+        # see every record (filtering happens at subscription level).
+        assert node_logger.level == logging.DEBUG
         # Propagation preserved (spec: keep terminal logging)
         assert node_logger.propagate is True
     finally:
-        logging.getLogger("bioimageflow.node").removeHandler(handler)
+        node_logger.removeHandler(handler)
+        node_logger.setLevel(saved_level)
+
+
+async def test_attach_preserves_explicit_logger_level() -> None:
+    """When the deployer has pinned a level on bioimageflow.node, the bridge
+    must not override it — doing so would silently increase log volume going
+    to other handlers (terminal/file) attached to the same logger."""
+    from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    node_logger = logging.getLogger("bioimageflow.node")
+    saved_level = node_logger.level
+    node_logger.setLevel(logging.WARNING)
+    try:
+        handler = attach_ws_log_handler(mgr, loop)
+        try:
+            assert node_logger.level == logging.WARNING
+        finally:
+            node_logger.removeHandler(handler)
+    finally:
+        node_logger.setLevel(saved_level)
 
 
 async def test_emit_via_logger_triggers_broadcast() -> None:
@@ -246,5 +273,27 @@ async def test_recursion_guard_prevents_infinite_loop() -> None:
         # (Coroutine scheduling is async but the guard applies inside emit(),
         # so only the outer emit reaches broadcast_log in the same call stack.)
         assert emit_count["n"] == 1
+    finally:
+        logging.getLogger("bioimageflow.node").removeHandler(handler)
+
+
+async def test_internal_ws_logger_is_not_captured() -> None:
+    """Records emitted on the internal ``bioimageflow_server.ws`` logger
+    must not reach the WS handler — that's the primary recursion-prevention
+    mechanism (the ContextVar guard is just a backstop)."""
+    from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = attach_ws_log_handler(mgr, loop)
+    try:
+        logging.getLogger("bioimageflow_server.ws.handler").warning(
+            "an internal diagnostic"
+        )
+        # Give the loop ample chance to schedule something if it would.
+        for _ in range(10):
+            await asyncio.sleep(0.01)
+
+        assert mgr.broadcast_calls == []
     finally:
         logging.getLogger("bioimageflow.node").removeHandler(handler)

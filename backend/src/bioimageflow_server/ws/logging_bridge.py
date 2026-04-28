@@ -104,8 +104,11 @@ def attach_ws_log_handler(
     handler.setLevel(logging.DEBUG)
     node_logger = logging.getLogger("bioimageflow.node")
     node_logger.addHandler(handler)
-    # Ensure DEBUG-and-above records actually reach the handler.
-    if node_logger.level == logging.NOTSET or node_logger.level > logging.DEBUG:
+    # If the deployer hasn't pinned a level on this logger, default to DEBUG so
+    # WS subscribers see all records (filtering then happens per-subscription).
+    # Respect any explicitly-set level — overriding it would change the volume
+    # going to *other* handlers (terminal/file) attached to the same logger.
+    if node_logger.level == logging.NOTSET:
         node_logger.setLevel(logging.DEBUG)
     return handler
 

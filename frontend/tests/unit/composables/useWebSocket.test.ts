@@ -21,6 +21,7 @@ const loggerStoreMock = {
   addEntry: vi.fn(),
   clearEntries: vi.fn(),
   getLastSubscription: vi.fn(() => null as { nodeId?: string; level?: string } | null),
+  setLastSubscription: vi.fn(),
 }
 
 const errorStoreMock = {
@@ -260,6 +261,25 @@ describe('useWebSocket', () => {
 
     latestSocket().receive({ type: 'ack', ref: sent.message_id })
     await expect(promise).resolves.toBeUndefined()
+  })
+
+  it('ack persists the applied filter to loggerStore for reconnect replay', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    useWebSocket().connect('ws://test/ws')
+    latestSocket().open()
+
+    const promise = useWebSocket().sendSubscribeLogs({
+      nodeId: 'n42',
+      level: 'WARNING',
+    })
+    const sent = JSON.parse(latestSocket().sent[0])
+    latestSocket().receive({ type: 'ack', ref: sent.message_id })
+    await promise
+
+    expect(loggerStoreMock.setLastSubscription).toHaveBeenCalledWith({
+      nodeId: 'n42',
+      level: 'WARNING',
+    })
   })
 
   it('error with ref rejects the pending Promise', async () => {
