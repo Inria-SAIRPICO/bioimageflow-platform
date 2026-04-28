@@ -102,3 +102,29 @@ def test_integration_subscribe_ack_roundtrip() -> None:
             ws.send_json({"type": "subscribe_logs", "message_id": "m1"})
             msg = ws.receive_json()
             assert msg == {"type": "ack", "ref": "m1"}
+
+
+def test_execution_manager_uses_connection_manager_as_event_bus() -> None:
+    """When a ConnectionManager is supplied, the auto-built ExecutionManager
+    should use it as its ExecutionEventBus so progress / node_state /
+    execution_complete events flow over the WebSocket. With no manager, the
+    NullEventBus default applies.
+    """
+    from bioimageflow_server.app import create_app
+    from bioimageflow_server.models.tools import AppConfig
+    from bioimageflow_server.services.execution import NullEventBus
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    manager = ConnectionManager()
+    app_with_ws = create_app(AppConfig(connection_manager=manager))
+    # Resolve the ExecutionManager that the graph router will receive.
+    from bioimageflow_server.routers.graph import (
+        get_execution_manager as graph_get_execution_manager,
+    )
+
+    em_with_ws = app_with_ws.dependency_overrides[graph_get_execution_manager]()
+    assert em_with_ws.event_bus is manager
+
+    app_without_ws = create_app()
+    em_without_ws = app_without_ws.dependency_overrides[graph_get_execution_manager]()
+    assert isinstance(em_without_ws.event_bus, NullEventBus)

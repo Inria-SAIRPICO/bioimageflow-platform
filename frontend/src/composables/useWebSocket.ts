@@ -80,11 +80,11 @@ function cancelAllPending(reason: Error) {
   state.pending.clear()
 }
 
-// Dispatch targets intentionally duck-typed: several hooks
-// (applyNodeState, applyToolReload, applyPackageInstall, applyEnvironmentStatus)
-// are owned by peer plans (Execution, Hot-Reload, Tools Panel) that may not
-// be implemented yet. This layer only transports messages; if a hook is
-// missing, we warn once and skip — the peer plan adds it later.
+// Dispatch targets intentionally duck-typed: applyToolReload,
+// applyPackageInstall, and applyEnvironmentStatus are owned by peer plans
+// (Hot-Reload, Tools Panel) that may not be implemented yet. This layer only
+// transports messages; if a hook is missing, we warn once and skip — the peer
+// plan adds it later.
 function callIfExists(
   store: Record<string, unknown>,
   method: string,
@@ -108,11 +108,7 @@ function dispatch(raw: unknown) {
       useExecutionStore().applyProgress(msg as never)
       break
     case 'node_state':
-      callIfExists(
-        useExecutionStore() as unknown as Record<string, unknown>,
-        'applyNodeState',
-        msg,
-      )
+      useExecutionStore().applyNodeState(msg as never)
       break
     case 'log': {
       const entry: LogEntry = {

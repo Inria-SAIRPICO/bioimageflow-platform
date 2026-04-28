@@ -107,11 +107,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         output_data_folder=str(get_home()),
     )
 
+    # When a ConnectionManager is wired in, route execution events through it
+    # so progress / node_state / execution_complete reach connected clients.
+    # Otherwise fall back to NullEventBus (CLI / tests with no transport).
+    ws_manager = config.connection_manager
+    event_bus: Any = ws_manager if ws_manager is not None else NullEventBus()
+
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
         execution_manager = ExecutionManager(
-            event_bus=NullEventBus(),
+            event_bus=event_bus,
             tool_registry=registry,
             settings=resolved_settings,
             storage_path=config.storage_path,
@@ -137,7 +143,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         registry=registry, known=known, pypi=pypi
     )
 
-    ws_manager = config.connection_manager
     ws_log_handler = None
 
     @asynccontextmanager
