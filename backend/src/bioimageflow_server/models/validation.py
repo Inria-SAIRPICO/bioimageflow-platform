@@ -34,6 +34,7 @@ class GraphValidationError(BaseModel):
         "missing_package",
         "invalid_node_id",
         "invalid_edge_id",
+        "source_tool_upstream",
     ]
     detail: str
     node: str | None = None

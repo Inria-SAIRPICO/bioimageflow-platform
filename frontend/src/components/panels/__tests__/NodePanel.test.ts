@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
+import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
 import type { ToolMetadata, InputFieldSchema } from '@/api/types'
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
@@ -13,13 +14,15 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     package: 'bioimageflow-core',
     package_version: '0.3.2',
     tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
     documentation: 'Apply gaussian blur to smooth images.',
     tags: [],
     categories: ['Filtering'],
     inputs: {
-      image: { type: 'ImagePath', connectable: true, description: 'Input image path' },
-      sigma: { type: 'float', connectable: false, default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
-      threshold: { type: 'float', connectable: false, default: 0.5, optional: true, description: 'Optional threshold' },
+      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Input image path' },
+      sigma: { type: 'float', required: true, nullable: false, connectable: 'never', default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
+      threshold: { type: 'float', required: false, nullable: true, connectable: 'never', default: 0.5, description: 'Optional threshold' },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -68,6 +71,7 @@ function mountPanel(nodeData: ReturnType<typeof makeNodeData> | null = null) {
 describe('NodePanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    _resetGraphSyncForTest()
   })
 
   // --- Empty state ---
@@ -142,26 +146,63 @@ describe('NodePanel', () => {
     })
   })
 
-  // --- Fix 16: None toggle for Optional fields ---
+  // --- Fix 16: None toggle for nullable fields ---
 
-  describe('none toggle for optional fields', () => {
-    it('renders none toggle only for optional fields', () => {
+  describe('none toggle for nullable fields', () => {
+    it('renders none toggle only for nullable fields', () => {
       const w = mountPanel(makeNodeData())
       const noneToggles = w.findAll('[data-testid="none-toggle"]')
-      // Only 'threshold' is optional
+      // Only `threshold` is nullable; `sigma` has a default but is non-nullable.
       expect(noneToggles.length).toBe(1)
     })
 
-    it('sets parameter to null when toggled via component event', async () => {
+    it('does not render the toggle for a non-nullable field with a default', () => {
+      // Regression: prior to nullable, ANY field with a default got the toggle —
+      // which would crash the tool when the user nulled e.g. Atlas's `gaussian_std: int = 60`.
+      const tool = makeTool({
+        inputs: {
+          k: { type: 'int', required: false, nullable: false, connectable: 'never', default: 5 },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, parameters: { k: 5 } }))
+      expect(w.findAll('[data-testid="none-toggle"]').length).toBe(0)
+    })
+
+    it('renders the toggle for a nullable required field (no default)', () => {
+      // `int | None` with no default: user must pass *something*, but None is acceptable.
+      const tool = makeTool({
+        inputs: {
+          t: { type: 'int', required: true, nullable: true, connectable: 'never' },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, parameters: {} }))
+      expect(w.findAll('[data-testid="none-toggle"]').length).toBe(1)
+    })
+
+    it('sets parameter to null when toggled via click', async () => {
       const data = makeNodeData()
       data.parameters.threshold = 0.5
       const w = mountPanel(data)
       const noneToggle = w.find('[data-testid="none-toggle"]')
-      // PrimeVue Checkbox emits update:modelValue; find the Checkbox component and trigger it
-      const checkbox = noneToggle.findComponent({ name: 'Checkbox' })
-      await checkbox.vm.$emit('update:modelValue', true)
+      await noneToggle.trigger('click')
       await w.vm.$nextTick()
       expect(data.parameters.threshold).toBe(null)
+    })
+
+    it('toggles between pencil and Ø (pi-ban) icons based on null state', async () => {
+      // Icons reflect the action that will happen on click, not the
+      // current state — so an editable field shows Ø (click to nullify)
+      // and a nulled field shows pencil (click to edit).
+      const data = makeNodeData()
+      data.parameters.threshold = 0.5
+      const w = mountPanel(data)
+      const noneToggle = w.find('[data-testid="none-toggle"]')
+      // Editable: Ø (pi-ban)
+      expect(noneToggle.html()).toContain('pi-ban')
+      await noneToggle.trigger('click')
+      await w.vm.$nextTick()
+      // Nulled: pencil
+      expect(noneToggle.html()).toContain('pi-pencil')
     })
   })
 
@@ -183,6 +224,48 @@ describe('NodePanel', () => {
       await pinToggle.trigger('click')
       await w.vm.$nextTick()
       expect(data.pinnedInputs.image).toBe(false)
+    })
+
+    it('treats both by_default and not_by_default as connectable (pin visible)', () => {
+      const tool = makeTool({
+        inputs: {
+          a: { type: 'float', required: true, nullable: false, connectable: 'by_default' },
+          b: { type: 'float', required: true, nullable: false, connectable: 'not_by_default' },
+          c: { type: 'float', required: true, nullable: false, connectable: 'never' },
+        },
+      })
+      const data = makeNodeData({ tool, pinnedInputs: { a: true, b: true } })
+      const w = mountPanel(data)
+      // Per the T6 decision: treat both by_default and not_by_default as
+      // connectable and always show the pin. `never` hides it.
+      expect(w.findAll('[data-testid="pin-toggle"]').length).toBe(2)
+    })
+  })
+
+  describe('new wire-format fields', () => {
+    it('accepts image_spec and new field shape', () => {
+      const tool = makeTool({
+        inputs: {
+          mask: {
+            type: 'ImagePath',
+            required: true,
+            nullable: false,
+            connectable: 'by_default',
+            display_name: 'Input mask',
+            description: 'Binary mask',
+            image_spec: {
+              semantics: ['binary'],
+              layouts: ['YX', 'ZYX'],
+              dtypes: [],
+              formats: [],
+            },
+          },
+        },
+      })
+      const data = makeNodeData({ tool, pinnedInputs: { mask: true } })
+      const w = mountPanel(data)
+      // Field renders with a pin toggle (connectable !== 'never').
+      expect(w.findAll('[data-testid="pin-toggle"]').length).toBe(1)
     })
   })
 
@@ -232,6 +315,28 @@ describe('NodePanel', () => {
       const templateInputs = w.findAll('[data-testid="output-template"]')
       expect(templateInputs.length).toBe(0)
     })
+
+    it('does not render template input for DataFrameTool path outputs (column declarations)', () => {
+      // DataFrameTool Outputs are column declarations, not file paths.
+      // Files (a source DataFrameTool) declares `path: Path` to enable
+      // downstream column-ref validation — it must NOT render a template editor.
+      const tool = makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        inputs: {
+          path: { type: 'Path', required: true, nullable: false, connectable: 'never', description: 'Directory' },
+          pattern: { type: 'str', required: false, nullable: false, connectable: 'never', default: '*' },
+        },
+        outputs: {
+          path: { type: 'Path' },
+          filename: { type: 'str' },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, output_templates: {} }))
+      const templateInputs = w.findAll('[data-testid="output-template"]')
+      expect(templateInputs.length).toBe(0)
+    })
   })
 
   // --- Path input: file/folder pickers (pywebview bridge) ---
@@ -249,7 +354,6 @@ describe('NodePanel', () => {
     }
 
     afterEach(() => {
-      // @ts-expect-error -- cleanup the pywebview stub we installed
       delete window.pywebview
       vi.restoreAllMocks()
     })
@@ -257,8 +361,8 @@ describe('NodePanel', () => {
     function makePathTool(): ToolMetadata {
       return makeTool({
         inputs: {
-          input_image: { type: 'ImagePath', connectable: true, description: 'Image file' },
-          work_dir: { type: 'Path', connectable: false, description: 'Working directory' },
+          input_image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Image file' },
+          work_dir: { type: 'Path', required: true, nullable: false, connectable: 'never', description: 'Working directory' },
         },
         outputs: { result: { type: 'ImagePath' } },
       })
@@ -275,7 +379,6 @@ describe('NodePanel', () => {
     })
 
     it('renders both file and folder buttons for plain Path in desktop mode', () => {
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api: mockPywebviewApi() }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
@@ -302,7 +405,6 @@ describe('NodePanel', () => {
     it('calls the pywebview select_file bridge and stores the chosen path', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue('/absolute/chosen/image.tif')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {}, pinnedInputs: { input_image: true } })
@@ -318,7 +420,6 @@ describe('NodePanel', () => {
     it('calls the pywebview select_folder bridge and stores the chosen path', async () => {
       const api = mockPywebviewApi()
       api.select_folder.mockResolvedValue('/absolute/chosen/dir')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
@@ -334,7 +435,6 @@ describe('NodePanel', () => {
     it('passes image extensions to the native dialog for ImagePath fields', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue('/chosen.tif')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({
@@ -356,7 +456,6 @@ describe('NodePanel', () => {
     it('passes no filter for plain Path fields', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue('/chosen')
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
@@ -372,7 +471,6 @@ describe('NodePanel', () => {
     it('does not overwrite the parameter when the user cancels the native dialog', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue(null)
-      // @ts-expect-error -- install the pywebview desktop stub
       window.pywebview = { api }
 
       const data = makeNodeData({
@@ -418,5 +516,76 @@ describe('NodePanel', () => {
     })
     expect(w.find('.multi-select').exists()).toBe(true)
     expect(w.find('.multi-select').text()).toContain('2 nodes selected')
+  })
+
+  describe('validation errors', () => {
+    it('renders no error banner when validationResult is null', () => {
+      const w = mountPanel(makeNodeData())
+      expect(
+        w.find('[data-testid="node-validation-errors"]').exists(),
+      ).toBe(false)
+    })
+
+    it('renders error list scoped to the selected node', () => {
+      // Mount first (creates pinia), then push a validation result into
+      // the shared useGraphSync singleton so NodePanel can see it.
+      const w = mountPanel(makeNodeData())
+      const { validationResult } = useGraphSync()
+      validationResult.value = {
+        valid: false,
+        node_statuses: {},
+        errors: [
+          {
+            type: 'parameter_invalid',
+            detail: "Input is not a valid path",
+            node: 'node-1',
+            edge_id: null,
+            field: 'path',
+          },
+          {
+            // Error on a different node — must be excluded.
+            type: 'parameter_invalid',
+            detail: 'other',
+            node: 'other',
+            edge_id: null,
+            field: 'x',
+          },
+        ],
+      }
+      return w.vm.$nextTick().then(() => {
+        const banner = w.find('[data-testid="node-validation-errors"]')
+        expect(banner.exists()).toBe(true)
+        expect(banner.text()).toContain('path')
+        expect(banner.text()).toContain('Input is not a valid path')
+        expect(banner.text()).not.toContain('other')
+      })
+    })
+
+    it('banner disappears once errors are cleared', async () => {
+      const w = mountPanel(makeNodeData())
+      const { validationResult } = useGraphSync()
+      validationResult.value = {
+        valid: false,
+        node_statuses: {},
+        errors: [
+          {
+            type: 'missing_connection',
+            detail: 'nope',
+            node: 'node-1',
+            edge_id: null,
+            field: 'image',
+          },
+        ],
+      }
+      await w.vm.$nextTick()
+      expect(
+        w.find('[data-testid="node-validation-errors"]').exists(),
+      ).toBe(true)
+      validationResult.value = { valid: true, node_statuses: {}, errors: [] }
+      await w.vm.$nextTick()
+      expect(
+        w.find('[data-testid="node-validation-errors"]').exists(),
+      ).toBe(false)
+    })
   })
 })

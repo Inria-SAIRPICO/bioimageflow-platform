@@ -11,6 +11,20 @@ function makeNodeStatus(
   return { node_id: nodeId, status, cached: false }
 }
 
+function makeNode(id: string, toolName = 't'): NodeState {
+  return {
+    id,
+    name: id.toUpperCase(),
+    tool_name: toolName,
+    position: [0, 0],
+    parameters: {},
+    resources: {},
+    output_templates: {},
+    enabled: true,
+    collapsed: false,
+  }
+}
+
 function makeValidation(statuses: Record<string, NodeStatus>): ValidationResult {
   return { valid: true, node_statuses: statuses, errors: [] }
 }
@@ -18,7 +32,7 @@ function makeValidation(statuses: Record<string, NodeStatus>): ValidationResult 
 describe('useStatusReconciliation', () => {
   it('returns authoritative statuses when no edits are pending', () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
     ])
     const validation = ref<ValidationResult | null>(
       makeValidation({ a: makeNodeStatus('a', 'executed') }),
@@ -34,7 +48,7 @@ describe('useStatusReconciliation', () => {
 
   it('shows provisional status during debounce', () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
     ])
     const validation = ref<ValidationResult | null>(null)
     const ws = ref<NodeStateMessage[]>([])
@@ -50,7 +64,7 @@ describe('useStatusReconciliation', () => {
 
   it('authoritative overwrites provisional when validation arrives', async () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
     ])
     const validation = ref<ValidationResult | null>(null)
     const ws = ref<NodeStateMessage[]>([])
@@ -70,7 +84,7 @@ describe('useStatusReconciliation', () => {
 
   it('WS updates take effect immediately', async () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
     ])
     const validation = ref<ValidationResult | null>(
       makeValidation({ a: makeNodeStatus('a', 'unexecuted') }),
@@ -89,7 +103,7 @@ describe('useStatusReconciliation', () => {
 
   it('WS has priority over stale validation', async () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
     ])
     const validation = ref<ValidationResult | null>(
       makeValidation({ a: makeNodeStatus('a', 'unexecuted') }),
@@ -106,7 +120,7 @@ describe('useStatusReconciliation', () => {
 
   it('isReconciling is true when provisional exists', () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
     ])
     const validation = ref<ValidationResult | null>(null)
     const ws = ref<NodeStateMessage[]>([])
@@ -122,8 +136,8 @@ describe('useStatusReconciliation', () => {
 
   it('applyValidationResult clears provisional flags for nodes it covers', () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
-      { id: 'b', name: 'B', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
+      makeNode('b'),
     ])
     const validation = ref<ValidationResult | null>(null)
     const ws = ref<NodeStateMessage[]>([])
@@ -144,8 +158,8 @@ describe('useStatusReconciliation', () => {
 
   it('handles multiple rapid edits', async () => {
     const nodes = ref<NodeState[]>([
-      { id: 'a', name: 'A', tool_name: 't', position: [0, 0], parameters: {} },
-      { id: 'b', name: 'B', tool_name: 't', position: [0, 0], parameters: {} },
+      makeNode('a'),
+      makeNode('b'),
     ])
     const validation = ref<ValidationResult | null>(null)
     const ws = ref<NodeStateMessage[]>([])

@@ -2,11 +2,14 @@ import { ref } from 'vue'
 import { api } from '@/api/client'
 import { useIndexedDB } from '@/composables/useIndexedDB'
 import type {
+  ColumnRefEdge,
   GraphState,
   NodeState,
-  Edge,
+  PositionalEdge,
   ValidationResult,
 } from '@/api/types'
+
+type Edge = ColumnRefEdge | PositionalEdge
 
 export type SyncState = 'idle' | 'pending' | 'error'
 
@@ -76,10 +79,31 @@ export function serializeGraph(raw: {
   }
 }
 
+// Module-level singleton so multiple callers (CanvasView, MenuBar, run
+// button) observe the same validation result, debounce timer, and latest
+// graph ref. Test mocks replace the module export and don't exercise this
+// path.
+let _instance: ReturnType<typeof _createGraphSync> | null = null
+
 export function useGraphSync(errorStore?: GraphSyncErrorStore) {
+  if (_instance !== null) return _instance
+  _instance = _createGraphSync(errorStore)
+  return _instance
+}
+
+/** Test-only: reset the singleton so each test starts clean. */
+export function _resetGraphSyncForTest(): void {
+  _instance = null
+}
+
+function _createGraphSync(errorStore?: GraphSyncErrorStore) {
   const validationResult = ref<ValidationResult | null>(null)
   const isPending = ref(false)
   const syncState = ref<SyncState>('idle')
+  // Latest graph seen by syncGraph/flushNow. Read by consumers (e.g. the
+  // Run button) that need the current graph without owning a Vue Flow
+  // instance.
+  const currentGraph = ref<GraphState>({ nodes: [], edges: [] })
   const { saveWorkflow, loadWorkflow } = useIndexedDB()
 
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -95,6 +119,7 @@ export function useGraphSync(errorStore?: GraphSyncErrorStore) {
 
   function syncGraph(graph: { nodes: any[]; edges: any[] }): void {
     pendingGraph = graph
+    currentGraph.value = serializeGraph(graph)
     if (timer !== null) {
       clearTimeout(timer)
     }
@@ -216,5 +241,6 @@ export function useGraphSync(errorStore?: GraphSyncErrorStore) {
     validationResult,
     isPending,
     syncState,
+    currentGraph,
   }
 }

@@ -1,4 +1,10 @@
 """Tests for the tools router (Tasks 4-9)."""
+# pyright: reportPossiblyUnboundVariable=false, reportArgumentType=false
+# Rationale: ``async for client in _client(config):`` always yields once (the
+# helper is a single-yield async generator), so ``resp`` is bound at the
+# assertions — pyright can't prove that statically. Fake service stand-ins
+# (``_FakeCatalog``, ``_BrokenCatalog``) deliberately bypass the concrete
+# service class; tests only exercise the protocol surface.
 
 from __future__ import annotations
 
@@ -43,7 +49,14 @@ def _make_tool(name: str = "Cellpose") -> ToolMetadata:
         package="pkg",
         package_version="1.0",
         tool_type="ProcessingTool",
-        inputs={"diameter": InputFieldSchema(type="float", min=0.0)},
+        inputs={
+            "diameter": InputFieldSchema(
+                type="float",
+                required=True,
+                connectable="not_by_default",
+                min=0.0,
+            )
+        },
         outputs={"masks": OutputFieldSchema(type="image")},
     )
 
@@ -89,10 +102,57 @@ async def test_get_tools_populated(populated_client: httpx.AsyncClient):
     assert data[0]["name"] == "Cellpose"
 
 
+async def test_get_tools_returns_new_metadata_fields(populated_client: httpx.AsyncClient):
+    """GET /tools must surface accepts_upstream and dynamic_outputs."""
+    resp = await populated_client.get("/api/v1/tools")
+    assert resp.status_code == 200
+    tool = resp.json()[0]
+    assert "accepts_upstream" in tool
+    assert "dynamic_outputs" in tool
+    assert tool["accepts_upstream"] is True
+    assert tool["dynamic_outputs"] is False
+
+
 async def test_get_tools_empty(empty_client: httpx.AsyncClient):
     resp = await empty_client.get("/api/v1/tools")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+async def test_get_tools_surfaces_nullable_per_field():
+    """`nullable` is propagated through the API for each input field."""
+    reg = ToolRegistryService()
+    reg.register_tool(
+        "Mixed",
+        ToolMetadata(
+            name="Mixed",
+            display_name="Mixed",
+            package="pkg",
+            package_version="1.0",
+            tool_type="ProcessingTool",
+            inputs={
+                "size": InputFieldSchema(
+                    type="int", required=True, connectable="not_by_default",
+                ),
+                "area_lim": InputFieldSchema(
+                    type="float",
+                    required=False,
+                    nullable=True,
+                    connectable="not_by_default",
+                    default=None,
+                ),
+            },
+            outputs={"out": OutputFieldSchema(type="image")},
+        ),
+    )
+    config = AppConfig(tool_registry=reg)
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools")
+        assert resp.status_code == 200
+        tool = resp.json()[0]
+        assert tool["inputs"]["size"]["nullable"] is False
+        assert tool["inputs"]["area_lim"]["nullable"] is True
+        break
 
 
 # ---------------------------------------------------------------------------

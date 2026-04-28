@@ -175,4 +175,32 @@ describe('InputPin', () => {
       expect(disconnectEdge).not.toHaveBeenCalled()
     })
   })
+
+  // --- Phase 3: variant prop ---
+
+  describe('variant prop', () => {
+    it('defaults to body variant with round pin styling', () => {
+      const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
+      const handle = w.find('.pin-handle')
+      // Body variant: round (border-radius: 50%)
+      expect(handle.exists()).toBe(true)
+      expect(w.find('.input-pin').classes()).not.toContain('input-pin--header')
+    })
+
+    it('header variant adds input-pin--header class', () => {
+      const w = factory({ fieldName: '__positional_0', fieldType: 'DataFrame', connected: false, variant: 'header' })
+      expect(w.find('.input-pin').classes()).toContain('input-pin--header')
+    })
+
+    it('header variant renders square pin (no border-radius 50%)', () => {
+      const w = factory({ fieldName: '__positional_0', fieldType: 'DataFrame', connected: false, variant: 'header' })
+      const handle = w.find('.pin-handle')
+      expect(handle.classes()).toContain('pin-handle--header')
+    })
+
+    it('body variant does not add header class', () => {
+      const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false, variant: 'body' })
+      expect(w.find('.input-pin').classes()).not.toContain('input-pin--header')
+    })
+  })
 })

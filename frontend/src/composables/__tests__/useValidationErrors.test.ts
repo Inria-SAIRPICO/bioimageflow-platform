@@ -115,4 +115,18 @@ describe('useValidationErrors', () => {
     const { nodeErrors } = useValidationErrors(r)
     expect(nodeErrors.value['n1']).toEqual([e1, e2])
   })
+
+  it('routes source_tool_upstream with edge_id to edgeErrors', () => {
+    const err: GraphValidationError = {
+      type: 'source_tool_upstream',
+      detail: 'This tool is a source and does not accept DataFrame inputs.',
+      edge_id: 'e_pos_1',
+      node: 'files_1',
+    }
+    const r = ref<ValidationResult | null>(makeResult(false, [err]))
+    const { edgeErrors, nodeErrors, getEdgeErrors } = useValidationErrors(r)
+    expect(edgeErrors.value['e_pos_1']).toEqual([err])
+    expect(nodeErrors.value).toEqual({})
+    expect(getEdgeErrors('e_pos_1')).toEqual([err])
+  })
 })

@@ -31,7 +31,7 @@ const path = computed(() => {
   <path
     :d="path"
     stroke="transparent"
-    stroke-width="12"
+    stroke-width="14"
     fill="none"
     class="vue-flow__edge-interaction"
   />
@@ -39,9 +39,8 @@ const path = computed(() => {
     :id="id"
     class="vue-flow__edge-path"
     :d="path"
-    stroke="#8E8E93"
-    stroke-width="2"
-    stroke-dasharray="5 3"
+    stroke="#7A7A80"
+    stroke-width="2.5"
     fill="none"
   />
 </template>

@@ -87,7 +87,43 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 
 **Tool metadata response (from `GET /tools`):**
 
-The backend calls `get_inputs_schema(tool)` (from `bioimageflow.validation`) to produce the input schema. This function reads `GUIMeta` annotations from tool `Inputs` fields.
+The input/output schemas are the library's canonical wire format, produced by `bioimageflow.validation.serialize_input_schema` and `serialize_output_schema`. The platform does not transform them — see the library spec (§2.4 / §3.4) for the authoritative definition.
+
+Per-field `InputFieldSchema`:
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `type` | `string` | Display name (e.g. `"float"`, `"int"`, `"str"`, `"bool"`, `"Path"`, `"ImagePath"`, `"ImageShared"`). |
+| `required` | `boolean` | `true` when no class-level default is set on `Inputs`. |
+| `nullable` | `boolean` | `true` when the type annotation admits `None` (i.e. `Optional[X]` or `X \| None`). Independent of `required`: a field can be required-and-nullable (user must pass *something*, and `None` counts) or non-required-and-non-nullable. GUIs use this to decide whether to expose a "set to null" affordance. |
+| `connectable` | `"never" \| "not_by_default" \| "by_default"` | Three-state. `"never"` hides the pin; the other two mean the field can accept an upstream binding. |
+| `default` | `any` | JSON-safe default (or `null` when `required: true`). |
+| `display_name` | `string \| null` | From `GUIMeta.display_name`. |
+| `description` | `string \| null` | From `GUIMeta.description`. |
+| `group` | `string \| null` | From `GUIMeta.group`. |
+| `min` / `max` / `step` | `number \| null` | From `GUIMeta`. |
+| `choices` | `string[] \| null` | Populated for `Literal[...]` and `Enum` fields. |
+| `image_spec` | `object \| null` | `{semantics, layouts, dtypes, formats}` each as `string[]`, populated for `ImagePath` / `ImageShared` fields. |
+
+Per-field `OutputFieldSchema`:
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `type` | `string` | Display name. |
+| `default` | `any` | Path-template string for `Path`-typed outputs (e.g. `"{input_image.stem}_mask{ext}"`), or `null`. |
+| `image_spec` | `object \| null` | Same shape as on inputs. |
+
+**Passthrough outputs (`DataFrameTool`):** when the tool's `Outputs` class subclasses `bioimageflow.Passthrough`, the `outputs` dict on `ToolMetadata` is the marker `{"_passthrough": true}` instead of a per-field dict — frontends render "inherits columns from upstream."
+
+Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
+
+| Key | Type | Notes |
+|-----|------|-------|
+| `tool_type` | `"ProcessingTool" \| "DataFrameTool"` | Discriminator for rendering and pin logic. |
+| `accepts_upstream` | `boolean` | `false` means the tool refuses positional upstream `DataFrameTool` connections. The canvas hides positional pins. |
+| `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits via `POST /graph/nodes/{node_id}/output_schema`. |
+
+**The `"any"` type.** The library reserves `"any"` (per library `specs.md` §2.4) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
 ```json
 {
@@ -96,42 +132,59 @@ The backend calls `get_inputs_schema(tool)` (from `bioimageflow.validation`) to 
   "package": "bioimageflow-cellpose",
   "package_version": "1.2.0",
   "tool_type": "ProcessingTool",
+  "accepts_upstream": true,
+  "dynamic_outputs": false,
   "documentation": "Segment cells using Cellpose models.",
   "tags": ["segmentation", "deep-learning"],
   "categories": ["Segmentation"],
   "inputs": {
     "input_image": {
       "type": "ImagePath",
-      "connectable": true,
+      "required": true,
+      "nullable": false,
+      "connectable": "by_default",
       "default": null,
-      "description": "Input intensity image"
+      "display_name": "Input image",
+      "description": "Input intensity image",
+      "group": null,
+      "min": null, "max": null, "step": null,
+      "choices": null,
+      "image_spec": {"semantics": ["intensity"], "layouts": ["YX", "CYX"], "dtypes": [], "formats": []}
     },
     "diameter": {
       "type": "float",
-      "connectable": false,
+      "required": false,
+      "nullable": false,
+      "connectable": "not_by_default",
       "default": 30.0,
-      "min": 1.0,
-      "max": 500.0,
-      "step": 0.5,
+      "display_name": "Cell diameter",
+      "description": "Expected cell diameter in pixels",
       "group": "general",
-      "description": "Expected cell diameter in pixels"
+      "min": 1.0, "max": 500.0, "step": 0.5,
+      "choices": null,
+      "image_spec": null
     },
     "model_type": {
-      "type": "Literal['cyto', 'cyto2', 'nuclei']",
-      "connectable": false,
+      "type": "str",
+      "required": false,
+      "nullable": false,
+      "connectable": "not_by_default",
       "default": "cyto2",
-      "description": "Cellpose model to use"
+      "display_name": "Model",
+      "description": "Cellpose model to use",
+      "group": null,
+      "min": null, "max": null, "step": null,
+      "choices": ["cyto", "cyto2", "nuclei"],
+      "image_spec": null
     }
   },
   "outputs": {
-    "mask": {"type": "ImagePath"},
-    "cell_count": {"type": "int"}
+    "mask": {"type": "ImagePath", "default": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
+    "cell_count": {"type": "int", "default": null, "image_spec": null}
   },
   "environment": {"python": "3.11", "conda": ["cellpose"], "pip": []}
 }
 ```
-
-The `connectable`, `min`, `max`, `step`, and `group` fields come from `GUIMeta` annotations on the tool's `Inputs` fields. Fields without `GUIMeta` default to `connectable: true` (backward-compatible). See `bioimageflow_core.tool.GUIMeta`.
 
 **Endpoint roles:** `GET /tools` returns tool-level metadata (inputs schema, outputs, environment) for graph construction and the Node Panel. `GET /tools/packages` returns package-level metadata (installed/available versions, environment status) for the Tools Panel tool list and Manage Tools dialog. The data intentionally overlaps (both include package name and version) for convenience — the frontend uses `GET /tools/packages` to populate the Tools Panel, and `GET /tools` to resolve tool schemas when building nodes.
 
@@ -462,6 +515,36 @@ For **parameter-only changes** (no structural change to edges/nodes), the fronte
 }
 ```
 
+#### 2.4.4b Node Output Schema Resolution
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/graph/nodes/{node_id}/output_schema` | Resolve the output column schema for a single node |
+
+**Request body:** a full `GraphState` (same format as `PUT /graph`). The full graph is required because schema resolution may depend on upstream wiring (e.g. merge tools propagate columns from their upstreams).
+
+**Response:** the library's `serialize_resolved_outputs(node)` wire shape verbatim. No `node_id` in the response body --- the URL carries it.
+
+```json
+{
+  "resolved": true,
+  "columns": {
+    "sensitivity": {"type": "any", "default": null, "image_spec": null}
+  }
+}
+```
+
+Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not yet set):
+
+```json
+{"resolved": false, "columns": {}}
+```
+
+**Error handling:**
+- **404:** only when the `node_id` is not present in the request body's `nodes` list.
+- **200 with `resolved: false`:** for all build/resolution failures (cycles, missing required kwargs, unknown tool). Input edits frequently produce transiently invalid graph states; the endpoint must respond cleanly so the GUI can keep polling.
+- The `columns` dict may contain a passthrough marker (`{"_passthrough": true, ...extra}`) when the tool declares `class Outputs(Passthrough)` without enough information to expand. The frontend renders `extra` keys as concrete pins plus a single "(+ inherited columns)" placeholder.
+
 #### 2.4.5 Execution
 
 | Method | Endpoint | Description |
@@ -743,12 +826,19 @@ The central canvas where users build the DAG visually.
 
 #### 3.3.1 Nodes
 
-A node represents an instance of a tool in the workflow. Each node displays:
+A node represents an instance of a tool in the workflow. The node template is divided into three regions:
 
-- **Header:** Tool name (or custom node name) + tool icon/category badge
-- **Input pins:** One pin per connectable input field (left side)
-- **Output pins:** One pin per output field (right side)
-- **Status indicator:** Color-coded border or badge
+- **Header:** Tool name, category badge, and **DataFrame-level pins** (header pins). DataFrameTool nodes render square header pins for positional DataFrame inputs (left) and a single DataFrame output (right). ProcessingTool nodes have no header pins.
+- **Body:** Per-column output pins and per-field input pins (body pins). Round, type-colored, matching the existing column/field semantics.
+- **Footer:** Status indicator (color-coded dot), GPU badge, provisional indicator.
+
+Per-tool-type header pin rules:
+
+| Tool type | Header input pins | Header output pin |
+|---|---|---|
+| Source DataFrameTool (`accepts_upstream: false`, e.g. `Files`, `Generate`) | None | `__dataframe_out` |
+| Merge / transform DataFrameTool (`accepts_upstream: true`, e.g. `CrossJoin`, `FilterRows`) | Positional (`__positional_0`, `__positional_1`, ..., auto-grow) | `__dataframe_out` |
+| ProcessingTool | None | None |
 
 **Node creation:**
 - Drag a tool from the Tools Panel onto the canvas
@@ -785,14 +875,16 @@ Disabled nodes are rendered at reduced opacity. Nodes downstream of a disabled n
 
 #### 3.3.2 Edges
 
-Edges represent data flow between nodes. There are two kinds of edges (see [Section 2.4.3](#243-graph-schema-and-validation)):
+Edges represent data flow between nodes. There are two kinds of edges (see [Section 2.4.3](#243-graph-schema-and-validation)), each visually distinct:
 
-- **Column reference edges** (`ColumnRefEdge`): Connect a specific output pin to a specific input pin. Represent `ColumnRef` bindings for `ProcessingTool` inputs.
-- **Positional edges** (`PositionalEdge`): Connect a node to a `DataFrameTool`'s positional input pin. Represent upstream arguments to `merge_dataframes`.
+- **Positional edges** (`PositionalEdge`): Connect a DataFrameTool's header DataFrame output pin (`__dataframe_out`) to another DataFrameTool's header positional input pin (`__positional_*`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves anchored on header-region pins.
+- **Column reference edges** (`ColumnRefEdge`): Connect a body output pin (column name) to a body input pin (field name). Represent `ColumnRef` bindings for `ProcessingTool` inputs. Rendered as **solid, type-colored, thinner (2px)** bezier curves anchored on body-region pins.
+
+**Cross-region rejection:** Header pins can only connect to header pins; body pins can only connect to body pins. Dragging a header output to a body input (or vice versa) is rejected client-side.
 
 **Edge creation:**
 - Drag from an output pin to an input pin (or vice versa).
-- The frontend performs lightweight client-side validation (cycle detection, basic type check) for instant feedback.
+- The frontend performs lightweight client-side validation (cycle detection, basic type check, cross-region rejection) for instant feedback.
 - Invalid connections show a visual rejection (red flash + tooltip with reason).
 - After creation, the full graph is sent to `PUT /graph` for authoritative server validation.
 
@@ -802,17 +894,33 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 
 **Edge visuals:**
 - Edges are drawn as curved lines (bezier curves).
-- Edge color matches the data type (e.g., ImagePath = blue, scalar = gray).
+- Positional edges: solid, neutral gray (#7A7A80), 2.5px stroke width.
+- Column reference edges: solid, type-colored (e.g., ImagePath = blue, scalar = gray), 2px stroke width.
 - Selected edges are highlighted.
 
 #### 3.3.3 Pins
 
-Input and output pins are the connection points on nodes.
+Pins are the connection points on nodes. They are divided into two visual categories corresponding to the two edge types:
 
-- **Output pins** (right side): One per field in `Outputs`. Label shows the field name. Tooltip shows the type.
-- **Input pins** (left side): Only for inputs where `connectable` is `true` (declared by the tool author via `GUIMeta`). Fields without `GUIMeta` default to `connectable: true`. When a connectable input is connected, the corresponding parameter field in the Node Panel shows the source (e.g., `"cellpose_segmenter_1.mask"`) and the input widget is hidden.
+**Header pins (DataFrame-level)**
 
-For **DataFrameTool** nodes: positional upstream connections appear as numbered input pins ("1", "2", ...) on the left side. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap (e.g., removing pin 1 causes pin 2 to become pin 1). Positional pin order can be changed by disconnecting and reconnecting edges in the desired order.
+Header pins appear in the node header region and carry whole-DataFrame connections (positional edges).
+
+- **Visual style:** Square (~14px), neutral gray fill (#7A7A80), distinct from the `"any"` wildcard color (#B0A060) and from body type-colored pins.
+- **DataFrame output pin** (`__dataframe_out`, right side): Present on all DataFrameTool nodes. Represents the tool's output DataFrame.
+- **Positional input pins** (`__positional_0`, `__positional_1`, ..., left side): Present on DataFrameTool nodes with `accepts_upstream === true`. Numbered "1", "2", etc. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap.
+- Source-only DataFrameTools (`accepts_upstream === false`, e.g. `Files`, `Generate`) render no positional input pins. Edge-creation onto a positional handle of such a tool is rejected client-side. The backend additionally rejects any graph containing such an edge with a `source_tool_upstream` validation error.
+- ProcessingTool nodes have **no header pins**.
+
+**Body pins (column-level / field-level)**
+
+Body pins appear in the node body region and carry per-column or per-field connections (column reference edges).
+
+- **Visual style:** Round (~10px), type-colored (matching the data type color palette).
+- **Output pins** (right side): One per output field or resolved column. Label shows the field/column name. Tooltip shows the type.
+- **Input pins** (left side): Only for inputs where `connectable` is `"by_default"` or `"not_by_default"` (i.e. not `"never"`; declared by the tool author via `GUIMeta`). Fields without `GUIMeta` default to `"not_by_default"`. When a connectable input is connected, the corresponding parameter field in the Node Panel shows the source (e.g., `"cellpose_segmenter_1.mask"`) and the input widget is hidden.
+
+For tools with `dynamic_outputs === true`, the body output pin set is computed by `POST /graph/nodes/{node_id}/output_schema` and refetched whenever a parameter on the node changes, or whenever a parameter on any upstream node with `dynamic_outputs === true` changes (the change is propagated downstream along positional edges). While the schema is unresolvable (`resolved: false`), the canvas renders a single placeholder pin styled with a dashed outline and disabled drag-out. Columns with `type: "any"` use a neutral wildcard pin color (#B0A060) and bypass type-compatibility checks at edge creation.
 
 #### 3.3.4 Canvas Controls
 
@@ -880,6 +988,8 @@ Displays details and parameters for the currently selected node(s).
 
 **Multi-selection:** When multiple nodes are selected, the Node Panel shows only bulk actions: Enable/Disable all, Delete all, Clear all. No parameter editing. The Data Table shows the outputs of all selected nodes.
 
+**Dynamic outputs refresh:** When an input field changes on a node whose tool has `dynamic_outputs === true`, a debounced (200ms) call to `POST /graph/nodes/{node_id}/output_schema` refreshes the node's resolved output pins. The refresh also propagates downstream along positional edges to any visited node with `dynamic_outputs === true`.
+
 **Single-node layout (top to bottom):**
 
 #### 3.5.1 Header Section
@@ -907,10 +1017,10 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 
 | Element | Description |
 |---------|-------------|
-| **Pin toggle button** | Icon-only button placed **before** the label, only rendered if the input is `connectable`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` decides whether the button appears; the button itself decides whether the pin is shown. |
+| **Pin toggle button** | Icon-only button placed **before** the label, only rendered when `connectable != "never"`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` (three-state: `"never" \| "not_by_default" \| "by_default"`) decides whether the button appears; the button itself decides whether the pin is shown. Current behaviour is to treat both `"not_by_default"` and `"by_default"` identically (pin visible) — a richer UX that hides pins by default for `"not_by_default"` fields is a separate plan. |
 | **Label** | Field name (human-readable) |
 | **Default button** | Resets the field to its default value |
-| **None toggle** | Two-state button (only shown if the field is `Optional`). When active, the value is `None` and the input field is hidden. |
+| **None toggle** | Two-state button (only shown when `nullable` is `true` on the field schema). When active, the value is `None` and the input field is hidden. Independent of `required`: a required-and-nullable field still gets the toggle so the user can explicitly choose `None` as a valid value. |
 | **Input field** | The actual value editor (hidden when connected or None). Type depends on the field annotation (see below). |
 | **Help text** | Collapsible description from field metadata |
 
@@ -926,19 +1036,20 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `Path` (file) | Text input + "Select File" button | In pywebview: native file dialog. In browser: Dataset Browser modal (Section 3.14). |
 | `Path` (directory) | Text input + "Select Folder" button | In pywebview: native folder dialog. In browser: folder selection is not offered — the button is hidden and only manual text entry or drag-and-drop is available. |
 | `ImagePath` | Text input + "Select File" button (filtered by format spec) | Same dual behavior as `Path` (file). File-type filter applies to both the native dialog and the Dataset Browser search filter. |
-| `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable=True`, not user-editable. |
+| `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable != "never"`, not user-editable. |
 | `tuple`, `list` | Inline list editor | -- |
 
 When a connectable input is **connected** (pin has an edge), the input field is replaced by a read-only label showing the source: `"segmenter_1.mask"`.
 
 #### 3.5.4 Output Fields
 
-Each output field from `Outputs` is displayed with editable path templates for path-typed outputs:
+Each output field from `Outputs` is displayed with editable path templates for path-typed outputs **on `ProcessingTool` nodes only**:
 
 - **Label:** Field name
 - **Type badge:** Visual indicator of the type (ImagePath, int, etc.)
-- **Path template editor:** For path-typed outputs (`Path`, `ImagePath`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
+- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImagePath`, `MaskPath`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
 - **Non-path outputs** (int, float, str, etc.) are shown read-only.
+- **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImagePath`/`MaskPath` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept (see `specs.md` Section 2080: *"DataFrameTool does not use output templating — it returns DataFrames directly."*). The tool's `tool_type` field on `ToolMetadata` is the gate.
 
 #### 3.5.4b Resource Configuration
 
@@ -1035,7 +1146,7 @@ Accessed via the menu bar or a dedicated toolbar area.
 
 **Buttons:**
 - **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" **Disabled** when a validation request is pending or the debounce timer is active. If clicked during the debounce window, the frontend flushes the debounce (sends `PUT /graph` immediately), waits for the validation response, and only then proceeds with execution. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
-- **Execute Selected:** Execute only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
+- **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
 **During execution — Non-Modal Execution Banner:**
@@ -1332,7 +1443,7 @@ On load, the server reports missing packages in the load response. The frontend 
 | 17 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
 | 18 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
 | 19 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
-| 20 | `POST` | `/api/v1/execution/run` | "Run" / "Execute Selected" buttons |
+| 20 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
 | 21 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
 | 22 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
 | 23 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |

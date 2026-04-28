@@ -1,4 +1,14 @@
-"""In-memory tool and package registry with filesystem scanning."""
+"""In-memory tool and package registry backed by the library's ToolRegistry.
+
+The library's :class:`bioimageflow.ToolRegistry` handles package loading
+and tool class indexing. This service wraps it with:
+
+- The platform's :class:`ToolMetadata` wire format (richer than the
+  library's ``ToolMetadata`` — includes ``tool_type``, ``documentation``,
+  ``categories``, ``environment``).
+- Package-level bookkeeping (:class:`PackageInfo`) for the frontend.
+- A ``get_tool_class`` method that delegates to the library registry.
+"""
 
 from __future__ import annotations
 
@@ -6,87 +16,129 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from bioimageflow import ToolRegistry as LibToolRegistry
+from bioimageflow.validation import (
+    SchemaSerializationError,
+    serialize_input_schema,
+    serialize_output_schema,
+    serialize_tool_metadata,
+)
+
 from bioimageflow_server.models.tools import (
     InputFieldSchema,
-    OutputFieldSchema,
     PackageInfo,
     ToolMetadata,
 )
+from bioimageflow_server.services.pypi_versions import _version_sort_key
 
 logger = logging.getLogger(__name__)
 
 
 class ToolRegistryService:
-    """Dict-backed registry of tools and packages."""
+    """Dict-backed registry of tools and packages.
+
+    Delegates tool class resolution and package scanning to the library's
+    :class:`ToolRegistry`. The platform layer enriches tool metadata with
+    fields the library does not carry (``tool_type``, ``documentation``,
+    ``categories``, ``environment``).
+    """
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolMetadata] = {}
-        self._tool_classes: dict[str, type] = {}
+        self._lib_registry = LibToolRegistry()
         self._packages: dict[str, PackageInfo] = {}
 
     def scan_tool_store(self, store_path: Path | None = None) -> None:
-        """Scan the tool store directory and register all discovered tools."""
-        from bioimageflow.tool_loader import load_versioned_package
+        """Scan the tool store directory and register all discovered tools.
+
+        Uses the library's :meth:`ToolRegistry.register_package` for
+        package loading (never triggers network installs on the hot path).
+        """
         from bioimageflow.paths import get_tool_store_path
-        from bioimageflow_core.tool import BaseTool
 
-        if store_path is None:
-            store_path = get_tool_store_path()
+        if store_path is not None:
+            self._lib_registry = LibToolRegistry(store_path=store_path)
 
-        if not store_path.exists():
-            logger.warning("Tool store not found: %s", store_path)
+        actual_store = store_path if store_path is not None else get_tool_store_path()
+
+        if not actual_store.exists():
+            logger.warning("Tool store not found: %s", actual_store)
             return
 
-        for pkg_dir in sorted(store_path.iterdir()):
+        for pkg_dir in sorted(actual_store.iterdir()):
             if not pkg_dir.is_dir() or pkg_dir.name.startswith("."):
                 continue
             package_name = pkg_dir.name
+
+            # Sort version directories oldest-first using PEP 440 ordering.
+            # Each `lib_registry.register_package(name, version)` call
+            # overwrites `_classes[class_name]` with this version's class
+            # object — so to leave the NEWEST version active for each
+            # class, we load oldest-first and let the newest call win.
+            # (Lex sort treats `0.1.10` < `0.1.9`, which is wrong for
+            # multi-digit versions.)
+            ver_dirs = [
+                d for d in pkg_dir.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            ]
+            ver_dirs.sort(key=lambda d: _version_sort_key(d.name))
+
             installed_versions: list[str] = []
             tools_by_version: dict[str, list[str]] = {}
+            # class_name -> newest version that exports it. The platform
+            # registry stores one ToolMetadata per class, so this picks
+            # which version's metadata (incl. inputs/outputs schema) we
+            # surface to the GUI.
+            class_versions: dict[str, str] = {}
 
-            for ver_dir in sorted(pkg_dir.iterdir()):
-                if not ver_dir.is_dir() or ver_dir.name.startswith("."):
-                    continue
+            for ver_dir in ver_dirs:
                 version = ver_dir.name
                 installed_versions.append(version)
 
                 try:
-                    mod = load_versioned_package(package_name, version, store_path)
+                    lib_metas = self._lib_registry.register_package(
+                        package_name, version,
+                    )
                 except Exception:
                     logger.exception(
                         "Failed to load %s==%s", package_name, version
                     )
                     continue
 
-                tool_names: list[str] = []
-                for attr_name in dir(mod):
-                    try:
-                        obj = getattr(mod, attr_name)
-                    except Exception:
-                        continue
-                    if (
-                        not isinstance(obj, type)
-                        or not issubclass(obj, BaseTool)
-                        or obj is BaseTool
-                    ):
-                        continue
-
-                    tool_names.append(attr_name)
-                    if attr_name not in self._tools:
-                        self._register_tool_from_class(
-                            obj, attr_name, package_name, version
-                        )
-                        self._tool_classes[attr_name] = obj
-
+                tool_names = [m.class_name for m in lib_metas]
                 tools_by_version[version] = tool_names
 
+                # Newer iterations overwrite older entries — at the end
+                # of the loop each class points at the newest version
+                # that exports it.
+                for class_name in tool_names:
+                    class_versions[class_name] = version
+
+            # Snapshot platform metadata using the lib registry's current
+            # bindings (newest version per class, thanks to the load
+            # order above).
+            for class_name, version in class_versions.items():
+                if class_name in self._tools:
+                    continue
+                tool_cls = self._lib_registry.get_class(class_name)
+                if tool_cls is not None:
+                    self._register_tool_from_class(
+                        tool_cls, class_name, package_name, version,
+                    )
+
             if installed_versions:
+                # The lib registry was loaded oldest-first, so the newest
+                # version is the one currently bound in `_classes`. Reflect
+                # that in `active_version` so the GUI knows which version
+                # the workflow will execute against.
+                active_version = installed_versions[-1]
                 self.register_package(
                     package_name,
                     PackageInfo(
                         name=package_name,
                         installed_versions=installed_versions,
                         available_versions=installed_versions,
+                        active_version=active_version,
                         tools=tools_by_version,
                         environment_status="stopped",
                     ),
@@ -106,76 +158,34 @@ class ToolRegistryService:
         version: str,
     ) -> None:
         """Extract metadata from a tool class and register it."""
-        from bioimageflow_core.tool import BaseTool
-
         display_name = getattr(tool_cls, "display_name", None) or class_name
         documentation = getattr(tool_cls, "documentation", "") or getattr(tool_cls, "__doc__", "") or ""
         tags = list(getattr(tool_cls, "tags", []))
         category = getattr(tool_cls, "category", None)
         categories = [category.value] if category is not None else []
 
-        # Determine tool type
+        # Determine tool type, accepts_upstream, and dynamic_outputs from the
+        # library's canonical serializer.
+        meta = serialize_tool_metadata(tool_cls)
+        tool_type = meta["tool_type"]
+        accepts_upstream = meta["accepts_upstream"]
+        dynamic_outputs = meta["dynamic_outputs"]
+
         try:
-            from bioimageflow.dataframe_tool import DataFrameTool
+            inputs_raw = serialize_input_schema(tool_cls)
+            inputs_dict: dict[str, InputFieldSchema] = {
+                name: InputFieldSchema.model_validate(spec)
+                for name, spec in inputs_raw.items()
+            }
+        except SchemaSerializationError as exc:
+            logger.warning("Failed to serialize inputs for %s: %s", class_name, exc)
+            inputs_dict = {}
 
-            tool_type = "DataFrameTool" if issubclass(tool_cls, DataFrameTool) else ""
-        except ImportError:
-            tool_type = ""
-        if not tool_type:
-            from bioimageflow_core.tool import ProcessingTool
-
-            if issubclass(tool_cls, ProcessingTool):
-                tool_type = "ProcessingTool"
-            else:
-                tool_type = "BaseTool"
-
-        # Extract input schema
-        inputs: dict[str, InputFieldSchema] = {}
-        inputs_cls = getattr(tool_cls, "Inputs", None)
-        if inputs_cls is not None:
-            from bioimageflow_core.types import Connectable, extract_gui_meta
-
-            annotations: dict[str, Any] = {}
-            for klass in reversed(inputs_cls.__mro__):
-                annotations.update(getattr(klass, "__annotations__", {}))
-            for field_name, annotation in annotations.items():
-                type_name = _type_display_name(annotation)
-                has_default = hasattr(inputs_cls, field_name)
-                default = getattr(inputs_cls, field_name, None) if has_default else None
-                is_optional = _is_optional_type(annotation)
-
-                gui_meta = extract_gui_meta(annotation)
-                connectable = gui_meta.connectable is not Connectable.NEVER if gui_meta else True
-                min_val = gui_meta.min if gui_meta else None
-                max_val = gui_meta.max if gui_meta else None
-                step_val = gui_meta.step if gui_meta else None
-                group_val = gui_meta.group if gui_meta else None
-                choices_val = _extract_choices(annotation)
-
-                inputs[field_name] = InputFieldSchema(
-                    type=type_name,
-                    connectable=connectable,
-                    default=default,
-                    description="",
-                    optional=is_optional,
-                    min=min_val,
-                    max=max_val,
-                    step=step_val,
-                    group=group_val,
-                    choices=choices_val,
-                )
-
-        # Extract output schema
-        outputs: dict[str, OutputFieldSchema] = {}
-        outputs_cls = getattr(tool_cls, "Outputs", None)
-        if outputs_cls is not None:
-            annotations = getattr(outputs_cls, "__annotations__", {})
-            for field_name, annotation in annotations.items():
-                default_val = getattr(outputs_cls, field_name, None)
-                outputs[field_name] = OutputFieldSchema(
-                    type=_type_display_name(annotation),
-                    default=_output_default_str(default_val),
-                )
+        try:
+            outputs_dict = serialize_output_schema(tool_cls)
+        except SchemaSerializationError as exc:
+            logger.warning("Failed to serialize outputs for %s: %s", class_name, exc)
+            outputs_dict = {}
 
         # Extract environment info
         env_spec = getattr(tool_cls, "environment", None)
@@ -194,11 +204,13 @@ class ToolRegistryService:
                 package=package,
                 package_version=version,
                 tool_type=tool_type,
+                accepts_upstream=accepts_upstream,
+                dynamic_outputs=dynamic_outputs,
                 documentation=documentation.strip(),
                 tags=tags,
                 categories=categories,
-                inputs=inputs,
-                outputs=outputs,
+                inputs=inputs_dict,
+                outputs=outputs_dict,
                 environment=environment,
             ),
         )
@@ -213,7 +225,7 @@ class ToolRegistryService:
     ) -> None:
         self._tools[class_name] = metadata
         if tool_class is not None:
-            self._tool_classes[class_name] = tool_class
+            self._lib_registry._classes[class_name] = tool_class
 
     def get_tool(self, class_name: str) -> ToolMetadata | None:
         return self._tools.get(class_name)
@@ -222,9 +234,10 @@ class ToolRegistryService:
         """Return the tool class if registered, or attempt to resolve it from
         the installed tool store. Returns ``None`` if the package/version is
         not installed."""
-        cls = self._tool_classes.get(class_name)
+        cls = self._lib_registry.get_class(class_name)
         if cls is not None:
             return cls
+        # Fall back to lazy loading via the platform metadata.
         metadata = self._tools.get(class_name)
         if metadata is None:
             return None
@@ -236,7 +249,7 @@ class ToolRegistryService:
             )
             resolved = getattr(module, class_name, None)
             if resolved is not None:
-                self._tool_classes[class_name] = resolved
+                self._lib_registry._classes[class_name] = resolved
             return resolved
         except Exception:
             return None
@@ -255,6 +268,59 @@ class ToolRegistryService:
     def list_packages(self) -> list[PackageInfo]:
         return list(self._packages.values())
 
+    def set_active_version(self, package_name: str, version: str) -> None:
+        """Make ``package_name==version`` the active version for the workflow.
+
+        Re-registers the package via the library registry — that overwrites
+        the class binding in :attr:`_lib_registry._classes`, so subsequent
+        :meth:`get_tool_class` lookups (and therefore execution) resolve
+        to the requested version's class. Platform metadata for tools
+        exported by this package is refreshed from the new class so the
+        GUI sees the correct schema, version string, etc.
+
+        Raises :class:`ValueError` if the package or version is unknown.
+        Soft-fails (logs and returns) if the package directory is missing
+        on disk — covers test fixtures that register a fake PackageInfo
+        without copying real files into the tool store.
+        """
+        pkg = self._packages.get(package_name)
+        if pkg is None:
+            raise ValueError(f"Package '{package_name}' is not registered")
+        if version not in pkg.installed_versions:
+            raise ValueError(
+                f"Version '{version}' is not installed for "
+                f"'{package_name}'"
+            )
+
+        try:
+            lib_metas = self._lib_registry.register_package(package_name, version)
+        except FileNotFoundError:
+            logger.warning(
+                "set_active_version: %s==%s not found on disk; "
+                "skipping lib registry refresh",
+                package_name, version,
+            )
+            # Still record the user's choice on the package info so the GUI
+            # reflects the requested active version even when the lib
+            # registry can't actually load the class (test fixtures).
+            pkg.active_version = version
+            return
+
+        pkg.active_version = version
+
+        # Refresh platform metadata for every class in this version so the
+        # GUI's tool list reflects the new schema/version.
+        for lib_meta in lib_metas:
+            class_name = lib_meta.class_name
+            tool_cls = self._lib_registry.get_class(class_name)
+            if tool_cls is None:
+                continue
+            # Drop the stale entry so _register_tool_from_class refills it.
+            self._tools.pop(class_name, None)
+            self._register_tool_from_class(
+                tool_cls, class_name, package_name, version,
+            )
+
     def forget_package(self, name: str, version: str | None = None) -> None:
         """Drop a package (or a single version) from the in-memory registry.
 
@@ -268,11 +334,10 @@ class ToolRegistryService:
 
         if version is None:
             del self._packages[name]
-            self._tools = {
-                class_name: meta
-                for class_name, meta in self._tools.items()
-                if meta.package != name
-            }
+            for class_name, meta in list(self._tools.items()):
+                if meta.package == name:
+                    del self._tools[class_name]
+                    self._lib_registry.forget(class_name)
             return
 
         if version in pkg.installed_versions:
@@ -280,79 +345,7 @@ class ToolRegistryService:
         pkg.tools.pop(version, None)
         if not pkg.installed_versions:
             del self._packages[name]
-        self._tools = {
-            class_name: meta
-            for class_name, meta in self._tools.items()
-            if not (meta.package == name and meta.package_version == version)
-        }
-
-
-def _output_default_str(default_val: Any) -> str | None:
-    """Serialize a tool Output field default to the path-template string sent
-    to the GUI. Tool authors typically declare defaults as ``Path("...")``
-    (e.g. ``Path("{input_image.stem}_mask{ext}")``) — fall back to ``str()``
-    for any object that's not ``None``.
-    """
-    if default_val is None:
-        return None
-    if isinstance(default_val, str):
-        return default_val
-    return str(default_val)
-
-
-def _is_optional_type(annotation: Any) -> bool:
-    """Return True if the annotation is Optional[X] (i.e. X | None)."""
-    from typing import get_origin, get_args, Annotated, Union
-    import types
-
-    # Unwrap Annotated first
-    if get_origin(annotation) is Annotated:
-        annotation = get_args(annotation)[0]
-
-    origin = get_origin(annotation)
-    # Python 3.10+ unions use types.UnionType
-    if origin is Union or isinstance(annotation, types.UnionType):
-        args = get_args(annotation)
-        return type(None) in args
-
-    return False
-
-
-def _extract_choices(annotation: Any) -> list[str] | None:
-    """Extract choices from Literal or Enum type annotations."""
-    import enum
-    import types
-    from typing import Annotated, Literal, Union, get_args, get_origin
-
-    # Unwrap Annotated
-    if get_origin(annotation) is Annotated:
-        annotation = get_args(annotation)[0]
-
-    # Unwrap Optional (Union[X, None])
-    origin = get_origin(annotation)
-    if origin is Union or isinstance(annotation, types.UnionType):
-        args = [a for a in get_args(annotation) if a is not type(None)]
-        if len(args) == 1:
-            annotation = args[0]
-
-    # Handle Literal["a", "b", "c"]
-    if get_origin(annotation) is Literal:
-        return [str(v) for v in get_args(annotation)]
-
-    # Handle Enum subclasses
-    if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
-        return [str(member.value) for member in annotation]
-
-    return None
-
-
-def _type_display_name(annotation: Any) -> str:
-    """Convert a type annotation to a human-readable string."""
-    from typing import get_origin, get_args, Annotated
-
-    if get_origin(annotation) is Annotated:
-        annotation = get_args(annotation)[0]
-
-    if isinstance(annotation, type):
-        return annotation.__name__
-    return str(annotation)
+        for class_name, meta in list(self._tools.items()):
+            if meta.package == name and meta.package_version == version:
+                del self._tools[class_name]
+                self._lib_registry.forget(class_name)

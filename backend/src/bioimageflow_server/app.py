@@ -6,6 +6,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 
 from bioimageflow.paths import get_home
 from fastapi import FastAPI, Request
@@ -17,7 +18,7 @@ from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 
 from bioimageflow_server.models.errors import ErrorResponse
-from bioimageflow_server.models.settings import _DEFAULT_MAX_UPLOAD_SIZE
+from bioimageflow_server.models.settings import Settings, _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.dev import (
     get_tool_registry as dev_get_tool_registry,
@@ -32,9 +33,17 @@ from bioimageflow_server.routers.filesystem import router as filesystem_router
 from bioimageflow_server.routers.graph import (
     get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
+    get_session_manager as graph_get_session_manager,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
     router as graph_router,
+)
+from bioimageflow_server.routers.execution import (
+    get_execution_manager as execution_get_manager,
+    get_session_manager as execution_get_session_manager,
+    get_storage_path as execution_get_storage_path,
+    get_tool_registry as execution_get_tool_registry,
+    router as execution_router,
 )
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.tools import (
@@ -45,7 +54,12 @@ from bioimageflow_server.routers.tools import (
     get_workflow_root,
     router as tools_router,
 )
+from bioimageflow_server.services.execution import (
+    ExecutionManager,
+    NullEventBus,
+)
 from bioimageflow_server.services.known_packages import KnownPackagesService
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
     PackageNetworkError,
@@ -78,6 +92,31 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     registry = config.tool_registry or ToolRegistryService()
     if config.tool_registry is None:
         registry.scan_tool_store()
+
+    session_manager = SessionManager()
+
+    # Resolve Settings once: caller-supplied wins, otherwise build a minimal
+    # default. Used for both the ExecutionManager and the dev_mode dependency.
+    _deployment_mode = (
+        config.deployment_mode
+        if config.deployment_mode in ("desktop", "webapp")
+        else "desktop"
+    )
+    resolved_settings: Settings = config.settings or Settings(
+        deployment_mode=_deployment_mode,
+        output_data_folder=str(get_home()),
+    )
+
+    if config.execution_manager is not None:
+        execution_manager: Any = config.execution_manager
+    else:
+        execution_manager = ExecutionManager(
+            event_bus=NullEventBus(),
+            tool_registry=registry,
+            settings=resolved_settings,
+            storage_path=config.storage_path,
+            session_manager=session_manager,
+        )
 
     known = config.known_packages or KnownPackagesService.default()
     pypi = config.pypi_versions or PyPIVersionService()
@@ -147,12 +186,21 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
         # Routers may pass `detail` as a dict {"error": "<code>", "detail": "..."}
         # to override the default code mapping (e.g., "path_traversal" on 400).
-        if isinstance(exc.detail, dict) and "error" in exc.detail:
-            body = ErrorResponse(
-                error=exc.detail["error"],
-                detail=str(exc.detail.get("detail", "")),
-                field=exc.detail.get("field"),
-            )
+        detail_obj: object = exc.detail
+        if isinstance(detail_obj, dict):
+            detail_dict = cast(dict[str, Any], detail_obj)
+            if "error" in detail_dict:
+                body = ErrorResponse(
+                    error=detail_dict["error"],
+                    detail=str(detail_dict.get("detail", "")),
+                    field=detail_dict.get("field"),
+                )
+            else:
+                error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
+                body = ErrorResponse(
+                    error=error_code,
+                    detail=str(exc.detail),
+                )
         else:
             error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
             body = ErrorResponse(
@@ -189,19 +237,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(filesystem_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
+    app.include_router(execution_router, prefix="/api/v1")
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
+    app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: config.storage_path
-    app.dependency_overrides[graph_get_execution_manager] = (
-        lambda: config.execution_manager
-    )
-    _dev_mode = (
-        config.settings.dev_mode if config.settings is not None else True
-    )
-    app.dependency_overrides[graph_get_dev_mode] = lambda: _dev_mode
+    app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[execution_get_manager] = lambda: execution_manager
+    app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
+    app.dependency_overrides[execution_get_tool_registry] = lambda: registry
+    app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
+    app.dependency_overrides[graph_get_dev_mode] = lambda: resolved_settings.dev_mode
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

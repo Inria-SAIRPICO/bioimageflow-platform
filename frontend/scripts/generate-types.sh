@@ -7,6 +7,8 @@ OUTPUT="$FRONTEND_DIR/src/api/types.ts"
 SCHEMA_URL="${OPENAPI_URL:-http://localhost:8000/openapi.json}"
 
 echo "Fetching OpenAPI schema from $SCHEMA_URL ..."
-curl -sf "$SCHEMA_URL" | npx openapi-typescript --stdin -o "$OUTPUT"
+curl -sf "$SCHEMA_URL" | npx openapi-typescript --stdin \
+  --root-types --root-types-no-schema-prefix \
+  -o "$OUTPUT"
 
 echo "Types generated at $OUTPUT"

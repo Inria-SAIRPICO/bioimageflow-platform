@@ -32,12 +32,14 @@ _SEED_TOOLS: list[ToolMetadata] = [
         inputs={
             "input_image": InputFieldSchema(
                 type="ImagePath",
-                connectable=True,
+                required=True,
+                connectable="by_default",
                 description="Input intensity image",
             ),
             "diameter": InputFieldSchema(
                 type="float",
-                connectable=False,
+                required=False,
+                connectable="not_by_default",
                 default=30.0,
                 min=1.0,
                 max=500.0,
@@ -63,12 +65,14 @@ _SEED_TOOLS: list[ToolMetadata] = [
         inputs={
             "input_image": InputFieldSchema(
                 type="ImagePath",
-                connectable=True,
+                required=True,
+                connectable="by_default",
                 description="Image to blur",
             ),
             "sigma": InputFieldSchema(
                 type="float",
-                connectable=False,
+                required=False,
+                connectable="not_by_default",
                 default=1.0,
                 min=0.1,
                 max=50.0,
@@ -92,12 +96,14 @@ _SEED_TOOLS: list[ToolMetadata] = [
         inputs={
             "input_image": InputFieldSchema(
                 type="ImagePath",
-                connectable=True,
+                required=True,
+                connectable="by_default",
                 description="Image to threshold",
             ),
             "threshold": InputFieldSchema(
                 type="float",
-                connectable=False,
+                required=False,
+                connectable="not_by_default",
                 default=128.0,
                 min=0.0,
                 max=255.0,

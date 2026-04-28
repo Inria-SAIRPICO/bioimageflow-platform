@@ -49,14 +49,18 @@ class TestSettings:
 
     def test_invalid_deployment_mode(self):
         with pytest.raises(ValidationError):
-            Settings(deployment_mode="cloud", output_data_folder="/out")
+            Settings.model_validate(
+                {"deployment_mode": "cloud", "output_data_folder": "/out"}
+            )
 
     def test_invalid_execution_engine(self):
         with pytest.raises(ValidationError):
-            Settings(
-                deployment_mode="desktop",
-                output_data_folder="/out",
-                execution_engine="spark",
+            Settings.model_validate(
+                {
+                    "deployment_mode": "desktop",
+                    "output_data_folder": "/out",
+                    "execution_engine": "spark",
+                }
             )
 
     def test_with_omero_instances(self):

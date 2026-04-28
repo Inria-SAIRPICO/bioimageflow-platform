@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { ToolMetadata } from '@/api/types'
+import { computed, inject } from 'vue'
+import type { ToolMetadata, NodeOutputSchemaResponse } from '@/api/types'
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 
@@ -28,9 +28,18 @@ const emit = defineEmits<{
   'toggle-collapse': [id: string]
 }>()
 
+/**
+ * Injected by CanvasView — the reactive resolved-outputs map keyed by node id.
+ * Falls back to an empty object if not provided (e.g. in unit tests).
+ */
+const resolvedOutputsByNodeId = inject<Record<string, NodeOutputSchemaResponse>>(
+  'bioimageflow:resolvedOutputs',
+  {},
+)
+
 const connectableInputs = computed(() => {
   return Object.entries(props.data.tool.inputs).filter(
-    ([name, field]) => field.connectable && (props.data.pinnedInputs[name] !== false),
+    ([name, field]) => field.connectable !== 'never' && (props.data.pinnedInputs[name] !== false),
   )
 })
 
@@ -38,21 +47,70 @@ const isDataFrameTool = computed(() => {
   return props.data.tool.tool_type === 'DataFrameTool'
 })
 
+const showsPositionalPins = computed(() => {
+  return isDataFrameTool.value && props.data.tool.accepts_upstream === true
+})
+
+/**
+ * Whether to show header pins (DataFrame-level).
+ * DataFrameTools get header pins; ProcessingTools do not.
+ */
+const showsHeaderPins = computed(() => isDataFrameTool.value)
+
 const positionalInputCount = computed(() => {
-  // For DataFrameTools: number of connected positional inputs + 1 spare
-  if (!isDataFrameTool.value) return 0
+  // For DataFrameTools that accept upstream: number of connected positional inputs + 1 spare
+  if (!showsPositionalPins.value) return 0
   const connected = Object.keys(props.data.connectedInputs).filter((k) =>
     k.startsWith('__positional_'),
   ).length
   return connected + 1
 })
 
-const outputs = computed(() => {
-  const toolOutputs = props.data.tool.outputs
-  if (isDataFrameTool.value && Object.keys(toolOutputs).length === 0) {
-    return [['result', { type: 'DataFrame' }]]
+/**
+ * Output pin entries. For tools with `dynamic_outputs === true`, the
+ * resolved schema from the store replaces the static tool.outputs.
+ *
+ * Shape: `[name, { type }, placeholder?]`
+ */
+const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
+  const tool = props.data.tool
+
+  if (tool.dynamic_outputs !== true) {
+    // Static outputs — render tool.outputs directly (no fallback).
+    const toolOutputs = tool.outputs as Record<string, { type: string }>
+    return Object.entries(toolOutputs).map(([name, field]) => [name, field, false])
   }
-  return Object.entries(toolOutputs)
+
+  // Dynamic outputs — check the resolved-outputs store.
+  const entry = resolvedOutputsByNodeId[props.id]
+
+  if (!entry || entry.resolved !== true) {
+    // Unresolved or not yet fetched — render a single placeholder pin.
+    return [['...', { type: 'DataFrame' }, true]]
+  }
+
+  const columns = entry.columns as Record<string, { type?: string }>
+
+  // Passthrough marker: `{_passthrough: true, ...extra}`
+  const isPassthrough = '_passthrough' in columns && (columns as any)._passthrough === true
+
+  if (isPassthrough) {
+    const concreteEntries: Array<[string, { type: string }, boolean]> = []
+    for (const [key, spec] of Object.entries(columns)) {
+      if (key === '_passthrough') continue
+      concreteEntries.push([key, { type: (spec as any)?.type ?? 'any' }, false])
+    }
+    // Add a single placeholder for inherited columns.
+    concreteEntries.push(['(+ inherited columns)', { type: 'DataFrame' }, true])
+    return concreteEntries
+  }
+
+  // Normal resolved: one pin per column.
+  return Object.entries(columns).map(([name, spec]) => [
+    name,
+    { type: (spec as any)?.type ?? 'any' },
+    false,
+  ])
 })
 
 const statusClass = computed(() => {
@@ -90,24 +148,9 @@ function onContextMenu(event: MouseEvent) {
     @contextmenu="onContextMenu"
   >
     <div class="node-header" @dblclick="toggleCollapse">
-      <span class="node-name">{{ data.name }}</span>
-      <span class="category-badge" v-if="data.tool?.categories?.length">{{ data.tool.categories[0] }}</span>
-      <span v-if="hasGpu" class="gpu-badge">GPU</span>
-    </div>
-
-    <div v-show="!data.collapsed" class="node-body">
-      <div class="inputs">
+      <div class="header-inputs">
         <InputPin
-          v-for="[name, field] in connectableInputs"
-          :key="name"
-          :node-id="id"
-          :field-name="name"
-          :field-type="field.type"
-          :connected="name in data.connectedInputs"
-          :source-label="data.connectedInputs[name]"
-        />
-        <InputPin
-          v-if="isDataFrameTool"
+          v-if="showsPositionalPins"
           v-for="i in positionalInputCount"
           :key="`__positional_${i - 1}`"
           :node-id="id"
@@ -116,17 +159,51 @@ function onContextMenu(event: MouseEvent) {
           :connected="`__positional_${i - 1}` in data.connectedInputs"
           :positional="true"
           :positional-index="i - 1"
+          variant="header"
+        />
+      </div>
+      <span class="node-name">{{ data.name }}</span>
+      <span class="category-badge" v-if="data.tool?.categories?.length">{{ data.tool.categories[0] }}</span>
+      <div class="header-outputs">
+        <OutputPin
+          v-if="showsHeaderPins"
+          field-name="__dataframe_out"
+          field-type="DataFrame"
+          variant="header"
+        />
+      </div>
+    </div>
+
+    <div v-show="!data.collapsed" class="node-body">
+      <div class="body-inputs">
+        <InputPin
+          v-for="[name, field] in connectableInputs"
+          :key="name"
+          :node-id="id"
+          :field-name="name"
+          :field-type="field.type"
+          :connected="name in data.connectedInputs"
+          :source-label="data.connectedInputs[name]"
+          variant="body"
         />
       </div>
 
-      <div class="outputs">
+      <div class="body-outputs">
         <OutputPin
-          v-for="[name, field] in outputs"
+          v-for="[name, field, isPlaceholder] in outputs"
           :key="name"
           :field-name="name"
           :field-type="field.type"
+          :placeholder="isPlaceholder"
+          variant="body"
         />
       </div>
+    </div>
+
+    <div class="node-footer">
+      <span class="status-indicator" :class="statusClass"></span>
+      <span v-if="hasGpu" class="gpu-badge">GPU</span>
+      <span v-if="data.provisional" class="provisional-indicator">provisional</span>
     </div>
   </div>
 </template>
@@ -153,6 +230,15 @@ function onContextMenu(event: MouseEvent) {
   background: var(--p-surface-50);
   border-radius: 6px 6px 0 0;
   margin: 0.5px;
+  gap: 4px;
+}
+
+.header-inputs,
+.header-outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .node-name {
@@ -182,15 +268,42 @@ function onContextMenu(event: MouseEvent) {
   padding: 6px 6px;
 }
 
-.inputs,
-.outputs {
+.body-inputs,
+.body-outputs {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.outputs {
+.body-outputs {
   margin-top: 4px;
+}
+
+.node-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-top: 1px solid var(--p-surface-200);
+  font-size: 10px;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-indicator.status-unexecuted { background: var(--p-blue-500); }
+.status-indicator.status-executed { background: var(--p-green-500); }
+.status-indicator.status-out-of-date { background: var(--p-orange-500); }
+.status-indicator.status-running { background: var(--p-blue-500); animation: pulse 1.5s ease-in-out infinite; }
+.status-indicator.status-failed { background: var(--p-red-500); }
+
+.provisional-indicator {
+  color: var(--p-text-muted-color, #999);
+  font-style: italic;
 }
 
 /* Status */

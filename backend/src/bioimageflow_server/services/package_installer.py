@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import anyio
+import anyio.to_thread as anyio_to_thread
 from send2trash import send2trash
 
 from bioimageflow.tool_loader import ensure_installed
@@ -105,7 +106,7 @@ class PypiPackageInstaller(PackageInstallerService):
             version = await self._pypi.get_latest_stable(package_name)
 
         try:
-            await anyio.to_thread.run_sync(
+            await anyio_to_thread.run_sync(
                 ensure_installed,
                 package_name,
                 version,

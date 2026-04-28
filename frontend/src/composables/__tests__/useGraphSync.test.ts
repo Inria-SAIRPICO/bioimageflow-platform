@@ -9,7 +9,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { api } from '@/api/client'
-import { useGraphSync, serializeGraph } from '../useGraphSync'
+import { useGraphSync, serializeGraph, _resetGraphSyncForTest } from '../useGraphSync'
 
 const mockedPut = vi.mocked(api.put)
 const mockedPatch = vi.mocked(api.patch)
@@ -63,6 +63,7 @@ describe('useGraphSync', () => {
     vi.useFakeTimers()
     mockedPut.mockReset()
     mockedPatch.mockReset()
+    _resetGraphSyncForTest()
   })
 
   afterEach(() => {

@@ -9,7 +9,27 @@ import Select from 'primevue/select'
 import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
 import { usePathPicker } from '@/composables/usePathPicker'
-import type { InputFieldSchema, OutputFieldSchema } from '@/api/types'
+import { useGraphSync } from '@/composables/useGraphSync'
+import { useValidationErrors } from '@/composables/useValidationErrors'
+import type { InputFieldSchema } from '@/api/types'
+
+// `OutputFieldSchema` is not exposed in the generated OpenAPI types because
+// `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
+// `{"_passthrough": true}` Passthrough marker for DataFrame tools). Mirror
+// the library's wire shape here.
+interface OutputFieldSchema {
+  type: string
+  default: unknown
+  image_spec: Record<string, string[]> | null
+}
+
+// Connectable is a three-state string: `"never" | "not_by_default" | "by_default"`.
+// For this PR we treat every non-`"never"` value as "pin visible"; the richer
+// three-state UX (`not_by_default` → hidden pin with a reveal toggle) is a
+// separate plan.
+function canConnect(field: InputFieldSchema): boolean {
+  return field.connectable !== 'never'
+}
 
 const { pickFile: pickFileNative, pickFolder: pickFolderNative, isDesktop } = usePathPicker()
 
@@ -23,6 +43,14 @@ function fileTypesForField(type: string): string[] {
 }
 
 const uiStore = useUIStore()
+const { validationResult } = useGraphSync()
+const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
+
+const selectedNodeErrors = computed(() => {
+  const nodeId = uiStore.selectedNodeIds[0]
+  if (!nodeId) return []
+  return nodeErrors.value[nodeId] ?? []
+})
 
 const selectedNode = computed(() => {
   if (!uiStore.isSingleSelection) return null
@@ -103,9 +131,10 @@ function toggleNull(key: string) {
 function isFieldNulled(key: string): boolean {
   if (!nodeData.value) return false
   const field = nodeData.value.tool?.inputs[key] as InputFieldSchema | undefined
-  // Non-optional fields are never in a "null" state — an undefined value just
-  // means "not yet set" and the widget should render so the user can set it.
-  if (!field?.optional) return false
+  // Non-nullable fields can never be in a "null" state. For required-but-
+  // nullable fields, an undefined value is treated as null until the user
+  // toggles to a real value (the toggle is the only affordance to set one).
+  if (!field || !field.nullable) return false
   if (nulledFields.value[key]) return true
   return nodeData.value.parameters[key] === null || nodeData.value.parameters[key] === undefined
 }
@@ -138,6 +167,13 @@ function updateOutputTemplate(key: string, value: string) {
 
 function isPathType(type: string): boolean {
   return ['Path', 'ImagePath', 'MaskPath'].includes(type)
+}
+
+function isOutputTemplateApplicable(field: OutputFieldSchema): boolean {
+  // Path-template editing only applies to ProcessingTool outputs. DataFrameTool
+  // Outputs are column declarations, not files written to disk.
+  if (nodeData.value?.tool?.tool_type === 'DataFrameTool') return false
+  return isPathType(field.type)
 }
 
 function isImageSharedType(type: string): boolean {
@@ -181,6 +217,24 @@ async function pickFolder(key: string) {
     </div>
 
     <div v-else-if="nodeData" class="node-details">
+      <!-- Validation errors -->
+      <div
+        v-if="selectedNodeErrors.length > 0"
+        class="node-validation-errors"
+        data-testid="node-validation-errors"
+      >
+        <div class="node-validation-errors__title">
+          <i class="pi pi-exclamation-triangle" />
+          Validation errors
+        </div>
+        <ul>
+          <li v-for="(err, i) in selectedNodeErrors" :key="i">
+            <strong v-if="err.field">{{ err.field }}:</strong>
+            {{ err.detail }}
+          </li>
+        </ul>
+      </div>
+
       <!-- Header -->
       <div class="node-panel-header">
         <div class="node-name-row">
@@ -214,7 +268,8 @@ async function pickFolder(key: string) {
             {{ nodeData.status }}
           </span>
         </div>
-        <!-- Fix 13: Package + version display -->
+        <!-- Fix 13: Package + version display. The active version is
+             workflow-scoped and is changed via the Manage Tools dialog. -->
         <div v-if="nodeData.tool" class="package-info">
           {{ nodeData.tool.package }} v{{ nodeData.tool.package_version }}
         </div>
@@ -231,7 +286,7 @@ async function pickFolder(key: string) {
           <div class="param-header">
             <!-- Pin visibility toggle (icon-only, before the label) -->
             <Button
-              v-if="(field as InputFieldSchema).connectable"
+              v-if="canConnect(field as InputFieldSchema)"
               :icon="isPinned(key) ? 'pi pi-times' : 'pi pi-arrow-right-arrow-left'"
               class="p-button-text p-button-sm param-action-btn pin-toggle-btn"
               :title="isPinned(key) ? 'Remove input pin' : 'Add input pin'"
@@ -259,6 +314,20 @@ async function pickFolder(key: string) {
                 data-testid="reset-default"
               />
             </span>
+            <!-- None toggle for nullable fields. Two-state icon button —
+                 the icon shows the action that will happen on click: pencil
+                 when the field is null (click to edit), Ø (pi-ban) when the
+                 field is editable (click to set to null). -->
+            <span v-if="(field as InputFieldSchema).nullable" class="param-toggles">
+              <Button
+                :icon="isFieldNulled(key) ? 'pi pi-pencil' : 'pi pi-ban'"
+                class="p-button-text p-button-sm param-action-btn none-toggle-btn"
+                :title="isFieldNulled(key) ? 'Set value (currently null)' : 'Set to null'"
+                :aria-pressed="isFieldNulled(key)"
+                @click="toggleNull(key)"
+                data-testid="none-toggle"
+              />
+            </span>
           </div>
 
           <!-- Fix 18: Collapsible help text -->
@@ -269,19 +338,6 @@ async function pickFolder(key: string) {
           >
             {{ (field as InputFieldSchema).description }}
           </small>
-
-          <!-- None toggle for Optional fields (Pin toggle is now an icon
-               button in the param header — see above) -->
-          <div v-if="(field as InputFieldSchema).optional" class="param-toggles">
-            <label class="toggle-label" data-testid="none-toggle">
-              <Checkbox
-                :model-value="isFieldNulled(key)"
-                binary
-                @update:model-value="toggleNull(key)"
-              />
-              <span>None</span>
-            </label>
-          </div>
 
           <!-- Input widget (hidden when field is nulled) -->
           <template v-if="!isFieldNulled(key)">
@@ -376,7 +432,7 @@ async function pickFolder(key: string) {
             </div>
             <!-- Text / non-connectable string input -->
             <InputText
-              v-else-if="!(field as InputFieldSchema).connectable || (field as InputFieldSchema).type === 'str'"
+              v-else-if="!canConnect(field as InputFieldSchema) || (field as InputFieldSchema).type === 'str'"
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               @update:model-value="updateParameter(key, $event)"
             />
@@ -399,9 +455,10 @@ async function pickFolder(key: string) {
             <span class="output-name">{{ key }}</span>
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
           </div>
-          <!-- Fix 19: Editable template for path-typed outputs -->
+          <!-- Editable path template — ProcessingTool outputs only.
+               DataFrameTool Outputs are column declarations, not file paths. -->
           <InputText
-            v-if="isPathType((field as OutputFieldSchema).type)"
+            v-if="isOutputTemplateApplicable(field as OutputFieldSchema)"
             :model-value="nodeData.output_templates?.[key] ?? ''"
             @update:model-value="updateOutputTemplate(key, $event as string)"
             placeholder="Output path template..."
@@ -445,6 +502,30 @@ async function pickFolder(key: string) {
   color: var(--p-text-muted-color);
   text-align: center;
   padding: 40px 20px;
+}
+
+.node-validation-errors {
+  background: color-mix(in srgb, var(--p-red-500, #dc2626) 10%, transparent);
+  border: 1px solid var(--p-red-500, #dc2626);
+  color: var(--p-red-700, #b91c1c);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.node-validation-errors__title {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 4px;
+}
+.node-validation-errors ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+.node-validation-errors li {
+  margin: 2px 0;
 }
 
 .node-panel-header {
@@ -628,20 +709,17 @@ h4 {
   padding: 2px 0 4px;
 }
 
-/* Fix 16 + 17: Toggle row */
+/* Fix 16: None toggle button (now an icon-only button living in the
+   .param-header alongside .param-actions). */
 .param-toggles {
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 0;
+  margin-left: 2px;
 }
 
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--p-text-muted-color);
-  cursor: pointer;
+.none-toggle-btn[aria-pressed='true'] {
+  color: var(--p-orange-500);
 }
 
 .null-indicator {

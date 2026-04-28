@@ -1078,7 +1078,7 @@ Accessed via the menu bar or a dedicated toolbar area.
 
 **Buttons:**
 - **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" **Disabled** when a validation request is pending or the debounce timer is active. If clicked during the debounce window, the frontend flushes the debounce (sends `PUT /graph` immediately), waits for the validation response, and only then proceeds with execution. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
-- **Execute Selected:** Execute only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
+- **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
 **During execution — Non-Modal Execution Banner:**
@@ -1448,7 +1448,7 @@ All shortcuts are customizable via Settings (Section 3.13.6).
 | 22 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
 | 23 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
 | 24 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
-| 25 | `POST` | `/api/v1/execution/run` | "Run" / "Execute Selected" buttons |
+| 25 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
 | 26 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
 | 27 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
 | 28 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |

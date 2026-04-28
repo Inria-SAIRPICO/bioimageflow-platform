@@ -199,6 +199,7 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
         confirm_close=True,
         js_api=api,
     )
+    assert window is not None, "webview.create_window returned None"
     api.set_window(window)
 
     window.events.closing += _on_closing

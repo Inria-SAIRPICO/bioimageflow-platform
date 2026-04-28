@@ -23,22 +23,31 @@ if TYPE_CHECKING:
 
 class InputFieldSchema(BaseModel):
     type: str
-    connectable: bool = True
+    required: bool
+    nullable: bool = False
+    connectable: Literal["never", "not_by_default", "by_default"]
     default: Any = None
-    description: str = ""
-    optional: bool = False
+    display_name: str | None = None
+    description: str | None = None
+    group: str | None = None
     min: float | None = None
     max: float | None = None
     step: float | None = None
-    group: str | None = None
     choices: list[str] | None = None
+    image_spec: dict[str, list[str]] | None = None
 
 
 class OutputFieldSchema(BaseModel):
     type: str
-    default: str | None = None
+    default: Any = None
+    image_spec: dict[str, list[str]] | None = None
 
 
+# Passthrough marker for DataFrameTool outputs that inherit upstream columns.
+# When present, `ToolMetadata.outputs` is ``{"_passthrough": True}`` instead of
+# a per-field dict. Modelled as ``dict[str, Any]`` to keep OpenAPI generation
+# straightforward.
+#
 # --- Tool metadata ---
 
 
@@ -47,12 +56,14 @@ class ToolMetadata(BaseModel):
     display_name: str
     package: str
     package_version: str
-    tool_type: str
+    tool_type: Literal["ProcessingTool", "DataFrameTool"]
+    accepts_upstream: bool = True
+    dynamic_outputs: bool = False
     documentation: str = ""
     tags: list[str] = []
     categories: list[str] = []
     inputs: dict[str, InputFieldSchema] = {}
-    outputs: dict[str, OutputFieldSchema] = {}
+    outputs: dict[str, Any] = {}
     environment: dict[str, Any] | None = None
 
 
@@ -63,6 +74,12 @@ class PackageInfo(BaseModel):
     name: str
     installed_versions: list[str] = []
     available_versions: list[str] = []
+    # The version currently active for the workflow. There is one active
+    # version per package — switching it via POST /tools/packages/{name}/use
+    # rebinds the library registry's class index so every node from this
+    # package resolves to the chosen version's class. ``None`` while no
+    # version is installed.
+    active_version: str | None = None
     tools: dict[str, list[str]] = {}
     environment_status: str = "stopped"
 

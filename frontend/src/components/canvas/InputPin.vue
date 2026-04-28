@@ -3,7 +3,7 @@ import { computed, inject } from 'vue'
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { getTypeColor } from '@/utils/typeColors'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   nodeId: string
   fieldName: string
   fieldType: string
@@ -11,7 +11,10 @@ const props = defineProps<{
   sourceLabel?: string
   positional?: boolean
   positionalIndex?: number
-}>()
+  variant?: 'header' | 'body'
+}>(), {
+  variant: 'body',
+})
 
 const { getEdges } = useVueFlow()
 const disconnectEdge = inject<((edgeId: string) => void) | undefined>(
@@ -75,14 +78,14 @@ function onPointerDown(event: PointerEvent) {
 </script>
 
 <template>
-  <div class="input-pin" :title="fieldType" @pointerdown.capture="onPointerDown">
+  <div class="input-pin" :class="{ 'input-pin--any': fieldType === 'any', 'input-pin--header': variant === 'header' }" :title="fieldType === 'any' ? '? (runtime-typed)' : fieldType" @pointerdown.capture="onPointerDown">
     <Handle
       type="target"
       :position="Position.Left"
       :id="fieldName"
       class="pin-handle"
-      :class="{ connected }"
-      :style="{ backgroundColor: connected ? color : 'transparent', borderColor: color }"
+      :class="{ connected, 'pin-handle--header': variant === 'header' }"
+      :style="variant === 'header' ? { backgroundColor: connected ? '#7A7A80' : 'transparent', borderColor: '#7A7A80' } : { backgroundColor: connected ? color : 'transparent', borderColor: color }"
     />
     <span class="pin-label">{{ label }}</span>
   </div>
@@ -105,6 +108,15 @@ function onPointerDown(event: PointerEvent) {
   background: transparent !important;
   position: relative !important;
   transform: none !important;
+}
+
+.pin-handle--header {
+  border-radius: 2px !important;
+}
+
+.input-pin--header .pin-label {
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .pin-label {
