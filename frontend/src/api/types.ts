@@ -267,6 +267,31 @@ export interface paths {
         patch: operations["patch_node_parameters_api_v1_graph_nodes__node_id__parameters_patch"];
         trace?: never;
     };
+    "/api/v1/graph/nodes/{node_id}/output_schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Node Output Schema
+         * @description Return the resolved output column schema for a single node.
+         *
+         *     The full ``GraphState`` is required because schema resolution may
+         *     depend on upstream wiring (e.g. merge tools). Build failures return
+         *     ``{resolved: false, columns: {}}`` — input edits frequently produce
+         *     transiently invalid graph states.
+         */
+        post: operations["resolve_node_output_schema_api_v1_graph_nodes__node_id__output_schema_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets": {
         parameters: {
             query?: never;
@@ -493,6 +518,11 @@ export interface components {
             /** Required */
             required: boolean;
             /**
+             * Nullable
+             * @default false
+             */
+            nullable: boolean;
+            /**
              * Connectable
              * @enum {string}
              */
@@ -517,6 +547,18 @@ export interface components {
             image_spec?: {
                 [key: string]: string[];
             } | null;
+        };
+        /**
+         * NodeOutputSchemaResponse
+         * @description Response for ``POST /graph/nodes/{node_id}/output_schema``.
+         */
+        NodeOutputSchemaResponse: {
+            /** Resolved */
+            resolved: boolean;
+            /** Columns */
+            columns: {
+                [key: string]: unknown;
+            };
         };
         /**
          * NodeState
@@ -820,6 +862,7 @@ export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
+export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
 export type PackageInfo = components['schemas']['PackageInfo'];
@@ -834,17 +877,6 @@ export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
-/**
- * NodeOutputSchemaResponse
- * @description Response for ``POST /graph/nodes/{node_id}/output_schema``.
- */
-export interface NodeOutputSchemaResponse {
-  /** Resolved */
-  resolved: boolean;
-  /** Columns */
-  columns: { [key: string]: unknown };
-}
-
 export type $defs = Record<string, never>;
 export interface operations {
     health_api_v1_health_get: {
@@ -1362,6 +1394,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_node_output_schema_api_v1_graph_nodes__node_id__output_schema_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphState"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeOutputSchemaResponse"];
                 };
             };
             /** @description Validation Error */

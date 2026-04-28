@@ -19,8 +19,8 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImagePath', required: true, connectable: 'by_default' },
-      sigma: { type: 'float', required: false, connectable: 'never', default: 1.0 },
+      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+      sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -35,8 +35,8 @@ function makeThresholdTool(): ToolMetadata {
     name: 'threshold',
     display_name: 'Threshold',
     inputs: {
-      mask: { type: 'MaskPath', required: true, connectable: 'by_default' },
-      level: { type: 'float', required: false, connectable: 'never', default: 0.5 },
+      mask: { type: 'MaskPath', required: true, nullable: false, connectable: 'by_default' },
+      level: { type: 'float', required: false, nullable: false, connectable: 'never', default: 0.5 },
     },
     outputs: {
       result: { type: 'MaskPath' },
@@ -336,8 +336,8 @@ describe('CanvasView', () => {
           display_name: 'Files',
           tool_type: 'DataFrameTool',
           inputs: {
-            path: { type: 'Path', required: true, connectable: 'never' },
-            pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+            path: { type: 'Path', required: true, nullable: false, connectable: 'never' },
+            pattern: { type: 'str', required: false, nullable: false, connectable: 'never', default: '*' },
           },
           outputs: {
             path: { type: 'Path' },
@@ -352,9 +352,9 @@ describe('CanvasView', () => {
           name: 'path_sink',
           display_name: 'Path Sink',
           inputs: {
-            any_path: { type: 'Path', required: true, connectable: 'by_default' },
-            image: { type: 'ImagePath', required: true, connectable: 'by_default' },
-            mask: { type: 'MaskPath', required: true, connectable: 'by_default' },
+            any_path: { type: 'Path', required: true, nullable: false, connectable: 'by_default' },
+            image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+            mask: { type: 'MaskPath', required: true, nullable: false, connectable: 'by_default' },
           },
           outputs: {},
         })
@@ -366,7 +366,7 @@ describe('CanvasView', () => {
           name: 'multi_path_source',
           display_name: 'Multi Path Source',
           inputs: {
-            seed: { type: 'ImagePath', required: true, connectable: 'by_default' },
+            seed: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
           },
           outputs: {
             any_path: { type: 'Path' },
@@ -582,8 +582,8 @@ describe('CanvasView', () => {
         display_name: 'Files',
         tool_type: 'DataFrameTool',
         inputs: {
-          path: { type: 'Path', required: true, connectable: 'never' },
-          pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+          path: { type: 'Path', required: true, nullable: false, connectable: 'never' },
+          pattern: { type: 'str', required: false, nullable: false, connectable: 'never', default: '*' },
         },
         outputs: {
           path: { type: 'Path' },
@@ -1394,7 +1394,7 @@ describe('CanvasView', () => {
         accepts_upstream: false,
         dynamic_outputs: true,
         inputs: {
-          column_name: { type: 'str', required: true, connectable: 'never' },
+          column_name: { type: 'str', required: true, nullable: false, connectable: 'never' },
         },
         outputs: {},
       })

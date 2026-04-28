@@ -119,6 +119,42 @@ async def test_get_tools_empty(empty_client: httpx.AsyncClient):
     assert resp.json() == []
 
 
+async def test_get_tools_surfaces_nullable_per_field():
+    """`nullable` is propagated through the API for each input field."""
+    reg = ToolRegistryService()
+    reg.register_tool(
+        "Mixed",
+        ToolMetadata(
+            name="Mixed",
+            display_name="Mixed",
+            package="pkg",
+            package_version="1.0",
+            tool_type="ProcessingTool",
+            inputs={
+                "size": InputFieldSchema(
+                    type="int", required=True, connectable="not_by_default",
+                ),
+                "area_lim": InputFieldSchema(
+                    type="float",
+                    required=False,
+                    nullable=True,
+                    connectable="not_by_default",
+                    default=None,
+                ),
+            },
+            outputs={"out": OutputFieldSchema(type="image")},
+        ),
+    )
+    config = AppConfig(tool_registry=reg)
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools")
+        assert resp.status_code == 200
+        tool = resp.json()[0]
+        assert tool["inputs"]["size"]["nullable"] is False
+        assert tool["inputs"]["area_lim"]["nullable"] is True
+        break
+
+
 # ---------------------------------------------------------------------------
 # Task 5: GET /tools/packages
 # ---------------------------------------------------------------------------

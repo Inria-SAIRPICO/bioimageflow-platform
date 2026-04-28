@@ -131,9 +131,10 @@ function toggleNull(key: string) {
 function isFieldNulled(key: string): boolean {
   if (!nodeData.value) return false
   const field = nodeData.value.tool?.inputs[key] as InputFieldSchema | undefined
-  // Required fields are never in a "null" state — an undefined value just
-  // means "not yet set" and the widget should render so the user can set it.
-  if (!field || field.required) return false
+  // Non-nullable fields can never be in a "null" state. For required-but-
+  // nullable fields, an undefined value is treated as null until the user
+  // toggles to a real value (the toggle is the only affordance to set one).
+  if (!field || !field.nullable) return false
   if (nulledFields.value[key]) return true
   return nodeData.value.parameters[key] === null || nodeData.value.parameters[key] === undefined
 }
@@ -313,11 +314,11 @@ async function pickFolder(key: string) {
                 data-testid="reset-default"
               />
             </span>
-            <!-- None toggle for Optional fields. Two-state icon button —
+            <!-- None toggle for nullable fields. Two-state icon button —
                  the icon shows the action that will happen on click: pencil
                  when the field is null (click to edit), Ø (pi-ban) when the
                  field is editable (click to set to null). -->
-            <span v-if="!(field as InputFieldSchema).required" class="param-toggles">
+            <span v-if="(field as InputFieldSchema).nullable" class="param-toggles">
               <Button
                 :icon="isFieldNulled(key) ? 'pi pi-pencil' : 'pi pi-ban'"
                 class="p-button-text p-button-sm param-action-btn none-toggle-btn"
