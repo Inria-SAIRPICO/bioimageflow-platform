@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -66,6 +67,7 @@ from bioimageflow_server.services.package_installer import (
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.ws import attach_ws_log_handler, register_ws
 
 _STATUS_TO_ERROR: dict[int, str] = {
     400: "bad_request",
@@ -105,11 +107,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         output_data_folder=str(get_home()),
     )
 
+    # When a ConnectionManager is wired in, route execution events through it
+    # so progress / node_state / execution_complete reach connected clients.
+    # Otherwise fall back to NullEventBus (CLI / tests with no transport).
+    ws_manager = config.connection_manager
+    event_bus: Any = ws_manager if ws_manager is not None else NullEventBus()
+
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
         execution_manager = ExecutionManager(
-            event_bus=NullEventBus(),
+            event_bus=event_bus,
             tool_registry=registry,
             settings=resolved_settings,
             storage_path=config.storage_path,
@@ -135,6 +143,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         registry=registry, known=known, pypi=pypi
     )
 
+    ws_log_handler = None
+
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
         try:
@@ -148,9 +158,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             logging.getLogger(__name__).warning(
                 "Initial PyPI refresh crashed: %r", exc
             )
+
+        nonlocal ws_log_handler
+        if ws_manager is not None:
+            loop = asyncio.get_running_loop()
+            ws_manager._loop = loop
+            ws_log_handler = attach_ws_log_handler(ws_manager, loop)
+
         try:
             yield
         finally:
+            if ws_manager is not None:
+                if ws_log_handler is not None:
+                    logging.getLogger("bioimageflow.node").removeHandler(
+                        ws_log_handler
+                    )
+                ws_manager._loop = None
             if _owns_pypi:
                 await pypi.aclose()
 
@@ -207,6 +230,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             field=field_name,
         )
         return JSONResponse(status_code=422, content=body.model_dump())
+
+    # ---- WebSocket layer ------------------------------------------------
+    if ws_manager is not None:
+        register_ws(app, ws_manager)
+        app.state.connection_manager = ws_manager
 
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(tools_router, prefix="/api/v1")

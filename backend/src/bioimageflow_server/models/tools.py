@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.package_installer import PackageInstallerService
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
+    from bioimageflow_server.ws.handler import ConnectionManager
 
 
 # --- Field schemas ---
@@ -113,3 +114,4 @@ class AppConfig:
     storage_path: Path | None = None
     execution_manager: Any | None = None
     settings: Settings | None = None
+    connection_manager: ConnectionManager | None = None
