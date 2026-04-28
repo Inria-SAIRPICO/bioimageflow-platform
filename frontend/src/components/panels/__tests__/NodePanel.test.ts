@@ -18,9 +18,9 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: ['Filtering'],
     inputs: {
-      image: { type: 'ImagePath', required: true, connectable: 'by_default', description: 'Input image path' },
-      sigma: { type: 'float', required: true, connectable: 'never', default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
-      threshold: { type: 'float', required: false, connectable: 'never', default: 0.5, description: 'Optional threshold' },
+      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Input image path' },
+      sigma: { type: 'float', required: true, nullable: false, connectable: 'never', default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
+      threshold: { type: 'float', required: false, nullable: true, connectable: 'never', default: 0.5, description: 'Optional threshold' },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -144,14 +144,37 @@ describe('NodePanel', () => {
     })
   })
 
-  // --- Fix 16: None toggle for Optional fields ---
+  // --- Fix 16: None toggle for nullable fields ---
 
-  describe('none toggle for optional fields', () => {
-    it('renders none toggle only for optional fields', () => {
+  describe('none toggle for nullable fields', () => {
+    it('renders none toggle only for nullable fields', () => {
       const w = mountPanel(makeNodeData())
       const noneToggles = w.findAll('[data-testid="none-toggle"]')
-      // Only 'threshold' is optional
+      // Only `threshold` is nullable; `sigma` has a default but is non-nullable.
       expect(noneToggles.length).toBe(1)
+    })
+
+    it('does not render the toggle for a non-nullable field with a default', () => {
+      // Regression: prior to nullable, ANY field with a default got the toggle —
+      // which would crash the tool when the user nulled e.g. Atlas's `gaussian_std: int = 60`.
+      const tool = makeTool({
+        inputs: {
+          k: { type: 'int', required: false, nullable: false, connectable: 'never', default: 5 },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, parameters: { k: 5 } }))
+      expect(w.findAll('[data-testid="none-toggle"]').length).toBe(0)
+    })
+
+    it('renders the toggle for a nullable required field (no default)', () => {
+      // `int | None` with no default: user must pass *something*, but None is acceptable.
+      const tool = makeTool({
+        inputs: {
+          t: { type: 'int', required: true, nullable: true, connectable: 'never' },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, parameters: {} }))
+      expect(w.findAll('[data-testid="none-toggle"]').length).toBe(1)
     })
 
     it('sets parameter to null when toggled via component event', async () => {
@@ -190,9 +213,9 @@ describe('NodePanel', () => {
     it('treats both by_default and not_by_default as connectable (pin visible)', () => {
       const tool = makeTool({
         inputs: {
-          a: { type: 'float', required: true, connectable: 'by_default' },
-          b: { type: 'float', required: true, connectable: 'not_by_default' },
-          c: { type: 'float', required: true, connectable: 'never' },
+          a: { type: 'float', required: true, nullable: false, connectable: 'by_default' },
+          b: { type: 'float', required: true, nullable: false, connectable: 'not_by_default' },
+          c: { type: 'float', required: true, nullable: false, connectable: 'never' },
         },
       })
       const data = makeNodeData({ tool, pinnedInputs: { a: true, b: true } })
@@ -210,6 +233,7 @@ describe('NodePanel', () => {
           mask: {
             type: 'ImagePath',
             required: true,
+            nullable: false,
             connectable: 'by_default',
             display_name: 'Input mask',
             description: 'Binary mask',
@@ -285,8 +309,8 @@ describe('NodePanel', () => {
         display_name: 'Files',
         tool_type: 'DataFrameTool',
         inputs: {
-          path: { type: 'Path', required: true, connectable: 'never', description: 'Directory' },
-          pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+          path: { type: 'Path', required: true, nullable: false, connectable: 'never', description: 'Directory' },
+          pattern: { type: 'str', required: false, nullable: false, connectable: 'never', default: '*' },
         },
         outputs: {
           path: { type: 'Path' },
@@ -321,8 +345,8 @@ describe('NodePanel', () => {
     function makePathTool(): ToolMetadata {
       return makeTool({
         inputs: {
-          input_image: { type: 'ImagePath', required: true, connectable: 'by_default', description: 'Image file' },
-          work_dir: { type: 'Path', required: true, connectable: 'never', description: 'Working directory' },
+          input_image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Image file' },
+          work_dir: { type: 'Path', required: true, nullable: false, connectable: 'never', description: 'Working directory' },
         },
         outputs: { result: { type: 'ImagePath' } },
       })

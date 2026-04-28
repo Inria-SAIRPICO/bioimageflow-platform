@@ -29,8 +29,8 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImagePath', required: true, connectable: 'by_default' },
-      sigma: { type: 'float', required: false, connectable: 'never', default: 1.0 },
+      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+      sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -146,7 +146,7 @@ describe('ToolNode', () => {
     const tool = makeTool({
       tool_type: 'DataFrameTool',
       inputs: {
-        column: { type: 'str', required: true, connectable: 'by_default' },
+        column: { type: 'str', required: true, nullable: false, connectable: 'by_default' },
       },
     })
     const data = makeData({
@@ -237,7 +237,7 @@ describe('ToolNode', () => {
       tool_type: 'DataFrameTool',
       accepts_upstream: false,
       inputs: {
-        path: { type: 'Path', required: true, connectable: 'never' },
+        path: { type: 'Path', required: true, nullable: false, connectable: 'never' },
       },
       outputs: {
         path: { type: 'Path' },
@@ -272,7 +272,7 @@ describe('ToolNode', () => {
       tool_type: 'ProcessingTool',
       accepts_upstream: true,
       inputs: {
-        image: { type: 'ImagePath', required: true, connectable: 'by_default' },
+        image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
       },
       outputs: {
         result: { type: 'ImagePath' },
@@ -348,7 +348,7 @@ describe('ToolNode', () => {
         accepts_upstream: false,
         dynamic_outputs: false,
         inputs: {
-          path: { type: 'Path', required: true, connectable: 'never' },
+          path: { type: 'Path', required: true, nullable: false, connectable: 'never' },
         },
         outputs: {
           path: { type: 'Path' },
@@ -434,7 +434,7 @@ describe('ToolNode', () => {
         accepts_upstream: true,
         dynamic_outputs: true,
         inputs: {
-          column: { type: 'str', required: true, connectable: 'never' },
+          column: { type: 'str', required: true, nullable: false, connectable: 'never' },
         },
         outputs: {},
       })
@@ -452,8 +452,8 @@ describe('ToolNode', () => {
       const tool = makeTool({
         tool_type: 'ProcessingTool',
         inputs: {
-          image: { type: 'ImagePath', required: true, connectable: 'by_default' },
-          sigma: { type: 'float', required: false, connectable: 'never', default: 1.0 },
+          image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+          sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
         },
         outputs: {
           result: { type: 'ImagePath' },

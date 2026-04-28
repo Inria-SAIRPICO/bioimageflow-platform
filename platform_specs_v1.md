@@ -95,6 +95,7 @@ Per-field `InputFieldSchema`:
 |-----|------|-------|
 | `type` | `string` | Display name (e.g. `"float"`, `"int"`, `"str"`, `"bool"`, `"Path"`, `"ImagePath"`, `"ImageShared"`). |
 | `required` | `boolean` | `true` when no class-level default is set on `Inputs`. |
+| `nullable` | `boolean` | `true` when the type annotation admits `None` (i.e. `Optional[X]` or `X \| None`). Independent of `required`: a field can be required-and-nullable (user must pass *something*, and `None` counts) or non-required-and-non-nullable. GUIs use this to decide whether to expose a "set to null" affordance. |
 | `connectable` | `"never" \| "not_by_default" \| "by_default"` | Three-state. `"never"` hides the pin; the other two mean the field can accept an upstream binding. |
 | `default` | `any` | JSON-safe default (or `null` when `required: true`). |
 | `display_name` | `string \| null` | From `GUIMeta.display_name`. |
@@ -140,6 +141,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
     "input_image": {
       "type": "ImagePath",
       "required": true,
+      "nullable": false,
       "connectable": "by_default",
       "default": null,
       "display_name": "Input image",
@@ -152,6 +154,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
     "diameter": {
       "type": "float",
       "required": false,
+      "nullable": false,
       "connectable": "not_by_default",
       "default": 30.0,
       "display_name": "Cell diameter",
@@ -164,6 +167,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
     "model_type": {
       "type": "str",
       "required": false,
+      "nullable": false,
       "connectable": "not_by_default",
       "default": "cyto2",
       "display_name": "Model",
@@ -1016,7 +1020,7 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | **Pin toggle button** | Icon-only button placed **before** the label, only rendered when `connectable != "never"`. Two states with explicit tooltips: a two-arrows icon ("Add input pin") when the pin is hidden, a cross icon ("Remove input pin") when the pin is visible. Clicking toggles whether the canvas node shows an input pin for this field. `GUIMeta.connectable` (three-state: `"never" \| "not_by_default" \| "by_default"`) decides whether the button appears; the button itself decides whether the pin is shown. Current behaviour is to treat both `"not_by_default"` and `"by_default"` identically (pin visible) — a richer UX that hides pins by default for `"not_by_default"` fields is a separate plan. |
 | **Label** | Field name (human-readable) |
 | **Default button** | Resets the field to its default value |
-| **None toggle** | Two-state button (only shown when `required` is `false` on the field schema, i.e. the field has a default). When active, the value is `None` and the input field is hidden. |
+| **None toggle** | Two-state button (only shown when `nullable` is `true` on the field schema). When active, the value is `None` and the input field is hidden. Independent of `required`: a required-and-nullable field still gets the toggle so the user can explicitly choose `None` as a valid value. |
 | **Input field** | The actual value editor (hidden when connected or None). Type depends on the field annotation (see below). |
 | **Help text** | Collapsible description from field metadata |
 

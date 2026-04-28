@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 class InputFieldSchema(BaseModel):
     type: str
     required: bool
+    nullable: bool = False
     connectable: Literal["never", "not_by_default", "by_default"]
     default: Any = None
     display_name: str | None = None
