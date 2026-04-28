@@ -681,6 +681,69 @@ describe('CanvasView', () => {
     })
   })
 
+  // --- Workflow-wide version switch refresh ---
+
+  describe('tool snapshot refresh on registry change', () => {
+    it('updates each node\'s tool snapshot when the registry version changes', async () => {
+      // Create a node at v1.0.0, then simulate a "Set current" version
+      // switch by mutating the registry to v2.0.0. The watcher in
+      // CanvasView should propagate the new ToolMetadata to the existing
+      // node so the GUI (NodePanel header, ToolNode badges) reflects the
+      // new version without recreating the node.
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
+
+      expect(mockNodes[0].data.tool.package_version).toBe('1.0.0')
+
+      // Simulate version switch: registry now exports the same tool at a
+      // newer version.
+      store.tools = [makeTool({ package_version: '2.0.0' })] as any
+      await nextTick()
+
+      expect(mockNodes[0].data.tool.package_version).toBe('2.0.0')
+      w.unmount()
+    })
+
+    it('marks executed nodes as out_of_date after a version switch', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
+      // Simulate the node having been executed against v1.0.0.
+      mockNodes[0].data.status = 'executed'
+
+      store.tools = [makeTool({ package_version: '2.0.0' })] as any
+      await nextTick()
+
+      expect(mockNodes[0].data.status).toBe('out_of_date')
+      w.unmount()
+    })
+
+    it('leaves non-executed status alone after a version switch', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
+      // Default status is 'unexecuted'.
+      expect(mockNodes[0].data.status).toBe('unexecuted')
+
+      store.tools = [makeTool({ package_version: '2.0.0' })] as any
+      await nextTick()
+
+      // unexecuted should stay unexecuted — only `executed` flips to out_of_date.
+      expect(mockNodes[0].data.status).toBe('unexecuted')
+      w.unmount()
+    })
+  })
+
   // --- Task 8: Selection + Keyboard Shortcuts ---
 
   describe('selection and keyboard', () => {

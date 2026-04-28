@@ -251,6 +251,41 @@ watch(
   { deep: true },
 )
 
+// Refresh the per-node tool metadata snapshot whenever the registry's
+// tools list changes (typically after a "Set current" version switch in
+// the Manage Tools dialog, or an install/uninstall). Each node was created
+// with a frozen ToolMetadata copy in `data.tool`, so without this watcher
+// the package version + schema in the GUI would stay pinned at creation
+// time even though the workflow actually executes against the new
+// version.
+//
+// Nodes whose package_version actually changed are flagged `out_of_date`
+// so the user knows they need to re-run — schema changes between versions
+// can invalidate cached results.
+watch(
+  () => toolRegistryStore.tools,
+  (tools) => {
+    if (!tools || tools.length === 0) return
+    const byName = new Map(tools.map((t) => [t.name, t]))
+    for (const n of getNodes.value as any[]) {
+      const toolName = n.data?.toolName
+      if (!toolName) continue
+      const fresh = byName.get(toolName)
+      if (!fresh) continue
+      const prev = n.data.tool
+      if (prev && prev.package_version === fresh.package_version) continue
+      n.data.tool = fresh
+      // Only invalidate executed nodes — leave unexecuted/failed/disabled
+      // alone so the version switch doesn't visually thrash the canvas.
+      if (n.data.status === 'executed') {
+        n.data.status = 'out_of_date'
+      }
+    }
+    emitGraphChanged()
+  },
+  { deep: false },
+)
+
 // Debounced refresh of resolved outputs when parameters change on
 // dynamic_outputs nodes. Edge connect/disconnect events refresh explicitly
 // (see refreshIfDynamicOutputs) — Vue's deep watcher doesn't reliably notice
