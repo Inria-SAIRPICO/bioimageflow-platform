@@ -312,6 +312,20 @@ async function pickFolder(key: string) {
                 data-testid="reset-default"
               />
             </span>
+            <!-- None toggle for Optional fields. Two-state icon button:
+                 Ø (pi-ban) when the field is set to null, pencil when the
+                 field is editable. Lives in the header so it sits next to
+                 the other per-field actions. -->
+            <span v-if="!(field as InputFieldSchema).required" class="param-toggles">
+              <Button
+                :icon="isFieldNulled(key) ? 'pi pi-ban' : 'pi pi-pencil'"
+                class="p-button-text p-button-sm param-action-btn none-toggle-btn"
+                :title="isFieldNulled(key) ? 'Set value (currently null)' : 'Set to null'"
+                :aria-pressed="isFieldNulled(key)"
+                @click="toggleNull(key)"
+                data-testid="none-toggle"
+              />
+            </span>
           </div>
 
           <!-- Fix 18: Collapsible help text -->
@@ -322,19 +336,6 @@ async function pickFolder(key: string) {
           >
             {{ (field as InputFieldSchema).description }}
           </small>
-
-          <!-- None toggle for Optional fields (Pin toggle is now an icon
-               button in the param header — see above) -->
-          <div v-if="!(field as InputFieldSchema).required" class="param-toggles">
-            <label class="toggle-label" data-testid="none-toggle">
-              <Checkbox
-                :model-value="isFieldNulled(key)"
-                binary
-                @update:model-value="toggleNull(key)"
-              />
-              <span>None</span>
-            </label>
-          </div>
 
           <!-- Input widget (hidden when field is nulled) -->
           <template v-if="!isFieldNulled(key)">
@@ -706,20 +707,17 @@ h4 {
   padding: 2px 0 4px;
 }
 
-/* Fix 16 + 17: Toggle row */
+/* Fix 16: None toggle button (now an icon-only button living in the
+   .param-header alongside .param-actions). */
 .param-toggles {
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 0;
+  margin-left: 2px;
 }
 
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--p-text-muted-color);
-  cursor: pointer;
+.none-toggle-btn[aria-pressed='true'] {
+  color: var(--p-orange-500);
 }
 
 .null-indicator {
