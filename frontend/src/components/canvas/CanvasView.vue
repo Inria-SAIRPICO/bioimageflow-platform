@@ -202,6 +202,16 @@ onConnect((connection) => {
       ...targetNode.data.connectedInputs,
       [targetHandle]: sourceLabel,
     }
+    // Drop any constant the user (or default-seeding) had stashed for this
+    // input. The wire schema says `parameters` carries non-connected fields
+    // only, and a stray value here (notably ``null``) would otherwise ride
+    // along into the lib payload and override the upstream binding.
+    if (!edgeIsHeader && targetNode.data.parameters
+        && targetHandle in targetNode.data.parameters) {
+      const next = { ...targetNode.data.parameters }
+      delete next[targetHandle]
+      targetNode.data.parameters = next
+    }
   }
 
   // A new positional edge into a dynamic_outputs node changes its resolved
@@ -389,6 +399,15 @@ onEdgeUpdate(({ edge, connection }) => {
     targetNode.data.connectedInputs = {
       ...targetNode.data.connectedInputs,
       [newTargetHandle]: sourceLabel,
+    }
+    // Mirror the onConnect cleanup: drop any constant for this input so
+    // the wire payload carries non-connected fields only.
+    const newEdgeIsHeader = isHeaderHandle(newTargetHandle) || isHeaderHandle(newSourceHandle)
+    if (!newEdgeIsHeader && targetNode.data.parameters
+        && newTargetHandle in targetNode.data.parameters) {
+      const next = { ...targetNode.data.parameters }
+      delete next[newTargetHandle]
+      targetNode.data.parameters = next
     }
   }
 

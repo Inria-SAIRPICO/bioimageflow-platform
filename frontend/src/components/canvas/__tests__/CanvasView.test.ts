@@ -246,6 +246,73 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('onConnect drops a stale parameter for the now-connected input', () => {
+      // Reproduces the Files → Atlas bug: the user had a null parameter
+      // sitting on `image`, then wired up an edge. The wire payload must
+      // not carry the constant — otherwise the engine merges it on top of
+      // the column binding and the upstream value is lost.
+      mockNodes = [
+        { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', parameters: {}, connectedInputs: {} } },
+        {
+          id: 'b',
+          data: {
+            toolName: 'gaussian_blur',
+            name: 'b',
+            parameters: { image: null, sigma: 1.0 },
+            connectedInputs: {},
+          },
+        },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+
+      connectHandler!({
+        source: 'a',
+        target: 'b',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+      })
+
+      const targetNode = mockNodes.find((n: any) => n.id === 'b')!
+      expect('image' in targetNode.data.parameters).toBe(false)
+      expect(targetNode.data.parameters.sigma).toBe(1.0)
+      expect(targetNode.data.connectedInputs.image).toBe('a.result')
+      w.unmount()
+    })
+
+    it('onConnect leaves parameters untouched on a positional/header connection', () => {
+      // Positional handles like `__positional_0` are not real field names
+      // in `parameters`, so we must not delete an unrelated entry that
+      // happens to share its key by accident.
+      mockNodes = [
+        { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', parameters: {}, connectedInputs: {} } },
+        {
+          id: 'b',
+          data: {
+            toolName: 'gaussian_blur',
+            name: 'b',
+            parameters: { __positional_0: 'should-not-be-touched', sigma: 1.0 },
+            connectedInputs: {},
+          },
+        },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+
+      connectHandler!({
+        source: 'a',
+        target: 'b',
+        sourceHandle: 'result',
+        targetHandle: '__positional_0',
+      })
+
+      const targetNode = mockNodes.find((n: any) => n.id === 'b')!
+      expect(targetNode.data.parameters.__positional_0).toBe('should-not-be-touched')
+      w.unmount()
+    })
+
     it('positional inputs allow multiple incoming edges', () => {
       mockNodes = [
         { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', connectedInputs: {} } },
