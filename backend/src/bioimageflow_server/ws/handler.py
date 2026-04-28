@@ -222,11 +222,17 @@ class ConnectionManager:
         errors: list,
         node_statuses: dict,
     ) -> None:
+        # ExecutionManager passes a dict[str, NodeStatus] (Pydantic models).
+        # ``send_json`` uses plain ``json.dumps``, which can't serialize models —
+        # so dump them here. Plain dicts pass through unchanged.
         payload = {
             "type": "execution_complete",
             "success": success,
             "errors": list(errors),
-            "node_statuses": dict(node_statuses),
+            "node_statuses": {
+                k: v.model_dump() if hasattr(v, "model_dump") else v
+                for k, v in node_statuses.items()
+            },
         }
         self._enqueue_all(payload)
 

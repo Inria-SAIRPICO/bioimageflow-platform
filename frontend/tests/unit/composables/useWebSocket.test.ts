@@ -456,4 +456,37 @@ describe('useWebSocket', () => {
       latestSocket().receive({ type: 'bogus_type', foo: 'bar' })
     }).not.toThrow()
   })
+
+  it('connect() while a previous socket exists detaches it (no ghost reconnects)', async () => {
+    // Regression: a stale onclose handler on the first socket would overwrite
+    // the new socket's connectionState back to 'disconnected', wipe the new
+    // pending-ack map, and spawn a ghost reconnect cycle.
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    const { connectionState, connect } = useWebSocket()
+
+    connect('ws://test/ws')
+    const first = latestSocket()
+    first.open()
+    expect(connectionState.value).toBe('connected')
+
+    // Caller (or pending reconnect) opens a second socket without the first
+    // having been intentionally disconnected. Ghost handlers on `first`
+    // must not bleed into the new singleton state.
+    connect('ws://test/ws')
+    const second = latestSocket()
+    expect(second).not.toBe(first)
+    second.open()
+    expect(connectionState.value).toBe('connected')
+
+    // Simulate the first socket's late close arriving on the wire — its
+    // handlers should already be detached, so connectionState stays
+    // 'connected' and no extra reconnect socket is created.
+    const beforeCount = MockWebSocket.instances.length
+    first.triggerClose()
+    expect(connectionState.value).toBe('connected')
+
+    vi.advanceTimersByTime(2000)
+    await flushMicrotasks()
+    expect(MockWebSocket.instances.length).toBe(beforeCount)
+  })
 })

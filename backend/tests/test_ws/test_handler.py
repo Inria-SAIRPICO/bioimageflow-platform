@@ -257,6 +257,52 @@ async def test_broadcast_execution_complete() -> None:
     assert ws.sent[0]["success"] is True
 
 
+async def test_broadcast_execution_complete_serializes_pydantic_node_statuses() -> None:
+    """ExecutionManager passes ``dict[str, NodeStatus]`` (Pydantic models).
+    The broadcast must convert them to plain dicts so ``json.dumps`` works.
+    Regression test: previously the values flowed through unchanged and would
+    raise ``TypeError`` the first time a real execution finished with a
+    connected client.
+    """
+    import json
+
+    from bioimageflow_server.models.validation import NodeStatus
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    statuses = {
+        "n1": NodeStatus(node_id="n1", status="executed", cached=False),
+        "n2": NodeStatus(
+            node_id="n2",
+            status="failed",
+            cached=False,
+            error="boom",
+            traceback="...",
+        ),
+    }
+    await mgr.broadcast_execution_complete(
+        success=False, errors=[{"type": "X", "detail": "y"}], node_statuses=statuses
+    )
+    await _drain(mgr)
+
+    payload = ws.sent[0]
+    # Round-trips through json.dumps without a TypeError.
+    json.dumps(payload)
+    assert payload["type"] == "execution_complete"
+    assert payload["node_statuses"]["n1"] == {
+        "node_id": "n1",
+        "status": "executed",
+        "cached": False,
+        "error": None,
+        "traceback": None,
+    }
+    assert payload["node_statuses"]["n2"]["status"] == "failed"
+    assert payload["node_statuses"]["n2"]["error"] == "boom"
+
+
 async def test_broadcast_tool_reload() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 

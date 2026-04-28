@@ -209,6 +209,26 @@ function scheduleReconnect() {
 }
 
 function openSocket(url: string) {
+  // Detach and discard any prior socket. Without this, the old socket's
+  // handlers stay live and its eventual `close` will overwrite the new
+  // socket's connectionState, wipe the new pending-ack map, and spawn a
+  // ghost reconnect cycle. Reachable when connect() runs while a previous
+  // socket or reconnect timer exists.
+  clearReconnectTimer()
+  const prev = state.socket
+  if (prev) {
+    prev.onopen = null
+    prev.onclose = null
+    prev.onerror = null
+    prev.onmessage = null
+    try {
+      prev.close()
+    } catch {
+      /* */
+    }
+    state.socket = null
+  }
+
   state.url = url
   state.connectionState.value = 'connecting'
 
