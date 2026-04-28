@@ -14,6 +14,8 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     package: 'bioimageflow-core',
     package_version: '0.3.2',
     tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
     documentation: 'Apply gaussian blur to smooth images.',
     tags: [],
     categories: ['Filtering'],
@@ -154,16 +156,27 @@ describe('NodePanel', () => {
       expect(noneToggles.length).toBe(1)
     })
 
-    it('sets parameter to null when toggled via component event', async () => {
+    it('sets parameter to null when toggled via click', async () => {
       const data = makeNodeData()
       data.parameters.threshold = 0.5
       const w = mountPanel(data)
       const noneToggle = w.find('[data-testid="none-toggle"]')
-      // PrimeVue Checkbox emits update:modelValue; find the Checkbox component and trigger it
-      const checkbox = noneToggle.findComponent({ name: 'Checkbox' })
-      await checkbox.vm.$emit('update:modelValue', true)
+      await noneToggle.trigger('click')
       await w.vm.$nextTick()
       expect(data.parameters.threshold).toBe(null)
+    })
+
+    it('toggles between Ø (pi-ban) and pencil icons based on null state', async () => {
+      const data = makeNodeData()
+      data.parameters.threshold = 0.5
+      const w = mountPanel(data)
+      const noneToggle = w.find('[data-testid="none-toggle"]')
+      // Editable: pencil
+      expect(noneToggle.html()).toContain('pi-pencil')
+      await noneToggle.trigger('click')
+      await w.vm.$nextTick()
+      // Nulled: Ø (pi-ban)
+      expect(noneToggle.html()).toContain('pi-ban')
     })
   })
 
