@@ -596,6 +596,8 @@ export interface components {
              * @default []
              */
             available_versions: string[];
+            /** Active Version */
+            active_version?: string | null;
             /**
              * Tools
              * @default {}

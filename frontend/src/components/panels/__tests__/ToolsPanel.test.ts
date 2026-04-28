@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import ConfirmationService from 'primevue/confirmationservice'
 import ToastService from 'primevue/toastservice'
@@ -7,6 +7,14 @@ import PrimeVue from 'primevue/config'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+}))
+
+// Mock primevue/useconfirm so the `useVersionInWorkflow` test can fire the
+// accept callback synchronously — without a rendered ConfirmDialog the
+// real confirm service never resolves the require() promise on its own.
+const requireMock = vi.fn()
+vi.mock('primevue/useconfirm', () => ({
+  useConfirm: () => ({ require: requireMock }),
 }))
 
 import { api } from '@/api/client'
@@ -74,6 +82,7 @@ const mockPackages: PackageInfo[] = [
     name: 'bioimageflow-core',
     installed_versions: ['0.1.0'],
     available_versions: ['0.1.0', '0.2.0'],
+    active_version: '0.1.0',
     tools: { threshold: ['0.1.0'], gaussian_blur: ['0.1.0'] },
     environment_status: 'ready',
   },
@@ -81,6 +90,7 @@ const mockPackages: PackageInfo[] = [
     name: 'bioimageflow-cellpose',
     installed_versions: ['0.2.0'],
     available_versions: ['0.1.0', '0.2.0'],
+    active_version: '0.2.0',
     tools: { cellpose: ['0.2.0'] },
     environment_status: 'stopped',
   },
@@ -116,6 +126,7 @@ describe('ToolsPanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    requireMock.mockReset()
   })
 
   // --- Task 12: Basic component tests ---
@@ -327,6 +338,93 @@ describe('ToolsPanel', () => {
     await vm.installVersion('bioimageflow-core', '0.2.0')
 
     expect(vm.isVersionsExpanded('bioimageflow-core')).toBe(true)
+  })
+
+  // --- Set-current button: workflow-wide active version selection ---
+
+  it('isActiveVersion reflects the package active_version field', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.packages = [
+      {
+        ...mockPackages[0],
+        installed_versions: ['0.1.0', '0.2.0'],
+        active_version: '0.2.0',
+      },
+      mockPackages[1],
+    ]
+
+    const vm = wrapper.vm as unknown as {
+      isActiveVersion: (name: string, version: string) => boolean
+    }
+    expect(vm.isActiveVersion('bioimageflow-core', '0.2.0')).toBe(true)
+    expect(vm.isActiveVersion('bioimageflow-core', '0.1.0')).toBe(false)
+    // Unknown package
+    expect(vm.isActiveVersion('nonexistent', '0.1.0')).toBe(false)
+  })
+
+  it('useVersionInWorkflow posts /use and refreshes when the user confirms', async () => {
+    // Auto-confirm the dialog by firing accept() the moment require() is
+    // called. Without a rendered ConfirmDialog the real confirm service
+    // never resolves on its own.
+    requireMock.mockImplementation((opts: { accept?: () => void | Promise<void> }) => {
+      opts.accept?.()
+    })
+
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.post.mockResolvedValueOnce({ data: {} })
+
+    const vm = wrapper.vm as unknown as {
+      useVersionInWorkflow: (name: string, version: string) => void
+    }
+    // Switch from the active 0.1.0 → install 0.2.0 first so we're switching
+    // to a different installed version.
+    const store = useToolRegistryStore()
+    store.packages = [
+      {
+        ...mockPackages[0],
+        installed_versions: ['0.1.0', '0.2.0'],
+        active_version: '0.1.0',
+      },
+      mockPackages[1],
+    ]
+
+    vm.useVersionInWorkflow('bioimageflow-core', '0.2.0')
+    await flushPromises()
+
+    expect(mockedApi.post).toHaveBeenCalledWith(
+      '/api/v1/tools/packages/bioimageflow-core/use',
+      { version: '0.2.0' },
+    )
+  })
+
+  it('useVersionInWorkflow is a no-op when the version is already active', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.packages = [{ ...mockPackages[0], active_version: '0.1.0' }, mockPackages[1]]
+
+    const vm = wrapper.vm as unknown as {
+      useVersionInWorkflow: (name: string, version: string) => void
+    }
+    vm.useVersionInWorkflow('bioimageflow-core', '0.1.0')
+
+    // No POST should have been issued — onMounted may have called GETs but
+    // we only care that no /use POST went out.
+    const useCalls = mockedApi.post.mock.calls.filter((c) => /\/use$/.test(String(c[0])))
+    expect(useCalls).toHaveLength(0)
   })
 
   it('uninstallVersion sends version as a query parameter (spec v1 §2.4)', async () => {

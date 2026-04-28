@@ -166,17 +166,20 @@ describe('NodePanel', () => {
       expect(data.parameters.threshold).toBe(null)
     })
 
-    it('toggles between Ø (pi-ban) and pencil icons based on null state', async () => {
+    it('toggles between pencil and Ø (pi-ban) icons based on null state', async () => {
+      // Icons reflect the action that will happen on click, not the
+      // current state — so an editable field shows Ø (click to nullify)
+      // and a nulled field shows pencil (click to edit).
       const data = makeNodeData()
       data.parameters.threshold = 0.5
       const w = mountPanel(data)
       const noneToggle = w.find('[data-testid="none-toggle"]')
-      // Editable: pencil
-      expect(noneToggle.html()).toContain('pi-pencil')
+      // Editable: Ø (pi-ban)
+      expect(noneToggle.html()).toContain('pi-ban')
       await noneToggle.trigger('click')
       await w.vm.$nextTick()
-      // Nulled: Ø (pi-ban)
-      expect(noneToggle.html()).toContain('pi-ban')
+      // Nulled: pencil
+      expect(noneToggle.html()).toContain('pi-pencil')
     })
   })
 

@@ -221,10 +221,18 @@ function closeAllVersionDropdowns() {
   expandedVersions.value = new Set()
 }
 
-/** Label for the dropdown trigger: installed versions or "uninstalled". */
+/** Label for the dropdown trigger. Shows the active version with a hint when
+ * other installed versions are available (so the user knows the dropdown is
+ * worth opening), or "uninstalled" when nothing is on disk. */
 function versionTriggerLabel(packageName: string): string {
   const pkg = toolRegistry.packages.find((p) => p.name === packageName)
   if (!pkg || pkg.installed_versions.length === 0) return 'uninstalled'
+  if (pkg.active_version) {
+    if (pkg.installed_versions.length > 1) {
+      return `${pkg.active_version} (active, +${pkg.installed_versions.length - 1})`
+    }
+    return `${pkg.active_version} (active)`
+  }
   return pkg.installed_versions.join(', ')
 }
 
@@ -312,14 +320,49 @@ async function uninstallVersion(packageName: string, version: string) {
   }
 }
 
+/** True when ``version`` is the currently active version for ``packageName``
+ * in the workflow. Used to disable the "Set current" button on the active
+ * row and to render the "current" badge. */
+function isActiveVersion(packageName: string, version: string): boolean {
+  const pkg = toolRegistry.packages.find((p) => p.name === packageName)
+  return pkg?.active_version === version
+}
+
+/** Make ``packageName==version`` the active version for the workflow. There
+ * is one active version per package, so this affects every node from this
+ * package — confirm before switching because nodes built against a different
+ * schema may need to be re-validated. */
 function useVersionInWorkflow(packageName: string, version: string) {
+  if (isActiveVersion(packageName, version)) return
   confirm.require({
-    message: `Switch ${packageName} to version ${version} in the current workflow? Affected nodes will be marked as out-of-date.`,
+    message: `Set ${packageName} ${version} as the active version for this workflow? Every node from this package will use the new version's schema.`,
     header: 'Change Package Version',
-    acceptLabel: 'Switch',
+    acceptLabel: 'Set current',
     rejectLabel: 'Cancel',
     accept: async () => {
-      await toolRegistry.fetchTools()
+      const key = busyKey(packageName, version)
+      markBusy(key, true)
+      try {
+        await api.post(`/api/v1/tools/packages/${packageName}/use`, { version })
+        await Promise.all([toolRegistry.fetchPackages(), toolRegistry.fetchTools()])
+        toast.add({
+          severity: 'success',
+          summary: 'Active version changed',
+          detail: `${packageName} ${version}`,
+          life: 3000,
+        })
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e)
+        toolRegistry.error = message
+        toast.add({
+          severity: 'error',
+          summary: 'Failed to change active version',
+          detail: `${packageName} ${version}: ${message}`,
+          life: 5000,
+        })
+      } finally {
+        markBusy(key, false)
+      }
     },
   })
 }
@@ -396,6 +439,7 @@ defineExpose({
   installVersion,
   uninstallVersion,
   useVersionInWorkflow,
+  isActiveVersion,
   toggleDocumentation,
   toggleManageDocumentation,
   getDocumentation,
@@ -606,6 +650,7 @@ defineExpose({
                       v-for="row in getVersionRows(node.data.name)"
                       :key="row.version"
                       class="version-row"
+                      :class="{ 'version-row-current': isActiveVersion(node.data.name, row.version) }"
                       role="menuitem"
                     >
                       <span class="version-label">{{ row.version }}</span>
@@ -614,6 +659,30 @@ defineExpose({
                         :class="row.installed ? 'version-status-installed' : 'version-status-missing'"
                         :title="row.installed ? 'Installed' : 'Not installed'"
                         :aria-label="row.installed ? 'Installed' : 'Not installed'"
+                      />
+                      <!-- "Current" badge marks the active version for the
+                           workflow. Otherwise, an installed row offers a
+                           "Set current" button to switch to it. Only
+                           installed versions can be set current. -->
+                      <span
+                        v-if="row.installed && isActiveVersion(node.data.name, row.version)"
+                        class="version-current-badge"
+                        :data-testid="`current-version-${node.data.name}-${row.version}`"
+                      >
+                        Current
+                      </span>
+                      <Button
+                        v-else-if="row.installed"
+                        label="Set current"
+                        icon="pi pi-check"
+                        size="small"
+                        severity="secondary"
+                        text
+                        class="version-action"
+                        :loading="isBusy(node.data.name, row.version)"
+                        :disabled="isBusy(node.data.name, row.version)"
+                        :data-testid="`set-current-version-${node.data.name}-${row.version}`"
+                        @click="useVersionInWorkflow(node.data.name, row.version)"
                       />
                       <Button
                         v-if="!row.installed"
@@ -995,6 +1064,22 @@ defineExpose({
 
 .version-status-missing {
   background: var(--p-surface-400);
+}
+
+.version-row-current {
+  background: color-mix(in srgb, var(--p-primary-color) 8%, transparent);
+}
+
+.version-current-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--p-primary-color);
+  color: var(--p-primary-contrast-color, #fff);
+  flex-shrink: 0;
 }
 
 .version-action {

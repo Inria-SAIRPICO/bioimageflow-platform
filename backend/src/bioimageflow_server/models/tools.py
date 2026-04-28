@@ -72,6 +72,12 @@ class PackageInfo(BaseModel):
     name: str
     installed_versions: list[str] = []
     available_versions: list[str] = []
+    # The version currently active for the workflow. There is one active
+    # version per package — switching it via POST /tools/packages/{name}/use
+    # rebinds the library registry's class index so every node from this
+    # package resolves to the chosen version's class. ``None`` while no
+    # version is installed.
+    active_version: str | None = None
     tools: dict[str, list[str]] = {}
     environment_status: str = "stopped"
 

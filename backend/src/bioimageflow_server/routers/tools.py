@@ -243,12 +243,13 @@ async def use_package_version(
     pkg = registry.get_package(package_name)
     if pkg is None:
         raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
-    if version and version not in pkg.installed_versions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Version '{version}' is not installed for '{package_name}'",
-        )
-    return {"package": package_name, "version": version or "", "status": "active"}
+    if not version:
+        return {"package": package_name, "version": "", "status": "active"}
+    try:
+        registry.set_active_version(package_name, version)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"package": package_name, "version": version, "status": "active"}
 
 
 @router.post("/packages/{package_name}/install")

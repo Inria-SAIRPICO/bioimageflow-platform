@@ -267,7 +267,8 @@ async function pickFolder(key: string) {
             {{ nodeData.status }}
           </span>
         </div>
-        <!-- Fix 13: Package + version display -->
+        <!-- Fix 13: Package + version display. The active version is
+             workflow-scoped and is changed via the Manage Tools dialog. -->
         <div v-if="nodeData.tool" class="package-info">
           {{ nodeData.tool.package }} v{{ nodeData.tool.package_version }}
         </div>
@@ -312,13 +313,13 @@ async function pickFolder(key: string) {
                 data-testid="reset-default"
               />
             </span>
-            <!-- None toggle for Optional fields. Two-state icon button:
-                 Ø (pi-ban) when the field is set to null, pencil when the
-                 field is editable. Lives in the header so it sits next to
-                 the other per-field actions. -->
+            <!-- None toggle for Optional fields. Two-state icon button —
+                 the icon shows the action that will happen on click: pencil
+                 when the field is null (click to edit), Ø (pi-ban) when the
+                 field is editable (click to set to null). -->
             <span v-if="!(field as InputFieldSchema).required" class="param-toggles">
               <Button
-                :icon="isFieldNulled(key) ? 'pi pi-ban' : 'pi pi-pencil'"
+                :icon="isFieldNulled(key) ? 'pi pi-pencil' : 'pi pi-ban'"
                 class="p-button-text p-button-sm param-action-btn none-toggle-btn"
                 :title="isFieldNulled(key) ? 'Set value (currently null)' : 'Set to null'"
                 :aria-pressed="isFieldNulled(key)"

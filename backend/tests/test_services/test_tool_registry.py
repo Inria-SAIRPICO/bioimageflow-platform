@@ -138,6 +138,61 @@ def test_processing_tool_atlas_has_correct_type_and_accepts_upstream():
     assert meta.accepts_upstream is True
 
 
+def test_scan_tool_store_picks_latest_version_by_default(tmp_path, monkeypatch):
+    """Each tool class should default to the highest installed version.
+
+    Regression: lex-sorted iteration of the version directories meant that
+    `0.1.2` won over `0.1.10` and `0.1.3` won over `0.1.20`, so a freshly
+    created node from a package that had multiple installed versions
+    started life on an older version than the user expected.
+    """
+    pkg_dir = tmp_path / "fakepkg"
+    pkg_dir.mkdir()
+
+    versions = ["0.1.2", "0.1.10", "0.1.3"]
+
+    # Build empty version directories. The library's register_package will
+    # fail to load real metadata, but scan_tool_store records the version
+    # set regardless — which is what we want to assert on.
+    for v in versions:
+        (pkg_dir / v).mkdir()
+
+    reg = ToolRegistryService()
+    reg.scan_tool_store(store_path=tmp_path)
+
+    info = reg.get_package("fakepkg")
+    assert info is not None, "package should be registered even if no tools loaded"
+    # installed_versions stays in ascending order for the GUI dropdown.
+    assert info.installed_versions == ["0.1.2", "0.1.3", "0.1.10"]
+    # The newest installed version is the workflow's default active version
+    # so freshly created nodes execute against the latest available code.
+    assert info.active_version == "0.1.10"
+
+
+def test_set_active_version_updates_package_active_version(tmp_path):
+    """Switching the active version updates ``PackageInfo.active_version``
+    so the GUI can mark which row is current. Lib registry rebinding can
+    soft-fail on test fixtures (no real package on disk) — the field still
+    needs to record the user's choice."""
+    pkg_dir = tmp_path / "fakepkg"
+    pkg_dir.mkdir()
+    for v in ["0.1.0", "0.2.0"]:
+        (pkg_dir / v).mkdir()
+
+    reg = ToolRegistryService()
+    reg.scan_tool_store(store_path=tmp_path)
+
+    info = reg.get_package("fakepkg")
+    assert info is not None
+    # Newest installed wins by default.
+    assert info.active_version == "0.2.0"
+
+    reg.set_active_version("fakepkg", "0.1.0")
+    info_after = reg.get_package("fakepkg")
+    assert info_after is not None
+    assert info_after.active_version == "0.1.0"
+
+
 def test_scan_tool_store_registers_common_tools():
     """End-to-end regression: scanning the real tool store must surface
     every tool re-exported from bioimageflow_common_tools' __init__.py.
