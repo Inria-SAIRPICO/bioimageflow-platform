@@ -6,6 +6,7 @@ import { Controls } from '@vue-flow/controls'
 import ToolNode from './ToolNode.vue'
 import ColumnRefEdge from './ColumnRefEdge.vue'
 import PositionalEdge from './PositionalEdge.vue'
+import CanvasErrorBanner from './CanvasErrorBanner.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useUIStore } from '@/stores/ui'
 import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
@@ -964,6 +965,7 @@ defineExpose({
     @keydown="handleKeydown"
     tabindex="0"
   >
+    <CanvasErrorBanner :validation-result="validationResult" />
     <VueFlow
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
