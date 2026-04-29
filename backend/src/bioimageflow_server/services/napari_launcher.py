@@ -13,9 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import multiprocessing
+import os
 import subprocess
+from multiprocessing.connection import Client
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from bioimageflow.env_manager import get_shared_environment_manager
 
 from bioimageflow_server.models.napari import NapariStatus
 
@@ -29,6 +34,8 @@ _logger = logging.getLogger(__name__)
 
 _SHUTDOWN_WAIT_SECONDS = 5.0
 _RESPONSE_TIMEOUT_SECONDS = 10.0
+_PORT_LINE_TIMEOUT_SECONDS = 30.0
+_PORT_LINE_PREFIX = "Listening port "
 
 
 class NapariConnectionError(Exception):
@@ -191,10 +198,106 @@ class NapariLauncher:
     def _launch(self) -> None:
         """Create/reuse the Conda env and launch ``napari_manager.py``.
 
-        Implemented in Task B4. The B3 skeleton raises ``NotImplementedError``
-        so any test path that calls it without monkeypatching fails loudly.
+        Synchronous: spawns the manager process, waits for the port-line
+        on stdout, and connects the IPC channel. Called via
+        ``asyncio.to_thread`` from ``open()`` so the event loop stays
+        responsive while a multi-minute Conda solve runs.
         """
-        raise NotImplementedError("Task B4: implement Wetlands env + subprocess launch")
+        # Step 1: short-circuit if already alive.
+        if self._is_alive():
+            return
+
+        # Step 2: announce the long-running solve so the UI can flip a
+        # spinner before we block on Wetlands.
+        self._broadcast_status("creating")
+
+        try:
+            # Steps 3–5: get/create the Wetlands environment.
+            env_manager = get_shared_environment_manager()
+            if self._napari_env_path:
+                environment = env_manager.load(
+                    "napari", Path(self._napari_env_path)
+                )
+            else:
+                environment = env_manager.create(
+                    "napari",
+                    dependencies={
+                        "python": "3.12",
+                        "conda": ["conda-forge::napari", "conda-forge::pyqt"],
+                        "pip": [],
+                    },
+                    use_existing=False,
+                )
+
+            # Step 6: per-launch authkey (32 random bytes, hex-encoded for
+            # safe transit through the env var).
+            authkey = os.urandom(32)
+
+            # Step 7: absolute path to the helper script (handles paths
+            # with spaces).
+            napari_manager_path = (
+                Path(__file__).parent.parent / "_external" / "napari_manager.py"
+            ).resolve()
+
+            # Step 8: build child env, strip QT_API leak, inject authkey.
+            child_env = os.environ.copy()
+            child_env.pop("QT_API", None)
+            child_env["NAPARI_AUTHKEY"] = authkey.hex()
+            child_env["NAPARI_PORT_PREFIX"] = _PORT_LINE_PREFIX
+
+            # Step 9: launch the helper. List-of-strings form (Galaxy
+            # convention).
+            commands = [f'python -u "{napari_manager_path}"']
+            process = env_manager.execute_commands(
+                environment,
+                commands,
+                popen_kwargs={"env": child_env},
+            )
+
+            # Step 10: get the process logger (default log=True keeps
+            # stdout buffered for wait_for_line).
+            process_logger = env_manager.get_process_logger(process)
+
+            # Step 11: read the port from stdout via a startswith
+            # predicate (matches Wetlands' own port_predicate
+            # convention).
+            line = process_logger.wait_for_line(
+                lambda l: l.startswith(_PORT_LINE_PREFIX),
+                timeout=_PORT_LINE_TIMEOUT_SECONDS,
+            )
+            if line is None:
+                raise NapariLaunchError(
+                    f"napari manager did not announce a port within "
+                    f"{_PORT_LINE_TIMEOUT_SECONDS:.0f}s"
+                )
+
+            # Step 12: parse.
+            port = int(line.removeprefix(_PORT_LINE_PREFIX).strip())
+
+            # Step 13: connect; wrap AuthenticationError so the caller
+            # sees a single failure type.
+            try:
+                connection = Client(("localhost", port), authkey=authkey)
+            except multiprocessing.AuthenticationError as exc:
+                raise NapariLaunchError(
+                    f"napari authkey mismatch on connect: {exc}"
+                ) from exc
+
+            # Step 14: install state.
+            self._process = process
+            self._connection = connection
+            env_path = getattr(environment, "path", None)
+            self._env_path = str(env_path) if env_path else None
+            self._pid = getattr(process, "pid", None)
+        except Exception:
+            # Any failure between "creating" and a successful connect
+            # must flip the indicator back to "stopped" so the UI does
+            # not stay stuck on the spinner.
+            self._broadcast_status("stopped")
+            raise
+
+        # Step 15: announce success.
+        self._broadcast_status("running")
 
     # ------------------------------------------------------------------
     # Helpers
