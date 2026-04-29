@@ -141,6 +141,11 @@ function onContextMenu(event: MouseEvent) {
 
 function onDismissBadge(event: MouseEvent) {
   event.stopPropagation()
+  // Mutate locally so dismissal works even when the parent isn't
+  // listening — Vue Flow's NodeWrapper doesn't forward custom emits to
+  // CanvasView, so the emit is for tests only and not the load-bearing
+  // contract. NodeData is reactive (shared with the Vue Flow store).
+  props.data.updatedBadge = false
   emit('dismiss-badge', props.id)
 }
 </script>
