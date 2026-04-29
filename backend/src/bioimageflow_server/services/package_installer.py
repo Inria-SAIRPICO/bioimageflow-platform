@@ -108,30 +108,45 @@ class PypiPackageInstaller(PackageInstallerService):
         if version is None:
             version = await self._pypi.get_latest_stable(package_name)
 
-        try:
-            await anyio_to_thread.run_sync(
-                ensure_installed,
-                package_name,
-                version,
-                _pypi_name(package_name),
-                self._tool_store,
-            )
-        except PackageNotFoundError:
-            raise
-        except PackageNetworkError:
-            raise
-        except Exception as exc:  # noqa: BLE001 — classify then re-raise
-            message = str(exc)
-            logger.warning(
-                "Wetlands install failed for %s==%s: %s",
-                package_name,
-                version,
-                message,
-            )
-            cls = _classify_failure(message)
-            raise cls(f"Failed to install {package_name}=={version}: {message}") from exc
+        if self._hot_reload is not None:
+            self._hot_reload.suppress()
 
-        self._registry.scan_tool_store(self._tool_store)
+        try:
+            try:
+                await anyio_to_thread.run_sync(
+                    ensure_installed,
+                    package_name,
+                    version,
+                    _pypi_name(package_name),
+                    self._tool_store,
+                )
+            except PackageNotFoundError:
+                raise
+            except PackageNetworkError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — classify then re-raise
+                message = str(exc)
+                logger.warning(
+                    "Wetlands install failed for %s==%s: %s",
+                    package_name,
+                    version,
+                    message,
+                )
+                cls = _classify_failure(message)
+                raise cls(
+                    f"Failed to install {package_name}=={version}: {message}"
+                ) from exc
+        except Exception:
+            if self._hot_reload is not None:
+                self._hot_reload.resume(emit_batch=False)
+            raise
+
+        if self._hot_reload is not None:
+            # resume(emit_batch=True) discovers the new (pkg, ver) pair
+            # and broadcasts one tool_reload per discovered tool.
+            self._hot_reload.resume(emit_batch=True)
+        else:
+            self._registry.scan_tool_store(self._tool_store)
 
     async def uninstall(self, package_name: str, version: str | None = None) -> None:
         pkg_root = self._tool_store / package_name
@@ -140,24 +155,36 @@ class PypiPackageInstaller(PackageInstallerService):
         else:
             target = pkg_root / version
 
-        if not target.exists():
-            raise PackageNotFoundError(
-                f"Package '{package_name}'"
-                + (f"=={version}" if version else "")
-                + " is not installed"
-            )
+        if self._hot_reload is not None:
+            self._hot_reload.suppress()
 
-        # send2trash is ~O(1) on macOS (APFS rename into ~/.Trash) vs
-        # shutil.rmtree which unlinks every file in the target tree —
-        # slow for site-packages-style directories with thousands of files.
         try:
-            send2trash(str(target))
+            if not target.exists():
+                raise PackageNotFoundError(
+                    f"Package '{package_name}'"
+                    + (f"=={version}" if version else "")
+                    + " is not installed"
+                )
+
+            # send2trash is ~O(1) on macOS (APFS rename into ~/.Trash) vs
+            # shutil.rmtree which unlinks every file in the target tree —
+            # slow for site-packages-style directories with thousands of files.
+            try:
+                send2trash(str(target))
+            except Exception:
+                logger.warning(
+                    "send2trash failed for %s; falling back to shutil.rmtree",
+                    target,
+                    exc_info=True,
+                )
+                shutil.rmtree(target)
+            self._registry.forget_package(package_name, version)
         except Exception:
-            logger.warning(
-                "send2trash failed for %s; falling back to shutil.rmtree",
-                target,
-                exc_info=True,
-            )
-            shutil.rmtree(target)
-        self._registry.forget_package(package_name, version)
-        self._registry.scan_tool_store(self._tool_store)
+            if self._hot_reload is not None:
+                self._hot_reload.resume(emit_batch=False)
+            raise
+
+        if self._hot_reload is not None:
+            self._hot_reload.resume(emit_batch=True)
+        else:
+            self._registry.scan_tool_store(self._tool_store)

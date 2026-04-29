@@ -276,3 +276,194 @@ async def test_uninstall_missing_path_raises_not_found(
 ):
     with pytest.raises(PackageNotFoundError):
         await installer.uninstall("ghost", "1.0")
+
+
+# ---------------------------------------------------------------------------
+# Hot-reload suppression hook (Task 5)
+# ---------------------------------------------------------------------------
+
+
+class _FakeHotReload:
+    """Records suppress / resume calls to assert ordering and arguments."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, bool | None]] = []
+
+    def suppress(self) -> None:
+        self.calls.append(("suppress", None))
+
+    def resume(self, emit_batch: bool = True) -> None:
+        self.calls.append(("resume", emit_batch))
+
+
+@pytest.fixture
+def hot_reload() -> _FakeHotReload:
+    return _FakeHotReload()
+
+
+@pytest.fixture
+def installer_with_hot_reload(
+    tool_store: Path,
+    registry: ToolRegistryService,
+    pypi: PyPIVersionService,
+    hot_reload: _FakeHotReload,
+) -> PypiPackageInstaller:
+    return PypiPackageInstaller(
+        tool_store=tool_store,
+        registry=registry,
+        pypi=pypi,
+        hot_reload=hot_reload,
+    )
+
+
+async def test_install_success_suppresses_then_resumes_with_batch(
+    installer_with_hot_reload: PypiPackageInstaller,
+    hot_reload: _FakeHotReload,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        installer_module,
+        "ensure_installed",
+        _ensure_installed_success_factory([]),
+    )
+
+    await installer_with_hot_reload.install("foo", "1.0")
+
+    assert hot_reload.calls == [("suppress", None), ("resume", True)]
+
+
+async def test_install_failure_resumes_with_emit_batch_false(
+    installer_with_hot_reload: PypiPackageInstaller,
+    hot_reload: _FakeHotReload,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        installer_module,
+        "ensure_installed",
+        _ensure_installed_failure_factory(
+            "ERROR: No matching distribution found for foo==9.9.9"
+        ),
+    )
+
+    with pytest.raises(PackageNotFoundError):
+        await installer_with_hot_reload.install("foo", "9.9.9")
+
+    assert ("suppress", None) in hot_reload.calls
+    assert ("resume", False) in hot_reload.calls
+    # No (resume, True) on the failure path.
+    assert ("resume", True) not in hot_reload.calls
+
+
+async def test_uninstall_success_suppresses_then_resumes_with_batch(
+    installer_with_hot_reload: PypiPackageInstaller,
+    tool_store: Path,
+    hot_reload: _FakeHotReload,
+):
+    pkg_root = tool_store / "foo" / "1.0"
+    (pkg_root / "foo").mkdir(parents=True)
+
+    await installer_with_hot_reload.uninstall("foo", "1.0")
+
+    assert hot_reload.calls == [("suppress", None), ("resume", True)]
+
+
+async def test_uninstall_failure_resumes_with_emit_batch_false(
+    installer_with_hot_reload: PypiPackageInstaller,
+    hot_reload: _FakeHotReload,
+):
+    with pytest.raises(PackageNotFoundError):
+        await installer_with_hot_reload.uninstall("ghost", "1.0")
+
+    assert ("suppress", None) in hot_reload.calls
+    assert ("resume", False) in hot_reload.calls
+    assert ("resume", True) not in hot_reload.calls
+
+
+async def test_install_skips_scan_tool_store_when_hot_reload_wired(
+    installer_with_hot_reload: PypiPackageInstaller,
+    registry: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When hot-reload is wired, resume(emit_batch=True) performs the
+    load + index — a second scan_tool_store would double the work."""
+    monkeypatch.setattr(
+        installer_module,
+        "ensure_installed",
+        _ensure_installed_success_factory([]),
+    )
+
+    await installer_with_hot_reload.install("foo", "1.0")
+
+    registry.scan_tool_store.assert_not_called()
+
+
+async def test_install_calls_scan_tool_store_when_hot_reload_none(
+    installer: PypiPackageInstaller,
+    registry: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Legacy path: without hot-reload the installer must still scan."""
+    monkeypatch.setattr(
+        installer_module,
+        "ensure_installed",
+        _ensure_installed_success_factory([]),
+    )
+
+    await installer.install("foo", "1.0")
+
+    registry.scan_tool_store.assert_called_once()
+
+
+async def test_uninstall_skips_scan_tool_store_when_hot_reload_wired(
+    installer_with_hot_reload: PypiPackageInstaller,
+    tool_store: Path,
+    registry: MagicMock,
+):
+    pkg_root = tool_store / "foo" / "1.0"
+    (pkg_root / "foo").mkdir(parents=True)
+
+    await installer_with_hot_reload.uninstall("foo", "1.0")
+
+    registry.scan_tool_store.assert_not_called()
+
+
+async def test_uninstall_calls_scan_tool_store_when_hot_reload_none(
+    installer: PypiPackageInstaller,
+    tool_store: Path,
+    registry: MagicMock,
+):
+    pkg_root = tool_store / "foo" / "1.0"
+    (pkg_root / "foo").mkdir(parents=True)
+
+    await installer.uninstall("foo", "1.0")
+
+    registry.scan_tool_store.assert_called_once()
+
+
+async def test_install_suppresses_before_ensure_installed_runs(
+    installer_with_hot_reload: PypiPackageInstaller,
+    hot_reload: _FakeHotReload,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """suppress() must fire BEFORE ensure_installed touches disk so the
+    watchdog observer doesn't see in-progress files."""
+    timeline: list[str] = []
+
+    original_suppress = hot_reload.suppress
+
+    def _record_suppress() -> None:
+        timeline.append("suppress")
+        original_suppress()
+
+    hot_reload.suppress = _record_suppress  # type: ignore[method-assign]
+
+    def _fake_ensure(*args, **kwargs) -> None:
+        timeline.append("ensure")
+
+    monkeypatch.setattr(installer_module, "ensure_installed", _fake_ensure)
+
+    await installer_with_hot_reload.install("foo", "1.0")
+
+    suppress_idx = timeline.index("suppress")
+    ensure_idx = timeline.index("ensure")
+    assert suppress_idx < ensure_idx
