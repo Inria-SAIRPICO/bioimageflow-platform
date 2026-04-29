@@ -202,4 +202,168 @@ describe('toolRegistry store', () => {
     expect(store.error).toBe('Server error')
     expect(store.packages).toEqual([])
   })
+
+  describe('applyToolReload', () => {
+    it('replaces an existing tool entry', async () => {
+      mockedApi.get.mockResolvedValueOnce({ data: mockTools })
+      const store = useToolRegistryStore()
+      await store.fetchTools()
+
+      const updated: ToolMetadata = {
+        ...mockTools[0],
+        documentation: 'Updated docs',
+        inputs: { ...mockTools[0].inputs, sigma: { type: 'float', required: false, connectable: 'never' } },
+      }
+      store.applyToolReload({
+        type: 'tool_reload',
+        tool_name: 'threshold',
+        tool_metadata: updated,
+      })
+
+      const after = store.getToolByName('threshold')
+      expect(after).toBeDefined()
+      expect(after!.documentation).toBe('Updated docs')
+      expect(after!.inputs).toHaveProperty('sigma')
+      // No duplicate entry.
+      expect(store.tools.filter((t) => t.name === 'threshold')).toHaveLength(1)
+    })
+
+    it('adds a tool that was not previously in the registry', () => {
+      const store = useToolRegistryStore()
+      const newTool: ToolMetadata = {
+        ...mockTools[0],
+        name: 'brand_new',
+        display_name: 'Brand New',
+      }
+      store.applyToolReload({
+        type: 'tool_reload',
+        tool_name: 'brand_new',
+        tool_metadata: newTool,
+      })
+      expect(store.getToolByName('brand_new')).toBeDefined()
+      expect(store.tools).toHaveLength(1)
+    })
+
+    it('does not duplicate when called multiple times for the same tool', async () => {
+      mockedApi.get.mockResolvedValueOnce({ data: mockTools })
+      const store = useToolRegistryStore()
+      await store.fetchTools()
+
+      for (let i = 0; i < 3; i++) {
+        store.applyToolReload({
+          type: 'tool_reload',
+          tool_name: 'threshold',
+          tool_metadata: mockTools[0],
+        })
+      }
+      expect(store.tools.filter((t) => t.name === 'threshold')).toHaveLength(1)
+    })
+
+    it('updates the tool entry in PackageInfo.tools[version]', async () => {
+      mockedApi.get.mockResolvedValueOnce({ data: mockPackages })
+      const store = useToolRegistryStore()
+      await store.fetchPackages()
+
+      // Add a new tool that the package doesn't yet know about.
+      const newTool: ToolMetadata = {
+        ...mockTools[0],
+        name: 'newly_added',
+        package: 'bioimageflow-core',
+        package_version: '0.1.0',
+      }
+      store.applyToolReload({
+        type: 'tool_reload',
+        tool_name: 'newly_added',
+        tool_metadata: newTool,
+      })
+
+      const pkg = store.packages.find((p) => p.name === 'bioimageflow-core')
+      expect(pkg).toBeDefined()
+      expect(pkg!.tools['0.1.0']).toContain('newly_added')
+    })
+  })
+
+  describe('applyToolRemoved', () => {
+    it('removes the tool from the registry', async () => {
+      mockedApi.get.mockResolvedValueOnce({ data: mockTools })
+      const store = useToolRegistryStore()
+      await store.fetchTools()
+
+      store.applyToolRemoved({ type: 'tool_removed', tool_name: 'threshold' })
+      expect(store.getToolByName('threshold')).toBeUndefined()
+      expect(store.tools).toHaveLength(2)
+    })
+
+    it('is a no-op when the tool is not present', () => {
+      const store = useToolRegistryStore()
+      store.applyToolRemoved({ type: 'tool_removed', tool_name: 'ghost' })
+      expect(store.tools).toEqual([])
+    })
+
+    it('drops the tool from PackageInfo.tools[version]', async () => {
+      mockedApi.get.mockResolvedValueOnce({ data: mockPackages })
+      const store = useToolRegistryStore()
+      await store.fetchPackages()
+
+      // First add the tool to the registry so we have something to remove.
+      const t: ToolMetadata = {
+        ...mockTools[0],
+        name: 'temp_tool',
+        package: 'bioimageflow-core',
+        package_version: '0.1.0',
+      }
+      store.applyToolReload({
+        type: 'tool_reload',
+        tool_name: 'temp_tool',
+        tool_metadata: t,
+      })
+      let pkg = store.packages.find((p) => p.name === 'bioimageflow-core')
+      expect(pkg!.tools['0.1.0']).toContain('temp_tool')
+
+      store.applyToolRemoved({ type: 'tool_removed', tool_name: 'temp_tool' })
+
+      pkg = store.packages.find((p) => p.name === 'bioimageflow-core')
+      expect(pkg!.tools['0.1.0']).not.toContain('temp_tool')
+    })
+  })
+
+  describe('reactivity', () => {
+    it('applyToolReload triggers a watcher on tools', async () => {
+      const { watch, nextTick } = await import('vue')
+      const store = useToolRegistryStore()
+      const fired: number[] = []
+      watch(
+        () => store.tools.length,
+        (n) => fired.push(n),
+      )
+
+      store.applyToolReload({
+        type: 'tool_reload',
+        tool_name: 'gauss',
+        tool_metadata: { ...mockTools[0], name: 'gauss' },
+      })
+      await nextTick()
+      expect(fired).toEqual([1])
+    })
+
+    it('applyToolRemoved triggers a watcher on tools', async () => {
+      const { watch, nextTick } = await import('vue')
+      const store = useToolRegistryStore()
+      store.applyToolReload({
+        type: 'tool_reload',
+        tool_name: 'gauss',
+        tool_metadata: { ...mockTools[0], name: 'gauss' },
+      })
+      await nextTick()
+
+      const fired: number[] = []
+      watch(
+        () => store.tools.length,
+        (n) => fired.push(n),
+      )
+      store.applyToolRemoved({ type: 'tool_removed', tool_name: 'gauss' })
+      await nextTick()
+      expect(fired).toEqual([0])
+    })
+  })
 })
