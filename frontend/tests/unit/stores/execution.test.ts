@@ -237,4 +237,92 @@ describe('execution store', () => {
     expect(store.state).toBe('idle')
     expect(store.error).toBe('Server error')
   })
+
+  describe('execution_failed reporting', () => {
+    it('does NOT report on success=true', async () => {
+      const errorsModule = await import('@/stores/errors')
+      const errorStore = errorsModule.useErrorStore()
+      const store = useExecutionStore()
+
+      store.applyExecutionComplete({
+        success: true,
+        errors: [],
+        node_statuses: {
+          n1: { node_id: 'n1', status: 'executed', cached: false },
+        },
+      })
+      expect(errorStore.errors).toHaveLength(0)
+    })
+
+    it('reports execution_failed with first failed node id and error', async () => {
+      const errorsModule = await import('@/stores/errors')
+      const errorStore = errorsModule.useErrorStore()
+      const store = useExecutionStore()
+
+      store.applyExecutionComplete({
+        success: false,
+        errors: [],
+        node_statuses: {
+          a: { node_id: 'a', status: 'executed', cached: false },
+          b: {
+            node_id: 'b',
+            status: 'failed',
+            cached: false,
+            error: 'b broke',
+            traceback: 'tb',
+          },
+        },
+      })
+      expect(errorStore.errors).toHaveLength(1)
+      const entry = errorStore.errors[0]!
+      expect(entry.kind).toBe('execution_failed')
+      expect(entry.nodeId).toBe('b')
+      expect(entry.detail).toContain('b broke')
+    })
+
+    it('falls back to top-level errors[0].detail when no failed node is present', async () => {
+      const errorsModule = await import('@/stores/errors')
+      const errorStore = errorsModule.useErrorStore()
+      const store = useExecutionStore()
+
+      store.applyExecutionComplete({
+        success: false,
+        errors: [{ detail: 'pre-execution validation failed' }],
+        node_statuses: {},
+      })
+      expect(errorStore.errors).toHaveLength(1)
+      expect(errorStore.errors[0]!.kind).toBe('execution_failed')
+      expect(errorStore.errors[0]!.detail).toContain(
+        'pre-execution validation failed',
+      )
+    })
+
+    it('emits one report even when multiple nodes failed', async () => {
+      const errorsModule = await import('@/stores/errors')
+      const errorStore = errorsModule.useErrorStore()
+      const store = useExecutionStore()
+
+      store.applyExecutionComplete({
+        success: false,
+        errors: [],
+        node_statuses: {
+          a: {
+            node_id: 'a',
+            status: 'failed',
+            cached: false,
+            error: 'a broke',
+          },
+          b: {
+            node_id: 'b',
+            status: 'failed',
+            cached: false,
+            error: 'b broke',
+          },
+        },
+      })
+      expect(errorStore.errors).toHaveLength(1)
+      // Detail should mention that more than one node failed.
+      expect(errorStore.errors[0]!.detail).toContain('failed')
+    })
+  })
 })

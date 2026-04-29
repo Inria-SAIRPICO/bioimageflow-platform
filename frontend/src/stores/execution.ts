@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
+import { useErrorReporting } from '@/composables/useErrorReporting'
 import type {
   GraphState,
   GraphValidationError,
@@ -141,6 +142,45 @@ export const useExecutionStore = defineStore('execution', () => {
     progress.value = null
     if (payload.node_statuses) {
       nodeStatuses.value = { ...nodeStatuses.value, ...payload.node_statuses }
+    }
+
+    if (!payload.success) {
+      _reportFailure(payload)
+    }
+  }
+
+  function _reportFailure(payload: ExecutionResult): void {
+    const failedEntries = Object.entries(payload.node_statuses ?? {}).filter(
+      ([, s]) => s.status === 'failed',
+    )
+
+    let detail: string
+    let nodeId: string | undefined
+    if (failedEntries.length > 0) {
+      const [firstId, firstStatus] = failedEntries[0]!
+      nodeId = firstId
+      const firstMsg = `${firstId}: ${firstStatus.error ?? 'unknown error'}`
+      detail =
+        failedEntries.length === 1
+          ? firstMsg
+          : `${failedEntries.length} nodes failed; first: ${firstMsg}`
+    } else if (payload.errors?.length) {
+      const first = payload.errors[0] as { detail?: string }
+      detail = first.detail ?? 'Execution failed'
+    } else {
+      detail = 'Execution failed'
+    }
+
+    try {
+      const { reportError } = useErrorReporting()
+      reportError({
+        kind: 'execution_failed',
+        detail,
+        ...(nodeId ? { nodeId } : {}),
+      })
+    } catch {
+      // No active Pinia / Toast in test contexts that don't import the
+      // error store; failure is best-effort.
     }
   }
 
