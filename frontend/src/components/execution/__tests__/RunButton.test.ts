@@ -31,6 +31,14 @@ function mountButton(opts: {
   const wrapper = mount(RunButton, {
     global: {
       plugins: [[PrimeVue, { theme: { preset: Aura } }]],
+      stubs: {
+        // PrimeVue Dialog teleports to document.body; stub it so the
+        // assertions can use wrapper.find() without poking at the DOM.
+        Dialog: {
+          template: '<div v-if="visible" :data-testid="$attrs[\'data-testid\']"><slot /><slot name="footer" /></div>',
+          props: ['visible'],
+        },
+      },
     },
     props: {
       graph,

@@ -7,6 +7,11 @@ import Aura from '@primevue/themes/aura'
 import App from '@/App.vue'
 import { useUIStore } from '@/stores/ui'
 
+const { connectMock, disconnectMock } = vi.hoisted(() => ({
+  connectMock: vi.fn(),
+  disconnectMock: vi.fn(),
+}))
+
 // Vue Flow uses ResizeObserver
 globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
@@ -25,6 +30,15 @@ vi.mock('dockview-vue', () => ({
       (this as any).$emit('ready', { api: mockDockviewApi })
     },
   },
+}))
+
+vi.mock('@/composables/useWebSocket', () => ({
+  useWebSocket: () => ({
+    connectionState: { value: 'disconnected' },
+    connect: connectMock,
+    disconnect: disconnectMock,
+    sendSubscribeLogs: vi.fn(),
+  }),
 }))
 
 // PrimeVue Menubar uses matchMedia
@@ -74,6 +88,8 @@ describe('AppShell', () => {
   beforeEach(() => {
     pinia = createPinia()
     setActivePinia(pinia)
+    connectMock.mockClear()
+    disconnectMock.mockClear()
   })
 
   it('renders #bioimageflow-app wrapper', () => {
@@ -90,6 +106,12 @@ describe('AppShell', () => {
     const wrapper = mountApp()
     expect(wrapper.find('.dockview-wrapper').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dockview-container"]').exists()).toBe(true)
+  })
+
+  it('connects the WebSocket on startup', async () => {
+    mountApp()
+    await flushPromises()
+    expect(connectMock).toHaveBeenCalledTimes(1)
   })
 
   it('registers all 5 panels on ready', async () => {

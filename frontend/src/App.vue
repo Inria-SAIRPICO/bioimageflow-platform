@@ -1,48 +1,112 @@
 <script lang="ts">
-import { defineComponent, h } from 'vue'
+import { defineComponent } from 'vue'
 import ToolsPanel from './components/panels/ToolsPanel.vue'
 import CanvasView from './components/canvas/CanvasView.vue'
 import NodePanel from './components/panels/NodePanel.vue'
+import SettingsPanel from './components/panels/SettingsPanel.vue'
+import LoggerPanel from './components/panels/LoggerPanel.vue'
+import DataTablePanel from './components/panels/DataTablePanel.vue'
 
 export default defineComponent({
   components: {
     tools: ToolsPanel,
     canvasView: CanvasView,
     nodePanel: NodePanel,
-    dataTable: defineComponent({
-      render() {
-        return h('div', { 'data-testid': 'panel-dataTable', style: 'padding: 8px' }, 'Data Table (placeholder)')
-      },
-    }),
-    logger: defineComponent({
-      render() {
-        return h('div', { 'data-testid': 'panel-logger', style: 'padding: 8px' }, 'Logger (placeholder)')
-      },
-    }),
+    logger: LoggerPanel,
+    dataTable: DataTablePanel,
   },
 })
 </script>
 
 <script setup lang="ts">
-import { watch, shallowRef, watchEffect } from 'vue'
+import { onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
 import { themeLight } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
+import ConfirmDialog from 'primevue/confirmdialog'
 import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetBrowserStore } from './stores/datasetBrowser'
+import { useExecutionStore } from './stores/execution'
 import { useFileDrop } from './composables/useFileDrop'
 import { useExecutionLock } from './composables/useExecutionLock'
+import { useSettingsPanel } from './composables/useSettingsPanel'
+import { isDesktop as isPywebview } from './utils/nativeDialogs'
+import { useWebSocket } from './composables/useWebSocket'
+
+function isMac(): boolean {
+  return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+}
+
+function onPreferencesShortcut(event: KeyboardEvent) {
+  if (event.key !== ',') return
+  // macOS: Cmd+, always (browser or pywebview).
+  // Linux/Windows pywebview: Ctrl+, only.
+  // Linux/Windows browser: never registered (the menu entry is the fallback —
+  // some browsers reserve Ctrl+, for their own preferences).
+  const fired =
+    (isMac() && event.metaKey) || (!isMac() && isPywebview() && event.ctrlKey)
+  if (!fired) return
+  event.preventDefault()
+  useSettingsPanel().open()
+}
+
+const shortcutEnabled = isMac() || isPywebview()
 
 const uiStore = useUIStore()
 const datasetBrowserStore = useDatasetBrowserStore()
+const executionStore = useExecutionStore()
+const websocket = useWebSocket()
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
 // executionStore.isRunning anywhere in the tree. The composable has a
 // side-effectful watch; the return values are unused here.
 useExecutionLock()
+
+function stopStatusPolling() {
+  if (statusPollTimer !== null) {
+    clearInterval(statusPollTimer)
+    statusPollTimer = null
+  }
+}
+
+function startStatusPolling() {
+  if (statusPollTimer !== null) return
+  statusPollTimer = setInterval(() => {
+    if (!executionStore.isRunning) {
+      stopStatusPolling()
+      return
+    }
+    void executionStore.fetchStatus()
+  }, 1000)
+}
+
+onMounted(() => {
+  websocket.connect()
+  if (shortcutEnabled) {
+    window.addEventListener('keydown', onPreferencesShortcut)
+  }
+})
+
+onBeforeUnmount(() => {
+  stopStatusPolling()
+  websocket.disconnect()
+  if (shortcutEnabled) {
+    window.removeEventListener('keydown', onPreferencesShortcut)
+  }
+})
+
+watch(
+  () => executionStore.state,
+  (state) => {
+    if (state === 'running') startStatusPolling()
+    else stopStatusPolling()
+  },
+  { immediate: true },
+)
 
 // Server-side upload cap default (2 GB, matches backend default). Used for
 // the client-side pre-upload size check in DatasetBrowser. The authoritative
@@ -174,6 +238,8 @@ defineExpose({ dockviewApi })
       />
     </div>
     <Toast position="bottom-right" />
+    <ConfirmDialog />
+    <SettingsPanel />
     <DatasetBrowser
       v-if="datasetBrowserStore.isOpen && datasetBrowserStore.options"
       :visible="datasetBrowserStore.isOpen"

@@ -1,0 +1,12 @@
+export type ColumnTypeString =
+  | 'ImagePath'
+  | 'ImageShared'
+  | 'Path'
+  | 'SharedArray'
+  | 'int'
+  | 'float'
+  | 'str'
+  | 'bool'
+  | 'list'
+  | 'dict'
+  | 'tuple'

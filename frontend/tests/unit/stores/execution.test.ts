@@ -7,6 +7,7 @@ vi.mock('@/api/client', () => ({
 
 import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
+import { useLoggerStore } from '@/stores/logger'
 import type { ExecutionResult, ProgressInfo } from '@/api/types'
 
 const mockedApi = api as unknown as {
@@ -75,6 +76,13 @@ describe('execution store', () => {
       node_statuses: { n1: { node_id: 'n1', status: 'executed', cached: false } },
     }
     store.progress = { node_id: 'n1', row: 5, total_rows: 10 }
+    const logger = useLoggerStore()
+    logger.addEntry({
+      level: 'INFO',
+      message: 'old run',
+      nodeId: null,
+      timestamp: 1,
+    })
 
     await store.run(graph)
 
@@ -86,6 +94,7 @@ describe('execution store', () => {
     expect(store.lastResult).toBeNull()
     expect(store.progress).toBeNull()
     expect(store.nodeStatuses).toEqual({})
+    expect(logger.entries).toEqual([])
   })
 
   it('run with nodes passes node list', async () => {

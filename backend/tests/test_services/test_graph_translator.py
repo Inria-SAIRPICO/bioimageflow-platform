@@ -114,6 +114,32 @@ def test_column_ref_edge_emitted(registry: ToolRegistryService) -> None:
     ]
 
 
+def test_connected_input_does_not_emit_constant(registry: ToolRegistryService) -> None:
+    """Fields with an incoming column_ref edge must not appear in ``constants``.
+
+    The library engine merges constants on top of column bindings, so a
+    leftover constant (e.g. a ``None`` placeholder kept by the frontend on
+    the disabled parameter widget) would clobber the upstream value.
+    """
+    graph = GraphState(
+        nodes=[
+            NodeState(id="src", name="src", tool_name="TProcTool",
+                      position=(0, 0), parameters={"input_image": "/a"}),
+            NodeState(id="dst", name="dst", tool_name="TProcTool",
+                      position=(0, 0),
+                      parameters={"input_image": None, "diameter": 7.0}),
+        ],
+        edges=[
+            ColumnRefEdge(id="e", source_node="src", target_node="dst",
+                          source_output="mask", target_input="input_image"),
+        ],
+    )
+    result = graph_state_to_lib_dict(graph, registry)
+    dst_dict = next(n for n in result.lib_dict["nodes"] if n["name"] == "dst")
+    assert "input_image" not in dst_dict["constants"]
+    assert dst_dict["constants"]["diameter"] == {"__type__": "float", "value": 7.0}
+
+
 def test_positional_edges_sorted_and_normalised(registry: ToolRegistryService) -> None:
     graph = GraphState(
         nodes=[
@@ -231,3 +257,78 @@ def test_error_path_flattened_into_detail() -> None:
     out = lib_validation_error_to_graph_error(err)
     assert "outer_sw/inner_sw" in out.detail
     assert "n must be >= 0" in out.detail
+
+
+# ---- Cache settings wired through Settings -----------------------------
+
+
+_UNLIMITED = 2**31 - 1
+
+
+def test_default_settings_yields_unlimited_max_executions(
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop")
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    config = result.lib_dict["config"]
+    assert config["max_executions"] == _UNLIMITED
+    assert config["max_age"] is None
+
+
+def test_zero_cache_max_executions_round_trips(
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", cache_max_executions=0)
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["max_executions"] == 0
+
+
+def test_positive_cache_max_executions_round_trips(
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", cache_max_executions=3)
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["max_executions"] == 3
+
+
+def test_cache_max_age_round_trips(registry: ToolRegistryService) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", cache_max_age="30d")
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["max_age"] == "30d"
+
+
+def test_execution_engine_round_trips(registry: ToolRegistryService) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", execution_engine="parsl")
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["engine"] == "parsl"
+
+
+def test_no_settings_preserves_legacy_defaults(
+    registry: ToolRegistryService,
+) -> None:
+    """Backwards-compat: callers that don't pass settings keep the old behaviour."""
+    result = graph_state_to_lib_dict(GraphState(nodes=[], edges=[]), registry)
+    config = result.lib_dict["config"]
+    assert config["engine"] == "sequential"
+    assert config["max_executions"] == 0
+    assert config["max_age"] is None

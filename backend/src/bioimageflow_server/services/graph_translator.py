@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from bioimageflow import serialize_constant
 
@@ -24,9 +24,17 @@ from bioimageflow_server.models.graph import (
 from bioimageflow_server.models.validation import GraphValidationError
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
+if TYPE_CHECKING:
+    from bioimageflow_server.models.settings import Settings
+
 
 # Key used for positional edges in the library wire format.
 POSITIONAL_KEY = "__positional__"
+
+# Library has no native "no limit" for max_executions; map the GUI's
+# ``None`` (unlimited) to a very large integer at translation time.
+# Documented in plan §"Cross-Plan Notes #8".
+_UNLIMITED_MAX_EXECUTIONS = 2**31 - 1
 
 
 @dataclass
@@ -47,6 +55,7 @@ def graph_state_to_lib_dict(
     *,
     storage_path: Path | None = None,
     engine: str = "sequential",
+    settings: "Settings | None" = None,
 ) -> TranslationResult:
     """Translate ``graph`` into the library's serialization dict.
 
@@ -169,6 +178,17 @@ def graph_state_to_lib_dict(
     for target, pos_edges in positional_by_target.items():
         pos_edges.sort(key=lambda e: e.positional_index)
 
+    # Fields that already receive their value from a column_ref edge must
+    # not be re-emitted as constants — the library's engine merges
+    # constants on top of column bindings, so a leftover constant
+    # (commonly a None placeholder kept by the frontend on the disabled
+    # parameter widget) would clobber the upstream value.
+    connected_inputs_by_target: dict[str, set[str]] = {}
+    for edge in column_edges:
+        connected_inputs_by_target.setdefault(edge.target_node, set()).add(
+            edge.target_input
+        )
+
     # --- Emit nodes. ---
     nodes_data: list[dict[str, Any]] = []
     emitted_ids: set[str] = set()
@@ -197,7 +217,10 @@ def graph_state_to_lib_dict(
         if not node.enabled:
             node_dict["enabled"] = False
 
+        connected_inputs = connected_inputs_by_target.get(node.id, set())
         for key, value in node.parameters.items():
+            if key in connected_inputs:
+                continue
             node_dict["constants"][key] = serialize_constant(value)
 
         nodes_data.append(node_dict)
@@ -229,14 +252,31 @@ def graph_state_to_lib_dict(
             )
 
     storage_str = str(storage_path) if storage_path is not None else "./bif_data"
+
+    # Cache config: derived from Settings when supplied; otherwise the legacy
+    # defaults so callers that don't yet thread Settings through (validators,
+    # tests) keep working.
+    if settings is not None:
+        resolved_engine = settings.execution_engine
+        resolved_max_executions = (
+            _UNLIMITED_MAX_EXECUTIONS
+            if settings.cache_max_executions is None
+            else settings.cache_max_executions
+        )
+        resolved_max_age = settings.cache_max_age
+    else:
+        resolved_engine = engine
+        resolved_max_executions = 0
+        resolved_max_age = None
+
     lib_dict: dict[str, Any] = {
         "nodes": nodes_data,
         "edges": edges_data,
         "config": {
             "storage_path": storage_str,
-            "engine": engine,
-            "max_executions": 0,
-            "max_age": None,
+            "engine": resolved_engine,
+            "max_executions": resolved_max_executions,
+            "max_age": resolved_max_age,
         },
     }
 

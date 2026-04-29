@@ -19,8 +19,8 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImagePath', required: true, connectable: 'by_default' },
-      sigma: { type: 'float', required: false, connectable: 'never', default: 1.0 },
+      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+      sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -35,8 +35,8 @@ function makeThresholdTool(): ToolMetadata {
     name: 'threshold',
     display_name: 'Threshold',
     inputs: {
-      mask: { type: 'MaskPath', required: true, connectable: 'by_default' },
-      level: { type: 'float', required: false, connectable: 'never', default: 0.5 },
+      mask: { type: 'MaskPath', required: true, nullable: false, connectable: 'by_default' },
+      level: { type: 'float', required: false, nullable: false, connectable: 'never', default: 0.5 },
     },
     outputs: {
       result: { type: 'MaskPath' },
@@ -246,6 +246,73 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('onConnect drops a stale parameter for the now-connected input', () => {
+      // Reproduces the Files → Atlas bug: the user had a null parameter
+      // sitting on `image`, then wired up an edge. The wire payload must
+      // not carry the constant — otherwise the engine merges it on top of
+      // the column binding and the upstream value is lost.
+      mockNodes = [
+        { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', parameters: {}, connectedInputs: {} } },
+        {
+          id: 'b',
+          data: {
+            toolName: 'gaussian_blur',
+            name: 'b',
+            parameters: { image: null, sigma: 1.0 },
+            connectedInputs: {},
+          },
+        },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+
+      connectHandler!({
+        source: 'a',
+        target: 'b',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+      })
+
+      const targetNode = mockNodes.find((n: any) => n.id === 'b')!
+      expect('image' in targetNode.data.parameters).toBe(false)
+      expect(targetNode.data.parameters.sigma).toBe(1.0)
+      expect(targetNode.data.connectedInputs.image).toBe('a.result')
+      w.unmount()
+    })
+
+    it('onConnect leaves parameters untouched on a positional/header connection', () => {
+      // Positional handles like `__positional_0` are not real field names
+      // in `parameters`, so we must not delete an unrelated entry that
+      // happens to share its key by accident.
+      mockNodes = [
+        { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', parameters: {}, connectedInputs: {} } },
+        {
+          id: 'b',
+          data: {
+            toolName: 'gaussian_blur',
+            name: 'b',
+            parameters: { __positional_0: 'should-not-be-touched', sigma: 1.0 },
+            connectedInputs: {},
+          },
+        },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+
+      connectHandler!({
+        source: 'a',
+        target: 'b',
+        sourceHandle: 'result',
+        targetHandle: '__positional_0',
+      })
+
+      const targetNode = mockNodes.find((n: any) => n.id === 'b')!
+      expect(targetNode.data.parameters.__positional_0).toBe('should-not-be-touched')
+      w.unmount()
+    })
+
     it('positional inputs allow multiple incoming edges', () => {
       mockNodes = [
         { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', connectedInputs: {} } },
@@ -336,8 +403,8 @@ describe('CanvasView', () => {
           display_name: 'Files',
           tool_type: 'DataFrameTool',
           inputs: {
-            path: { type: 'Path', required: true, connectable: 'never' },
-            pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+            path: { type: 'Path', required: true, nullable: false, connectable: 'never' },
+            pattern: { type: 'str', required: false, nullable: false, connectable: 'never', default: '*' },
           },
           outputs: {
             path: { type: 'Path' },
@@ -352,9 +419,9 @@ describe('CanvasView', () => {
           name: 'path_sink',
           display_name: 'Path Sink',
           inputs: {
-            any_path: { type: 'Path', required: true, connectable: 'by_default' },
-            image: { type: 'ImagePath', required: true, connectable: 'by_default' },
-            mask: { type: 'MaskPath', required: true, connectable: 'by_default' },
+            any_path: { type: 'Path', required: true, nullable: false, connectable: 'by_default' },
+            image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+            mask: { type: 'MaskPath', required: true, nullable: false, connectable: 'by_default' },
           },
           outputs: {},
         })
@@ -366,7 +433,7 @@ describe('CanvasView', () => {
           name: 'multi_path_source',
           display_name: 'Multi Path Source',
           inputs: {
-            seed: { type: 'ImagePath', required: true, connectable: 'by_default' },
+            seed: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
           },
           outputs: {
             any_path: { type: 'Path' },
@@ -620,8 +687,8 @@ describe('CanvasView', () => {
         display_name: 'Files',
         tool_type: 'DataFrameTool',
         inputs: {
-          path: { type: 'Path', required: true, connectable: 'never' },
-          pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+          path: { type: 'Path', required: true, nullable: false, connectable: 'never' },
+          pattern: { type: 'str', required: false, nullable: false, connectable: 'never', default: '*' },
         },
         outputs: {
           path: { type: 'Path' },
@@ -715,6 +782,69 @@ describe('CanvasView', () => {
       // We test by calling onAddNode with a nonexistent tool
       vm.onAddNode({ toolName: 'nonexistent_tool' })
       expect(mockNodes.length).toBe(0)
+      w.unmount()
+    })
+  })
+
+  // --- Workflow-wide version switch refresh ---
+
+  describe('tool snapshot refresh on registry change', () => {
+    it('updates each node\'s tool snapshot when the registry version changes', async () => {
+      // Create a node at v1.0.0, then simulate a "Set current" version
+      // switch by mutating the registry to v2.0.0. The watcher in
+      // CanvasView should propagate the new ToolMetadata to the existing
+      // node so the GUI (NodePanel header, ToolNode badges) reflects the
+      // new version without recreating the node.
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
+
+      expect(mockNodes[0].data.tool.package_version).toBe('1.0.0')
+
+      // Simulate version switch: registry now exports the same tool at a
+      // newer version.
+      store.tools = [makeTool({ package_version: '2.0.0' })] as any
+      await nextTick()
+
+      expect(mockNodes[0].data.tool.package_version).toBe('2.0.0')
+      w.unmount()
+    })
+
+    it('marks executed nodes as out_of_date after a version switch', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
+      // Simulate the node having been executed against v1.0.0.
+      mockNodes[0].data.status = 'executed'
+
+      store.tools = [makeTool({ package_version: '2.0.0' })] as any
+      await nextTick()
+
+      expect(mockNodes[0].data.status).toBe('out_of_date')
+      w.unmount()
+    })
+
+    it('leaves non-executed status alone after a version switch', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
+      // Default status is 'unexecuted'.
+      expect(mockNodes[0].data.status).toBe('unexecuted')
+
+      store.tools = [makeTool({ package_version: '2.0.0' })] as any
+      await nextTick()
+
+      // unexecuted should stay unexecuted — only `executed` flips to out_of_date.
+      expect(mockNodes[0].data.status).toBe('unexecuted')
       w.unmount()
     })
   })
@@ -1369,7 +1499,7 @@ describe('CanvasView', () => {
         accepts_upstream: false,
         dynamic_outputs: true,
         inputs: {
-          column_name: { type: 'str', required: true, connectable: 'never' },
+          column_name: { type: 'str', required: true, nullable: false, connectable: 'never' },
         },
         outputs: {},
       })

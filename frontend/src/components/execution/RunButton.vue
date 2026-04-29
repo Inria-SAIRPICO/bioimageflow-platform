@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, type Ref } from 'vue'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExecutionLock'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
@@ -62,6 +63,18 @@ function resolveConfirm(value: boolean) {
   if (resolve) resolve(value)
 }
 
+/** PrimeVue Dialog can close itself (Escape key) without going through one
+ * of our action buttons. When that happens, treat it as a cancel so the
+ * pending promise resolves and we don't leak state for the next run. */
+function onConfirmDialogVisibilityChange(visible: boolean) {
+  if (!visible && confirmResolve.value) {
+    const resolve = confirmResolve.value
+    confirmResolve.value = null
+    pendingOutOfDateNodes.value = []
+    resolve(false)
+  }
+}
+
 function findOutOfDateNodes(): string[] {
   const result: ValidationResult | null = props.graphSync.validationResult.value
   if (!result || !result.node_statuses) return []
@@ -91,8 +104,12 @@ async function runCore(nodes?: string[]) {
     }
     if (status === 422 || /validation/i.test(err?.message ?? '')) {
       // Pull the fresh validation result so we can enumerate errors. The
-      // pre-run flushNow has just refreshed it.
-      const errs = props.graphSync.validationResult.value?.errors ?? []
+      // pre-run flushNow has just refreshed it; run-time build errors are
+      // returned directly by POST /execution/run and stored on exec.
+      const errs =
+        exec.validationErrors.length > 0
+          ? exec.validationErrors
+          : props.graphSync.validationResult.value?.errors ?? []
       const firstBadNode = errs.find((e) => e.node)?.node
       if (firstBadNode) {
         ui.setSelectedNodes([firstBadNode])
@@ -115,7 +132,7 @@ async function runCore(nodes?: string[]) {
               })
               .join('\n') +
             (errs.length > 5 ? `\n…and ${errs.length - 5} more` : '')
-          : 'Fix them before running'
+          : exec.error ?? 'Fix them before running'
       emit('toast', {
         severity: 'error',
         summary,
@@ -126,7 +143,7 @@ async function runCore(nodes?: string[]) {
     emit('toast', {
       severity: 'error',
       summary: 'Run failed',
-      detail: err?.message ?? 'Unknown error',
+      detail: exec.error ?? err?.message ?? 'Unknown error',
     })
   }
 }
@@ -187,19 +204,24 @@ defineExpose({
       @click="onStop"
     />
 
-    <div
-      v-if="confirmOpen"
-      class="run-button__confirm"
+    <Dialog
+      v-model:visible="confirmOpen"
+      modal
+      :closable="false"
+      :close-on-escape="true"
+      header="Re-execute out-of-date nodes?"
+      :style="{ width: '32rem' }"
       data-testid="out-of-date-confirm"
+      @update:visible="onConfirmDialogVisibilityChange"
     >
-      <p>
+      <p class="run-button__confirm-message">
         The following out-of-date nodes will be re-executed, replacing their
         previous outputs:
       </p>
-      <ul>
+      <ul class="run-button__confirm-list">
         <li v-for="nid in pendingOutOfDateNodes" :key="nid">{{ nid }}</li>
       </ul>
-      <div class="run-button__confirm-actions">
+      <template #footer>
         <Button
           label="Cancel"
           severity="secondary"
@@ -211,8 +233,8 @@ defineExpose({
           data-testid="out-of-date-continue"
           @click="resolveConfirm(true)"
         />
-      </div>
-    </div>
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -222,17 +244,13 @@ defineExpose({
   gap: 0.5rem;
   align-items: center;
 }
-.run-button__confirm {
-  position: absolute;
-  background: var(--p-surface-0);
-  border: 1px solid var(--p-surface-300);
-  padding: 1rem;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.run-button__confirm-message {
+  margin: 0 0 0.5rem;
 }
-.run-button__confirm-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+.run-button__confirm-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  max-height: 40vh;
+  overflow-y: auto;
 }
 </style>

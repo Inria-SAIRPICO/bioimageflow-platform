@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
+import { useLoggerStore } from '@/stores/logger'
 import type {
   GraphState,
   GraphValidationError,
@@ -46,8 +47,15 @@ interface ClearResponse {
 
 interface RunError {
   status?: number
-  response?: { status?: number; data?: { errors?: GraphValidationError[] } }
+  response?: {
+    status?: number
+    data?: { detail?: string; error?: string; errors?: GraphValidationError[] }
+  }
   message?: string
+}
+
+function messageFromError(err: RunError): string {
+  return err.response?.data?.detail ?? err.message ?? String(err)
 }
 
 export const useExecutionStore = defineStore('execution', () => {
@@ -81,6 +89,7 @@ export const useExecutionStore = defineStore('execution', () => {
     if (state.value === 'running') {
       throw new Error('already running')
     }
+    useLoggerStore().clearEntries()
     error.value = null
     isConflict.value = false
     validationErrors.value = []
@@ -99,7 +108,7 @@ export const useExecutionStore = defineStore('execution', () => {
       } else if (status === 422) {
         validationErrors.value = err.response?.data?.errors ?? []
       }
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = messageFromError(err)
       throw e
     }
   }

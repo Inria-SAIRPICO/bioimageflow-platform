@@ -17,6 +17,10 @@ from pathlib import Path
 from typing import Any
 
 from bioimageflow import ToolRegistry as LibToolRegistry
+from bioimageflow.tool_loader import (
+    load_versioned_package,
+    unload_versioned_package,
+)
 from bioimageflow.validation import (
     SchemaSerializationError,
     serialize_input_schema,
@@ -29,6 +33,7 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
+from bioimageflow_server.services.pypi_versions import _version_sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +51,10 @@ class ToolRegistryService:
         self._tools: dict[str, ToolMetadata] = {}
         self._lib_registry = LibToolRegistry()
         self._packages: dict[str, PackageInfo] = {}
+        # Tracked from the most recent ``scan_tool_store`` call. Used by
+        # ``resolve_package_for_path`` to map watchdog file events back to
+        # ``(package, version)`` pairs.
+        self._store_path: Path | None = None
 
     def scan_tool_store(self, store_path: Path | None = None) -> None:
         """Scan the tool store directory and register all discovered tools.
@@ -59,6 +68,7 @@ class ToolRegistryService:
             self._lib_registry = LibToolRegistry(store_path=store_path)
 
         actual_store = store_path if store_path is not None else get_tool_store_path()
+        self._store_path = actual_store
 
         if not actual_store.exists():
             logger.warning("Tool store not found: %s", actual_store)
@@ -68,12 +78,29 @@ class ToolRegistryService:
             if not pkg_dir.is_dir() or pkg_dir.name.startswith("."):
                 continue
             package_name = pkg_dir.name
+
+            # Sort version directories oldest-first using PEP 440 ordering.
+            # Each `lib_registry.register_package(name, version)` call
+            # overwrites `_classes[class_name]` with this version's class
+            # object — so to leave the NEWEST version active for each
+            # class, we load oldest-first and let the newest call win.
+            # (Lex sort treats `0.1.10` < `0.1.9`, which is wrong for
+            # multi-digit versions.)
+            ver_dirs = [
+                d for d in pkg_dir.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            ]
+            ver_dirs.sort(key=lambda d: _version_sort_key(d.name))
+
             installed_versions: list[str] = []
             tools_by_version: dict[str, list[str]] = {}
+            # class_name -> newest version that exports it. The platform
+            # registry stores one ToolMetadata per class, so this picks
+            # which version's metadata (incl. inputs/outputs schema) we
+            # surface to the GUI.
+            class_versions: dict[str, str] = {}
 
-            for ver_dir in sorted(pkg_dir.iterdir()):
-                if not ver_dir.is_dir() or ver_dir.name.startswith("."):
-                    continue
+            for ver_dir in ver_dirs:
                 version = ver_dir.name
                 installed_versions.append(version)
 
@@ -87,26 +114,38 @@ class ToolRegistryService:
                     )
                     continue
 
-                tool_names: list[str] = []
-                for lib_meta in lib_metas:
-                    class_name = lib_meta.class_name
-                    tool_names.append(class_name)
-                    if class_name not in self._tools:
-                        tool_cls = self._lib_registry.get_class(class_name)
-                        if tool_cls is not None:
-                            self._register_tool_from_class(
-                                tool_cls, class_name, package_name, version,
-                            )
-
+                tool_names = [m.class_name for m in lib_metas]
                 tools_by_version[version] = tool_names
 
+                # Newer iterations overwrite older entries — at the end
+                # of the loop each class points at the newest version
+                # that exports it.
+                for class_name in tool_names:
+                    class_versions[class_name] = version
+
+            # Snapshot platform metadata using the lib registry's current
+            # bindings (newest version per class, thanks to the load
+            # order above).
+            for class_name, version in class_versions.items():
+                tool_cls = self._lib_registry.get_class(class_name)
+                if tool_cls is not None:
+                    self._register_tool_from_class(
+                        tool_cls, class_name, package_name, version,
+                    )
+
             if installed_versions:
+                # The lib registry was loaded oldest-first, so the newest
+                # version is the one currently bound in `_classes`. Reflect
+                # that in `active_version` so the GUI knows which version
+                # the workflow will execute against.
+                active_version = installed_versions[-1]
                 self.register_package(
                     package_name,
                     PackageInfo(
                         name=package_name,
                         installed_versions=installed_versions,
                         available_versions=installed_versions,
+                        active_version=active_version,
                         tools=tools_by_version,
                         environment_status="stopped",
                     ),
@@ -235,6 +274,177 @@ class ToolRegistryService:
 
     def list_packages(self) -> list[PackageInfo]:
         return list(self._packages.values())
+
+    def set_active_version(self, package_name: str, version: str) -> None:
+        """Make ``package_name==version`` the active version for the workflow.
+
+        Re-registers the package via the library registry — that overwrites
+        the class binding in :attr:`_lib_registry._classes`, so subsequent
+        :meth:`get_tool_class` lookups (and therefore execution) resolve
+        to the requested version's class. Platform metadata for tools
+        exported by this package is refreshed from the new class so the
+        GUI sees the correct schema, version string, etc.
+
+        Raises :class:`ValueError` if the package or version is unknown.
+        Soft-fails (logs and returns) if the package directory is missing
+        on disk — covers test fixtures that register a fake PackageInfo
+        without copying real files into the tool store.
+        """
+        pkg = self._packages.get(package_name)
+        if pkg is None:
+            raise ValueError(f"Package '{package_name}' is not registered")
+        if version not in pkg.installed_versions:
+            raise ValueError(
+                f"Version '{version}' is not installed for "
+                f"'{package_name}'"
+            )
+
+        try:
+            lib_metas = self._lib_registry.register_package(package_name, version)
+        except FileNotFoundError:
+            logger.warning(
+                "set_active_version: %s==%s not found on disk; "
+                "skipping lib registry refresh",
+                package_name, version,
+            )
+            # Still record the user's choice on the package info so the GUI
+            # reflects the requested active version even when the lib
+            # registry can't actually load the class (test fixtures).
+            pkg.active_version = version
+            return
+
+        pkg.active_version = version
+
+        # Refresh platform metadata for every class in this version so the
+        # GUI's tool list reflects the new schema/version.
+        for lib_meta in lib_metas:
+            class_name = lib_meta.class_name
+            tool_cls = self._lib_registry.get_class(class_name)
+            if tool_cls is None:
+                continue
+            # Drop the stale entry so _register_tool_from_class refills it.
+            self._tools.pop(class_name, None)
+            self._register_tool_from_class(
+                tool_cls, class_name, package_name, version,
+            )
+
+    # -- hot reload --
+
+    def snapshot(self, package: str, version: str) -> dict[str, ToolMetadata]:
+        """Return the current platform metadata for tools matching
+        ``(package, version)``. Empty if nothing is loaded for that pair.
+        """
+        return {
+            name: meta
+            for name, meta in self._tools.items()
+            if meta.package == package and meta.package_version == version
+        }
+
+    def resolve_package_for_path(self, path: Path) -> tuple[str, str] | None:
+        """Map a filesystem path to ``(package, version)`` if it lives
+        under the tool store and has at least two components below the
+        store root, else ``None``.
+
+        Parsing rule: the first two path components below the tracked
+        store root are ``(package_name, version)``. Anything shallower
+        (e.g. a stray README directly under ``<store>/<pkg>``) is treated
+        as out-of-scope.
+        """
+        if self._store_path is None:
+            return None
+        try:
+            relative = Path(path).resolve().relative_to(self._store_path.resolve())
+        except ValueError:
+            return None
+        parts = relative.parts
+        # Need at least <pkg>/<ver>/<file> — anything shallower is at
+        # the store root or the package level and isn't a hot-reloadable
+        # source path.
+        if len(parts) < 3:
+            return None
+        return parts[0], parts[1]
+
+    def reload_package(
+        self, package: str, version: str
+    ) -> dict[str, ToolMetadata]:
+        """Unload + load + re-index a single ``(package, version)`` pair.
+
+        Preserves the user's chosen ``active_version`` for the package by
+        re-applying it after the lib registry's class bindings have been
+        rebuilt for the reloaded version. On any exception during the
+        load + index phase, restores the prior class bindings and
+        platform metadata, then re-raises so the caller can broadcast
+        a ``system_error`` and surface the failure in the GUI.
+        """
+        if self._store_path is None:
+            from bioimageflow.paths import get_tool_store_path
+            self._store_path = get_tool_store_path()
+
+        # Snapshot prior state for rollback. We hold strong refs to the
+        # prior class objects so they remain resolvable even after
+        # ``unload_versioned_package`` strips ``sys.modules`` entries.
+        prior_snapshot = self.snapshot(package, version)
+        prior_classes: dict[str, type] = {}
+        for class_name in prior_snapshot:
+            prior = self._lib_registry.get_class(class_name)
+            if prior is not None:
+                prior_classes[class_name] = prior
+
+        # Capture the active version BEFORE the reload — register_package
+        # rebinds ``_lib_registry._classes`` for every class in the
+        # version it loads, so an inactive-version reload would clobber
+        # the active version's bindings unless we restore them below.
+        pkg_info = self._packages.get(package)
+        active_version = pkg_info.active_version if pkg_info is not None else None
+
+        unload_versioned_package(package, version)
+
+        try:
+            load_versioned_package(package, version, self._store_path)
+            # Drop stale ToolMetadata entries for this package/version so
+            # the re-register loop below produces a fresh snapshot. Tools
+            # that disappear from the source land outside this set and
+            # are removed by the caller (the hot-reload service diff).
+            for class_name in list(prior_snapshot):
+                self._tools.pop(class_name, None)
+                self._lib_registry.forget(class_name)
+
+            # Reload metadata for every class actually present in the new
+            # version. Re-register through the lib registry so its
+            # _classes binding is fresh.
+            lib_metas = self._lib_registry.register_package(package, version)
+            for lib_meta in lib_metas:
+                class_name = lib_meta.class_name
+                tool_cls = self._lib_registry.get_class(class_name)
+                if tool_cls is None:
+                    continue
+                self._register_tool_from_class(
+                    tool_cls, class_name, package, version,
+                )
+        except Exception:
+            # Restore prior state — hold the prior class objects strongly
+            # so callers don't see "tools vanished" because of a bad edit.
+            self._tools.clear()
+            self._tools.update(prior_snapshot)
+            for class_name, cls in prior_classes.items():
+                self._lib_registry._classes[class_name] = cls
+            raise
+
+        # Restore active-version binding if we just reloaded an inactive
+        # version: the call to ``register_package(package, version)``
+        # above clobbered ``_classes[class_name]`` for every class shared
+        # with the active version.
+        if active_version is not None and active_version != version:
+            try:
+                self._lib_registry.register_package(package, active_version)
+            except FileNotFoundError:
+                logger.warning(
+                    "reload_package: could not restore active version "
+                    "%s==%s after reloading inactive %s",
+                    package, active_version, version,
+                )
+
+        return self.snapshot(package, version)
 
     def forget_package(self, name: str, version: str | None = None) -> None:
         """Drop a package (or a single version) from the in-memory registry.

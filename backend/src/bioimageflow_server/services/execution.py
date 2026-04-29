@@ -134,10 +134,15 @@ class ExecutionManager:
         settings: Settings,
         storage_path: Path | None = None,
         session_manager: SessionManager | None = None,
+        settings_provider: Callable[[], Settings] | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
         self.settings = settings
+        # When provided, ``settings_provider`` is consulted on each ``start()``
+        # so live SettingsStore PATCHes (e.g. flipping ``dev_mode``) take
+        # effect on the next run without restarting the app.
+        self._settings_provider = settings_provider
         self.storage_path = storage_path
         self.session_manager = session_manager
 
@@ -208,6 +213,10 @@ class ExecutionManager:
 
         on_progress = self._make_progress_callback()
 
+        live_settings = (
+            self._settings_provider() if self._settings_provider else self.settings
+        )
+
         # Prefer the session's cached workflow — avoids a redundant
         # build_workflow() call when validation already loaded the graph.
         session = (
@@ -256,6 +265,7 @@ class ExecutionManager:
                     self.tool_registry,
                     storage_path=self.storage_path,
                     on_progress=on_progress,
+                    settings=live_settings,
                 )
             except Exception as exc:
                 self.state = "idle"
@@ -287,12 +297,14 @@ class ExecutionManager:
                     resolved.append(node_map[nid])
             targets = tuple(resolved)
 
-        dev_mode = bool(self.settings.dev_mode)
+        dev_mode = bool(live_settings.dev_mode)
+        target_label = ", ".join(nodes) if nodes else "workflow terminals"
+        logger.info("Starting workflow execution for %s", target_label)
 
         def _run_sync() -> Any:
             return workflow.compute(*targets, dev_mode=dev_mode)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
         self._run_task = task
         task.add_done_callback(self._on_run_done)
@@ -434,6 +446,7 @@ class ExecutionManager:
                         "detail": str(exc),
                     }
                 )
+                logger.info("Workflow execution cancelled: %s", exc)
                 # If a currently-running node never got a terminal event,
                 # mark it as unexecuted.
                 if (
@@ -460,6 +473,11 @@ class ExecutionManager:
                         "traceback": tb,
                     }
                 )
+                logger.error(
+                    "Workflow execution failed: %s",
+                    exc,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
                 # Attribute the failure to the currently-running node if
                 # no explicit "failed" event was seen.
                 target_id = self._current_node_id
@@ -482,6 +500,8 @@ class ExecutionManager:
         self.event_bus.publish_execution_complete(
             success, errors, dict(self._node_statuses)
         )
+        if success:
+            logger.info("Workflow execution completed successfully")
 
         self.state = "idle"
         self._workflow = None
