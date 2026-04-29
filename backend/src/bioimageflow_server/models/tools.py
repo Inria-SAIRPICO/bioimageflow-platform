@@ -11,6 +11,7 @@ from pydantic import BaseModel
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
     from bioimageflow_server.services.known_packages import KnownPackagesService
+    from bioimageflow_server.services.napari_launcher import NapariLauncher
     from bioimageflow_server.services.package_catalog import PackageCatalogService
     from bioimageflow_server.services.package_installer import PackageInstallerService
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
@@ -119,6 +120,7 @@ class AppConfig:
     execution_manager: Any | None = None
     settings: Settings | None = None
     connection_manager: ConnectionManager | None = None
+    napari_launcher: NapariLauncher | None = None
     # Set True in tests that don't want a watchdog Observer running. The
     # production app builds the service inside ``create_app`` from the
     # resolved registry + connection_manager + tool-store path.

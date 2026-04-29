@@ -42,6 +42,7 @@ packages = ["src/bioimageflow_server"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/bioimageflow_server/data/default_known_packages.txt" = "bioimageflow_server/data/default_known_packages.txt"
+"src/bioimageflow_server/_external/napari_manager.py" = "bioimageflow_server/_external/napari_manager.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
