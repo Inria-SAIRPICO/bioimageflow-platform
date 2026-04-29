@@ -185,15 +185,28 @@ function onDismissBadge(event: MouseEvent) {
           variant="header"
         />
       </div>
-      <span class="node-name">{{ data.name }}</span>
-      <span
-        v-if="data.missingTool"
-        class="missing-tool-badge"
-        :title="`Missing tool: ${data.missingTool.tool_name}`"
-      >
-        Missing
-      </span>
-      <span class="category-badge" v-if="data.tool?.categories?.length">{{ data.tool.categories[0] }}</span>
+      <div class="node-title">
+        <span class="status-indicator" :class="statusClass"></span>
+        <span class="node-name">{{ data.name }}</span>
+        <span
+          v-if="data.missingTool"
+          class="missing-tool-badge"
+          :title="`Missing tool: ${data.missingTool.tool_name}`"
+        >
+          Missing
+        </span>
+        <span v-if="hasGpu" class="gpu-badge">GPU</span>
+        <span v-if="data.provisional" class="provisional-indicator">provisional</span>
+        <button
+          v-if="data.updatedBadge === true"
+          type="button"
+          class="updated-badge"
+          title="Tool source was reloaded - click to dismiss."
+          @click="onDismissBadge"
+        >
+          ↻
+        </button>
+      </div>
       <div class="header-outputs">
         <OutputPin
           v-if="showsHeaderPins"
@@ -230,21 +243,6 @@ function onDismissBadge(event: MouseEvent) {
       </div>
     </div>
 
-    <div class="node-footer">
-      <span class="status-indicator" :class="statusClass"></span>
-      <span v-if="data.missingTool" class="missing-tool-text">tool unavailable</span>
-      <span v-if="hasGpu" class="gpu-badge">GPU</span>
-      <span v-if="data.provisional" class="provisional-indicator">provisional</span>
-      <button
-        v-if="data.updatedBadge === true"
-        type="button"
-        class="updated-badge"
-        title="Tool source was reloaded — click to dismiss."
-        @click="onDismissBadge"
-      >
-        ↻
-      </button>
-    </div>
   </div>
 </template>
 
@@ -281,18 +279,20 @@ function onDismissBadge(event: MouseEvent) {
   min-width: 0;
 }
 
+.node-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
 .node-name {
   font-weight: 600;
   font-size: 13px;
-}
-
-.category-badge {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--p-primary-50);
-  color: var(--p-primary-color);
-  margin-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .missing-tool-badge,
@@ -332,20 +332,12 @@ function onDismissBadge(event: MouseEvent) {
   margin-top: 4px;
 }
 
-.node-footer {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-top: 1px solid var(--p-surface-200);
-  font-size: 10px;
-}
-
 .status-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   display: inline-block;
+  flex-shrink: 0;
 }
 
 .status-indicator.status-unexecuted { background: var(--p-blue-500); }
@@ -400,7 +392,6 @@ function onDismissBadge(event: MouseEvent) {
 
 /* Hot-reload badge: small refresh icon shown when the tool was reloaded. */
 .updated-badge {
-  margin-left: auto;
   background: var(--p-primary-50);
   color: var(--p-primary-color);
   border: 1px solid var(--p-primary-300, var(--p-primary-color));

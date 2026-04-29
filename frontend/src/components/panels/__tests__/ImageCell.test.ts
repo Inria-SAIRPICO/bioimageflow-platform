@@ -4,8 +4,15 @@ import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ImageCell from '../ImageCell.vue'
 
+vi.mock('@/api/client', () => ({
+  api: { post: vi.fn() },
+}))
+
+import { api } from '@/api/client'
+
 const READY_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
 const PENDING_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9])
+const mockedPost = vi.mocked(api.post)
 
 function makeFetchResponse(status: 'ready' | 'pending', bytes: Uint8Array): Response {
   const blob = new Blob([bytes], { type: 'image/png' })
@@ -26,6 +33,7 @@ describe('ImageCell', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
+    mockedPost.mockReset()
     // jsdom doesn't ship URL.createObjectURL/revokeObjectURL
     if (typeof URL.createObjectURL !== 'function') {
       ;(URL as any).createObjectURL = vi.fn(() => 'blob:mock-url')
@@ -132,5 +140,25 @@ describe('ImageCell', () => {
     // No <img> rendered; the placeholder div is shown
     expect(wrapper.find('img.image-cell__thumb').exists()).toBe(false)
     expect(wrapper.find('.image-cell__placeholder').exists()).toBe(true)
+  })
+
+  it('keeps Open in Napari enabled after a launch failure so the action can be retried', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    mockedPost.mockRejectedValueOnce({
+      response: {
+        status: 503,
+        data: { error: 'napari_launch_failed', detail: 'solver crashed' },
+      },
+    })
+
+    const wrapper = mountCell()
+    await flushPromises()
+
+    const button = wrapper.find('[data-testid="open-napari-0-mask"]')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(button.attributes('disabled')).toBeUndefined()
   })
 })

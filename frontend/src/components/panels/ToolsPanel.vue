@@ -507,7 +507,6 @@ defineExpose({
             :class="isCategoryCollapsed(group.category) ? 'pi-chevron-right' : 'pi-chevron-down'"
           />
           <span class="tool-category-label">{{ group.category }}</span>
-          <span class="tool-category-count">{{ group.tools.length }}</span>
         </button>
         <div v-if="!isCategoryCollapsed(group.category)" class="tool-category-items">
           <div
@@ -828,7 +827,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   width: 100%;
-  background: none;
+  background: var(--p-surface-100);
   border: 0;
   padding: 4px 4px;
   text-align: left;
@@ -842,7 +841,7 @@ defineExpose({
 }
 
 .tool-category-header:hover {
-  background-color: var(--p-surface-100);
+  background-color: var(--p-surface-200);
 }
 
 .tool-category-chevron {
@@ -852,12 +851,6 @@ defineExpose({
 
 .tool-category-label {
   flex: 1;
-}
-
-.tool-category-count {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--p-text-muted-color);
 }
 
 .tool-category-items {
@@ -898,9 +891,19 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.tool-list-info-btn {
+.tool-list-info-btn,
+.tool-list-power-btn {
   width: 24px;
   height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.tool-list-info-btn :deep(.p-button-icon),
+.tool-list-power-btn :deep(.p-button-icon) {
+  line-height: 1;
 }
 
 .tool-list-meta {
@@ -1084,11 +1087,6 @@ defineExpose({
 
 .version-action {
   flex-shrink: 0;
-}
-
-.tool-list-power-btn {
-  width: 24px;
-  height: 24px;
 }
 
 .tool-documentation {

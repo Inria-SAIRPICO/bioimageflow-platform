@@ -271,28 +271,22 @@ describe('NodePanel', () => {
     })
   })
 
-  // --- Fix 18: Collapsible help text ---
+  // --- Fix 18: Always-visible help text ---
 
-  describe('collapsible help text', () => {
-    it('renders help toggle buttons for fields with descriptions', () => {
+  describe('parameter help text', () => {
+    it('does not render help toggle buttons for field descriptions', () => {
       const w = mountPanel(makeNodeData())
       const helpToggles = w.findAll('[data-testid="help-toggle"]')
-      // All three fields have descriptions
-      expect(helpToggles.length).toBe(3)
+      expect(helpToggles.length).toBe(0)
     })
 
-    it('help text is hidden by default', () => {
+    it('shows parameter descriptions by default', () => {
       const w = mountPanel(makeNodeData())
-      expect(w.find('[data-testid="param-help-text"]').exists()).toBe(false)
-    })
-
-    it('shows help text when toggle is clicked', async () => {
-      const w = mountPanel(makeNodeData())
-      const helpToggle = w.findAll('[data-testid="help-toggle"]')[0]
-      await helpToggle.trigger('click')
-      const helpText = w.find('[data-testid="param-help-text"]')
-      expect(helpText.exists()).toBe(true)
-      expect(helpText.text()).toContain('Input image path')
+      const helpTexts = w.findAll('[data-testid="param-help-text"]')
+      expect(helpTexts.length).toBe(3)
+      expect(w.text()).toContain('Input image path')
+      expect(w.text()).toContain('Blur strength')
+      expect(w.text()).toContain('Optional threshold')
     })
   })
 

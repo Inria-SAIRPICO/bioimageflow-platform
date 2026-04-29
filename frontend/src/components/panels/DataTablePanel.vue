@@ -16,7 +16,6 @@ const { currentGraph } = useGraphSync()
 const showAll = ref(false)
 
 const graphNodes = computed(() => currentGraph.value.nodes)
-const graphEdges = computed(() => currentGraph.value.edges)
 
 const nodeById = computed<Record<string, NodeState>>(() => {
   const out: Record<string, NodeState> = {}
@@ -26,10 +25,7 @@ const nodeById = computed<Record<string, NodeState>>(() => {
 
 const displayedNodeIds = computed(() => {
   if (uiStore.selectedNodeIds.length > 0) return uiStore.selectedNodeIds
-  const nonTerminal = new Set(graphEdges.value.map((edge) => edge.source_node))
-  return graphNodes.value
-    .filter((node) => !nonTerminal.has(node.id))
-    .map((node) => node.id)
+  return []
 })
 
 const visibleNodeIds = computed(() => {
@@ -40,7 +36,6 @@ const visibleNodeIds = computed(() => {
 })
 
 const allTerminalDisabled = computed(() =>
-  uiStore.selectedNodeIds.length === 0 &&
   displayedNodeIds.value.length > 0 &&
   displayedNodeIds.value.every((id) => nodeById.value[id]?.enabled === false),
 )
@@ -101,10 +96,16 @@ onBeforeUnmount(() => scope?.stop())
     data-testid="data-table-panel"
   >
     <div
-      v-if="displayedNodeIds.length === 0"
+      v-if="graphNodes.length === 0"
       class="data-table-panel__placeholder"
     >
       No nodes in the workflow.
+    </div>
+    <div
+      v-else-if="displayedNodeIds.length === 0"
+      class="data-table-panel__placeholder"
+    >
+      No node selected.
     </div>
     <div
       v-else-if="allTerminalDisabled"

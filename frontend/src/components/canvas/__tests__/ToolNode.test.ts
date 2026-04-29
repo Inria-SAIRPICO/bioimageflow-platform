@@ -203,13 +203,12 @@ describe('ToolNode', () => {
     expect(w.find('.gpu-badge').exists()).toBe(false)
   })
 
-  // --- Category badge ---
+  // --- Header content ---
 
-  it('shows category badge when categories are present', () => {
+  it('does not show a category badge when categories are present', () => {
     const tool = makeTool({ categories: ['Filtering', 'Enhancement'] })
     const w = factory(makeData({ tool }))
-    expect(w.find('.category-badge').exists()).toBe(true)
-    expect(w.find('.category-badge').text()).toBe('Filtering')
+    expect(w.find('.category-badge').exists()).toBe(false)
   })
 
   it('does not show category badge when categories are empty', () => {
@@ -505,24 +504,22 @@ describe('ToolNode', () => {
       expect(bodyOutputs.findAllComponents({ name: 'OutputPin' })).toHaveLength(1)
     })
 
-    it('status indicator and GPU badge are in the footer, not the header', () => {
+    it('status indicator is in the header before the node name and the footer is hidden', () => {
       const tool = makeTool({
         environment: { resources: { gpu: 1 } },
       })
       const w = factory(makeData({ tool }))
 
-      // GPU badge in footer
-      expect(w.find('.node-footer .gpu-badge').exists()).toBe(true)
-      // GPU badge NOT in header
-      expect(w.find('.node-header .gpu-badge').exists()).toBe(false)
-
-      // Footer exists
-      expect(w.find('.node-footer').exists()).toBe(true)
+      expect(w.find('.node-footer').exists()).toBe(false)
+      expect(w.find('.node-header .status-indicator').exists()).toBe(true)
+      const status = w.find('.node-header .status-indicator').element
+      const name = w.find('.node-header .node-name').element
+      expect(status.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
-    it('footer has status indicator', () => {
+    it('header has status indicator', () => {
       const w = factory(makeData({ status: 'executed' }))
-      expect(w.find('.node-footer .status-indicator').exists()).toBe(true)
+      expect(w.find('.node-header .status-indicator').exists()).toBe(true)
     })
   })
 
