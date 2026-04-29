@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 import Menubar from 'primevue/menubar'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
 import RunButton from '@/components/execution/RunButton.vue'
+import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -120,12 +121,15 @@ function onRunButtonToast(payload: {
   })
 }
 
-defineExpose({ menuItems })
+const historyPanelOpen = ref(false)
+
+defineExpose({ menuItems, historyPanelOpen })
 </script>
 
 <template>
   <Menubar :model="menuItems" data-testid="app-menubar">
     <template #end>
+      <ErrorIndicator @open="historyPanelOpen = true" />
       <RunButton
         ref="runButtonRef"
         :graph="currentGraph"
