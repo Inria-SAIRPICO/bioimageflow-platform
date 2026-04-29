@@ -20,6 +20,8 @@ The platform follows a **client-server model**:
 
 The frontend owns all graph state. The backend is stateless between requests for graph editing -- each request sends the full graph as JSON. The backend holds only transient execution state during workflow runs.
 
+For local development, start with the browser workflow unless you specifically need the native desktop shell.
+
 ## Prerequisites
 
 - **Python** >= 3.12
