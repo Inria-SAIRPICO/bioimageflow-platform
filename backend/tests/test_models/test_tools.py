@@ -139,6 +139,7 @@ def test_app_config_defaults():
     assert cfg.package_installer is None
     assert cfg.datasets_root is None
     assert cfg.max_upload_size is None
+    assert cfg.napari_launcher is None
 
 
 def test_app_config_dataset_overrides():
@@ -147,3 +148,9 @@ def test_app_config_dataset_overrides():
     cfg = AppConfig(datasets_root=_P("/tmp/datasets"), max_upload_size=1_000_000)
     assert cfg.datasets_root == _P("/tmp/datasets")
     assert cfg.max_upload_size == 1_000_000
+
+
+def test_app_config_napari_launcher_override():
+    sentinel = object()
+    cfg = AppConfig(napari_launcher=sentinel)  # type: ignore[arg-type]
+    assert cfg.napari_launcher is sentinel
