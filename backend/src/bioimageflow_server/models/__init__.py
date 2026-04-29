@@ -14,6 +14,7 @@ from bioimageflow_server.models.graph import (
     NodeState,
     PositionalEdge,
 )
+from bioimageflow_server.models.nodes import NodeDataResponse
 from bioimageflow_server.models.settings import OMEROInstance, Settings
 from bioimageflow_server.models.tools import (
     AppConfig,
@@ -70,6 +71,7 @@ __all__ = [
     "NodeState",
     "NodeStateMessage",
     "NodeStatus",
+    "NodeDataResponse",
     "OMEROInstance",
     "OutputFieldSchema",
     "PackageInfo",

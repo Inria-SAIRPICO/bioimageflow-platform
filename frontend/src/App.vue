@@ -1,9 +1,10 @@
 <script lang="ts">
-import { defineComponent, h } from 'vue'
+import { defineComponent } from 'vue'
 import ToolsPanel from './components/panels/ToolsPanel.vue'
 import CanvasView from './components/canvas/CanvasView.vue'
 import NodePanel from './components/panels/NodePanel.vue'
 import LoggerPanel from './components/panels/LoggerPanel.vue'
+import DataTablePanel from './components/panels/DataTablePanel.vue'
 
 export default defineComponent({
   components: {
@@ -11,11 +12,7 @@ export default defineComponent({
     canvasView: CanvasView,
     nodePanel: NodePanel,
     logger: LoggerPanel,
-    dataTable: defineComponent({
-      render() {
-        return h('div', { 'data-testid': 'panel-dataTable', style: 'padding: 8px' }, 'Data Table (placeholder)')
-      },
-    }),
+    dataTable: DataTablePanel,
   },
 })
 </script>
