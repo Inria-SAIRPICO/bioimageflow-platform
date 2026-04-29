@@ -23,6 +23,7 @@ interface PendingAck {
   reject: (err: Error) => void
   timeoutHandle: ReturnType<typeof setTimeout>
   filter: LogSubscriptionFilter
+  generation: number
 }
 
 interface Singleton {
@@ -35,6 +36,7 @@ interface Singleton {
   pending: Map<string, PendingAck>
   lastAppliedFilter: LogSubscriptionFilter | null
   messageCounter: number
+  subscriptionGeneration: number
 }
 
 function createSingleton(): Singleton {
@@ -48,6 +50,7 @@ function createSingleton(): Singleton {
     pending: new Map(),
     lastAppliedFilter: null,
     messageCounter: 0,
+    subscriptionGeneration: 0,
   }
 }
 
@@ -111,11 +114,19 @@ function dispatch(raw: unknown) {
       useExecutionStore().applyNodeState(msg as never)
       break
     case 'log': {
+      if (
+        typeof msg.level !== 'string' ||
+        typeof msg.message !== 'string' ||
+        typeof msg.timestamp !== 'number' ||
+        !Number.isFinite(msg.timestamp)
+      ) {
+        break
+      }
       const entry: LogEntry = {
-        level: String(msg.level ?? ''),
-        message: String(msg.message ?? ''),
-        nodeId: (msg.node_id as string | null | undefined) ?? null,
-        timestamp: Number(msg.timestamp ?? 0),
+        level: msg.level,
+        message: msg.message,
+        nodeId: typeof msg.node_id === 'string' ? msg.node_id : null,
+        timestamp: msg.timestamp,
       }
       useLoggerStore().addEntry(entry)
       break
@@ -136,6 +147,7 @@ function dispatch(raw: unknown) {
         'applyPackageInstall',
         msg,
       )
+      mirrorPackageInstallToLogger(msg)
       break
     case 'environment_status':
       callIfExists(
@@ -150,12 +162,13 @@ function dispatch(raw: unknown) {
       const pending = state.pending.get(ref)
       if (!pending) return
       clearTimeout(pending.timeoutHandle)
-      state.lastAppliedFilter = pending.filter
-      // Persist the just-applied filter so reconnect recovery can replay it.
-      useLoggerStore().setLastSubscription?.({
-        nodeId: pending.filter.nodeId ?? null,
-        level: pending.filter.level ?? null,
-      })
+      if (pending.generation === state.subscriptionGeneration) {
+        state.lastAppliedFilter = pending.filter
+        useLoggerStore().setLastSubscription?.({
+          nodeId: pending.filter.nodeId ?? null,
+          level: pending.filter.level ?? null,
+        })
+      }
       state.pending.delete(ref)
       pending.resolve()
       break
@@ -188,6 +201,23 @@ function dispatch(raw: unknown) {
   }
 }
 
+function mirrorPackageInstallToLogger(msg: Record<string, unknown>) {
+  if (typeof msg.package_name !== 'string' || typeof msg.status !== 'string') return
+  const detail = typeof msg.detail === 'string' && msg.detail.length > 0
+    ? `: ${msg.detail}`
+    : ''
+  useLoggerStore().addEntry({
+    level: msg.status === 'failed' ? 'ERROR' : 'INFO',
+    message: `Package ${msg.package_name} ${msg.status}${detail}`,
+    nodeId: null,
+    timestamp: Date.now() / 1000,
+  })
+}
+
+function sendUnfilteredLogSubscription() {
+  void sendSubscribeLogsInternal({}).catch(() => {})
+}
+
 async function runReconnectRecovery() {
   try {
     await useExecutionStore().fetchStatus()
@@ -200,14 +230,7 @@ async function runReconnectRecovery() {
     console.warn('[useWebSocket] fetchTools on reconnect failed:', err)
   }
 
-  const sub = useLoggerStore().getLastSubscription?.()
-  if (sub) {
-    // Fire-and-forget; any rejection surfaces via errorStore from sendSubscribeLogs.
-    void sendSubscribeLogsInternal({
-      nodeId: sub.nodeId ?? undefined,
-      level: sub.level ?? undefined,
-    })
-  }
+  sendUnfilteredLogSubscription()
 }
 
 function scheduleReconnect() {
@@ -255,6 +278,8 @@ function openSocket(url: string) {
     state.reconnectAttempt = 0
     if (isReconnect) {
       void runReconnectRecovery()
+    } else {
+      sendUnfilteredLogSubscription()
     }
   }
 
@@ -288,13 +313,15 @@ function sendSubscribeLogsInternal(
       return
     }
     const messageId = nextMessageId()
+    state.subscriptionGeneration += 1
+    const generation = state.subscriptionGeneration
     const timeoutHandle = setTimeout(() => {
       state.pending.delete(messageId)
       const err = new Error('subscribe_logs ack timed out')
       try {
         useErrorStore().report({
           kind: 'log_subscription_failed',
-          detail: 'Log filter could not be applied; showing previous filter',
+          detail: 'Log stream subscription could not be applied',
         })
       } catch {
         /* errorStore not ready — surface via reject only */
@@ -316,6 +343,7 @@ function sendSubscribeLogsInternal(
       },
       timeoutHandle,
       filter,
+      generation,
     })
     sock.send(
       JSON.stringify({

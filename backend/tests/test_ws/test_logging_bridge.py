@@ -129,7 +129,7 @@ async def test_handler_does_not_crash_when_loop_closed() -> None:
     handler.emit(record)
 
 
-async def test_attach_to_bioimageflow_node_logger() -> None:
+async def test_attach_to_bioimageflow_logger() -> None:
     from bioimageflow_server.ws.logging_bridge import (
         WebSocketLogHandler,
         attach_ws_log_handler,
@@ -138,21 +138,21 @@ async def test_attach_to_bioimageflow_node_logger() -> None:
     mgr = _StubManager()
     loop = asyncio.get_running_loop()
 
-    node_logger = logging.getLogger("bioimageflow.node")
-    saved_level = node_logger.level
-    node_logger.setLevel(logging.NOTSET)
+    bioimageflow_logger = logging.getLogger("bioimageflow")
+    saved_level = bioimageflow_logger.level
+    bioimageflow_logger.setLevel(logging.NOTSET)
     handler = attach_ws_log_handler(mgr, loop)
     try:
-        assert handler in node_logger.handlers
+        assert handler in bioimageflow_logger.handlers
         assert handler.level == logging.DEBUG
         # Default-lowered to DEBUG when level was NOTSET so subscribers
         # see every record (filtering happens at subscription level).
-        assert node_logger.level == logging.DEBUG
+        assert bioimageflow_logger.level == logging.DEBUG
         # Propagation preserved (spec: keep terminal logging)
-        assert node_logger.propagate is True
+        assert bioimageflow_logger.propagate is True
     finally:
-        node_logger.removeHandler(handler)
-        node_logger.setLevel(saved_level)
+        bioimageflow_logger.removeHandler(handler)
+        bioimageflow_logger.setLevel(saved_level)
 
 
 async def test_attach_preserves_explicit_logger_level() -> None:
@@ -163,17 +163,17 @@ async def test_attach_preserves_explicit_logger_level() -> None:
 
     mgr = _StubManager()
     loop = asyncio.get_running_loop()
-    node_logger = logging.getLogger("bioimageflow.node")
-    saved_level = node_logger.level
-    node_logger.setLevel(logging.WARNING)
+    bioimageflow_logger = logging.getLogger("bioimageflow")
+    saved_level = bioimageflow_logger.level
+    bioimageflow_logger.setLevel(logging.WARNING)
     try:
         handler = attach_ws_log_handler(mgr, loop)
         try:
-            assert node_logger.level == logging.WARNING
+            assert bioimageflow_logger.level == logging.WARNING
         finally:
-            node_logger.removeHandler(handler)
+            bioimageflow_logger.removeHandler(handler)
     finally:
-        node_logger.setLevel(saved_level)
+        bioimageflow_logger.setLevel(saved_level)
 
 
 async def test_emit_via_logger_triggers_broadcast() -> None:
@@ -197,7 +197,54 @@ async def test_emit_via_logger_triggers_broadcast() -> None:
         assert message == "hello"
         assert node_id == "test_node"
     finally:
-        logging.getLogger("bioimageflow.node").removeHandler(handler)
+        logging.getLogger("bioimageflow").removeHandler(handler)
+
+
+async def test_emit_framework_logger_triggers_broadcast_with_null_node() -> None:
+    """Framework-level bioimageflow records reach broadcast_log with no node id."""
+    from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = attach_ws_log_handler(mgr, loop)
+    try:
+        logging.getLogger("bioimageflow").warning("framework warning")
+
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if mgr.broadcast_calls:
+                break
+
+        assert len(mgr.broadcast_calls) == 1
+        level, message, node_id, _ = mgr.broadcast_calls[0]
+        assert level == "WARNING"
+        assert message == "framework warning"
+        assert node_id is None
+    finally:
+        logging.getLogger("bioimageflow").removeHandler(handler)
+
+
+async def test_node_logs_are_not_duplicated_by_framework_handler() -> None:
+    """A node record propagating to bioimageflow is emitted once."""
+    from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = attach_ws_log_handler(mgr, loop)
+    try:
+        logging.getLogger("bioimageflow.node.segmenter_1").error("node failed")
+
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if mgr.broadcast_calls:
+                break
+
+        assert len(mgr.broadcast_calls) == 1
+        assert mgr.broadcast_calls[0][0] == "ERROR"
+        assert mgr.broadcast_calls[0][1] == "node failed"
+        assert mgr.broadcast_calls[0][2] == "segmenter_1"
+    finally:
+        logging.getLogger("bioimageflow").removeHandler(handler)
 
 
 async def test_emit_from_background_thread() -> None:
@@ -274,7 +321,7 @@ async def test_recursion_guard_prevents_infinite_loop() -> None:
         # so only the outer emit reaches broadcast_log in the same call stack.)
         assert emit_count["n"] == 1
     finally:
-        logging.getLogger("bioimageflow.node").removeHandler(handler)
+        logging.getLogger("bioimageflow").removeHandler(handler)
 
 
 async def test_internal_ws_logger_is_not_captured() -> None:
@@ -296,4 +343,4 @@ async def test_internal_ws_logger_is_not_captured() -> None:
 
         assert mgr.broadcast_calls == []
     finally:
-        logging.getLogger("bioimageflow.node").removeHandler(handler)
+        logging.getLogger("bioimageflow").removeHandler(handler)

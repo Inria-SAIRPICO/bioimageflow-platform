@@ -88,13 +88,13 @@ export const useExecutionStore = defineStore('execution', () => {
     if (state.value === 'running') {
       throw new Error('already running')
     }
+    useLoggerStore().clearEntries()
     error.value = null
     isConflict.value = false
     validationErrors.value = []
     lastResult.value = null
     progress.value = null
     nodeStatuses.value = {}
-    useLoggerStore().clearEntries()
     try {
       await api.post('/api/v1/execution/run', { graph, nodes })
       state.value = 'running'

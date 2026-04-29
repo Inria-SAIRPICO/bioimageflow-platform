@@ -20,7 +20,7 @@ const toolRegistryStoreMock = {
 const loggerStoreMock = {
   addEntry: vi.fn(),
   clearEntries: vi.fn(),
-  getLastSubscription: vi.fn(() => null as { nodeId?: string; level?: string } | null),
+  getLastSubscription: vi.fn(() => ({ nodeId: null, level: null })),
   setLastSubscription: vi.fn(),
 }
 
@@ -102,6 +102,14 @@ function latestSocket() {
   return MockWebSocket.instances[MockWebSocket.instances.length - 1]
 }
 
+function sentMessages(socket = latestSocket()) {
+  return socket.sent.map((s) => JSON.parse(s))
+}
+
+function subscribeMessages(socket = latestSocket()) {
+  return sentMessages(socket).filter((msg) => msg.type === 'subscribe_logs')
+}
+
 async function flushMicrotasks() {
   await Promise.resolve()
   await Promise.resolve()
@@ -131,6 +139,21 @@ describe('useWebSocket', () => {
 
     latestSocket().open()
     expect(connectionState.value).toBe('connected')
+  })
+
+  it('initial connect sends an unfiltered log subscription', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    useWebSocket().connect('ws://test/ws')
+    latestSocket().open()
+
+    const sub = subscribeMessages()[0]
+    expect(sub).toEqual(
+      expect.objectContaining({
+        type: 'subscribe_logs',
+        node_id: null,
+        level: null,
+      }),
+    )
   })
 
   it('dispatches progress to executionStore.applyProgress', async () => {
@@ -189,6 +212,19 @@ describe('useWebSocket', () => {
     })
   })
 
+  it('drops malformed log messages before store insertion', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    useWebSocket().connect('ws://test/ws')
+    latestSocket().open()
+    loggerStoreMock.addEntry.mockClear()
+
+    latestSocket().receive({ type: 'log', message: 'missing level', timestamp: 1 })
+    latestSocket().receive({ type: 'log', level: 'INFO', timestamp: 1 })
+    latestSocket().receive({ type: 'log', level: 'INFO', message: 'bad timestamp', timestamp: Number.NaN })
+
+    expect(loggerStoreMock.addEntry).not.toHaveBeenCalled()
+  })
+
   it('dispatches execution_complete to executionStore.applyExecutionComplete', async () => {
     const { useWebSocket } = await import('@/composables/useWebSocket')
     useWebSocket().connect('ws://test/ws')
@@ -230,6 +266,36 @@ describe('useWebSocket', () => {
     })
 
     expect(toolRegistryStoreMock.applyPackageInstall).toHaveBeenCalledTimes(1)
+    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'INFO',
+        message: 'Package pkg installing',
+        nodeId: null,
+        timestamp: expect.any(Number),
+      }),
+    )
+  })
+
+  it('mirrors failed package_install messages as ERROR logs with detail', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    useWebSocket().connect('ws://test/ws')
+    latestSocket().open()
+    loggerStoreMock.addEntry.mockClear()
+
+    latestSocket().receive({
+      type: 'package_install',
+      package_name: 'pkg',
+      status: 'failed',
+      detail: 'network unavailable',
+    })
+
+    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'ERROR',
+        message: 'Package pkg failed: network unavailable',
+        nodeId: null,
+      }),
+    )
   })
 
   it('dispatches environment_status to toolRegistryStore.applyEnvironmentStatus', async () => {
@@ -255,7 +321,7 @@ describe('useWebSocket', () => {
     const promise = sendSubscribeLogs({ level: 'INFO' })
 
     // Extract the message_id from the sent payload
-    const sent = JSON.parse(latestSocket().sent[0])
+    const sent = subscribeMessages().at(-1)!
     expect(sent.type).toBe('subscribe_logs')
     expect(sent.message_id).toBeTruthy()
 
@@ -272,7 +338,7 @@ describe('useWebSocket', () => {
       nodeId: 'n42',
       level: 'WARNING',
     })
-    const sent = JSON.parse(latestSocket().sent[0])
+    const sent = subscribeMessages().at(-1)!
     latestSocket().receive({ type: 'ack', ref: sent.message_id })
     await promise
 
@@ -289,7 +355,7 @@ describe('useWebSocket', () => {
     latestSocket().open()
 
     const promise = sendSubscribeLogs({ level: 'INFO' })
-    const sent = JSON.parse(latestSocket().sent[0])
+    const sent = subscribeMessages().at(-1)!
 
     latestSocket().receive({
       type: 'error',
@@ -306,7 +372,7 @@ describe('useWebSocket', () => {
     latestSocket().open()
 
     void useWebSocket().sendSubscribeLogs({ nodeId: 'n1', level: 'WARNING' })
-    const sent = JSON.parse(latestSocket().sent[0])
+    const sent = subscribeMessages().at(-1)!
     expect(sent.type).toBe('subscribe_logs')
     expect(sent.node_id).toBe('n1')
     expect(sent.level).toBe('WARNING')
@@ -396,7 +462,7 @@ describe('useWebSocket', () => {
     expect(toolRegistryStoreMock.fetchTools).toHaveBeenCalled()
   })
 
-  it('reconnect re-subscribes logs with last subscription', async () => {
+  it('reconnect sends an unfiltered subscription instead of replaying display filters', async () => {
     const { useWebSocket } = await import('@/composables/useWebSocket')
     useWebSocket().connect('ws://test/ws')
     latestSocket().open()
@@ -411,11 +477,29 @@ describe('useWebSocket', () => {
     latestSocket().open()
     await flushMicrotasks()
 
-    const sub = latestSocket().sent.find((s) => JSON.parse(s).type === 'subscribe_logs')
-    expect(sub).toBeTruthy()
-    const parsed = JSON.parse(sub!)
-    expect(parsed.node_id).toBe('n1')
-    expect(parsed.level).toBe('INFO')
+    const sub = subscribeMessages().at(-1)!
+    expect(sub.node_id).toBeNull()
+    expect(sub.level).toBeNull()
+  })
+
+  it('stale subscription ack cannot overwrite a newer subscription', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    const ws = useWebSocket()
+    ws.connect('ws://test/ws')
+    latestSocket().open()
+
+    const initial = subscribeMessages()[0]
+    const explicit = ws.sendSubscribeLogs({ nodeId: 'n42', level: 'ERROR' })
+    const explicitMsg = subscribeMessages().at(-1)!
+
+    latestSocket().receive({ type: 'ack', ref: explicitMsg.message_id })
+    await explicit
+    latestSocket().receive({ type: 'ack', ref: initial.message_id })
+
+    expect(loggerStoreMock.setLastSubscription).toHaveBeenLastCalledWith({
+      nodeId: 'n42',
+      level: 'ERROR',
+    })
   })
 
   it('disconnect() prevents reconnection', async () => {

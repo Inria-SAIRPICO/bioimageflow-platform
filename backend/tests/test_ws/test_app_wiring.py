@@ -80,18 +80,18 @@ def test_lifespan_sets_and_clears_loop_and_handler() -> None:
 
     manager = ConnectionManager()
     app = create_app(AppConfig(connection_manager=manager))
-    node_logger = logging.getLogger("bioimageflow.node")
-    initial_handlers = set(node_logger.handlers)
+    bioimageflow_logger = logging.getLogger("bioimageflow")
+    initial_handlers = set(bioimageflow_logger.handlers)
 
     with TestClient(app):
         # Inside lifespan: loop is bound and a WS log handler is attached.
         assert manager._loop is not None
-        added = set(node_logger.handlers) - initial_handlers
+        added = set(bioimageflow_logger.handlers) - initial_handlers
         assert len(added) == 1
 
     # After shutdown: loop cleared and handler removed.
     assert manager._loop is None
-    assert set(node_logger.handlers) == initial_handlers
+    assert set(bioimageflow_logger.handlers) == initial_handlers
 
 
 def test_integration_subscribe_ack_roundtrip() -> None:
