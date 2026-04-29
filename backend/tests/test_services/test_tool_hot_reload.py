@@ -576,6 +576,192 @@ async def test_concurrent_suppress_resume_thread_safety(tmp_path):
     assert not t.is_alive()
 
 
+async def test_tool_reload_payload_contains_full_outputs(tmp_path):
+    """The tool_reload payload must carry every output field name and
+    type so the frontend graph_validator can re-check edges that
+    reference removed outputs without a separate fetch."""
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    pkg, ver = "dummy", "1.0.0"
+    reg = FakeRegistry(tmp_path)
+
+    base_meta = ToolMetadata(
+        name="ImageOp",
+        display_name="Image Op",
+        package=pkg,
+        package_version=ver,
+        tool_type="ProcessingTool",
+        inputs={
+            "src": InputFieldSchema(
+                type="image", required=True, connectable="by_default"
+            )
+        },
+        outputs={
+            "primary": OutputFieldSchema(type="image"),
+            "metadata": OutputFieldSchema(type="dataframe"),
+        },
+    )
+    reg.set_state(pkg, ver, {"ImageOp": base_meta})
+
+    new_meta = base_meta.model_copy(
+        update={"outputs": {"primary": OutputFieldSchema(type="image")}}
+    )
+    reg.set_reload_outcome(pkg, ver, {"ImageOp": new_meta})
+
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+
+    svc = ToolHotReloadService(registry=reg, connection_manager=cm, debounce_ms=15)
+    await svc._handle_event(tmp_path / pkg / ver / pkg / "x.py")
+
+    assert await _wait_for(
+        lambda: cm.broadcast_tool_reload.await_count == 1, timeout=1.0
+    )
+    payload = cm.broadcast_tool_reload.await_args.args[1]
+    # The "metadata" output disappeared in the new version — payload
+    # carries the new outputs dict so the frontend validator can flag
+    # any edges referencing it.
+    assert "outputs" in payload
+    assert "primary" in payload["outputs"]
+    assert "metadata" not in payload["outputs"]
+    # And the input schema is also present, of course.
+    assert "inputs" in payload
+    assert "src" in payload["inputs"]
+
+
+# ---------------------------------------------------------------------------
+# Task 6: dev_mode cache hashing precondition tests
+# ---------------------------------------------------------------------------
+
+
+def test_dev_mode_source_change_observable_in_loaded_class(tmp_path):
+    """When a tool source actually changes, ``inspect.getsource(new_class)``
+    differs byte-for-byte from the old. This is the precondition the
+    bioimageflow.cache module relies on to invalidate the cache hash for
+    the affected tool — Task 6 just locks it down here."""
+    import inspect
+
+    from bioimageflow.tool_loader import (
+        load_versioned_package,
+        unload_versioned_package,
+    )
+
+    pkg, ver = "dummy_t6", "1.0.0"
+    pkg_dir = tmp_path / pkg / ver / pkg
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").write_text("from .filters import GaussianSmooth\n")
+    (pkg_dir / "filters.py").write_text(
+        "from bioimageflow_core import ProcessingTool, IOModel, Arguments, "
+        "EnvironmentSpec\n\n"
+        "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
+        "class GaussianSmooth(ProcessingTool):\n"
+        "    environment = _env\n"
+        "    class Inputs(IOModel):\n"
+        "        diameter: float = 1.0\n"
+        "    class Outputs(IOModel):\n"
+        "        result: str\n"
+        "    def process_row(self, arguments: Arguments):\n"
+        "        return self.Outputs(result='v1')\n"
+    )
+    (pkg_dir / "utils").mkdir()
+    (pkg_dir / "utils" / "__init__.py").write_text("")
+
+    try:
+        mod = load_versioned_package(pkg, ver, tmp_path)
+        old_src = inspect.getsource(mod.GaussianSmooth)
+        unload_versioned_package(pkg, ver)
+
+        # Edit the source to change a parameter default.
+        (pkg_dir / "filters.py").write_text(
+            "from bioimageflow_core import ProcessingTool, IOModel, Arguments, "
+            "EnvironmentSpec\n\n"
+            "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
+            "class GaussianSmooth(ProcessingTool):\n"
+            "    environment = _env\n"
+            "    class Inputs(IOModel):\n"
+            "        diameter: float = 2.0\n"
+            "    class Outputs(IOModel):\n"
+            "        result: str\n"
+            "    def process_row(self, arguments: Arguments):\n"
+            "        return self.Outputs(result='v2')\n"
+        )
+
+        mod = load_versioned_package(pkg, ver, tmp_path)
+        new_src = inspect.getsource(mod.GaussianSmooth)
+        assert new_src != old_src
+    finally:
+        try:
+            unload_versioned_package(pkg, ver)
+        except Exception:
+            pass
+        for k in list(sys.modules):
+            if pkg in k:
+                del sys.modules[k]
+        sys.path[:] = [p for p in sys.path if pkg not in p]
+
+
+def test_dev_mode_source_unchanged_for_sibling_helper_edit(tmp_path):
+    """Editing a sibling helper file leaves the affected tool's source
+    byte-identical, so dev_mode's source_hash doesn't invalidate that
+    tool's cache. The reconciliation contract documented in the plan
+    relies on this — the frontend can optimistically flip status to
+    out_of_date but the backend's authoritative response will say
+    CACHED for the sibling-only edit."""
+    import inspect
+
+    from bioimageflow.tool_loader import (
+        load_versioned_package,
+        unload_versioned_package,
+    )
+
+    pkg, ver = "dummy_t6_sibling", "1.0.0"
+    pkg_dir = tmp_path / pkg / ver / pkg
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").write_text("from .filters import GaussianSmooth\n")
+    (pkg_dir / "filters.py").write_text(
+        "from bioimageflow_core import ProcessingTool, IOModel, Arguments, "
+        "EnvironmentSpec\n\n"
+        "_env = EnvironmentSpec(name='dummy', dependencies={'pip': []})\n\n"
+        "class GaussianSmooth(ProcessingTool):\n"
+        "    environment = _env\n"
+        "    class Inputs(IOModel):\n"
+        "        diameter: float = 1.0\n"
+        "    class Outputs(IOModel):\n"
+        "        result: str\n"
+        "    def process_row(self, arguments: Arguments):\n"
+        "        return self.Outputs(result='v1')\n"
+    )
+    helper_dir = pkg_dir / "utils"
+    helper_dir.mkdir()
+    (helper_dir / "__init__.py").write_text("")
+    (helper_dir / "helpers.py").write_text("def helper():\n    return 1\n")
+
+    try:
+        mod = load_versioned_package(pkg, ver, tmp_path)
+        old_src = inspect.getsource(mod.GaussianSmooth)
+        unload_versioned_package(pkg, ver)
+
+        # Edit the sibling helper but leave filters.py untouched.
+        (helper_dir / "helpers.py").write_text("def helper():\n    return 999\n")
+
+        mod = load_versioned_package(pkg, ver, tmp_path)
+        new_src = inspect.getsource(mod.GaussianSmooth)
+        # GaussianSmooth's own source is byte-identical — the cache
+        # signature won't invalidate for it.
+        assert new_src == old_src
+    finally:
+        try:
+            unload_versioned_package(pkg, ver)
+        except Exception:
+            pass
+        for k in list(sys.modules):
+            if pkg in k:
+                del sys.modules[k]
+        sys.path[:] = [p for p in sys.path if pkg not in p]
+
+
 async def test_changed_metadata_uses_model_dump_in_payload(tmp_path):
     """The tool_reload payload carries the full metadata dict, including
     inputs and outputs."""
