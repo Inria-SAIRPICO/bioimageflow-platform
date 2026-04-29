@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef, watch, type ComputedRef } from 'vue'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import Checkbox from 'primevue/checkbox'
 import ToggleSwitch from 'primevue/toggleswitch'
+import ToggleButton from 'primevue/togglebutton'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
 import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
+import { useExecutionStore } from '@/stores/execution'
+import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useValidationErrors } from '@/composables/useValidationErrors'
@@ -43,6 +46,8 @@ function fileTypesForField(type: string): string[] {
 }
 
 const uiStore = useUIStore()
+const executionStore = useExecutionStore()
+const loggerStore = useLoggerStore()
 const { validationResult } = useGraphSync()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
 
@@ -71,6 +76,44 @@ const expandedHelp = ref<Record<string, boolean>>({})
 
 /** Documentation section collapsed state (open by default) */
 const docCollapsed = ref(false)
+const executionOutputCollapsed = ref(false)
+const nodeLogLevels = ref(new Set<string>(['INFO', 'WARNING', 'ERROR']))
+const activeNodeLogEntries = shallowRef<ComputedRef<LogEntry[]> | null>(null)
+
+watch(
+  () => selectedNode.value?.id ?? null,
+  (nodeId) => {
+    activeNodeLogEntries.value = nodeId ? loggerStore.nodeEntries(nodeId) : null
+  },
+  { immediate: true },
+)
+
+const selectedNodeStatus = computed(() => {
+  const nodeId = selectedNode.value?.id
+  return nodeId ? executionStore.nodeStatuses[nodeId] ?? null : null
+})
+
+const selectedNodeLogs = computed(() => activeNodeLogEntries.value?.value ?? [])
+
+const filteredSelectedNodeLogs = computed(() =>
+  selectedNodeLogs.value.filter((entry) => nodeLogLevels.value.has(entry.level.toUpperCase())),
+)
+
+function toggleNodeLogLevel(level: string) {
+  const next = new Set(nodeLogLevels.value)
+  if (next.has(level)) next.delete(level)
+  else next.add(level)
+  nodeLogLevels.value = next
+}
+
+function formatLogTimestamp(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  } as Intl.DateTimeFormatOptions)
+}
 
 function startEditName() {
   if (!nodeData.value) return
@@ -131,9 +174,10 @@ function toggleNull(key: string) {
 function isFieldNulled(key: string): boolean {
   if (!nodeData.value) return false
   const field = nodeData.value.tool?.inputs[key] as InputFieldSchema | undefined
-  // Required fields are never in a "null" state — an undefined value just
-  // means "not yet set" and the widget should render so the user can set it.
-  if (!field || field.required) return false
+  // Non-nullable fields can never be in a "null" state. For required-but-
+  // nullable fields, an undefined value is treated as null until the user
+  // toggles to a real value (the toggle is the only affordance to set one).
+  if (!field || !field.nullable) return false
   if (nulledFields.value[key]) return true
   return nodeData.value.parameters[key] === null || nodeData.value.parameters[key] === undefined
 }
@@ -267,7 +311,8 @@ async function pickFolder(key: string) {
             {{ nodeData.status }}
           </span>
         </div>
-        <!-- Fix 13: Package + version display -->
+        <!-- Fix 13: Package + version display. The active version is
+             workflow-scoped and is changed via the Manage Tools dialog. -->
         <div v-if="nodeData.tool" class="package-info">
           {{ nodeData.tool.package }} v{{ nodeData.tool.package_version }}
         </div>
@@ -312,6 +357,20 @@ async function pickFolder(key: string) {
                 data-testid="reset-default"
               />
             </span>
+            <!-- None toggle for nullable fields. Two-state icon button —
+                 the icon shows the action that will happen on click: pencil
+                 when the field is null (click to edit), Ø (pi-ban) when the
+                 field is editable (click to set to null). -->
+            <span v-if="(field as InputFieldSchema).nullable" class="param-toggles">
+              <Button
+                :icon="isFieldNulled(key) ? 'pi pi-pencil' : 'pi pi-ban'"
+                class="p-button-text p-button-sm param-action-btn none-toggle-btn"
+                :title="isFieldNulled(key) ? 'Set value (currently null)' : 'Set to null'"
+                :aria-pressed="isFieldNulled(key)"
+                @click="toggleNull(key)"
+                data-testid="none-toggle"
+              />
+            </span>
           </div>
 
           <!-- Fix 18: Collapsible help text -->
@@ -322,19 +381,6 @@ async function pickFolder(key: string) {
           >
             {{ (field as InputFieldSchema).description }}
           </small>
-
-          <!-- None toggle for Optional fields (Pin toggle is now an icon
-               button in the param header — see above) -->
-          <div v-if="!(field as InputFieldSchema).required" class="param-toggles">
-            <label class="toggle-label" data-testid="none-toggle">
-              <Checkbox
-                :model-value="isFieldNulled(key)"
-                binary
-                @update:model-value="toggleNull(key)"
-              />
-              <span>None</span>
-            </label>
-          </div>
 
           <!-- Input widget (hidden when field is nulled) -->
           <template v-if="!isFieldNulled(key)">
@@ -464,6 +510,67 @@ async function pickFolder(key: string) {
           />
         </div>
       </div>
+
+      <!-- Execution output section: failed-node details and selected-node logs. -->
+      <section class="execution-output-panel" data-testid="node-execution-output">
+        <button
+          type="button"
+          class="execution-output-panel__header"
+          :aria-expanded="!executionOutputCollapsed"
+          @click="executionOutputCollapsed = !executionOutputCollapsed"
+        >
+          <i :class="executionOutputCollapsed ? 'pi pi-chevron-right' : 'pi pi-chevron-down'" />
+          <span class="p-panel-title execution-output-panel__title">Execution Output</span>
+        </button>
+
+        <div v-show="!executionOutputCollapsed" class="execution-output-panel__body">
+          <div
+            v-if="selectedNodeStatus?.error || selectedNodeStatus?.traceback"
+            class="node-runtime-error"
+            data-testid="node-runtime-error"
+          >
+            <div v-if="selectedNodeStatus?.error" class="node-runtime-error__message">
+              {{ selectedNodeStatus.error }}
+            </div>
+            <pre v-if="selectedNodeStatus?.traceback" class="node-runtime-error__traceback">{{ selectedNodeStatus.traceback }}</pre>
+          </div>
+
+          <div class="node-log-toolbar" aria-label="Node log levels">
+            <ToggleButton
+              v-for="level in ALL_LEVELS"
+              :key="level"
+              :model-value="nodeLogLevels.has(level)"
+              :on-label="level"
+              :off-label="level"
+              size="small"
+              :data-testid="`node-log-level-${level}`"
+              @update:model-value="toggleNodeLogLevel(level)"
+            />
+          </div>
+
+          <div v-if="filteredSelectedNodeLogs.length === 0" class="node-log-empty" data-testid="node-log-empty">
+            No log messages
+          </div>
+          <div v-else class="node-log-list" data-testid="node-log-list">
+            <div
+              v-for="(entry, index) in filteredSelectedNodeLogs"
+              :key="`${entry.timestamp}-${index}`"
+              :class="['node-log-entry', `node-log-entry--${entry.level.toLowerCase()}`]"
+              data-testid="node-log-entry"
+            >
+              <span class="node-log-entry__time" data-testid="node-log-timestamp">
+                {{ formatLogTimestamp(entry.timestamp) }}
+              </span>
+              <span class="node-log-entry__level" data-testid="node-log-level">
+                {{ entry.level }}
+              </span>
+              <span class="node-log-entry__message" data-testid="node-log-message">
+                {{ entry.message }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- Documentation section, docked at the bottom, open by default.
            Chevron is rendered before the "Documentation" label and toggles
@@ -603,6 +710,109 @@ async function pickFolder(key: string) {
   color: var(--p-red-700);
 }
 
+.execution-output-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--p-content-border-color);
+  padding-top: 8px;
+}
+
+.execution-output-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  color: inherit;
+  width: 100%;
+  text-align: left;
+}
+
+.execution-output-panel__header .pi {
+  font-size: 12px;
+  color: var(--p-text-muted-color);
+}
+
+.execution-output-panel__title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.execution-output-panel__body {
+  padding: 4px 0 8px;
+}
+
+.node-runtime-error {
+  background: color-mix(in srgb, var(--p-red-500, #dc2626) 10%, transparent);
+  border: 1px solid var(--p-red-500, #dc2626);
+  color: var(--p-red-800, #991b1b);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.node-runtime-error__message {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.node-runtime-error__traceback {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.node-log-toolbar {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.node-log-empty {
+  color: var(--p-text-muted-color);
+  font-size: 12px;
+}
+
+.node-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.node-log-entry {
+  display: grid;
+  grid-template-columns: 6.5rem 4.25rem minmax(0, 1fr);
+  gap: 6px;
+  padding: 2px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.node-log-entry__time {
+  color: var(--p-text-muted-color);
+}
+
+.node-log-entry__level {
+  font-weight: 700;
+}
+
+.node-log-entry__message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.node-log-entry--warning {
+  color: var(--p-yellow-800, #92400e);
+}
+
+.node-log-entry--error {
+  color: var(--p-red-700, #b91c1c);
+}
+
 /* Documentation panel (bottom, open by default, chevron before title) */
 .doc-panel {
   margin-top: 12px;
@@ -706,20 +916,17 @@ h4 {
   padding: 2px 0 4px;
 }
 
-/* Fix 16 + 17: Toggle row */
+/* Fix 16: None toggle button (now an icon-only button living in the
+   .param-header alongside .param-actions). */
 .param-toggles {
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 0;
+  margin-left: 2px;
 }
 
-.toggle-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--p-text-muted-color);
-  cursor: pointer;
+.none-toggle-btn[aria-pressed='true'] {
+  color: var(--p-orange-500);
 }
 
 .null-indicator {

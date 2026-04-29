@@ -252,3 +252,68 @@ async def test_catalog_list_packages_without_refresh_returns_registry_snapshot()
     assert names == {"only_installed"}
     # PyPI was not consulted.
     assert pypi.get_versions_calls == []
+
+
+async def test_catalog_refresh_preserves_active_version():
+    """``refresh()`` must carry the registry's ``active_version`` through —
+    GET /tools/packages reads from the catalog snapshot in production, so a
+    refresh that drops it would make the GUI's "Current" badge invisible
+    (regression caught in code review of commit 75bca63).
+    """
+    reg = ToolRegistryService()
+    reg.register_package(
+        "pkg",
+        PackageInfo(
+            name="pkg",
+            installed_versions=["0.1.0", "0.2.0"],
+            available_versions=["0.1.0", "0.2.0"],
+            active_version="0.2.0",
+        ),
+    )
+    known = _FakeKnown(["pkg"])
+    pypi = _make_pypi({"pkg": ["0.1.0", "0.2.0"]})
+    catalog = PackageCatalogService(registry=reg, known=known, pypi=pypi)
+
+    await catalog.refresh()
+    pkg = {p.name: p for p in catalog.list_packages()}["pkg"]
+    assert pkg.active_version == "0.2.0"
+
+
+async def test_catalog_update_active_version_patches_snapshot():
+    """``update_active_version`` keeps the catalog snapshot in sync with a
+    registry ``set_active_version`` without rebuilding (which would round
+    trip to PyPI)."""
+    reg = ToolRegistryService()
+    reg.register_package(
+        "pkg",
+        PackageInfo(
+            name="pkg",
+            installed_versions=["0.1.0", "0.2.0"],
+            available_versions=["0.1.0", "0.2.0"],
+            active_version="0.1.0",
+        ),
+    )
+    known = _FakeKnown(["pkg"])
+    pypi = _make_pypi({"pkg": ["0.1.0", "0.2.0"]})
+    catalog = PackageCatalogService(registry=reg, known=known, pypi=pypi)
+
+    await catalog.refresh()
+    catalog.update_active_version("pkg", "0.2.0")
+
+    pkg = {p.name: p for p in catalog.list_packages()}["pkg"]
+    assert pkg.active_version == "0.2.0"
+    # PyPI was queried only by the initial refresh, not by the update.
+    assert pypi.get_versions_calls == ["pkg"]
+
+
+async def test_catalog_update_active_version_is_noop_before_refresh():
+    """Before any refresh, the snapshot is None and ``list_packages()``
+    falls through to the registry. ``update_active_version`` must not blow
+    up in that state."""
+    reg = ToolRegistryService()
+    known = _FakeKnown([])
+    pypi = _make_pypi({})
+    catalog = PackageCatalogService(registry=reg, known=known, pypi=pypi)
+
+    # No refresh; snapshot is None. Should silently do nothing.
+    catalog.update_active_version("pkg", "0.2.0")

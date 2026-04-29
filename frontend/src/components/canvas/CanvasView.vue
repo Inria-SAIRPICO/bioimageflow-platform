@@ -202,6 +202,16 @@ onConnect((connection) => {
       ...targetNode.data.connectedInputs,
       [targetHandle]: sourceLabel,
     }
+    // Drop any constant the user (or default-seeding) had stashed for this
+    // input. The wire schema says `parameters` carries non-connected fields
+    // only, and a stray value here (notably ``null``) would otherwise ride
+    // along into the lib payload and override the upstream binding.
+    if (!edgeIsHeader && targetNode.data.parameters
+        && targetHandle in targetNode.data.parameters) {
+      const next = { ...targetNode.data.parameters }
+      delete next[targetHandle]
+      targetNode.data.parameters = next
+    }
   }
 
   // A new positional edge into a dynamic_outputs node changes its resolved
@@ -249,6 +259,41 @@ watch(
     emitGraphChanged()
   },
   { deep: true },
+)
+
+// Refresh the per-node tool metadata snapshot whenever the registry's
+// tools list changes (typically after a "Set current" version switch in
+// the Manage Tools dialog, or an install/uninstall). Each node was created
+// with a frozen ToolMetadata copy in `data.tool`, so without this watcher
+// the package version + schema in the GUI would stay pinned at creation
+// time even though the workflow actually executes against the new
+// version.
+//
+// Nodes whose package_version actually changed are flagged `out_of_date`
+// so the user knows they need to re-run — schema changes between versions
+// can invalidate cached results.
+watch(
+  () => toolRegistryStore.tools,
+  (tools) => {
+    if (!tools || tools.length === 0) return
+    const byName = new Map(tools.map((t) => [t.name, t]))
+    for (const n of getNodes.value as any[]) {
+      const toolName = n.data?.toolName
+      if (!toolName) continue
+      const fresh = byName.get(toolName)
+      if (!fresh) continue
+      const prev = n.data.tool
+      if (prev && prev.package_version === fresh.package_version) continue
+      n.data.tool = fresh
+      // Only invalidate executed nodes — leave unexecuted/failed/disabled
+      // alone so the version switch doesn't visually thrash the canvas.
+      if (n.data.status === 'executed') {
+        n.data.status = 'out_of_date'
+      }
+    }
+    emitGraphChanged()
+  },
+  { deep: false },
 )
 
 // Debounced refresh of resolved outputs when parameters change on
@@ -354,6 +399,15 @@ onEdgeUpdate(({ edge, connection }) => {
     targetNode.data.connectedInputs = {
       ...targetNode.data.connectedInputs,
       [newTargetHandle]: sourceLabel,
+    }
+    // Mirror the onConnect cleanup: drop any constant for this input so
+    // the wire payload carries non-connected fields only.
+    const newEdgeIsHeader = isHeaderHandle(newTargetHandle) || isHeaderHandle(newSourceHandle)
+    if (!newEdgeIsHeader && targetNode.data.parameters
+        && newTargetHandle in targetNode.data.parameters) {
+      const next = { ...targetNode.data.parameters }
+      delete next[newTargetHandle]
+      targetNode.data.parameters = next
     }
   }
 

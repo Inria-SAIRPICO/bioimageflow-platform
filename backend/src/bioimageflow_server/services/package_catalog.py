@@ -81,6 +81,12 @@ class PackageCatalogService:
             installed_versions = list(base.installed_versions) if base else []
             tools = dict(base.tools) if base else {}
             env_status = base.environment_status if base else "stopped"
+            # Preserve the registry's active_version through every refresh —
+            # otherwise the GUI's "Current" badge disappears whenever the
+            # catalog rebuilds (server startup, install/uninstall, manual
+            # /packages/refresh). The catalog is just a read model; the
+            # registry remains the source of truth.
+            active_version = base.active_version if base else None
 
             merged = _merge_versions(installed_versions, pypi_versions.get(name, []))
 
@@ -88,11 +94,26 @@ class PackageCatalogService:
                 name=name,
                 installed_versions=installed_versions,
                 available_versions=merged,
+                active_version=active_version,
                 tools=tools,
                 environment_status=env_status,
             )
 
         self._snapshot = snapshot
+
+    def update_active_version(self, package_name: str, version: str) -> None:
+        """Reflect a registry ``set_active_version`` change in the snapshot
+        without a full rebuild (which would round-trip to PyPI). The
+        registry is the source of truth — this only keeps the read model
+        consistent so the next ``list_packages()`` returns the new value."""
+        if self._snapshot is None:
+            return
+        existing = self._snapshot.get(package_name)
+        if existing is None:
+            return
+        self._snapshot[package_name] = existing.model_copy(
+            update={"active_version": version},
+        )
 
 
 def _merge_versions(installed: list[str], available: list[str]) -> list[str]:

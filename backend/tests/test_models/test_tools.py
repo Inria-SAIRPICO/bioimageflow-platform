@@ -75,6 +75,27 @@ def test_input_field_schema_connectable_three_state():
     assert field.required is True
 
 
+def test_input_field_schema_nullable_default_false():
+    # Older fixtures and library schemas without `nullable` must keep working.
+    field = InputFieldSchema(type="int", required=True, connectable="not_by_default")
+    assert field.nullable is False
+
+
+def test_input_field_schema_nullable_round_trip():
+    field = InputFieldSchema(
+        type="int",
+        required=False,
+        nullable=True,
+        connectable="not_by_default",
+        default=None,
+    )
+    assert field.nullable is True
+    # Validate that a dict containing `nullable` (as the library will emit)
+    # round-trips through Pydantic validation.
+    rebuilt = InputFieldSchema.model_validate(field.model_dump())
+    assert rebuilt.nullable is True
+
+
 # --- Task 2 tests ---
 
 
@@ -118,6 +139,7 @@ def test_app_config_defaults():
     assert cfg.package_installer is None
     assert cfg.datasets_root is None
     assert cfg.max_upload_size is None
+    assert cfg.napari_launcher is None
 
 
 def test_app_config_dataset_overrides():
@@ -126,3 +148,9 @@ def test_app_config_dataset_overrides():
     cfg = AppConfig(datasets_root=_P("/tmp/datasets"), max_upload_size=1_000_000)
     assert cfg.datasets_root == _P("/tmp/datasets")
     assert cfg.max_upload_size == 1_000_000
+
+
+def test_app_config_napari_launcher_override():
+    sentinel = object()
+    cfg = AppConfig(napari_launcher=sentinel)  # type: ignore[arg-type]
+    assert cfg.napari_launcher is sentinel

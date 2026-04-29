@@ -238,17 +238,25 @@ async def use_package_version(
     package_name: str,
     body: dict[str, str] | None = None,
     registry: ToolRegistryService = Depends(get_tool_registry),
+    catalog: Any = Depends(get_package_catalog),
 ) -> dict[str, str]:
     version = body.get("version") if body else None
     pkg = registry.get_package(package_name)
     if pkg is None:
         raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
-    if version and version not in pkg.installed_versions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Version '{version}' is not installed for '{package_name}'",
-        )
-    return {"package": package_name, "version": version or "", "status": "active"}
+    if not version:
+        return {"package": package_name, "version": "", "status": "active"}
+    try:
+        registry.set_active_version(package_name, version)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    # Catalog is the read model that GET /packages serves in production. It
+    # was built from the registry but doesn't observe later mutations, so we
+    # patch the matching snapshot entry so the next list_packages() reflects
+    # the new active version without a PyPI round-trip.
+    if catalog is not None and hasattr(catalog, "update_active_version"):
+        catalog.update_active_version(package_name, version)
+    return {"package": package_name, "version": version, "status": "active"}
 
 
 @router.post("/packages/{package_name}/install")

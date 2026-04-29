@@ -411,6 +411,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/napari/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open In Napari */
+        post: operations["open_in_napari_api_v1_napari_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Napari Status */
+        get: operations["napari_status_api_v1_napari_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/napari/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Shutdown Napari */
+        post: operations["shutdown_napari_api_v1_napari_shutdown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Data */
+        get: operations["get_node_data_api_v1_nodes__node_id__data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/data/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Node Csv */
+        get: operations["download_node_csv_api_v1_nodes__node_id__data_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Thumbnail */
+        get: operations["get_node_thumbnail_api_v1_nodes__node_id__thumbnail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -536,6 +638,11 @@ export interface components {
             /** Required */
             required: boolean;
             /**
+             * Nullable
+             * @default false
+             */
+            nullable: boolean;
+            /**
              * Connectable
              * @enum {string}
              */
@@ -560,6 +667,57 @@ export interface components {
             image_spec?: {
                 [key: string]: string[];
             } | null;
+        };
+        /**
+         * NapariOpenRequest
+         * @description Body for ``POST /napari/open``.
+         */
+        NapariOpenRequest: {
+            /** Paths */
+            paths: string[];
+            /**
+             * Clear Layers
+             * @default false
+             */
+            clear_layers: boolean;
+        };
+        /**
+         * NapariStatus
+         * @description Response for ``GET /napari/status``.
+         */
+        NapariStatus: {
+            /** Running */
+            running: boolean;
+            /** Env Path */
+            env_path?: string | null;
+            /** Pid */
+            pid?: number | null;
+        };
+        /**
+         * NodeDataResponse
+         * @description Paginated DataFrame payload for the Data Table panel.
+         */
+        NodeDataResponse: {
+            /** Columns */
+            columns: string[];
+            /** Index */
+            index: string[];
+            /** Rows */
+            rows: {
+                [key: string]: unknown;
+            }[];
+            /** Absolute Rows */
+            absolute_rows: number[];
+            /** Total Rows */
+            total_rows: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Column Types */
+            column_types: {
+                [key: string]: string;
+            };
         };
         /**
          * NodeOutputSchemaResponse
@@ -668,6 +826,8 @@ export interface components {
              * @default []
              */
             available_versions: string[];
+            /** Active Version */
+            active_version?: string | null;
             /**
              * Tools
              * @default {}
@@ -962,6 +1122,9 @@ export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
+export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
+export type NapariStatus = components['schemas']['NapariStatus'];
+export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
@@ -1738,6 +1901,186 @@ export interface operations {
             };
         };
     };
+    open_in_napari_api_v1_napari_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NapariOpenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    napari_status_api_v1_napari_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NapariStatus"];
+                };
+            };
+        };
+    };
+    shutdown_napari_api_v1_napari_shutdown_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    get_node_data_api_v1_nodes__node_id__data_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                sort_by?: string | null;
+                sort_order?: "asc" | "desc";
+                tool_name?: string | null;
+            };
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeDataResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_node_csv_api_v1_nodes__node_id__data_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_node_thumbnail_api_v1_nodes__node_id__thumbnail_get: {
+        parameters: {
+            query: {
+                col: string;
+                row?: number;
+                size?: number;
+            };
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_settings_api_v1_settings_get: {
         parameters: {
             query?: never;
@@ -1795,9 +2138,6 @@ export interface operations {
     };
 }
 
-// --- Manual aliases (preserved across `generate-types` runs by the script) ---
-// Pydantic emits a single ``SettingsResponse`` schema (the GET/PATCH wrapper);
-// we re-export it as ``Settings`` so consumers don't have to know about the
-// wrapper, and keep the historical ``OMEROInstance`` casing.
+// --- Manual aliases (re-applied after every `generate-types` run) ---
 export type Settings = SettingsResponse;
 export type OMEROInstance = OmeroInstance;

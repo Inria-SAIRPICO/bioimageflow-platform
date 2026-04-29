@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -46,6 +47,15 @@ from bioimageflow_server.routers.execution import (
     router as execution_router,
 )
 from bioimageflow_server.routers.health import router as health_router
+from bioimageflow_server.routers.napari import (
+    get_napari_launcher,
+    router as napari_router,
+)
+from bioimageflow_server.routers.nodes import (
+    get_result_store,
+    get_thumbnail_service,
+    router as nodes_router,
+)
 from bioimageflow_server.routers.settings import (
     get_settings_store as settings_get_store,
     router as settings_router,
@@ -60,9 +70,9 @@ from bioimageflow_server.routers.tools import (
 )
 from bioimageflow_server.services.execution import (
     ExecutionManager,
-    NullEventBus,
 )
 from bioimageflow_server.services.known_packages import KnownPackagesService
+from bioimageflow_server.services.napari_launcher import NapariLauncher
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
@@ -70,7 +80,14 @@ from bioimageflow_server.services.package_installer import (
     PypiPackageInstaller,
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
+from bioimageflow_server.services.result_store import ResultStoreService
+from bioimageflow_server.services.thumbnail import ThumbnailService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.ws import (
+    ConnectionManager,
+    attach_ws_log_handler,
+    register_ws,
+)
 
 _STATUS_TO_ERROR: dict[int, str] = {
     400: "bad_request",
@@ -109,6 +126,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         deployment_mode=_deployment_mode,
     )
 
+    # Always provide a ConnectionManager in the default app. Production launch
+    # paths use create_app() directly, so leaving this optional silently drops
+    # progress / node_state / execution_complete events.
+    ws_manager = config.connection_manager or ConnectionManager()
+    event_bus: Any = ws_manager
+
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
@@ -118,13 +141,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             else None
         )
         execution_manager = ExecutionManager(
-            event_bus=NullEventBus(),
+            event_bus=event_bus,
             tool_registry=registry,
             settings=resolved_settings,
             storage_path=config.storage_path,
             session_manager=session_manager,
             settings_provider=settings_provider,
         )
+
+    resolved_storage_path = config.storage_path or Path("./bif_data")
+    result_store = config.result_store or ResultStoreService(
+        storage_path=resolved_storage_path,
+        tool_registry=registry,
+    )
+    thumbnail_service = config.thumbnail_service or ThumbnailService(
+        cache_dir=resolved_storage_path / ".thumbnails",
+    )
 
     known = config.known_packages or KnownPackagesService.default()
     pypi = config.pypi_versions or PyPIVersionService()
@@ -145,6 +177,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         registry=registry, known=known, pypi=pypi
     )
 
+    # Always instantiate a launcher (cheap config + state). The expensive
+    # Conda solve is deferred to the first /napari/open call.
+    napari_launcher = config.napari_launcher or NapariLauncher(
+        napari_env_path=resolved_settings.napari_env_path,
+        connection_manager=ws_manager,
+    )
+
+    ws_log_handler = None
+
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
         # Settings must load before catalog.refresh() so any settings the
@@ -162,9 +203,32 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             logging.getLogger(__name__).warning(
                 "Initial PyPI refresh crashed: %r", exc
             )
+
+        nonlocal ws_log_handler
+        if ws_manager is not None:
+            loop = asyncio.get_running_loop()
+            ws_manager._loop = loop
+            ws_log_handler = attach_ws_log_handler(ws_manager, loop)
+
         try:
             yield
         finally:
+            # Napari shutdown FIRST: it may take up to 5s (kill timeout)
+            # and must run before the WS log handler is detached so the
+            # final environment_status: stopped event reaches clients.
+            try:
+                await napari_launcher.shutdown()
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).exception(
+                    "napari_launcher.shutdown() raised during lifespan: %r",
+                    exc,
+                )
+            if ws_manager is not None:
+                if ws_log_handler is not None:
+                    logging.getLogger("bioimageflow").removeHandler(
+                        ws_log_handler
+                    )
+                ws_manager._loop = None
             if config.settings_store is not None:
                 await config.settings_store.flush()
             if _owns_pypi:
@@ -224,6 +288,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
         return JSONResponse(status_code=422, content=body.model_dump())
 
+    # ---- WebSocket layer ------------------------------------------------
+    if ws_manager is not None:
+        register_ws(app, ws_manager)
+        app.state.connection_manager = ws_manager
+
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(tools_router, prefix="/api/v1")
     app.include_router(dev_router, prefix="/api/v1")
@@ -231,6 +300,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    app.include_router(napari_router, prefix="/api/v1")
+    app.include_router(nodes_router, prefix="/api/v1")
+    app.state.napari_launcher = napari_launcher
+    app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
     if config.settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
         app.dependency_overrides[settings_get_store] = lambda: config.settings_store
@@ -246,6 +319,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
+
     def _live_dev_mode() -> bool:
         if config.settings_store is not None:
             return config.settings_store.get().dev_mode
@@ -258,6 +332,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings
+    app.dependency_overrides[get_result_store] = lambda: result_store
+    app.dependency_overrides[get_thumbnail_service] = lambda: thumbnail_service
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

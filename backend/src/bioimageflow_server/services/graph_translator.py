@@ -178,6 +178,17 @@ def graph_state_to_lib_dict(
     for target, pos_edges in positional_by_target.items():
         pos_edges.sort(key=lambda e: e.positional_index)
 
+    # Fields that already receive their value from a column_ref edge must
+    # not be re-emitted as constants — the library's engine merges
+    # constants on top of column bindings, so a leftover constant
+    # (commonly a None placeholder kept by the frontend on the disabled
+    # parameter widget) would clobber the upstream value.
+    connected_inputs_by_target: dict[str, set[str]] = {}
+    for edge in column_edges:
+        connected_inputs_by_target.setdefault(edge.target_node, set()).add(
+            edge.target_input
+        )
+
     # --- Emit nodes. ---
     nodes_data: list[dict[str, Any]] = []
     emitted_ids: set[str] = set()
@@ -206,7 +217,10 @@ def graph_state_to_lib_dict(
         if not node.enabled:
             node_dict["enabled"] = False
 
+        connected_inputs = connected_inputs_by_target.get(node.id, set())
         for key, value in node.parameters.items():
+            if key in connected_inputs:
+                continue
             node_dict["constants"][key] = serialize_constant(value)
 
         nodes_data.append(node_dict)

@@ -4,6 +4,8 @@ import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
+import { useExecutionStore } from '@/stores/execution'
+import { useLoggerStore } from '@/stores/logger'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
 import type { ToolMetadata, InputFieldSchema } from '@/api/types'
 
@@ -14,13 +16,15 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     package: 'bioimageflow-core',
     package_version: '0.3.2',
     tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
     documentation: 'Apply gaussian blur to smooth images.',
     tags: [],
     categories: ['Filtering'],
     inputs: {
-      image: { type: 'ImagePath', required: true, connectable: 'by_default', description: 'Input image path' },
-      sigma: { type: 'float', required: true, connectable: 'never', default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
-      threshold: { type: 'float', required: false, connectable: 'never', default: 0.5, description: 'Optional threshold' },
+      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Input image path' },
+      sigma: { type: 'float', required: true, nullable: false, connectable: 'never', default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
+      threshold: { type: 'float', required: false, nullable: true, connectable: 'never', default: 0.5, description: 'Optional threshold' },
     },
     outputs: {
       result: { type: 'ImagePath' },
@@ -144,26 +148,63 @@ describe('NodePanel', () => {
     })
   })
 
-  // --- Fix 16: None toggle for Optional fields ---
+  // --- Fix 16: None toggle for nullable fields ---
 
-  describe('none toggle for optional fields', () => {
-    it('renders none toggle only for optional fields', () => {
+  describe('none toggle for nullable fields', () => {
+    it('renders none toggle only for nullable fields', () => {
       const w = mountPanel(makeNodeData())
       const noneToggles = w.findAll('[data-testid="none-toggle"]')
-      // Only 'threshold' is optional
+      // Only `threshold` is nullable; `sigma` has a default but is non-nullable.
       expect(noneToggles.length).toBe(1)
     })
 
-    it('sets parameter to null when toggled via component event', async () => {
+    it('does not render the toggle for a non-nullable field with a default', () => {
+      // Regression: prior to nullable, ANY field with a default got the toggle —
+      // which would crash the tool when the user nulled e.g. Atlas's `gaussian_std: int = 60`.
+      const tool = makeTool({
+        inputs: {
+          k: { type: 'int', required: false, nullable: false, connectable: 'never', default: 5 },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, parameters: { k: 5 } }))
+      expect(w.findAll('[data-testid="none-toggle"]').length).toBe(0)
+    })
+
+    it('renders the toggle for a nullable required field (no default)', () => {
+      // `int | None` with no default: user must pass *something*, but None is acceptable.
+      const tool = makeTool({
+        inputs: {
+          t: { type: 'int', required: true, nullable: true, connectable: 'never' },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool, parameters: {} }))
+      expect(w.findAll('[data-testid="none-toggle"]').length).toBe(1)
+    })
+
+    it('sets parameter to null when toggled via click', async () => {
       const data = makeNodeData()
       data.parameters.threshold = 0.5
       const w = mountPanel(data)
       const noneToggle = w.find('[data-testid="none-toggle"]')
-      // PrimeVue Checkbox emits update:modelValue; find the Checkbox component and trigger it
-      const checkbox = noneToggle.findComponent({ name: 'Checkbox' })
-      await checkbox.vm.$emit('update:modelValue', true)
+      await noneToggle.trigger('click')
       await w.vm.$nextTick()
       expect(data.parameters.threshold).toBe(null)
+    })
+
+    it('toggles between pencil and Ø (pi-ban) icons based on null state', async () => {
+      // Icons reflect the action that will happen on click, not the
+      // current state — so an editable field shows Ø (click to nullify)
+      // and a nulled field shows pencil (click to edit).
+      const data = makeNodeData()
+      data.parameters.threshold = 0.5
+      const w = mountPanel(data)
+      const noneToggle = w.find('[data-testid="none-toggle"]')
+      // Editable: Ø (pi-ban)
+      expect(noneToggle.html()).toContain('pi-ban')
+      await noneToggle.trigger('click')
+      await w.vm.$nextTick()
+      // Nulled: pencil
+      expect(noneToggle.html()).toContain('pi-pencil')
     })
   })
 
@@ -190,9 +231,9 @@ describe('NodePanel', () => {
     it('treats both by_default and not_by_default as connectable (pin visible)', () => {
       const tool = makeTool({
         inputs: {
-          a: { type: 'float', required: true, connectable: 'by_default' },
-          b: { type: 'float', required: true, connectable: 'not_by_default' },
-          c: { type: 'float', required: true, connectable: 'never' },
+          a: { type: 'float', required: true, nullable: false, connectable: 'by_default' },
+          b: { type: 'float', required: true, nullable: false, connectable: 'not_by_default' },
+          c: { type: 'float', required: true, nullable: false, connectable: 'never' },
         },
       })
       const data = makeNodeData({ tool, pinnedInputs: { a: true, b: true } })
@@ -210,6 +251,7 @@ describe('NodePanel', () => {
           mask: {
             type: 'ImagePath',
             required: true,
+            nullable: false,
             connectable: 'by_default',
             display_name: 'Input mask',
             description: 'Binary mask',
@@ -285,8 +327,8 @@ describe('NodePanel', () => {
         display_name: 'Files',
         tool_type: 'DataFrameTool',
         inputs: {
-          path: { type: 'Path', required: true, connectable: 'never', description: 'Directory' },
-          pattern: { type: 'str', required: false, connectable: 'never', default: '*' },
+          path: { type: 'Path', required: true, nullable: false, connectable: 'never', description: 'Directory' },
+          pattern: { type: 'str', required: false, nullable: false, connectable: 'never', default: '*' },
         },
         outputs: {
           path: { type: 'Path' },
@@ -321,8 +363,8 @@ describe('NodePanel', () => {
     function makePathTool(): ToolMetadata {
       return makeTool({
         inputs: {
-          input_image: { type: 'ImagePath', required: true, connectable: 'by_default', description: 'Image file' },
-          work_dir: { type: 'Path', required: true, connectable: 'never', description: 'Working directory' },
+          input_image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Image file' },
+          work_dir: { type: 'Path', required: true, nullable: false, connectable: 'never', description: 'Working directory' },
         },
         outputs: { result: { type: 'ImagePath' } },
       })
@@ -546,6 +588,66 @@ describe('NodePanel', () => {
       expect(
         w.find('[data-testid="node-validation-errors"]').exists(),
       ).toBe(false)
+    })
+  })
+
+  describe('execution output', () => {
+    it('renders failed-node error and traceback from execution state', async () => {
+      const w = mountPanel(makeNodeData())
+      useExecutionStore().applyNodeState({
+        node_id: 'node-1',
+        status: 'failed',
+        cached: false,
+        error: 'Node failed',
+        traceback: 'Traceback line 1\nTraceback line 2',
+      })
+      await w.vm.$nextTick()
+
+      const error = w.find('[data-testid="node-runtime-error"]')
+      expect(error.exists()).toBe(true)
+      expect(error.text()).toContain('Node failed')
+      expect(error.text()).toContain('Traceback line 2')
+    })
+
+    it('renders selected-node logs and hides other nodes', async () => {
+      const w = mountPanel(makeNodeData())
+      const logger = useLoggerStore()
+      logger.addEntry({ level: 'INFO', message: 'selected log', nodeId: 'node-1', timestamp: 1 })
+      logger.addEntry({ level: 'INFO', message: 'other log', nodeId: 'node-2', timestamp: 2 })
+      await w.vm.$nextTick()
+
+      const list = w.find('[data-testid="node-log-list"]')
+      expect(list.text()).toContain('selected log')
+      expect(list.text()).not.toContain('other log')
+    })
+
+    it('filters selected-node logs independently by level', async () => {
+      const w = mountPanel(makeNodeData())
+      const logger = useLoggerStore()
+      logger.addEntry({ level: 'DEBUG', message: 'debug log', nodeId: 'node-1', timestamp: 1 })
+      logger.addEntry({ level: 'ERROR', message: 'error log', nodeId: 'node-1', timestamp: 2 })
+      await w.vm.$nextTick()
+
+      expect(w.find('[data-testid="node-log-list"]').text()).toContain('error log')
+      expect(w.find('[data-testid="node-log-list"]').text()).not.toContain('debug log')
+
+      await w.find('[data-testid="node-log-level-DEBUG"]').trigger('click')
+      expect(w.find('[data-testid="node-log-list"]').text()).toContain('debug log')
+    })
+
+    it('renders node log messages as escaped text', async () => {
+      const w = mountPanel(makeNodeData())
+      useLoggerStore().addEntry({
+        level: 'INFO',
+        message: '<script>alert(1)</script>',
+        nodeId: 'node-1',
+        timestamp: 1,
+      })
+      await w.vm.$nextTick()
+
+      const message = w.find('[data-testid="node-log-message"]')
+      expect(message.text()).toBe('<script>alert(1)</script>')
+      expect(w.find('script').exists()).toBe(false)
     })
   })
 })

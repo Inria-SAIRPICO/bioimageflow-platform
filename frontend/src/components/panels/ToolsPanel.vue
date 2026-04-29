@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import TreeTable from 'primevue/treetable'
 import Column from 'primevue/column'
 import InputText from 'primevue/inputtext'
@@ -48,6 +48,43 @@ function markBusy(key: string, on: boolean) {
 }
 
 const filteredTools = computed(() => toolRegistry.searchTools(searchQuery.value))
+
+/** Tools grouped by their primary category for the sidebar list. The list
+ * is rendered as a tree (category -> tool rows), mirroring the package tree
+ * in the Manage Tools dialog. Tools without categories are grouped under
+ * "Uncategorized". */
+export interface CategoryGroup {
+  category: string
+  tools: ToolMetadata[]
+}
+
+const categoryGroups = computed<CategoryGroup[]>(() => {
+  const grouped: Record<string, ToolMetadata[]> = {}
+  for (const tool of filteredTools.value) {
+    const category = tool.categories[0] ?? 'Uncategorized'
+    if (!grouped[category]) grouped[category] = []
+    grouped[category].push(tool)
+  }
+  return Object.keys(grouped)
+    .sort((a, b) => a.localeCompare(b))
+    .map((category) => ({ category, tools: grouped[category] }))
+})
+
+/** Categories collapsed by the user. Categories are expanded by default, so
+ * we track collapse state instead of expand state — that way newly arriving
+ * categories appear open. */
+const collapsedCategories = ref(new Set<string>())
+
+function isCategoryCollapsed(category: string): boolean {
+  return collapsedCategories.value.has(category)
+}
+
+function toggleCategoryCollapsed(category: string) {
+  const next = new Set(collapsedCategories.value)
+  if (next.has(category)) next.delete(category)
+  else next.add(category)
+  collapsedCategories.value = next
+}
 
 export interface TreeNode {
   key: string
@@ -114,6 +151,32 @@ const treeNodes = computed<TreeNode[]>(() => {
   })
 })
 
+/** Expansion map for the Manage Tools TreeTable. PrimeVue's TreeTable expects
+ * a record `{ [nodeKey]: true }` of expanded keys; we seed it with every
+ * known package row whenever the tree node set changes so newly arriving
+ * packages start expanded, but we still let the user collapse a row.
+ *
+ * `seenPackages` records keys we've already auto-expanded — once the user
+ * collapses a row it stays collapsed instead of being re-expanded on the
+ * next package fetch. */
+const manageExpandedKeys = ref<Record<string, boolean>>({})
+const seenPackages = ref(new Set<string>())
+
+watch(
+  treeNodes,
+  (nodes) => {
+    const next = { ...manageExpandedKeys.value }
+    for (const node of nodes) {
+      if (!seenPackages.value.has(node.key)) {
+        next[node.key] = true
+        seenPackages.value.add(node.key)
+      }
+    }
+    manageExpandedKeys.value = next
+  },
+  { immediate: true },
+)
+
 function onToolDragStart(event: DragEvent, tool: ToolMetadata) {
   event.dataTransfer?.setData('application/bioimageflow-tool', tool.name)
 }
@@ -158,10 +221,18 @@ function closeAllVersionDropdowns() {
   expandedVersions.value = new Set()
 }
 
-/** Label for the dropdown trigger: installed versions or "uninstalled". */
+/** Label for the dropdown trigger. Shows the active version with a hint when
+ * other installed versions are available (so the user knows the dropdown is
+ * worth opening), or "uninstalled" when nothing is on disk. */
 function versionTriggerLabel(packageName: string): string {
   const pkg = toolRegistry.packages.find((p) => p.name === packageName)
   if (!pkg || pkg.installed_versions.length === 0) return 'uninstalled'
+  if (pkg.active_version) {
+    if (pkg.installed_versions.length > 1) {
+      return `${pkg.active_version} (active, +${pkg.installed_versions.length - 1})`
+    }
+    return `${pkg.active_version} (active)`
+  }
   return pkg.installed_versions.join(', ')
 }
 
@@ -249,14 +320,49 @@ async function uninstallVersion(packageName: string, version: string) {
   }
 }
 
+/** True when ``version`` is the currently active version for ``packageName``
+ * in the workflow. Used to disable the "Set current" button on the active
+ * row and to render the "current" badge. */
+function isActiveVersion(packageName: string, version: string): boolean {
+  const pkg = toolRegistry.packages.find((p) => p.name === packageName)
+  return pkg?.active_version === version
+}
+
+/** Make ``packageName==version`` the active version for the workflow. There
+ * is one active version per package, so this affects every node from this
+ * package — confirm before switching because nodes built against a different
+ * schema may need to be re-validated. */
 function useVersionInWorkflow(packageName: string, version: string) {
+  if (isActiveVersion(packageName, version)) return
   confirm.require({
-    message: `Switch ${packageName} to version ${version} in the current workflow? Affected nodes will be marked as out-of-date.`,
+    message: `Set ${packageName} ${version} as the active version for this workflow? Every node from this package will use the new version's schema.`,
     header: 'Change Package Version',
-    acceptLabel: 'Switch',
+    acceptLabel: 'Set current',
     rejectLabel: 'Cancel',
     accept: async () => {
-      await toolRegistry.fetchTools()
+      const key = busyKey(packageName, version)
+      markBusy(key, true)
+      try {
+        await api.post(`/api/v1/tools/packages/${packageName}/use`, { version })
+        await Promise.all([toolRegistry.fetchPackages(), toolRegistry.fetchTools()])
+        toast.add({
+          severity: 'success',
+          summary: 'Active version changed',
+          detail: `${packageName} ${version}`,
+          life: 3000,
+        })
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e)
+        toolRegistry.error = message
+        toast.add({
+          severity: 'error',
+          summary: 'Failed to change active version',
+          detail: `${packageName} ${version}: ${message}`,
+          life: 5000,
+        })
+      } finally {
+        markBusy(key, false)
+      }
     },
   })
 }
@@ -324,11 +430,16 @@ onBeforeUnmount(() => {
 
 defineExpose({
   treeNodes,
+  manageExpandedKeys,
   filteredTools,
+  categoryGroups,
+  isCategoryCollapsed,
+  toggleCategoryCollapsed,
   getVersionRows,
   installVersion,
   uninstallVersion,
   useVersionInWorkflow,
+  isActiveVersion,
   toggleDocumentation,
   toggleManageDocumentation,
   getDocumentation,
@@ -374,54 +485,76 @@ defineExpose({
       />
     </div>
 
-    <!-- Minimalist tool list -->
+    <!-- Tool list grouped by category. Categories are expanded by default and
+         can be collapsed individually; the structure mirrors the package tree
+         in the Manage Tools dialog. -->
     <div class="tool-list" data-testid="tool-list">
       <div
-        v-for="tool in filteredTools"
-        :key="tool.name"
-        class="tool-list-item"
-        :data-testid="`tool-item-${tool.name}`"
-        draggable="true"
-        @dragstart="onToolDragStart($event, tool)"
-        @click="onToolClick(tool.name)"
+        v-for="group in categoryGroups"
+        :key="group.category"
+        class="tool-category-group"
+        :data-testid="`category-group-${group.category}`"
       >
-        <div class="tool-list-item-row">
-          <span class="tool-list-name">{{ tool.display_name }}</span>
-          <span class="tool-list-right">
-            <Button
-              icon="pi pi-info-circle"
-              text
-              size="small"
-              class="tool-list-info-btn"
-              :data-testid="`tool-info-${tool.name}`"
-              @click.stop="toggleDocumentation(tool.name)"
-            />
-            <Button
-              icon="pi pi-power-off"
-              text
-              size="small"
-              class="tool-list-power-btn"
-              :class="`env-${toolRegistry.getEnvStatusForTool(tool.name)}`"
-              :data-testid="`tool-power-${tool.name}`"
-              :title="toolRegistry.getEnvStatusForTool(tool.name)"
-              @click.stop="toggleEnvironment(tool.package)"
-            />
-          </span>
-        </div>
-        <div class="tool-list-meta">
-          <span v-if="tool.categories.length" class="tool-list-category">
-            {{ tool.categories[0] }}
-          </span>
-          <Tag
-            v-for="tag in tool.tags"
-            :key="tag"
-            :value="tag"
-            severity="secondary"
-            class="tool-list-tag"
+        <button
+          type="button"
+          class="tool-category-header"
+          :aria-expanded="!isCategoryCollapsed(group.category)"
+          :data-testid="`category-toggle-${group.category}`"
+          @click="toggleCategoryCollapsed(group.category)"
+        >
+          <i
+            class="pi tool-category-chevron"
+            :class="isCategoryCollapsed(group.category) ? 'pi-chevron-right' : 'pi-chevron-down'"
           />
+          <span class="tool-category-label">{{ group.category }}</span>
+          <span class="tool-category-count">{{ group.tools.length }}</span>
+        </button>
+        <div v-if="!isCategoryCollapsed(group.category)" class="tool-category-items">
+          <div
+            v-for="tool in group.tools"
+            :key="tool.name"
+            class="tool-list-item"
+            :data-testid="`tool-item-${tool.name}`"
+            draggable="true"
+            @dragstart="onToolDragStart($event, tool)"
+            @click="onToolClick(tool.name)"
+          >
+            <div class="tool-list-item-row">
+              <span class="tool-list-name">{{ tool.display_name }}</span>
+              <span class="tool-list-right">
+                <Button
+                  icon="pi pi-info-circle"
+                  text
+                  size="small"
+                  class="tool-list-info-btn"
+                  :data-testid="`tool-info-${tool.name}`"
+                  @click.stop="toggleDocumentation(tool.name)"
+                />
+                <Button
+                  icon="pi pi-power-off"
+                  text
+                  size="small"
+                  class="tool-list-power-btn"
+                  :class="`env-${toolRegistry.getEnvStatusForTool(tool.name)}`"
+                  :data-testid="`tool-power-${tool.name}`"
+                  :title="toolRegistry.getEnvStatusForTool(tool.name)"
+                  @click.stop="toggleEnvironment(tool.package)"
+                />
+              </span>
+            </div>
+            <div v-if="tool.tags.length" class="tool-list-meta">
+              <Tag
+                v-for="tag in tool.tags"
+                :key="tag"
+                :value="tag"
+                severity="secondary"
+                class="tool-list-tag"
+              />
+            </div>
+          </div>
         </div>
       </div>
-      <div v-if="filteredTools.length === 0" class="tool-list-empty">
+      <div v-if="categoryGroups.length === 0" class="tool-list-empty">
         No tools found.
       </div>
     </div>
@@ -466,7 +599,11 @@ defineExpose({
       content-class="manage-tools-dialog-content"
       data-testid="manage-tools-dialog"
     >
-      <TreeTable :value="treeNodes" class="manage-tools-tree mt-2">
+      <TreeTable
+        :value="treeNodes"
+        v-model:expanded-keys="manageExpandedKeys"
+        class="manage-tools-tree mt-2"
+      >
         <Column field="display_name" header="Name" expander>
           <template #body="{ node }">
             <span>{{ node.data.display_name }}</span>
@@ -513,6 +650,7 @@ defineExpose({
                       v-for="row in getVersionRows(node.data.name)"
                       :key="row.version"
                       class="version-row"
+                      :class="{ 'version-row-current': isActiveVersion(node.data.name, row.version) }"
                       role="menuitem"
                     >
                       <span class="version-label">{{ row.version }}</span>
@@ -521,6 +659,30 @@ defineExpose({
                         :class="row.installed ? 'version-status-installed' : 'version-status-missing'"
                         :title="row.installed ? 'Installed' : 'Not installed'"
                         :aria-label="row.installed ? 'Installed' : 'Not installed'"
+                      />
+                      <!-- "Current" badge marks the active version for the
+                           workflow. Otherwise, an installed row offers a
+                           "Set current" button to switch to it. Only
+                           installed versions can be set current. -->
+                      <span
+                        v-if="row.installed && isActiveVersion(node.data.name, row.version)"
+                        class="version-current-badge"
+                        :data-testid="`current-version-${node.data.name}-${row.version}`"
+                      >
+                        Current
+                      </span>
+                      <Button
+                        v-else-if="row.installed"
+                        label="Set current"
+                        icon="pi pi-check"
+                        size="small"
+                        severity="secondary"
+                        text
+                        class="version-action"
+                        :loading="isBusy(node.data.name, row.version)"
+                        :disabled="isBusy(node.data.name, row.version)"
+                        :data-testid="`set-current-version-${node.data.name}-${row.version}`"
+                        @click="useVersionInWorkflow(node.data.name, row.version)"
                       />
                       <Button
                         v-if="!row.installed"
@@ -650,11 +812,56 @@ defineExpose({
   padding: 8px 10px 10px;
 }
 
-/* --- Minimalist list --- */
+/* --- Tool list (category tree) --- */
 .tool-list {
   flex: 1;
   overflow-y: auto;
   padding: 0 6px;
+}
+
+.tool-category-group {
+  margin-bottom: 4px;
+}
+
+.tool-category-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 4px 4px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--p-text-color);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-radius: 3px;
+}
+
+.tool-category-header:hover {
+  background-color: var(--p-surface-100);
+}
+
+.tool-category-chevron {
+  font-size: 10px;
+  color: var(--p-text-muted-color);
+}
+
+.tool-category-label {
+  flex: 1;
+}
+
+.tool-category-count {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--p-text-muted-color);
+}
+
+.tool-category-items {
+  padding-left: 12px;
 }
 
 .tool-list-item {
@@ -857,6 +1064,22 @@ defineExpose({
 
 .version-status-missing {
   background: var(--p-surface-400);
+}
+
+.version-row-current {
+  background: color-mix(in srgb, var(--p-primary-color) 8%, transparent);
+}
+
+.version-current-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--p-primary-color);
+  color: var(--p-primary-contrast-color, #fff);
+  flex-shrink: 0;
 }
 
 .version-action {
