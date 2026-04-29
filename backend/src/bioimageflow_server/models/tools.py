@@ -119,3 +119,7 @@ class AppConfig:
     execution_manager: Any | None = None
     settings: Settings | None = None
     connection_manager: ConnectionManager | None = None
+    # Set True in tests that don't want a watchdog Observer running. The
+    # production app builds the service inside ``create_app`` from the
+    # resolved registry + connection_manager + tool-store path.
+    disable_hot_reload: bool = False

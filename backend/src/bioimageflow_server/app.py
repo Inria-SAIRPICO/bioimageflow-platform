@@ -72,6 +72,7 @@ from bioimageflow_server.services.package_installer import (
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.thumbnail import ThumbnailService
+from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.ws import (
     ConnectionManager,
@@ -147,15 +148,25 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     pypi = config.pypi_versions or PyPIVersionService()
     _owns_pypi = config.pypi_versions is None
 
+    from bioimageflow.paths import get_tool_store_path
+    tool_store_path = get_tool_store_path()
+
+    if config.disable_hot_reload:
+        hot_reload: ToolHotReloadService | None = None
+    else:
+        hot_reload = ToolHotReloadService(
+            registry=registry,
+            connection_manager=ws_manager,
+        )
+
     if config.package_installer is not None:
         installer = config.package_installer
     else:
-        from bioimageflow.paths import get_tool_store_path
-
         installer = PypiPackageInstaller(
-            tool_store=get_tool_store_path(),
+            tool_store=tool_store_path,
             registry=registry,
             pypi=pypi,
+            hot_reload=hot_reload,
         )
 
     catalog = config.package_catalog or PackageCatalogService(
@@ -184,9 +195,30 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ws_manager._loop = loop
             ws_log_handler = attach_ws_log_handler(ws_manager, loop)
 
+        # Hot-reload watcher starts AFTER the registry has been populated
+        # by scan_tool_store() (which runs synchronously above) so the
+        # observer never races the initial load.
+        hot_reload_started = False
+        if hot_reload is not None:
+            try:
+                await hot_reload.start(tool_store_path)
+                hot_reload_started = True
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning(
+                    "Tool hot-reload failed to start: %r", exc, exc_info=exc,
+                )
+
         try:
             yield
         finally:
+            if hot_reload is not None and hot_reload_started:
+                try:
+                    await hot_reload.stop()
+                except Exception:  # noqa: BLE001
+                    logging.getLogger(__name__).warning(
+                        "Tool hot-reload failed to stop cleanly",
+                        exc_info=True,
+                    )
             if ws_manager is not None:
                 if ws_log_handler is not None:
                     logging.getLogger("bioimageflow").removeHandler(

@@ -23,6 +23,7 @@ from bioimageflow.tool_loader import ensure_installed
 
 if TYPE_CHECKING:
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 logger = logging.getLogger(__name__)
@@ -96,10 +97,12 @@ class PypiPackageInstaller(PackageInstallerService):
         tool_store: Path,
         registry: "ToolRegistryService",
         pypi: "PyPIVersionService",
+        hot_reload: "ToolHotReloadService | None" = None,
     ) -> None:
         self._tool_store = tool_store
         self._registry = registry
         self._pypi = pypi
+        self._hot_reload = hot_reload
 
     async def install(self, package_name: str, version: str | None = None) -> None:
         if version is None:
