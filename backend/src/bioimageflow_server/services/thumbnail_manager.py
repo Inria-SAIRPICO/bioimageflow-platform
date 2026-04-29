@@ -39,6 +39,28 @@ _logger = logging.getLogger(__name__)
 _POLL_INTERVAL_SECONDS = 0.05
 
 
+# Absolute path to the subprocess-side helper. Wetlands' ``execute``
+# imports it by path (the helper isn't on the env's PYTHONPATH).
+_GENERATOR_MODULE_NAME: str = str(
+    (Path(__file__).parent.parent / "_external" / "thumbnail_generator.py").resolve()
+)
+
+
+# Pip dependencies for the ``thumbnail`` Wetlands env. Mirrors Galaxy's
+# choice plus a couple of extras for ome-zarr / ome-tiff. Pinned to the
+# versions Galaxy ships so we get a known-good stack.
+_THUMBNAIL_ENV_PIP: tuple[str, ...] = (
+    "bioio==3.0.0",
+    "pillow==11.1.0",
+    "numpy",
+    "bioio-ome-zarr",
+    "bioio-ome-tiff",
+    "bioio-imageio",
+    "bioio-tifffile",
+    "bioio-tiff-glob",
+)
+
+
 class ThumbnailManager:
     """Generate and cache image thumbnails via a Wetlands env.
 
@@ -157,21 +179,84 @@ class ThumbnailManager:
         return self.placeholder_png(size)
 
     async def queue_generate(self, file_path: str | Path, size: int) -> None:
-        """Dispatch a generation task into the Wetlands env (T3)."""
-        # Wired in T3.
-        return None
+        """Submit a thumbnail-render task into the Wetlands env.
+
+        Idempotent: returns immediately if the cache file already exists
+        or the source isn't a regular file. Launches the env on first
+        use.
+        """
+        path = Path(file_path)
+        if not path.is_file():
+            return
+        cache_file = self.cache_path(path, size)
+        if cache_file.is_file():
+            return
+
+        async with self._lock:
+            if self._env is None:
+                await asyncio.to_thread(self._launch)
+
+        env = self._env
+        if env is None:
+            # Launch failed — _launch already logged. Don't raise; the
+            # endpoint returns a placeholder which the frontend retries.
+            return
+
+        extension = path.suffix.lstrip(".")
+        await asyncio.to_thread(
+            env.execute,
+            _GENERATOR_MODULE_NAME,
+            "queue_generate_thumbnail",
+            (str(path), extension, str(cache_file), (size, size)),
+        )
 
     async def shutdown(self) -> None:
         """Best-effort env shutdown. Idempotent."""
-        return None
+        env = self._env
+        if env is None:
+            return
+        try:
+            close = getattr(env, "close", None)
+            if callable(close):
+                await asyncio.to_thread(close)
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("thumbnail env close raised: %r", exc)
+        self._env = None
 
     # ------------------------------------------------------------------
     # Hooks
     # ------------------------------------------------------------------
 
     def _launch(self) -> None:
-        """Synchronously create + launch the Wetlands env (T3)."""
-        return None
+        """Create or load the Wetlands env and launch its workers.
+
+        Synchronous; called via ``asyncio.to_thread`` from
+        ``queue_generate`` so the event loop stays responsive while the
+        Conda solve runs.
+        """
+        if self._env is not None:
+            return
+
+        try:
+            from bioimageflow.env_manager import get_shared_environment_manager
+
+            em = get_shared_environment_manager()
+            if self._env_path:
+                env = em.load("thumbnail", Path(self._env_path))
+            else:
+                env = em.create(
+                    "thumbnail",
+                    dependencies={
+                        "pip": list(_THUMBNAIL_ENV_PIP),
+                    },
+                    use_existing=False,
+                )
+            env.launch()
+            self._env = env
+        except Exception:  # noqa: BLE001
+            _logger.exception("thumbnail Wetlands env failed to launch")
+            self._env = None
+            raise
 
 
 # ---------------------------------------------------------------------------

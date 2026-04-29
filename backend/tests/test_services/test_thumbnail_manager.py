@@ -13,6 +13,7 @@ Tests here focus on:
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -138,6 +139,172 @@ async def test_get_or_queue_returns_cached_immediately(tmp_path: Path) -> None:
     mgr._launch = _explode  # type: ignore[method-assign]
     result = await mgr.get_or_queue(src, 128, wait_timeout=0.0)
     assert result == payload
+
+
+# ---------------------------------------------------------------------------
+# Wetlands launch + queue (T3)
+# ---------------------------------------------------------------------------
+
+
+def _stub_env() -> mock.MagicMock:
+    """Mock object that quacks like a launched Wetlands environment."""
+    env = mock.MagicMock()
+    env.execute = mock.MagicMock(return_value=None)
+    return env
+
+
+@pytest.mark.anyio
+async def test_queue_generate_lazily_calls_launch(tmp_path: Path) -> None:
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"x")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+
+    env = _stub_env()
+    launched: list[bool] = []
+
+    def fake_launch() -> None:
+        launched.append(True)
+        mgr._env = env
+
+    mgr._launch = fake_launch  # type: ignore[method-assign]
+    await mgr.queue_generate(src, 128)
+    assert launched == [True]
+    env.execute.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_queue_generate_passes_correct_args(tmp_path: Path) -> None:
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"fake-tiff")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+
+    env = _stub_env()
+    mgr._env = env  # bypass launch
+
+    await mgr.queue_generate(src, 128)
+
+    args, kwargs = env.execute.call_args
+    # function name must be queue_generate_thumbnail
+    assert "thumbnail_generator" in str(args[0]) or "thumbnail_generator" in str(
+        kwargs.get("module_path", "")
+    )
+    assert args[1] == "queue_generate_thumbnail"
+    submitted = args[2]
+    assert submitted[0] == str(src)
+    assert submitted[1] == "tif"  # extension without dot
+    assert submitted[2] == str(mgr.cache_path(src, 128))
+    assert submitted[3] == (128, 128)
+
+
+@pytest.mark.anyio
+async def test_queue_generate_skips_when_cached(tmp_path: Path) -> None:
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"x")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    mgr.cache_path(src, 128).write_bytes(b"already-cached")
+
+    env = _stub_env()
+    mgr._env = env
+
+    await mgr.queue_generate(src, 128)
+    env.execute.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_queue_generate_skips_when_source_missing(tmp_path: Path) -> None:
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+
+    env = _stub_env()
+    mgr._env = env
+
+    def _explode() -> None:  # pragma: no cover
+        raise AssertionError("_launch must not run for a missing source")
+
+    mgr._launch = _explode  # type: ignore[method-assign]
+
+    await mgr.queue_generate(tmp_path / "missing.tif", 128)
+    env.execute.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_queue_generate_reuses_env_across_calls(tmp_path: Path) -> None:
+    src1 = tmp_path / "a.tif"
+    src1.write_bytes(b"x")
+    src2 = tmp_path / "b.tif"
+    src2.write_bytes(b"y")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+
+    env = _stub_env()
+    launches: list[bool] = []
+
+    def fake_launch() -> None:
+        launches.append(True)
+        mgr._env = env
+
+    mgr._launch = fake_launch  # type: ignore[method-assign]
+
+    await mgr.queue_generate(src1, 128)
+    await mgr.queue_generate(src2, 128)
+
+    assert len(launches) == 1
+    assert env.execute.call_count == 2
+
+
+@pytest.mark.anyio
+async def test_queue_generate_handles_extension_with_no_dot(tmp_path: Path) -> None:
+    """Files with no extension produce extension="" — bioio side handles it
+    (Galaxy fallback creates a symlink with the dataset's logical
+    extension, which is empty here)."""
+    src = tmp_path / "datafile_no_extension"
+    src.write_bytes(b"x")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    mgr._env = _stub_env()
+
+    await mgr.queue_generate(src, 128)
+    args, _ = mgr._env.execute.call_args
+    assert args[2][1] == ""
+
+
+# ---------------------------------------------------------------------------
+# get_or_queue bounded wait (T4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_or_queue_bounded_wait_returns_real_when_ready(tmp_path: Path) -> None:
+    """When the cache file is written by the (mocked) generator before the
+    timeout, get_or_queue returns the real bytes."""
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"x")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    cache_file = mgr.cache_path(src, 128)
+    real_png = b"\x89PNG\r\n\x1a\nrendered"
+
+    env = _stub_env()
+
+    def write_cache(*_a: object, **_kw: object) -> None:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(real_png)
+
+    env.execute.side_effect = write_cache
+    mgr._env = env
+
+    result = await mgr.get_or_queue(src, 128, wait_timeout=1.0)
+    assert result == real_png
+
+
+@pytest.mark.anyio
+async def test_get_or_queue_returns_placeholder_on_timeout(tmp_path: Path) -> None:
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"x")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+
+    env = _stub_env()  # never writes the cache file
+    mgr._env = env
+
+    result = await mgr.get_or_queue(src, 128, wait_timeout=0.1)
+    assert result == mgr.placeholder_png(128)
+    env.execute.assert_called_once()
 
 
 @pytest.fixture
