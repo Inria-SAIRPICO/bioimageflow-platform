@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.package_catalog import PackageCatalogService
     from bioimageflow_server.services.package_installer import PackageInstallerService
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
+    from bioimageflow_server.services.settings_store import SettingsStore
     from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
@@ -106,3 +107,6 @@ class AppConfig:
     storage_path: Path | None = None
     execution_manager: Any | None = None
     settings: Settings | None = None
+    # Authoritative live source when set; ``settings`` becomes a snapshot
+    # fallback used only when ``settings_store`` is None (CLI / tests).
+    settings_store: SettingsStore | None = None

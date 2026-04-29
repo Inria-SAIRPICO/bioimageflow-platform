@@ -285,3 +285,33 @@ def test_appconfig_supplied_execution_manager_is_preserved():
     app = create_app(AppConfig(execution_manager=sentinel))
     assert app.dependency_overrides[execution_get_manager]() is sentinel
     assert app.dependency_overrides[graph_get_execution_manager]() is sentinel
+
+
+# ---------------------------------------------------------------------------
+# settings_store field
+# ---------------------------------------------------------------------------
+
+
+def test_app_config_default_settings_store_is_none():
+    cfg = AppConfig()
+    assert cfg.settings_store is None
+
+
+def test_app_config_accepts_settings_store(tmp_path: Path):
+    from bioimageflow_server.services.settings_store import SettingsStore
+
+    store = SettingsStore(path=tmp_path / "settings.json")
+    cfg = AppConfig(settings_store=store)
+    assert cfg.settings_store is store
+
+
+def test_app_config_accepts_both_settings_and_settings_store(tmp_path: Path):
+    """Both fields can coexist; create_app prefers settings_store."""
+    from bioimageflow_server.models.settings import Settings
+    from bioimageflow_server.services.settings_store import SettingsStore
+
+    store = SettingsStore(path=tmp_path / "settings.json")
+    settings = Settings(deployment_mode="desktop")
+    cfg = AppConfig(settings=settings, settings_store=store)
+    assert cfg.settings is settings
+    assert cfg.settings_store is store
