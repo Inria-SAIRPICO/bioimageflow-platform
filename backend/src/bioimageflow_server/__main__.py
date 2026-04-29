@@ -1,8 +1,38 @@
 """Entrypoint for `python -m bioimageflow_server`."""
 
 import argparse
+from pathlib import Path
 
 import uvicorn
+
+
+_RELOAD_EXCLUDES = [
+    ".git/*",
+    ".mypy_cache/*",
+    ".pytest_cache/*",
+    ".ruff_cache/*",
+    ".venv/*",
+    ".pixi/*",
+    "bif_data/*",
+    "datasets/*",
+    "tool_packages/*",
+    "workflows/*",
+    "**/.wetlands/*",
+    "**/envs/*",
+    "**/site-packages/*",
+]
+
+
+def _reload_kwargs(enabled: bool) -> dict[str, object]:
+    if not enabled:
+        return {"reload": False}
+    package_dir = Path(__file__).resolve().parent
+    return {
+        "reload": True,
+        "reload_dirs": [str(package_dir)],
+        "reload_includes": ["*.py"],
+        "reload_excludes": _RELOAD_EXCLUDES,
+    }
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -41,7 +71,7 @@ def main(argv: list[str] | None = None) -> None:
             factory=True,
             host=args.host,
             port=args.port,
-            reload=args.dev,
+            **_reload_kwargs(args.dev),
         )
 
 

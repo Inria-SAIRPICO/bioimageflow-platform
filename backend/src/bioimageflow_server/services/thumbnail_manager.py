@@ -81,6 +81,7 @@ class ThumbnailManager:
         self._connection_manager = connection_manager
         self._env: Any | None = None
         self._lock = asyncio.Lock()
+        self._pending_generations: dict[Path, asyncio.Task[None]] = {}
         self._placeholder_cache: dict[int, bytes] = {}
 
     # ------------------------------------------------------------------
@@ -203,12 +204,24 @@ class ThumbnailManager:
             return
 
         extension = path.suffix.lstrip(".")
-        await asyncio.to_thread(
-            env.execute,
-            _GENERATOR_MODULE_NAME,
-            "queue_generate_thumbnail",
-            (str(path), extension, str(cache_file), (size, size)),
-        )
+        async with self._lock:
+            task = self._pending_generations.get(cache_file)
+            if task is None or task.done():
+                task = asyncio.create_task(
+                    asyncio.to_thread(
+                        env.execute,
+                        _GENERATOR_MODULE_NAME,
+                        "queue_generate_thumbnail",
+                        (str(path), extension, str(cache_file), (size, size)),
+                    )
+                )
+                self._pending_generations[cache_file] = task
+
+        try:
+            await task
+        finally:
+            if task.done():
+                self._pending_generations.pop(cache_file, None)
 
     async def shutdown(self) -> None:
         """Best-effort env shutdown. Idempotent."""
@@ -249,7 +262,7 @@ class ThumbnailManager:
                     dependencies={
                         "pip": list(_THUMBNAIL_ENV_PIP),
                     },
-                    use_existing=False,
+                    use_existing=True,
                 )
             env.launch()
             self._env = env

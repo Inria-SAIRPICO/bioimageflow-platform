@@ -9,6 +9,10 @@ from bioimageflow.cache import cache_load
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
+class ResultDataNotReadyError(Exception):
+    """Raised when a node cache file exists but is not yet readable."""
+
+
 class ResultStoreService:
     """Filesystem-backed reader for cached node DataFrames."""
 
@@ -23,7 +27,12 @@ class ResultStoreService:
         data_path = self._dataframe_path(latest_dir)
         if data_path is None:
             return None
-        return cache_load(data_path)
+        try:
+            return cache_load(data_path)
+        except (OSError, pd.errors.EmptyDataError) as exc:
+            raise ResultDataNotReadyError(
+                f"Output data for node '{node_id}' is not ready"
+            ) from exc
 
     def get_csv_path(self, node_id: str) -> Path | None:
         latest_dir = self._latest_hash_dir(node_id)
@@ -36,7 +45,12 @@ class ResultStoreService:
 
     def has_data(self, node_id: str) -> bool:
         latest_dir = self._latest_hash_dir(node_id)
-        return latest_dir is not None and self._dataframe_path(latest_dir) is not None
+        if latest_dir is None:
+            return False
+        try:
+            return self._dataframe_path(latest_dir) is not None
+        except ResultDataNotReadyError:
+            return False
 
     def get_column_types(
         self, df: pd.DataFrame, tool_name: str | None = None
@@ -55,11 +69,7 @@ class ResultStoreService:
         if not node_dir.is_dir():
             return None
 
-        candidates = [
-            path
-            for path in node_dir.iterdir()
-            if path.is_dir() and self._dataframe_path(path) is not None
-        ]
+        candidates = [path for path in node_dir.iterdir() if path.is_dir()]
         if not candidates:
             return None
         return max(candidates, key=lambda p: p.stat().st_mtime)
@@ -68,9 +78,17 @@ class ResultStoreService:
     def _dataframe_path(hash_dir: Path) -> Path | None:
         parquet = hash_dir / "dataframe.parquet"
         if parquet.is_file():
+            if parquet.stat().st_size == 0:
+                raise ResultDataNotReadyError(
+                    f"Output cache file '{parquet}' is not ready"
+                )
             return parquet
         csv = hash_dir / "dataframe.csv"
         if csv.is_file():
+            if csv.stat().st_size == 0:
+                raise ResultDataNotReadyError(
+                    f"Output cache file '{csv}' is not ready"
+                )
             return csv
         return None
 

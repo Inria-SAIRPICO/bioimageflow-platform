@@ -226,7 +226,7 @@ class NapariLauncher:
                         "conda": ["conda-forge::napari", "conda-forge::pyqt"],
                         "pip": [],
                     },
-                    use_existing=False,
+                    use_existing=True,
                 )
 
             # Step 6: per-launch authkey (32 random bytes, hex-encoded for
@@ -262,7 +262,7 @@ class NapariLauncher:
             # predicate (matches Wetlands' own port_predicate
             # convention).
             line = process_logger.wait_for_line(
-                lambda l: l.startswith(_PORT_LINE_PREFIX),
+                lambda output_line: output_line.startswith(_PORT_LINE_PREFIX),
                 timeout=_PORT_LINE_TIMEOUT_SECONDS,
             )
             if line is None:

@@ -541,7 +541,7 @@ def test_launch_creates_environment_when_path_is_none(monkeypatch) -> None:
     assert len(em.created) == 1
     rec = em.created[0]
     assert rec["name"] == "napari"
-    assert rec["use_existing"] is False
+    assert rec["use_existing"] is True
     deps = rec["dependencies"]
     assert deps["python"] == "3.12"
     assert "conda-forge::napari" in deps["conda"]

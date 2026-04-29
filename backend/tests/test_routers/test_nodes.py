@@ -110,6 +110,20 @@ async def test_get_node_data_404_and_422() -> None:
     assert bad_size.status_code == 422
 
 
+async def test_get_node_data_returns_409_when_cache_not_ready() -> None:
+    from bioimageflow_server.services.result_store import ResultDataNotReadyError
+
+    store = MagicMock()
+    store.get_latest_dataframe.side_effect = ResultDataNotReadyError(
+        "dataframe.parquet is not ready"
+    )
+    async with await _client(store) as client:
+        resp = await client.get("/api/v1/nodes/n1/data")
+
+    assert resp.status_code == 409
+    assert "not ready" in resp.json()["detail"]
+
+
 async def test_get_node_data_forwards_tool_name() -> None:
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"x": [1]})
