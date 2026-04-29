@@ -26,6 +26,7 @@ class Settings(BaseModel):
     deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None
     napari_env_path: str | None = None
+    thumbnail_env_path: str | None = None
     omero_instances: list[OMEROInstance] = []
     output_data_folder: str
     tool_store_path: str = "~/.bioimageflow/tool_packages/"

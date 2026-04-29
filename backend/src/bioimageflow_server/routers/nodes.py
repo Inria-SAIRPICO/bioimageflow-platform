@@ -9,17 +9,25 @@ from starlette.responses import FileResponse
 
 from bioimageflow_server.models.nodes import NodeDataResponse
 from bioimageflow_server.services.result_store import ResultStoreService
-from bioimageflow_server.services.thumbnail import ThumbnailService
+from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
+
+
+# Bounded wait the endpoint applies on a cache miss. The Wetlands env
+# stays warm after the first call, so most renders complete inside this
+# window and the response carries the real PNG. Callers that time out
+# get a placeholder + ``X-Thumbnail-Status: pending`` so the frontend
+# can retry.
+_THUMBNAIL_WAIT_TIMEOUT_SECONDS = 3.0
 
 
 def get_result_store() -> ResultStoreService:
     raise RuntimeError("ResultStoreService dependency is not configured")
 
 
-def get_thumbnail_service() -> ThumbnailService:
-    raise RuntimeError("ThumbnailService dependency is not configured")
+def get_thumbnail_manager() -> ThumbnailManager:
+    raise RuntimeError("ThumbnailManager dependency is not configured")
 
 
 @router.get("/{node_id}/data", response_model=NodeDataResponse)
@@ -91,7 +99,7 @@ async def download_node_csv(
 async def get_node_thumbnail(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
-    thumbnail_service: Annotated[ThumbnailService, Depends(get_thumbnail_service)],
+    thumbnail_manager: Annotated[ThumbnailManager, Depends(get_thumbnail_manager)],
     col: str,
     row: Annotated[int, Query(ge=0)] = 0,
     size: Annotated[int, Query(ge=16, le=1024)] = 128,
@@ -105,5 +113,16 @@ async def get_node_thumbnail(
         raise HTTPException(status_code=422, detail=f"Row out of range: {row}")
 
     value = str(df.iloc[row][col])
-    png = thumbnail_service.get_thumbnail(value, size=size)
-    return Response(content=png, media_type="image/png")
+    png = await thumbnail_manager.get_or_queue(
+        value, size, wait_timeout=_THUMBNAIL_WAIT_TIMEOUT_SECONDS
+    )
+
+    # Tell the frontend whether the body is the rendered thumbnail or a
+    # placeholder still warming up — placeholders must not be cached or
+    # a stale "pending" image sticks until the user hard-reloads.
+    is_placeholder = png == thumbnail_manager.placeholder_png(size)
+    headers = {
+        "X-Thumbnail-Status": "pending" if is_placeholder else "ready",
+        "Cache-Control": "no-store" if is_placeholder else "public, max-age=86400",
+    }
+    return Response(content=png, media_type="image/png", headers=headers)

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.package_installer import PackageInstallerService
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
     from bioimageflow_server.services.result_store import ResultStoreService
-    from bioimageflow_server.services.thumbnail import ThumbnailService
+    from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
     from bioimageflow_server.services.tool_registry import ToolRegistryService
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -116,7 +116,7 @@ class AppConfig:
     max_upload_size: int | None = None
     storage_path: Path | None = None
     result_store: ResultStoreService | None = None
-    thumbnail_service: ThumbnailService | None = None
+    thumbnail_manager: ThumbnailManager | None = None
     execution_manager: Any | None = None
     settings: Settings | None = None
     connection_manager: ConnectionManager | None = None

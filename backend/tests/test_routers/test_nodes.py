@@ -21,15 +21,26 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-async def _client(result_store: MagicMock, thumbnail_service: MagicMock | None = None):
+async def _client(result_store: MagicMock, thumbnail_manager: MagicMock | None = None):
     app = create_app(
         AppConfig(
             result_store=result_store,
-            thumbnail_service=thumbnail_service or MagicMock(),
+            thumbnail_manager=thumbnail_manager or _default_thumbnail_mock(),
         )
     )
     transport = ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+
+def _default_thumbnail_mock() -> MagicMock:
+    """A no-op manager whose async API returns a small placeholder PNG."""
+    from unittest.mock import AsyncMock
+
+    mgr = MagicMock()
+    placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
+    mgr.placeholder_png.return_value = placeholder
+    mgr.get_or_queue = AsyncMock(return_value=placeholder)
+    return mgr
 
 
 async def test_get_node_data_returns_page_and_absolute_rows() -> None:
@@ -122,15 +133,45 @@ async def test_download_csv(tmp_path: Path) -> None:
 
 
 async def test_thumbnail_endpoint() -> None:
+    from unittest.mock import AsyncMock
+
     store = MagicMock()
     store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [Path("/tmp/m.tif")]})
     thumbs = MagicMock()
-    thumbs.get_thumbnail.return_value = b"\x89PNG\r\n\x1a\n"
+    real_png = b"\x89PNG\r\n\x1a\nrendered"
+    placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
+    thumbs.placeholder_png.return_value = placeholder
+    thumbs.get_or_queue = AsyncMock(return_value=real_png)
     async with await _client(store, thumbs) as client:
         resp = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 0, "col": "mask", "size": 64})
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "image/png"
-    thumbs.get_thumbnail.assert_called_with("/tmp/m.tif", size=64)
+    assert resp.headers["x-thumbnail-status"] == "ready"
+    assert resp.content == real_png
+    thumbs.get_or_queue.assert_awaited_once()
+    args, kwargs = thumbs.get_or_queue.call_args
+    assert args[0] == "/tmp/m.tif"
+    assert args[1] == 64
+
+
+async def test_thumbnail_endpoint_signals_pending_for_placeholder() -> None:
+    """When the manager returns the placeholder bytes, the endpoint must
+    signal X-Thumbnail-Status: pending and Cache-Control: no-store so
+    the frontend retries.
+    """
+    from unittest.mock import AsyncMock
+
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [Path("/tmp/m.tif")]})
+    thumbs = MagicMock()
+    placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
+    thumbs.placeholder_png.return_value = placeholder
+    thumbs.get_or_queue = AsyncMock(return_value=placeholder)
+    async with await _client(store, thumbs) as client:
+        resp = await client.get("/api/v1/nodes/n1/thumbnail", params={"row": 0, "col": "mask"})
+    assert resp.status_code == 200
+    assert resp.headers["x-thumbnail-status"] == "pending"
+    assert "no-store" in resp.headers["cache-control"]
 
 
 async def test_thumbnail_endpoint_validation() -> None:
