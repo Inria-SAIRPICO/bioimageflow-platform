@@ -3,6 +3,17 @@ import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import type { ToolMetadata, PackageInfo } from '@/api/types'
 
+export interface ToolReloadPayload {
+  type: 'tool_reload'
+  tool_name: string
+  tool_metadata: ToolMetadata
+}
+
+export interface ToolRemovedPayload {
+  type: 'tool_removed'
+  tool_name: string
+}
+
 export const useToolRegistryStore = defineStore('toolRegistry', () => {
   const tools = ref<ToolMetadata[]>([])
   const packages = ref<PackageInfo[]>([])
@@ -55,6 +66,67 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     return pkg?.environment_status ?? 'unknown'
   }
 
+  function applyToolReload(payload: ToolReloadPayload) {
+    const meta = payload.tool_metadata
+    const idx = tools.value.findIndex((t) => t.name === payload.tool_name)
+    const next = [...tools.value]
+    if (idx === -1) {
+      next.push(meta)
+    } else {
+      next[idx] = meta
+    }
+    tools.value = next
+
+    // Keep PackageInfo.tools[version] in sync so the Tools Panel doesn't
+    // need a separate refresh.
+    const pkgIdx = packages.value.findIndex((p) => p.name === meta.package)
+    if (pkgIdx !== -1) {
+      const pkg = packages.value[pkgIdx]
+      const versionTools = pkg.tools[meta.package_version] ?? []
+      if (!versionTools.includes(payload.tool_name)) {
+        const updated: PackageInfo = {
+          ...pkg,
+          tools: {
+            ...pkg.tools,
+            [meta.package_version]: [...versionTools, payload.tool_name],
+          },
+        }
+        const nextPkgs = [...packages.value]
+        nextPkgs[pkgIdx] = updated
+        packages.value = nextPkgs
+      }
+    }
+  }
+
+  function applyToolRemoved(payload: ToolRemovedPayload) {
+    const removed = tools.value.find((t) => t.name === payload.tool_name)
+    const next = tools.value.filter((t) => t.name !== payload.tool_name)
+    tools.value = next
+
+    if (removed !== undefined) {
+      const pkgIdx = packages.value.findIndex(
+        (p) => p.name === removed.package,
+      )
+      if (pkgIdx !== -1) {
+        const pkg = packages.value[pkgIdx]
+        const versionTools = pkg.tools[removed.package_version] ?? []
+        const filtered = versionTools.filter((n) => n !== payload.tool_name)
+        if (filtered.length !== versionTools.length) {
+          const updated: PackageInfo = {
+            ...pkg,
+            tools: {
+              ...pkg.tools,
+              [removed.package_version]: filtered,
+            },
+          }
+          const nextPkgs = [...packages.value]
+          nextPkgs[pkgIdx] = updated
+          packages.value = nextPkgs
+        }
+      }
+    }
+  }
+
   return {
     tools,
     packages,
@@ -64,5 +136,7 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     getToolByName,
     searchTools,
     getEnvStatusForTool,
+    applyToolReload,
+    applyToolRemoved,
   }
 })

@@ -17,7 +17,9 @@ from bioimageflow_server.models.ws import (
     ProgressMessage,
     ServerMessage,
     SubscribeLogsMessage,
+    SystemErrorMessage,
     ToolReloadMessage,
+    ToolRemovedMessage,
 )
 
 
@@ -127,6 +129,36 @@ class TestToolReloadMessage:
         assert msg.type == "tool_reload"
         assert msg.tool_name == "my_tool"
         assert msg.tool_metadata["display_name"] == "MT"
+
+
+class TestToolRemovedMessage:
+    def test_construction(self) -> None:
+        msg = ToolRemovedMessage(tool_name="GaussianSmooth")
+        assert msg.type == "tool_removed"
+        assert msg.tool_name == "GaussianSmooth"
+
+    def test_rejects_extra_fields(self) -> None:
+        with pytest.raises(ValidationError):
+            ToolRemovedMessage(tool_name="GaussianSmooth", bogus="x")
+
+
+class TestSystemErrorMessage:
+    def test_construction(self) -> None:
+        msg = SystemErrorMessage(
+            code="tool_reload_failed",
+            detail="syntax error in foo.py",
+            timestamp=1.0,
+        )
+        assert msg.type == "system_error"
+        assert msg.code == "tool_reload_failed"
+        assert msg.detail == "syntax error in foo.py"
+        assert msg.timestamp == 1.0
+
+    def test_rejects_extra_fields(self) -> None:
+        with pytest.raises(ValidationError):
+            SystemErrorMessage(
+                code="c", detail="d", timestamp=0.0, bogus="x"
+            )
 
 
 class TestPackageInstallMessage:
@@ -246,6 +278,23 @@ class TestServerMessageUnion:
         )
         assert isinstance(parsed, ToolReloadMessage)
 
+    def test_dispatch_tool_removed(self) -> None:
+        parsed = self._adapter.validate_python(
+            {"type": "tool_removed", "tool_name": "x"}
+        )
+        assert isinstance(parsed, ToolRemovedMessage)
+
+    def test_dispatch_system_error(self) -> None:
+        parsed = self._adapter.validate_python(
+            {
+                "type": "system_error",
+                "code": "tool_reload_failed",
+                "detail": "boom",
+                "timestamp": 0.0,
+            }
+        )
+        assert isinstance(parsed, SystemErrorMessage)
+
     def test_dispatch_package_install(self) -> None:
         parsed = self._adapter.validate_python(
             {
@@ -306,6 +355,8 @@ class TestJsonRoundTrip:
                 success=True, node_statuses={"n": {"status": "executed"}}
             ),
             ToolReloadMessage(tool_name="t", tool_metadata={"x": 1}),
+            ToolRemovedMessage(tool_name="t"),
+            SystemErrorMessage(code="c", detail="d", timestamp=1.0),
             PackageInstallMessage(package_name="p", status="complete"),
             EnvironmentStatusMessage(env_name="e", status="running"),
             AckMessage(ref="r"),

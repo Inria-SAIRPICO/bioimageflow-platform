@@ -127,6 +127,34 @@ describe('ToolNode', () => {
     expect(w.emitted('context-menu')).toBeTruthy()
   })
 
+  it('renders updated-badge when data.updatedBadge is true', () => {
+    const w = factory(makeData({ updatedBadge: true }))
+    expect(w.find('.updated-badge').exists()).toBe(true)
+  })
+
+  it('hides updated-badge when data.updatedBadge is false', () => {
+    const w = factory(makeData({ updatedBadge: false }))
+    expect(w.find('.updated-badge').exists()).toBe(false)
+  })
+
+  it('hides updated-badge when data.updatedBadge is absent', () => {
+    const w = factory(makeData())
+    expect(w.find('.updated-badge').exists()).toBe(false)
+  })
+
+  it('emits dismiss-badge with the node id when the badge is clicked', async () => {
+    const w = factory(makeData({ updatedBadge: true }))
+    await w.find('.updated-badge').trigger('click')
+    const emitted = w.emitted('dismiss-badge')
+    expect(emitted).toBeTruthy()
+    expect(emitted![0]).toEqual(['node-1'])
+  })
+
+  it('renders tool-missing class when data.toolMissing is true', () => {
+    const w = factory(makeData({ toolMissing: true }))
+    expect(w.find('.tool-node').classes()).toContain('tool-missing')
+  })
+
   it('DataFrameTool with empty outputs and dynamic_outputs=false renders no body output pins', () => {
     const tool = makeTool({
       tool_type: 'DataFrameTool',

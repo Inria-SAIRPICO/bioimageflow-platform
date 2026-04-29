@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import time
 from typing import Any, Protocol
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -243,6 +244,24 @@ class ConnectionManager:
             "type": "tool_reload",
             "tool_name": tool_name,
             "tool_metadata": dict(tool_metadata),
+        }
+        self._enqueue_all(payload)
+
+    async def broadcast_tool_removed(self, tool_name: str) -> None:
+        payload = {
+            "type": "tool_removed",
+            "tool_name": tool_name,
+        }
+        self._enqueue_all(payload)
+
+    async def broadcast_system_error(
+        self, code: str, detail: str
+    ) -> None:
+        payload = {
+            "type": "system_error",
+            "code": code,
+            "detail": detail,
+            "timestamp": time.time(),
         }
         self._enqueue_all(payload)
 
