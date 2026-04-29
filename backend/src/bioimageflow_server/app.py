@@ -102,7 +102,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     resolved_settings: Settings = config.settings or Settings(
         deployment_mode=_deployment_mode,
-        output_data_folder=str(get_home()),
     )
 
     if config.execution_manager is not None:
