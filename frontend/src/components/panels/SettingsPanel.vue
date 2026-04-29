@@ -1,0 +1,126 @@
+<script setup lang="ts">
+import { computed, watch } from 'vue'
+import Dialog from 'primevue/dialog'
+import Tabs from 'primevue/tabs'
+import TabList from 'primevue/tablist'
+import Tab from 'primevue/tab'
+import TabPanels from 'primevue/tabpanels'
+import TabPanel from 'primevue/tabpanel'
+import Button from 'primevue/button'
+import { useToast } from 'primevue/usetoast'
+import { useSettingsStore } from '@/stores/settings'
+import { useSettingsPanel } from '@/composables/useSettingsPanel'
+import type { Settings } from '@/api/types'
+import ExternalEditorSection from '@/components/panels/sections/ExternalEditorSection.vue'
+import NapariSection from '@/components/panels/sections/NapariSection.vue'
+import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
+import StorageSection from '@/components/panels/sections/StorageSection.vue'
+
+const settingsStore = useSettingsStore()
+const panel = useSettingsPanel()
+
+let toast: ReturnType<typeof useToast> | null = null
+try {
+  toast = useToast()
+} catch {
+  toast = null
+}
+
+// Lazy-load on first open.
+watch(panel.isOpen, async (open) => {
+  if (open && !settingsStore.isLoaded) {
+    await settingsStore.fetchSettings()
+  }
+})
+
+// Surface server errors as a toast as soon as `error` transitions to non-null.
+watch(
+  () => settingsStore.error,
+  (next, prev) => {
+    if (next && next !== prev) {
+      toast?.add({
+        severity: 'error',
+        summary: 'Settings update failed',
+        detail: next,
+        life: 6000,
+      })
+    }
+  },
+)
+
+const visible = computed({
+  get: () => panel.isOpen.value,
+  set: (value: boolean) => {
+    if (value) panel.open()
+    else panel.close()
+  },
+})
+
+const fallback: Settings & {
+  resolved_tool_store_path?: string
+  resolved_output_data_folder?: string
+} = {
+  deployment_mode: 'desktop',
+  external_editor: null,
+  napari_env_path: null,
+  omero_instances: [],
+  output_data_folder: '~/bioimageflow_data/',
+  tool_store_path: '~/.bioimageflow/tool_packages/',
+  update_mode: 'auto',
+  execution_engine: 'sequential',
+  cache_max_executions: null,
+  cache_max_age: null,
+  keyboard_shortcuts: {},
+  dev_mode: true,
+  datasets_root: null,
+  max_upload_size: 2147483648,
+  resolved_tool_store_path: '',
+  resolved_output_data_folder: '',
+}
+const liveSettings = computed(() => settingsStore.settings ?? fallback)
+
+function onUpdate(payload: { field: keyof Settings; value: unknown }) {
+  settingsStore.updateSettings({ [payload.field]: payload.value } as Partial<Settings>)
+}
+</script>
+
+<template>
+  <Dialog
+    v-model:visible="visible"
+    modal
+    header="Preferences"
+    :style="{ width: '640px' }"
+    data-testid="settings-panel"
+  >
+    <Tabs value="external" data-testid="settings-tabs">
+      <TabList>
+        <Tab value="external">External Editor</Tab>
+        <Tab value="napari">Napari</Tab>
+        <Tab value="execution">Execution</Tab>
+        <Tab value="storage">Storage</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel value="external">
+          <ExternalEditorSection :model-value="liveSettings" @update:field="onUpdate" />
+        </TabPanel>
+        <TabPanel value="napari">
+          <NapariSection :model-value="liveSettings" @update:field="onUpdate" />
+        </TabPanel>
+        <TabPanel value="execution">
+          <ExecutionSection :model-value="liveSettings" @update:field="onUpdate" />
+        </TabPanel>
+        <TabPanel value="storage">
+          <StorageSection :model-value="liveSettings" @update:field="onUpdate" />
+        </TabPanel>
+      </TabPanels>
+    </Tabs>
+    <template #footer>
+      <Button
+        label="Close"
+        severity="secondary"
+        data-testid="settings-close"
+        @click="panel.close"
+      />
+    </template>
+  </Dialog>
+</template>

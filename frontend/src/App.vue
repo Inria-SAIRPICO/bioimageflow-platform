@@ -3,6 +3,7 @@ import { defineComponent } from 'vue'
 import ToolsPanel from './components/panels/ToolsPanel.vue'
 import CanvasView from './components/canvas/CanvasView.vue'
 import NodePanel from './components/panels/NodePanel.vue'
+import SettingsPanel from './components/panels/SettingsPanel.vue'
 import LoggerPanel from './components/panels/LoggerPanel.vue'
 import DataTablePanel from './components/panels/DataTablePanel.vue'
 
@@ -23,6 +24,7 @@ import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview
 import { themeLight } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
+import ConfirmDialog from 'primevue/confirmdialog'
 import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import { useUIStore } from './stores/ui'
@@ -30,7 +32,28 @@ import { useDatasetBrowserStore } from './stores/datasetBrowser'
 import { useExecutionStore } from './stores/execution'
 import { useFileDrop } from './composables/useFileDrop'
 import { useExecutionLock } from './composables/useExecutionLock'
+import { useSettingsPanel } from './composables/useSettingsPanel'
+import { isDesktop as isPywebview } from './utils/nativeDialogs'
 import { useWebSocket } from './composables/useWebSocket'
+
+function isMac(): boolean {
+  return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+}
+
+function onPreferencesShortcut(event: KeyboardEvent) {
+  if (event.key !== ',') return
+  // macOS: Cmd+, always (browser or pywebview).
+  // Linux/Windows pywebview: Ctrl+, only.
+  // Linux/Windows browser: never registered (the menu entry is the fallback —
+  // some browsers reserve Ctrl+, for their own preferences).
+  const fired =
+    (isMac() && event.metaKey) || (!isMac() && isPywebview() && event.ctrlKey)
+  if (!fired) return
+  event.preventDefault()
+  useSettingsPanel().open()
+}
+
+const shortcutEnabled = isMac() || isPywebview()
 
 const uiStore = useUIStore()
 const datasetBrowserStore = useDatasetBrowserStore()
@@ -63,11 +86,17 @@ function startStatusPolling() {
 
 onMounted(() => {
   websocket.connect()
+  if (shortcutEnabled) {
+    window.addEventListener('keydown', onPreferencesShortcut)
+  }
 })
 
 onBeforeUnmount(() => {
   stopStatusPolling()
   websocket.disconnect()
+  if (shortcutEnabled) {
+    window.removeEventListener('keydown', onPreferencesShortcut)
+  }
 })
 
 watch(
@@ -209,6 +238,8 @@ defineExpose({ dockviewApi })
       />
     </div>
     <Toast position="bottom-right" />
+    <ConfirmDialog />
+    <SettingsPanel />
     <DatasetBrowser
       v-if="datasetBrowserStore.isOpen && datasetBrowserStore.options"
       :visible="datasetBrowserStore.isOpen"

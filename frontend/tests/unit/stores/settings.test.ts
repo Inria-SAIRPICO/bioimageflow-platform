@@ -110,11 +110,99 @@ describe('settings store', () => {
 
     const store = useSettingsStore()
     await store.fetchSettings()
-    const original = store.settings
+    const original = JSON.parse(JSON.stringify(store.settings))
     await store.updateSettings({ external_editor: 'vim' })
 
     expect(store.error).toBe('Server error')
-    // Settings unchanged on error
+    // Settings reverted to pre-PATCH snapshot.
     expect(store.settings).toEqual(original)
+  })
+
+  it('updateSettings 422 surfaces server detail', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      data: { deployment_mode: 'desktop', output_data_folder: '/out' },
+    })
+    const axiosError = Object.assign(new Error('Request failed'), {
+      isAxiosError: true,
+      response: {
+        status: 422,
+        data: { error: 'validation_error', detail: 'cache_max_age must match …' },
+      },
+    })
+    Object.setPrototypeOf(axiosError, (await import('axios')).AxiosError.prototype)
+    mockedApi.patch.mockRejectedValueOnce(axiosError)
+
+    const store = useSettingsStore()
+    await store.fetchSettings()
+    await store.updateSettings({ cache_max_age: 'bad' })
+
+    expect(store.error).toContain('cache_max_age')
+  })
+
+  it('updateSettings serializes rapid concurrent calls', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      data: { deployment_mode: 'desktop', output_data_folder: '/out' },
+    })
+    let firstResolve: (value: { data: unknown }) => void = () => undefined
+    let secondResolve: (value: { data: unknown }) => void = () => undefined
+    const order: string[] = []
+    mockedApi.patch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          order.push('first-start')
+          firstResolve = (value) => {
+            order.push('first-end')
+            resolve(value)
+          }
+        }),
+    )
+    mockedApi.patch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          order.push('second-start')
+          secondResolve = (value) => {
+            order.push('second-end')
+            resolve(value)
+          }
+        }),
+    )
+
+    const store = useSettingsStore()
+    await store.fetchSettings()
+    const p1 = store.updateSettings({ external_editor: 'vim' })
+    const p2 = store.updateSettings({ napari_env_path: '/n' })
+
+    // Let the promise chain reach the first PATCH.
+    await new Promise((r) => setTimeout(r, 0))
+    // Second call must not have started yet — chain is serialized.
+    expect(order).toEqual(['first-start'])
+    firstResolve({
+      data: {
+        deployment_mode: 'desktop',
+        output_data_folder: '/out',
+        external_editor: 'vim',
+      },
+    })
+    await p1
+    expect(order).toEqual(['first-start', 'first-end', 'second-start'])
+    secondResolve({
+      data: {
+        deployment_mode: 'desktop',
+        output_data_folder: '/out',
+        external_editor: 'vim',
+        napari_env_path: '/n',
+      },
+    })
+    await p2
+    expect(store.settings?.external_editor).toBe('vim')
+    expect(store.settings?.napari_env_path).toBe('/n')
+  })
+
+  it('isLoaded stays false when fetchSettings fails', async () => {
+    mockedApi.get.mockRejectedValueOnce(new Error('boom'))
+    const store = useSettingsStore()
+    await store.fetchSettings()
+    expect(store.isLoaded).toBe(false)
+    expect(store.error).toBe('boom')
   })
 })

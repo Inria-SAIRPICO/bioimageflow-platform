@@ -14,7 +14,9 @@ import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useValidationErrors } from '@/composables/useValidationErrors'
-import type { InputFieldSchema } from '@/api/types'
+import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
+import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
+import type { GraphValidationError, InputFieldSchema } from '@/api/types'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
 // `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
@@ -56,6 +58,12 @@ const selectedNodeErrors = computed(() => {
   if (!nodeId) return []
   return nodeErrors.value[nodeId] ?? []
 })
+
+function fieldErrorsFor(fieldName: string): GraphValidationError[] {
+  const nodeId = uiStore.selectedNodeIds[0]
+  if (!nodeId) return []
+  return getFieldErrors(nodeId, fieldName)
+}
 
 const selectedNode = computed(() => {
   if (!uiStore.isSingleSelection) return null
@@ -383,7 +391,7 @@ async function pickFolder(key: string) {
           </small>
 
           <!-- Input widget (hidden when field is nulled) -->
-          <template v-if="!isFieldNulled(key)">
+          <ParameterFieldError v-if="!isFieldNulled(key)" :errors="fieldErrorsFor(key)">
             <!-- Connected input: show source label -->
             <span v-if="key in nodeData.connectedInputs" class="connected-source">
               {{ nodeData.connectedInputs[key] }}
@@ -481,10 +489,16 @@ async function pickFolder(key: string) {
             />
             <!-- Fallback: connectable-only field with no manual widget -->
             <span v-else class="connect-hint">Connect to upstream node</span>
-          </template>
+          </ParameterFieldError>
           <span v-else class="null-indicator">null</span>
         </div>
       </div>
+
+      <!-- Execution error display: above Outputs section, only when failed -->
+      <NodeOutputErrorBlock
+        v-if="uiStore.selectedNodeIds[0]"
+        :node-id="uiStore.selectedNodeIds[0]"
+      />
 
       <!-- Outputs section (Fix 19: output template editing) -->
       <div v-if="nodeData.tool?.outputs" class="outputs-section">

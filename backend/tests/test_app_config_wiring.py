@@ -25,7 +25,7 @@ from bioimageflow_server.routers.datasets import (
 )
 from bioimageflow_server.routers.nodes import (
     get_result_store,
-    get_thumbnail_service,
+    get_thumbnail_manager,
 )
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.package_installer import (
@@ -262,23 +262,23 @@ async def test_nodes_router_is_mounted():
 
 def test_app_config_wires_node_services():
     result_store = object()
-    thumbnail_service = object()
+    thumbnail_manager = object()
     cfg = AppConfig(
         result_store=result_store,
-        thumbnail_service=thumbnail_service,
+        thumbnail_manager=thumbnail_manager,
     )
     app = create_app(config=cfg)
     assert app.dependency_overrides[get_result_store]() is result_store
-    assert app.dependency_overrides[get_thumbnail_service]() is thumbnail_service
+    assert app.dependency_overrides[get_thumbnail_manager]() is thumbnail_manager
 
 
 def test_default_node_services_use_storage_path(tmp_path: Path):
     cfg = AppConfig(storage_path=tmp_path)
     app = create_app(config=cfg)
     result_store = app.dependency_overrides[get_result_store]()
-    thumbnail_service = app.dependency_overrides[get_thumbnail_service]()
+    thumbnail_manager = app.dependency_overrides[get_thumbnail_manager]()
     assert result_store.storage_path == tmp_path
-    assert thumbnail_service.cache_dir == tmp_path / ".thumbnails"
+    assert thumbnail_manager.cache_dir == tmp_path / ".thumbnails"
 
 
 def test_default_node_services_fall_back_to_bif_data():
@@ -317,6 +317,216 @@ def test_default_app_provides_execution_manager():
     assert em.is_running is False
 
 
+# ---------------------------------------------------------------------------
+# Hot-reload service wiring (Task 4)
+# ---------------------------------------------------------------------------
+
+
+async def test_appconfig_disable_hot_reload_default_is_false():
+    cfg = AppConfig()
+    assert cfg.disable_hot_reload is False
+
+
+async def test_appconfig_disable_hot_reload_round_trip():
+    cfg = AppConfig(disable_hot_reload=True)
+    assert cfg.disable_hot_reload is True
+
+
+async def test_lifespan_starts_and_stops_hot_reload_service(
+    empty_tool_store: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from bioimageflow_server.services.tool_hot_reload import (
+        ToolHotReloadService,
+    )
+
+    starts: list[Path] = []
+    stops: list[None] = []
+
+    async def _record_start(self, watch_root: Path) -> None:
+        starts.append(watch_root)
+
+    async def _record_stop(self) -> None:
+        stops.append(None)
+
+    monkeypatch.setattr(ToolHotReloadService, "start", _record_start)
+    monkeypatch.setattr(ToolHotReloadService, "stop", _record_stop)
+
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        known_packages=KnownPackagesService(
+            user_path=empty_tool_store / "no_user",
+            bundled_path=empty_tool_store / "no_bundled",
+        ),
+        pypi_versions=_FakePypi(),
+    )
+    app = create_app(config=config)
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert len(starts) == 1
+    assert starts[0] == empty_tool_store
+    assert len(stops) == 1
+
+
+async def test_disable_hot_reload_skips_service_construction(
+    empty_tool_store: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from bioimageflow_server.services import tool_hot_reload as thr_mod
+
+    constructed: list[object] = []
+    real_init = thr_mod.ToolHotReloadService.__init__
+
+    def _spy_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        constructed.append(self)
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(thr_mod.ToolHotReloadService, "__init__", _spy_init)
+
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        disable_hot_reload=True,
+        known_packages=KnownPackagesService(
+            user_path=empty_tool_store / "no_user",
+            bundled_path=empty_tool_store / "no_bundled",
+        ),
+        pypi_versions=_FakePypi(),
+    )
+    app = create_app(config=config)
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert constructed == []
+
+
+async def test_observer_starts_after_scan_tool_store(
+    empty_tool_store: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The watchdog observer must not start before the registry has been
+    populated by scan_tool_store — otherwise it could race with the
+    initial load and trigger reloads on entries that are mid-load."""
+    from bioimageflow_server.services.tool_hot_reload import (
+        ToolHotReloadService,
+    )
+
+    timeline: list[str] = []
+
+    real_scan = ToolRegistryService.scan_tool_store
+
+    def _recording_scan(self, store_path=None):
+        timeline.append("scan")
+        return real_scan(self, store_path=store_path)
+
+    async def _record_start(self, watch_root: Path) -> None:
+        timeline.append("start")
+
+    async def _record_stop(self) -> None:
+        pass
+
+    monkeypatch.setattr(ToolRegistryService, "scan_tool_store", _recording_scan)
+    monkeypatch.setattr(ToolHotReloadService, "start", _record_start)
+    monkeypatch.setattr(ToolHotReloadService, "stop", _record_stop)
+
+    config = AppConfig(
+        known_packages=KnownPackagesService(
+            user_path=empty_tool_store / "no_user",
+            bundled_path=empty_tool_store / "no_bundled",
+        ),
+        pypi_versions=_FakePypi(),
+    )
+    app = create_app(config=config)
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    # scan must precede start.
+    scan_idx = timeline.index("scan")
+    start_idx = timeline.index("start")
+    assert scan_idx < start_idx
+
+
+async def test_initial_scan_produces_zero_broadcasts(
+    empty_tool_store: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The watcher isn't running yet during the initial registry scan,
+    so it cannot broadcast tool_reload / tool_removed."""
+    from bioimageflow_server.services.tool_hot_reload import (
+        ToolHotReloadService,
+    )
+
+    async def _record_start(self, watch_root: Path) -> None:
+        pass
+
+    async def _record_stop(self) -> None:
+        pass
+
+    monkeypatch.setattr(ToolHotReloadService, "start", _record_start)
+    monkeypatch.setattr(ToolHotReloadService, "stop", _record_stop)
+
+    config = AppConfig(
+        known_packages=KnownPackagesService(
+            user_path=empty_tool_store / "no_user",
+            bundled_path=empty_tool_store / "no_bundled",
+        ),
+        pypi_versions=_FakePypi(),
+    )
+    app = create_app(config=config)
+    cm = app.state.connection_manager
+
+    broadcast_calls: list[str] = []
+
+    async def _spy_reload(name, payload):
+        broadcast_calls.append(("reload", name))
+
+    async def _spy_removed(name):
+        broadcast_calls.append(("removed", name))
+
+    monkeypatch.setattr(cm, "broadcast_tool_reload", _spy_reload)
+    monkeypatch.setattr(cm, "broadcast_tool_removed", _spy_removed)
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert broadcast_calls == []
+
+
+async def test_installer_receives_hot_reload_service(
+    empty_tool_store: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The default PypiPackageInstaller must be constructed with the
+    same ToolHotReloadService instance the lifespan starts."""
+    from bioimageflow_server.services.tool_hot_reload import (
+        ToolHotReloadService,
+    )
+
+    async def _no_start(self, watch_root: Path) -> None:
+        pass
+
+    async def _no_stop(self) -> None:
+        pass
+
+    monkeypatch.setattr(ToolHotReloadService, "start", _no_start)
+    monkeypatch.setattr(ToolHotReloadService, "stop", _no_stop)
+
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        known_packages=KnownPackagesService(
+            user_path=empty_tool_store / "no_user",
+            bundled_path=empty_tool_store / "no_bundled",
+        ),
+        pypi_versions=_FakePypi(),
+    )
+    app = create_app(config=config)
+
+    from bioimageflow_server.routers.tools import get_package_installer
+    installer = app.dependency_overrides[get_package_installer]()
+    assert isinstance(installer, PypiPackageInstaller)
+    # Installer holds a reference to the hot-reload service.
+    hot_reload = getattr(installer, "_hot_reload", None)
+    assert isinstance(hot_reload, ToolHotReloadService)
+
+
 def test_appconfig_supplied_execution_manager_is_preserved():
     """Caller-supplied ExecutionManager must win over the default.
 
@@ -334,3 +544,33 @@ def test_appconfig_supplied_execution_manager_is_preserved():
     app = create_app(AppConfig(execution_manager=sentinel))
     assert app.dependency_overrides[execution_get_manager]() is sentinel
     assert app.dependency_overrides[graph_get_execution_manager]() is sentinel
+
+
+# ---------------------------------------------------------------------------
+# settings_store field
+# ---------------------------------------------------------------------------
+
+
+def test_app_config_default_settings_store_is_none():
+    cfg = AppConfig()
+    assert cfg.settings_store is None
+
+
+def test_app_config_accepts_settings_store(tmp_path: Path):
+    from bioimageflow_server.services.settings_store import SettingsStore
+
+    store = SettingsStore(path=tmp_path / "settings.json")
+    cfg = AppConfig(settings_store=store)
+    assert cfg.settings_store is store
+
+
+def test_app_config_accepts_both_settings_and_settings_store(tmp_path: Path):
+    """Both fields can coexist; create_app prefers settings_store."""
+    from bioimageflow_server.models.settings import Settings
+    from bioimageflow_server.services.settings_store import SettingsStore
+
+    store = SettingsStore(path=tmp_path / "settings.json")
+    settings = Settings(deployment_mode="desktop")
+    cfg = AppConfig(settings=settings, settings_store=store)
+    assert cfg.settings is settings
+    assert cfg.settings_store is store

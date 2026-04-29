@@ -10,7 +10,10 @@ import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
+import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
+import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
+import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
 import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue'
 import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue'
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
@@ -307,6 +310,12 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'Paste', disabled: true },
       { separator: true },
       { label: 'Select All', disabled: true },
+      { separator: true },
+      {
+        label: 'Preferences...',
+        icon: 'pi pi-cog',
+        command: () => useSettingsPanel().open(),
+      },
     ],
   },
   {
@@ -364,7 +373,14 @@ function onRunButtonToast(payload: {
   })
 }
 
-defineExpose({ menuItems })
+const historyPanelOpen = ref(false)
+
+function onHistoryNavigate(nodeId: string) {
+  uiStore.setSelectedNodes([nodeId])
+  historyPanelOpen.value = false
+}
+
+defineExpose({ menuItems, historyPanelOpen })
 </script>
 
 <template>
@@ -374,6 +390,7 @@ defineExpose({ menuItems })
         <span class="workflow-title" data-testid="workflow-title">
           {{ workflowTitle }}
         </span>
+        <ErrorIndicator @open="historyPanelOpen = true" />
         <RunButton
           ref="runButtonRef"
           :graph="currentGraph"
@@ -384,6 +401,11 @@ defineExpose({ menuItems })
       </div>
     </template>
   </Menubar>
+  <ErrorHistoryPanel
+    :visible="historyPanelOpen"
+    @update:visible="historyPanelOpen = $event"
+    @navigate="onHistoryNavigate"
+  />
 
   <WorkflowDialog
     v-model:visible="workflowDialogVisible"

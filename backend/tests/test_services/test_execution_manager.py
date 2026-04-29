@@ -169,7 +169,7 @@ def _install_fake_builder(
     """Replace ``graph_builder.build_workflow`` with a fake returning ``BuildOutput``."""
     from bioimageflow_server.services.graph_builder import BuildOutput
 
-    def _builder(graph, registry, storage_path=None, on_progress=None):
+    def _builder(graph, registry, storage_path=None, on_progress=None, settings=None):
         # Wire the progress callback into the fake workflow so scripted
         # events are delivered through it.
         if workflow is not None:
@@ -589,3 +589,35 @@ class TestExecutionManagerIsRunning:
         wf.go.set()
         await _drain(em)
         assert em.is_running is False
+
+
+class TestExecutionManagerSettingsProvider:
+    async def test_provider_overrides_snapshot_dev_mode(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        _install_fake_builder(monkeypatch, wf)
+        # Snapshot says dev_mode=True; live provider returns False.
+        em = ExecutionManager(
+            RecordingEventBus(),
+            MagicMock(),
+            _settings(dev_mode=True),
+            settings_provider=lambda: _settings(dev_mode=False),
+        )
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+        assert wf.compute_calls == 1
+        assert wf.dev_mode_received is False
+
+    async def test_no_provider_uses_snapshot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(
+            RecordingEventBus(), MagicMock(), _settings(dev_mode=True)
+        )
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+        assert wf.compute_calls == 1
+        assert wf.dev_mode_received is True

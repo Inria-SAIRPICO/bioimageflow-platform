@@ -5,6 +5,7 @@ import PrimeVue from 'primevue/config'
 import Aura from '@primevue/themes/aura'
 import MenuBar from '../MenuBar.vue'
 import { useUIStore } from '@/stores/ui'
+import { useErrorStore } from '@/stores/errors'
 
 // PrimeVue Menubar uses matchMedia for responsive behavior
 Object.defineProperty(window, 'matchMedia', {
@@ -132,6 +133,25 @@ describe('MenuBar', () => {
       expect(
         wrapper.find('[data-testid="run-button-group"]').exists(),
       ).toBe(true)
+    })
+  })
+
+  describe('ErrorIndicator wiring', () => {
+    it('renders the indicator when errors are reported', () => {
+      const errors = useErrorStore()
+      errors.report({ kind: 'graph_sync_error', detail: 'down' })
+      const wrapper = mountMenuBar()
+      expect(wrapper.find('.error-indicator').exists()).toBe(true)
+    })
+
+    it('clicking the indicator opens the history panel local state', async () => {
+      const errors = useErrorStore()
+      errors.report({ kind: 'graph_sync_error', detail: 'down' })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as unknown as { historyPanelOpen: boolean }
+      expect(vm.historyPanelOpen).toBe(false)
+      await wrapper.find('.error-indicator').trigger('click')
+      expect(vm.historyPanelOpen).toBe(true)
     })
   })
 })

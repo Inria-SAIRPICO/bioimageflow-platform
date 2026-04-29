@@ -21,7 +21,7 @@ import { api } from '@/api/client'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import ToolsPanel from '../ToolsPanel.vue'
-import type { ToolMetadata, PackageInfo } from '@/api/types'
+import type { ToolMetadata, PackageInfo, Settings } from '@/api/types'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -95,6 +95,28 @@ const mockPackages: PackageInfo[] = [
     environment_status: 'stopped',
   },
 ]
+
+function makeSettings(overrides: Partial<Settings> = {}): Settings {
+  return {
+    deployment_mode: 'desktop',
+    external_editor: null,
+    napari_env_path: null,
+    omero_instances: [],
+    output_data_folder: '/out',
+    tool_store_path: '~/.bioimageflow/tool_packages/',
+    update_mode: 'auto',
+    execution_engine: 'sequential',
+    cache_max_executions: null,
+    cache_max_age: null,
+    keyboard_shortcuts: {},
+    dev_mode: true,
+    datasets_root: null,
+    max_upload_size: 2147483648,
+    resolved_tool_store_path: '~/.bioimageflow/tool_packages/',
+    resolved_output_data_folder: '/out',
+    ...overrides,
+  }
+}
 
 function mountPanel() {
   // Mock fetchTools and fetchPackages calls in onMounted
@@ -481,7 +503,7 @@ describe('ToolsPanel', () => {
 
     // Set settings to desktop mode
     const settingsStore = useSettingsStore()
-    settingsStore.settings = { deployment_mode: 'desktop', output_data_folder: '/out' }
+    settingsStore.settings = makeSettings({ deployment_mode: 'desktop' })
 
     mockedApi.get.mockResolvedValueOnce({ data: { source: '/path/to/tool.py' } })
     mockedApi.post.mockResolvedValueOnce({ data: {} })
@@ -506,7 +528,7 @@ describe('ToolsPanel', () => {
 
     // Set settings to webapp mode
     const settingsStore = useSettingsStore()
-    settingsStore.settings = { deployment_mode: 'webapp', output_data_folder: '/out' }
+    settingsStore.settings = makeSettings({ deployment_mode: 'webapp' })
 
     // Clear mocks so we can verify no calls are made
     mockedApi.get.mockClear()

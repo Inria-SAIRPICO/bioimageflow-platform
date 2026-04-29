@@ -6,6 +6,7 @@ import { Controls } from '@vue-flow/controls'
 import ToolNode from './ToolNode.vue'
 import ColumnRefEdge from './ColumnRefEdge.vue'
 import PositionalEdge from './PositionalEdge.vue'
+import CanvasErrorBanner from './CanvasErrorBanner.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useUIStore } from '@/stores/ui'
 import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
@@ -15,11 +16,15 @@ import { serializeGraph, useGraphSync } from '@/composables/useGraphSync'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
+import { useValidationErrors } from '@/composables/useValidationErrors'
+import { useErrorReporting } from '@/composables/useErrorReporting'
+import { useHotReload } from '@/composables/useHotReload'
 import { useExecutionStore } from '@/stores/execution'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import type { GraphState, MissingTool, NodeState } from '@/api/types'
+import { useToast } from 'primevue/usetoast'
 import type { ClipboardData } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
 
@@ -70,6 +75,8 @@ const {
 } = useVueFlow()
 
 const { syncGraph, flushNow, patchParameters, validationResult, syncState } = useGraphSync()
+const { edgeErrors } = useValidationErrors(validationResult)
+const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
 const { isLocked } = useExecutionLock()
 const executionStore = useExecutionStore()
@@ -87,6 +94,23 @@ const {
 watch(validationResult, (result) => {
   applyValidationResult(result)
 })
+
+// Mirror per-edge validation errors onto each edge's `data.errors` so the
+// edge component can render the red stroke + tooltip.
+watch(
+  edgeErrors,
+  (byEdge) => {
+    for (const edge of getEdges.value) {
+      const errs = byEdge[edge.id] ?? []
+      const prev = (edge.data as { errors?: unknown[] } | undefined)?.errors ?? []
+      // Cheap reference check to avoid noisy reactive churn when the result
+      // hasn't changed shape.
+      if (errs.length === 0 && prev.length === 0) continue
+      edge.data = { ...(edge.data ?? {}), errors: errs }
+    }
+  },
+  { deep: true },
+)
 
 // Live per-node status from the execution store — takes precedence over the
 // validation-result status while an execution is running so nodes turn green
@@ -185,6 +209,32 @@ async function handleApplyGraphEvent(event: Event) {
   await applyGraphState(detail.graph, detail.missingTools ?? [], detail.dirty ?? false)
 }
 
+// Hot-reload watcher: subscribes to toolRegistryStore.tools mutations
+// driven by useWebSocket and updates affected canvas nodes (badge,
+// schema swap, optimistic out_of_date, flushNow). useToast throws when
+// no ToastService is provided (e.g. in unit tests that mount CanvasView
+// in isolation), so guard it. The toast surfaces "Field 'X' was removed
+// by the tool update." when a focused field vanishes from the new
+// schema.
+let hotReloadToast: ReturnType<typeof useToast> | null = null
+try {
+  hotReloadToast = useToast()
+} catch {
+  /* no ToastService — useHotReload still runs without the toast surface */
+}
+useHotReload({
+  toast: hotReloadToast === null
+    ? undefined
+    : (message: string) => {
+        hotReloadToast!.add({
+          severity: 'warn',
+          summary: 'Tool reloaded',
+          detail: message,
+          life: 5000,
+        })
+      },
+})
+
 onMounted(async () => {
   window.addEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
   if (toolRegistryStore.tools.length === 0) {
@@ -253,6 +303,17 @@ onConnect((connection) => {
       (targetNode?.data?.tool as ToolMetadata | undefined) ??
       toolRegistryStore.getToolByName(targetNode?.data?.toolName)
     if (targetTool?.accepts_upstream === false) {
+      const sourceNode = getNodes.value.find(
+        (n: any) => n.id === connection.source,
+      )
+      const sourceLabel =
+        sourceNode?.data?.name ?? sourceNode?.id ?? connection.source
+      const targetLabel =
+        targetNode?.data?.name ?? targetNode?.id ?? connection.target
+      reportError({
+        kind: 'edge_rejected',
+        detail: `${targetLabel} is a source node and does not accept upstream input from ${sourceLabel}.`,
+      })
       return
     }
   }
@@ -1078,6 +1139,7 @@ defineExpose({
     @keydown="handleKeydown"
     tabindex="0"
   >
+    <CanvasErrorBanner :validation-result="validationResult" />
     <VueFlow
       :node-types="nodeTypes"
       :edge-types="edgeTypes"

@@ -272,7 +272,6 @@ def test_error_path_flattened_into_detail() -> None:
     assert "outer_sw/inner_sw" in out.detail
     assert "n must be >= 0" in out.detail
 
-
 def test_persisted_sections_keep_graph_lossless_and_split_gui(
     registry: ToolRegistryService,
 ) -> None:
@@ -439,3 +438,78 @@ def test_missing_tool_detection_is_node_level(registry: ToolRegistryService) -> 
     assert len(missing) == 1
     assert missing[0].node_id == "n"
     assert missing[0].tool_name == "RemovedTool"
+
+
+# ---- Cache settings wired through Settings -----------------------------
+
+
+_UNLIMITED = 2**31 - 1
+
+
+def test_default_settings_yields_unlimited_max_executions(
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop")
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    config = result.lib_dict["config"]
+    assert config["max_executions"] == _UNLIMITED
+    assert config["max_age"] is None
+
+
+def test_zero_cache_max_executions_round_trips(
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", cache_max_executions=0)
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["max_executions"] == 0
+
+
+def test_positive_cache_max_executions_round_trips(
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", cache_max_executions=3)
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["max_executions"] == 3
+
+
+def test_cache_max_age_round_trips(registry: ToolRegistryService) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", cache_max_age="30d")
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["max_age"] == "30d"
+
+
+def test_execution_engine_round_trips(registry: ToolRegistryService) -> None:
+    from bioimageflow_server.models.settings import Settings
+
+    settings = Settings(deployment_mode="desktop", execution_engine="parsl")
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]), registry, settings=settings
+    )
+    assert result.lib_dict["config"]["engine"] == "parsl"
+
+
+def test_no_settings_preserves_legacy_defaults(
+    registry: ToolRegistryService,
+) -> None:
+    """Backwards-compat: callers that don't pass settings keep the old behaviour."""
+    result = graph_state_to_lib_dict(GraphState(nodes=[], edges=[]), registry)
+    config = result.lib_dict["config"]
+    assert config["engine"] == "sequential"
+    assert config["max_executions"] == 0
+    assert config["max_age"] is None
