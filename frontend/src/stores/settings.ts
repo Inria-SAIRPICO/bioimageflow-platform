@@ -1,34 +1,27 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
+import { AxiosError } from 'axios'
 import { api } from '@/api/client'
+import type { Settings } from '@/api/types'
 
-// Mirrors bioimageflow_server.models.settings.Settings. Not auto-generated
-// because there's no /settings endpoint producing an OpenAPI schema yet.
-export interface OMEROInstance {
-  host: string
-  username: string
-}
+export type { Settings }
 
-export interface Settings {
-  deployment_mode: 'desktop' | 'webapp'
-  external_editor?: string | null
-  napari_env_path?: string | null
-  omero_instances?: OMEROInstance[]
-  output_data_folder: string
-  tool_store_path?: string
-  update_mode?: 'auto' | 'manual' | string
-  execution_engine?: 'sequential' | 'parsl'
-  cache_max_executions?: number | null
-  cache_max_age?: string | null
-  keyboard_shortcuts?: Record<string, string>
-  dev_mode?: boolean
-  datasets_root?: string | null
-  max_upload_size?: number
+function _extractError(e: unknown): string {
+  if (e instanceof AxiosError && e.response?.data) {
+    const data = e.response.data as { detail?: string; message?: string }
+    if (data.detail) return data.detail
+    if (data.message) return data.message
+  }
+  return e instanceof Error ? e.message : String(e)
 }
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Settings | null>(null)
   const error = ref<string | null>(null)
+
+  // Internal serialization chain: each updateSettings() call appends to it
+  // so concurrent calls run in submit order rather than racing the server.
+  let lastPromise: Promise<unknown> = Promise.resolve()
 
   const isLoaded = computed(() => settings.value !== null)
   const isDesktop = computed(() => settings.value?.deployment_mode === 'desktop')
@@ -40,18 +33,35 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value = data
       error.value = null
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = _extractError(e)
     }
   }
 
-  async function updateSettings(partial: Partial<Settings>) {
+  async function _doPatch(partial: Partial<Settings>): Promise<void> {
+    const previous = settings.value
+    // Optimistic merge so listeners see the change immediately.
+    if (previous !== null) {
+      settings.value = { ...previous, ...partial } as Settings
+    }
     try {
       const { data } = await api.patch<Settings>('/api/v1/settings', partial)
       settings.value = data
       error.value = null
     } catch (e: unknown) {
-      error.value = e instanceof Error ? e.message : String(e)
+      // Revert on failure: restore the snapshot taken before the optimistic
+      // mutation. This avoids leaving the store mirroring a server-rejected
+      // value (the previous behaviour).
+      settings.value = previous
+      error.value = _extractError(e)
     }
+  }
+
+  async function updateSettings(partial: Partial<Settings>) {
+    const next = lastPromise.then(() => _doPatch(partial))
+    lastPromise = next.catch(() => {
+      /* swallow so a single rejection doesn't poison subsequent calls */
+    })
+    return next
   }
 
   return {

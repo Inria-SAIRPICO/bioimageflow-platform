@@ -6,6 +6,7 @@ import type { MenuItem } from 'primevue/menuitem'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
 
 const uiStore = useUIStore()
@@ -63,6 +64,12 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'Paste', disabled: true },
       { separator: true },
       { label: 'Select All', disabled: true },
+      { separator: true },
+      {
+        label: 'Preferences...',
+        icon: 'pi pi-cog',
+        command: () => useSettingsPanel().open(),
+      },
     ],
   },
   {

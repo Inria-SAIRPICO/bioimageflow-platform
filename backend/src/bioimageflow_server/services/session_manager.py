@@ -15,12 +15,15 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import GraphValidationError
 from bioimageflow_server.services.graph_translator import graph_state_to_lib_dict
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+if TYPE_CHECKING:
+    from bioimageflow_server.models.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,7 @@ class SessionManager:
         registry: ToolRegistryService,
         *,
         storage_path: Path | None = None,
+        settings: "Settings | None" = None,
     ) -> list[GraphValidationError]:
         """Replace the active session with a new one derived from ``graph``.
 
@@ -59,7 +63,7 @@ class SessionManager:
         from bioimageflow import WorkflowSession
 
         translation = graph_state_to_lib_dict(
-            graph, registry, storage_path=storage_path,
+            graph, registry, storage_path=storage_path, settings=settings,
         )
         self._translation_errors = list(translation.errors)
         self._disabled_node_ids = {n.id for n in graph.nodes if not n.enabled}
