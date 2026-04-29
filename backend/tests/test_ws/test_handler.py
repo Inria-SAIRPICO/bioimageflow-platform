@@ -320,6 +320,57 @@ async def test_broadcast_tool_reload() -> None:
     }
 
 
+async def test_broadcast_tool_removed() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_tool_removed("GaussianSmooth")
+    await _drain(mgr)
+
+    assert ws.sent[0] == {
+        "type": "tool_removed",
+        "tool_name": "GaussianSmooth",
+    }
+
+
+async def test_broadcast_system_error_sets_timestamp() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_system_error("tool_reload_failed", "syntax error")
+    await _drain(mgr)
+
+    payload = ws.sent[0]
+    assert payload["type"] == "system_error"
+    assert payload["code"] == "tool_reload_failed"
+    assert payload["detail"] == "syntax error"
+    # Server-side timestamp set via time.time() — must be a float > 0.
+    assert isinstance(payload["timestamp"], float)
+    assert payload["timestamp"] > 0
+
+
+async def test_broadcast_system_error_to_all_connections() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws1, ws2 = MockWebSocket(), MockWebSocket()
+    await mgr.connect(ws1)
+    await mgr.connect(ws2)
+
+    await mgr.broadcast_system_error("c", "d")
+    await _drain(mgr)
+
+    for ws in (ws1, ws2):
+        assert len(ws.sent) == 1
+        assert ws.sent[0]["type"] == "system_error"
+
+
 async def test_broadcast_package_install() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 
