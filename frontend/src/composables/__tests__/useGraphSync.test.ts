@@ -254,6 +254,20 @@ describe('useGraphSync', () => {
     )
   })
 
+  it('falls back to useErrorReporting when no errorStore is injected', async () => {
+    // Lazy-import to avoid colliding with the mocked api setup at the top of the file.
+    const { setActivePinia, createPinia } = await import('pinia')
+    setActivePinia(createPinia())
+    const errorsModule = await import('@/stores/errors')
+    const errorStore = errorsModule.useErrorStore()
+    mockedPut.mockRejectedValueOnce({ message: 'boom', response: { status: 500 } })
+    const { syncGraph, flushNow } = useGraphSync()
+    syncGraph(makeVueFlowGraph())
+    await flushNow()
+    expect(errorStore.errors).toHaveLength(1)
+    expect(errorStore.errors[0]!.kind).toBe('graph_sync_error')
+  })
+
   it('serializeNode round-trips the resources field', () => {
     const result = serializeGraph({
       nodes: [{

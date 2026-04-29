@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { api } from '@/api/client'
 import { useIndexedDB } from '@/composables/useIndexedDB'
+import { useErrorReporting } from '@/composables/useErrorReporting'
 import type {
   ColumnRefEdge,
   GraphState,
@@ -106,14 +107,37 @@ function _createGraphSync(errorStore?: GraphSyncErrorStore) {
   const currentGraph = ref<GraphState>({ nodes: [], edges: [] })
   const { saveWorkflow, loadWorkflow } = useIndexedDB()
 
+  // When no errorStore is injected (production wiring), fall back to the
+  // canonical reporter so toasts and history get the entry. The lookup is
+  // wrapped in try/catch because tests construct the singleton without an
+  // active Pinia and don't exercise the error path.
+  let defaultReporter: ((err: GraphSyncErrorReport) => void) | null = null
+  if (!errorStore) {
+    try {
+      const { reportError } = useErrorReporting()
+      defaultReporter = (err) => {
+        reportError(err)
+      }
+    } catch {
+      defaultReporter = null
+    }
+  }
+
   let timer: ReturnType<typeof setTimeout> | null = null
   let pendingGraph: { nodes: any[]; edges: any[] } | null = null
   let requestId = 0
   let inflightController: AbortController | null = null
 
   function _reportError(status: number | undefined, detail: string): void {
+    const payload: GraphSyncErrorReport = {
+      kind: 'graph_sync_error',
+      status,
+      detail,
+    }
     if (errorStore) {
-      errorStore.report({ kind: 'graph_sync_error', status, detail })
+      errorStore.report(payload)
+    } else if (defaultReporter) {
+      defaultReporter(payload)
     }
   }
 
