@@ -46,6 +46,11 @@ from bioimageflow_server.routers.execution import (
     router as execution_router,
 )
 from bioimageflow_server.routers.health import router as health_router
+from bioimageflow_server.routers.nodes import (
+    get_result_store,
+    get_thumbnail_service,
+    router as nodes_router,
+)
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
     get_package_catalog,
@@ -65,6 +70,8 @@ from bioimageflow_server.services.package_installer import (
     PypiPackageInstaller,
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
+from bioimageflow_server.services.result_store import ResultStoreService
+from bioimageflow_server.services.thumbnail import ThumbnailService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.ws import (
     ConnectionManager,
@@ -126,6 +133,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             storage_path=config.storage_path,
             session_manager=session_manager,
         )
+
+    resolved_storage_path = config.storage_path or Path("./bif_data")
+    result_store = config.result_store or ResultStoreService(
+        storage_path=resolved_storage_path,
+        tool_registry=registry,
+    )
+    thumbnail_service = config.thumbnail_service or ThumbnailService(
+        cache_dir=resolved_storage_path / ".thumbnails",
+    )
 
     known = config.known_packages or KnownPackagesService.default()
     pypi = config.pypi_versions or PyPIVersionService()
@@ -246,6 +262,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    app.include_router(nodes_router, prefix="/api/v1")
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
@@ -259,6 +276,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_dev_mode] = lambda: resolved_settings.dev_mode
+    app.dependency_overrides[get_result_store] = lambda: result_store
+    app.dependency_overrides[get_thumbnail_service] = lambda: thumbnail_service
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

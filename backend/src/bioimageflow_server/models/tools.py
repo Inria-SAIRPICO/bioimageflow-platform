@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.package_catalog import PackageCatalogService
     from bioimageflow_server.services.package_installer import PackageInstallerService
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
+    from bioimageflow_server.services.result_store import ResultStoreService
+    from bioimageflow_server.services.thumbnail import ThumbnailService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -112,6 +114,8 @@ class AppConfig:
     datasets_root: Path | None = None
     max_upload_size: int | None = None
     storage_path: Path | None = None
+    result_store: ResultStoreService | None = None
+    thumbnail_service: ThumbnailService | None = None
     execution_manager: Any | None = None
     settings: Settings | None = None
     connection_manager: ConnectionManager | None = None

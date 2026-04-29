@@ -411,6 +411,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{node_id}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Data */
+        get: operations["get_node_data_api_v1_nodes__node_id__data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/data/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Node Csv */
+        get: operations["download_node_csv_api_v1_nodes__node_id__data_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Thumbnail */
+        get: operations["get_node_thumbnail_api_v1_nodes__node_id__thumbnail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -547,6 +598,32 @@ export interface components {
             image_spec?: {
                 [key: string]: string[];
             } | null;
+        };
+        /**
+         * NodeDataResponse
+         * @description Paginated DataFrame payload for the Data Table panel.
+         */
+        NodeDataResponse: {
+            /** Columns */
+            columns: string[];
+            /** Index */
+            index: string[];
+            /** Rows */
+            rows: {
+                [key: string]: unknown;
+            }[];
+            /** Absolute Rows */
+            absolute_rows: number[];
+            /** Total Rows */
+            total_rows: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Column Types */
+            column_types: {
+                [key: string]: string;
+            };
         };
         /**
          * NodeOutputSchemaResponse
@@ -862,6 +939,7 @@ export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
+export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
@@ -1632,6 +1710,109 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    get_node_data_api_v1_nodes__node_id__data_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                sort_by?: string | null;
+                sort_order?: "asc" | "desc";
+                tool_name?: string | null;
+            };
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeDataResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_node_csv_api_v1_nodes__node_id__data_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_node_thumbnail_api_v1_nodes__node_id__thumbnail_get: {
+        parameters: {
+            query: {
+                col: string;
+                row?: number;
+                size?: number;
+            };
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

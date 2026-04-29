@@ -23,6 +23,10 @@ from bioimageflow_server.routers.datasets import (
     get_datasets_root,
     get_max_upload_size,
 )
+from bioimageflow_server.routers.nodes import (
+    get_result_store,
+    get_thumbnail_service,
+)
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
@@ -38,6 +42,11 @@ pytestmark = pytest.mark.anyio
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
 
 
 @pytest.fixture
@@ -236,6 +245,46 @@ def test_app_config_wires_datasets_root(tmp_path: Path):
     app = create_app(config=cfg)
     assert app.dependency_overrides[get_datasets_root]() == tmp_path
     assert app.dependency_overrides[get_max_upload_size]() == 1_000_000
+
+
+# ---------------------------------------------------------------------------
+# Nodes deps wiring
+# ---------------------------------------------------------------------------
+
+
+async def test_nodes_router_is_mounted():
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/v1/nodes/test/data")
+    assert resp.status_code == 404
+
+
+def test_app_config_wires_node_services():
+    result_store = object()
+    thumbnail_service = object()
+    cfg = AppConfig(
+        result_store=result_store,
+        thumbnail_service=thumbnail_service,
+    )
+    app = create_app(config=cfg)
+    assert app.dependency_overrides[get_result_store]() is result_store
+    assert app.dependency_overrides[get_thumbnail_service]() is thumbnail_service
+
+
+def test_default_node_services_use_storage_path(tmp_path: Path):
+    cfg = AppConfig(storage_path=tmp_path)
+    app = create_app(config=cfg)
+    result_store = app.dependency_overrides[get_result_store]()
+    thumbnail_service = app.dependency_overrides[get_thumbnail_service]()
+    assert result_store.storage_path == tmp_path
+    assert thumbnail_service.cache_dir == tmp_path / ".thumbnails"
+
+
+def test_default_node_services_fall_back_to_bif_data():
+    app = create_app()
+    result_store = app.dependency_overrides[get_result_store]()
+    assert result_store.storage_path == Path("./bif_data")
 
 
 # ---------------------------------------------------------------------------
