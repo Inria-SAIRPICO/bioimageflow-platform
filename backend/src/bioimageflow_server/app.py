@@ -46,6 +46,10 @@ from bioimageflow_server.routers.execution import (
     router as execution_router,
 )
 from bioimageflow_server.routers.health import router as health_router
+from bioimageflow_server.routers.napari import (
+    get_napari_launcher,
+    router as napari_router,
+)
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
     get_package_catalog,
@@ -58,6 +62,7 @@ from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
 from bioimageflow_server.services.known_packages import KnownPackagesService
+from bioimageflow_server.services.napari_launcher import NapariLauncher
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
@@ -146,6 +151,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         registry=registry, known=known, pypi=pypi
     )
 
+    # Always instantiate a launcher (cheap config + state). The expensive
+    # Conda solve is deferred to the first /napari/open call.
+    napari_launcher = config.napari_launcher or NapariLauncher(
+        napari_env_path=resolved_settings.napari_env_path,
+        connection_manager=ws_manager,
+    )
+
     ws_log_handler = None
 
     @asynccontextmanager
@@ -171,6 +183,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         try:
             yield
         finally:
+            # Napari shutdown FIRST: it may take up to 5s (kill timeout)
+            # and must run before the WS log handler is detached so the
+            # final environment_status: stopped event reaches clients.
+            try:
+                await napari_launcher.shutdown()
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).exception(
+                    "napari_launcher.shutdown() raised during lifespan: %r",
+                    exc,
+                )
             if ws_manager is not None:
                 if ws_log_handler is not None:
                     logging.getLogger("bioimageflow").removeHandler(
@@ -246,6 +268,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    app.include_router(napari_router, prefix="/api/v1")
+    app.state.napari_launcher = napari_launcher
+    app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
