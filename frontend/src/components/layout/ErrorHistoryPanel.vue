@@ -2,9 +2,9 @@
 import { computed } from 'vue'
 import Button from 'primevue/button'
 import {
+  ERROR_KIND_LABELS,
   useErrorStore,
   type ErrorEntry,
-  type ErrorKind,
 } from '@/stores/errors'
 
 const props = defineProps<{ visible: boolean }>()
@@ -14,16 +14,6 @@ const emit = defineEmits<{
 }>()
 
 const errorStore = useErrorStore()
-
-const KIND_LABELS: Record<ErrorKind, string> = {
-  graph_sync_error: 'Graph sync error',
-  websocket_error: 'Connection error',
-  log_subscription_failed: 'Log subscription error',
-  execution_failed: 'Execution failed',
-  network_unreachable: 'Network unreachable',
-  edge_rejected: 'Edge rejected',
-  unknown: 'Error',
-}
 
 const sortedErrors = computed<ErrorEntry[]>(() =>
   [...errorStore.errors].sort((a, b) => b.timestamp - a.timestamp),
@@ -122,7 +112,7 @@ void props
               <span data-testid="error-row-timestamp" class="error-row-timestamp">
                 {{ formatTimestamp(entry.timestamp) }}
               </span>
-              <span class="error-row-kind">{{ KIND_LABELS[entry.kind] }}</span>
+              <span class="error-row-kind">{{ ERROR_KIND_LABELS[entry.kind] }}</span>
               <Button
                 data-testid="error-row-dismiss"
                 icon="pi pi-times"

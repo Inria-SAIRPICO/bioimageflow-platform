@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import Button from 'primevue/button'
 import { useExecutionStore } from '@/stores/execution'
 
@@ -13,6 +13,7 @@ const traceback = computed(() => status.value?.traceback ?? null)
 
 const expanded = ref(false)
 const copied = ref(false)
+let copyResetTimer: ReturnType<typeof setTimeout> | null = null
 
 const rowInfo = computed(() => {
   const p = executionStore.progress
@@ -25,8 +26,10 @@ async function copyTraceback() {
   try {
     await navigator.clipboard.writeText(traceback.value)
     copied.value = true
-    setTimeout(() => {
+    if (copyResetTimer !== null) clearTimeout(copyResetTimer)
+    copyResetTimer = setTimeout(() => {
       copied.value = false
+      copyResetTimer = null
     }, 2000)
   } catch {
     // Clipboard permissions denied; swallow.
@@ -36,6 +39,13 @@ async function copyTraceback() {
 function toggleTraceback() {
   expanded.value = !expanded.value
 }
+
+onBeforeUnmount(() => {
+  if (copyResetTimer !== null) {
+    clearTimeout(copyResetTimer)
+    copyResetTimer = null
+  }
+})
 </script>
 
 <template>

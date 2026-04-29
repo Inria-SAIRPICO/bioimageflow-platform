@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from 'vue'
+import { computed, ref, toRef } from 'vue'
 import Button from 'primevue/button'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import type { ValidationResult } from '@/api/types'
@@ -9,31 +9,24 @@ const props = defineProps<{ validationResult: ValidationResult | null }>()
 const validationResultRef = toRef(props, 'validationResult')
 const { globalErrors } = useValidationErrors(validationResultRef)
 
-function signature(): string {
-  return JSON.stringify(
+const currentSignature = computed(() =>
+  JSON.stringify(
     globalErrors.value.map((e) => [
       e.type,
       e.detail,
       e.node ?? null,
       e.edge_id ?? null,
     ]),
-  )
-}
+  ),
+)
 
 const dismissedSignature = ref<string | null>(null)
-const currentSignature = computed(() => signature())
 
 const visible = computed(
   () =>
     globalErrors.value.length > 0 &&
     currentSignature.value !== dismissedSignature.value,
 )
-
-watch(currentSignature, (sig) => {
-  // If the signature changes to one we haven't dismissed, ensure the banner
-  // can re-appear. Nothing to do here other than letting `visible` re-evaluate.
-  void sig
-})
 
 function onDismiss() {
   dismissedSignature.value = currentSignature.value

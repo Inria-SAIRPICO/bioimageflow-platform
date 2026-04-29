@@ -1,17 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import type { GraphValidationError } from '@/api/types'
 
 const props = defineProps<{
   errors: GraphValidationError[]
 }>()
 
-let _idCounter = 0
-function nextId(): string {
-  _idCounter += 1
-  return `param-error-${_idCounter}`
-}
-const descId = nextId()
+const descId = useId()
 
 const hasError = computed(() => props.errors.length > 0)
 const joinedTitle = computed(() =>

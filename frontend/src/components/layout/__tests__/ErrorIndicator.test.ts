@@ -4,12 +4,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import ErrorIndicator from '../ErrorIndicator.vue'
 import { useErrorStore } from '@/stores/errors'
 
-function mountIndicator() {
-  return mount(ErrorIndicator, {
-    global: { plugins: [setActivePinia(createPinia())] },
-  })
-}
-
 describe('ErrorIndicator', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -99,6 +93,3 @@ describe('ErrorIndicator', () => {
     )
   })
 })
-
-// Suppress unused import warning when the helper is not exercised.
-void mountIndicator

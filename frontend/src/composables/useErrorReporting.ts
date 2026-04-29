@@ -1,5 +1,6 @@
 import { useToast } from 'primevue/usetoast'
 import {
+  ERROR_KIND_LABELS,
   useErrorStore,
   type ErrorKind,
   type ErrorReportInput,
@@ -69,16 +70,6 @@ const TOAST_POLICY: Record<ErrorKind, KindPolicy> = {
   },
 }
 
-const KIND_LABELS: Record<ErrorKind, string> = {
-  graph_sync_error: 'Graph sync error',
-  websocket_error: 'Connection error',
-  log_subscription_failed: 'Log subscription error',
-  execution_failed: 'Execution failed',
-  network_unreachable: 'Network unreachable',
-  edge_rejected: 'Edge rejected',
-  unknown: 'Error',
-}
-
 const _toastedKinds = new Set<ErrorKind>()
 
 export function __resetErrorReportingForTests(): void {
@@ -111,7 +102,7 @@ export function useErrorReporting() {
         try {
           toast.add({
             severity: policy.severity,
-            summary: KIND_LABELS[input.kind],
+            summary: ERROR_KIND_LABELS[input.kind],
             detail: input.detail,
             life: policy.lifeMs,
           })
@@ -124,5 +115,5 @@ export function useErrorReporting() {
     return id
   }
 
-  return { reportError, __resetErrorReportingForTests }
+  return { reportError }
 }

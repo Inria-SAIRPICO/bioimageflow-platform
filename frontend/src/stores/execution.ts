@@ -178,9 +178,11 @@ export const useExecutionStore = defineStore('execution', () => {
         detail,
         ...(nodeId ? { nodeId } : {}),
       })
-    } catch {
-      // No active Pinia / Toast in test contexts that don't import the
-      // error store; failure is best-effort.
+    } catch (e) {
+      // Best-effort: in test contexts the composable may not have access
+      // to a Toast provider. Surface unexpected failures so real bugs in
+      // the reporting path don't go unnoticed.
+      console.warn('[execution] failed to report execution_failed:', e)
     }
   }
 

@@ -10,6 +10,16 @@ export type ErrorKind =
   | 'edge_rejected'
   | 'unknown'
 
+export const ERROR_KIND_LABELS: Record<ErrorKind, string> = {
+  graph_sync_error: 'Graph sync error',
+  websocket_error: 'Connection error',
+  log_subscription_failed: 'Log subscription error',
+  execution_failed: 'Execution failed',
+  network_unreachable: 'Network unreachable',
+  edge_rejected: 'Edge rejected',
+  unknown: 'Error',
+}
+
 export interface ErrorEntry {
   id: string
   kind: ErrorKind

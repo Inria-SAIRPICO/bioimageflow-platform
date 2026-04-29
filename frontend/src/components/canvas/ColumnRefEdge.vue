@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import { getBezierPath, Position } from '@vue-flow/core'
 import { getTypeColor } from '@/utils/typeColors'
+import { useEdgeError } from '@/composables/useEdgeError'
 import type { GraphValidationError } from '@/api/types'
 
 defineOptions({ inheritAttrs: false })
@@ -29,15 +30,10 @@ const path = computed(() => {
   return d
 })
 
-const hasError = computed(() => (props.data?.errors?.length ?? 0) > 0)
+const { hasError, errorTitle } = useEdgeError(toRef(props, 'data'))
 
-const strokeColor = computed(() => {
-  if (hasError.value) return 'var(--p-red-500)'
-  return getTypeColor(props.data?.type ?? '')
-})
-
-const errorTitle = computed(() =>
-  (props.data?.errors ?? []).map((e) => e.detail).join('\n'),
+const strokeColor = computed(() =>
+  hasError.value ? 'var(--p-red-500)' : getTypeColor(props.data?.type ?? ''),
 )
 </script>
 
