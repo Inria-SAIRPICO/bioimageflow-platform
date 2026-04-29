@@ -11,4 +11,14 @@ curl -sf "$SCHEMA_URL" | npx openapi-typescript --stdin \
   --root-types --root-types-no-schema-prefix \
   -o "$OUTPUT"
 
+# Append manual aliases. ``Settings`` is the schema-less alias for
+# ``SettingsResponse`` (the GET/PATCH wrapper); ``OMEROInstance`` keeps the
+# historical UPPER-case spelling that consumers expect.
+cat >> "$OUTPUT" <<'EOF'
+
+// --- Manual aliases (re-applied after every `generate-types` run) ---
+export type Settings = SettingsResponse;
+export type OMEROInstance = OmeroInstance;
+EOF
+
 echo "Types generated at $OUTPUT"

@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 
 from bioimageflow_server.models.graph import GraphState, NodeOutputSchemaResponse
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import (
     ParameterPatchRequest,
     ValidationResult,
@@ -44,6 +45,11 @@ def get_session_manager() -> SessionManager:  # pragma: no cover
     raise RuntimeError("session_manager dependency not configured")
 
 
+def get_settings() -> Settings | None:
+    """Live Settings or None when the app is configured without one."""
+    return None
+
+
 def _ensure_unlocked(execution_manager: Any | None) -> None:
     if execution_manager is None:
         return
@@ -73,11 +79,12 @@ async def validate_graph_endpoint(
     execution_manager: Any | None = Depends(get_execution_manager),
     dev_mode: bool = Depends(get_dev_mode),
     session_manager: SessionManager = Depends(get_session_manager),
+    settings: Settings | None = Depends(get_settings),
 ) -> ValidationResult:
     _ensure_unlocked(execution_manager)
     return _validate_graph(
         graph, registry, session_manager,
-        storage_path=storage_path, dev_mode=dev_mode,
+        storage_path=storage_path, dev_mode=dev_mode, settings=settings,
     )
 
 

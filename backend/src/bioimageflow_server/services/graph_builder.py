@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import GraphValidationError
@@ -20,6 +20,9 @@ from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+if TYPE_CHECKING:
+    from bioimageflow_server.models.settings import Settings
 
 
 class BuildOutput(NamedTuple):
@@ -35,6 +38,7 @@ def build_workflow(
     registry: ToolRegistryService,
     storage_path: Path | None = None,
     on_progress: Callable[[Any], None] | None = None,
+    settings: "Settings | None" = None,
 ) -> BuildOutput:
     """Translate ``graph`` into a library :class:`Workflow`.
 
@@ -44,7 +48,7 @@ def build_workflow(
     from bioimageflow.workflow import Workflow
 
     translation = graph_state_to_lib_dict(
-        graph, registry, storage_path=storage_path,
+        graph, registry, storage_path=storage_path, settings=settings,
     )
     errors: list[GraphValidationError] = list(translation.errors)
 

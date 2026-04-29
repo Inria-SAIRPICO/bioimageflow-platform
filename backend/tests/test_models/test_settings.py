@@ -35,10 +35,13 @@ class TestSettings:
         assert s.external_editor == "code {file_path}"
 
     def test_defaults(self):
-        s = Settings(deployment_mode="webapp", output_data_folder="/out")
+        # Settings(deployment_mode=...) should be constructible without
+        # an explicit output_data_folder thanks to default_factory.
+        s = Settings(deployment_mode="webapp")
         assert s.external_editor is None
         assert s.napari_env_path is None
         assert s.omero_instances == []
+        assert s.output_data_folder == "~/bioimageflow_data/"
         assert s.tool_store_path == "~/.bioimageflow/tool_packages/"
         assert s.update_mode == "auto"
         assert s.execution_engine == "sequential"
@@ -46,6 +49,10 @@ class TestSettings:
         assert s.cache_max_age is None
         assert s.keyboard_shortcuts == {}
         assert s.dev_mode is True
+
+    def test_output_data_folder_overridable(self):
+        s = Settings(deployment_mode="desktop", output_data_folder="/tmp/x")
+        assert s.output_data_folder == "/tmp/x"
 
     def test_invalid_deployment_mode(self):
         with pytest.raises(ValidationError):
@@ -62,6 +69,10 @@ class TestSettings:
                     "execution_engine": "spark",
                 }
             )
+
+    def test_execution_engine_dask_rejected(self):
+        with pytest.raises(ValidationError):
+            Settings(deployment_mode="desktop", execution_engine="dask")
 
     def test_with_omero_instances(self):
         s = Settings(
@@ -87,6 +98,13 @@ class TestSettings:
         rebuilt = Settings.model_validate_json(s.model_dump_json())
         assert rebuilt.keyboard_shortcuts == s.keyboard_shortcuts
         assert rebuilt.omero_instances[0].host == "omero.example.com"
+
+    def test_json_roundtrip_preserves_none_defaults(self):
+        s = Settings(deployment_mode="desktop", external_editor=None)
+        dumped = s.model_dump()
+        assert dumped["external_editor"] is None
+        rebuilt = Settings.model_validate_json(s.model_dump_json())
+        assert rebuilt.external_editor is None
 
     def test_update_mode_accepts_auto(self):
         s = Settings(deployment_mode="desktop", output_data_folder="/out", update_mode="auto")
@@ -133,3 +151,48 @@ class TestSettings:
             datasets_root="/elsewhere/datasets",
         )
         assert s.resolved_datasets_root() == "/elsewhere/datasets"
+
+    # --- Validators added by the Settings Panel plan, Task 1 ---
+
+    def test_cache_max_executions_zero_is_valid(self):
+        s = Settings(deployment_mode="desktop", cache_max_executions=0)
+        assert s.cache_max_executions == 0
+
+    def test_cache_max_executions_positive_is_valid(self):
+        s = Settings(deployment_mode="desktop", cache_max_executions=5)
+        assert s.cache_max_executions == 5
+
+    def test_cache_max_executions_none_is_valid(self):
+        s = Settings(deployment_mode="desktop", cache_max_executions=None)
+        assert s.cache_max_executions is None
+
+    def test_cache_max_executions_negative_rejected(self):
+        with pytest.raises(ValidationError):
+            Settings(deployment_mode="desktop", cache_max_executions=-1)
+
+    @pytest.mark.parametrize("value", ["30d", "1h", "45m", "10s", "999d"])
+    def test_cache_max_age_accepts_valid_strings(self, value: str):
+        s = Settings(deployment_mode="desktop", cache_max_age=value)
+        assert s.cache_max_age == value
+
+    @pytest.mark.parametrize("value", ["1 day", "30D", "abc", "", "10x", "d10"])
+    def test_cache_max_age_rejects_invalid_strings(self, value: str):
+        with pytest.raises(ValidationError):
+            Settings(deployment_mode="desktop", cache_max_age=value)
+
+    def test_cache_max_age_none_is_valid(self):
+        s = Settings(deployment_mode="desktop", cache_max_age=None)
+        assert s.cache_max_age is None
+
+    def test_unknown_field_is_rejected(self):
+        with pytest.raises(ValidationError):
+            Settings.model_validate(
+                {"deployment_mode": "desktop", "foo": 1}
+            )
+
+    def test_dev_mode_false_accepted_at_model_layer(self):
+        # Router rejects this in GUI mode; the model itself stays permissive
+        # so non-GUI callers (CLI, tests, future webapp deployments) can build
+        # Settings(dev_mode=False).
+        s = Settings(deployment_mode="desktop", dev_mode=False)
+        assert s.dev_mode is False

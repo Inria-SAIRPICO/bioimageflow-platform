@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.package_installer import PackageInstallerService
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
     from bioimageflow_server.services.result_store import ResultStoreService
+    from bioimageflow_server.services.settings_store import SettingsStore
     from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
     from bioimageflow_server.services.tool_registry import ToolRegistryService
     from bioimageflow_server.ws.handler import ConnectionManager
@@ -119,5 +120,12 @@ class AppConfig:
     thumbnail_manager: ThumbnailManager | None = None
     execution_manager: Any | None = None
     settings: Settings | None = None
+    # Authoritative live source when set; ``settings`` becomes a snapshot
+    # fallback used only when ``settings_store`` is None (CLI / tests).
+    settings_store: SettingsStore | None = None
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
+    # Set True in tests that don't want a watchdog Observer running. The
+    # production app builds the service inside ``create_app`` from the
+    # resolved registry + connection_manager + tool-store path.
+    disable_hot_reload: bool = False

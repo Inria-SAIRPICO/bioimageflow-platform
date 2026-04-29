@@ -613,6 +613,44 @@ describe('CanvasView', () => {
       expect(mockEdges).toHaveLength(0)
       w.unmount()
     })
+
+    it('rejected positional edge emits an edge_rejected toast (no history entry)', async () => {
+      const errors = await import('@/stores/errors')
+      const errorStore = errors.useErrorStore()
+      const filesTool = makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        accepts_upstream: false,
+        inputs: {},
+        outputs: { path: { type: 'Path' } },
+      })
+      const store = useToolRegistryStore()
+      store.tools = [makeTool(), filesTool] as any
+
+      mockNodes = [
+        { id: 'src', data: { toolName: 'gaussian_blur', name: 'Source', tool: makeTool(), connectedInputs: {} } },
+        { id: 'files_1', data: { toolName: 'files', name: 'Files', tool: filesTool, connectedInputs: {} } },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+      expect(connectHandler).not.toBeNull()
+
+      const before = errorStore.errors.length
+      connectHandler!({
+        source: 'src',
+        target: 'files_1',
+        sourceHandle: 'result',
+        targetHandle: '__positional_0',
+      })
+
+      // edge_rejected does not record history per F2 policy.
+      expect(errorStore.errors.length).toBe(before)
+      // Edge was not added.
+      expect(mockEdges).toHaveLength(0)
+      w.unmount()
+    })
   })
 
   // --- Task 7: Drop Handling + Node Creation ---

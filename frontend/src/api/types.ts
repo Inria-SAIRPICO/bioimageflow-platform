@@ -513,6 +513,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings */
+        get: operations["get_settings_api_v1_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Settings */
+        patch: operations["patch_settings_api_v1_settings_patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -777,6 +795,23 @@ export interface components {
             /** Traceback */
             traceback?: string | null;
         };
+        /**
+         * OMEROInstance
+         * @description OMERO server connection configuration.
+         */
+        OMEROInstance: {
+            /** Name */
+            name?: string | null;
+            /** Host */
+            host: string;
+            /**
+             * Port
+             * @default 4064
+             */
+            port: number;
+            /** Username */
+            username: string;
+        };
         /** PackageInfo */
         PackageInfo: {
             /** Name */
@@ -842,6 +877,78 @@ export interface components {
         RevealRequest: {
             /** Path */
             path: string;
+        };
+        /**
+         * SettingsResponse
+         * @description ``GET``/``PATCH`` /settings response wrapper.
+         *
+         *     Adds two **server-resolved** convenience fields so the frontend can show
+         *     where tools and outputs *actually* live (env-var overrides applied,
+         *     ``~`` expanded). The raw ``Settings`` fields remain so PATCH bodies
+         *     stay symmetrical with what GET returns.
+         */
+        SettingsResponse: {
+            /**
+             * Deployment Mode
+             * @enum {string}
+             */
+            deployment_mode: "desktop" | "webapp";
+            /** External Editor */
+            external_editor?: string | null;
+            /** Napari Env Path */
+            napari_env_path?: string | null;
+            /**
+             * Omero Instances
+             * @default []
+             */
+            omero_instances: components["schemas"]["OMEROInstance"][];
+            /** Output Data Folder */
+            output_data_folder?: string;
+            /**
+             * Tool Store Path
+             * @default ~/.bioimageflow/tool_packages/
+             */
+            tool_store_path: string;
+            /**
+             * Update Mode
+             * @default auto
+             */
+            update_mode: ("auto" | "manual") | string;
+            /**
+             * Execution Engine
+             * @default sequential
+             * @enum {string}
+             */
+            execution_engine: "sequential" | "parsl";
+            /** Cache Max Executions */
+            cache_max_executions?: number | null;
+            /** Cache Max Age */
+            cache_max_age?: string | null;
+            /**
+             * Keyboard Shortcuts
+             * @default {}
+             */
+            keyboard_shortcuts: {
+                [key: string]: string;
+            };
+            /**
+             * Dev Mode
+             * @default true
+             */
+            dev_mode: boolean;
+            /** Datasets Root */
+            datasets_root?: string | null;
+            /**
+             * Max Upload Size
+             * @default 2147483648
+             */
+            max_upload_size: number;
+            /** Resolved Tool Store Path */
+            resolved_tool_store_path: string;
+            /** Resolved Output Data Folder */
+            resolved_output_data_folder: string;
+        } & {
+            [key: string]: unknown;
         };
         /** ToolCreate */
         ToolCreate: {
@@ -1021,10 +1128,12 @@ export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
+export type OmeroInstance = components['schemas']['OMEROInstance'];
 export type PackageInfo = components['schemas']['PackageInfo'];
 export type ParameterPatchRequest = components['schemas']['ParameterPatchRequest'];
 export type PositionalEdge = components['schemas']['PositionalEdge'];
 export type RevealRequest = components['schemas']['RevealRequest'];
+export type SettingsResponse = components['schemas']['SettingsResponse'];
 export type ToolCreate = components['schemas']['ToolCreate'];
 export type ToolMetadata = components['schemas']['ToolMetadata'];
 export type ToolRename = components['schemas']['ToolRename'];
@@ -1972,4 +2081,63 @@ export interface operations {
             };
         };
     };
+    get_settings_api_v1_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+        };
+    };
+    patch_settings_api_v1_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
 }
+
+// --- Manual aliases (re-applied after every `generate-types` run) ---
+export type Settings = SettingsResponse;
+export type OMEROInstance = OmeroInstance;

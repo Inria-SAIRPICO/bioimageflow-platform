@@ -34,6 +34,7 @@ from bioimageflow_server.routers.graph import (
     get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
     get_session_manager as graph_get_session_manager,
+    get_settings as graph_get_settings,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
     router as graph_router,
@@ -54,6 +55,10 @@ from bioimageflow_server.routers.nodes import (
     get_result_store,
     get_thumbnail_manager,
     router as nodes_router,
+)
+from bioimageflow_server.routers.settings import (
+    get_settings_store as settings_get_store,
+    router as settings_router,
 )
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
@@ -77,6 +82,7 @@ from bioimageflow_server.services.package_installer import (
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
+from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.ws import (
     ConnectionManager,
@@ -119,7 +125,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     resolved_settings: Settings = config.settings or Settings(
         deployment_mode=_deployment_mode,
-        output_data_folder=str(get_home()),
     )
 
     # Always provide a ConnectionManager in the default app. Production launch
@@ -131,12 +136,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
+        settings_provider = (
+            (lambda: config.settings_store.get())
+            if config.settings_store is not None
+            else None
+        )
         execution_manager = ExecutionManager(
             event_bus=event_bus,
             tool_registry=registry,
             settings=resolved_settings,
             storage_path=config.storage_path,
             session_manager=session_manager,
+            settings_provider=settings_provider,
         )
 
     resolved_storage_path = config.storage_path or Path("./bif_data")
@@ -154,15 +165,25 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     pypi = config.pypi_versions or PyPIVersionService()
     _owns_pypi = config.pypi_versions is None
 
+    from bioimageflow.paths import get_tool_store_path
+    tool_store_path = get_tool_store_path()
+
+    if config.disable_hot_reload:
+        hot_reload: ToolHotReloadService | None = None
+    else:
+        hot_reload = ToolHotReloadService(
+            registry=registry,
+            connection_manager=ws_manager,
+        )
+
     if config.package_installer is not None:
         installer = config.package_installer
     else:
-        from bioimageflow.paths import get_tool_store_path
-
         installer = PypiPackageInstaller(
-            tool_store=get_tool_store_path(),
+            tool_store=tool_store_path,
             registry=registry,
             pypi=pypi,
+            hot_reload=hot_reload,
         )
 
     catalog = config.package_catalog or PackageCatalogService(
@@ -180,6 +201,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
+        # Settings must load before catalog.refresh() so any settings the
+        # catalog might consult (tool_store_path, etc.) are in place.
+        if config.settings_store is not None:
+            await config.settings_store.load()
         try:
             await catalog.refresh()
         except PackageNetworkError as exc:
@@ -197,6 +222,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             loop = asyncio.get_running_loop()
             ws_manager._loop = loop
             ws_log_handler = attach_ws_log_handler(ws_manager, loop)
+
+        # Hot-reload watcher starts AFTER the registry has been populated
+        # by scan_tool_store() (which runs synchronously above) so the
+        # observer never races the initial load.
+        hot_reload_started = False
+        if hot_reload is not None:
+            try:
+                await hot_reload.start(tool_store_path)
+                hot_reload_started = True
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).warning(
+                    "Tool hot-reload failed to start: %r", exc, exc_info=exc,
+                )
 
         try:
             yield
@@ -218,12 +256,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     "thumbnail_manager.shutdown() raised during lifespan: %r",
                     exc,
                 )
+            if hot_reload is not None and hot_reload_started:
+                try:
+                    await hot_reload.stop()
+                except Exception:  # noqa: BLE001
+                    logging.getLogger(__name__).warning(
+                        "Tool hot-reload failed to stop cleanly",
+                        exc_info=True,
+                    )
             if ws_manager is not None:
                 if ws_log_handler is not None:
                     logging.getLogger("bioimageflow").removeHandler(
                         ws_log_handler
                     )
                 ws_manager._loop = None
+            if config.settings_store is not None:
+                await config.settings_store.flush()
             if _owns_pypi:
                 await pypi.aclose()
 
@@ -297,6 +345,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(nodes_router, prefix="/api/v1")
     app.state.napari_launcher = napari_launcher
     app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
+    if config.settings_store is not None:
+        app.include_router(settings_router, prefix="/api/v1")
+        app.dependency_overrides[settings_get_store] = lambda: config.settings_store
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
@@ -309,7 +360,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
-    app.dependency_overrides[graph_get_dev_mode] = lambda: resolved_settings.dev_mode
+
+    def _live_dev_mode() -> bool:
+        if config.settings_store is not None:
+            return config.settings_store.get().dev_mode
+        return resolved_settings.dev_mode
+
+    def _live_settings() -> Settings:
+        if config.settings_store is not None:
+            return config.settings_store.get()
+        return resolved_settings
+
+    app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
+    app.dependency_overrides[graph_get_settings] = _live_settings
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
 

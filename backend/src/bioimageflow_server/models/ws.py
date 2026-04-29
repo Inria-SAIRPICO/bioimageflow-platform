@@ -65,6 +65,18 @@ class ToolReloadMessage(_MessageBase):
     tool_metadata: dict[str, Any]
 
 
+class ToolRemovedMessage(_MessageBase):
+    type: Literal["tool_removed"] = "tool_removed"
+    tool_name: str
+
+
+class SystemErrorMessage(_MessageBase):
+    type: Literal["system_error"] = "system_error"
+    code: str
+    detail: str
+    timestamp: float
+
+
 class PackageInstallMessage(_MessageBase):
     type: Literal["package_install"] = "package_install"
     package_name: str
@@ -109,6 +121,8 @@ ServerMessage = Annotated[
         LogMessage,
         ExecutionCompleteMessage,
         ToolReloadMessage,
+        ToolRemovedMessage,
+        SystemErrorMessage,
         PackageInstallMessage,
         EnvironmentStatusMessage,
         AckMessage,
@@ -135,5 +149,7 @@ __all__ = [
     "ProgressMessage",
     "ServerMessage",
     "SubscribeLogsMessage",
+    "SystemErrorMessage",
     "ToolReloadMessage",
+    "ToolRemovedMessage",
 ]

@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { api } from '@/api/client'
 import { useIndexedDB } from '@/composables/useIndexedDB'
+import { useErrorReporting } from '@/composables/useErrorReporting'
 import type {
   ColumnRefEdge,
   GraphState,
@@ -12,16 +13,6 @@ import type {
 type Edge = ColumnRefEdge | PositionalEdge
 
 export type SyncState = 'idle' | 'pending' | 'error'
-
-export interface GraphSyncErrorReport {
-  kind: 'graph_sync_error'
-  status?: number
-  detail: string
-}
-
-export interface GraphSyncErrorStore {
-  report(err: GraphSyncErrorReport): void
-}
 
 /**
  * Serialise a Vue Flow node object into the backend NodeState format.
@@ -81,13 +72,13 @@ export function serializeGraph(raw: {
 
 // Module-level singleton so multiple callers (CanvasView, MenuBar, run
 // button) observe the same validation result, debounce timer, and latest
-// graph ref. Test mocks replace the module export and don't exercise this
-// path.
+// graph ref. Tests reset via _resetGraphSyncForTest and mock the
+// useErrorReporting module to observe error reporting.
 let _instance: ReturnType<typeof _createGraphSync> | null = null
 
-export function useGraphSync(errorStore?: GraphSyncErrorStore) {
+export function useGraphSync() {
   if (_instance !== null) return _instance
-  _instance = _createGraphSync(errorStore)
+  _instance = _createGraphSync()
   return _instance
 }
 
@@ -96,7 +87,7 @@ export function _resetGraphSyncForTest(): void {
   _instance = null
 }
 
-function _createGraphSync(errorStore?: GraphSyncErrorStore) {
+function _createGraphSync() {
   const validationResult = ref<ValidationResult | null>(null)
   const isPending = ref(false)
   const syncState = ref<SyncState>('idle')
@@ -112,8 +103,14 @@ function _createGraphSync(errorStore?: GraphSyncErrorStore) {
   let inflightController: AbortController | null = null
 
   function _reportError(status: number | undefined, detail: string): void {
-    if (errorStore) {
-      errorStore.report({ kind: 'graph_sync_error', status, detail })
+    // useErrorReporting requires an active Pinia. Tests that don't set one
+    // up never trigger this path (they don't reject the api mock); a real
+    // failure here would be a misconfiguration worth surfacing.
+    try {
+      const { reportError } = useErrorReporting()
+      reportError({ kind: 'graph_sync_error', status, detail })
+    } catch (e) {
+      console.warn('[graph-sync] failed to report error:', e)
     }
   }
 

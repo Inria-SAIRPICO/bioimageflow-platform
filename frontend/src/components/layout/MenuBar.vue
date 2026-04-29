@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { computed, ref, useTemplateRef } from 'vue'
 import Menubar from 'primevue/menubar'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
+import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
+import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -63,6 +66,12 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'Paste', disabled: true },
       { separator: true },
       { label: 'Select All', disabled: true },
+      { separator: true },
+      {
+        label: 'Preferences...',
+        icon: 'pi pi-cog',
+        command: () => useSettingsPanel().open(),
+      },
     ],
   },
   {
@@ -120,12 +129,20 @@ function onRunButtonToast(payload: {
   })
 }
 
-defineExpose({ menuItems })
+const historyPanelOpen = ref(false)
+
+function onHistoryNavigate(nodeId: string) {
+  uiStore.setSelectedNodes([nodeId])
+  historyPanelOpen.value = false
+}
+
+defineExpose({ menuItems, historyPanelOpen })
 </script>
 
 <template>
   <Menubar :model="menuItems" data-testid="app-menubar">
     <template #end>
+      <ErrorIndicator @open="historyPanelOpen = true" />
       <RunButton
         ref="runButtonRef"
         :graph="currentGraph"
@@ -135,4 +152,9 @@ defineExpose({ menuItems })
       />
     </template>
   </Menubar>
+  <ErrorHistoryPanel
+    :visible="historyPanelOpen"
+    @update:visible="historyPanelOpen = $event"
+    @navigate="onHistoryNavigate"
+  />
 </template>
