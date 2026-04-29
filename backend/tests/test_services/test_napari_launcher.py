@@ -727,3 +727,203 @@ def test_launch_emits_stopped_when_step_fails(monkeypatch) -> None:
     with pytest.raises(NapariLaunchError):
         launcher._launch()
     assert statuses == ["creating", "stopped"]
+
+
+# ---------------------------------------------------------------------------
+# B7 Part A — Auto-reconnect, error recovery
+# ---------------------------------------------------------------------------
+
+
+async def test_open_reconnects_on_eof_error(tmp_path, monkeypatch) -> None:
+    launcher = _make_launcher()
+    a = tmp_path / "a.tif"
+    a.write_bytes(b"\0")
+    initial = _FakeConnection()
+    initial.recv_exc = EOFError()
+    fresh = _FakeConnection()
+    fresh.responses.append({"status": "ok"})
+    _attach_alive(launcher, conn=initial)
+    monkeypatch.setattr(
+        NapariLauncher, "_launch",
+        lambda self: _attach_alive(self, conn=fresh),
+    )
+    await launcher.open([str(a)])
+    assert fresh.sent == [
+        {"action": "open", "paths": [str(a)], "clear_layers": False}
+    ]
+
+
+async def test_open_reconnects_on_broken_pipe(tmp_path, monkeypatch) -> None:
+    launcher = _make_launcher()
+    a = tmp_path / "a.tif"
+    a.write_bytes(b"\0")
+    initial = _FakeConnection()
+    initial.send_exc = BrokenPipeError()
+    fresh = _FakeConnection()
+    fresh.responses.append({"status": "ok"})
+    _attach_alive(launcher, conn=initial)
+    monkeypatch.setattr(
+        NapariLauncher, "_launch",
+        lambda self: _attach_alive(self, conn=fresh),
+    )
+    await launcher.open([str(a)])
+    assert fresh.sent == [
+        {"action": "open", "paths": [str(a)], "clear_layers": False}
+    ]
+
+
+async def test_status_reports_new_pid_after_reconnect(tmp_path, monkeypatch) -> None:
+    launcher = _make_launcher()
+    a = tmp_path / "a.tif"
+    a.write_bytes(b"\0")
+    initial = _FakeConnection()
+    initial.send_exc = ConnectionResetError()
+    fresh = _FakeConnection()
+    fresh.responses.append({"status": "ok"})
+    _attach_alive(launcher, conn=initial, pid=111)
+
+    def _relaunch(self: NapariLauncher) -> None:
+        _attach_alive(self, conn=fresh, pid=222)
+
+    monkeypatch.setattr(NapariLauncher, "_launch", _relaunch)
+    await launcher.open([str(a)])
+    assert launcher.status().pid == 222
+
+
+async def test_status_after_crash_without_reconnect_reports_not_running() -> None:
+    launcher = _make_launcher()
+    fake = _attach_alive(launcher)
+    fake.send_exc = ConnectionResetError()
+    with pytest.raises(NapariConnectionError):
+        launcher._send_command({"action": "open", "paths": []})
+    # The user-visible truth is running=False (the connection was reset
+    # and the process reference cleared by _send_command). The stale
+    # pid value is harmless — the next open() call will relaunch.
+    assert launcher.status().running is False
+
+
+async def test_open_does_not_reconnect_more_than_once(tmp_path, monkeypatch) -> None:
+    """If the post-launch send also fails with a connection error, we
+    surface NapariLaunchError without infinite-looping.
+    """
+    launcher = _make_launcher()
+    a = tmp_path / "a.tif"
+    a.write_bytes(b"\0")
+    initial = _FakeConnection()
+    initial.send_exc = ConnectionResetError()
+    retry = _FakeConnection()
+    retry.send_exc = ConnectionResetError()  # also fails
+    _attach_alive(launcher, conn=initial)
+    launch_calls = {"n": 0}
+
+    def _relaunch(self: NapariLauncher) -> None:
+        launch_calls["n"] += 1
+        _attach_alive(self, conn=retry)
+
+    monkeypatch.setattr(NapariLauncher, "_launch", _relaunch)
+    with pytest.raises(NapariLaunchError):
+        await launcher.open([str(a)])
+    assert launch_calls["n"] == 1  # exactly one reconnect
+
+
+async def test_simultaneous_open_during_reconnect_skips_relaunch(
+    tmp_path, monkeypatch
+) -> None:
+    """Two concurrent open() calls hitting a dead launcher: only one
+    relaunch is performed; the second sees alive and just sends.
+    """
+    launcher = _make_launcher()
+    a = tmp_path / "a.tif"
+    a.write_bytes(b"\0")
+    fresh = _FakeConnection()
+    fresh.responses.extend([{"status": "ok"}, {"status": "ok"}])
+    launch_count = {"n": 0}
+
+    def _relaunch(self: NapariLauncher) -> None:
+        launch_count["n"] += 1
+        _attach_alive(self, conn=fresh)
+
+    monkeypatch.setattr(NapariLauncher, "_launch", _relaunch)
+
+    # Both calls start with a not-alive launcher; they queue on the
+    # async lock; the first triggers _launch, the second sees alive.
+    t1 = asyncio.create_task(launcher.open([str(a)]))
+    t2 = asyncio.create_task(launcher.open([str(a)]))
+    await asyncio.wait_for(asyncio.gather(t1, t2), timeout=2.0)
+    assert launch_count["n"] == 1
+
+
+async def test_authkey_mismatch_wraps_as_launch_error_and_emits_stopped(
+    monkeypatch,
+) -> None:
+    import multiprocessing
+
+    em = _FakeEnvManager()
+
+    def _client(addr, *, authkey):
+        raise multiprocessing.AuthenticationError("digest mismatch")
+
+    _patch_launch_deps(monkeypatch, env_manager=em, client_factory=_client)
+    statuses: list[str] = []
+    cm = MagicMock()
+    cm.broadcast_environment_status = lambda env, st: statuses.append(st)
+    launcher = _make_launcher(connection_manager=cm)
+    with pytest.raises(NapariLaunchError, match="authkey"):
+        launcher._launch()
+    assert statuses == ["creating", "stopped"]
+
+
+async def test_manager_dies_after_port_before_connect_emits_stopped(
+    monkeypatch,
+) -> None:
+    """Process exits with non-zero between announcing port and Client()
+    connect: Client raises ConnectionRefusedError. _launch wraps it and
+    emits stopped.
+    """
+    em = _FakeEnvManager()
+
+    def _client(addr, *, authkey):
+        raise ConnectionRefusedError("manager died")
+
+    _patch_launch_deps(monkeypatch, env_manager=em, client_factory=_client)
+    statuses: list[str] = []
+    cm = MagicMock()
+    cm.broadcast_environment_status = lambda env, st: statuses.append(st)
+    launcher = _make_launcher(connection_manager=cm)
+    with pytest.raises((ConnectionRefusedError, NapariLaunchError)):
+        launcher._launch()
+    assert statuses == ["creating", "stopped"]
+
+
+async def test_reconnect_emits_fresh_creating_and_running_events(
+    tmp_path, monkeypatch
+) -> None:
+    """When the open() path triggers a reconnect via _launch, the
+    frontend should see a fresh creating -> running cycle so the
+    status indicator can flip back to creating briefly.
+    """
+    a = tmp_path / "a.tif"
+    a.write_bytes(b"\0")
+
+    em = _FakeEnvManager()
+    fresh = _FakeConnection()
+    fresh.responses.append({"status": "ok"})
+
+    def _client(addr, *, authkey):
+        return fresh
+
+    _patch_launch_deps(monkeypatch, env_manager=em, client_factory=_client)
+
+    statuses: list[str] = []
+    cm = MagicMock()
+    cm.broadcast_environment_status = lambda env, st: statuses.append(st)
+    launcher = _make_launcher(connection_manager=cm)
+
+    # Simulate a dead initial connection.
+    initial = _FakeConnection()
+    initial.send_exc = ConnectionResetError()
+    _attach_alive(launcher, conn=initial)
+
+    await launcher.open([str(a)])
+    assert "creating" in statuses
+    assert statuses[-1] == "running"
