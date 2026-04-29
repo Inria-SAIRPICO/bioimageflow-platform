@@ -1,6 +1,5 @@
 import { ref } from 'vue'
 import { api } from '@/api/client'
-import { useIndexedDB } from '@/composables/useIndexedDB'
 import type {
   ColumnRefEdge,
   GraphState,
@@ -104,7 +103,6 @@ function _createGraphSync(errorStore?: GraphSyncErrorStore) {
   // Run button) that need the current graph without owning a Vue Flow
   // instance.
   const currentGraph = ref<GraphState>({ nodes: [], edges: [] })
-  const { saveWorkflow, loadWorkflow } = useIndexedDB()
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let pendingGraph: { nodes: any[]; edges: any[] } | null = null
@@ -136,9 +134,6 @@ function _createGraphSync(errorStore?: GraphSyncErrorStore) {
       clearTimeout(timer)
       timer = null
     }
-
-    // Save raw Vue Flow state to IndexedDB (fire-and-forget)
-    saveWorkflow({ nodes: raw.nodes, edges: raw.edges })
 
     // Cancel any in-flight request.
     if (inflightController !== null) {
@@ -237,7 +232,6 @@ function _createGraphSync(errorStore?: GraphSyncErrorStore) {
     syncGraph,
     flushNow,
     patchParameters,
-    loadWorkflow,
     validationResult,
     isPending,
     syncState,

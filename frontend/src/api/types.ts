@@ -411,6 +411,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workflows */
+        get: operations["list_workflows_api_v1_workflows_get"];
+        put?: never;
+        /** Create Workflow */
+        post: operations["create_workflow_api_v1_workflows_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow */
+        get: operations["get_workflow_api_v1_workflows__name__get"];
+        /** Save Workflow */
+        put: operations["save_workflow_api_v1_workflows__name__put"];
+        post?: never;
+        /** Delete Workflow */
+        delete: operations["delete_workflow_api_v1_workflows__name__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Workflow */
+        patch: operations["patch_workflow_api_v1_workflows__name__patch"];
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/rebind-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebind Workflow Versions */
+        post: operations["rebind_workflow_versions_api_v1_workflows__name__rebind_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/napari/open": {
         parameters: {
             query?: never;
@@ -649,6 +704,36 @@ export interface components {
             image_spec?: {
                 [key: string]: string[];
             } | null;
+        };
+        /**
+         * MissingPackage
+         * @description Package/version-level load issue for a workflow.
+         */
+        MissingPackage: {
+            /** Package Name */
+            package_name: string;
+            /** Required Version */
+            required_version: string;
+            /** Installed Versions */
+            installed_versions?: string[];
+            /** Affected Nodes */
+            affected_nodes?: string[];
+        };
+        /**
+         * MissingTool
+         * @description Node/tool-level load issue for a workflow.
+         */
+        MissingTool: {
+            /** Node Id */
+            node_id: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Package Name */
+            package_name?: string | null;
+            /** Required Version */
+            required_version?: string | null;
+            /** Installed Versions */
+            installed_versions?: string[];
         };
         /**
          * NapariOpenRequest
@@ -999,6 +1084,80 @@ export interface components {
              */
             errors: components["schemas"]["GraphValidationError"][];
         };
+        /**
+         * WorkflowCreate
+         * @description Request body for POST /workflows.
+         */
+        WorkflowCreate: {
+            /** Name */
+            name: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Storage Path */
+            storage_path?: string | null;
+        };
+        /**
+         * WorkflowFile
+         * @description Workflow file response returned to the frontend.
+         */
+        WorkflowFile: {
+            info: components["schemas"]["WorkflowInfo"];
+            graph: components["schemas"]["GraphState"];
+            /** Gui */
+            gui?: {
+                [key: string]: unknown;
+            };
+            /** Missing Packages */
+            missing_packages?: components["schemas"]["MissingPackage"][];
+            /** Missing Tools */
+            missing_tools?: components["schemas"]["MissingTool"][];
+        };
+        /**
+         * WorkflowInfo
+         * @description Workflow list item returned by GET /workflows.
+         */
+        WorkflowInfo: {
+            /** Name */
+            name: string;
+            /** Display Name */
+            display_name: string;
+            /** Path */
+            path: string;
+            /** Last Modified */
+            last_modified: string;
+            /** Description */
+            description?: string | null;
+            /** Storage Path */
+            storage_path?: string | null;
+        };
+        /**
+         * WorkflowSaveBody
+         * @description Request body for PUT /workflows/{name}.
+         */
+        WorkflowSaveBody: {
+            graph: components["schemas"]["GraphState"];
+        };
+        /**
+         * WorkflowUpdate
+         * @description Request body for PATCH /workflows/{name}.
+         */
+        WorkflowUpdate: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "update" | "duplicate";
+            /** Display Name */
+            display_name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** New Name */
+            new_name?: string | null;
+            /** Storage Path */
+            storage_path?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -1015,6 +1174,8 @@ export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
+export type MissingPackage = components['schemas']['MissingPackage'];
+export type MissingTool = components['schemas']['MissingTool'];
 export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
 export type NapariStatus = components['schemas']['NapariStatus'];
 export type NodeDataResponse = components['schemas']['NodeDataResponse'];
@@ -1033,6 +1194,11 @@ export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
+export type WorkflowCreate = components['schemas']['WorkflowCreate'];
+export type WorkflowFile = components['schemas']['WorkflowFile'];
+export type WorkflowInfo = components['schemas']['WorkflowInfo'];
+export type WorkflowSaveBody = components['schemas']['WorkflowSaveBody'];
+export type WorkflowUpdate = components['schemas']['WorkflowUpdate'];
 export type $defs = Record<string, never>;
 export interface operations {
     health_api_v1_health_get: {
@@ -1788,6 +1954,224 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    list_workflows_api_v1_workflows_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowInfo"][];
+                };
+            };
+        };
+    };
+    create_workflow_api_v1_workflows_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_api_v1_workflows__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_workflow_api_v1_workflows__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowSaveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workflow_api_v1_workflows__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_workflow_api_v1_workflows__name__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebind_workflow_versions_api_v1_workflows__name__rebind_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

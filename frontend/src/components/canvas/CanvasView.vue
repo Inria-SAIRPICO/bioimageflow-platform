@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, markRaw, nextTick, onMounted, provide } from 'vue'
+import { ref, watch, markRaw, nextTick, onMounted, onBeforeUnmount, provide } from 'vue'
 import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -11,12 +11,15 @@ import { useUIStore } from '@/stores/ui'
 import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
 import { serializeSelection, deserializeSelection } from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
-import { useGraphSync } from '@/composables/useGraphSync'
+import { serializeGraph, useGraphSync } from '@/composables/useGraphSync'
+import { useAutoSave } from '@/composables/useAutoSave'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
 import { useExecutionStore } from '@/stores/execution'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
-import type { NodeState } from '@/api/types'
+import { useWorkflowStore } from '@/stores/workflow'
+import { graphStateToVueFlow } from '@/utils/workflowGraph'
+import type { GraphState, MissingTool, NodeState } from '@/api/types'
 import type { ClipboardData } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
 
@@ -39,6 +42,8 @@ const edgeTypes = {
 
 const toolRegistryStore = useToolRegistryStore()
 const uiStore = useUIStore()
+const workflowStore = useWorkflowStore()
+const autoSave = useAutoSave()
 const resolvedOutputsStore = useResolvedOutputsStore()
 
 // Provide the resolved-outputs map so ToolNode can read it via inject.
@@ -64,7 +69,7 @@ const {
   fitView,
 } = useVueFlow()
 
-const { syncGraph, flushNow, patchParameters, loadWorkflow, validationResult, syncState } = useGraphSync()
+const { syncGraph, flushNow, patchParameters, validationResult, syncState } = useGraphSync()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
 const { isLocked } = useExecutionLock()
 const executionStore = useExecutionStore()
@@ -104,20 +109,97 @@ const clipboardData = ref<ClipboardData | null>(null)
 const canvasRef = ref<HTMLDivElement | null>(null)
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
 
-// --- Restore persisted workflow on mount ---
+// --- Workflow startup / graph application ---
+
+async function applyGraphState(
+  graph: GraphState,
+  missingTools: MissingTool[] = [],
+  dirty = false,
+) {
+  const vueFlowGraph = graphStateToVueFlow(
+    graph,
+    toolRegistryStore.getToolByName,
+    missingTools,
+  )
+  setNodes([])
+  setEdges([])
+  await nextTick()
+  setNodes(vueFlowGraph.nodes)
+  // Wait for node components (and their <Handle> DOM elements) to mount
+  // before setting edges — Vue Flow resolves edge endpoints against live
+  // handle elements, so edges added in the same tick as nodes render with
+  // no visible path.
+  await nextTick()
+  setEdges(vueFlowGraph.edges)
+  syncGraph(vueFlowGraph)
+  if (dirty) {
+    workflowStore.markDirty()
+  } else {
+    workflowStore.markClean()
+  }
+}
+
+async function ensureDefaultWorkflow(): Promise<GraphState> {
+  const base = 'Untitled'
+  const names = new Set(workflowStore.workflows.map((workflow) => workflow.name))
+  let name = base
+  let suffix = 2
+  while (names.has(name)) {
+    name = `${base}_${suffix}`
+    suffix += 1
+  }
+  await workflowStore.createWorkflow({ name, display_name: name })
+  return { nodes: [], edges: [] }
+}
+
+async function recoverStartupWorkflow() {
+  await workflowStore.fetchWorkflows()
+  const autoSaved = await autoSave.loadMostRecentAutoSave()
+  const lastOpened = await autoSave.getLastOpenedWorkflow()
+  const targetName = autoSaved?.name ?? lastOpened
+  const exists = targetName
+    ? workflowStore.workflows.some((workflow) => workflow.name === targetName)
+    : false
+
+  if (targetName && exists) {
+    const serverGraph = await workflowStore.loadWorkflow(targetName)
+    return {
+      graph: autoSaved?.name === targetName ? autoSaved.graph : serverGraph,
+      dirty: autoSaved?.name === targetName,
+    }
+  }
+
+  return {
+    graph: await ensureDefaultWorkflow(),
+    dirty: false,
+  }
+}
+
+async function handleApplyGraphEvent(event: Event) {
+  const detail = (event as CustomEvent<{
+    graph: GraphState
+    missingTools?: MissingTool[]
+    dirty?: boolean
+  }>).detail
+  if (!detail?.graph) return
+  await applyGraphState(detail.graph, detail.missingTools ?? [], detail.dirty ?? false)
+}
 
 onMounted(async () => {
-  const saved = await loadWorkflow()
-  if (saved && saved.nodes.length > 0) {
-    setNodes(saved.nodes)
-    // Wait for node components (and their <Handle> DOM elements) to mount
-    // before setting edges — Vue Flow resolves edge endpoints against live
-    // handle elements, so edges added in the same tick as nodes render with
-    // no visible path.
-    await nextTick()
-    setEdges(saved.edges)
-    syncGraph({ nodes: saved.nodes, edges: saved.edges })
+  window.addEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
+  if (toolRegistryStore.tools.length === 0) {
+    await toolRegistryStore.fetchTools()
   }
+  const recovered = await recoverStartupWorkflow()
+  await applyGraphState(
+    recovered.graph,
+    workflowStore.missingTools,
+    recovered.dirty,
+  )
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
 })
 
 // --- Node drag tracking (undo support) ---
@@ -909,6 +991,7 @@ function handleKeydown(event: KeyboardEvent) {
       setNodes(state.nodes)
       setEdges(state.edges)
       syncGraph(state as any)
+      markDirtyAndAutoSave(state)
     }
     return
   }
@@ -920,6 +1003,7 @@ function handleKeydown(event: KeyboardEvent) {
       setNodes(state.nodes)
       setEdges(state.edges)
       syncGraph(state as any)
+      markDirtyAndAutoSave(state)
     }
     return
   }
@@ -938,6 +1022,13 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 // --- Graph change emission ---
+
+function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
+  const name = workflowStore.currentName
+  if (!name) return
+  workflowStore.markDirty()
+  autoSave.scheduleAutoSave(name, serializeGraph(state))
+}
 
 function emitGraphChanged() {
   const state = {
@@ -959,6 +1050,7 @@ function emitGraphChanged() {
     markProvisional(n.id, 'unexecuted')
   }
   syncGraph(state as any)
+  markDirtyAndAutoSave(state)
   emit('graph-changed', state)
 }
 

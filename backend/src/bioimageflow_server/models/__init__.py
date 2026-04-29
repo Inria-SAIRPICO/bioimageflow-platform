@@ -31,9 +31,12 @@ from bioimageflow_server.models.validation import (
     ValidationResult,
 )
 from bioimageflow_server.models.workflow import (
+    MissingPackage,
+    MissingTool,
     WorkflowCreate,
     WorkflowFile,
     WorkflowInfo,
+    WorkflowSaveBody,
     WorkflowUpdate,
 )
 from bioimageflow_server.models.ws import (
@@ -68,6 +71,8 @@ __all__ = [
     "GraphValidationError",
     "InputFieldSchema",
     "LogMessage",
+    "MissingPackage",
+    "MissingTool",
     "NodeState",
     "NodeStateMessage",
     "NodeStatus",
@@ -90,5 +95,6 @@ __all__ = [
     "WorkflowCreate",
     "WorkflowFile",
     "WorkflowInfo",
+    "WorkflowSaveBody",
     "WorkflowUpdate",
 ]

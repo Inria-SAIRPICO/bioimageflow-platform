@@ -10,6 +10,7 @@ constant validation) are the library's responsibility.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -19,10 +20,17 @@ from bioimageflow import serialize_constant
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
     GraphState,
+    NodeState,
     PositionalEdge,
 )
 from bioimageflow_server.models.validation import GraphValidationError
+from bioimageflow_server.models.workflow import MissingPackage, MissingTool
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+try:
+    from bioimageflow.validation import deserialize_constant as _lib_deserialize_constant
+except ImportError:  # pragma: no cover - depends on library version
+    _lib_deserialize_constant = None
 
 
 # Key used for positional edges in the library wire format.
@@ -39,6 +47,271 @@ class TranslationResult:
 
     lib_dict: dict[str, Any]
     errors: list[GraphValidationError] = field(default_factory=list)
+
+
+def _deserialize_constant_envelope(value: Any) -> Any:
+    """Reverse the library constant envelope when the current library supports it."""
+    if _lib_deserialize_constant is not None:
+        try:
+            return _lib_deserialize_constant(value)
+        except Exception:
+            pass
+
+    if not isinstance(value, dict):
+        return value
+
+    for key in ("value", "data"):
+        if key in value and len(value) <= 3:
+            return value[key]
+
+    return value
+
+
+def _extract_gui_section(graph: GraphState) -> dict[str, Any]:
+    return {
+        "nodes": {
+            node.id: {
+                "position": list(node.position),
+                "collapsed": node.collapsed,
+                "resources": node.resources,
+                "output_templates": node.output_templates,
+            }
+            for node in graph.nodes
+        }
+    }
+
+
+def _gui_node(gui_data: dict[str, Any] | None, node_id: str) -> dict[str, Any]:
+    if not isinstance(gui_data, dict):
+        return {}
+    nodes = gui_data.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return {}
+    value = nodes.get(node_id, {})
+    return value if isinstance(value, dict) else {}
+
+
+def graph_state_to_persisted_sections(
+    graph: GraphState,
+    registry: ToolRegistryService,
+    *,
+    storage_path: Path | None = None,
+    engine: str = "sequential",
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[GraphValidationError]]:
+    """Return canonical graph, derived workflow, GUI section, and translation errors."""
+    result = graph_state_to_lib_dict(
+        graph,
+        registry,
+        storage_path=storage_path,
+        engine=engine,
+    )
+    return (
+        graph.model_dump(mode="json"),
+        result.lib_dict,
+        _extract_gui_section(graph),
+        result.errors,
+    )
+
+
+def lib_dict_to_graph_state(
+    workflow_data: dict[str, Any],
+    gui_data: dict[str, Any] | None = None,
+) -> GraphState:
+    """Convert a persisted library workflow dict into frontend ``GraphState``."""
+    nodes: list[NodeState] = []
+    node_names: set[str] = set()
+    for raw_node in workflow_data.get("nodes", []):
+        if not isinstance(raw_node, dict):
+            continue
+        node_id = str(raw_node.get("name") or raw_node.get("id") or "")
+        if not node_id:
+            continue
+        node_names.add(node_id)
+        gui_node = _gui_node(gui_data, node_id)
+        raw_position = gui_node.get("position", (0, 0))
+        if isinstance(raw_position, (list, tuple)) and len(raw_position) >= 2:
+            position = (float(raw_position[0]), float(raw_position[1]))
+        else:
+            position = (0.0, 0.0)
+        constants = raw_node.get("constants", {})
+        parameters = {
+            str(key): _deserialize_constant_envelope(value)
+            for key, value in constants.items()
+        } if isinstance(constants, dict) else {}
+        nodes.append(
+            NodeState(
+                id=node_id,
+                name=str(raw_node.get("display_name") or node_id),
+                tool_name=str(raw_node.get("tool_class") or raw_node.get("tool_name") or node_id),
+                position=position,
+                parameters=parameters,
+                resources=cast(dict[str, Any], gui_node.get("resources", {})),
+                output_templates=cast(
+                    dict[str, str],
+                    gui_node.get("output_templates", {}),
+                ),
+                enabled=bool(raw_node.get("enabled", True)),
+                collapsed=bool(gui_node.get("collapsed", False)),
+            )
+        )
+
+    edges: list[ColumnRefEdge | PositionalEdge] = []
+    positional_pairs: set[tuple[str, str, int]] = set()
+    positional_index_by_target: dict[str, int] = {}
+    for index, raw_edge in enumerate(workflow_data.get("edges", [])):
+        if not isinstance(raw_edge, dict):
+            continue
+        source = str(raw_edge.get("from") or raw_edge.get("source_node") or "")
+        target = str(raw_edge.get("to") or raw_edge.get("target_node") or "")
+        if not source or not target:
+            continue
+        edge_id = str(raw_edge.get("id") or f"edge_{index}")
+        column = raw_edge.get("column")
+        field_name = raw_edge.get("field")
+        if column == POSITIONAL_KEY and field_name == POSITIONAL_KEY:
+            positional_index = positional_index_by_target.get(target, 0)
+            positional_index_by_target[target] = positional_index + 1
+            positional_pairs.add((source, target, positional_index))
+            edges.append(
+                PositionalEdge(
+                    id=edge_id,
+                    source_node=source,
+                    target_node=target,
+                    positional_index=positional_index,
+                )
+            )
+        else:
+            edges.append(
+                ColumnRefEdge(
+                    id=edge_id,
+                    source_node=source,
+                    target_node=target,
+                    source_output=str(column or ""),
+                    target_input=str(field_name or ""),
+                )
+            )
+
+    # Older library dicts can carry positional inputs only in node["args"].
+    for raw_node in workflow_data.get("nodes", []):
+        if not isinstance(raw_node, dict):
+            continue
+        target = str(raw_node.get("name") or "")
+        args = raw_node.get("args", [])
+        if not target or not isinstance(args, list):
+            continue
+        for positional_index, source_raw in enumerate(args):
+            source = str(source_raw)
+            if (
+                not source
+                or source not in node_names
+                or (source, target, positional_index) in positional_pairs
+            ):
+                continue
+            edges.append(
+                PositionalEdge(
+                    id=f"{source}__to__{target}__pos_{positional_index}",
+                    source_node=source,
+                    target_node=target,
+                    positional_index=positional_index,
+                )
+            )
+
+    return GraphState(nodes=nodes, edges=edges)
+
+
+def rebind_lib_dict_versions(
+    workflow_data: dict[str, Any],
+    registry: ToolRegistryService,
+) -> dict[str, Any]:
+    """Return a copy whose tool package versions match the active registry."""
+    rebound = deepcopy(workflow_data)
+    for node in rebound.get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        tool_name = str(node.get("tool_class") or node.get("tool_name") or "")
+        metadata = registry.get_tool(tool_name) if tool_name else None
+        package_name = str(node.get("tool_package") or (metadata.package if metadata else ""))
+        if not package_name:
+            continue
+        package = registry.get_package(package_name)
+        version = (
+            package.active_version
+            if package is not None and package.active_version is not None
+            else metadata.package_version if metadata is not None
+            else None
+        )
+        if version is None:
+            continue
+        node["tool_package"] = package_name
+        node["tool_package_version"] = version
+    return rebound
+
+
+def _detect_missing_packages(
+    workflow_data: dict[str, Any],
+    registry: ToolRegistryService,
+) -> list[MissingPackage]:
+    missing: dict[tuple[str, str], MissingPackage] = {}
+    for node in workflow_data.get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        package_name = node.get("tool_package")
+        required_version = node.get("tool_package_version")
+        node_id = str(node.get("name") or "")
+        if not isinstance(package_name, str) or not isinstance(required_version, str):
+            continue
+        package = registry.get_package(package_name)
+        installed_versions = package.installed_versions if package is not None else []
+        if required_version in installed_versions:
+            continue
+        key = (package_name, required_version)
+        item = missing.setdefault(
+            key,
+            MissingPackage(
+                package_name=package_name,
+                required_version=required_version,
+                installed_versions=list(installed_versions),
+            ),
+        )
+        if node_id:
+            item.affected_nodes.append(node_id)
+    return list(missing.values())
+
+
+def _detect_missing_tools(
+    workflow_data: dict[str, Any],
+    registry: ToolRegistryService,
+) -> list[MissingTool]:
+    missing: list[MissingTool] = []
+    for node in workflow_data.get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        node_id = str(node.get("name") or "")
+        tool_name = str(node.get("tool_class") or node.get("tool_name") or "")
+        if not node_id or not tool_name:
+            continue
+        package_name = node.get("tool_package")
+        required_version = node.get("tool_package_version")
+        package = registry.get_package(package_name) if isinstance(package_name, str) else None
+        installed_versions = package.installed_versions if package is not None else []
+        metadata = registry.get_tool(tool_name)
+        version_has_tool = True
+        if package is not None and isinstance(required_version, str):
+            version_has_tool = tool_name in package.tools.get(required_version, [])
+        if metadata is not None and version_has_tool:
+            continue
+        missing.append(
+            MissingTool(
+                node_id=node_id,
+                tool_name=tool_name,
+                package_name=package_name if isinstance(package_name, str) else None,
+                required_version=(
+                    required_version if isinstance(required_version, str) else None
+                ),
+                installed_versions=list(installed_versions),
+            )
+        )
+    return missing
 
 
 def graph_state_to_lib_dict(

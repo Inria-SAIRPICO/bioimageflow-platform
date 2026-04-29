@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
-import type { ToolMetadata, NodeOutputSchemaResponse } from '@/api/types'
+import type { MissingTool, ToolMetadata, NodeOutputSchemaResponse } from '@/api/types'
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 
 export interface NodeData {
   name: string
   toolName: string
-  tool: ToolMetadata
+  tool: ToolMetadata | null
+  missingTool?: MissingTool | null
   status: string
   parameters: Record<string, unknown>
   collapsed: boolean
@@ -38,17 +39,19 @@ const resolvedOutputsByNodeId = inject<Record<string, NodeOutputSchemaResponse>>
 )
 
 const connectableInputs = computed(() => {
+  if (!props.data.tool) return []
   return Object.entries(props.data.tool.inputs).filter(
     ([name, field]) => field.connectable !== 'never' && (props.data.pinnedInputs[name] !== false),
   )
 })
 
 const isDataFrameTool = computed(() => {
+  if (!props.data.tool) return false
   return props.data.tool.tool_type === 'DataFrameTool'
 })
 
 const showsPositionalPins = computed(() => {
-  return isDataFrameTool.value && props.data.tool.accepts_upstream === true
+  return isDataFrameTool.value && props.data.tool?.accepts_upstream === true
 })
 
 /**
@@ -74,6 +77,7 @@ const positionalInputCount = computed(() => {
  */
 const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
   const tool = props.data.tool
+  if (!tool) return []
 
   if (tool.dynamic_outputs !== true) {
     // Static outputs — render tool.outputs directly (no fallback).
@@ -118,6 +122,7 @@ const statusClass = computed(() => {
 })
 
 const hasGpu = computed(() => {
+  if (!props.data.tool) return false
   const env = props.data.tool.environment
   if (!env) return false
   const resources = env.resources as Record<string, number> | undefined
@@ -143,6 +148,7 @@ function onContextMenu(event: MouseEvent) {
         disabled: !data.enabled,
         provisional: data.provisional,
         collapsed: data.collapsed,
+        'missing-tool': data.missingTool,
       },
     ]"
     @contextmenu="onContextMenu"
@@ -163,6 +169,13 @@ function onContextMenu(event: MouseEvent) {
         />
       </div>
       <span class="node-name">{{ data.name }}</span>
+      <span
+        v-if="data.missingTool"
+        class="missing-tool-badge"
+        :title="`Missing tool: ${data.missingTool.tool_name}`"
+      >
+        Missing
+      </span>
       <span class="category-badge" v-if="data.tool?.categories?.length">{{ data.tool.categories[0] }}</span>
       <div class="header-outputs">
         <OutputPin
@@ -202,6 +215,7 @@ function onContextMenu(event: MouseEvent) {
 
     <div class="node-footer">
       <span class="status-indicator" :class="statusClass"></span>
+      <span v-if="data.missingTool" class="missing-tool-text">tool unavailable</span>
       <span v-if="hasGpu" class="gpu-badge">GPU</span>
       <span v-if="data.provisional" class="provisional-indicator">provisional</span>
     </div>
@@ -253,6 +267,19 @@ function onContextMenu(event: MouseEvent) {
   background: var(--p-primary-50);
   color: var(--p-primary-color);
   margin-left: 4px;
+}
+
+.missing-tool-badge,
+.missing-tool-text {
+  color: var(--p-red-500);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.missing-tool-badge {
+  border: 1px solid var(--p-red-300);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 
 .gpu-badge {
@@ -321,6 +348,9 @@ function onContextMenu(event: MouseEvent) {
   animation: pulse 1.5s ease-in-out infinite;
 }
 .status-failed {
+  border-color: var(--p-red-500);
+}
+.missing-tool {
   border-color: var(--p-red-500);
 }
 

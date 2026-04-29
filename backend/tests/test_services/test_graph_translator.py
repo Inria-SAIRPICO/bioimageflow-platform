@@ -18,11 +18,16 @@ from bioimageflow_server.models.graph import (
     NodeState,
     PositionalEdge,
 )
-from bioimageflow_server.models.tools import ToolMetadata
+from bioimageflow_server.models.tools import PackageInfo, ToolMetadata
 from bioimageflow_server.services.graph_translator import (
     POSITIONAL_KEY,
+    _detect_missing_packages,
+    _detect_missing_tools,
     graph_state_to_lib_dict,
+    graph_state_to_persisted_sections,
+    lib_dict_to_graph_state,
     lib_validation_error_to_graph_error,
+    rebind_lib_dict_versions,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
@@ -66,6 +71,15 @@ def registry() -> ToolRegistryService:
             ),
             tool_class=cls,
         )
+    reg.register_package(
+        "test-pkg",
+        PackageInfo(
+            name="test-pkg",
+            installed_versions=["1.0.0", "2.0.0"],
+            active_version="2.0.0",
+            tools={"1.0.0": ["TProcTool", "TDfTool"], "2.0.0": ["TProcTool"]},
+        ),
+    )
     return reg
 
 
@@ -257,3 +271,171 @@ def test_error_path_flattened_into_detail() -> None:
     out = lib_validation_error_to_graph_error(err)
     assert "outer_sw/inner_sw" in out.detail
     assert "n must be >= 0" in out.detail
+
+
+def test_persisted_sections_keep_graph_lossless_and_split_gui(
+    registry: ToolRegistryService,
+) -> None:
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="n",
+                name="n",
+                tool_name="TProcTool",
+                position=(12, 34),
+                parameters={"input_image": "/a", "diameter": 42.0},
+                resources={"cpu": 2},
+                output_templates={"mask": "mask.tif"},
+                collapsed=True,
+            ),
+        ],
+        edges=[],
+    )
+    graph_section, workflow_section, gui_section, errors = graph_state_to_persisted_sections(
+        graph,
+        registry,
+    )
+    assert errors == []
+    assert GraphState.model_validate(graph_section) == graph
+    assert workflow_section["nodes"][0]["tool_class"] == "TProcTool"
+    assert gui_section["nodes"]["n"]["position"] == [12.0, 34.0]
+    assert gui_section["nodes"]["n"]["collapsed"] is True
+    assert gui_section["nodes"]["n"]["resources"] == {"cpu": 2}
+    assert gui_section["nodes"]["n"]["output_templates"] == {"mask": "mask.tif"}
+
+
+def test_lib_dict_to_graph_state_roundtrip_with_edges_and_constants(
+    registry: ToolRegistryService,
+) -> None:
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="src",
+                name="src",
+                tool_name="TProcTool",
+                position=(0, 0),
+                parameters={"input_image": "/a", "diameter": 1.5},
+            ),
+            NodeState(
+                id="dst",
+                name="dst",
+                tool_name="TProcTool",
+                position=(20, 30),
+                parameters={"diameter": 2.5},
+                enabled=False,
+            ),
+            NodeState(
+                id="df",
+                name="df",
+                tool_name="TDfTool",
+                position=(50, 60),
+                parameters={},
+            ),
+        ],
+        edges=[
+            ColumnRefEdge(
+                id="e_col",
+                source_node="src",
+                target_node="dst",
+                source_output="mask",
+                target_input="input_image",
+            ),
+            PositionalEdge(
+                id="e_pos",
+                source_node="dst",
+                target_node="df",
+                positional_index=0,
+            ),
+        ],
+    )
+    _, workflow_section, gui_section, _ = graph_state_to_persisted_sections(
+        graph,
+        registry,
+    )
+    restored = lib_dict_to_graph_state(workflow_section, gui_section)
+    assert restored.nodes == graph.nodes
+    assert restored.edges == graph.edges
+
+
+def test_lib_dict_to_graph_state_synthesizes_legacy_positional_edges() -> None:
+    graph = lib_dict_to_graph_state(
+        {
+            "nodes": [
+                {"name": "src", "tool_class": "TProcTool", "constants": {}},
+                {
+                    "name": "df",
+                    "tool_class": "TDfTool",
+                    "constants": {},
+                    "args": ["src"],
+                },
+            ],
+            "edges": [],
+        }
+    )
+    assert graph.edges == [
+        PositionalEdge(
+            id="src__to__df__pos_0",
+            source_node="src",
+            target_node="df",
+            positional_index=0,
+        )
+    ]
+
+
+def test_rebind_versions_updates_to_active_registry_version(
+    registry: ToolRegistryService,
+) -> None:
+    workflow = {
+        "nodes": [
+            {
+                "name": "n",
+                "tool_class": "TProcTool",
+                "tool_package": "test-pkg",
+                "tool_package_version": "1.0.0",
+            }
+        ],
+        "edges": [],
+    }
+    rebound = rebind_lib_dict_versions(workflow, registry)
+    assert rebound["nodes"][0]["tool_package_version"] == "2.0.0"
+    assert workflow["nodes"][0]["tool_package_version"] == "1.0.0"
+
+
+def test_missing_package_detection_is_package_version_level(
+    registry: ToolRegistryService,
+) -> None:
+    workflow = {
+        "nodes": [
+            {
+                "name": "n",
+                "tool_class": "TProcTool",
+                "tool_package": "test-pkg",
+                "tool_package_version": "9.9.9",
+            }
+        ],
+        "edges": [],
+    }
+    missing = _detect_missing_packages(workflow, registry)
+    assert len(missing) == 1
+    assert missing[0].package_name == "test-pkg"
+    assert missing[0].required_version == "9.9.9"
+    assert missing[0].installed_versions == ["1.0.0", "2.0.0"]
+    assert missing[0].affected_nodes == ["n"]
+
+
+def test_missing_tool_detection_is_node_level(registry: ToolRegistryService) -> None:
+    workflow = {
+        "nodes": [
+            {
+                "name": "n",
+                "tool_class": "RemovedTool",
+                "tool_package": "test-pkg",
+                "tool_package_version": "1.0.0",
+            }
+        ],
+        "edges": [],
+    }
+    missing = _detect_missing_tools(workflow, registry)
+    assert len(missing) == 1
+    assert missing[0].node_id == "n"
+    assert missing[0].tool_name == "RemovedTool"

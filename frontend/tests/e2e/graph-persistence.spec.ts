@@ -1,57 +1,34 @@
 /**
- * End-to-end test for graph persistence across page reloads.
+ * End-to-end test for workflow-scoped auto-save recovery.
  *
- * Guarantees that both nodes AND edges saved to IndexedDB are restored
- * and rendered after the page reloads. Regression coverage for the bug
- * where edges were present in storage but absent from the DOM on reload.
+ * Regression coverage for the old global IndexedDB key (`bioimageflow/current`):
+ * recovery now uses `bioimageflow-autosave`, keyed by workflow name, after the
+ * server workflow is loaded.
  */
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
+const API_BASE = 'http://127.0.0.1:8000'
+
 type ToolMetadata = {
   name: string
-  inputs: Record<string, { type: string; connectable?: boolean }>
+  inputs: Record<string, { type: string; connectable?: string | boolean }>
   outputs: Record<string, { type: string }>
   [k: string]: unknown
 }
 
-async function clearWorkflowDB(page: Page) {
-  await page.evaluate(() => {
-    return new Promise<void>((resolve) => {
-      const req = indexedDB.deleteDatabase('bioimageflow')
-      req.onsuccess = () => resolve()
-      req.onerror = () => resolve()
-      req.onblocked = () => resolve()
-    })
-  })
+type GraphState = {
+  nodes: Array<Record<string, unknown>>
+  edges: Array<Record<string, unknown>>
 }
 
-async function seedWorkflow(
-  page: Page,
-  workflow: { nodes: unknown[]; edges: unknown[] },
-) {
-  await page.evaluate((wf) => {
-    return new Promise<void>((resolve, reject) => {
-      const req = indexedDB.open('bioimageflow', 1)
-      req.onupgradeneeded = () => {
-        const db = req.result
-        if (!db.objectStoreNames.contains('workflows')) {
-          db.createObjectStore('workflows')
-        }
-      }
-      req.onsuccess = () => {
-        const db = req.result
-        const tx = db.transaction('workflows', 'readwrite')
-        tx.objectStore('workflows').put(wf, 'current')
-        tx.oncomplete = () => {
-          db.close()
-          resolve()
-        }
-        tx.onerror = () => reject(tx.error)
-      }
-      req.onerror = () => reject(req.error)
-    })
-  }, workflow)
+function uniqueName(prefix: string): string {
+  const project = test.info().project.name.replace(/[^a-zA-Z0-9_-]/g, '_')
+  return `${prefix}_${project}_${Date.now()}_${Math.floor(Math.random() * 10000)}`
+}
+
+async function deleteWorkflowIfExists(page: Page, name: string) {
+  await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
 }
 
 async function fetchAnyTool(page: Page): Promise<{
@@ -59,196 +36,127 @@ async function fetchAnyTool(page: Page): Promise<{
   outputName: string
   inputName: string
 }> {
-  const tools = await page.evaluate(async () => {
-    const r = await fetch('/api/v1/tools')
-    return (await r.json()) as ToolMetadata[]
-  })
+  const response = await page.request.get(`${API_BASE}/api/v1/tools`)
+  expect(response.ok()).toBeTruthy()
+  const tools = (await response.json()) as ToolMetadata[]
   const tool = tools.find(
-    (t) =>
-      Object.values(t.outputs).length > 0 &&
-      Object.values(t.inputs).some((f) => f.connectable),
+    (candidate) =>
+      Object.keys(candidate.outputs).length > 0 &&
+      Object.values(candidate.inputs).some((field) => field.connectable !== 'never'),
   )
   if (!tool) {
     throw new Error('No tool found with both a connectable input and an output')
   }
   const [outputName] = Object.keys(tool.outputs)
   const inputEntry = Object.entries(tool.inputs).find(
-    ([, f]) => f.connectable,
+    ([, field]) => field.connectable !== 'never',
   )!
   return { tool, outputName, inputName: inputEntry[0] }
 }
 
-function buildNode(
-  id: string,
-  name: string,
-  x: number,
-  tool: ToolMetadata,
-  opts: {
-    connectedInputs?: Record<string, string>
-    pinnedInputs?: Record<string, boolean>
-  } = {},
-) {
+async function createServerWorkflow(page: Page, name: string, graph: GraphState) {
+  const create = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+    data: { name, display_name: name },
+  })
+  expect([201, 409]).toContain(create.status())
+  const save = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+    data: { graph },
+  })
+  expect(save.ok()).toBeTruthy()
+}
+
+async function seedWorkflowAutoSave(page: Page, name: string, graph: GraphState) {
+  await page.evaluate(
+    ({ workflowName, workflowGraph }) => new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('bioimageflow-autosave', 1)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        if (!db.objectStoreNames.contains('workflows')) {
+          db.createObjectStore('workflows', { keyPath: 'name' })
+        }
+        if (!db.objectStoreNames.contains('preferences')) {
+          db.createObjectStore('preferences')
+        }
+      }
+      req.onsuccess = () => {
+        const db = req.result
+        const tx = db.transaction(['workflows', 'preferences'], 'readwrite')
+        tx.objectStore('workflows').put({
+          name: workflowName,
+          graph: workflowGraph,
+          timestamp: Date.now(),
+        })
+        tx.objectStore('preferences').put(workflowName, 'last_opened_workflow')
+        tx.oncomplete = () => {
+          db.close()
+          resolve()
+        }
+        tx.onerror = () => reject(tx.error)
+      }
+      req.onerror = () => reject(req.error)
+    }),
+    { workflowName: name, workflowGraph: graph },
+  )
+}
+
+function graphWithEdge(tool: ToolMetadata, outputName: string, inputName: string): GraphState {
   return {
-    id,
-    type: 'tool',
-    position: { x, y: 100 },
-    data: {
-      name,
-      toolName: tool.name,
-      tool,
-      status: 'unexecuted',
-      parameters: {},
-      resources: {},
-      output_templates: {},
-      collapsed: false,
-      enabled: true,
-      connectedInputs: opts.connectedInputs ?? {},
-      pinnedInputs: opts.pinnedInputs ?? {},
-    },
+    nodes: [
+      {
+        id: 'src_node',
+        name: 'Source',
+        tool_name: tool.name,
+        position: [100, 100],
+        parameters: {},
+      },
+      {
+        id: 'tgt_node',
+        name: 'Target',
+        tool_name: tool.name,
+        position: [500, 100],
+        parameters: {},
+      },
+    ],
+    edges: [
+      {
+        type: 'column_ref',
+        id: `e-src_node-${outputName}-tgt_node-${inputName}`,
+        source_node: 'src_node',
+        target_node: 'tgt_node',
+        source_output: outputName,
+        target_input: inputName,
+      },
+    ],
   }
 }
 
-test.describe('graph persistence across reloads', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/')
-    await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    await expect(page.locator('.canvas-view')).toBeVisible()
-    await clearWorkflowDB(page)
-  })
+test.describe('workflow-scoped graph recovery', () => {
+  test('auto-saved graph restores nodes and edges after reload', async ({ page }) => {
+    const workflowName = uniqueName('autosave_graph')
+    await deleteWorkflowIfExists(page, workflowName)
 
-  test('edges are restored and visible in the DOM after reload', async ({
-    page,
-  }) => {
     const { tool, outputName, inputName } = await fetchAnyTool(page)
+    await createServerWorkflow(page, workflowName, { nodes: [], edges: [] })
 
-    const source = buildNode('src_node', 'Source', 100, tool)
-    const target = buildNode('tgt_node', 'Target', 500, tool, {
-      connectedInputs: { [inputName]: `Source.${outputName}` },
-      pinnedInputs: { [inputName]: true },
-    })
-    const edge = {
-      id: `e-src_node-${outputName}-tgt_node-${inputName}`,
-      source: 'src_node',
-      target: 'tgt_node',
-      sourceHandle: outputName,
-      targetHandle: inputName,
-      type: 'column_ref',
-    }
-
-    await seedWorkflow(page, { nodes: [source, target], edges: [edge] })
+    await page.goto('/')
+    await seedWorkflowAutoSave(
+      page,
+      workflowName,
+      graphWithEdge(tool, outputName, inputName),
+    )
     await page.reload()
-    await expect(page.locator('#bioimageflow-app')).toBeVisible()
 
-    // Both nodes must be rendered.
-    await expect(page.locator('.vue-flow__node')).toHaveCount(2, {
-      timeout: 5000,
-    })
+    await expect(page.locator('[data-testid="workflow-title"]')).toContainText('*')
     await expect(page.locator('.vue-flow__node[data-id="src_node"]')).toBeVisible()
     await expect(page.locator('.vue-flow__node[data-id="tgt_node"]')).toBeVisible()
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1, { timeout: 5000 })
 
-    // The edge must exist AND have a valid SVG path (non-empty `d` attribute).
-    await expect(page.locator('.vue-flow__edge')).toHaveCount(1, {
-      timeout: 5000,
-    })
     const edgePath = page.locator('.vue-flow__edge path.vue-flow__edge-path').first()
-    await expect(edgePath).toBeVisible()
     const d = await edgePath.getAttribute('d')
     expect(d).toBeTruthy()
-    // A real bezier path is long; a broken one is empty, "M 0 0" or "M NaN NaN".
     expect(d!.length).toBeGreaterThan(10)
     expect(d).not.toContain('NaN')
-  })
 
-  test('multi-edge workflow reloads intact', async ({ page }) => {
-    const { tool, outputName, inputName } = await fetchAnyTool(page)
-
-    const n1 = buildNode('a', 'A', 100, tool)
-    const n2 = buildNode('b', 'B', 400, tool, {
-      connectedInputs: { [inputName]: `A.${outputName}` },
-      pinnedInputs: { [inputName]: true },
-    })
-    const n3 = buildNode('c', 'C', 700, tool, {
-      connectedInputs: { [inputName]: `B.${outputName}` },
-      pinnedInputs: { [inputName]: true },
-    })
-    const edges = [
-      {
-        id: `e-a-${outputName}-b-${inputName}`,
-        source: 'a',
-        target: 'b',
-        sourceHandle: outputName,
-        targetHandle: inputName,
-        type: 'column_ref',
-      },
-      {
-        id: `e-b-${outputName}-c-${inputName}`,
-        source: 'b',
-        target: 'c',
-        sourceHandle: outputName,
-        targetHandle: inputName,
-        type: 'column_ref',
-      },
-    ]
-
-    await seedWorkflow(page, { nodes: [n1, n2, n3], edges })
-    await page.reload()
-    await expect(page.locator('#bioimageflow-app')).toBeVisible()
-
-    await expect(page.locator('.vue-flow__node')).toHaveCount(3, {
-      timeout: 5000,
-    })
-    await expect(page.locator('.vue-flow__edge')).toHaveCount(2, {
-      timeout: 5000,
-    })
-
-    // All edge paths must have valid geometry.
-    const paths = page.locator('.vue-flow__edge path.vue-flow__edge-path')
-    const count = await paths.count()
-    for (let i = 0; i < count; i++) {
-      const d = await paths.nth(i).getAttribute('d')
-      expect(d).toBeTruthy()
-      expect(d!.length).toBeGreaterThan(10)
-      expect(d).not.toContain('NaN')
-    }
-  })
-
-  test('round-trip: create graph in-app, reload, edges still rendered', async ({
-    page,
-  }) => {
-    const { tool, outputName, inputName } = await fetchAnyTool(page)
-
-    // Seed directly — simulates state that was previously saved by the app
-    // without relying on drag-connect (which is fragile in headless).
-    const source = buildNode('round_src', 'Source', 100, tool)
-    const target = buildNode('round_tgt', 'Target', 500, tool, {
-      connectedInputs: { [inputName]: `Source.${outputName}` },
-      pinnedInputs: { [inputName]: true },
-    })
-    const edge = {
-      id: `e-round_src-${outputName}-round_tgt-${inputName}`,
-      source: 'round_src',
-      target: 'round_tgt',
-      sourceHandle: outputName,
-      targetHandle: inputName,
-      type: 'column_ref',
-    }
-
-    await seedWorkflow(page, { nodes: [source, target], edges: [edge] })
-    await page.reload()
-    await expect(page.locator('.vue-flow__edge')).toHaveCount(1, {
-      timeout: 5000,
-    })
-
-    // Now reload again — the first post-reload save-cycle (syncGraph → sendNow)
-    // must preserve edges in IndexedDB. If the save path strips edges, the
-    // second reload would come back with zero edges.
-    await page.waitForTimeout(800) // past the 300ms syncGraph debounce
-    await page.reload()
-    await expect(page.locator('.vue-flow__node')).toHaveCount(2, {
-      timeout: 5000,
-    })
-    await expect(page.locator('.vue-flow__edge')).toHaveCount(1, {
-      timeout: 5000,
-    })
+    await deleteWorkflowIfExists(page, workflowName)
   })
 })

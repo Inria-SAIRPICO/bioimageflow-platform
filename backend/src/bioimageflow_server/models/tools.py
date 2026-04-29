@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.result_store import ResultStoreService
     from bioimageflow_server.services.thumbnail import ThumbnailService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
+    from bioimageflow_server.services.workflow_store import WorkflowStoreService
     from bioimageflow_server.ws.handler import ConnectionManager
 
 
@@ -121,3 +122,4 @@ class AppConfig:
     settings: Settings | None = None
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
+    workflow_store: WorkflowStoreService | None = None

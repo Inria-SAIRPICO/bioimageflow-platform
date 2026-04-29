@@ -63,6 +63,11 @@ from bioimageflow_server.routers.tools import (
     get_workflow_root,
     router as tools_router,
 )
+from bioimageflow_server.routers.workflows import (
+    get_execution_manager as workflows_get_execution_manager,
+    get_workflow_store,
+    router as workflows_router,
+)
 from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
@@ -78,6 +83,7 @@ from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.thumbnail import ThumbnailService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from bioimageflow_server.ws import (
     ConnectionManager,
     attach_ws_log_handler,
@@ -143,6 +149,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     result_store = config.result_store or ResultStoreService(
         storage_path=resolved_storage_path,
         tool_registry=registry,
+    )
+    workflow_root = config.workflow_root or Path("./workflows")
+    workflow_store = config.workflow_store or WorkflowStoreService(
+        root_dir=workflow_root,
+        tool_registry=registry,
+        storage_base_dir=resolved_storage_path / "workflows",
     )
     thumbnail_service = config.thumbnail_service or ThumbnailService(
         cache_dir=resolved_storage_path / ".thumbnails",
@@ -284,6 +296,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.state.napari_launcher = napari_launcher
@@ -300,6 +313,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
+    app.dependency_overrides[get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[graph_get_dev_mode] = lambda: resolved_settings.dev_mode
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[get_thumbnail_service] = lambda: thumbnail_service
