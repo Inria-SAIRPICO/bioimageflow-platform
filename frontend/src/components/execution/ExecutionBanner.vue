@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
@@ -139,10 +138,6 @@ function onBannerClick() {
   terminalMode.value = null
 }
 
-async function onStop() {
-  await exec.stop()
-}
-
 onBeforeUnmount(() => {
   clearTimer()
 })
@@ -169,15 +164,6 @@ defineExpose({ mode, isVisible })
         >
           {{ currentNodeId }}
         </span>
-        <Button
-          v-if="mode === 'running'"
-          icon="pi pi-stop"
-          label="Stop"
-          severity="danger"
-          size="small"
-          data-testid="execution-banner-stop"
-          @click.stop="onStop"
-        />
       </div>
       <div v-if="mode === 'running'" class="execution-banner__progress">
         <ProgressBar
@@ -241,7 +227,7 @@ defineExpose({ mode, isVisible })
 }
 
 .execution-banner__bar {
-  height: 6px;
+  height: 1.25rem;
 }
 
 .execution-banner-enter-active,

@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
-import Textarea from 'primevue/textarea'
 
 const props = defineProps<{
   visible: boolean
@@ -25,7 +24,6 @@ const emit = defineEmits<{
 
 const name = ref('')
 const displayName = ref('')
-const description = ref('')
 
 const title = computed(() => (
   props.mode === 'new' ? 'Create workflow' : 'Save workflow as'
@@ -35,23 +33,37 @@ const subtitle = computed(() => (
     ? 'Start with an empty canvas and a dedicated workflow file.'
     : 'Create a copy of the current workflow and continue editing it.'
 ))
-const nameError = computed(() => {
-  if (!name.value.trim()) return 'A filesystem-safe workflow name is required.'
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name.value.trim())) {
-    return 'Use letters, numbers, underscores, or hyphens. The first character must be alphanumeric.'
-  }
+function deriveWorkflowId(value: string): string {
+  return value
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
+    .toLowerCase()
+}
+
+const generatedName = computed(() => props.suggestedName || deriveWorkflowId(displayName.value))
+const displayNameError = computed(() => {
+  if (!displayName.value.trim()) return 'A workflow name is required.'
+  if (!generatedName.value) return 'Use at least one letter or number.'
   return null
 })
-const canSubmit = computed(() => nameError.value === null)
+const canSubmit = computed(() => displayNameError.value === null)
 
 watch(
-  () => props.visible,
-  (visible) => {
+  () => [
+    props.visible,
+    props.initialName,
+    props.initialDisplayName,
+    props.suggestedName,
+  ],
+  ([visible]) => {
     if (!visible) return
     const nextName = props.suggestedName || props.initialName || ''
-    name.value = nextName
-    displayName.value = props.initialDisplayName || nextName
-    description.value = props.initialDescription || ''
+    name.value = nextName || deriveWorkflowId(props.initialDisplayName || '')
+    displayName.value = props.initialDisplayName || nextName || ''
   },
   { immediate: true },
 )
@@ -62,11 +74,12 @@ function onCancel() {
 
 function onSubmit() {
   if (!canSubmit.value) return
-  const trimmedName = name.value.trim()
+  const trimmedDisplayName = displayName.value.trim()
+  const trimmedName = (props.suggestedName || generatedName.value || name.value).trim()
   emit('submit', {
     name: trimmedName,
-    display_name: displayName.value.trim() || trimmedName,
-    description: description.value.trim() || null,
+    display_name: trimmedDisplayName || trimmedName,
+    description: props.initialDescription?.trim() || null,
   })
 }
 </script>
@@ -92,36 +105,22 @@ function onSubmit() {
       <label class="field">
         <span>Name</span>
         <InputText
-          v-model="name"
-          autofocus
-          autocomplete="off"
-          data-testid="workflow-name-input"
-          placeholder="My_Workflow"
-        />
-        <small v-if="nameError" class="error" data-testid="workflow-name-error">
-          {{ nameError }}
-        </small>
-      </label>
-
-      <label class="field">
-        <span>Display name</span>
-        <InputText
           v-model="displayName"
+          autofocus
           autocomplete="off"
           data-testid="workflow-display-name-input"
           placeholder="My workflow"
         />
-      </label>
-
-      <label class="field">
-        <span>Description</span>
-        <Textarea
-          v-model="description"
-          rows="3"
-          auto-resize
-          data-testid="workflow-description-input"
-          placeholder="Optional notes for this workflow"
-        />
+        <small
+          v-if="displayNameError"
+          class="error"
+          data-testid="workflow-display-name-error"
+        >
+          {{ displayNameError }}
+        </small>
+        <small v-else class="generated-name" data-testid="workflow-generated-name">
+          ID: {{ generatedName }}
+        </small>
       </label>
     </div>
 
@@ -169,5 +168,9 @@ function onSubmit() {
 }
 .error {
   color: var(--p-red-500);
+}
+.generated-name {
+  color: var(--p-text-muted-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 </style>

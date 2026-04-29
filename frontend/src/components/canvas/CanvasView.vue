@@ -237,6 +237,7 @@ useHotReload({
 
 onMounted(async () => {
   window.addEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
+  window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
@@ -250,6 +251,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
+  window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
 })
 
 // --- Node drag tracking (undo support) ---
@@ -1009,6 +1011,53 @@ function selectAll() {
   }
 }
 
+function redoGraphChange() {
+  if (isLocked.value) return
+  const state = undoRedo.redo()
+  if (state) {
+    setNodes(state.nodes)
+    setEdges(state.edges)
+    syncGraph(state as any)
+    markDirtyAndAutoSave(state)
+  }
+}
+
+function undoGraphChange() {
+  if (isLocked.value) return
+  const state = undoRedo.undo()
+  if (state) {
+    setNodes(state.nodes)
+    setEdges(state.edges)
+    syncGraph(state as any)
+    markDirtyAndAutoSave(state)
+  }
+}
+
+function handleEditCommandEvent(event: CustomEvent<{ command?: string }>) {
+  if (isLocked.value) return
+  switch (event.detail?.command) {
+    case 'undo':
+      undoGraphChange()
+      break
+    case 'redo':
+      redoGraphChange()
+      break
+    case 'cut':
+      copySelected()
+      deleteSelected()
+      break
+    case 'copy':
+      copySelected()
+      break
+    case 'paste':
+      pasteFromClipboard()
+      break
+    case 'select-all':
+      selectAll()
+      break
+  }
+}
+
 function handleKeydown(event: KeyboardEvent) {
   const meta = event.metaKey || event.ctrlKey
   const locked = isLocked.value
@@ -1047,25 +1096,13 @@ function handleKeydown(event: KeyboardEvent) {
 
   if (meta && event.shiftKey && (event.key === 'z' || event.key === 'Z')) {
     if (locked) return
-    const state = undoRedo.redo()
-    if (state) {
-      setNodes(state.nodes)
-      setEdges(state.edges)
-      syncGraph(state as any)
-      markDirtyAndAutoSave(state)
-    }
+    redoGraphChange()
     return
   }
 
   if (meta && event.key === 'z') {
     if (locked) return
-    const state = undoRedo.undo()
-    if (state) {
-      setNodes(state.nodes)
-      setEdges(state.edges)
-      syncGraph(state as any)
-      markDirtyAndAutoSave(state)
-    }
+    undoGraphChange()
     return
   }
 
