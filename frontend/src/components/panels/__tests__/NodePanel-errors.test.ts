@@ -14,6 +14,8 @@ function makeTool(): ToolMetadata {
     package: 'bioimageflow-core',
     package_version: '0.3.2',
     tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
     documentation: '',
     tags: [],
     categories: [],
