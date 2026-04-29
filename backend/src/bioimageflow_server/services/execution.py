@@ -213,6 +213,10 @@ class ExecutionManager:
 
         on_progress = self._make_progress_callback()
 
+        live_settings = (
+            self._settings_provider() if self._settings_provider else self.settings
+        )
+
         # Prefer the session's cached workflow — avoids a redundant
         # build_workflow() call when validation already loaded the graph.
         session = (
@@ -261,6 +265,7 @@ class ExecutionManager:
                     self.tool_registry,
                     storage_path=self.storage_path,
                     on_progress=on_progress,
+                    settings=live_settings,
                 )
             except Exception as exc:
                 self.state = "idle"
@@ -292,9 +297,6 @@ class ExecutionManager:
                     resolved.append(node_map[nid])
             targets = tuple(resolved)
 
-        live_settings = (
-            self._settings_provider() if self._settings_provider else self.settings
-        )
         dev_mode = bool(live_settings.dev_mode)
 
         def _run_sync() -> Any:

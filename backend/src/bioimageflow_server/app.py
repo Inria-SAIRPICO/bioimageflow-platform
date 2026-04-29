@@ -33,6 +33,7 @@ from bioimageflow_server.routers.graph import (
     get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
     get_session_manager as graph_get_session_manager,
+    get_settings as graph_get_settings,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
     router as graph_router,
@@ -250,7 +251,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return config.settings_store.get().dev_mode
         return resolved_settings.dev_mode
 
+    def _live_settings() -> Settings:
+        if config.settings_store is not None:
+            return config.settings_store.get()
+        return resolved_settings
+
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
+    app.dependency_overrides[graph_get_settings] = _live_settings
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

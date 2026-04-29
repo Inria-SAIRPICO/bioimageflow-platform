@@ -169,7 +169,7 @@ def _install_fake_builder(
     """Replace ``graph_builder.build_workflow`` with a fake returning ``BuildOutput``."""
     from bioimageflow_server.services.graph_builder import BuildOutput
 
-    def _builder(graph, registry, storage_path=None, on_progress=None):
+    def _builder(graph, registry, storage_path=None, on_progress=None, settings=None):
         # Wire the progress callback into the fake workflow so scripted
         # events are delivered through it.
         if workflow is not None:

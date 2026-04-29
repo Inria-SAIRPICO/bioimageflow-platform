@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from bioimageflow import serialize_constant
 
@@ -24,9 +24,17 @@ from bioimageflow_server.models.graph import (
 from bioimageflow_server.models.validation import GraphValidationError
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
+if TYPE_CHECKING:
+    from bioimageflow_server.models.settings import Settings
+
 
 # Key used for positional edges in the library wire format.
 POSITIONAL_KEY = "__positional__"
+
+# Library has no native "no limit" for max_executions; map the GUI's
+# ``None`` (unlimited) to a very large integer at translation time.
+# Documented in plan §"Cross-Plan Notes #8".
+_UNLIMITED_MAX_EXECUTIONS = 2**31 - 1
 
 
 @dataclass
@@ -47,6 +55,7 @@ def graph_state_to_lib_dict(
     *,
     storage_path: Path | None = None,
     engine: str = "sequential",
+    settings: "Settings | None" = None,
 ) -> TranslationResult:
     """Translate ``graph`` into the library's serialization dict.
 
@@ -229,14 +238,31 @@ def graph_state_to_lib_dict(
             )
 
     storage_str = str(storage_path) if storage_path is not None else "./bif_data"
+
+    # Cache config: derived from Settings when supplied; otherwise the legacy
+    # defaults so callers that don't yet thread Settings through (validators,
+    # tests) keep working.
+    if settings is not None:
+        resolved_engine = settings.execution_engine
+        resolved_max_executions = (
+            _UNLIMITED_MAX_EXECUTIONS
+            if settings.cache_max_executions is None
+            else settings.cache_max_executions
+        )
+        resolved_max_age = settings.cache_max_age
+    else:
+        resolved_engine = engine
+        resolved_max_executions = 0
+        resolved_max_age = None
+
     lib_dict: dict[str, Any] = {
         "nodes": nodes_data,
         "edges": edges_data,
         "config": {
             "storage_path": storage_str,
-            "engine": engine,
-            "max_executions": 0,
-            "max_age": None,
+            "engine": resolved_engine,
+            "max_executions": resolved_max_executions,
+            "max_age": resolved_max_age,
         },
     }
 

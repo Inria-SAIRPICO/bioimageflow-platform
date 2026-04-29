@@ -19,7 +19,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from bioimageflow_server.models.settings import Settings
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import (
@@ -121,13 +124,16 @@ def validate_graph(
     session_manager: SessionManager,
     storage_path: Path | None = None,
     dev_mode: bool = True,
+    settings: "Settings | None" = None,
 ) -> ValidationResult:
     """Run full validation on ``graph`` via the session manager.
 
     Loads the graph into the session (replacing any prior session),
     then reads errors and plan from the cached session.
     """
-    session_manager.load(graph, registry, storage_path=storage_path)
+    session_manager.load(
+        graph, registry, storage_path=storage_path, settings=settings
+    )
     return _build_validation_result(
         session_manager,
         all_node_ids=[n.id for n in graph.nodes],
