@@ -1,4 +1,4 @@
-"""Python logging.Handler that forwards ``bioimageflow.node.*`` records to WS clients."""
+"""Python logging.Handler that forwards BioImageFlow records to WS clients."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _EMITTING: contextvars.ContextVar[bool] = contextvars.ContextVar(
 
 
 class WebSocketLogHandler(logging.Handler):
-    """Forwards log records from ``bioimageflow.node.*`` loggers to WS clients.
+    """Forwards log records from ``bioimageflow`` loggers to WS clients.
 
     The handler must be safe to call from any thread (library code runs in
     worker threads via ``asyncio.to_thread``). It schedules
@@ -42,6 +42,8 @@ class WebSocketLogHandler(logging.Handler):
         self._loop = loop
 
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D401
+        if not _is_bioimageflow_record(record.name):
+            return
         if _EMITTING.get():
             # Already emitting on this stack — any log from inside
             # broadcast_log must not recurse back into us.
@@ -89,27 +91,33 @@ def _extract_node_id(logger_name: str) -> str | None:
     return None
 
 
+def _is_bioimageflow_record(logger_name: str) -> bool:
+    return logger_name == "bioimageflow" or logger_name.startswith("bioimageflow.")
+
+
 def attach_ws_log_handler(
     manager: "ConnectionManager",
     loop: asyncio.AbstractEventLoop,
 ) -> WebSocketLogHandler:
-    """Attach a ``WebSocketLogHandler`` to the ``bioimageflow.node`` logger.
+    """Attach a ``WebSocketLogHandler`` to the ``bioimageflow`` logger.
 
+    Attaching at the framework root captures both framework-level records
+    (``bioimageflow`` / ``bioimageflow.engine``) and per-node records
+    (``bioimageflow.node.<node_id>``) once through normal logger propagation.
     Propagation is **not** disabled: keeping it on preserves terminal/file
-    logging in dev environments, which is valuable for debugging. The
-    recursion guard + dedicated ``bioimageflow_server.ws`` internal logger
-    prevent self-capture loops.
+    logging in dev environments. The recursion guard + dedicated
+    ``bioimageflow_server.ws`` internal logger prevent self-capture loops.
     """
     handler = WebSocketLogHandler(manager, loop=loop)
     handler.setLevel(logging.DEBUG)
-    node_logger = logging.getLogger("bioimageflow.node")
-    node_logger.addHandler(handler)
+    bioimageflow_logger = logging.getLogger("bioimageflow")
+    bioimageflow_logger.addHandler(handler)
     # If the deployer hasn't pinned a level on this logger, default to DEBUG so
     # WS subscribers see all records (filtering then happens per-subscription).
     # Respect any explicitly-set level — overriding it would change the volume
     # going to *other* handlers (terminal/file) attached to the same logger.
-    if node_logger.level == logging.NOTSET:
-        node_logger.setLevel(logging.DEBUG)
+    if bioimageflow_logger.level == logging.NOTSET:
+        bioimageflow_logger.setLevel(logging.DEBUG)
     return handler
 
 

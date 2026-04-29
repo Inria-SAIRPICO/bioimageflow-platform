@@ -173,7 +173,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         finally:
             if ws_manager is not None:
                 if ws_log_handler is not None:
-                    logging.getLogger("bioimageflow.node").removeHandler(
+                    logging.getLogger("bioimageflow").removeHandler(
                         ws_log_handler
                     )
                 ws_manager._loop = None

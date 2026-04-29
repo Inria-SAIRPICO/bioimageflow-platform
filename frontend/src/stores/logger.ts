@@ -47,17 +47,22 @@ export const useLoggerStore = defineStore('logger', () => {
   const entries = ref<LogEntry[]>([])
   const filter = ref<LogFilter>(cloneDefaultFilter())
   const autoScroll = ref(true)
-  const lastSubscription = ref<LogSubscription | null>(null)
+  const lastSubscription = ref<LogSubscription>({ nodeId: null, level: null })
   const maxEntries = MAX_ENTRIES
 
   const filteredEntries = computed(() => {
     const { levels, nodeId, searchText } = filter.value
     if (levels.size === 0) return []
 
+    const allKnownLevelsActive = ALL_LEVELS.every((level) => levels.has(level))
     const query = searchText.trim().toLowerCase()
     return entries.value.filter((entry) => {
       const level = normalizeLevel(entry.level)
-      if (!levels.has(level)) return false
+      if (!levels.has(level)) {
+        if (!allKnownLevelsActive || (ALL_LEVELS as readonly string[]).includes(level)) {
+          return false
+        }
+      }
       if (nodeId !== null && entry.nodeId !== nodeId) return false
       if (query && !entry.message.toLowerCase().includes(query)) return false
       return true
@@ -117,14 +122,12 @@ export const useLoggerStore = defineStore('logger', () => {
     return computed(() => entries.value.filter((entry) => entry.nodeId === nodeId))
   }
 
-  function getLastSubscription(): LogSubscription | null {
+  function getLastSubscription(): LogSubscription {
     return lastSubscription.value
   }
 
-  function setLastSubscription(sub: LogSubscription | null): void {
-    lastSubscription.value = sub
-      ? { nodeId: sub.nodeId ?? null, level: sub.level ?? null }
-      : null
+  function setLastSubscription(sub: LogSubscription): void {
+    lastSubscription.value = { nodeId: sub.nodeId ?? null, level: sub.level ?? null }
   }
 
   return {

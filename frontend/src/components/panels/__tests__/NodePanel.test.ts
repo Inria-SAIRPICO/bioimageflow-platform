@@ -4,6 +4,8 @@ import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
+import { useExecutionStore } from '@/stores/execution'
+import { useLoggerStore } from '@/stores/logger'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
 import type { ToolMetadata, InputFieldSchema } from '@/api/types'
 
@@ -586,6 +588,66 @@ describe('NodePanel', () => {
       expect(
         w.find('[data-testid="node-validation-errors"]').exists(),
       ).toBe(false)
+    })
+  })
+
+  describe('execution output', () => {
+    it('renders failed-node error and traceback from execution state', async () => {
+      const w = mountPanel(makeNodeData())
+      useExecutionStore().applyNodeState({
+        node_id: 'node-1',
+        status: 'failed',
+        cached: false,
+        error: 'Node failed',
+        traceback: 'Traceback line 1\nTraceback line 2',
+      })
+      await w.vm.$nextTick()
+
+      const error = w.find('[data-testid="node-runtime-error"]')
+      expect(error.exists()).toBe(true)
+      expect(error.text()).toContain('Node failed')
+      expect(error.text()).toContain('Traceback line 2')
+    })
+
+    it('renders selected-node logs and hides other nodes', async () => {
+      const w = mountPanel(makeNodeData())
+      const logger = useLoggerStore()
+      logger.addEntry({ level: 'INFO', message: 'selected log', nodeId: 'node-1', timestamp: 1 })
+      logger.addEntry({ level: 'INFO', message: 'other log', nodeId: 'node-2', timestamp: 2 })
+      await w.vm.$nextTick()
+
+      const list = w.find('[data-testid="node-log-list"]')
+      expect(list.text()).toContain('selected log')
+      expect(list.text()).not.toContain('other log')
+    })
+
+    it('filters selected-node logs independently by level', async () => {
+      const w = mountPanel(makeNodeData())
+      const logger = useLoggerStore()
+      logger.addEntry({ level: 'DEBUG', message: 'debug log', nodeId: 'node-1', timestamp: 1 })
+      logger.addEntry({ level: 'ERROR', message: 'error log', nodeId: 'node-1', timestamp: 2 })
+      await w.vm.$nextTick()
+
+      expect(w.find('[data-testid="node-log-list"]').text()).toContain('error log')
+      expect(w.find('[data-testid="node-log-list"]').text()).not.toContain('debug log')
+
+      await w.find('[data-testid="node-log-level-DEBUG"]').trigger('click')
+      expect(w.find('[data-testid="node-log-list"]').text()).toContain('debug log')
+    })
+
+    it('renders node log messages as escaped text', async () => {
+      const w = mountPanel(makeNodeData())
+      useLoggerStore().addEntry({
+        level: 'INFO',
+        message: '<script>alert(1)</script>',
+        nodeId: 'node-1',
+        timestamp: 1,
+      })
+      await w.vm.$nextTick()
+
+      const message = w.find('[data-testid="node-log-message"]')
+      expect(message.text()).toBe('<script>alert(1)</script>')
+      expect(w.find('script').exists()).toBe(false)
     })
   })
 })
