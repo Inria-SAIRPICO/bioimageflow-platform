@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import InputText from 'primevue/inputtext'
 import Menubar from 'primevue/menubar'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
@@ -15,7 +16,6 @@ import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
 import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
 import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue'
-import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue'
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState } from '@/api/types'
@@ -52,8 +52,10 @@ const workflowDialogSuggestedName = ref<string | null>(null)
 const createIntent = ref<'new-empty' | 'save-current'>('new-empty')
 const openDialogVisible = ref(false)
 const deleteDialogVisible = ref(false)
-const missingDialogVisible = ref(false)
 const discardDialogVisible = ref(false)
+const aboutDialogVisible = ref(false)
+const renameDialogVisible = ref(false)
+const renameDisplayName = ref('')
 const pendingDiscardAction = ref<(() => void | Promise<void>) | null>(null)
 
 function panelToggle(label: string, panelKey: keyof typeof uiStore.panels): MenuItem {
@@ -240,16 +242,6 @@ async function confirmDeleteWorkflow(): Promise<void> {
   }
 }
 
-async function rebindVersions(): Promise<void> {
-  try {
-    const graph = await workflowStore.rebindVersions()
-    missingDialogVisible.value = false
-    applyGraph(graph)
-  } catch (err: unknown) {
-    showError('Rebind versions failed', err)
-  }
-}
-
 function onGlobalKeydown(event: KeyboardEvent): void {
   const meta = event.metaKey || event.ctrlKey
   if (meta && event.key === 's') {
@@ -257,6 +249,43 @@ function onGlobalKeydown(event: KeyboardEvent): void {
     if (!executionStore.isRunning) {
       void saveWorkflow()
     }
+  }
+}
+
+function dispatchEditCommand(
+  command: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all',
+): void {
+  window.dispatchEvent(new CustomEvent('bioimageflow:edit-command', {
+    detail: { command },
+  }))
+}
+
+function editCommandDisabled(command: 'cut' | 'copy' | 'paste' | 'select-all' | 'undo' | 'redo'): boolean {
+  if (executionStore.isRunning) return true
+  if (command === 'cut' || command === 'copy') {
+    return uiStore.selectedNodeIds.length === 0
+  }
+  return false
+}
+
+function openRenameDialog(): void {
+  if (!workflowStore.currentName) return
+  renameDisplayName.value = uiStore.activeWorkflowName || workflowStore.currentName
+  renameDialogVisible.value = true
+}
+
+async function submitRename(): Promise<void> {
+  if (!workflowStore.currentName) return
+  const displayName = renameDisplayName.value.trim()
+  if (!displayName) return
+  try {
+    await workflowStore.patchWorkflow(workflowStore.currentName, {
+      action: 'update',
+      display_name: displayName,
+    })
+    renameDialogVisible.value = false
+  } catch (err: unknown) {
+    showError('Rename workflow failed', err)
   }
 }
 
@@ -281,35 +310,21 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'New', icon: 'pi pi-plus', disabled: executionStore.isRunning, command: createNewWorkflow },
       { label: 'Open', icon: 'pi pi-folder-open', disabled: executionStore.isRunning, command: openWorkflow },
       { label: 'Save', icon: 'pi pi-save', disabled: executionStore.isRunning, command: saveWorkflow },
-      { label: 'Save As', disabled: executionStore.isRunning, command: saveWorkflowAs },
+      { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isRunning, command: saveWorkflowAs },
       { label: 'Delete', icon: 'pi pi-trash', disabled: executionStore.isRunning || !workflowStore.currentName, command: deleteWorkflow },
-      {
-        label: 'Dependencies',
-        icon: 'pi pi-box',
-        disabled: workflowStore.missingPackages.length === 0 && workflowStore.missingTools.length === 0,
-        command: () => {
-          missingDialogVisible.value = true
-        },
-      },
-      {
-        label: 'Use Installed Versions',
-        icon: 'pi pi-refresh',
-        disabled: executionStore.isRunning || workflowStore.missingPackages.length === 0,
-        command: rebindVersions,
-      },
     ],
   },
   {
     label: 'Edit',
     items: [
-      { label: 'Undo', icon: 'pi pi-undo', disabled: true },
-      { label: 'Redo', icon: 'pi pi-refresh', disabled: true },
+      { label: 'Undo', icon: 'pi pi-undo', disabled: editCommandDisabled('undo'), command: () => dispatchEditCommand('undo') },
+      { label: 'Redo', icon: 'pi pi-refresh', disabled: editCommandDisabled('redo'), command: () => dispatchEditCommand('redo') },
       { separator: true },
-      { label: 'Cut', icon: 'pi pi-clipboard', disabled: true },
-      { label: 'Copy', icon: 'pi pi-copy', disabled: true },
-      { label: 'Paste', disabled: true },
+      { label: 'Cut', icon: 'pi pi-clipboard', disabled: editCommandDisabled('cut'), command: () => dispatchEditCommand('cut') },
+      { label: 'Copy', icon: 'pi pi-copy', disabled: editCommandDisabled('copy'), command: () => dispatchEditCommand('copy') },
+      { label: 'Paste', icon: 'pi pi-clone', disabled: editCommandDisabled('paste'), command: () => dispatchEditCommand('paste') },
       { separator: true },
-      { label: 'Select All', disabled: true },
+      { label: 'Select All', icon: 'pi pi-list-check', disabled: editCommandDisabled('select-all'), command: () => dispatchEditCommand('select-all') },
       { separator: true },
       {
         label: 'Preferences...',
@@ -353,7 +368,13 @@ const menuItems = computed<MenuItem[]>(() => [
   },
   {
     label: 'Help',
-    items: [{ label: 'About', disabled: true }],
+    items: [{
+      label: 'About',
+      icon: 'pi pi-info-circle',
+      command: () => {
+        aboutDialogVisible.value = true
+      },
+    }],
   },
 ])
 
@@ -380,7 +401,7 @@ function onHistoryNavigate(nodeId: string) {
   historyPanelOpen.value = false
 }
 
-defineExpose({ menuItems, historyPanelOpen })
+defineExpose({ menuItems, historyPanelOpen, aboutDialogVisible, renameDialogVisible })
 </script>
 
 <template>
@@ -390,6 +411,17 @@ defineExpose({ menuItems, historyPanelOpen })
         <span class="workflow-title" data-testid="workflow-title">
           {{ workflowTitle }}
         </span>
+        <Button
+          v-if="workflowStore.currentName"
+          icon="pi pi-pencil"
+          text
+          rounded
+          size="small"
+          aria-label="Rename workflow"
+          data-testid="workflow-title-edit"
+          :disabled="executionStore.isRunning"
+          @click="openRenameDialog"
+        />
         <ErrorIndicator @open="historyPanelOpen = true" />
         <RunButton
           ref="runButtonRef"
@@ -429,13 +461,6 @@ defineExpose({ menuItems, historyPanelOpen })
     @confirm="confirmDeleteWorkflow"
   />
 
-  <MissingPackageDialog
-    v-model:visible="missingDialogVisible"
-    :packages="workflowStore.missingPackages"
-    :tools="workflowStore.missingTools"
-    @rebind="rebindVersions"
-  />
-
   <Dialog
     v-model:visible="discardDialogVisible"
     modal
@@ -457,6 +482,50 @@ defineExpose({ menuItems, historyPanelOpen })
       />
     </template>
   </Dialog>
+
+  <Dialog
+    v-model:visible="renameDialogVisible"
+    modal
+    header="Rename workflow"
+    :style="{ width: '380px' }"
+    data-testid="rename-workflow-dialog"
+  >
+    <label class="rename-field">
+      <span>Name</span>
+      <InputText
+        v-model="renameDisplayName"
+        autofocus
+        autocomplete="off"
+        data-testid="rename-workflow-input"
+        @keydown.enter="submitRename"
+      />
+    </label>
+    <template #footer>
+      <Button label="Cancel" text @click="renameDialogVisible = false" />
+      <Button
+        label="Save"
+        icon="pi pi-check"
+        :disabled="!renameDisplayName.trim()"
+        data-testid="rename-workflow-submit"
+        @click="submitRename"
+      />
+    </template>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="aboutDialogVisible"
+    modal
+    header="About BioImageFlow"
+    :style="{ width: '420px' }"
+    data-testid="about-dialog"
+  >
+    <p class="about-copy">
+      BioImageFlow is a desktop workflow editor for bioimage analysis pipelines.
+    </p>
+    <template #footer>
+      <Button label="Close" text @click="aboutDialogVisible = false" />
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -469,5 +538,16 @@ defineExpose({ menuItems, historyPanelOpen })
   color: var(--text-color-secondary);
   font-size: 0.875rem;
   white-space: nowrap;
+}
+.rename-field {
+  display: grid;
+  gap: 0.35rem;
+}
+.rename-field span {
+  font-weight: 700;
+}
+.about-copy {
+  margin: 0;
+  color: var(--p-text-color);
 }
 </style>

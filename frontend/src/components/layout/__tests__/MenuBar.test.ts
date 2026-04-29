@@ -6,6 +6,7 @@ import Aura from '@primevue/themes/aura'
 import MenuBar from '../MenuBar.vue'
 import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
+import { useWorkflowStore } from '@/stores/workflow'
 
 // PrimeVue Menubar uses matchMedia for responsive behavior
 Object.defineProperty(window, 'matchMedia', {
@@ -84,6 +85,81 @@ describe('MenuBar', () => {
     expect(store.panels.tools).toBe(true)
     toolsToggle.command()
     expect(store.panels.tools).toBe(false)
+  })
+
+  describe('Workflow menu', () => {
+    it('omits dependency-only entries and shows an icon for Save As', () => {
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      const labels = workflow.items.map((item: any) => item.label)
+
+      expect(labels).toEqual(['New', 'Open', 'Save', 'Save As', 'Delete'])
+      expect(labels).not.toContain('Dependencies')
+      expect(labels).not.toContain('Use Installed Versions')
+      expect(workflow.items.find((item: any) => item.label === 'Save As').icon).toBe('pi pi-copy')
+    })
+
+    it('shows an edit-name affordance when a workflow is active', async () => {
+      const workflow = useWorkflowStore()
+      workflow.current = {
+        name: 'cell_segmentation',
+        display_name: 'Cell segmentation',
+        path: '/tmp/cell_segmentation.json',
+        last_modified: '2026-04-29T00:00:00Z',
+      }
+      useUIStore().setActiveWorkflow('Cell segmentation')
+
+      const wrapper = mountMenuBar()
+      await wrapper.vm.$nextTick()
+
+      const edit = wrapper.find('[data-testid="workflow-title-edit"]')
+      expect(edit.exists()).toBe(true)
+      expect(edit.attributes('aria-label')).toBe('Rename workflow')
+    })
+  })
+
+  describe('Edit menu', () => {
+    it('enables commands that are implemented by the canvas', () => {
+      const store = useUIStore()
+      store.setSelectedNodes(['n1'])
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const edit = vm.menuItems.find((item: any) => item.label === 'Edit')
+
+      expect(edit.items.find((item: any) => item.label === 'Undo').disabled).toBe(false)
+      expect(edit.items.find((item: any) => item.label === 'Redo').disabled).toBe(false)
+      expect(edit.items.find((item: any) => item.label === 'Cut').disabled).toBe(false)
+      expect(edit.items.find((item: any) => item.label === 'Copy').disabled).toBe(false)
+      expect(edit.items.find((item: any) => item.label === 'Paste').disabled).toBe(false)
+      expect(edit.items.find((item: any) => item.label === 'Select All').disabled).toBe(false)
+    })
+
+    it('dispatches canvas edit commands', () => {
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const dispatched: string[] = []
+      window.addEventListener('bioimageflow:edit-command', ((event: CustomEvent) => {
+        dispatched.push(event.detail.command)
+      }) as EventListener)
+
+      const edit = vm.menuItems.find((item: any) => item.label === 'Edit')
+      edit.items.find((item: any) => item.label === 'Copy').command()
+      edit.items.find((item: any) => item.label === 'Paste').command()
+
+      expect(dispatched).toEqual(['copy', 'paste'])
+    })
+
+    it('makes About functional', () => {
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const help = vm.menuItems.find((item: any) => item.label === 'Help')
+      const about = help.items.find((item: any) => item.label === 'About')
+
+      expect(about.disabled).toBeFalsy()
+      about.command()
+      expect(vm.aboutDialogVisible).toBe(true)
+    })
   })
 
   describe('Execution menu', () => {

@@ -24,6 +24,7 @@ export interface ErrorEntry {
   id: string
   kind: ErrorKind
   detail: string
+  fullDetail?: string
   timestamp: number
   field?: string
   status?: number
@@ -78,6 +79,7 @@ export const useErrorStore = defineStore('errors', () => {
     if (input.field !== undefined) entry.field = input.field
     if (input.status !== undefined) entry.status = input.status
     if (input.nodeId !== undefined) entry.nodeId = input.nodeId
+    if (input.fullDetail !== undefined) entry.fullDetail = input.fullDetail
     if (input.autoDismissMs !== undefined) {
       entry.autoDismissMs = input.autoDismissMs
       const t = setTimeout(() => {

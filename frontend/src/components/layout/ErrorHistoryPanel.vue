@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import {
   ERROR_KIND_LABELS,
   useErrorStore,
@@ -14,6 +15,7 @@ const emit = defineEmits<{
 }>()
 
 const errorStore = useErrorStore()
+const selectedEntry = ref<ErrorEntry | null>(null)
 
 const sortedErrors = computed<ErrorEntry[]>(() =>
   [...errorStore.errors].sort((a, b) => b.timestamp - a.timestamp),
@@ -39,6 +41,10 @@ function onDismissAll() {
 
 function onNavigate(nodeId: string) {
   emit('navigate', nodeId)
+}
+
+function onShowDetails(entry: ErrorEntry) {
+  selectedEntry.value = entry
 }
 
 function onClose() {
@@ -137,9 +143,47 @@ void props
             >
               Go to node
             </button>
+            <Button
+              v-if="entry.fullDetail || entry.field || entry.status || entry.nodeId"
+              data-testid="error-row-details"
+              icon="pi pi-list"
+              label="Details"
+              severity="secondary"
+              size="small"
+              text
+              class="error-row-details"
+              @click="onShowDetails(entry)"
+            />
           </div>
         </div>
       </aside>
+      <Dialog
+        :visible="selectedEntry !== null"
+        modal
+        header="Error details"
+        :style="{ width: 'min(720px, 92vw)' }"
+        @update:visible="selectedEntry = $event ? selectedEntry : null"
+      >
+        <dl v-if="selectedEntry" class="error-details" data-testid="error-details-body">
+          <template v-if="selectedEntry.nodeId">
+            <dt>Node</dt>
+            <dd>{{ selectedEntry.nodeId }}</dd>
+          </template>
+          <template v-if="selectedEntry.status">
+            <dt>Status</dt>
+            <dd>{{ selectedEntry.status }}</dd>
+          </template>
+          <template v-if="selectedEntry.field">
+            <dt>Field</dt>
+            <dd>{{ selectedEntry.field }}</dd>
+          </template>
+          <dt>Detail</dt>
+          <dd>{{ selectedEntry.fullDetail || selectedEntry.detail }}</dd>
+        </dl>
+        <template #footer>
+          <Button label="Close" text @click="selectedEntry = null" />
+        </template>
+      </Dialog>
     </div>
   </Teleport>
 </template>
@@ -240,5 +284,27 @@ void props
   cursor: pointer;
   font-size: 0.85rem;
   text-decoration: underline;
+}
+
+.error-row-details {
+  align-self: flex-start;
+}
+
+.error-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.error-details dt {
+  color: var(--p-text-muted-color, #6b7280);
+  font-weight: 700;
+}
+
+.error-details dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>

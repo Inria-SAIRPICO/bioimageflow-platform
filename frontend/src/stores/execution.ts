@@ -58,6 +58,14 @@ function messageFromError(err: RunError): string {
   return err.response?.data?.detail ?? err.message ?? String(err)
 }
 
+function stringifyExecutionError(err: Record<string, unknown>): string {
+  const detail = typeof err.detail === 'string' ? err.detail : null
+  const error = typeof err.error === 'string' ? err.error : null
+  const type = typeof err.type === 'string' ? err.type : null
+  if (detail && type) return `${type}: ${detail}`
+  return detail ?? error ?? JSON.stringify(err)
+}
+
 export const useExecutionStore = defineStore('execution', () => {
   const state = ref<'running' | 'idle'>('idle')
   const lastResult = ref<ExecutionResult | null>(null)
@@ -154,7 +162,40 @@ export const useExecutionStore = defineStore('execution', () => {
     }
 
     if (!payload.success) {
+      _logFailure(payload)
       _reportFailure(payload)
+    }
+  }
+
+  function _logFailure(payload: ExecutionResult): void {
+    const logger = useLoggerStore()
+    const timestamp = Date.now() / 1000
+    const failedEntries = Object.entries(payload.node_statuses ?? {}).filter(
+      ([, s]) => s.status === 'failed',
+    )
+
+    for (const [nodeId, status] of failedEntries) {
+      const parts = [
+        status.error ?? 'Execution failed',
+        status.traceback ? status.traceback : null,
+      ].filter((part): part is string => Boolean(part))
+      logger.addEntry({
+        level: 'ERROR',
+        message: parts.join('\n'),
+        nodeId,
+        timestamp,
+      })
+    }
+
+    if (failedEntries.length === 0) {
+      for (const err of payload.errors ?? []) {
+        logger.addEntry({
+          level: 'ERROR',
+          message: stringifyExecutionError(err),
+          nodeId: null,
+          timestamp,
+        })
+      }
     }
   }
 
@@ -164,6 +205,7 @@ export const useExecutionStore = defineStore('execution', () => {
     )
 
     let detail: string
+    let fullDetail: string | undefined
     let nodeId: string | undefined
     if (failedEntries.length > 0) {
       const [firstId, firstStatus] = failedEntries[0]!
@@ -173,9 +215,15 @@ export const useExecutionStore = defineStore('execution', () => {
         failedEntries.length === 1
           ? firstMsg
           : `${failedEntries.length} nodes failed; first: ${firstMsg}`
+      fullDetail = failedEntries
+        .map(([id, status]) => [
+          `${id}: ${status.error ?? 'unknown error'}`,
+          status.traceback ?? null,
+        ].filter((part): part is string => Boolean(part)).join('\n'))
+        .join('\n\n')
     } else if (payload.errors?.length) {
-      const first = payload.errors[0] as { detail?: string }
-      detail = first.detail ?? 'Execution failed'
+      detail = stringifyExecutionError(payload.errors[0]!)
+      fullDetail = payload.errors.map(stringifyExecutionError).join('\n\n')
     } else {
       detail = 'Execution failed'
     }
@@ -185,6 +233,7 @@ export const useExecutionStore = defineStore('execution', () => {
       reportError({
         kind: 'execution_failed',
         detail,
+        ...(fullDetail ? { fullDetail } : {}),
         ...(nodeId ? { nodeId } : {}),
       })
     } catch (e) {

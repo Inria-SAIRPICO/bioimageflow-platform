@@ -209,6 +209,7 @@ watch(
         :icon="autoScope ? 'pi pi-link' : 'pi pi-link-slash'"
         :severity="autoScope ? undefined : 'secondary'"
         :outlined="!autoScope"
+        :class="{ 'logger-panel__auto-scope--active': autoScope }"
         text
         aria-label="Auto-scope to selected node"
         data-testid="log-auto-scope"
@@ -336,6 +337,11 @@ watch(
 .logger-panel__search {
   width: 16rem;
   min-width: 10rem;
+}
+
+.logger-panel__auto-scope--active {
+  background: var(--p-primary-50, #eff6ff);
+  box-shadow: inset 0 0 0 1px var(--p-primary-color, #2563eb);
 }
 
 .logger-panel__list {

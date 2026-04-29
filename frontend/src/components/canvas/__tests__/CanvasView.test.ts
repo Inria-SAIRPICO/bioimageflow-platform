@@ -119,6 +119,20 @@ const graphSyncMocks = vi.hoisted(() => ({
   loadWorkflow: vi.fn().mockResolvedValue(null),
 }))
 
+vi.mock('@/api/client', () => ({
+  api: {
+    get: vi.fn((url: string) => {
+      if (url === '/api/v1/workflows') return Promise.resolve({ data: [] })
+      if (url === '/api/v1/tools') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: {} })
+    }),
+    post: vi.fn(() => Promise.resolve({ data: {} })),
+    put: vi.fn(() => Promise.resolve({ data: {} })),
+    patch: vi.fn(() => Promise.resolve({ data: {} })),
+    delete: vi.fn(() => Promise.resolve({ data: {} })),
+  },
+}))
+
 vi.mock('@/composables/useGraphSync', async () => {
   const { ref } = await import('vue')
   return {
@@ -983,6 +997,26 @@ describe('CanvasView', () => {
 
       const w = mountCanvas()
       w.find('.canvas-view').trigger('keydown', { key: 'c', ctrlKey: true })
+
+      const vm = w.vm as any
+      expect(vm.clipboardData).not.toBeNull()
+      w.unmount()
+    })
+
+    it('global edit-command events invoke canvas commands', () => {
+      mockNodes = [
+        {
+          id: 'a',
+          selected: true,
+          data: { name: 'A', toolName: 'gaussian_blur', parameters: {} },
+          position: { x: 0, y: 0 },
+        },
+      ]
+
+      const w = mountCanvas()
+      window.dispatchEvent(new CustomEvent('bioimageflow:edit-command', {
+        detail: { command: 'copy' },
+      }))
 
       const vm = w.vm as any
       expect(vm.clipboardData).not.toBeNull()

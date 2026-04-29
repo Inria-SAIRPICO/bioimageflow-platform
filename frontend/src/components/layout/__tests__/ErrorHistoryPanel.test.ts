@@ -166,6 +166,28 @@ describe('ErrorHistoryPanel', () => {
     wrapper.unmount()
   })
 
+  it('opens full error details for entries with expanded detail text', async () => {
+    const store = useErrorStore()
+    store.report({
+      kind: 'execution_failed',
+      detail: 'node failed',
+      fullDetail: 'node failed\nTraceback line 1\nTraceback line 2',
+      nodeId: 'n42',
+    })
+    const wrapper = mountPanel(true)
+    const button = document.querySelector(
+      '[data-testid="error-row-details"]',
+    ) as HTMLElement
+
+    expect(button).not.toBeNull()
+    button.click()
+    await wrapper.vm.$nextTick()
+
+    const detail = document.querySelector('[data-testid="error-details-body"]')
+    expect(detail?.textContent).toContain('Traceback line 2')
+    wrapper.unmount()
+  })
+
   it('shows empty state when no errors are present', () => {
     const wrapper = mountPanel(true)
     const empty = document.querySelector('[data-testid="error-history-empty"]')

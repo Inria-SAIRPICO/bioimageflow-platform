@@ -115,6 +115,15 @@ describe('LoggerPanel', () => {
     expect(store.filter.nodeId).toBeNull()
   })
 
+  it('renders a visible active state for the auto-scope toggle', async () => {
+    const w = mountPanel()
+    const button = w.find('[data-testid="log-auto-scope"]')
+
+    expect(button.classes()).toContain('logger-panel__auto-scope--active')
+    await button.trigger('click')
+    expect(button.classes()).not.toContain('logger-panel__auto-scope--active')
+  })
+
   it('manual node filters are not overridden by canvas selection', async () => {
     const w = mountPanel()
     const ui = useUIStore()

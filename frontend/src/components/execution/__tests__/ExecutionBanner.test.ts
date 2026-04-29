@@ -83,14 +83,12 @@ describe('ExecutionBanner', () => {
     ).toBe(true)
   })
 
-  it('Stop button calls executionStore.stop()', async () => {
+  it('does not render a duplicate Stop button in the running banner', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    const stopSpy = vi.spyOn(exec, 'stop').mockResolvedValue()
     exec.state = 'running'
     await nextTick()
-    await wrapper.find('[data-testid="execution-banner-stop"]').trigger('click')
-    expect(stopSpy).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="execution-banner-stop"]').exists()).toBe(false)
   })
 
   it('shows "Execution complete" on success result', async () => {
