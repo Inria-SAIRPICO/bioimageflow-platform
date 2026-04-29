@@ -45,6 +45,10 @@ from bioimageflow_server.routers.execution import (
     router as execution_router,
 )
 from bioimageflow_server.routers.health import router as health_router
+from bioimageflow_server.routers.settings import (
+    get_settings_store as settings_get_store,
+    router as settings_router,
+)
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
     get_package_catalog,
@@ -136,6 +140,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
+        # Settings must load before catalog.refresh() so any settings the
+        # catalog might consult (tool_store_path, etc.) are in place.
+        if config.settings_store is not None:
+            await config.settings_store.load()
         try:
             await catalog.refresh()
         except PackageNetworkError as exc:
@@ -150,6 +158,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if config.settings_store is not None:
+                await config.settings_store.flush()
             if _owns_pypi:
                 await pypi.aclose()
 
@@ -214,6 +224,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    if config.settings_store is not None:
+        app.include_router(settings_router, prefix="/api/v1")
+        app.dependency_overrides[settings_get_store] = lambda: config.settings_store
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
@@ -226,7 +239,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
-    app.dependency_overrides[graph_get_dev_mode] = lambda: resolved_settings.dev_mode
+    def _live_dev_mode() -> bool:
+        if config.settings_store is not None:
+            return config.settings_store.get().dev_mode
+        return resolved_settings.dev_mode
+
+    app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root
