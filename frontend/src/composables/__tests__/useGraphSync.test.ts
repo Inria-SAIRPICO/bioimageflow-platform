@@ -243,15 +243,21 @@ describe('useGraphSync', () => {
     expect(validationResult.value).toEqual(previous)
   })
 
-  it('errorStore.report is called on network failure', async () => {
-    const report = vi.fn()
-    mockedPut.mockRejectedValueOnce({ message: 'boom' })
-    const { syncGraph, flushNow } = useGraphSync({ report })
+  it('reports a graph_sync_error to the canonical error store on network failure', async () => {
+    const { setActivePinia, createPinia } = await import('pinia')
+    setActivePinia(createPinia())
+    const errorsModule = await import('@/stores/errors')
+    const errorStore = errorsModule.useErrorStore()
+    mockedPut.mockRejectedValueOnce({
+      message: 'boom',
+      response: { status: 500 },
+    })
+    const { syncGraph, flushNow } = useGraphSync()
     syncGraph(makeVueFlowGraph())
     await flushNow()
-    expect(report).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'graph_sync_error' }),
-    )
+    expect(errorStore.errors).toHaveLength(1)
+    expect(errorStore.errors[0]!.kind).toBe('graph_sync_error')
+    expect(errorStore.errors[0]!.status).toBe(500)
   })
 
   it('serializeNode round-trips the resources field', () => {
