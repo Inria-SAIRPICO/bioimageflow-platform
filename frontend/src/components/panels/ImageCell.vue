@@ -128,7 +128,7 @@ async function openNapari(event: MouseEvent) {
     })
   } catch (exc: any) {
     const status = exc?.response?.status
-    if (status === 404 || status === 503) {
+    if (status === 404) {
       napariDisabled.value = true
       toast?.add({
         severity: 'warn',

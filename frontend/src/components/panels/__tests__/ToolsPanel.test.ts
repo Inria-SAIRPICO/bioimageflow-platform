@@ -188,6 +188,16 @@ describe('ToolsPanel', () => {
     expect(vm.filteredTools).toHaveLength(3)
   })
 
+  it('does not render category tool counts in the tool list', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    expect(wrapper.find('.tool-category-count').exists()).toBe(false)
+  })
+
   it('treeNodes groups tools by package', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {

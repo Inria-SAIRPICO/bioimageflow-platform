@@ -79,9 +79,6 @@ const nameInput = ref('')
 /** Track which optional fields have been set to null by the user */
 const nulledFields = ref<Record<string, boolean>>({})
 
-/** Track which parameter help sections are expanded */
-const expandedHelp = ref<Record<string, boolean>>({})
-
 /** Documentation section collapsed state (open by default) */
 const docCollapsed = ref(false)
 const executionOutputCollapsed = ref(false)
@@ -202,10 +199,6 @@ function togglePinned(key: string) {
 function isPinned(key: string): boolean {
   if (!nodeData.value?.pinnedInputs) return true
   return nodeData.value.pinnedInputs[key] !== false
-}
-
-function toggleHelp(key: string) {
-  expandedHelp.value[key] = !expandedHelp.value[key]
 }
 
 function updateOutputTemplate(key: string, value: string) {
@@ -347,15 +340,6 @@ async function pickFolder(key: string) {
             />
             <label>{{ key }}</label>
             <span class="param-actions">
-              <!-- Fix 18: Help toggle button -->
-              <Button
-                v-if="(field as InputFieldSchema).description"
-                icon="pi pi-info-circle"
-                class="p-button-text p-button-sm param-action-btn"
-                @click="toggleHelp(key)"
-                :title="expandedHelp[key] ? 'Hide help' : 'Show help'"
-                data-testid="help-toggle"
-              />
               <!-- Fix 15: Reset to default button -->
               <Button
                 icon="pi pi-undo"
@@ -381,9 +365,9 @@ async function pickFolder(key: string) {
             </span>
           </div>
 
-          <!-- Fix 18: Collapsible help text -->
+          <!-- Fix 18: Always-visible help text -->
           <small
-            v-if="expandedHelp[key] && (field as InputFieldSchema).description"
+            v-if="(field as InputFieldSchema).description"
             class="param-help"
             data-testid="param-help-text"
           >
@@ -409,6 +393,7 @@ async function pickFolder(key: string) {
               v-else-if="hasChoices(field as InputFieldSchema)"
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               :options="(field as InputFieldSchema).choices!"
+              class="param-input"
               :data-testid="`choices-select-${key}`"
               @update:model-value="updateParameter(key, $event)"
             />
@@ -452,6 +437,7 @@ async function pickFolder(key: string) {
               :step="(field as InputFieldSchema).step ?? 1"
               :min-fraction-digits="(field as InputFieldSchema).type === 'float' ? 1 : 0"
               show-buttons
+              class="param-input param-number"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Path-typed input: text input + native file/folder picker buttons -->
@@ -485,6 +471,7 @@ async function pickFolder(key: string) {
             <InputText
               v-else-if="!canConnect(field as InputFieldSchema) || (field as InputFieldSchema).type === 'str'"
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
+              class="param-input"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Fallback: connectable-only field with no manual widget -->
@@ -887,6 +874,12 @@ h4 {
   flex-direction: column;
   gap: 2px;
   margin-bottom: 10px;
+  min-width: 0;
+}
+
+.param-row :deep(.parameter-field-error) {
+  width: 100%;
+  min-width: 0;
 }
 
 .param-header {
@@ -928,6 +921,7 @@ h4 {
   font-size: 11px;
   line-height: 1.4;
   padding: 2px 0 4px;
+  overflow-wrap: anywhere;
 }
 
 /* Fix 16: None toggle button (now an icon-only button living in the
@@ -988,6 +982,23 @@ h4 {
 /* PrimeVue's InputNumber wraps an inner .p-inputtext that defaults to its
    intrinsic width; force it to fill the parent so it stays inside. */
 .slider-number :deep(.p-inputtext) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.param-input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.param-number {
+  display: flex;
+}
+
+.param-number :deep(.p-inputtext) {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
