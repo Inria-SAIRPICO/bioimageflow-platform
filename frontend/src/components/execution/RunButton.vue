@@ -104,8 +104,12 @@ async function runCore(nodes?: string[]) {
     }
     if (status === 422 || /validation/i.test(err?.message ?? '')) {
       // Pull the fresh validation result so we can enumerate errors. The
-      // pre-run flushNow has just refreshed it.
-      const errs = props.graphSync.validationResult.value?.errors ?? []
+      // pre-run flushNow has just refreshed it; run-time build errors are
+      // returned directly by POST /execution/run and stored on exec.
+      const errs =
+        exec.validationErrors.length > 0
+          ? exec.validationErrors
+          : props.graphSync.validationResult.value?.errors ?? []
       const firstBadNode = errs.find((e) => e.node)?.node
       if (firstBadNode) {
         ui.setSelectedNodes([firstBadNode])
@@ -128,7 +132,7 @@ async function runCore(nodes?: string[]) {
               })
               .join('\n') +
             (errs.length > 5 ? `\n…and ${errs.length - 5} more` : '')
-          : 'Fix them before running'
+          : exec.error ?? 'Fix them before running'
       emit('toast', {
         severity: 'error',
         summary,
@@ -139,7 +143,7 @@ async function runCore(nodes?: string[]) {
     emit('toast', {
       severity: 'error',
       summary: 'Run failed',
-      detail: err?.message ?? 'Unknown error',
+      detail: exec.error ?? err?.message ?? 'Unknown error',
     })
   }
 }

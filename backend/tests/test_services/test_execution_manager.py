@@ -434,6 +434,26 @@ class TestExecutionManagerResult:
         assert em.last_result.errors
         assert "kaboom" in str(em.last_result.errors[0])
 
+    async def test_failed_execution_is_logged(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        import logging
+
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow()
+        wf.raise_exc = RuntimeError("kaboom")
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+        with caplog.at_level(logging.ERROR):
+            await em.start(_graph_with([("n1", True)]))
+            await _drain(em)
+        assert any(
+            "Workflow execution failed: kaboom" in rec.message
+            for rec in caplog.records
+        )
+
     async def test_execution_complete_event_payload(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

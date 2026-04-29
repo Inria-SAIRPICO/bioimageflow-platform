@@ -56,7 +56,6 @@ from bioimageflow_server.routers.tools import (
 )
 from bioimageflow_server.services.execution import (
     ExecutionManager,
-    NullEventBus,
 )
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.session_manager import SessionManager
@@ -67,7 +66,11 @@ from bioimageflow_server.services.package_installer import (
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from bioimageflow_server.ws import attach_ws_log_handler, register_ws
+from bioimageflow_server.ws import (
+    ConnectionManager,
+    attach_ws_log_handler,
+    register_ws,
+)
 
 _STATUS_TO_ERROR: dict[int, str] = {
     400: "bad_request",
@@ -107,11 +110,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         output_data_folder=str(get_home()),
     )
 
-    # When a ConnectionManager is wired in, route execution events through it
-    # so progress / node_state / execution_complete reach connected clients.
-    # Otherwise fall back to NullEventBus (CLI / tests with no transport).
-    ws_manager = config.connection_manager
-    event_bus: Any = ws_manager if ws_manager is not None else NullEventBus()
+    # Always provide a ConnectionManager in the default app. Production launch
+    # paths use create_app() directly, so leaving this optional silently drops
+    # progress / node_state / execution_complete events.
+    ws_manager = config.connection_manager or ConnectionManager()
+    event_bus: Any = ws_manager
 
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager

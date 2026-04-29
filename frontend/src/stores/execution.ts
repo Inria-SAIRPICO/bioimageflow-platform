@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
+import { useLoggerStore } from '@/stores/logger'
 import type {
   GraphState,
   GraphValidationError,
@@ -45,8 +46,15 @@ interface ClearResponse {
 
 interface RunError {
   status?: number
-  response?: { status?: number; data?: { errors?: GraphValidationError[] } }
+  response?: {
+    status?: number
+    data?: { detail?: string; error?: string; errors?: GraphValidationError[] }
+  }
   message?: string
+}
+
+function messageFromError(err: RunError): string {
+  return err.response?.data?.detail ?? err.message ?? String(err)
 }
 
 export const useExecutionStore = defineStore('execution', () => {
@@ -86,6 +94,7 @@ export const useExecutionStore = defineStore('execution', () => {
     lastResult.value = null
     progress.value = null
     nodeStatuses.value = {}
+    useLoggerStore().clearEntries()
     try {
       await api.post('/api/v1/execution/run', { graph, nodes })
       state.value = 'running'
@@ -98,7 +107,7 @@ export const useExecutionStore = defineStore('execution', () => {
       } else if (status === 422) {
         validationErrors.value = err.response?.data?.errors ?? []
       }
-      error.value = e instanceof Error ? e.message : String(e)
+      error.value = messageFromError(err)
       throw e
     }
   }

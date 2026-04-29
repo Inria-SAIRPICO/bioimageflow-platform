@@ -152,7 +152,10 @@ function dispatch(raw: unknown) {
       clearTimeout(pending.timeoutHandle)
       state.lastAppliedFilter = pending.filter
       // Persist the just-applied filter so reconnect recovery can replay it.
-      useLoggerStore().setLastSubscription?.(pending.filter)
+      useLoggerStore().setLastSubscription?.({
+        nodeId: pending.filter.nodeId ?? null,
+        level: pending.filter.level ?? null,
+      })
       state.pending.delete(ref)
       pending.resolve()
       break
@@ -168,6 +171,14 @@ function dispatch(raw: unknown) {
           pending.reject(new Error(detail))
           return
         }
+      }
+      try {
+        useErrorStore().report({
+          kind: 'websocket_error',
+          detail,
+        })
+      } catch {
+        /* */
       }
       console.warn('[useWebSocket] server error without pending ref:', detail)
       break
@@ -192,7 +203,10 @@ async function runReconnectRecovery() {
   const sub = useLoggerStore().getLastSubscription?.()
   if (sub) {
     // Fire-and-forget; any rejection surfaces via errorStore from sendSubscribeLogs.
-    void sendSubscribeLogsInternal(sub)
+    void sendSubscribeLogsInternal({
+      nodeId: sub.nodeId ?? undefined,
+      level: sub.level ?? undefined,
+    })
   }
 }
 

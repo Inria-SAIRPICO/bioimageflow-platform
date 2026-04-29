@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
-import pytest
 from fastapi.testclient import TestClient
 
 
-def test_ws_route_mounted_when_manager_provided() -> None:
+def test_ws_route_mounted_by_default() -> None:
+    from bioimageflow_server.app import create_app
+
+    app = create_app()
+    ws_routes = [
+        r for r in app.routes if getattr(r, "path", None) == "/ws"
+    ]
+    assert len(ws_routes) == 1
+
+
+def test_ws_route_uses_provided_manager() -> None:
     from bioimageflow_server.app import create_app
     from bioimageflow_server.models.tools import AppConfig
     from bioimageflow_server.ws.handler import ConnectionManager
@@ -22,14 +30,12 @@ def test_ws_route_mounted_when_manager_provided() -> None:
     assert len(ws_routes) == 1
 
 
-def test_ws_route_absent_when_no_manager() -> None:
+def test_app_state_exposes_default_connection_manager() -> None:
     from bioimageflow_server.app import create_app
+    from bioimageflow_server.ws.handler import ConnectionManager
 
     app = create_app()
-    ws_routes = [
-        r for r in app.routes if getattr(r, "path", None) == "/ws"
-    ]
-    assert ws_routes == []
+    assert isinstance(app.state.connection_manager, ConnectionManager)
 
 
 def test_app_state_exposes_connection_manager() -> None:
@@ -107,12 +113,12 @@ def test_integration_subscribe_ack_roundtrip() -> None:
 def test_execution_manager_uses_connection_manager_as_event_bus() -> None:
     """When a ConnectionManager is supplied, the auto-built ExecutionManager
     should use it as its ExecutionEventBus so progress / node_state /
-    execution_complete events flow over the WebSocket. With no manager, the
-    NullEventBus default applies.
+    execution_complete events flow over the WebSocket. The default app also
+    creates a ConnectionManager so production launchers do not silently drop
+    terminal execution events.
     """
     from bioimageflow_server.app import create_app
     from bioimageflow_server.models.tools import AppConfig
-    from bioimageflow_server.services.execution import NullEventBus
     from bioimageflow_server.ws.handler import ConnectionManager
 
     manager = ConnectionManager()
@@ -125,6 +131,6 @@ def test_execution_manager_uses_connection_manager_as_event_bus() -> None:
     em_with_ws = app_with_ws.dependency_overrides[graph_get_execution_manager]()
     assert em_with_ws.event_bus is manager
 
-    app_without_ws = create_app()
-    em_without_ws = app_without_ws.dependency_overrides[graph_get_execution_manager]()
-    assert isinstance(em_without_ws.event_bus, NullEventBus)
+    app_default = create_app()
+    em_default = app_default.dependency_overrides[graph_get_execution_manager]()
+    assert em_default.event_bus is app_default.state.connection_manager
