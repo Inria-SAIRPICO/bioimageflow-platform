@@ -134,10 +134,15 @@ class ExecutionManager:
         settings: Settings,
         storage_path: Path | None = None,
         session_manager: SessionManager | None = None,
+        settings_provider: Callable[[], Settings] | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
         self.settings = settings
+        # When provided, ``settings_provider`` is consulted on each ``start()``
+        # so live SettingsStore PATCHes (e.g. flipping ``dev_mode``) take
+        # effect on the next run without restarting the app.
+        self._settings_provider = settings_provider
         self.storage_path = storage_path
         self.session_manager = session_manager
 
@@ -287,7 +292,10 @@ class ExecutionManager:
                     resolved.append(node_map[nid])
             targets = tuple(resolved)
 
-        dev_mode = bool(self.settings.dev_mode)
+        live_settings = (
+            self._settings_provider() if self._settings_provider else self.settings
+        )
+        dev_mode = bool(live_settings.dev_mode)
 
         def _run_sync() -> Any:
             return workflow.compute(*targets, dev_mode=dev_mode)

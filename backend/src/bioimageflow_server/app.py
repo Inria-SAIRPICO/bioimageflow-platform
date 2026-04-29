@@ -111,12 +111,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
+        settings_provider = (
+            (lambda: config.settings_store.get())
+            if config.settings_store is not None
+            else None
+        )
         execution_manager = ExecutionManager(
             event_bus=NullEventBus(),
             tool_registry=registry,
             settings=resolved_settings,
             storage_path=config.storage_path,
             session_manager=session_manager,
+            settings_provider=settings_provider,
         )
 
     known = config.known_packages or KnownPackagesService.default()
