@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: FastAPI dev server",
+      "type": "python",
+      "request": "launch",
+      "module": "bioimageflow_server",
+      "cwd": "${workspaceFolder}/backend",
+      "args": [
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--dev"
+      ],
+      "justMyCode": true
+    }
+  ]
+}

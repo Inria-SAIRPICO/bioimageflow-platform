@@ -1,7 +1,7 @@
 """Tests for desktop (pywebview) module."""
 
 import inspect
-from unittest.mock import ANY, MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -267,6 +267,20 @@ class TestMainDesktopFlag:
         main([])
 
         mock_uvicorn.run.assert_called_once()
+
+    @patch("bioimageflow_server.__main__.uvicorn")
+    def test_main_dev_reload_watches_only_backend_source(self, mock_uvicorn):
+        """Dev reload must not watch the repo root where Wetlands/Pixi envs live."""
+        from bioimageflow_server.__main__ import main
+
+        main(["--dev"])
+
+        _, kwargs = mock_uvicorn.run.call_args
+        assert kwargs["reload"] is True
+        assert kwargs["reload_dirs"]
+        assert all("bioimageflow_server" in path for path in kwargs["reload_dirs"])
+        assert ".pixi/*" in kwargs["reload_excludes"]
+        assert "bif_data/*" in kwargs["reload_excludes"]
 
     @patch("bioimageflow_server.desktop.start_desktop")
     def test_main_desktop_passes_host_port(self, mock_start_desktop):

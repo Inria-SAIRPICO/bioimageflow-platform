@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest import mock
+import asyncio
 
 import pytest
 
@@ -248,6 +249,38 @@ async def test_queue_generate_reuses_env_across_calls(tmp_path: Path) -> None:
 
     assert len(launches) == 1
     assert env.execute.call_count == 2
+
+
+@pytest.mark.anyio
+async def test_concurrent_queue_generate_same_cache_uses_one_render(
+    tmp_path: Path,
+) -> None:
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"x")
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+
+    env = _stub_env()
+    release = asyncio.Event()
+    execute_calls = 0
+
+    def slow_execute(*_args: object, **_kwargs: object) -> None:
+        nonlocal execute_calls
+        execute_calls += 1
+        while not release.is_set():
+            import time
+
+            time.sleep(0.01)
+
+    env.execute.side_effect = slow_execute
+    mgr._env = env
+
+    t1 = asyncio.create_task(mgr.queue_generate(src, 128))
+    await asyncio.sleep(0.05)
+    t2 = asyncio.create_task(mgr.queue_generate(src, 128))
+    release.set()
+    await asyncio.wait_for(asyncio.gather(t1, t2), timeout=1.0)
+
+    assert execute_calls == 1
 
 
 @pytest.mark.anyio

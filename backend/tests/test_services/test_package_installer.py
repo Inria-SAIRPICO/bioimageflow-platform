@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+import anyio
 
 import pytest
 
@@ -467,3 +468,31 @@ async def test_install_suppresses_before_ensure_installed_runs(
     suppress_idx = timeline.index("suppress")
     ensure_idx = timeline.index("ensure")
     assert suppress_idx < ensure_idx
+
+
+async def test_concurrent_installs_are_serialized(
+    installer: PypiPackageInstaller,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    active = 0
+    max_active = 0
+    calls: list[str] = []
+
+    def _slow_ensure(pkg_name, version, pypi_name, store_path) -> None:
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        calls.append(pkg_name)
+        import time
+
+        time.sleep(0.05)
+        active -= 1
+
+    monkeypatch.setattr(installer_module, "ensure_installed", _slow_ensure)
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(installer.install, "foo", "1.0")
+        tg.start_soon(installer.install, "bar", "1.0")
+
+    assert sorted(calls) == ["bar", "foo"]
+    assert max_active == 1

@@ -7,9 +7,13 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pandas as pd
+import pytest
 
 from bioimageflow_server.models.tools import ToolMetadata
-from bioimageflow_server.services.result_store import ResultStoreService
+from bioimageflow_server.services.result_store import (
+    ResultDataNotReadyError,
+    ResultStoreService,
+)
 
 
 def _store(tmp_path: Path, registry: MagicMock | None = None) -> ResultStoreService:
@@ -69,6 +73,36 @@ def test_get_latest_dataframe_prefers_parquet_over_csv(tmp_path: Path, monkeypat
     monkeypatch.setattr("bioimageflow_server.services.result_store.cache_load", fake_load)
     _store(tmp_path).get_latest_dataframe("n1")
     assert loaded_paths == [hash_dir / "dataframe.parquet"]
+
+
+def test_get_latest_dataframe_raises_not_ready_for_zero_byte_parquet(
+    tmp_path: Path,
+) -> None:
+    hash_dir = _hash_dir(tmp_path, "n1", "20260101_000000_hash")
+    (hash_dir / "dataframe.parquet").write_bytes(b"")
+
+    with pytest.raises(ResultDataNotReadyError):
+        _store(tmp_path).get_latest_dataframe("n1")
+
+
+def test_zero_byte_latest_hash_does_not_fall_back_to_stale_data(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    old_dir = _hash_dir(tmp_path, "n1", "20260101_000000_oldhash")
+    new_dir = _hash_dir(tmp_path, "n1", "20260101_000000_newhash")
+    (old_dir / "dataframe.csv").write_text("x\n1\n")
+    (new_dir / "dataframe.parquet").write_bytes(b"")
+    os.utime(old_dir, (100, 100))
+    os.utime(new_dir, (200, 200))
+
+    monkeypatch.setattr(
+        "bioimageflow_server.services.result_store.cache_load",
+        lambda path: pd.DataFrame({"x": [1]}),
+    )
+
+    with pytest.raises(ResultDataNotReadyError):
+        _store(tmp_path).get_latest_dataframe("n1")
 
 
 def test_get_column_types_infers_pandas_dtypes(tmp_path: Path) -> None:

@@ -8,7 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from starlette.responses import FileResponse
 
 from bioimageflow_server.models.nodes import NodeDataResponse
-from bioimageflow_server.services.result_store import ResultStoreService
+from bioimageflow_server.services.result_store import (
+    ResultDataNotReadyError,
+    ResultStoreService,
+)
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
@@ -40,7 +43,10 @@ async def get_node_data(
     sort_order: Literal["asc", "desc"] = "asc",
     tool_name: str | None = None,
 ) -> NodeDataResponse:
-    df = result_store.get_latest_dataframe(node_id)
+    try:
+        df = result_store.get_latest_dataframe(node_id)
+    except ResultDataNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if df is None:
         raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
 
@@ -104,7 +110,10 @@ async def get_node_thumbnail(
     row: Annotated[int, Query(ge=0)] = 0,
     size: Annotated[int, Query(ge=16, le=1024)] = 128,
 ) -> Response:
-    df = result_store.get_latest_dataframe(node_id)
+    try:
+        df = result_store.get_latest_dataframe(node_id)
+    except ResultDataNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if df is None:
         raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
     if col not in df.columns:
