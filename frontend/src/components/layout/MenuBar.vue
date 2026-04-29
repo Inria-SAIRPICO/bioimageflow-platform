@@ -8,6 +8,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
 import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
+import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -123,6 +124,11 @@ function onRunButtonToast(payload: {
 
 const historyPanelOpen = ref(false)
 
+function onHistoryNavigate(nodeId: string) {
+  uiStore.setSelectedNodes([nodeId])
+  historyPanelOpen.value = false
+}
+
 defineExpose({ menuItems, historyPanelOpen })
 </script>
 
@@ -139,4 +145,9 @@ defineExpose({ menuItems, historyPanelOpen })
       />
     </template>
   </Menubar>
+  <ErrorHistoryPanel
+    :visible="historyPanelOpen"
+    @update:visible="historyPanelOpen = $event"
+    @navigate="onHistoryNavigate"
+  />
 </template>
