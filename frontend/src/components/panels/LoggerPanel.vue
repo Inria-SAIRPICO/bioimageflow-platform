@@ -206,7 +206,7 @@ watch(
       />
 
       <Button
-        :icon="autoScope ? 'pi pi-link' : 'pi pi-link-slash'"
+        :icon="autoScope ? 'pi pi-link' : 'pi pi-unlink'"
         :severity="autoScope ? undefined : 'secondary'"
         :outlined="!autoScope"
         :class="{ 'logger-panel__auto-scope--active': autoScope }"

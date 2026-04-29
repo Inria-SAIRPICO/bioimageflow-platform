@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -77,6 +78,14 @@ class ExecutionEventBus(Protocol):
         self, success: bool, errors: list, node_statuses: dict
     ) -> None: ...
 
+    def publish_log(
+        self,
+        level: str,
+        message: str,
+        node_id: str | None,
+        timestamp: float,
+    ) -> None: ...
+
 
 class NullEventBus:
     """No-op event bus used when no transport is attached."""
@@ -98,6 +107,15 @@ class NullEventBus:
 
     def publish_execution_complete(
         self, success: bool, errors: list, node_statuses: dict
+    ) -> None:
+        return None
+
+    def publish_log(
+        self,
+        level: str,
+        message: str,
+        node_id: str | None,
+        timestamp: float,
     ) -> None:
         return None
 
@@ -408,6 +426,12 @@ class ExecutionManager:
                 self.event_bus.publish_node_state(
                     node_id, "failed", False, message, tb
                 )
+                self.event_bus.publish_log(
+                    "ERROR",
+                    _format_node_failure_message(node_id, message, tb),
+                    node_id,
+                    timestamp or time.time(),
+                )
                 return
 
             if status == "cancelled":
@@ -481,6 +505,7 @@ class ExecutionManager:
                 # Attribute the failure to the currently-running node if
                 # no explicit "failed" event was seen.
                 target_id = self._current_node_id
+                should_publish_error_log = True
                 if target_id is not None and target_id in self._node_statuses:
                     current = self._node_statuses[target_id]
                     if current.status == "running":
@@ -491,6 +516,17 @@ class ExecutionManager:
                             error=str(exc),
                             traceback=tb,
                         )
+                    elif current.status == "failed":
+                        should_publish_error_log = False
+                if should_publish_error_log:
+                    self.event_bus.publish_log(
+                        "ERROR",
+                        _format_node_failure_message(target_id, str(exc), tb)
+                        if target_id is not None
+                        else _format_workflow_failure_message(str(exc), tb),
+                        target_id,
+                        time.time(),
+                    )
 
         self.last_result = ExecutionResult(
             success=success,
@@ -506,6 +542,24 @@ class ExecutionManager:
         self.state = "idle"
         self._workflow = None
         self._run_task = None
+
+
+def _format_node_failure_message(
+    node_id: str | None,
+    message: str | None,
+    tb: str | None,
+) -> str:
+    detail = message or "Execution failed"
+    prefix = f"Node {node_id} failed" if node_id else "Node failed"
+    if tb:
+        return f"{prefix}: {detail}\n{tb}"
+    return f"{prefix}: {detail}"
+
+
+def _format_workflow_failure_message(message: str, tb: str | None) -> str:
+    if tb:
+        return f"Workflow execution failed: {message}\n{tb}"
+    return f"Workflow execution failed: {message}"
 
 
 # ---- Cache clearer ----------------------------------------------------------

@@ -508,6 +508,30 @@ async def test_publish_node_state_schedules_broadcast() -> None:
             scheduled_coro.close()
 
 
+async def test_publish_log_schedules_broadcast() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    loop = asyncio.get_running_loop()
+    mgr = ConnectionManager(loop=loop)
+
+    with patch.object(mgr, "broadcast_log") as mock_broadcast:
+        async def _fake(*args, **kwargs):
+            return None
+
+        mock_broadcast.side_effect = _fake
+
+        with patch(
+            "bioimageflow_server.ws.handler.asyncio.run_coroutine_threadsafe"
+        ) as mock_schedule:
+            fut = MagicMock()
+            mock_schedule.return_value = fut
+            mgr.publish_log("ERROR", "failed", "n1", 3.0)
+            mock_schedule.assert_called_once()
+            scheduled_coro, scheduled_loop = mock_schedule.call_args.args
+            assert scheduled_loop is loop
+            scheduled_coro.close()
+
+
 async def test_publish_execution_complete_schedules_broadcast() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -572,6 +596,7 @@ async def test_publish_without_loop_drops_silently(caplog: pytest.LogCaptureFixt
         # Should not raise AttributeError
         mgr.publish_progress("n1", "running", 1, 2, 3.0)
         mgr.publish_node_state("n1", "running", False)
+        mgr.publish_log("ERROR", "failed", "n1", 3.0)
         mgr.publish_execution_complete(True, [], {})
 
     # At least one DEBUG log about dropping

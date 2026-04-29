@@ -51,6 +51,10 @@ class TestNullEventBus:
         bus = NullEventBus()
         bus.publish_execution_complete(True, [], {})
 
+    def test_publish_log_accepts_four_args(self) -> None:
+        bus = NullEventBus()
+        bus.publish_log("ERROR", "failed", "n1", 123.0)
+
     def test_null_bus_is_execution_event_bus(self) -> None:
         bus: ExecutionEventBus = NullEventBus()
         assert bus is not None
@@ -73,6 +77,7 @@ class RecordingEventBus:
         self.progress_events: list[tuple[str, str, int, int, float]] = []
         self.node_state_events: list[tuple[str, str, bool, str | None, str | None]] = []
         self.complete_events: list[tuple[bool, list, dict]] = []
+        self.log_events: list[tuple[str, str, str | None, float]] = []
 
     def publish_progress(
         self, node_id: str, status: str, row: int, total_rows: int, timestamp: float
@@ -93,6 +98,15 @@ class RecordingEventBus:
         self, success: bool, errors: list, node_statuses: dict
     ) -> None:
         self.complete_events.append((success, errors, node_statuses))
+
+    def publish_log(
+        self,
+        level: str,
+        message: str,
+        node_id: str | None,
+        timestamp: float,
+    ) -> None:
+        self.log_events.append((level, message, node_id, timestamp))
 
 
 @dataclass
@@ -375,6 +389,11 @@ class TestExecutionManagerProgress:
         n1_failed = [e for e in bus.node_state_events if e[0] == "n1" and e[1] == "failed"]
         assert n1_failed
         assert em._node_statuses["n1"].status == "failed"
+        assert bus.log_events
+        level, message, node_id, _timestamp = bus.log_events[-1]
+        assert level == "ERROR"
+        assert node_id == "n1"
+        assert "Node n1 failed: boom" in message
 
     async def test_cancelled_publishes_unexecuted(
         self, monkeypatch: pytest.MonkeyPatch
@@ -453,6 +472,29 @@ class TestExecutionManagerResult:
             "Workflow execution failed: kaboom" in rec.message
             for rec in caplog.records
         )
+        assert bus.log_events
+        level, message, node_id, _timestamp = bus.log_events[-1]
+        assert level == "ERROR"
+        assert node_id is None
+        assert "Workflow execution failed: kaboom" in message
+
+    async def test_failed_progress_with_exception_emits_one_error_log(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(
+            events=[
+                _ProgressEventStub("n1", "started"),
+                _ProgressEventStub("n1", "failed", message="boom"),
+            ],
+        )
+        wf.raise_exc = RuntimeError("boom")
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+        assert [event[0] for event in bus.log_events] == ["ERROR"]
+        assert bus.log_events[0][2] == "n1"
 
     async def test_execution_complete_event_payload(
         self, monkeypatch: pytest.MonkeyPatch

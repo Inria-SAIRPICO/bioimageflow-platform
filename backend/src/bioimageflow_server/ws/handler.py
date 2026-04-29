@@ -338,6 +338,18 @@ class ConnectionManager:
             "node_state",
         )
 
+    def publish_log(
+        self,
+        level: str,
+        message: str,
+        node_id: str | None,
+        timestamp: float,
+    ) -> None:
+        self._schedule(
+            self.broadcast_log(level, message, node_id, timestamp),
+            "log",
+        )
+
     def publish_execution_complete(
         self,
         success: bool,
