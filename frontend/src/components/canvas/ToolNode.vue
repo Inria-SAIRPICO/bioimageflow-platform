@@ -16,6 +16,11 @@ export interface NodeData {
   pinnedInputs: Record<string, boolean>
   output_templates: Record<string, string>
   provisional?: boolean
+  // Set by useHotReload when this node's tool source was edited.
+  // Cleared when the user clicks the refresh-icon badge.
+  updatedBadge?: boolean
+  // Set by useHotReload when the tool was removed from the registry.
+  toolMissing?: boolean
 }
 
 const props = defineProps<{
@@ -26,6 +31,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'context-menu': [event: MouseEvent]
   'toggle-collapse': [id: string]
+  'dismiss-badge': [id: string]
 }>()
 
 /**
@@ -132,6 +138,11 @@ function onContextMenu(event: MouseEvent) {
   event.preventDefault()
   emit('context-menu', event)
 }
+
+function onDismissBadge(event: MouseEvent) {
+  event.stopPropagation()
+  emit('dismiss-badge', props.id)
+}
 </script>
 
 <template>
@@ -143,6 +154,7 @@ function onContextMenu(event: MouseEvent) {
         disabled: !data.enabled,
         provisional: data.provisional,
         collapsed: data.collapsed,
+        'tool-missing': data.toolMissing,
       },
     ]"
     @contextmenu="onContextMenu"
@@ -204,6 +216,15 @@ function onContextMenu(event: MouseEvent) {
       <span class="status-indicator" :class="statusClass"></span>
       <span v-if="hasGpu" class="gpu-badge">GPU</span>
       <span v-if="data.provisional" class="provisional-indicator">provisional</span>
+      <button
+        v-if="data.updatedBadge === true"
+        type="button"
+        class="updated-badge"
+        title="Tool source was reloaded — click to dismiss."
+        @click="onDismissBadge"
+      >
+        ↻
+      </button>
     </div>
   </div>
 </template>
@@ -340,6 +361,32 @@ function onContextMenu(event: MouseEvent) {
 .collapsed .node-header {
   border-bottom: none;
   border-radius: 6px;
+}
+
+/* Hot-reload badge: small refresh icon shown when the tool was reloaded. */
+.updated-badge {
+  margin-left: auto;
+  background: var(--p-primary-50);
+  color: var(--p-primary-color);
+  border: 1px solid var(--p-primary-300, var(--p-primary-color));
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.updated-badge:hover {
+  background: var(--p-primary-100, var(--p-primary-50));
+}
+
+.tool-missing {
+  border-color: var(--p-red-500);
+  background: var(--p-red-50, var(--p-surface-0));
 }
 </style>
 
