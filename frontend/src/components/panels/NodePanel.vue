@@ -12,6 +12,7 @@ import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
+import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
 import type { GraphValidationError, InputFieldSchema } from '@/api/types'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
@@ -446,6 +447,12 @@ async function pickFolder(key: string) {
           <span v-else class="null-indicator">null</span>
         </div>
       </div>
+
+      <!-- Execution error display: above Outputs section, only when failed -->
+      <NodeOutputErrorBlock
+        v-if="uiStore.selectedNodeIds[0]"
+        :node-id="uiStore.selectedNodeIds[0]"
+      />
 
       <!-- Outputs section (Fix 19: output template editing) -->
       <div v-if="nodeData.tool?.outputs" class="outputs-section">
