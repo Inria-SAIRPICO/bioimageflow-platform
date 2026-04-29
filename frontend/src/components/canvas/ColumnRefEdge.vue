@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { getBezierPath, Position } from '@vue-flow/core'
 import { getTypeColor } from '@/utils/typeColors'
+import type { GraphValidationError } from '@/api/types'
 
 defineOptions({ inheritAttrs: false })
 
@@ -13,7 +14,7 @@ const props = defineProps<{
   targetY: number
   sourcePosition: Position
   targetPosition: Position
-  data?: { type?: string }
+  data?: { type?: string; errors?: GraphValidationError[] }
 }>()
 
 const path = computed(() => {
@@ -28,9 +29,16 @@ const path = computed(() => {
   return d
 })
 
+const hasError = computed(() => (props.data?.errors?.length ?? 0) > 0)
+
 const strokeColor = computed(() => {
+  if (hasError.value) return 'var(--p-red-500)'
   return getTypeColor(props.data?.type ?? '')
 })
+
+const errorTitle = computed(() =>
+  (props.data?.errors ?? []).map((e) => e.detail).join('\n'),
+)
 </script>
 
 <template>
@@ -43,10 +51,12 @@ const strokeColor = computed(() => {
   />
   <path
     :id="id"
-    class="vue-flow__edge-path"
+    :class="['vue-flow__edge-path', { 'edge-error': hasError }]"
     :d="path"
     :stroke="strokeColor"
     stroke-width="2"
     fill="none"
-  />
+  >
+    <title v-if="hasError">{{ errorTitle }}</title>
+  </path>
 </template>

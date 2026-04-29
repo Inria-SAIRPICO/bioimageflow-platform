@@ -28,6 +28,54 @@ describe('ColumnRefEdge', () => {
     expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
   })
 
+  it('does NOT have edge-error class when errors is empty', () => {
+    const w = mount(ColumnRefEdge, {
+      props: { ...baseEdgeProps, data: { type: 'ImagePath', errors: [] } } as any,
+    })
+    expect(w.find('.vue-flow__edge-path').classes()).not.toContain('edge-error')
+  })
+
+  it('applies edge-error class and red stroke when data.errors is non-empty', () => {
+    const w = mount(ColumnRefEdge, {
+      props: {
+        ...baseEdgeProps,
+        data: {
+          type: 'ImagePath',
+          errors: [
+            {
+              type: 'type_incompatible',
+              detail: 'Source ImagePath is not compatible with target str',
+              edge_id: 'edge-1',
+            },
+          ],
+        },
+      } as any,
+    })
+    const path = w.find('.vue-flow__edge-path')
+    expect(path.classes()).toContain('edge-error')
+    expect(path.attributes('stroke')).toBe('var(--p-red-500)')
+  })
+
+  it('renders an SVG <title> with the first error detail when error present', () => {
+    const w = mount(ColumnRefEdge, {
+      props: {
+        ...baseEdgeProps,
+        data: {
+          errors: [
+            {
+              type: 'type_incompatible',
+              detail: 'incompatible types',
+              edge_id: 'edge-1',
+            },
+          ],
+        },
+      } as any,
+    })
+    const title = w.find('title')
+    expect(title.exists()).toBe(true)
+    expect(title.text()).toContain('incompatible types')
+  })
+
   it('applies stroke color from getTypeColor for ImagePath', () => {
     const w = mount(ColumnRefEdge, {
       props: { ...baseEdgeProps, data: { type: 'ImagePath' } } as any,
@@ -68,6 +116,26 @@ describe('PositionalEdge', () => {
     const path = w.find('.vue-flow__edge-path')
     expect(path.exists()).toBe(true)
     expect(path.attributes('d')).toBe('M 0 0 C 50 0 50 100 100 100')
+  })
+
+  it('applies edge-error class and red stroke when data.errors is non-empty', () => {
+    const w = mount(PositionalEdge, {
+      props: {
+        ...baseEdgeProps,
+        data: {
+          errors: [
+            {
+              type: 'type_incompatible',
+              detail: 'incompatible',
+              edge_id: 'edge-1',
+            },
+          ],
+        },
+      } as any,
+    })
+    const path = w.find('.vue-flow__edge-path')
+    expect(path.classes()).toContain('edge-error')
+    expect(path.attributes('stroke')).toBe('var(--p-red-500)')
   })
 
   it('uses neutral gray stroke color (#7A7A80)', () => {
