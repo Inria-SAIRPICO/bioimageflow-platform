@@ -267,6 +267,31 @@ export interface paths {
         patch: operations["patch_node_parameters_api_v1_graph_nodes__node_id__parameters_patch"];
         trace?: never;
     };
+    "/api/v1/graph/nodes/{node_id}/output_schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Node Output Schema
+         * @description Return the resolved output column schema for a single node.
+         *
+         *     The full ``GraphState`` is required because schema resolution may
+         *     depend on upstream wiring (e.g. merge tools). Build failures return
+         *     ``{resolved: false, columns: {}}`` — input edits frequently produce
+         *     transiently invalid graph states.
+         */
+        post: operations["resolve_node_output_schema_api_v1_graph_nodes__node_id__output_schema_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets": {
         parameters: {
             query?: never;
@@ -384,6 +409,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings */
+        get: operations["get_settings_api_v1_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Settings */
+        patch: operations["patch_settings_api_v1_settings_patch"];
         trace?: never;
     };
 }
@@ -519,6 +562,18 @@ export interface components {
             } | null;
         };
         /**
+         * NodeOutputSchemaResponse
+         * @description Response for ``POST /graph/nodes/{node_id}/output_schema``.
+         */
+        NodeOutputSchemaResponse: {
+            /** Resolved */
+            resolved: boolean;
+            /** Columns */
+            columns: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * NodeState
          * @description A single node in the processing graph.
          */
@@ -581,6 +636,23 @@ export interface components {
             error?: string | null;
             /** Traceback */
             traceback?: string | null;
+        };
+        /**
+         * OMEROInstance
+         * @description OMERO server connection configuration.
+         */
+        OMEROInstance: {
+            /** Name */
+            name?: string | null;
+            /** Host */
+            host: string;
+            /**
+             * Port
+             * @default 4064
+             */
+            port: number;
+            /** Username */
+            username: string;
         };
         /** PackageInfo */
         PackageInfo: {
@@ -645,6 +717,78 @@ export interface components {
         RevealRequest: {
             /** Path */
             path: string;
+        };
+        /**
+         * SettingsResponse
+         * @description ``GET``/``PATCH`` /settings response wrapper.
+         *
+         *     Adds two **server-resolved** convenience fields so the frontend can show
+         *     where tools and outputs *actually* live (env-var overrides applied,
+         *     ``~`` expanded). The raw ``Settings`` fields remain so PATCH bodies
+         *     stay symmetrical with what GET returns.
+         */
+        SettingsResponse: {
+            /**
+             * Deployment Mode
+             * @enum {string}
+             */
+            deployment_mode: "desktop" | "webapp";
+            /** External Editor */
+            external_editor?: string | null;
+            /** Napari Env Path */
+            napari_env_path?: string | null;
+            /**
+             * Omero Instances
+             * @default []
+             */
+            omero_instances: components["schemas"]["OMEROInstance"][];
+            /** Output Data Folder */
+            output_data_folder?: string;
+            /**
+             * Tool Store Path
+             * @default ~/.bioimageflow/tool_packages/
+             */
+            tool_store_path: string;
+            /**
+             * Update Mode
+             * @default auto
+             */
+            update_mode: ("auto" | "manual") | string;
+            /**
+             * Execution Engine
+             * @default sequential
+             * @enum {string}
+             */
+            execution_engine: "sequential" | "parsl";
+            /** Cache Max Executions */
+            cache_max_executions?: number | null;
+            /** Cache Max Age */
+            cache_max_age?: string | null;
+            /**
+             * Keyboard Shortcuts
+             * @default {}
+             */
+            keyboard_shortcuts: {
+                [key: string]: string;
+            };
+            /**
+             * Dev Mode
+             * @default true
+             */
+            dev_mode: boolean;
+            /** Datasets Root */
+            datasets_root?: string | null;
+            /**
+             * Max Upload Size
+             * @default 2147483648
+             */
+            max_upload_size: number;
+            /** Resolved Tool Store Path */
+            resolved_tool_store_path: string;
+            /** Resolved Output Data Folder */
+            resolved_output_data_folder: string;
+        } & {
+            [key: string]: unknown;
         };
         /** ToolCreate */
         ToolCreate: {
@@ -818,12 +962,15 @@ export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
+export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
+export type OmeroInstance = components['schemas']['OMEROInstance'];
 export type PackageInfo = components['schemas']['PackageInfo'];
 export type ParameterPatchRequest = components['schemas']['ParameterPatchRequest'];
 export type PositionalEdge = components['schemas']['PositionalEdge'];
 export type RevealRequest = components['schemas']['RevealRequest'];
+export type SettingsResponse = components['schemas']['SettingsResponse'];
 export type ToolCreate = components['schemas']['ToolCreate'];
 export type ToolMetadata = components['schemas']['ToolMetadata'];
 export type ToolRename = components['schemas']['ToolRename'];
@@ -832,17 +979,6 @@ export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
-/**
- * NodeOutputSchemaResponse
- * @description Response for ``POST /graph/nodes/{node_id}/output_schema``.
- */
-export interface NodeOutputSchemaResponse {
-  /** Resolved */
-  resolved: boolean;
-  /** Columns */
-  columns: { [key: string]: unknown };
-}
-
 export type $defs = Record<string, never>;
 export interface operations {
     health_api_v1_health_get: {
@@ -1373,6 +1509,41 @@ export interface operations {
             };
         };
     };
+    resolve_node_output_schema_api_v1_graph_nodes__node_id__output_schema_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphState"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeOutputSchemaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_datasets_api_v1_datasets_get: {
         parameters: {
             query?: never;
@@ -1567,4 +1738,66 @@ export interface operations {
             };
         };
     };
+    get_settings_api_v1_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+        };
+    };
+    patch_settings_api_v1_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
 }
+
+// --- Manual aliases (preserved across `generate-types` runs by the script) ---
+// Pydantic emits a single ``SettingsResponse`` schema (the GET/PATCH wrapper);
+// we re-export it as ``Settings`` so consumers don't have to know about the
+// wrapper, and keep the historical ``OMEROInstance`` casing.
+export type Settings = SettingsResponse;
+export type OMEROInstance = OmeroInstance;
