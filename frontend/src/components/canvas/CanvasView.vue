@@ -14,8 +14,10 @@ import { useUndoRedo } from '@/composables/useUndoRedo'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
+import { useHotReload } from '@/composables/useHotReload'
 import { useExecutionStore } from '@/stores/execution'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
+import { useToast } from 'primevue/usetoast'
 import type { NodeState } from '@/api/types'
 import type { ClipboardData } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
@@ -103,6 +105,32 @@ watch(
 const clipboardData = ref<ClipboardData | null>(null)
 const canvasRef = ref<HTMLDivElement | null>(null)
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
+
+// Hot-reload watcher: subscribes to toolRegistryStore.tools mutations
+// driven by useWebSocket and updates affected canvas nodes (badge,
+// schema swap, optimistic out_of_date, flushNow). useToast throws when
+// no ToastService is provided (e.g. in unit tests that mount CanvasView
+// in isolation), so guard it. The toast surfaces "Field 'X' was removed
+// by the tool update." when a focused field vanishes from the new
+// schema.
+let hotReloadToast: ReturnType<typeof useToast> | null = null
+try {
+  hotReloadToast = useToast()
+} catch {
+  /* no ToastService — useHotReload still runs without the toast surface */
+}
+useHotReload({
+  toast: hotReloadToast === null
+    ? undefined
+    : (message: string) => {
+        hotReloadToast!.add({
+          severity: 'warn',
+          summary: 'Tool reloaded',
+          detail: message,
+          life: 5000,
+        })
+      },
+})
 
 // --- Restore persisted workflow on mount ---
 
