@@ -53,7 +53,7 @@ from bioimageflow_server.routers.napari import (
 )
 from bioimageflow_server.routers.nodes import (
     get_result_store,
-    get_thumbnail_service,
+    get_thumbnail_manager,
     router as nodes_router,
 )
 from bioimageflow_server.routers.settings import (
@@ -81,7 +81,7 @@ from bioimageflow_server.services.package_installer import (
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
-from bioimageflow_server.services.thumbnail import ThumbnailService
+from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.ws import (
@@ -155,8 +155,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         storage_path=resolved_storage_path,
         tool_registry=registry,
     )
-    thumbnail_service = config.thumbnail_service or ThumbnailService(
+    thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
         cache_dir=resolved_storage_path / ".thumbnails",
+        env_path=resolved_settings.thumbnail_env_path,
+        connection_manager=ws_manager,
     )
 
     known = config.known_packages or KnownPackagesService.default()
@@ -245,6 +247,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).exception(
                     "napari_launcher.shutdown() raised during lifespan: %r",
+                    exc,
+                )
+            try:
+                await thumbnail_manager.shutdown()
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).exception(
+                    "thumbnail_manager.shutdown() raised during lifespan: %r",
                     exc,
                 )
             if hot_reload is not None and hot_reload_started:
@@ -365,7 +374,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings
     app.dependency_overrides[get_result_store] = lambda: result_store
-    app.dependency_overrides[get_thumbnail_service] = lambda: thumbnail_service
+    app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

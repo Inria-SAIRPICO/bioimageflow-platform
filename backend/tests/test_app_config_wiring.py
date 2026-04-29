@@ -25,7 +25,7 @@ from bioimageflow_server.routers.datasets import (
 )
 from bioimageflow_server.routers.nodes import (
     get_result_store,
-    get_thumbnail_service,
+    get_thumbnail_manager,
 )
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.package_installer import (
@@ -262,23 +262,23 @@ async def test_nodes_router_is_mounted():
 
 def test_app_config_wires_node_services():
     result_store = object()
-    thumbnail_service = object()
+    thumbnail_manager = object()
     cfg = AppConfig(
         result_store=result_store,
-        thumbnail_service=thumbnail_service,
+        thumbnail_manager=thumbnail_manager,
     )
     app = create_app(config=cfg)
     assert app.dependency_overrides[get_result_store]() is result_store
-    assert app.dependency_overrides[get_thumbnail_service]() is thumbnail_service
+    assert app.dependency_overrides[get_thumbnail_manager]() is thumbnail_manager
 
 
 def test_default_node_services_use_storage_path(tmp_path: Path):
     cfg = AppConfig(storage_path=tmp_path)
     app = create_app(config=cfg)
     result_store = app.dependency_overrides[get_result_store]()
-    thumbnail_service = app.dependency_overrides[get_thumbnail_service]()
+    thumbnail_manager = app.dependency_overrides[get_thumbnail_manager]()
     assert result_store.storage_path == tmp_path
-    assert thumbnail_service.cache_dir == tmp_path / ".thumbnails"
+    assert thumbnail_manager.cache_dir == tmp_path / ".thumbnails"
 
 
 def test_default_node_services_fall_back_to_bif_data():
