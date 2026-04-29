@@ -116,26 +116,46 @@ const graphSyncMocks = vi.hoisted(() => ({
   syncGraph: vi.fn(),
   flushNow: vi.fn(),
   patchParameters: vi.fn(),
-  loadWorkflow: vi.fn().mockResolvedValue(null),
+  serializeGraph: vi.fn((state: { nodes: any[]; edges: any[] }) => ({
+    nodes: state.nodes,
+    edges: state.edges,
+  })),
+}))
+
+const autoSaveMocks = vi.hoisted(() => ({
+  scheduleAutoSave: vi.fn(),
+  flushAutoSave: vi.fn().mockResolvedValue(undefined),
+  loadAutoSave: vi.fn().mockResolvedValue(null),
+  loadMostRecentAutoSave: vi.fn().mockResolvedValue(null),
+  clearAutoSave: vi.fn().mockResolvedValue(undefined),
+  setLastOpenedWorkflow: vi.fn().mockResolvedValue(undefined),
+  getLastOpenedWorkflow: vi.fn().mockResolvedValue(null),
+}))
+
+const apiMocks = vi.hoisted(() => ({
+  get: vi.fn((url: string) => {
+    if (url === '/api/v1/workflows') return Promise.resolve({ data: [] })
+    if (url === '/api/v1/tools') return Promise.resolve({ data: [] })
+    return Promise.resolve({ data: {} })
+  }),
+  post: vi.fn(() => Promise.resolve({ data: { name: 'Untitled', display_name: 'Untitled' } })),
+  put: vi.fn(() => Promise.resolve({ data: {} })),
+  patch: vi.fn(() => Promise.resolve({ data: {} })),
+  delete: vi.fn(() => Promise.resolve({ data: {} })),
 }))
 
 vi.mock('@/api/client', () => ({
-  api: {
-    get: vi.fn((url: string) => {
-      if (url === '/api/v1/workflows') return Promise.resolve({ data: [] })
-      if (url === '/api/v1/tools') return Promise.resolve({ data: [] })
-      return Promise.resolve({ data: {} })
-    }),
-    post: vi.fn(() => Promise.resolve({ data: {} })),
-    put: vi.fn(() => Promise.resolve({ data: {} })),
-    patch: vi.fn(() => Promise.resolve({ data: {} })),
-    delete: vi.fn(() => Promise.resolve({ data: {} })),
-  },
+  api: apiMocks,
+}))
+
+vi.mock('@/composables/useAutoSave', () => ({
+  useAutoSave: () => autoSaveMocks,
 }))
 
 vi.mock('@/composables/useGraphSync', async () => {
   const { ref } = await import('vue')
   return {
+    serializeGraph: graphSyncMocks.serializeGraph,
     useGraphSync: () => ({
       ...graphSyncMocks,
       validationResult: ref(null),
@@ -174,6 +194,37 @@ function mountCanvas(propsData: { nodes?: any[]; edges?: any[] } = {}) {
   })
 }
 
+function mockSavedWorkflow(
+  graph: { nodes: any[]; edges: any[] },
+  name = 'saved',
+  tools: ToolMetadata[] = [makeTool()],
+) {
+  apiMocks.get.mockImplementation((url: string) => {
+    if (url === '/api/v1/workflows') {
+      return Promise.resolve({
+        data: [{ name, display_name: 'Saved workflow' }],
+      })
+    }
+    if (url === `/api/v1/workflows/${name}`) {
+      return Promise.resolve({
+        data: {
+          info: { name, display_name: 'Saved workflow' },
+          graph,
+          missing_packages: [],
+          missing_tools: [],
+        },
+      })
+    }
+    if (url === '/api/v1/tools') return Promise.resolve({ data: tools })
+    return Promise.resolve({ data: {} })
+  })
+  autoSaveMocks.loadMostRecentAutoSave.mockResolvedValueOnce({
+    name,
+    graph,
+    timestamp: 1,
+  })
+}
+
 describe('CanvasView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -186,7 +237,25 @@ describe('CanvasView', () => {
     graphSyncMocks.syncGraph.mockClear()
     graphSyncMocks.flushNow.mockClear()
     graphSyncMocks.patchParameters.mockClear()
-    graphSyncMocks.loadWorkflow.mockReset().mockResolvedValue(null)
+    graphSyncMocks.serializeGraph.mockClear()
+    autoSaveMocks.scheduleAutoSave.mockClear()
+    autoSaveMocks.flushAutoSave.mockClear()
+    autoSaveMocks.loadAutoSave.mockReset().mockResolvedValue(null)
+    autoSaveMocks.loadMostRecentAutoSave.mockReset().mockResolvedValue(null)
+    autoSaveMocks.clearAutoSave.mockClear()
+    autoSaveMocks.setLastOpenedWorkflow.mockClear()
+    autoSaveMocks.getLastOpenedWorkflow.mockReset().mockResolvedValue(null)
+    apiMocks.get.mockReset().mockImplementation((url: string) => {
+      if (url === '/api/v1/workflows') return Promise.resolve({ data: [] })
+      if (url === '/api/v1/tools') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: {} })
+    })
+    apiMocks.post.mockReset().mockResolvedValue({
+      data: { name: 'Untitled', display_name: 'Untitled' },
+    })
+    apiMocks.put.mockReset().mockResolvedValue({ data: {} })
+    apiMocks.patch.mockReset().mockResolvedValue({ data: {} })
+    apiMocks.delete.mockReset().mockResolvedValue({ data: {} })
   })
 
   // --- Task 6: Core Vue Flow Setup ---
@@ -1129,39 +1198,32 @@ describe('CanvasView', () => {
     function savedNode(id: string, x: number) {
       return {
         id,
-        type: 'tool',
-        position: { x, y: 100 },
-        data: {
-          name: id,
-          toolName: 'gaussian_blur',
-          tool: makeTool(),
-          status: 'unexecuted',
-          parameters: {},
-          resources: {},
-          output_templates: {},
-          collapsed: false,
-          enabled: true,
-          connectedInputs: {},
-          pinnedInputs: {},
-        },
+        name: id,
+        tool_name: 'gaussian_blur',
+        position: [x, 100],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        collapsed: false,
+        enabled: true,
       }
     }
 
     function savedEdge(id: string, source: string, target: string) {
       return {
-        id,
-        source,
-        target,
-        sourceHandle: 'result',
-        targetHandle: 'image',
         type: 'column_ref',
+        id,
+        source_node: source,
+        target_node: target,
+        source_output: 'result',
+        target_input: 'image',
       }
     }
 
     it('restores both nodes and edges from persisted state', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+      mockSavedWorkflow({ nodes, edges })
 
       const w = mountCanvas()
       // Allow onMounted's async chain (await loadWorkflow + await nextTick) to settle.
@@ -1189,7 +1251,7 @@ describe('CanvasView', () => {
     it('sets nodes before edges so Vue Flow handles exist when edges attach', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+      mockSavedWorkflow({ nodes, edges })
 
       // Track call order: the restore path must populate nodes into Vue Flow's
       // internal state before edges, otherwise edges reference nodes/handles
@@ -1229,8 +1291,6 @@ describe('CanvasView', () => {
     })
 
     it('no-op when storage is empty', async () => {
-      graphSyncMocks.loadWorkflow.mockResolvedValueOnce(null)
-
       const w = mountCanvas()
       await flushPromises()
       await nextTick()
@@ -1242,10 +1302,7 @@ describe('CanvasView', () => {
     })
 
     it('no-op when storage has zero nodes', async () => {
-      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({
-        nodes: [],
-        edges: [],
-      })
+      mockSavedWorkflow({ nodes: [], edges: [] })
 
       const w = mountCanvas()
       await flushPromises()
@@ -1259,16 +1316,15 @@ describe('CanvasView', () => {
 
     it('restores edges even when the tool registry is empty (restore-race)', async () => {
       // Regression for a Firefox-specific bug where tool fetch was still in
-      // flight while CanvasView's onMounted restored edges. `isValidConnection`
-      // queried the empty registry, returned false, and Vue Flow rejected every
-      // restored edge with EDGE_INVALID. The fix reads tool metadata off the
-      // node itself (`data.tool`) instead of the async registry.
+      // flight while CanvasView's onMounted restored edges. Startup now awaits
+      // tool fetch before applying the saved graph, so the registry can be
+      // empty at mount time without rejecting restored connections.
       const store = useToolRegistryStore()
       store.tools = [] as any // registry empty — as if fetchTools hasn't resolved
 
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+      mockSavedWorkflow({ nodes, edges })
 
       const w = mountCanvas()
       await flushPromises()
@@ -1298,15 +1354,14 @@ describe('CanvasView', () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [
         {
-          id: 'e_pos',
-          source: 'a',
-          target: 'b',
-          sourceHandle: 'result',
-          targetHandle: '__positional_0',
           type: 'positional',
+          id: 'e_pos',
+          source_node: 'a',
+          target_node: 'b',
+          positional_index: 0,
         },
       ]
-      graphSyncMocks.loadWorkflow.mockResolvedValueOnce({ nodes, edges })
+      mockSavedWorkflow({ nodes, edges })
 
       const w = mountCanvas()
       await flushPromises()
@@ -1645,6 +1700,11 @@ describe('CanvasView', () => {
       const w = mountCanvas()
       await flushPromises()
       await nextTick()
+      mockNodes.splice(0, mockNodes.length,
+        { id: 'files_1', data: { toolName: 'files', tool: filesTool, name: 'Files 1', connectedInputs: {} } },
+        { id: 'join_1', data: { toolName: 'cross_join', tool: joinTool, name: 'CrossJoin 1', connectedInputs: {} } },
+      )
+      mockEdges.splice(0, mockEdges.length)
       ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
 
       connectHandler!({
@@ -1700,6 +1760,27 @@ describe('CanvasView', () => {
       const w = mountCanvas()
       await flushPromises()
       await nextTick()
+      mockNodes.splice(0, mockNodes.length,
+        { id: 'files_1', data: { toolName: 'files', tool: filesTool, name: 'Files 1', connectedInputs: {} } },
+        {
+          id: 'join_1',
+          data: {
+            toolName: 'cross_join',
+            tool: joinTool,
+            name: 'CrossJoin 1',
+            connectedInputs: { __positional_0: 'files_1.__dataframe_out' },
+          },
+        },
+      )
+      mockEdges.splice(0, mockEdges.length, {
+        id: 'e1',
+        source: 'files_1',
+        target: 'join_1',
+        sourceHandle: '__dataframe_out',
+        targetHandle: '__positional_0',
+        type: 'positional',
+        selected: true,
+      })
       ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
 
       const vm = w.vm as any
@@ -1740,6 +1821,11 @@ describe('CanvasView', () => {
       const w = mountCanvas()
       await flushPromises()
       await nextTick()
+      mockNodes.splice(0, mockNodes.length,
+        { id: 'files_1', data: { toolName: 'files', tool: filesTool, name: 'Files 1', connectedInputs: {} } },
+        { id: 'filter_1', data: { toolName: 'filter_rows', tool: passthroughTool, name: 'Filter 1', connectedInputs: {} } },
+      )
+      mockEdges.splice(0, mockEdges.length)
       ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
 
       connectHandler!({
