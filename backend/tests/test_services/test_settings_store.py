@@ -12,6 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.services.omero_credentials import OmeroCredentialError, OmeroCredentialKey
 from bioimageflow_server.services.settings_store import SettingsStore
 
 
@@ -25,6 +26,30 @@ def anyio_backend() -> str:
 
 def _read_disk(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text())
+
+
+class FakeOmeroCredentials:
+    def __init__(self) -> None:
+        self.passwords: dict[str, str] = {}
+        self.deleted: list[str] = []
+        self.fail_set = False
+        self.fail_set_after: int | None = None
+        self.set_calls = 0
+
+    def get_password(self, key: OmeroCredentialKey) -> str | None:
+        return self.passwords.get(key.username)
+
+    def set_password(self, key: OmeroCredentialKey, password: str) -> None:
+        self.set_calls += 1
+        if self.fail_set:
+            raise OmeroCredentialError("keyring write failed")
+        if self.fail_set_after is not None and self.set_calls > self.fail_set_after:
+            raise OmeroCredentialError("keyring write failed")
+        self.passwords[key.username] = password
+
+    def delete_password(self, key: OmeroCredentialKey) -> None:
+        self.deleted.append(key.username)
+        self.passwords.pop(key.username, None)
 
 
 class TestLoad:
@@ -65,15 +90,9 @@ class TestLoad:
         assert result.external_editor == "code {file_path}"
         assert result.execution_engine == "sequential"  # default
 
-    async def test_file_without_settings_version_loads_as_v1(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_file_without_settings_version_loads_as_v1(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
-        path.write_text(
-            json.dumps(
-                {"deployment_mode": "desktop", "external_editor": "vim"}
-            )
-        )
+        path.write_text(json.dumps({"deployment_mode": "desktop", "external_editor": "vim"}))
         store = SettingsStore(path=path)
         result = await store.load()
         assert result.external_editor == "vim"
@@ -91,9 +110,7 @@ class TestLoad:
         # File untouched.
         assert _read_disk(path) == original
 
-    async def test_unknown_keys_are_stripped_before_validation(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_unknown_keys_are_stripped_before_validation(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         path.write_text(
             json.dumps(
@@ -297,6 +314,178 @@ class TestPatch:
         s = store.get()
         assert s.external_editor == "vim"
         assert s.napari_env_path == "/envs/napari"
+
+    async def test_omero_patch_accepts_transient_password_without_persisting_it(
+        self, tmp_path: Path
+    ) -> None:
+        credentials = FakeOmeroCredentials()
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+
+        result = await store.patch(
+            {
+                "omero_instances": [
+                    {
+                        "name": " Prod ",
+                        "host": " omero.example.com ",
+                        "port": 4064,
+                        "username": " admin ",
+                        "password": "secret",
+                    }
+                ]
+            }
+        )
+
+        assert result.omero_instances[0].name == "Prod"
+        assert result.omero_instances[0].host == "omero.example.com"
+        assert credentials.passwords == {"omero.example.com:4064:admin": "secret"}
+        on_disk = _read_disk(path)
+        assert on_disk["omero_instances"] == [
+            {
+                "name": "Prod",
+                "host": "omero.example.com",
+                "port": 4064,
+                "username": "admin",
+            }
+        ]
+        assert "password" not in json.dumps(on_disk)
+        assert "password_stored" not in json.dumps(on_disk)
+
+    async def test_omero_remove_deletes_stored_password(self, tmp_path: Path) -> None:
+        credentials = FakeOmeroCredentials()
+        store = SettingsStore(path=tmp_path / "s.json", omero_credentials=credentials)
+        await store.load()
+        await store.patch(
+            {
+                "omero_instances": [
+                    {
+                        "host": "omero.example.com",
+                        "username": "admin",
+                        "password": "secret",
+                    }
+                ]
+            }
+        )
+
+        await store.patch({"omero_instances": []})
+
+        assert credentials.deleted == ["omero.example.com:4064:admin"]
+        assert credentials.passwords == {}
+
+    async def test_omero_rekey_without_password_deletes_old_key(self, tmp_path: Path) -> None:
+        credentials = FakeOmeroCredentials()
+        store = SettingsStore(path=tmp_path / "s.json", omero_credentials=credentials)
+        await store.load()
+        await store.patch(
+            {
+                "omero_instances": [
+                    {
+                        "host": "old.example.com",
+                        "username": "admin",
+                        "password": "secret",
+                    }
+                ]
+            }
+        )
+
+        await store.patch({"omero_instances": [{"host": "new.example.com", "username": "admin"}]})
+
+        assert credentials.deleted == ["old.example.com:4064:admin"]
+        assert credentials.passwords == {}
+        assert not store.omero_password_stored(store.get().omero_instances[0])
+
+    async def test_omero_set_failure_leaves_disk_and_memory_unchanged(self, tmp_path: Path) -> None:
+        credentials = FakeOmeroCredentials()
+        credentials.fail_set = True
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+        before_disk = path.read_text()
+        before_memory = store.get()
+
+        with pytest.raises(OmeroCredentialError):
+            await store.patch(
+                {
+                    "omero_instances": [
+                        {
+                            "host": "omero.example.com",
+                            "username": "admin",
+                            "password": "secret",
+                        }
+                    ]
+                }
+            )
+
+        assert path.read_text() == before_disk
+        assert store.get() is before_memory
+        assert credentials.passwords == {}
+
+    async def test_omero_settings_write_failure_rolls_back_written_password(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        credentials = FakeOmeroCredentials()
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+        before_disk = path.read_text()
+        before_memory = store.get()
+
+        def boom(*_: Any, **__: Any) -> None:
+            raise OSError("rename failed")
+
+        monkeypatch.setattr(os, "replace", boom)
+
+        with pytest.raises(OSError):
+            await store.patch(
+                {
+                    "omero_instances": [
+                        {
+                            "host": "omero.example.com",
+                            "username": "admin",
+                            "password": "secret",
+                        }
+                    ]
+                }
+            )
+
+        assert path.read_text() == before_disk
+        assert store.get() is before_memory
+        assert credentials.passwords == {}
+        assert credentials.deleted == ["omero.example.com:4064:admin"]
+        assert "password" not in path.read_text()
+
+    async def test_omero_partial_keyring_set_failure_rolls_back_written_keys(
+        self, tmp_path: Path
+    ) -> None:
+        credentials = FakeOmeroCredentials()
+        credentials.fail_set_after = 1
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path, omero_credentials=credentials)
+        await store.load()
+        before_disk = path.read_text()
+
+        with pytest.raises(OmeroCredentialError):
+            await store.patch(
+                {
+                    "omero_instances": [
+                        {
+                            "host": "one.example.com",
+                            "username": "admin",
+                            "password": "one",
+                        },
+                        {
+                            "host": "two.example.com",
+                            "username": "admin",
+                            "password": "two",
+                        },
+                    ]
+                }
+            )
+
+        assert path.read_text() == before_disk
+        assert credentials.passwords == {}
+        assert credentials.deleted == ["one.example.com:4064:admin"]
 
 
 class TestFlush:

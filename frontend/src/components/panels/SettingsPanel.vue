@@ -15,6 +15,7 @@ import ExternalEditorSection from '@/components/panels/sections/ExternalEditorSe
 import NapariSection from '@/components/panels/sections/NapariSection.vue'
 import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
+import OmeroSection from '@/components/panels/sections/OmeroSection.vue'
 
 const settingsStore = useSettingsStore()
 const panel = useSettingsPanel()
@@ -98,6 +99,7 @@ function onUpdate(payload: { field: keyof Settings; value: unknown }) {
         <Tab value="napari">Napari</Tab>
         <Tab value="execution">Execution</Tab>
         <Tab value="storage">Storage</Tab>
+        <Tab value="omero">OMERO</Tab>
       </TabList>
       <TabPanels>
         <TabPanel value="external">
@@ -111,6 +113,9 @@ function onUpdate(payload: { field: keyof Settings; value: unknown }) {
         </TabPanel>
         <TabPanel value="storage">
           <StorageSection :model-value="liveSettings" @update:field="onUpdate" />
+        </TabPanel>
+        <TabPanel value="omero">
+          <OmeroSection :model-value="liveSettings" @update:field="onUpdate" />
         </TabPanel>
       </TabPanels>
     </Tabs>

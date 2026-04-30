@@ -6,9 +6,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ConfigDict, ValidationError
 
-from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.models.settings import OMEROInstanceResponse, Settings
+from bioimageflow_server.services.omero_credentials import OmeroCredentialError
 from bioimageflow_server.services.settings_store import SettingsStore
 
 
@@ -31,14 +32,24 @@ class SettingsResponse(Settings):
 
     model_config = ConfigDict(extra="allow")
 
+    omero_instances: list[OMEROInstanceResponse] = []
     resolved_tool_store_path: str
     resolved_output_data_folder: str
 
 
 def _wrap(store: SettingsStore) -> SettingsResponse:
     settings = store.get()
+    omero_instances = [
+        OMEROInstanceResponse(
+            **instance.model_dump(),
+            password_stored=store.omero_password_stored(instance),
+        )
+        for instance in settings.omero_instances
+    ]
+    payload = settings.model_dump()
+    payload["omero_instances"] = omero_instances
     return SettingsResponse(
-        **settings.model_dump(),
+        **payload,
         resolved_tool_store_path=str(_resolved_tool_store_path(store)),
         resolved_output_data_folder=str(store.resolved_output_data_folder()),
     )
@@ -55,11 +66,24 @@ def _resolved_tool_store_path(store: SettingsStore):
     return get_tool_store_path()
 
 
+def _keyring_http_error(exc: OmeroCredentialError) -> HTTPException:
+    return HTTPException(
+        status_code=500,
+        detail={
+            "error": "settings_keyring_error",
+            "detail": str(exc),
+        },
+    )
+
+
 @router.get("", response_model=SettingsResponse)
 async def get_settings(
     store: SettingsStore = Depends(get_settings_store),
 ) -> SettingsResponse:
-    return _wrap(store)
+    try:
+        return _wrap(store)
+    except OmeroCredentialError as exc:
+        raise _keyring_http_error(exc) from exc
 
 
 @router.patch("", response_model=SettingsResponse)
@@ -78,4 +102,9 @@ async def patch_settings(
         # Re-raise as RequestValidationError so the existing handler in
         # app.py produces the standard ErrorResponse shape.
         raise RequestValidationError(exc.errors()) from exc
-    return _wrap(store)
+    except OmeroCredentialError as exc:
+        raise _keyring_http_error(exc) from exc
+    try:
+        return _wrap(store)
+    except OmeroCredentialError as exc:
+        raise _keyring_http_error(exc) from exc

@@ -2,9 +2,12 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { AxiosError } from 'axios'
 import { api } from '@/api/client'
-import type { Settings } from '@/api/types'
+import type { OMEROInstancePatch, Settings } from '@/api/types'
 
 export type { Settings }
+export type SettingsPatch = Omit<Partial<Settings>, 'omero_instances'> & {
+  omero_instances?: OMEROInstancePatch[]
+}
 
 function _extractError(e: unknown): string {
   if (e instanceof AxiosError && e.response?.data) {
@@ -37,11 +40,27 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function _doPatch(partial: Partial<Settings>): Promise<void> {
+  function _sanitizeOptimisticPatch(partial: SettingsPatch): Partial<Settings> {
+    const sanitized = { ...partial } as Partial<Settings>
+    if (partial.omero_instances) {
+      sanitized.omero_instances = partial.omero_instances.map(
+        ({ password: _password, ...instance }) => instance,
+      ) as Settings['omero_instances']
+    }
+    return sanitized
+  }
+
+  async function _doPatch(partial: SettingsPatch): Promise<void> {
     const previous = settings.value
-    // Optimistic merge so listeners see the change immediately.
-    if (previous !== null) {
-      settings.value = { ...previous, ...partial } as Settings
+    const containsOmeroInstances = partial.omero_instances !== undefined
+    // Optimistic merge so listeners see ordinary changes immediately. OMERO
+    // patches wait for the server response so local password form state is not
+    // cleared before a failed keyring write can be retried.
+    if (previous !== null && !containsOmeroInstances) {
+      settings.value = {
+        ...previous,
+        ..._sanitizeOptimisticPatch(partial),
+      } as Settings
     }
     try {
       const { data } = await api.patch<Settings>('/api/v1/settings', partial)
@@ -56,7 +75,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function updateSettings(partial: Partial<Settings>) {
+  async function updateSettings(partial: SettingsPatch) {
     const next = lastPromise.then(() => _doPatch(partial))
     lastPromise = next.catch(() => {
       /* swallow so a single rejection doesn't poison subsequent calls */

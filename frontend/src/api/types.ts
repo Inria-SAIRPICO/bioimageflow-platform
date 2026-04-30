@@ -951,6 +951,44 @@ export interface components {
             /** Username */
             username: string;
         };
+        /**
+         * OMEROInstancePatch
+         * @description API-facing OMERO instance patch with transient password input.
+         */
+        OMEROInstancePatch: {
+            /** Name */
+            name?: string | null;
+            /** Host */
+            host: string;
+            /**
+             * Port
+             * @default 4064
+             */
+            port: number;
+            /** Username */
+            username: string;
+            /** Password */
+            password?: string | null;
+        };
+        /**
+         * OMEROInstanceResponse
+         * @description API-facing OMERO instance response with non-secret password state.
+         */
+        OMEROInstanceResponse: {
+            /** Name */
+            name?: string | null;
+            /** Host */
+            host: string;
+            /**
+             * Port
+             * @default 4064
+             */
+            port: number;
+            /** Username */
+            username: string;
+            /** Password Stored */
+            password_stored: boolean;
+        };
         /** PackageInfo */
         PackageInfo: {
             /** Name */
@@ -1042,7 +1080,7 @@ export interface components {
              * Omero Instances
              * @default []
              */
-            omero_instances: components["schemas"]["OMEROInstance"][];
+            omero_instances: components["schemas"]["OMEROInstanceResponse"][];
             /** Output Data Folder */
             output_data_folder?: string;
             /**
@@ -1359,6 +1397,8 @@ export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaRe
 export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
 export type OmeroInstance = components['schemas']['OMEROInstance'];
+export type OmeroInstancePatch = components['schemas']['OMEROInstancePatch'];
+export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
 export type PackageInfo = components['schemas']['PackageInfo'];
 export type ParameterPatchRequest = components['schemas']['ParameterPatchRequest'];
 export type PositionalEdge = components['schemas']['PositionalEdge'];
@@ -2662,4 +2702,5 @@ export interface operations {
 
 // --- Manual aliases (re-applied after every `generate-types` run) ---
 export type Settings = SettingsResponse;
-export type OMEROInstance = OmeroInstance;
+export type OMEROInstance = OmeroInstanceResponse;
+export type OMEROInstancePatch = OmeroInstancePatch;
