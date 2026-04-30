@@ -202,6 +202,7 @@ describe('execution store', () => {
     const p: ProgressInfo = { node_id: 'n1', row: 5, total_rows: 10 }
     store.applyProgress(p)
     expect(store.progress).toEqual(p)
+    expect(store.state).toBe('running')
   })
 
   it('applyNodeState writes into nodeStatuses by node_id', () => {
@@ -217,6 +218,58 @@ describe('execution store', () => {
       cached: false,
       error: null,
       traceback: null,
+    })
+    expect(store.state).toBe('running')
+  })
+
+  it('applyStatusSnapshot reconciles websocket execution state', () => {
+    const store = useExecutionStore()
+    store.nodeStatuses = {
+      old: { node_id: 'old', status: 'executed', cached: false },
+    }
+
+    const lastResult: ExecutionResult = {
+      success: true,
+      errors: [],
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'executed', cached: false },
+      },
+    }
+    store.applyStatusSnapshot({
+      state: 'idle',
+      last_result: lastResult,
+      progress: null,
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'executed', cached: false },
+      },
+    })
+
+    expect(store.state).toBe('idle')
+    expect(store.lastResult).toEqual(lastResult)
+    expect(store.progress).toBeNull()
+    expect(store.nodeStatuses).toEqual({
+      n1: { node_id: 'n1', status: 'executed', cached: false },
+    })
+  })
+
+  it('applyStatusSnapshot replaces stale node statuses from older runs', () => {
+    const store = useExecutionStore()
+    store.nodeStatuses = {
+      a: { node_id: 'a', status: 'executed', cached: false },
+      b: { node_id: 'b', status: 'failed', cached: false, error: 'old' },
+    }
+
+    store.applyStatusSnapshot({
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        a: { node_id: 'a', status: 'running', cached: false },
+      },
+    })
+
+    expect(store.nodeStatuses).toEqual({
+      a: { node_id: 'a', status: 'running', cached: false },
     })
   })
 

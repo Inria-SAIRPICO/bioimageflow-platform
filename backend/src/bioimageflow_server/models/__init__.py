@@ -51,6 +51,7 @@ from bioimageflow_server.models.ws import (
     ProgressMessage,
     ServerMessage,
     SubscribeLogsMessage,
+    StatusSnapshotMessage,
     ToolReloadMessage,
 )
 
@@ -87,6 +88,7 @@ __all__ = [
     "ServerMessage",
     "Settings",
     "SubscribeLogsMessage",
+    "StatusSnapshotMessage",
     "ToolCreate",
     "ToolMetadata",
     "ToolReloadMessage",

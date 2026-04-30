@@ -134,6 +134,9 @@ function dispatch(raw: unknown) {
     case 'execution_complete':
       useExecutionStore().applyExecutionComplete(msg as never)
       break
+    case 'status_snapshot':
+      useExecutionStore().applyStatusSnapshot(msg as never)
+      break
     case 'tool_reload':
       callIfExists(
         useToolRegistryStore() as unknown as Record<string, unknown>,
@@ -277,11 +280,6 @@ function sendUnfilteredLogSubscription() {
 }
 
 async function runReconnectRecovery() {
-  try {
-    await useExecutionStore().fetchStatus()
-  } catch (err) {
-    console.warn('[useWebSocket] fetchStatus on reconnect failed:', err)
-  }
   try {
     await useToolRegistryStore().fetchTools()
   } catch (err) {

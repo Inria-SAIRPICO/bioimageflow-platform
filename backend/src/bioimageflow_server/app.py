@@ -346,7 +346,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     # ---- WebSocket layer ------------------------------------------------
     if ws_manager is not None:
-        register_ws(app, ws_manager)
+        register_ws(
+            app,
+            ws_manager,
+            status_provider=execution_manager.get_status
+            if hasattr(execution_manager, "get_status")
+            else None,
+        )
         app.state.connection_manager = ws_manager
 
     app.include_router(health_router, prefix="/api/v1")

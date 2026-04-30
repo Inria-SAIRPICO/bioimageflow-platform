@@ -18,6 +18,7 @@ from bioimageflow_server.models.ws import (
     ServerMessage,
     SubscribeLogsMessage,
     SystemErrorMessage,
+    StatusSnapshotMessage,
     ToolReloadMessage,
     ToolRemovedMessage,
 )
@@ -118,6 +119,22 @@ class TestExecutionCompleteMessage:
         assert msg.success is False
         assert len(msg.errors) == 1
         assert msg.node_statuses["n1"]["status"] == "failed"
+
+
+class TestStatusSnapshotMessage:
+    def test_running_snapshot(self) -> None:
+        msg = StatusSnapshotMessage(
+            state="running",
+            last_result=None,
+            progress={"node_id": "n1", "row": 2, "total_rows": 5},
+            node_statuses={
+                "n1": {"node_id": "n1", "status": "running", "cached": False}
+            },
+        )
+        assert msg.type == "status_snapshot"
+        assert msg.state == "running"
+        assert msg.progress["row"] == 2
+        assert msg.node_statuses["n1"]["status"] == "running"
 
 
 class TestToolReloadMessage:
@@ -268,6 +285,18 @@ class TestServerMessageUnion:
         )
         assert isinstance(parsed, ExecutionCompleteMessage)
 
+    def test_dispatch_status_snapshot(self) -> None:
+        parsed = self._adapter.validate_python(
+            {
+                "type": "status_snapshot",
+                "state": "idle",
+                "last_result": None,
+                "progress": None,
+                "node_statuses": {},
+            }
+        )
+        assert isinstance(parsed, StatusSnapshotMessage)
+
     def test_dispatch_tool_reload(self) -> None:
         parsed = self._adapter.validate_python(
             {
@@ -353,6 +382,12 @@ class TestJsonRoundTrip:
             LogMessage(level="INFO", message="m", timestamp=1.0),
             ExecutionCompleteMessage(
                 success=True, node_statuses={"n": {"status": "executed"}}
+            ),
+            StatusSnapshotMessage(
+                state="idle",
+                last_result=None,
+                progress=None,
+                node_statuses={},
             ),
             ToolReloadMessage(tool_name="t", tool_metadata={"x": 1}),
             ToolRemovedMessage(tool_name="t"),
