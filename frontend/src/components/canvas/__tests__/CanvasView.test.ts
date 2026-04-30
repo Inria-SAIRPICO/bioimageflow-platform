@@ -1349,6 +1349,67 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('loads last-opened renamed workflow when a stale autosave uses the old name', async () => {
+      const oldName = 'Untitled'
+      const newName = 'new_workflow'
+      const serverGraph = {
+        nodes: [savedNode('a', 100), savedNode('b', 400)],
+        edges: [savedEdge('e1', 'a', 'b')],
+      }
+      const staleGraph = {
+        nodes: [savedNode('stale', 100)],
+        edges: [],
+      }
+
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows') {
+          return Promise.resolve({
+            data: [{
+              name: newName,
+              display_name: 'New workflow',
+              path: '/tmp/new_workflow.json',
+              last_modified: '2026-04-30T12:00:00.000Z',
+            }],
+          })
+        }
+        if (url === `/api/v1/workflows/${newName}`) {
+          return Promise.resolve({
+            data: {
+              info: {
+                name: newName,
+                display_name: 'New workflow',
+                path: '/tmp/new_workflow.json',
+                last_modified: '2026-04-30T12:00:00.000Z',
+              },
+              graph: serverGraph,
+              missing_packages: [],
+              missing_tools: [],
+            },
+          })
+        }
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
+        return Promise.resolve({ data: {} })
+      })
+      autoSaveMocks.loadMostRecentAutoSave.mockResolvedValueOnce({
+        name: oldName,
+        graph: staleGraph,
+        timestamp: Date.parse('2026-04-30T12:00:01.000Z'),
+      })
+      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(newName)
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['a', 'b'])
+      expect(mockEdges).toHaveLength(1)
+      expect(mockEdges[0].id).toBe('e1')
+      expect(autoSaveMocks.clearAutoSave).toHaveBeenCalledWith(oldName)
+
+      w.unmount()
+    })
+
     it('sets nodes before edges so Vue Flow handles exist when edges attach', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]

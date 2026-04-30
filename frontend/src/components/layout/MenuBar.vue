@@ -194,11 +194,11 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
-    await workflowStore.saveWorkflow(currentGraph.value)
+    const info = await workflowStore.saveWorkflow(currentGraph.value)
     toast?.add({
       severity: 'success',
       summary: 'Workflow saved',
-      detail: workflowStore.currentName,
+      detail: info.display_name,
       life: 2500,
     })
   } catch (err: unknown) {

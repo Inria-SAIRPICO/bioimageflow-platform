@@ -184,28 +184,34 @@ async function ensureDefaultWorkflow(): Promise<GraphState> {
 
 async function recoverStartupWorkflow() {
   await workflowStore.fetchWorkflows()
-  const autoSaved = await autoSave.loadMostRecentAutoSave()
+  let autoSaved = await autoSave.loadMostRecentAutoSave()
   const lastOpened = await autoSave.getLastOpenedWorkflow()
+  const workflowNames = new Set(workflowStore.workflows.map((workflow) => workflow.name))
+  if (autoSaved !== null && !workflowNames.has(autoSaved.name)) {
+    await autoSave.clearAutoSave(autoSaved.name)
+    autoSaved = null
+  }
   const targetName = autoSaved?.name ?? lastOpened
   const exists = targetName
-    ? workflowStore.workflows.some((workflow) => workflow.name === targetName)
+    ? workflowNames.has(targetName)
     : false
 
   if (targetName && exists) {
     const serverGraph = await workflowStore.loadWorkflow(targetName)
     const serverModified = Date.parse(workflowStore.current?.last_modified ?? '')
+    const matchingAutoSave = autoSaved?.name === targetName ? autoSaved : null
     const autoSaveIsFresh =
-      autoSaved?.name === targetName &&
-      (!Number.isFinite(serverModified) || autoSaved.timestamp > serverModified)
+      matchingAutoSave !== null &&
+      (!Number.isFinite(serverModified) || matchingAutoSave.timestamp > serverModified)
     if (
-      autoSaved?.name === targetName &&
+      matchingAutoSave !== null &&
       Number.isFinite(serverModified) &&
       !autoSaveIsFresh
     ) {
       await autoSave.clearAutoSave(targetName)
     }
     return {
-      graph: autoSaveIsFresh ? autoSaved.graph : serverGraph,
+      graph: autoSaveIsFresh ? matchingAutoSave.graph : serverGraph,
       dirty: autoSaveIsFresh,
     }
   }

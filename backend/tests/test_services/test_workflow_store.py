@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from bioimageflow_server.models.graph import GraphState, NodeState
+from bioimageflow_server.models.graph import ColumnRefEdge, GraphState, NodeState
 from bioimageflow_server.models.tools import PackageInfo
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody, WorkflowUpdate
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -124,12 +124,169 @@ def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:
     assert updated.description == "desc"
 
     duplicate = store.patch_workflow(
-        "wf",
+        updated.name,
         WorkflowUpdate(action="duplicate", new_name="copy", display_name="Copy"),
     )
     assert duplicate.name == "copy"
     assert duplicate.display_name == "Copy"
     assert store.get_workflow("copy").info.name == "copy"
+
+
+def test_display_name_update_renames_file_and_managed_storage(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(WorkflowCreate(name="Untitled", display_name="Untitled"))
+    old_storage = Path(info.storage_path)
+    old_storage.mkdir(parents=True)
+    marker = old_storage / "result.txt"
+    marker.write_text("kept", encoding="utf-8")
+
+    updated = store.patch_workflow(
+        "Untitled",
+        WorkflowUpdate(action="update", display_name="New workflow"),
+    )
+
+    assert updated.name == "new_workflow"
+    assert updated.display_name == "New workflow"
+    assert not (store.root_dir / "Untitled.json").exists()
+    assert (store.root_dir / "new_workflow.json").exists()
+    assert updated.storage_path == str(store.storage_base_dir / "new_workflow")
+    assert not old_storage.exists()
+    assert (store.storage_base_dir / "new_workflow" / "result.txt").read_text() == "kept"
+    raw = json.loads((store.root_dir / "new_workflow.json").read_text())
+    assert raw["metadata"]["storage_path"] == str(store.storage_base_dir / "new_workflow")
+    assert raw["workflow"]["config"]["storage_path"] == str(
+        store.storage_base_dir / "new_workflow"
+    )
+
+
+def test_display_name_update_rejects_existing_target_managed_storage_without_old_source(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(WorkflowCreate(name="Untitled", display_name="Untitled"))
+    old_storage = Path(info.storage_path)
+    target_storage = store.storage_base_dir / "new_workflow"
+    target_storage.mkdir(parents=True)
+
+    with pytest.raises(FileExistsError):
+        store.patch_workflow(
+            "Untitled",
+            WorkflowUpdate(action="update", display_name="New workflow"),
+        )
+
+    assert not old_storage.exists()
+    assert (store.root_dir / "Untitled.json").exists()
+    assert not (store.root_dir / "new_workflow.json").exists()
+
+
+def test_display_name_update_preserves_custom_storage_path(
+    tmp_path: Path,
+    store: WorkflowStoreService,
+) -> None:
+    custom_storage = tmp_path / "external-results"
+    store.create_workflow(
+        WorkflowCreate(
+            name="Untitled",
+            display_name="Untitled",
+            storage_path=str(custom_storage),
+        )
+    )
+
+    updated = store.patch_workflow(
+        "Untitled",
+        WorkflowUpdate(action="update", display_name="New workflow"),
+    )
+
+    assert updated.name == "new_workflow"
+    assert updated.storage_path == str(custom_storage)
+
+
+def test_display_name_update_rejects_managed_target_collision_with_custom_storage(
+    tmp_path: Path,
+    store: WorkflowStoreService,
+) -> None:
+    custom_storage = tmp_path / "external-results"
+    store.create_workflow(
+        WorkflowCreate(
+            name="Untitled",
+            display_name="Untitled",
+            storage_path=str(custom_storage),
+        )
+    )
+    target_storage = store.storage_base_dir / "new_workflow"
+    target_storage.mkdir(parents=True)
+
+    with pytest.raises(FileExistsError):
+        store.patch_workflow(
+            "Untitled",
+            WorkflowUpdate(action="update", display_name="New workflow"),
+        )
+
+    workflow = store.get_workflow("Untitled")
+    assert workflow.info.display_name == "Untitled"
+    assert workflow.info.storage_path == str(custom_storage)
+    assert target_storage.exists()
+
+
+def test_display_name_update_without_valid_slug_keeps_canonical_identity(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(WorkflowCreate(name="Untitled", display_name="Untitled"))
+
+    updated = store.patch_workflow(
+        "Untitled",
+        WorkflowUpdate(action="update", display_name="测试"),
+    )
+
+    assert updated.name == "Untitled"
+    assert updated.display_name == "测试"
+    assert updated.storage_path == info.storage_path
+    assert (store.root_dir / "Untitled.json").exists()
+    assert not (store.root_dir / ".json").exists()
+    raw = json.loads((store.root_dir / "Untitled.json").read_text())
+    assert raw["metadata"]["display_name"] == "测试"
+    assert raw["metadata"]["storage_path"] == info.storage_path
+    assert raw["workflow"]["config"]["storage_path"] == info.storage_path
+
+
+def test_save_after_rename_retains_graph_edges(store: WorkflowStoreService) -> None:
+    store.create_workflow(WorkflowCreate(name="Untitled", display_name="Untitled"))
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="a",
+                name="A",
+                tool_name="MissingSource",
+                position=(0, 0),
+                parameters={},
+            ),
+            NodeState(
+                id="b",
+                name="B",
+                tool_name="MissingTarget",
+                position=(100, 0),
+                parameters={},
+            ),
+        ],
+        edges=[
+            ColumnRefEdge(
+                id="e1",
+                source_node="a",
+                target_node="b",
+                source_output="result",
+                target_input="image",
+            )
+        ],
+    )
+
+    renamed = store.patch_workflow(
+        "Untitled",
+        WorkflowUpdate(action="update", display_name="New workflow"),
+    )
+    store.save_workflow(renamed.name, WorkflowSaveBody(graph=graph))
+    restored = store.get_workflow(renamed.name)
+
+    assert restored.graph.edges == graph.edges
 
 
 def test_delete_removes_only_managed_storage(
@@ -157,4 +314,13 @@ def test_delete_removes_only_managed_storage(
 def test_suggest_name(store: WorkflowStoreService) -> None:
     store.create_workflow(WorkflowCreate(name="wf"))
     store.create_workflow(WorkflowCreate(name="wf_2"))
+    assert store.suggest_name("wf") == "wf_3"
+
+
+def test_suggest_name_skips_managed_storage_collisions(
+    store: WorkflowStoreService,
+) -> None:
+    store.create_workflow(WorkflowCreate(name="wf"))
+    (store.storage_base_dir / "wf_2").mkdir(parents=True)
+
     assert store.suggest_name("wf") == "wf_3"
