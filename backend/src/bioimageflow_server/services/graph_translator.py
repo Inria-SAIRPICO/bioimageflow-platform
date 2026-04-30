@@ -847,11 +847,11 @@ def _sub_workflow_config(
     return {
         "name": node.id,
         "inputs": {
-            published.name: _schema_for_config(published.schema, published.default)
+            published.name: _schema_for_config(published.schema_, published.default)
             for published in node.published_inputs
         },
         "outputs": {
-            published.name: _schema_for_config(published.schema)
+            published.name: _schema_for_config(published.schema_)
             for published in node.published_outputs
         },
         "nodes": _graph_state_to_sub_workflow_config_nodes(

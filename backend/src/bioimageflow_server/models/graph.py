@@ -10,21 +10,25 @@ from pydantic import BaseModel, ConfigDict, Discriminator, Field
 class PublishedInput(BaseModel):
     """An internal sub-workflow field exposed as an outer input pin."""
 
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
     name: str
     internal_node_id: str
     internal_field: str
     kind: Literal["parameter", "input"]
-    schema: dict[str, Any] | None = None
+    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
     default: Any | None = None
 
 
 class PublishedOutput(BaseModel):
     """An internal sub-workflow output exposed as an outer output pin."""
 
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
     name: str
     internal_node_id: str
     internal_output: str
-    schema: dict[str, Any] | None = None
+    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
 
 
 class NodeState(BaseModel):
