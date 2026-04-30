@@ -24,12 +24,15 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
+from bioimageflow_server.models.graph import GraphState, NodeState
+from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
     PackageNetworkError,
     PackageNotFoundError,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 pytestmark = pytest.mark.anyio
 
@@ -116,6 +119,30 @@ async def test_get_tools_empty(empty_client: httpx.AsyncClient):
     assert resp.json() == []
 
 
+async def test_get_tools_discovers_existing_custom_tools(workflow_root: Path):
+    registry = ToolRegistryService()
+    custom_root = workflow_root / "tools"
+    custom_root.mkdir(parents=True)
+    from bioimageflow_server.services.custom_tools import CustomToolService
+
+    source = CustomToolService(workflow_root, registry).render_template(
+        "ExistingTool",
+        "ProcessingTool",
+    )
+    (custom_root / "existing_tool.py").write_text(source, encoding="utf-8")
+    config = AppConfig(
+        tool_registry=registry,
+        workflow_root=workflow_root,
+        disable_hot_reload=True,
+    )
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools")
+    assert resp.status_code == 200
+    tool = next(t for t in resp.json() if t["name"] == "ExistingTool")
+    assert tool["source_kind"] == "custom"
+    assert tool["editable"] is True
+
+
 async def test_get_tools_surfaces_nullable_per_field():
     """`nullable` is propagated through the API for each input field."""
     reg = ToolRegistryService()
@@ -129,7 +156,9 @@ async def test_get_tools_surfaces_nullable_per_field():
             tool_type="ProcessingTool",
             inputs={
                 "size": InputFieldSchema(
-                    type="int", required=True, connectable="not_by_default",
+                    type="int",
+                    required=True,
+                    connectable="not_by_default",
                 ),
                 "area_lim": InputFieldSchema(
                     type="float",
@@ -182,8 +211,9 @@ def workflow_root(tmp_path: Path) -> Path:
 
 
 async def test_create_processing_tool(workflow_root: Path):
+    registry = ToolRegistryService()
     config = AppConfig(
-        tool_registry=ToolRegistryService(),
+        tool_registry=registry,
         workflow_root=workflow_root,
     )
     async for client in _client(config):
@@ -191,12 +221,22 @@ async def test_create_processing_tool(workflow_root: Path):
             "/api/v1/tools",
             json={"name": "MySegmenter", "tool_type": "ProcessingTool"},
         )
+        tools = await client.get("/api/v1/tools")
     assert resp.status_code == 201
     generated = workflow_root / "tools" / "my_segmenter.py"
     assert generated.exists()
     content = generated.read_text()
     assert "class MySegmenter" in content
     assert "process_row" in content
+    body = resp.json()
+    assert body["name"] == "MySegmenter"
+    assert body["source_kind"] == "custom"
+    assert body["editable"] is True
+
+    assert tools.status_code == 200
+    created = next(t for t in tools.json() if t["name"] == "MySegmenter")
+    assert created["source_kind"] == "custom"
+    assert created["editable"] is True
 
 
 async def test_create_dataframe_tool(workflow_root: Path):
@@ -248,14 +288,37 @@ async def test_create_tool_duplicate(workflow_root: Path):
     assert resp.status_code == 409
 
 
+async def test_create_tool_rejects_registry_conflict(workflow_root: Path):
+    registry = ToolRegistryService()
+    registry.register_tool("Cellpose", _make_tool("Cellpose"))
+    config = AppConfig(tool_registry=registry, workflow_root=workflow_root)
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools",
+            json={"name": "Cellpose", "tool_type": "ProcessingTool"},
+        )
+    assert resp.status_code == 409
+
+
+async def test_create_tool_invalid_name_returns_422(workflow_root: Path):
+    config = AppConfig(tool_registry=ToolRegistryService(), workflow_root=workflow_root)
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools",
+            json={"name": "../BadTool", "tool_type": "ProcessingTool"},
+        )
+    assert resp.status_code == 422
+
+
 # ---------------------------------------------------------------------------
 # Task 7: DELETE /tools/{tool_name} and PATCH /tools/{tool_name}
 # ---------------------------------------------------------------------------
 
 
 async def test_delete_tool_success(workflow_root: Path):
+    registry = ToolRegistryService()
     config = AppConfig(
-        tool_registry=ToolRegistryService(),
+        tool_registry=registry,
         workflow_root=workflow_root,
     )
     async for client in _client(config):
@@ -265,7 +328,10 @@ async def test_delete_tool_success(workflow_root: Path):
         )
         resp = await client.delete("/api/v1/tools/Trash")
     assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
+    assert resp.json()["affected_workflows"] == []
     assert not (workflow_root / "tools" / "trash.py").exists()
+    assert registry.get_tool("Trash") is None
 
 
 async def test_delete_tool_not_found(workflow_root: Path):
@@ -278,9 +344,19 @@ async def test_delete_tool_not_found(workflow_root: Path):
     assert resp.status_code == 404
 
 
+async def test_delete_package_tool_forbidden(workflow_root: Path):
+    registry = ToolRegistryService()
+    registry.register_tool("Cellpose", _make_tool("Cellpose"))
+    config = AppConfig(tool_registry=registry, workflow_root=workflow_root)
+    async for client in _client(config):
+        resp = await client.delete("/api/v1/tools/Cellpose")
+    assert resp.status_code == 400
+
+
 async def test_rename_tool_success(workflow_root: Path):
+    registry = ToolRegistryService()
     config = AppConfig(
-        tool_registry=ToolRegistryService(),
+        tool_registry=registry,
         workflow_root=workflow_root,
     )
     async for client in _client(config):
@@ -293,8 +369,15 @@ async def test_rename_tool_success(workflow_root: Path):
             json={"new_name": "NewName"},
         )
     assert resp.status_code == 200
+    body = resp.json()
+    assert body["old_name"] == "OldName"
+    assert body["new_name"] == "NewName"
     assert not (workflow_root / "tools" / "old_name.py").exists()
-    assert (workflow_root / "tools" / "new_name.py").exists()
+    renamed = workflow_root / "tools" / "new_name.py"
+    assert renamed.exists()
+    assert "class NewName(" in renamed.read_text()
+    assert registry.get_tool("OldName") is None
+    assert registry.get_tool("NewName") is not None
 
 
 async def test_rename_tool_not_found(workflow_root: Path):
@@ -308,6 +391,102 @@ async def test_rename_tool_not_found(workflow_root: Path):
             json={"new_name": "Whatever"},
         )
     assert resp.status_code == 404
+
+
+async def test_rename_tool_target_conflict(workflow_root: Path):
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        workflow_root=workflow_root,
+    )
+    async for client in _client(config):
+        await client.post(
+            "/api/v1/tools",
+            json={"name": "OldName", "tool_type": "ProcessingTool"},
+        )
+        await client.post(
+            "/api/v1/tools",
+            json={"name": "NewName", "tool_type": "ProcessingTool"},
+        )
+        resp = await client.patch(
+            "/api/v1/tools/OldName",
+            json={"new_name": "NewName"},
+        )
+    assert resp.status_code == 409
+
+
+async def test_tool_usage_reports_saved_workflows(workflow_root: Path):
+    registry = ToolRegistryService()
+    registry.register_tool("MyTool", _make_tool("MyTool"))
+    store = WorkflowStoreService(workflow_root, registry)
+    store.create_workflow(WorkflowCreate(name="uses_tool"))
+    store.save_workflow(
+        "uses_tool",
+        WorkflowSaveBody(
+            graph=GraphState(
+                nodes=[
+                    NodeState(
+                        id="n1",
+                        name="n1",
+                        tool_name="MyTool",
+                        position=(0, 0),
+                        parameters={},
+                    )
+                ],
+                edges=[],
+            )
+        ),
+    )
+    store.create_workflow(WorkflowCreate(name="other"))
+    config = AppConfig(
+        tool_registry=registry,
+        workflow_root=workflow_root,
+        workflow_store=store,
+    )
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools/MyTool/usage")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "tool_name": "MyTool",
+        "affected_workflows": ["uses_tool"],
+        "in_open_workflow": None,
+    }
+
+
+async def test_delete_reports_saved_workflow_usage(workflow_root: Path):
+    registry = ToolRegistryService()
+    service_store = WorkflowStoreService(workflow_root, registry)
+    config = AppConfig(
+        tool_registry=registry,
+        workflow_root=workflow_root,
+        workflow_store=service_store,
+    )
+    async for client in _client(config):
+        await client.post(
+            "/api/v1/tools",
+            json={"name": "UsedTool", "tool_type": "ProcessingTool"},
+        )
+        service_store.create_workflow(WorkflowCreate(name="uses_tool"))
+        service_store.save_workflow(
+            "uses_tool",
+            WorkflowSaveBody(
+                graph=GraphState(
+                    nodes=[
+                        NodeState(
+                            id="n1",
+                            name="n1",
+                            tool_name="UsedTool",
+                            position=(0, 0),
+                            parameters={},
+                        )
+                    ],
+                    edges=[],
+                )
+            ),
+        )
+        resp = await client.delete("/api/v1/tools/UsedTool")
+    assert resp.status_code == 200
+    assert resp.json()["affected_workflows"] == ["uses_tool"]
+    assert "saved workflow" in resp.json()["warning"]
 
 
 # ---------------------------------------------------------------------------

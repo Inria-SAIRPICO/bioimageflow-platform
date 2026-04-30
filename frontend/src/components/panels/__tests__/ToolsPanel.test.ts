@@ -26,6 +26,7 @@ import type { ToolMetadata, PackageInfo, Settings } from '@/api/types'
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
+  patch: ReturnType<typeof vi.fn>
   delete: ReturnType<typeof vi.fn>
 }
 
@@ -44,6 +45,8 @@ const mockTools: ToolMetadata[] = [
     inputs: { image: { type: 'Image', required: true, nullable: false, connectable: 'by_default' } },
     outputs: { mask: { type: 'Image' } },
     environment: null,
+    source_kind: 'package',
+    editable: false,
   },
   {
     name: 'gaussian_blur',
@@ -59,6 +62,8 @@ const mockTools: ToolMetadata[] = [
     inputs: { image: { type: 'Image', required: true, nullable: false, connectable: 'by_default' } },
     outputs: { image: { type: 'Image' } },
     environment: null,
+    source_kind: 'package',
+    editable: false,
   },
   {
     name: 'cellpose',
@@ -74,6 +79,25 @@ const mockTools: ToolMetadata[] = [
     inputs: { image: { type: 'Image', required: true, nullable: false, connectable: 'by_default' } },
     outputs: { labels: { type: 'Labels' } },
     environment: null,
+    source_kind: 'package',
+    editable: false,
+  },
+  {
+    name: 'MyCustomTool',
+    display_name: 'My Custom Tool',
+    package: '__custom__',
+    package_version: 'local',
+    tool_type: 'ProcessingTool',
+    accepts_upstream: true,
+    dynamic_outputs: false,
+    documentation: 'Local custom tool',
+    tags: [],
+    categories: ['Custom'],
+    inputs: {},
+    outputs: {},
+    environment: null,
+    source_kind: 'custom',
+    editable: true,
   },
 ]
 
@@ -127,6 +151,9 @@ function mountPanel() {
   })
 
   const pinia = createPinia()
+  setActivePinia(pinia)
+  const settingsStore = useSettingsStore()
+  settingsStore.settings = makeSettings({ deployment_mode: 'desktop' })
   return mount(ToolsPanel, {
     global: {
       plugins: [pinia, PrimeVue, ConfirmationService, ToastService],
@@ -185,7 +212,7 @@ describe('ToolsPanel', () => {
     })
 
     const vm = wrapper.vm as unknown as { filteredTools: ToolMetadata[] }
-    expect(vm.filteredTools).toHaveLength(3)
+    expect(vm.filteredTools).toHaveLength(4)
   })
 
   it('does not render category tool counts in the tool list', async () => {
@@ -208,7 +235,7 @@ describe('ToolsPanel', () => {
     const vm = wrapper.vm as unknown as { treeNodes: Array<{ key: string; children?: unknown[] }> }
     const nodes = vm.treeNodes
 
-    expect(nodes).toHaveLength(2)
+    expect(nodes).toHaveLength(3)
     expect(nodes[0].key).toBe('bioimageflow-core')
     expect(nodes[0].children).toHaveLength(2)
     expect(nodes[1].key).toBe('bioimageflow-cellpose')
@@ -515,7 +542,14 @@ describe('ToolsPanel', () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings = makeSettings({ deployment_mode: 'desktop' })
 
-    mockedApi.get.mockResolvedValueOnce({ data: { path: '/path/to/tool.py' } })
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        tool_name: 'threshold',
+        path: '/path/to/tool.py',
+        source_kind: 'package',
+        editable: false,
+      },
+    })
     mockedApi.post.mockResolvedValueOnce({
       data: { opened: true, method: 'external', url: null, path: '/path/to/tool.py', message: null },
     })
@@ -529,6 +563,60 @@ describe('ToolsPanel', () => {
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
       path: '/path/to/tool.py',
     })
+  })
+
+  it('openInEditor copies the path when editor backend returns clipboard fallback', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        tool_name: 'threshold',
+        path: '/path/to/tool.py',
+        source_kind: 'package',
+        editable: false,
+      },
+    })
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        opened: false,
+        method: 'clipboard',
+        path: '/path/to/tool.py',
+        url: null,
+        message: null,
+      },
+    })
+
+    const vm = wrapper.vm as unknown as {
+      openInEditor: (name: string) => Promise<void>
+    }
+    await vm.openInEditor('threshold')
+
+    expect(writeText).toHaveBeenCalledWith('/path/to/tool.py')
+  })
+
+  it('custom tool actions are only available for editable custom tools', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const store = useToolRegistryStore()
+    const vm = wrapper.vm as unknown as {
+      isEditableTool: (tool: ToolMetadata) => boolean
+    }
+
+    expect(vm.isEditableTool(store.getToolByName('MyCustomTool')!)).toBe(true)
+    expect(vm.isEditableTool(store.getToolByName('threshold')!)).toBe(false)
   })
 
   it('openInEditor does nothing in webapp mode', async () => {

@@ -63,6 +63,7 @@ class ToolHotReloadService:
         self._cm = connection_manager
         self._debounce_s = debounce_ms / 1000.0
         self._observer: Observer | None = None
+        self._handler: PatternMatchingEventHandler | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
         # Debounce timers, keyed by (package, version).
@@ -77,16 +78,14 @@ class ToolHotReloadService:
         # that was already mutated by the install path.
         self._suppressed = threading.Event()
         self._pending: set[tuple[str, str]] = set()
-        self._pre_suppress_snapshots: dict[
-            tuple[str, str], dict[str, object]
-        ] = {}
+        self._pre_suppress_snapshots: dict[tuple[str, str], dict[str, object]] = {}
         self._lock = threading.Lock()
         self._stopped = False
 
     # -- public lifecycle ------------------------------------------------
 
-    async def start(self, watch_root: Path) -> None:
-        """Start watching ``watch_root`` for ``*.py`` changes."""
+    async def start(self, watch_root: Path | list[Path]) -> None:
+        """Start watching one or more roots for ``*.py`` changes."""
         self._loop = asyncio.get_running_loop()
         self._stopped = False
 
@@ -97,9 +96,18 @@ class ToolHotReloadService:
             ignore_directories=True,
         )
         handler.on_any_event = self._on_any_event  # type: ignore[assignment]
-        observer.schedule(handler, str(watch_root), recursive=True)
+        roots = [watch_root] if isinstance(watch_root, Path) else watch_root
+        for root in roots:
+            observer.schedule(handler, str(root), recursive=True)
         observer.start()
         self._observer = observer
+        self._handler = handler
+
+    def add_watch_root(self, watch_root: Path) -> None:
+        """Add another root to the running observer."""
+        if self._observer is None or self._handler is None:
+            return
+        self._observer.schedule(self._handler, str(watch_root), recursive=True)
 
     async def stop(self) -> None:
         """Cancel timers and stop the observer."""
@@ -113,13 +121,12 @@ class ToolHotReloadService:
             self._observer.stop()
             # Hop the join off the event loop so we don't block it.
             try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None, self._observer.join, 2.0
-                )
+                await asyncio.get_running_loop().run_in_executor(None, self._observer.join, 2.0)
             except RuntimeError:
                 # No running loop (very unlikely during shutdown).
                 self._observer.join(timeout=2.0)
             self._observer = None
+            self._handler = None
 
     # -- suppress / resume ----------------------------------------------
 
@@ -142,9 +149,7 @@ class ToolHotReloadService:
                 for ver in versions:
                     key = (pkg_name, ver)
                     if key not in self._pre_suppress_snapshots:
-                        self._pre_suppress_snapshots[key] = (
-                            self._registry.snapshot(pkg_name, ver)
-                        )
+                        self._pre_suppress_snapshots[key] = self._registry.snapshot(pkg_name, ver)
 
     def resume(self, emit_batch: bool = True) -> None:
         """Clear the suppression flag.
@@ -184,9 +189,7 @@ class ToolHotReloadService:
 
         for pair in pending:
             prior = pre.get(pair, {})
-            self._loop.call_soon_threadsafe(
-                self._fire_with_prior, pair, prior
-            )
+            self._loop.call_soon_threadsafe(self._fire_with_prior, pair, prior)
 
     # -- watchdog callback (worker thread) -------------------------------
 
@@ -197,9 +200,7 @@ class ToolHotReloadService:
         if self._loop is None or self._stopped:
             return
         # Hop to the asyncio loop where the rest of the state lives.
-        self._loop.call_soon_threadsafe(
-            asyncio.create_task, self._handle_event(path)
-        )
+        self._loop.call_soon_threadsafe(asyncio.create_task, self._handle_event(path))
 
     # -- loop-thread handlers --------------------------------------------
 
@@ -213,10 +214,7 @@ class ToolHotReloadService:
             self._loop = asyncio.get_running_loop()
         # Defensive ignore for paths the watchdog filter would drop.
         path_str = str(path)
-        if any(
-            (token in path_str)
-            for token in ("__pycache__", "___jb_tmp___", ".swp", ".swx")
-        ):
+        if any((token in path_str) for token in ("__pycache__", "___jb_tmp___", ".swp", ".swx")):
             return
         if path_str.endswith(".pyc") or path_str.endswith("~"):
             return
@@ -234,9 +232,7 @@ class ToolHotReloadService:
                 # suppress() ran but the registry didn't yet know about
                 # this package).
                 if pair not in self._pre_suppress_snapshots:
-                    self._pre_suppress_snapshots[pair] = (
-                        self._registry.snapshot(*pair)
-                    )
+                    self._pre_suppress_snapshots[pair] = self._registry.snapshot(*pair)
             return
 
         loop = asyncio.get_running_loop()
@@ -256,17 +252,13 @@ class ToolHotReloadService:
         prior = self._registry.snapshot(*pair)
         asyncio.create_task(self._do_reload(pair, prior))
 
-    def _fire_with_prior(
-        self, pair: tuple[str, str], prior: dict[str, object]
-    ) -> None:
+    def _fire_with_prior(self, pair: tuple[str, str], prior: dict[str, object]) -> None:
         """Resume()'s scheduled fire — uses the pre-suppress snapshot."""
         if self._stopped:
             return
         asyncio.create_task(self._do_reload(pair, prior))
 
-    async def _do_reload(
-        self, pair: tuple[str, str], prior: dict
-    ) -> None:
+    async def _do_reload(self, pair: tuple[str, str], prior: dict) -> None:
         """Run reload + diff + broadcast for a single ``(pkg, ver)`` pair."""
         pkg, ver = pair
         try:
@@ -275,38 +267,41 @@ class ToolHotReloadService:
             )
         except FileNotFoundError as exc:
             logger.info(
-                "Tool package %s==%s no longer present on disk; "
-                "treating as full removal: %s",
-                pkg, ver, exc,
+                "Tool package %s==%s no longer present on disk; treating as full removal: %s",
+                pkg,
+                ver,
+                exc,
             )
             try:
                 self._registry.forget_package(pkg, ver)
             except Exception:
                 logger.warning(
-                    "forget_package(%s, %s) failed during full-removal "
-                    "handling", pkg, ver, exc_info=True,
+                    "forget_package(%s, %s) failed during full-removal handling",
+                    pkg,
+                    ver,
+                    exc_info=True,
                 )
             for name in prior:
                 await self._cm.broadcast_tool_removed(name)
             return
         except Exception as exc:
             logger.warning(
-                "Tool reload failed for %s==%s: %s", pkg, ver, exc,
+                "Tool reload failed for %s==%s: %s",
+                pkg,
+                ver,
+                exc,
                 exc_info=True,
             )
             await self._cm.broadcast_system_error(
-                "tool_reload_failed", str(exc),
+                "tool_reload_failed",
+                str(exc),
             )
             return
 
         # Diff prior vs. current and emit one event per change.
         for name, meta in current.items():
             if prior.get(name) != meta:
-                payload = (
-                    meta.model_dump()
-                    if hasattr(meta, "model_dump")
-                    else dict(meta)
-                )
+                payload = meta.model_dump() if hasattr(meta, "model_dump") else dict(meta)
                 await self._cm.broadcast_tool_reload(name, payload)
         for name in prior:
             if name not in current:

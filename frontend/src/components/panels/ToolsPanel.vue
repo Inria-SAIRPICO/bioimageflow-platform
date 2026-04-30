@@ -12,7 +12,7 @@ import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
-import type { ToolMetadata } from '@/api/types'
+import type { ToolCreateResponse, ToolMetadata, ToolSourceResponse } from '@/api/types'
 import { api } from '@/api/client'
 import { openPathWithEditor } from '@/api/editor'
 
@@ -186,9 +186,15 @@ function onToolClick(toolName: string) {
   emit('add-tool', toolName)
 }
 
-async function onToolCreated(toolName: string) {
+async function onToolCreated(response: ToolCreateResponse) {
   showCreateDialog.value = false
-  await toolRegistry.fetchTools()
+  if (response.path) {
+    try {
+      await openPathWithEditor(response.path, toast)
+    } catch (e: unknown) {
+      toolRegistry.error = e instanceof Error ? e.message : String(e)
+    }
+  }
 }
 
 // --- Version management (Task 14) ---
@@ -392,11 +398,88 @@ function getDocumentation(toolName: string): string {
 async function openInEditor(toolName: string) {
   if (!settingsStore.isDesktop) return
   try {
-    const { data } = await api.get<{ path: string }>(`/api/v1/tools/${toolName}/source`)
+    const { data } = await api.get<ToolSourceResponse>(`/api/v1/tools/${toolName}/source`)
     await openPathWithEditor(data.path, toast)
   } catch (e: unknown) {
     toolRegistry.error = e instanceof Error ? e.message : String(e)
   }
+}
+
+function isEditableTool(tool: ToolMetadata): boolean {
+  return tool.editable === true || tool.source_kind === 'custom'
+}
+
+async function renameCustomTool(tool: ToolMetadata) {
+  if (!isEditableTool(tool)) return
+  const nextName = window.prompt('Rename custom tool', tool.name)?.trim()
+  if (!nextName || nextName === tool.name) return
+  try {
+    const result = await toolRegistry.renameTool(tool.name, nextName)
+    window.dispatchEvent(new CustomEvent('bioimageflow:tool-renamed', { detail: result }))
+    toast.add({
+      severity: 'success',
+      summary: 'Tool renamed',
+      detail: `${result.old_name} -> ${result.new_name}`,
+      life: 3000,
+    })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    toast.add({
+      severity: 'error',
+      summary: 'Rename failed',
+      detail: message,
+      life: 5000,
+    })
+  }
+}
+
+async function requestDeleteCustomTool(tool: ToolMetadata) {
+  if (!isEditableTool(tool)) return
+  let affected: string[] = []
+  try {
+    const usage = await toolRegistry.getToolUsage(tool.name)
+    affected = usage.affected_workflows
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    toast.add({
+      severity: 'error',
+      summary: 'Usage check failed',
+      detail: message,
+      life: 5000,
+    })
+    return
+  }
+  const usageMessage = affected.length
+    ? `Delete ${tool.name}? Saved workflows referencing it: ${affected.join(', ')}.`
+    : `Delete ${tool.name}?`
+  confirm.require({
+    message: usageMessage,
+    header: 'Delete Custom Tool',
+    acceptLabel: 'Delete',
+    rejectLabel: 'Cancel',
+    accept: async () => {
+      try {
+        const result = await toolRegistry.deleteTool(tool.name)
+        window.dispatchEvent(new CustomEvent('bioimageflow:tool-deleted', {
+          detail: { tool_name: tool.name, ...result },
+        }))
+        toast.add({
+          severity: 'success',
+          summary: 'Tool deleted',
+          detail: tool.name,
+          life: 3000,
+        })
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e)
+        toast.add({
+          severity: 'error',
+          summary: 'Delete failed',
+          detail: message,
+          life: 5000,
+        })
+      }
+    },
+  })
 }
 
 // --- Environment controls (Task 16) ---
@@ -445,6 +528,9 @@ defineExpose({
   toggleManageDocumentation,
   getDocumentation,
   openInEditor,
+  isEditableTool,
+  renameCustomTool,
+  requestDeleteCustomTool,
   getEnvStatus,
   toggleEnvironment,
   isVersionsExpanded,
@@ -562,6 +648,7 @@ defineExpose({
     <!-- Create tool button at the bottom -->
     <div class="tools-panel-footer">
       <Button
+        v-if="settingsStore.isDesktop"
         label="Create Tool"
         icon="pi pi-plus"
         data-testid="create-tool-btn"
@@ -738,6 +825,25 @@ defineExpose({
                   size="small"
                   :data-testid="`manage-tool-edit-${node.data.name}`"
                   @click.stop="openInEditor(node.data.name)"
+                />
+                <Button
+                  v-if="settingsStore.isDesktop && isEditableTool(node.data.tool)"
+                  icon="pi pi-file-edit"
+                  text
+                  size="small"
+                  :disabled="toolRegistry.customToolBusy"
+                  :data-testid="`manage-tool-rename-${node.data.name}`"
+                  @click.stop="renameCustomTool(node.data.tool)"
+                />
+                <Button
+                  v-if="settingsStore.isDesktop && isEditableTool(node.data.tool)"
+                  icon="pi pi-trash"
+                  text
+                  size="small"
+                  severity="danger"
+                  :disabled="toolRegistry.customToolBusy"
+                  :data-testid="`manage-tool-delete-${node.data.name}`"
+                  @click.stop="requestDeleteCustomTool(node.data.tool)"
                 />
                 <span
                   :data-testid="`tool-env-status-${node.data.name}`"

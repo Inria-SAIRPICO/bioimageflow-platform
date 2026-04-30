@@ -4,7 +4,8 @@ import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
-import { api } from '@/api/client'
+import { useToolRegistryStore } from '@/stores/toolRegistry'
+import type { ToolCreateResponse } from '@/api/types'
 
 const props = defineProps<{
   visible: boolean
@@ -12,9 +13,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
-  created: [toolName: string]
+  created: [response: ToolCreateResponse]
 }>()
 
+const toolRegistry = useToolRegistryStore()
 const toolName = ref('')
 const toolType = ref('ProcessingTool')
 
@@ -23,15 +25,36 @@ const toolTypeOptions = [
   { label: 'DataFrame Tool', value: 'DataFrameTool' },
 ]
 
-const createDisabled = computed(() => !toolName.value.trim())
+const pythonKeywords = new Set([
+  'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await',
+  'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
+  'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is',
+  'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return',
+  'try', 'while', 'with', 'yield',
+])
+
+const trimmedName = computed(() => toolName.value.trim())
+
+const isValidToolName = computed(() => {
+  const name = trimmedName.value
+  if (!name || name !== toolName.value) return false
+  if (name.includes('/') || name.includes('\\') || name.includes('..')) return false
+  if (/\s/.test(name)) return false
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return false
+  if (pythonKeywords.has(name)) return false
+  if (!/^[A-Z]/.test(name)) return false
+  return toolRegistry.getToolByName(name) === undefined
+})
+
+const createDisabled = computed(() => !isValidToolName.value)
 
 async function onCreate() {
   if (createDisabled.value) return
-  await api.post('/api/v1/tools', {
-    name: toolName.value.trim(),
-    tool_type: toolType.value,
+  const response = await toolRegistry.createTool({
+    name: trimmedName.value,
+    tool_type: toolType.value as 'ProcessingTool' | 'DataFrameTool',
   })
-  emit('created', toolName.value.trim())
+  emit('created', response)
   toolName.value = ''
   toolType.value = 'ProcessingTool'
 }
@@ -42,7 +65,7 @@ function onCancel() {
   toolType.value = 'ProcessingTool'
 }
 
-defineExpose({ toolName, toolType, createDisabled, onCreate, onCancel })
+defineExpose({ toolName, toolType, createDisabled, isValidToolName, onCreate, onCancel })
 </script>
 
 <template>

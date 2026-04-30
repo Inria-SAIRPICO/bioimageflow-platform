@@ -1197,6 +1197,82 @@ export interface components {
             environment?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Source Kind
+             * @default package
+             */
+            source_kind?: "package" | "custom";
+            /**
+             * Editable
+             * @default false
+             */
+            editable?: boolean;
+        };
+        /** ToolCreateResponse */
+        ToolCreateResponse: {
+            /** Name */
+            name: string;
+            /**
+             * Tool Type
+             * @enum {string}
+             */
+            tool_type: "ProcessingTool" | "DataFrameTool";
+            /** Path */
+            path: string;
+            /**
+             * Source Kind
+             * @default custom
+             */
+            source_kind: "custom";
+            /**
+             * Editable
+             * @default true
+             */
+            editable: true;
+        };
+        /** ToolUsageResponse */
+        ToolUsageResponse: {
+            /** Tool Name */
+            tool_name: string;
+            /** Affected Workflows */
+            affected_workflows: string[];
+            /** In Open Workflow */
+            in_open_workflow?: boolean | null;
+        };
+        /** ToolRenameResponse */
+        ToolRenameResponse: {
+            /** Old Name */
+            old_name: string;
+            /** New Name */
+            new_name: string;
+            /** Path */
+            path: string;
+        };
+        /** ToolDeleteResponse */
+        ToolDeleteResponse: {
+            /**
+             * Deleted
+             * @default true
+             */
+            deleted: true;
+            /** Warning */
+            warning?: string | null;
+            /** Affected Workflows */
+            affected_workflows: string[];
+        };
+        /** ToolSourceResponse */
+        ToolSourceResponse: {
+            /** Tool Name */
+            tool_name: string;
+            /** Path */
+            path: string;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: "package" | "custom";
+            /** Editable */
+            editable: boolean;
         };
         /** ToolRename */
         ToolRename: {
@@ -1405,8 +1481,13 @@ export type PositionalEdge = components['schemas']['PositionalEdge'];
 export type RevealRequest = components['schemas']['RevealRequest'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
 export type ToolCreate = components['schemas']['ToolCreate'];
+export type ToolCreateResponse = components['schemas']['ToolCreateResponse'];
+export type ToolDeleteResponse = components['schemas']['ToolDeleteResponse'];
 export type ToolMetadata = components['schemas']['ToolMetadata'];
 export type ToolRename = components['schemas']['ToolRename'];
+export type ToolRenameResponse = components['schemas']['ToolRenameResponse'];
+export type ToolSourceResponse = components['schemas']['ToolSourceResponse'];
+export type ToolUsageResponse = components['schemas']['ToolUsageResponse'];
 export type UploadError = components['schemas']['UploadError'];
 export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];

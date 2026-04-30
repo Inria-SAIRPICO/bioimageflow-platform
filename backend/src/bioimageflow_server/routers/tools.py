@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -11,11 +10,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolCreate,
+    ToolCreateResponse,
+    ToolDeleteResponse,
     ToolMetadata,
     ToolRename,
+    ToolRenameResponse,
     ToolSourceResponse,
+    ToolUsageResponse,
 )
+from bioimageflow_server.services.custom_tools import CustomToolService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 
@@ -45,67 +50,8 @@ def get_package_catalog() -> Any:  # pragma: no cover
     return None
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
-
-
-def _name_to_snake(name: str) -> str:
-    return _CAMEL_BOUNDARY.sub("_", name).lower().replace(" ", "_")
-
-
-def _name_to_display(name: str) -> str:
-    spaced = _CAMEL_BOUNDARY.sub(" ", name)
-    return spaced.replace("_", " ").strip()
-
-
-def _custom_tool_source(workflow_root: Path | None, tool_name: str) -> Path | None:
-    if workflow_root is None:
-        return None
-    path = workflow_root / "tools" / f"{_name_to_snake(tool_name)}.py"
-    return path if path.exists() else None
-
-
-# ---------------------------------------------------------------------------
-# Templates
-# ---------------------------------------------------------------------------
-
-_PROCESSING_TEMPLATE = '''\
-"""Auto-generated ProcessingTool: {display_name}."""
-
-from bioimageflow_core.tool import ProcessingTool
-
-
-class {class_name}(ProcessingTool):
-    """Processing tool that operates on individual rows."""
-
-    display_name = "{display_name}"
-
-    def process_row(self, row):
-        raise NotImplementedError
-'''
-
-_DATAFRAME_TEMPLATE = '''\
-"""Auto-generated DataFrameTool: {display_name}."""
-
-from bioimageflow.dataframe_tool import DataFrameTool
-
-
-class {class_name}(DataFrameTool):
-    """DataFrame tool that transforms an entire dataframe."""
-
-    display_name = "{display_name}"
-
-    def transform(self, df):
-        raise NotImplementedError
-'''
-
-_TEMPLATES = {
-    "ProcessingTool": _PROCESSING_TEMPLATE,
-    "DataFrameTool": _DATAFRAME_TEMPLATE,
-}
+def get_workflow_store() -> WorkflowStoreService | None:  # pragma: no cover
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -149,28 +95,19 @@ async def get_tool_source(
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_root: Path | None = Depends(get_workflow_root),
 ) -> ToolSourceResponse:
-    custom_source = _custom_tool_source(workflow_root, tool_name)
-    if custom_source is not None:
-        return ToolSourceResponse(
-            tool_name=tool_name,
-            path=str(custom_source),
-            source_kind="custom",
-            editable=True,
-        )
-
     tool = registry.get_tool(tool_name)
-    if tool is not None:
-        source = registry.resolve_tool_source(tool_name)
-        if source is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Source for package tool '{tool_name}' could not be resolved",
-            )
+    path = registry.resolve_tool_source(tool_name)
+    if tool is not None and path is not None:
         return ToolSourceResponse(
             tool_name=tool_name,
-            path=str(source),
-            source_kind="package",
-            editable=False,
+            path=str(path),
+            source_kind=tool.source_kind,
+            editable=tool.editable,
+        )
+    if tool is not None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source for package tool '{tool_name}' could not be resolved",
         )
     raise HTTPException(status_code=404, detail=f"Source for '{tool_name}' not found")
 
@@ -185,25 +122,37 @@ async def create_tool(
     body: ToolCreate,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
-) -> dict[str, str]:
+    registry: ToolRegistryService = Depends(get_tool_registry),
+) -> ToolCreateResponse:
     if mode == "webapp":
         raise HTTPException(status_code=403, detail="Tool creation disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
 
-    snake = _name_to_snake(body.name)
-    display = _name_to_display(body.name)
-    dest = workflow_root / "tools" / f"{snake}.py"
+    service = CustomToolService(workflow_root, registry)
+    try:
+        path = service.create(body.name, body.tool_type)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=f"Tool '{body.name}' already exists") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ToolCreateResponse(name=body.name, tool_type=body.tool_type, path=str(path))
 
-    if dest.exists():
-        raise HTTPException(status_code=409, detail=f"Tool file '{snake}.py' already exists")
 
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
-    template = _TEMPLATES[body.tool_type]
-    dest.write_text(template.format(class_name=body.name, display_name=display))
-
-    return {"name": body.name, "tool_type": body.tool_type, "path": str(dest)}
+@router.get("/{tool_name}/usage")
+async def get_tool_usage(
+    tool_name: str,
+    workflow_root: Path | None = Depends(get_workflow_root),
+    registry: ToolRegistryService = Depends(get_tool_registry),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
+) -> ToolUsageResponse:
+    if workflow_root is None:
+        raise HTTPException(status_code=400, detail="No workflow root configured")
+    service = CustomToolService(workflow_root, registry)
+    return ToolUsageResponse(
+        tool_name=tool_name,
+        affected_workflows=service.usage(tool_name, workflow_store),
+    )
 
 
 @router.patch("/{tool_name}")
@@ -212,22 +161,27 @@ async def rename_tool(
     body: ToolRename,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
-) -> dict[str, str]:
+    registry: ToolRegistryService = Depends(get_tool_registry),
+) -> ToolRenameResponse:
     if mode == "webapp":
         raise HTTPException(status_code=403, detail="Tool renaming disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
 
-    old_snake = _name_to_snake(tool_name)
-    old_path = workflow_root / "tools" / f"{old_snake}.py"
-    if not old_path.exists():
-        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
-
-    new_snake = _name_to_snake(body.new_name)
-    new_path = workflow_root / "tools" / f"{new_snake}.py"
-    old_path.rename(new_path)
-
-    return {"path": str(new_path)}
+    service = CustomToolService(workflow_root, registry)
+    try:
+        path = service.rename(tool_name, body.new_name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found") from exc
+    except FileExistsError as exc:
+        raise HTTPException(
+            status_code=409, detail=f"Tool '{body.new_name}' already exists"
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=400, detail="Only custom tools can be renamed") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ToolRenameResponse(old_name=tool_name, new_name=body.new_name, path=str(path))
 
 
 @router.delete("/{tool_name}", status_code=200)
@@ -235,19 +189,24 @@ async def delete_tool(
     tool_name: str,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
-) -> dict[str, str]:
+    registry: ToolRegistryService = Depends(get_tool_registry),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
+) -> ToolDeleteResponse:
     if mode == "webapp":
         raise HTTPException(status_code=403, detail="Tool deletion disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
 
-    snake = _name_to_snake(tool_name)
-    path = workflow_root / "tools" / f"{snake}.py"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
-
-    path.unlink()
-    return {"status": "deleted"}
+    service = CustomToolService(workflow_root, registry)
+    affected = service.usage(tool_name, workflow_store)
+    try:
+        service.delete(tool_name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found") from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=400, detail="Only custom tools can be deleted") from exc
+    warning = "Tool is referenced by saved workflows." if affected else None
+    return ToolDeleteResponse(affected_workflows=affected, warning=warning)
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import { api } from '@/api/client'
 import CreateToolDialog from '../CreateToolDialog.vue'
 
 const mockedApi = api as unknown as {
+  get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
 }
 
@@ -30,7 +31,7 @@ function mountDialog(visible = true) {
         },
         Select: {
           template: '<select :data-testid="$attrs[\'data-testid\']"></select>',
-          props: ['modelValue'],
+          props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
         },
         Button: {
           template: '<button :data-testid="$attrs[\'data-testid\']" :disabled="$attrs.disabled" @click="$emit(\'click\')">{{ label }}</button>',
@@ -46,6 +47,7 @@ describe('CreateToolDialog', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mockedApi.get.mockResolvedValue({ data: [] })
   })
 
   it('renders name input', () => {
@@ -73,13 +75,33 @@ describe('CreateToolDialog', () => {
   it('create is enabled when name is provided', async () => {
     const wrapper = mountDialog()
     const vm = wrapper.vm as unknown as { toolName: string; createDisabled: boolean }
-    vm.toolName = 'my_tool'
+    vm.toolName = 'MyTool'
     await wrapper.vm.$nextTick()
     expect(vm.createDisabled).toBe(false)
   })
 
+  it('create is disabled for invalid class names', async () => {
+    const wrapper = mountDialog()
+    const vm = wrapper.vm as unknown as { toolName: string; createDisabled: boolean }
+    vm.toolName = 'my_tool'
+    await wrapper.vm.$nextTick()
+    expect(vm.createDisabled).toBe(true)
+
+    vm.toolName = '../BadTool'
+    await wrapper.vm.$nextTick()
+    expect(vm.createDisabled).toBe(true)
+  })
+
   it('onCreate calls POST /api/v1/tools and emits created', async () => {
-    mockedApi.post.mockResolvedValueOnce({ data: {} })
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        name: 'MyNewTool',
+        tool_type: 'DataFrameTool',
+        path: '/tmp/my_new_tool.py',
+        source_kind: 'custom',
+        editable: true,
+      },
+    })
 
     const wrapper = mountDialog()
     const vm = wrapper.vm as unknown as {
@@ -87,18 +109,23 @@ describe('CreateToolDialog', () => {
       toolType: string
       onCreate: () => Promise<void>
     }
-    vm.toolName = 'my_new_tool'
-    vm.toolType = 'SourceTool'
+    vm.toolName = 'MyNewTool'
+    vm.toolType = 'DataFrameTool'
     await wrapper.vm.$nextTick()
 
     await vm.onCreate()
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/tools', {
-      name: 'my_new_tool',
-      tool_type: 'SourceTool',
+      name: 'MyNewTool',
+      tool_type: 'DataFrameTool',
     })
     expect(wrapper.emitted('created')).toBeTruthy()
-    expect(wrapper.emitted('created')![0]).toEqual(['my_new_tool'])
+    expect(wrapper.emitted('created')![0]).toEqual([
+      expect.objectContaining({
+        name: 'MyNewTool',
+        path: '/tmp/my_new_tool.py',
+      }),
+    ])
   })
 
   it('onCancel emits update:visible with false', async () => {
@@ -111,7 +138,15 @@ describe('CreateToolDialog', () => {
   })
 
   it('onCreate resets fields after creation', async () => {
-    mockedApi.post.mockResolvedValueOnce({ data: {} })
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        name: 'MyTool',
+        tool_type: 'DataFrameTool',
+        path: '/tmp/my_tool.py',
+        source_kind: 'custom',
+        editable: true,
+      },
+    })
 
     const wrapper = mountDialog()
     const vm = wrapper.vm as unknown as {
@@ -119,8 +154,8 @@ describe('CreateToolDialog', () => {
       toolType: string
       onCreate: () => Promise<void>
     }
-    vm.toolName = 'my_tool'
-    vm.toolType = 'SinkTool'
+    vm.toolName = 'MyTool'
+    vm.toolType = 'DataFrameTool'
     await wrapper.vm.$nextTick()
 
     await vm.onCreate()
