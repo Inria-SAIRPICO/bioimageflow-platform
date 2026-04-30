@@ -284,6 +284,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     logging.getLogger("bioimageflow").removeHandler(
                         ws_log_handler
                     )
+                    logging.getLogger("wetlands").removeHandler(ws_log_handler)
                 ws_manager._loop = None
             if config.settings_store is not None:
                 await config.settings_store.flush()

@@ -117,6 +117,7 @@ class _ProgressEventStub:
     row: int = 0
     total_rows: int = 0
     message: str | None = None
+    traceback: str | None = None
     current: int | None = None
     maximum: int | None = None
     timestamp: float = 0.0
@@ -241,6 +242,21 @@ class TestExecutionManagerLifecycle:
         assert em.last_result is not None
         assert em.last_result.success is True
 
+    async def test_start_and_complete_are_published_as_backend_logs(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+
+        messages = [event[1] for event in bus.log_events]
+        assert any("Execution started for workflow terminals" in message for message in messages)
+        assert any("Workflow execution completed successfully" in message for message in messages)
+
     async def test_start_clears_previous_result(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -303,6 +319,7 @@ class TestExecutionManagerProgress:
         assert ("n1", "running", False, None, None) in bus.node_state_events
         n1_states = [e for e in bus.node_state_events if e[0] == "n1"]
         assert n1_states[0][1] == "running"
+        assert ("INFO", "Node n1 started", "n1", 0.0) in bus.log_events
 
     async def test_row_progress_updates_progress_ref_no_node_state(
         self, monkeypatch: pytest.MonkeyPatch
@@ -322,6 +339,12 @@ class TestExecutionManagerProgress:
         assert any(
             e[0] == "n1" and e[1] == "row_progress" and e[2] == 3 and e[3] == 10
             for e in bus.progress_events
+        )
+        assert any(
+            e[0] == "DEBUG"
+            and e[2] == "n1"
+            and "Node n1 row progress 3/10" in e[1]
+            for e in bus.log_events
         )
         assert not any(
             e[0] == "n1" and e[1] == "row_progress" for e in bus.node_state_events
@@ -349,6 +372,12 @@ class TestExecutionManagerProgress:
             e[1] == "row_complete" and e[2] == 2 and e[3] == 5
             for e in bus.progress_events
         )
+        assert any(
+            e[0] == "INFO"
+            and e[2] == "n1"
+            and "Node n1 completed row 2/5" in e[1]
+            for e in bus.log_events
+        )
         assert not any(e[1] == "row_complete" for e in bus.node_state_events)
 
     async def test_completed_publishes_executed_state(
@@ -363,6 +392,7 @@ class TestExecutionManagerProgress:
         assert ("n1", "executed", False, None, None) in bus.node_state_events
         assert em._node_statuses["n1"].status == "executed"
         assert em._node_statuses["n1"].cached is False
+        assert ("INFO", "Node n1 completed", "n1", 0.0) in bus.log_events
 
     async def test_cached_publishes_executed_with_cached_true(
         self, monkeypatch: pytest.MonkeyPatch
@@ -375,6 +405,7 @@ class TestExecutionManagerProgress:
         await _drain(em)
         assert ("n1", "executed", True, None, None) in bus.node_state_events
         assert em._node_statuses["n1"].cached is True
+        assert ("INFO", "Node n1 used cached result", "n1", 0.0) in bus.log_events
 
     async def test_failed_publishes_failed_state_with_error(
         self, monkeypatch: pytest.MonkeyPatch
@@ -390,11 +421,38 @@ class TestExecutionManagerProgress:
         n1_failed = [e for e in bus.node_state_events if e[0] == "n1" and e[1] == "failed"]
         assert n1_failed
         assert em._node_statuses["n1"].status == "failed"
-        assert bus.log_events
-        level, message, node_id, _timestamp = bus.log_events[-1]
+        error_logs = [event for event in bus.log_events if event[0] == "ERROR"]
+        assert error_logs
+        level, message, node_id, _timestamp = error_logs[-1]
         assert level == "ERROR"
         assert node_id == "n1"
         assert "Node n1 failed: boom" in message
+
+    async def test_failed_progress_publishes_traceback_in_log(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(
+            events=[
+                _ProgressEventStub(
+                    "n1",
+                    "failed",
+                    message="boom",
+                    traceback="Traceback line 1\nTraceback line 2",
+                )
+            ],
+        )
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+
+        error_logs = [event for event in bus.log_events if event[0] == "ERROR"]
+        assert error_logs
+        level, message, node_id, _timestamp = error_logs[-1]
+        assert level == "ERROR"
+        assert node_id == "n1"
+        assert "Traceback line 2" in message
 
     async def test_cancelled_publishes_unexecuted(
         self, monkeypatch: pytest.MonkeyPatch
@@ -479,6 +537,31 @@ class TestExecutionManagerResult:
         assert node_id is None
         assert "Workflow execution failed: kaboom" in message
 
+    async def test_workflow_compute_does_not_replace_process_stdout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sys
+
+        original_stdout = sys.stdout
+
+        class _ProbeWorkflow(_FakeWorkflow):
+            stdout_was_original = False
+
+            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+                self.stdout_was_original = sys.stdout is original_stdout
+                print("stdout line")
+                return {}
+
+        bus = RecordingEventBus()
+        wf = _ProbeWorkflow()
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+
+        assert wf.stdout_was_original is True
+        assert not any(event[1] == "stdout line" for event in bus.log_events)
+
     async def test_failed_progress_with_exception_emits_one_error_log(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -494,8 +577,9 @@ class TestExecutionManagerResult:
         em = ExecutionManager(bus, MagicMock(), _settings())
         await em.start(_graph_with([("n1", True)]))
         await _drain(em)
-        assert [event[0] for event in bus.log_events] == ["ERROR"]
-        assert bus.log_events[0][2] == "n1"
+        error_logs = [event for event in bus.log_events if event[0] == "ERROR"]
+        assert len(error_logs) == 1
+        assert error_logs[0][2] == "n1"
 
     async def test_execution_complete_event_payload(
         self, monkeypatch: pytest.MonkeyPatch
@@ -586,6 +670,36 @@ class TestExecutionManagerStop:
         assert wf.cancel_called is True
         await _drain(em)
         assert em.state == "idle"
+
+    async def test_stop_request_is_published_as_backend_log(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _CancellableWorkflow(_FakeWorkflow):
+            def __init__(self) -> None:
+                super().__init__()
+                self._go = threading.Event()
+
+            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+                self._go.wait(timeout=5.0)
+                return {}
+
+            def cancel(self) -> None:
+                super().cancel()
+                self._go.set()
+
+        bus = RecordingEventBus()
+        wf = _CancellableWorkflow()
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+        await em.start(_graph_with([("n1", True)]))
+        await asyncio.sleep(0.01)
+        await em.stop()
+        await _drain(em)
+
+        assert any(
+            event[0] == "INFO" and event[1] == "Execution stop requested"
+            for event in bus.log_events
+        )
 
 
 class TestExecutionManagerStatus:

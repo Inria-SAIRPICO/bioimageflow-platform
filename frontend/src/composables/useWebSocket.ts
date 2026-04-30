@@ -159,7 +159,6 @@ function dispatch(raw: unknown) {
         'applyPackageInstall',
         msg,
       )
-      mirrorPackageInstallToLogger(msg)
       break
     case 'environment_status':
       callIfExists(
@@ -167,7 +166,6 @@ function dispatch(raw: unknown) {
         'applyEnvironmentStatus',
         msg,
       )
-      mirrorEnvironmentStatusToLogger(msg)
       break
     case 'system_error':
       mirrorSystemError(msg)
@@ -236,22 +234,6 @@ function mirrorToolReloadToLogger(msg: Record<string, unknown>) {
 function mirrorToolRemovedToLogger(msg: Record<string, unknown>) {
   if (typeof msg.tool_name !== 'string') return
   addSystemLog('WARNING', `Tool removed: ${msg.tool_name}`)
-}
-
-function mirrorPackageInstallToLogger(msg: Record<string, unknown>) {
-  if (typeof msg.package_name !== 'string' || typeof msg.status !== 'string') return
-  const detail = typeof msg.detail === 'string' && msg.detail.length > 0
-    ? `: ${msg.detail}`
-    : ''
-  addSystemLog(
-    msg.status === 'failed' ? 'ERROR' : 'INFO',
-    `Package ${msg.package_name} ${msg.status}${detail}`,
-  )
-}
-
-function mirrorEnvironmentStatusToLogger(msg: Record<string, unknown>) {
-  if (typeof msg.env_name !== 'string' || typeof msg.status !== 'string') return
-  addSystemLog('INFO', `Environment ${msg.env_name} ${msg.status}`)
 }
 
 function mirrorSystemError(msg: Record<string, unknown>) {

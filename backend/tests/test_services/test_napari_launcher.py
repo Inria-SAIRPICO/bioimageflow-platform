@@ -429,6 +429,8 @@ async def test_shutdown_is_idempotent() -> None:
 async def test_shutdown_emits_environment_status_stopped_when_cm_provided() -> None:
     cm = MagicMock()
     cm.broadcast_environment_status = MagicMock()
+    cm.publish_environment_status = MagicMock()
+    cm.publish_log = MagicMock()
     launcher = _make_launcher(connection_manager=cm)
     fake = _FakeConnection()
     fake.responses.append({"status": "ok"})
@@ -436,7 +438,13 @@ async def test_shutdown_emits_environment_status_stopped_when_cm_provided() -> N
     launcher._process.wait.return_value = 0  # type: ignore[union-attr]
 
     await launcher.shutdown()
-    cm.broadcast_environment_status.assert_called_once_with("napari", "stopped")
+    cm.publish_environment_status.assert_called_once_with("napari", "stopped")
+    cm.publish_log.assert_called_with(
+        "INFO",
+        "Napari environment stopped",
+        None,
+        pytest.approx(cm.publish_log.call_args.args[3]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -703,12 +711,17 @@ def test_launch_emits_creating_then_running_status(monkeypatch) -> None:
     _patch_launch_deps(monkeypatch, env_manager=em, client_factory=_client)
     cm = MagicMock()
     statuses: list[str] = []
-    cm.broadcast_environment_status = (
+    cm.publish_environment_status = (
         lambda env, st: statuses.append(st)
     )
+    cm.publish_log = MagicMock()
     launcher = _make_launcher(connection_manager=cm)
     launcher._launch()
     assert statuses == ["creating", "running"]
+    assert [call.args[1] for call in cm.publish_log.call_args_list] == [
+        "Napari environment creating",
+        "Napari environment running",
+    ]
 
 
 def test_launch_emits_stopped_when_step_fails(monkeypatch) -> None:
@@ -720,13 +733,18 @@ def test_launch_emits_stopped_when_step_fails(monkeypatch) -> None:
     _patch_launch_deps(monkeypatch, env_manager=em, client_factory=_client)
     cm = MagicMock()
     statuses: list[str] = []
-    cm.broadcast_environment_status = (
+    cm.publish_environment_status = (
         lambda env, st: statuses.append(st)
     )
+    cm.publish_log = MagicMock()
     launcher = _make_launcher(connection_manager=cm)
     with pytest.raises(NapariLaunchError):
         launcher._launch()
     assert statuses == ["creating", "stopped"]
+    assert [call.args[1] for call in cm.publish_log.call_args_list] == [
+        "Napari environment creating",
+        "Napari environment stopped",
+    ]
 
 
 # ---------------------------------------------------------------------------

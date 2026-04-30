@@ -369,6 +369,23 @@ class ConnectionManager:
             "execution_complete",
         )
 
+    def publish_package_install(
+        self,
+        package_name: str,
+        status: str,
+        detail: str | None = None,
+    ) -> None:
+        self._schedule(
+            self.broadcast_package_install(package_name, status, detail),
+            "package_install",
+        )
+
+    def publish_environment_status(self, env_name: str, status: str) -> None:
+        self._schedule(
+            self.broadcast_environment_status(env_name, status),
+            "environment_status",
+        )
+
     # ---- internals ------------------------------------------------------
 
     def _schedule(self, coro, kind: str) -> None:

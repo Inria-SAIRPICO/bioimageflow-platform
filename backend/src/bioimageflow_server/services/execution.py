@@ -328,6 +328,12 @@ class ExecutionManager:
         dev_mode = bool(live_settings.dev_mode)
         target_label = ", ".join(nodes) if nodes else "workflow terminals"
         logger.info("Starting workflow execution for %s", target_label)
+        self.event_bus.publish_log(
+            "INFO",
+            f"Execution started for {target_label}",
+            None,
+            time.time(),
+        )
 
         def _run_sync() -> Any:
             return workflow.compute(*targets, dev_mode=dev_mode)
@@ -340,6 +346,7 @@ class ExecutionManager:
     async def stop(self) -> None:
         if self._workflow is None or self.state != "running":
             return
+        self.event_bus.publish_log("INFO", "Execution stop requested", None, time.time())
         try:
             self._workflow.cancel()
         except Exception:  # pragma: no cover — defensive
@@ -381,6 +388,12 @@ class ExecutionManager:
                 self.event_bus.publish_node_state(
                     node_id, "running", False, None, None
                 )
+                self.event_bus.publish_log(
+                    "INFO",
+                    f"Node {node_id} started",
+                    node_id,
+                    timestamp,
+                )
                 return
 
             if status == "row_progress":
@@ -391,6 +404,12 @@ class ExecutionManager:
                 )
                 self.event_bus.publish_progress(
                     node_id, "row_progress", current, maximum, timestamp
+                )
+                self.event_bus.publish_log(
+                    "DEBUG",
+                    f"Node {node_id} row progress {current}/{maximum}",
+                    node_id,
+                    timestamp,
                 )
                 return
 
@@ -403,6 +422,12 @@ class ExecutionManager:
                 self.event_bus.publish_progress(
                     node_id, "row_complete", row, total_rows, timestamp
                 )
+                self.event_bus.publish_log(
+                    "INFO",
+                    f"Node {node_id} completed row {row}/{total_rows}",
+                    node_id,
+                    timestamp,
+                )
                 return
 
             if status == "completed":
@@ -412,6 +437,12 @@ class ExecutionManager:
                 self.event_bus.publish_node_state(
                     node_id, "executed", False, None, None
                 )
+                self.event_bus.publish_log(
+                    "INFO",
+                    f"Node {node_id} completed",
+                    node_id,
+                    timestamp,
+                )
                 return
 
             if status == "cached":
@@ -420,6 +451,12 @@ class ExecutionManager:
                 )
                 self.event_bus.publish_node_state(
                     node_id, "executed", True, None, None
+                )
+                self.event_bus.publish_log(
+                    "INFO",
+                    f"Node {node_id} used cached result",
+                    node_id,
+                    timestamp,
                 )
                 return
 
@@ -548,6 +585,12 @@ class ExecutionManager:
         )
         if success:
             logger.info("Workflow execution completed successfully")
+            self.event_bus.publish_log(
+                "INFO",
+                "Workflow execution completed successfully",
+                None,
+                time.time(),
+            )
 
         self.state = "idle"
         self._workflow = None

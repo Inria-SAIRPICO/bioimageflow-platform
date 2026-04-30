@@ -117,6 +117,10 @@ class ThumbnailManager:
                 return path.read_bytes()
             except OSError as exc:
                 _logger.warning("failed to read cached thumbnail %s: %r", path, exc)
+                self._publish_log(
+                    "WARNING",
+                    f"failed to read cached thumbnail {path}: {exc!r}",
+                )
                 return None
         return None
 
@@ -195,6 +199,7 @@ class ThumbnailManager:
 
         async with self._lock:
             if self._env is None:
+                self._publish_log("INFO", "Launching thumbnail environment")
                 await asyncio.to_thread(self._launch)
 
         env = self._env
@@ -204,9 +209,14 @@ class ThumbnailManager:
             return
 
         extension = path.suffix.lstrip(".")
+        owns_task = False
         async with self._lock:
             task = self._pending_generations.get(cache_file)
             if task is None or task.done():
+                self._publish_log(
+                    "INFO",
+                    f"Queued thumbnail generation for {path}",
+                )
                 task = asyncio.create_task(
                     asyncio.to_thread(
                         env.execute,
@@ -216,11 +226,25 @@ class ThumbnailManager:
                     )
                 )
                 self._pending_generations[cache_file] = task
+                owns_task = True
 
         try:
             await task
+        except Exception as exc:
+            if owns_task:
+                self._publish_log(
+                    "ERROR",
+                    f"Thumbnail generation failed for {path}: {exc}",
+                )
+            raise
+        else:
+            if owns_task:
+                self._publish_log(
+                    "INFO",
+                    f"Thumbnail generation completed for {path}",
+                )
         finally:
-            if task.done():
+            if owns_task and task.done():
                 self._pending_generations.pop(cache_file, None)
 
     async def shutdown(self) -> None:
@@ -255,8 +279,13 @@ class ThumbnailManager:
 
             em = get_shared_environment_manager()
             if self._env_path:
+                self._publish_log(
+                    "INFO",
+                    f"Loading thumbnail environment from {self._env_path}",
+                )
                 env = em.load("thumbnail", Path(self._env_path))
             else:
+                self._publish_log("INFO", "Creating thumbnail environment")
                 env = em.create(
                     "thumbnail",
                     dependencies={
@@ -266,10 +295,24 @@ class ThumbnailManager:
                 )
             env.launch()
             self._env = env
+            self._publish_log("INFO", "Thumbnail environment running")
         except Exception:  # noqa: BLE001
             _logger.exception("thumbnail Wetlands env failed to launch")
+            self._publish_log(
+                "ERROR",
+                "thumbnail Wetlands env failed to launch",
+            )
             self._env = None
             raise
+
+    def _publish_log(self, level: str, message: str) -> None:
+        cm = self._connection_manager
+        if cm is None or not hasattr(cm, "publish_log"):
+            return
+        try:
+            cm.publish_log(level, message, None, time.time())
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("thumbnail log broadcast failed: %r", exc)
 
 
 # ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ import logging
 import multiprocessing
 import os
 import subprocess
+import time
 from multiprocessing.connection import Client
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -308,7 +309,21 @@ class NapariLauncher:
         if cm is None:
             return
         try:
-            cm.broadcast_environment_status("napari", status)  # type: ignore[arg-type]
+            if _has_explicit_method(cm, "publish_environment_status"):
+                getattr(cm, "publish_environment_status")("napari", status)
+            else:
+                getattr(cm, "broadcast_environment_status")("napari", status)
+            if _has_explicit_method(cm, "publish_log"):
+                getattr(cm, "publish_log")(
+                    "INFO",
+                    f"Napari environment {status}",
+                    None,
+                    time.time(),
+                )
         except Exception as exc:  # noqa: BLE001
             # Broadcasts must never fail the launch/shutdown path.
             _logger.warning("environment_status broadcast failed: %r", exc)
+
+
+def _has_explicit_method(obj: Any, name: str) -> bool:
+    return name in getattr(obj, "__dict__", {}) or callable(getattr(type(obj), name, None))

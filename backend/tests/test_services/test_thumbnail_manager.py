@@ -36,7 +36,8 @@ def test_init_creates_cache_dir(tmp_path: Path) -> None:
 def test_cache_path_changes_with_size(tmp_path: Path) -> None:
     src = tmp_path / "image.tif"
     src.write_bytes(b"x")
-    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    cm = mock.MagicMock()
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache", connection_manager=cm)
 
     p128 = mgr.cache_path(src, 128)
     p256 = mgr.cache_path(src, 256)
@@ -83,6 +84,27 @@ def test_get_cached_returns_none_when_absent(tmp_path: Path) -> None:
     src.write_bytes(b"x")
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
     assert mgr.get_cached(src, 128) is None
+
+
+def test_get_cached_logs_corrupt_cache_read_to_ws(tmp_path: Path, monkeypatch) -> None:
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"x")
+    cm = mock.MagicMock()
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache", connection_manager=cm)
+    cache_file = mgr.cache_path(src, 128)
+    cache_file.write_bytes(b"bad")
+
+    original_read_bytes = Path.read_bytes
+
+    def _raise_for_cache(path: Path) -> bytes:
+        if path == cache_file:
+            raise OSError("cannot read")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", _raise_for_cache)
+    assert mgr.get_cached(src, 128) is None
+    cm.publish_log.assert_called()
+    assert "failed to read cached thumbnail" in cm.publish_log.call_args.args[1]
 
 
 def test_placeholder_png_returns_valid_png(tmp_path: Path) -> None:
@@ -174,6 +196,26 @@ async def test_queue_generate_lazily_calls_launch(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
+async def test_queue_generate_publishes_backend_lifecycle_logs(tmp_path: Path) -> None:
+    src = tmp_path / "image.tif"
+    src.write_bytes(b"x")
+    cm = mock.MagicMock()
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache", connection_manager=cm)
+
+    env = _stub_env()
+
+    def fake_launch() -> None:
+        mgr._env = env
+
+    mgr._launch = fake_launch  # type: ignore[method-assign]
+    await mgr.queue_generate(src, 128)
+
+    messages = [call.args[1] for call in cm.publish_log.call_args_list]
+    assert any("Launching thumbnail environment" in message for message in messages)
+    assert any("Queued thumbnail generation" in message for message in messages)
+
+
+@pytest.mark.anyio
 async def test_queue_generate_passes_correct_args(tmp_path: Path) -> None:
     src = tmp_path / "image.tif"
     src.write_bytes(b"fake-tiff")
@@ -257,7 +299,8 @@ async def test_concurrent_queue_generate_same_cache_uses_one_render(
 ) -> None:
     src = tmp_path / "image.tif"
     src.write_bytes(b"x")
-    mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
+    cm = mock.MagicMock()
+    mgr = ThumbnailManager(cache_dir=tmp_path / "cache", connection_manager=cm)
 
     env = _stub_env()
     release = asyncio.Event()
@@ -281,6 +324,12 @@ async def test_concurrent_queue_generate_same_cache_uses_one_render(
     await asyncio.wait_for(asyncio.gather(t1, t2), timeout=1.0)
 
     assert execute_calls == 1
+    completion_logs = [
+        call.args[1]
+        for call in cm.publish_log.call_args_list
+        if "Thumbnail generation completed" in call.args[1]
+    ]
+    assert len(completion_logs) == 1
 
 
 @pytest.mark.anyio
