@@ -117,8 +117,38 @@ const graphSyncMocks = vi.hoisted(() => ({
   flushNow: vi.fn(),
   patchParameters: vi.fn(),
   serializeGraph: vi.fn((state: { nodes: any[]; edges: any[] }) => ({
-    nodes: state.nodes,
-    edges: state.edges,
+    nodes: state.nodes.map((n: any) => ({
+      id: n.id,
+      name: n.data?.name ?? n.id,
+      tool_name: n.data?.toolName ?? '',
+      position: [n.position?.x ?? 0, n.position?.y ?? 0],
+      parameters: n.data?.parameters ?? {},
+      resources: n.data?.resources ?? {},
+      output_templates: n.data?.output_templates ?? {},
+      enabled: n.data?.enabled ?? true,
+      collapsed: n.data?.collapsed ?? false,
+    })),
+    edges: state.edges.map((e: any) => {
+      if (e.type === 'positional') {
+        const handle = e.targetHandle ?? ''
+        const index = Number.parseInt(handle.replace('__positional_', ''), 10)
+        return {
+          type: 'positional',
+          id: e.id,
+          source_node: e.source,
+          target_node: e.target,
+          positional_index: Number.isNaN(index) ? 0 : index,
+        }
+      }
+      return {
+        type: 'column_ref',
+        id: e.id,
+        source_node: e.source,
+        target_node: e.target,
+        source_output: e.sourceHandle ?? '',
+        target_input: e.targetHandle ?? '',
+      }
+    }),
   })),
 }))
 
@@ -183,6 +213,7 @@ vi.mock('@/stores/resolvedOutputs', () => {
 import CanvasView from '../CanvasView.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
+import { _resetClipboardForTest } from '@/utils/clipboard'
 
 function mountCanvas(propsData: { nodes?: any[]; edges?: any[] } = {}) {
   return mount(CanvasView, {
@@ -228,6 +259,7 @@ function mockSavedWorkflow(
 describe('CanvasView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    _resetClipboardForTest()
     mockNodes.length = 0
     mockEdges.length = 0
     connectHandler = null
@@ -993,27 +1025,30 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('paste creates nodes with unique IDs, remapped edges, offset positions', () => {
+    it('paste creates nodes with unique IDs, remapped edges, offset positions', async () => {
       const store = useToolRegistryStore()
       store.tools = [makeTool()] as any
 
+      const w = mountCanvas()
+      await flushPromises()
+
       // Set up clipboard via copy first
-      mockNodes = [
+      mockNodes.splice(0, mockNodes.length, ...[
         {
           id: 'a',
           selected: true,
           data: { name: 'Gaussian Blur 1', toolName: 'gaussian_blur', parameters: { sigma: 2.0 } },
           position: { x: 10, y: 20 },
         },
-      ]
-      mockEdges = []
+      ])
+      mockEdges.splice(0, mockEdges.length)
 
-      const w = mountCanvas()
       const vm = w.vm as any
       vm.copySelected()
 
       // Now paste
-      vm.pasteFromClipboard()
+      await vm.pasteFromClipboard()
+      await flushPromises()
 
       // Should have original + pasted node
       expect(mockNodes.length).toBe(2)

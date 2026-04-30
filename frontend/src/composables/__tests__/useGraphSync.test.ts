@@ -276,6 +276,71 @@ describe('useGraphSync', () => {
     })
     expect(result.nodes[0].resources).toEqual({ cpu: 4, gpu: 1 })
   })
+
+  it('serializeNode preserves optional sub-workflow fields for v2 compatibility', () => {
+    const result = serializeGraph({
+      nodes: [{
+        id: 'outer',
+        position: { x: 0, y: 0 },
+        data: {
+          name: 'Outer',
+          toolName: '__sub_workflow__',
+          parameters: { exposed: 1 },
+          sub_workflow: {
+            nodes: [{
+              id: 'inner',
+              name: 'Inner',
+              tool_name: 'tool_a',
+              position: [0, 0],
+              parameters: {},
+            }],
+            edges: [],
+          },
+          published_inputs: [{
+            name: 'exposed',
+            internal_node_id: 'inner',
+            internal_field: 'a',
+            kind: 'parameter',
+          }],
+          published_outputs: [{
+            name: 'result',
+            internal_node_id: 'inner',
+            internal_output: 'out',
+          }],
+          sub_workflow_readonly_reason: null,
+        },
+      }],
+      edges: [],
+    })
+
+    expect((result.nodes[0] as any).sub_workflow.nodes[0].id).toBe('inner')
+    expect((result.nodes[0] as any).published_inputs[0].name).toBe('exposed')
+    expect((result.nodes[0] as any).published_outputs[0].name).toBe('result')
+  })
+
+  it('does not emit empty sub-workflow fields for regular tool nodes', () => {
+    const result = serializeGraph({
+      nodes: [{
+        id: 'regular',
+        position: { x: 0, y: 0 },
+        data: {
+          name: 'Regular',
+          toolName: 'tool_a',
+          parameters: {},
+          sub_workflow: null,
+          published_inputs: [],
+          published_outputs: [],
+          sub_workflow_readonly_reason: null,
+        },
+      }],
+      edges: [],
+    })
+
+    expect('sub_workflow' in (result.nodes[0] as any)).toBe(false)
+    expect('published_inputs' in (result.nodes[0] as any)).toBe(false)
+    expect('published_outputs' in (result.nodes[0] as any)).toBe(false)
+    expect('sub_workflow_readonly_reason' in (result.nodes[0] as any)).toBe(false)
+  })
 })
 
 describe('serializeGraph', () => {
