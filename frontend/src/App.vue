@@ -21,7 +21,7 @@ export default defineComponent({
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
-import { themeLight } from 'dockview-core'
+import { themeLight, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
@@ -71,6 +71,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  dockviewDisposables.splice(0).forEach((disposable) => disposable.dispose())
   websocket.disconnect()
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
@@ -97,12 +98,32 @@ watchEffect(() => {
 })
 
 const dockviewApi = shallowRef<DockviewApi | null>(null)
+const dockviewDisposables: DockviewIDisposable[] = []
 
 // --- Dockview setup ---
+
+const panelKeys = ['tools', 'nodePanel', 'dataTable', 'logger'] as const
+type DockPanelKey = typeof panelKeys[number]
+
+function isDockPanelKey(id: string): id is DockPanelKey {
+  return panelKeys.includes(id as DockPanelKey)
+}
 
 function onDockviewReady(event: DockviewReadyEvent) {
   const api = event.api
   dockviewApi.value = api
+  dockviewDisposables.push(
+    api.onDidRemovePanel((panel: IDockviewPanel) => {
+      if (isDockPanelKey(panel.id)) {
+        const panelId = panel.id
+        queueMicrotask(() => {
+          if (!api.getPanel(panelId)) {
+            uiStore.setPanelVisible(panelId, false)
+          }
+        })
+      }
+    }),
+  )
 
   // Canvas first — it becomes the root group that others dock relative to
   api.addPanel({
@@ -148,8 +169,6 @@ function onDockviewReady(event: DockviewReadyEvent) {
 }
 
 // --- Panel visibility sync ---
-
-const panelKeys = ['tools', 'nodePanel', 'dataTable', 'logger'] as const
 
 watch(
   () => panelKeys.map((k) => uiStore.panels[k]),

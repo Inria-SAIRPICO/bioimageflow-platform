@@ -62,6 +62,10 @@ export const useUIStore = defineStore('ui', () => {
     panels[panel] = !panels[panel]
   }
 
+  function setPanelVisible(panel: keyof typeof panels, visible: boolean) {
+    panels[panel] = visible
+  }
+
   return {
     selectedNodeIds,
     graphNodes,
@@ -81,5 +85,6 @@ export const useUIStore = defineStore('ui', () => {
     markClean,
     setExecutionLocked,
     togglePanel,
+    setPanelVisible,
   }
 })
