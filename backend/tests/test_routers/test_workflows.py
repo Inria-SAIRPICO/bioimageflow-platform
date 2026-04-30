@@ -131,6 +131,37 @@ async def test_patch_duplicate_conflict_preserves_suggested_name(
     assert conflict.json()["suggested_name"] == "copy_2"
 
 
+async def test_patch_display_rename_conflict_suggests_canonical_name(
+    client: httpx.AsyncClient,
+) -> None:
+    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+    assert (
+        await client.post("/api/v1/workflows", json={"name": "new_workflow"})
+    ).status_code == 201
+
+    conflict = await client.patch(
+        "/api/v1/workflows/wf",
+        json={"action": "update", "display_name": "New workflow"},
+    )
+
+    assert conflict.status_code == 409
+    assert conflict.json()["suggested_name"] == "new_workflow_2"
+
+
+async def test_patch_invalid_explicit_new_name_returns_400(
+    client: httpx.AsyncClient,
+) -> None:
+    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+
+    response = await client.patch(
+        "/api/v1/workflows/wf",
+        json={"action": "update", "new_name": "bad name"},
+    )
+
+    assert response.status_code == 400
+    assert "Workflow name must start" in response.json()["detail"]
+
+
 @pytest.mark.parametrize("method,path", [
     ("put", "/api/v1/workflows/wf"),
     ("patch", "/api/v1/workflows/wf"),

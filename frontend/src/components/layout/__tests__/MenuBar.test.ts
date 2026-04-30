@@ -3,6 +3,32 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import Aura from '@primevue/themes/aura'
+
+const toastAdd = vi.hoisted(() => vi.fn())
+const apiMocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  patch: vi.fn(),
+  delete: vi.fn(),
+}))
+const autoSaveMocks = vi.hoisted(() => ({
+  clearAutoSave: vi.fn().mockResolvedValue(undefined),
+  setLastOpenedWorkflow: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('primevue/usetoast', () => ({
+  useToast: () => ({ add: toastAdd }),
+}))
+
+vi.mock('@/api/client', () => ({
+  api: apiMocks,
+}))
+
+vi.mock('@/composables/useAutoSave', () => ({
+  useAutoSave: () => autoSaveMocks,
+}))
+
 import MenuBar from '../MenuBar.vue'
 import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
@@ -37,6 +63,14 @@ describe('MenuBar', () => {
   beforeEach(() => {
     pinia = createPinia()
     setActivePinia(pinia)
+    toastAdd.mockClear()
+    apiMocks.get.mockReset()
+    apiMocks.post.mockReset()
+    apiMocks.put.mockReset()
+    apiMocks.patch.mockReset()
+    apiMocks.delete.mockReset()
+    autoSaveMocks.clearAutoSave.mockClear()
+    autoSaveMocks.setLastOpenedWorkflow.mockClear()
   })
 
   it('renders a menubar element', () => {
@@ -116,6 +150,39 @@ describe('MenuBar', () => {
       const edit = wrapper.find('[data-testid="workflow-title-edit"]')
       expect(edit.exists()).toBe(true)
       expect(edit.attributes('aria-label')).toBe('Rename workflow')
+    })
+
+    it('save success toast uses the workflow display name', async () => {
+      const workflow = useWorkflowStore()
+      workflow.current = {
+        name: 'new_workflow',
+        display_name: 'New workflow',
+        path: '/tmp/new_workflow.json',
+        last_modified: '2026-04-29T00:00:00Z',
+      }
+      useUIStore().setActiveWorkflow('New workflow')
+      apiMocks.put.mockResolvedValue({
+        data: {
+          name: 'new_workflow',
+          display_name: 'New workflow',
+          path: '/tmp/new_workflow.json',
+          last_modified: '2026-04-29T00:00:01Z',
+        },
+      })
+
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      await workflowMenu.items.find((item: any) => item.label === 'Save').command()
+
+      expect(apiMocks.put).toHaveBeenCalledWith(
+        '/api/v1/workflows/new_workflow',
+        { graph: { nodes: [], edges: [] } },
+      )
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        summary: 'Workflow saved',
+        detail: 'New workflow',
+      }))
     })
   })
 

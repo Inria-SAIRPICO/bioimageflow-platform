@@ -113,8 +113,8 @@ async def patch_workflow(
         return store.patch_workflow(name, body)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
-    except FileExistsError:
-        new_name = body.new_name or name
+    except FileExistsError as exc:
+        new_name = str(exc.args[0]) if exc.args else body.new_name or name
         return JSONResponse(
             status_code=409,
             content={

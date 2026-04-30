@@ -47,7 +47,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const currentName = computed(() => current.value?.name ?? null)
   const hasWorkflow = computed(() => current.value !== null)
 
-  function upsertWorkflow(info: WorkflowInfo): void {
+  function upsertWorkflow(info: WorkflowInfo, previousName?: string): void {
+    const existing = workflows.value.filter((item) => (
+      item.name !== previousName || item.name === info.name
+    ))
+    workflows.value = existing
     const index = workflows.value.findIndex((item) => item.name === info.name)
     if (index === -1) {
       workflows.value = [...workflows.value, info].sort((a, b) => (
@@ -144,8 +148,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
         `/api/v1/workflows/${name}`,
         patch,
       )
-      upsertWorkflow(data)
+      upsertWorkflow(data, patch.action === 'update' ? name : undefined)
       setCurrent(data)
+      if (patch.action === 'update' && data.name !== name) {
+        await autoSave.renameWorkflow(name, data.name)
+      }
       await autoSave.setLastOpenedWorkflow(data.name)
       return data
     } catch (err: unknown) {

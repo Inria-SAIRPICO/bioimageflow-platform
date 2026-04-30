@@ -19,6 +19,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowInfo,
     WorkflowSaveBody,
     WorkflowUpdate,
+    canonical_workflow_name,
 )
 from bioimageflow_server.services.graph_translator import (
     _detect_missing_packages,
@@ -53,6 +54,37 @@ class WorkflowStoreService:
 
     def _managed_storage_path(self, name: str) -> Path:
         return self.storage_base_dir / self._validate_name(name)
+
+    def _has_name_collision(self, name: str) -> bool:
+        return self._path_for(name).exists() or self._managed_storage_path(name).exists()
+
+    def _is_managed_storage_path(self, name: str, storage_path: str | None) -> bool:
+        if not storage_path:
+            return True
+        return Path(storage_path) == self._managed_storage_path(name)
+
+    def _move_managed_storage(self, old_name: str, new_name: str) -> str:
+        old_storage = self._managed_storage_path(old_name)
+        new_storage = self._managed_storage_path(new_name)
+        if old_storage == new_storage:
+            return str(new_storage)
+        if new_storage.exists():
+            raise FileExistsError(new_name)
+        if old_storage.exists():
+            new_storage.parent.mkdir(parents=True, exist_ok=True)
+            old_storage.rename(new_storage)
+        return str(new_storage)
+
+    def _set_workflow_storage_path(self, raw: dict[str, Any], storage_path: str) -> None:
+        workflow_data = raw.get("workflow", {})
+        if not isinstance(workflow_data, dict):
+            workflow_data = {}
+            raw["workflow"] = workflow_data
+        config = workflow_data.get("config", {})
+        if not isinstance(config, dict):
+            config = {}
+        config["storage_path"] = storage_path
+        workflow_data["config"] = config
 
     def _metadata_from_raw(
         self,
@@ -144,7 +176,7 @@ class WorkflowStoreService:
         base = self._validate_name(base_name)
         candidate = base
         suffix = 2
-        while self._path_for(candidate).exists():
+        while self._has_name_collision(candidate):
             candidate = f"{base}_{suffix}"
             suffix += 1
         return candidate
@@ -167,6 +199,8 @@ class WorkflowStoreService:
     def create_workflow(self, data: WorkflowCreate) -> WorkflowInfo:
         path = self._path_for(data.name)
         if path.exists():
+            raise FileExistsError(data.name)
+        if data.storage_path is None and self._managed_storage_path(data.name).exists():
             raise FileExistsError(data.name)
         self._write_raw(data.name, self._empty_raw(data))
         return self._metadata_from_raw(data.name, self._read_raw(data.name), path)
@@ -246,6 +280,8 @@ class WorkflowStoreService:
             new_path = self._path_for(new_name)
             if new_path.exists():
                 raise FileExistsError(new_name)
+            if patch.storage_path is None and self._managed_storage_path(new_name).exists():
+                raise FileExistsError(new_name)
             duplicate = cast(dict[str, Any], json.loads(json.dumps(raw)))
             duplicate_metadata = duplicate.setdefault("metadata", {})
             if isinstance(duplicate_metadata, dict):
@@ -255,8 +291,23 @@ class WorkflowStoreService:
                 duplicate_metadata["storage_path"] = (
                     patch.storage_path or str(self._managed_storage_path(new_name))
                 )
+                self._set_workflow_storage_path(
+                    duplicate,
+                    duplicate_metadata["storage_path"],
+                )
             self._write_raw(new_name, duplicate)
             return self._metadata_from_raw(new_name, self._read_raw(new_name), new_path)
+
+        new_name = name
+        if patch.new_name is not None:
+            new_name = self._validate_name(patch.new_name)
+        elif patch.display_name is not None:
+            try:
+                new_name = canonical_workflow_name(patch.display_name)
+            except ValidationError:
+                new_name = name
+        if new_name != name and self._has_name_collision(new_name):
+            raise FileExistsError(new_name)
 
         if patch.display_name is not None:
             metadata["display_name"] = patch.display_name
@@ -264,9 +315,23 @@ class WorkflowStoreService:
             metadata["description"] = patch.description
         if patch.storage_path is not None:
             metadata["storage_path"] = patch.storage_path
+        elif new_name != name and self._is_managed_storage_path(
+            name,
+            cast(str | None, metadata.get("storage_path")),
+        ):
+            metadata["storage_path"] = self._move_managed_storage(name, new_name)
         raw["metadata"] = metadata
-        self._write_raw(name, raw)
-        return self._metadata_from_raw(name, self._read_raw(name), path)
+        storage_path = metadata.get("storage_path")
+        if isinstance(storage_path, str) and storage_path:
+            self._set_workflow_storage_path(raw, storage_path)
+        if new_name != name:
+            path.rename(self._path_for(new_name))
+        self._write_raw(new_name, raw)
+        return self._metadata_from_raw(
+            new_name,
+            self._read_raw(new_name),
+            self._path_for(new_name),
+        )
 
     def rebind_versions(self, name: str) -> WorkflowFile:
         raw = self._read_raw(name)

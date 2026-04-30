@@ -136,6 +136,30 @@ export function useAutoSave() {
     }
   }
 
+  async function renameWorkflow(oldName: string, newName: string): Promise<void> {
+    if (oldName === newName) return
+    if (pendingEntry?.name === oldName) {
+      pendingEntry = { ...pendingEntry, name: newName }
+    }
+    await flushAutoSave()
+    const entry = await loadAutoSave(oldName)
+    let moved = entry === null
+    if (entry !== null) {
+      try {
+        await putAutoSave({ ...entry, name: newName })
+        moved = true
+      } catch (err) {
+        console.warn('[useAutoSave] Failed to move workflow auto-save:', err)
+      }
+    }
+    if (moved) {
+      await clearAutoSave(oldName)
+    }
+    if (await getLastOpenedWorkflow() === oldName) {
+      await setLastOpenedWorkflow(newName)
+    }
+  }
+
   async function setLastOpenedWorkflow(name: string | null): Promise<void> {
     try {
       await withStore(PREFERENCES_STORE, 'readwrite', (store) => {
@@ -167,6 +191,7 @@ export function useAutoSave() {
     loadAutoSave,
     loadMostRecentAutoSave,
     clearAutoSave,
+    renameWorkflow,
     setLastOpenedWorkflow,
     getLastOpenedWorkflow,
   }

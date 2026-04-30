@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -11,6 +12,18 @@ from bioimageflow_server.models.graph import GraphState
 
 
 _WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+
+def canonical_workflow_name(value: str) -> str:
+    """Return the workflow ID generated from a user-facing display name."""
+    ascii_value = (
+        unicodedata.normalize("NFKD", value.strip())
+        .encode("ascii", "ignore")
+        .decode("ascii")
+    )
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_value)
+    normalized = re.sub(r"_+", "_", normalized).strip("_").lower()
+    return WorkflowCreate(name=normalized).name
 
 
 class WorkflowCreate(BaseModel):
