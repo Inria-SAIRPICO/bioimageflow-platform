@@ -20,8 +20,10 @@ class ResultStoreService:
         self.storage_path = Path(storage_path)
         self.tool_registry = tool_registry
 
-    def get_latest_dataframe(self, node_id: str) -> pd.DataFrame | None:
-        latest_dir = self._latest_hash_dir(node_id)
+    def get_latest_dataframe(
+        self, node_id: str, storage_path: Path | None = None
+    ) -> pd.DataFrame | None:
+        latest_dir = self._latest_hash_dir(node_id, storage_path=storage_path)
         if latest_dir is None:
             return None
         data_path = self._dataframe_path(latest_dir)
@@ -34,8 +36,10 @@ class ResultStoreService:
                 f"Output data for node '{node_id}' is not ready"
             ) from exc
 
-    def get_csv_path(self, node_id: str) -> Path | None:
-        latest_dir = self._latest_hash_dir(node_id)
+    def get_csv_path(
+        self, node_id: str, storage_path: Path | None = None
+    ) -> Path | None:
+        latest_dir = self._latest_hash_dir(node_id, storage_path=storage_path)
         if latest_dir is None:
             return None
         csv_path = latest_dir / "dataframe.csv"
@@ -43,8 +47,8 @@ class ResultStoreService:
             return csv_path
         return None
 
-    def has_data(self, node_id: str) -> bool:
-        latest_dir = self._latest_hash_dir(node_id)
+    def has_data(self, node_id: str, storage_path: Path | None = None) -> bool:
+        latest_dir = self._latest_hash_dir(node_id, storage_path=storage_path)
         if latest_dir is None:
             return False
         try:
@@ -61,11 +65,14 @@ class ResultStoreService:
             for column in df.columns
         }
 
-    def _node_dir(self, node_id: str) -> Path:
-        return self.storage_path / "data" / node_id
+    def _node_dir(self, node_id: str, storage_path: Path | None = None) -> Path:
+        root = Path(storage_path) if storage_path is not None else self.storage_path
+        return root / "data" / node_id
 
-    def _latest_hash_dir(self, node_id: str) -> Path | None:
-        node_dir = self._node_dir(node_id)
+    def _latest_hash_dir(
+        self, node_id: str, storage_path: Path | None = None
+    ) -> Path | None:
+        node_dir = self._node_dir(node_id, storage_path=storage_path)
         if not node_dir.is_dir():
             return None
 

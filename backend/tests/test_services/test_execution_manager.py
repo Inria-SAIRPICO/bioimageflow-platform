@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -663,3 +664,50 @@ class TestExecutionManagerSettingsProvider:
         await _drain(em)
         assert wf.compute_calls == 1
         assert wf.dev_mode_received is True
+
+
+class TestExecutionManagerStoragePath:
+    async def test_start_passes_per_run_storage_path_to_builder(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        builder = _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(
+            RecordingEventBus(),
+            MagicMock(),
+            _settings(),
+            storage_path=None,
+        )
+        await em.start(
+            _graph_with([("n1", True)]),
+            storage_path=Path("/tmp/workflows/wf_a"),
+        )
+        await _drain(em)
+        assert builder.call_args.kwargs["storage_path"] == Path("/tmp/workflows/wf_a")
+
+    async def test_session_storage_mismatch_rebuilds_workflow(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        builder = _install_fake_builder(monkeypatch, wf)
+        cached_session = MagicMock()
+        cached_session.to_workflow.return_value = _FakeWorkflow()
+        session_manager = MagicMock()
+        session_manager.session = cached_session
+        session_manager.storage_path = Path("/tmp/workflows/old")
+        session_manager.translation_errors = []
+        em = ExecutionManager(
+            RecordingEventBus(),
+            MagicMock(),
+            _settings(),
+            session_manager=session_manager,
+        )
+
+        await em.start(
+            _graph_with([("n1", True)]),
+            storage_path=Path("/tmp/workflows/new"),
+        )
+        await _drain(em)
+
+        cached_session.to_workflow.assert_not_called()
+        assert builder.call_args.kwargs["storage_path"] == Path("/tmp/workflows/new")

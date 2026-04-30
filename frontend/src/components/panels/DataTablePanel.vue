@@ -6,11 +6,13 @@ import { useGraphSync } from '@/composables/useGraphSync'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
+import { useWorkflowStore } from '@/stores/workflow'
 import type { NodeState } from '@/api/types'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const dataTableStore = useDataTableStore()
+const workflowStore = useWorkflowStore()
 const { currentGraph } = useGraphSync()
 
 const showAll = ref(false)
@@ -57,7 +59,10 @@ function toolName(nodeId: string): string | null {
 
 function fetchIfMissing(nodeId: string) {
   if (!dataTableStore.getNodeData(nodeId) && !dataTableStore.isLoading(nodeId)) {
-    void dataTableStore.fetchNodeData(nodeId, { toolName: toolName(nodeId) })
+    void dataTableStore.fetchNodeData(nodeId, {
+      toolName: toolName(nodeId),
+      workflowName: workflowStore.currentName,
+    })
   }
 }
 
@@ -75,7 +80,10 @@ watch(
           () => executionStore.nodeStatuses[nodeId]?.status,
           (next, prev) => {
             if (prev !== 'executed' && next === 'executed') {
-              void dataTableStore.fetchNodeData(nodeId, { toolName: toolName(nodeId) })
+              void dataTableStore.fetchNodeData(nodeId, {
+                toolName: toolName(nodeId),
+                workflowName: workflowStore.currentName,
+              })
             } else if (next === 'out_of_date' || next === 'unexecuted') {
               dataTableStore.clearCache(nodeId)
             }
@@ -151,6 +159,7 @@ onBeforeUnmount(() => scope?.stop())
         <NodeDataTable
           :node-id="nodeId"
           :tool-name="toolName(nodeId)"
+          :workflow-name="workflowStore.currentName"
           :disabled="nodeById[nodeId]?.enabled === false"
         />
       </section>

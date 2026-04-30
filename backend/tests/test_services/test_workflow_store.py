@@ -51,6 +51,12 @@ def test_create_list_and_get_empty_workflow(store: WorkflowStoreService) -> None
     assert workflow.gui == {"nodes": {}}
 
 
+def test_get_storage_path_reads_metadata_directly(store: WorkflowStoreService) -> None:
+    info = store.create_workflow(WorkflowCreate(name="wf"))
+
+    assert store.get_storage_path("wf") == Path(info.storage_path)
+
+
 def test_save_preserves_invalid_graph_losslessly(store: WorkflowStoreService) -> None:
     store.create_workflow(WorkflowCreate(name="wf"))
     graph = GraphState(

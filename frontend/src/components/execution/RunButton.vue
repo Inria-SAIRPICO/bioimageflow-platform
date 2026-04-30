@@ -5,6 +5,7 @@ import Dialog from 'primevue/dialog'
 import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExecutionLock'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useWorkflowStore } from '@/stores/workflow'
 import type { GraphState, ValidationResult } from '@/api/types'
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ const emit = defineEmits<{
 
 const exec = useExecutionStore()
 const ui = useUIStore()
+const workflowStore = useWorkflowStore()
 const { lockForExecution } = useExecutionLock()
 
 const confirmOpen = ref(false)
@@ -90,7 +92,12 @@ async function runCore(nodes?: string[]) {
     if (!ok) return
   }
   try {
-    await lockForExecution({ graph: props.graph, nodes, graphSync: props.graphSync })
+    await lockForExecution({
+      graph: props.graph,
+      nodes,
+      graphSync: props.graphSync,
+      workflowName: workflowStore.currentName,
+    })
     emit('run-started')
   } catch (e: unknown) {
     const err = e as { response?: { status?: number }; message?: string }

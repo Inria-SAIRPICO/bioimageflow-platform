@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import type { ValidationResult } from '@/api/types'
 
 vi.mock('@/api/client', () => ({
@@ -60,6 +61,7 @@ const makeValidation = (valid = true): ValidationResult => ({
 
 describe('useGraphSync', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.useFakeTimers()
     mockedPut.mockReset()
     mockedPatch.mockReset()
@@ -86,7 +88,7 @@ describe('useGraphSync', () => {
     // Should serialize the last graph to backend format
     expect(mockedPut).toHaveBeenCalledWith(
       '/api/v1/graph',
-      expectedBackendGraph('3'),
+      { graph: expectedBackendGraph('3'), workflow_name: null },
       expect.objectContaining({ signal: expect.anything() }),
     )
   })

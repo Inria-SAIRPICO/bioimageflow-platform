@@ -198,7 +198,10 @@ class ExecutionManager:
     # ---- Lifecycle ---------------------------------------------------------
 
     async def start(
-        self, graph: GraphState, nodes: list[str] | None = None
+        self,
+        graph: GraphState,
+        nodes: list[str] | None = None,
+        storage_path: Path | None = None,
     ) -> None:
         """Kick off a background execution.
 
@@ -234,6 +237,7 @@ class ExecutionManager:
         live_settings = (
             self._settings_provider() if self._settings_provider else self.settings
         )
+        run_storage_path = storage_path if storage_path is not None else self.storage_path
 
         # Prefer the session's cached workflow — avoids a redundant
         # build_workflow() call when validation already loaded the graph.
@@ -242,7 +246,13 @@ class ExecutionManager:
             if self.session_manager is not None
             else None
         )
-        if session is not None:
+        session_storage_path = (
+            self.session_manager.storage_path
+            if self.session_manager is not None
+            else None
+        )
+        session_matches_storage = _paths_equal(session_storage_path, run_storage_path)
+        if session is not None and session_matches_storage:
             try:
                 workflow = session.to_workflow()
                 workflow.on_progress = on_progress
@@ -281,7 +291,7 @@ class ExecutionManager:
                 build_result = build_workflow(
                     graph,
                     self.tool_registry,
-                    storage_path=self.storage_path,
+                    storage_path=run_storage_path,
                     on_progress=on_progress,
                     settings=live_settings,
                 )
@@ -583,7 +593,10 @@ def clear_node_cache(
     session = (
         session_manager.session if session_manager is not None else None
     )
-    if session is not None:
+    session_storage_path = (
+        session_manager.storage_path if session_manager is not None else None
+    )
+    if session is not None and _paths_equal(session_storage_path, storage_path):
         workflow = session.to_workflow()
     else:
         workflow, _errors, _disabled = build_workflow(
@@ -621,3 +634,10 @@ def clear_node_cache(
         result[nid] = NodeStatus(node_id=nid, status="out_of_date", cached=False)
 
     return result
+
+
+def _paths_equal(left: Path | None, right: Path | None) -> bool:
+    """Compare optional paths without requiring them to exist."""
+    if left is None or right is None:
+        return left is None and right is None
+    return Path(left).expanduser().absolute() == Path(right).expanduser().absolute()

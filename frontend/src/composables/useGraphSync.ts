@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
+import { useWorkflowStore } from '@/stores/workflow'
 import type {
   ColumnRefEdge,
   GraphState,
@@ -146,9 +147,12 @@ function _createGraphSync() {
     const graph = serializeGraph(raw)
 
     try {
-      const response = await api.put('/api/v1/graph', graph, {
-        signal: controller.signal,
-      })
+      const workflowName = useWorkflowStore().currentName
+      const response = await api.put(
+        '/api/v1/graph',
+        { graph, workflow_name: workflowName ?? null },
+        { signal: controller.signal },
+      )
       // Only apply if this is still the latest request
       if (thisId === requestId) {
         validationResult.value = response.data

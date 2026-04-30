@@ -12,6 +12,7 @@ export interface DataTablePageState {
 
 interface FetchOpts {
   toolName?: string | null
+  workflowName?: string | null
   page?: number
   pageSize?: number
   sortBy?: string | null
@@ -75,6 +76,9 @@ export const useDataTableStore = defineStore('dataTable', () => {
       if (opts.toolName && opts.toolName.trim() !== '') {
         params.tool_name = opts.toolName
       }
+      if (opts.workflowName && opts.workflowName.trim() !== '') {
+        params.workflow_name = opts.workflowName
+      }
       const { data } = await api.get<NodeDataResponse>(
         `/api/v1/nodes/${encodeURIComponent(nodeId)}/data`,
         { params, signal: controller.signal },
@@ -98,9 +102,16 @@ export const useDataTableStore = defineStore('dataTable', () => {
     }
   }
 
-  function downloadCsv(nodeId: string) {
+  function downloadCsv(nodeId: string, workflowName?: string | null) {
     const link = document.createElement('a')
-    link.href = `/api/v1/nodes/${encodeURIComponent(nodeId)}/data/csv`
+    const params = new URLSearchParams()
+    if (workflowName && workflowName.trim() !== '') {
+      params.set('workflow_name', workflowName)
+    }
+    const query = params.toString()
+    link.href =
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/data/csv` +
+      (query ? `?${query}` : '')
     link.download = `${nodeId}.csv`
     link.style.display = 'none'
     document.body.appendChild(link)
@@ -120,25 +131,46 @@ export const useDataTableStore = defineStore('dataTable', () => {
     }
   }
 
-  function setPage(nodeId: string, page: number, opts: { toolName?: string | null } = {}) {
-    return fetchNodeData(nodeId, { ...stateFor(nodeId), page, toolName: opts.toolName })
+  function setPage(
+    nodeId: string,
+    page: number,
+    opts: { toolName?: string | null; workflowName?: string | null } = {},
+  ) {
+    return fetchNodeData(nodeId, {
+      ...stateFor(nodeId),
+      page,
+      toolName: opts.toolName,
+      workflowName: opts.workflowName,
+    })
   }
 
   function setPageSize(
     nodeId: string,
     pageSize: number,
-    opts: { toolName?: string | null } = {},
+    opts: { toolName?: string | null; workflowName?: string | null } = {},
   ) {
-    return fetchNodeData(nodeId, { ...stateFor(nodeId), page: 0, pageSize, toolName: opts.toolName })
+    return fetchNodeData(nodeId, {
+      ...stateFor(nodeId),
+      page: 0,
+      pageSize,
+      toolName: opts.toolName,
+      workflowName: opts.workflowName,
+    })
   }
 
   function setSort(
     nodeId: string,
     sortBy: string | null,
     sortOrder: 'asc' | 'desc',
-    opts: { toolName?: string | null } = {},
+    opts: { toolName?: string | null; workflowName?: string | null } = {},
   ) {
-    return fetchNodeData(nodeId, { ...stateFor(nodeId), sortBy, sortOrder, toolName: opts.toolName })
+    return fetchNodeData(nodeId, {
+      ...stateFor(nodeId),
+      sortBy,
+      sortOrder,
+      toolName: opts.toolName,
+      workflowName: opts.workflowName,
+    })
   }
 
   const getNodeData = computed(() => (nodeId: string) => nodeDataCache[nodeId])

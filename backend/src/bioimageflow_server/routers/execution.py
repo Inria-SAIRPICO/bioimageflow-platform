@@ -13,13 +13,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from bioimageflow_server.models.execution import (
     ExecutionRequest,
-    ExecutionStatus,
 )
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import NodeStatus
@@ -31,6 +30,8 @@ from bioimageflow_server.services.execution import (
 )
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_context import resolve_workflow_storage_path
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/execution", tags=["execution"])
 
@@ -51,15 +52,22 @@ def get_session_manager() -> SessionManager:  # pragma: no cover
     raise RuntimeError("session_manager dependency not configured")
 
 
+def get_workflow_store() -> WorkflowStoreService | None:
+    return None
+
+
 class ClearRequest(BaseModel):
     graph: GraphState
     nodes: list[str]
+    workflow_name: str | None = None
 
 
 @router.post("/run", status_code=202, response_model=None)
 async def run_execution(
     body: ExecutionRequest,
     execution_manager: ExecutionManager | None = Depends(get_execution_manager),
+    storage_path: Path | None = Depends(get_storage_path),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> dict | JSONResponse:
     if execution_manager is None:
         raise HTTPException(
@@ -71,7 +79,22 @@ async def run_execution(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid graph: {exc}") from exc
     try:
-        await execution_manager.start(graph, body.nodes)
+        run_storage_path = resolve_workflow_storage_path(
+            body.workflow_name,
+            workflow_store,
+            storage_path,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Workflow '{body.workflow_name}' not found",
+        ) from exc
+    try:
+        await execution_manager.start(
+            graph,
+            nodes=body.nodes,
+            storage_path=run_storage_path,
+        )
     except ExecutionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except WorkflowBuildError as exc:
@@ -105,14 +128,26 @@ async def clear_execution(
     storage_path: Path | None = Depends(get_storage_path),
     registry: ToolRegistryService = Depends(get_tool_registry),
     session_manager: SessionManager = Depends(get_session_manager),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> dict:
     if execution_manager is not None and execution_manager.is_running:
         raise HTTPException(
             status_code=409,
             detail="Cannot clear cache while execution is running",
         )
+    try:
+        clear_storage_path = resolve_workflow_storage_path(
+            body.workflow_name,
+            workflow_store,
+            storage_path,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Workflow '{body.workflow_name}' not found",
+        ) from exc
     statuses = clear_node_cache(
-        body.nodes, body.graph, registry, storage_path,
+        body.nodes, body.graph, registry, clear_storage_path,
         session_manager=session_manager,
     )
     return {

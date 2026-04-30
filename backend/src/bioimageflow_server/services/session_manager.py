@@ -37,6 +37,7 @@ class SessionManager:
 
     def __init__(self) -> None:
         self._session: Any | None = None
+        self._storage_path: Path | None = None
         self._translation_errors: list[GraphValidationError] = []
         self._disabled_node_ids: set[str] = set()
 
@@ -71,6 +72,7 @@ class SessionManager:
         storage_str = (
             str(storage_path) if storage_path is not None else None
         )
+        self._storage_path = Path(storage_path) if storage_path is not None else None
         self._session = WorkflowSession(
             translation.lib_dict,
             storage_path=storage_str,
@@ -88,6 +90,11 @@ class SessionManager:
         return list(self._translation_errors)
 
     @property
+    def storage_path(self) -> Path | None:
+        """Storage path used to build the active session, if explicit."""
+        return self._storage_path
+
+    @property
     def disabled_node_ids(self) -> set[str]:
         """Node IDs that were disabled in the last loaded graph."""
         return set(self._disabled_node_ids)
@@ -95,5 +102,6 @@ class SessionManager:
     def clear(self) -> None:
         """Drop the active session."""
         self._session = None
+        self._storage_path = None
         self._translation_errors = []
         self._disabled_node_ids = set()

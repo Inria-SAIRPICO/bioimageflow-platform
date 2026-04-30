@@ -50,6 +50,13 @@ class GraphState(BaseModel):
     edges: list[Edge]
 
 
+class GraphValidationRequest(BaseModel):
+    """Request to validate a graph in an optional workflow context."""
+
+    graph: GraphState
+    workflow_name: str | None = None
+
+
 class NodeOutputSchemaResponse(BaseModel):
     """Response for ``POST /graph/nodes/{node_id}/output_schema``."""
 

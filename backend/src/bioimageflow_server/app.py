@@ -37,6 +37,7 @@ from bioimageflow_server.routers.graph import (
     get_settings as graph_get_settings,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
+    get_workflow_store as graph_get_workflow_store,
     router as graph_router,
 )
 from bioimageflow_server.routers.execution import (
@@ -44,6 +45,7 @@ from bioimageflow_server.routers.execution import (
     get_session_manager as execution_get_session_manager,
     get_storage_path as execution_get_storage_path,
     get_tool_registry as execution_get_tool_registry,
+    get_workflow_store as execution_get_workflow_store,
     router as execution_router,
 )
 from bioimageflow_server.routers.health import router as health_router
@@ -54,6 +56,7 @@ from bioimageflow_server.routers.napari import (
 from bioimageflow_server.routers.nodes import (
     get_result_store,
     get_thumbnail_manager,
+    get_workflow_store as nodes_get_workflow_store,
     router as nodes_router,
 )
 from bioimageflow_server.routers.settings import (
@@ -369,10 +372,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[graph_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
     app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
+    app.dependency_overrides[execution_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
 
@@ -390,6 +395,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_settings] = _live_settings
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
+    app.dependency_overrides[nodes_get_workflow_store] = lambda: workflow_store
 
     if config.workflow_root is not None:
         app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root

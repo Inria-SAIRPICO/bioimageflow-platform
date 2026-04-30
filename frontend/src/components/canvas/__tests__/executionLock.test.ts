@@ -74,6 +74,20 @@ vi.mock('@vue-flow/controls', () => ({
 }))
 
 vi.mock('@/composables/useGraphSync', () => ({
+  serializeGraph: (raw: { nodes: any[]; edges: any[] }) => ({
+    nodes: raw.nodes.map((node) => ({
+      id: node.id,
+      name: node.data?.name ?? node.id,
+      tool_name: node.data?.toolName ?? '',
+      position: [node.position?.x ?? 0, node.position?.y ?? 0],
+      parameters: node.data?.parameters ?? {},
+      resources: node.data?.resources ?? {},
+      output_templates: node.data?.output_templates ?? {},
+      enabled: node.data?.enabled ?? true,
+      collapsed: node.data?.collapsed ?? false,
+    })),
+    edges: [],
+  }),
   useGraphSync: () => ({
     syncGraph: vi.fn(),
     flushNow: vi.fn(),
@@ -89,7 +103,13 @@ vi.mock('@/api/client', () => ({
 }))
 
 import CanvasView from '../CanvasView.vue'
+import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
+
+const mockedApi = api as unknown as {
+  get: ReturnType<typeof vi.fn>
+  post: ReturnType<typeof vi.fn>
+}
 
 function mountCanvas() {
   return mount(CanvasView, {
@@ -101,6 +121,17 @@ function mountCanvas() {
 describe('CanvasView execution lock', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    mockedApi.get.mockResolvedValue({ data: [] })
+    mockedApi.post.mockResolvedValue({
+      data: {
+        name: 'untitled',
+        display_name: 'Untitled',
+        path: '/tmp/untitled.json',
+        last_modified: '2026-01-01T00:00:00Z',
+        description: null,
+        storage_path: '/tmp/workflows/untitled',
+      },
+    })
     mockNodes = []
     mockEdges = []
     connectHandler = null

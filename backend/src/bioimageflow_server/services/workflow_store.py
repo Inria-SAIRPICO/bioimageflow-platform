@@ -86,6 +86,21 @@ class WorkflowStoreService:
             raise ValueError(f"Workflow file {path} must contain a JSON object")
         return data
 
+    def get_storage_path(self, name: str) -> Path:
+        """Return the storage root recorded for a workflow.
+
+        Legacy workflow files may not have metadata yet. In that case, use the
+        managed per-workflow storage location without rewriting the file.
+        """
+        raw = self._read_raw(name)
+        metadata = raw.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        storage_path = metadata.get("storage_path")
+        if isinstance(storage_path, str) and storage_path:
+            return Path(storage_path)
+        return self._managed_storage_path(name)
+
     def _write_raw(self, name: str, raw: dict[str, Any]) -> None:
         path = self._path_for(name)
         self.root_dir.mkdir(parents=True, exist_ok=True)

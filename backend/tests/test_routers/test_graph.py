@@ -6,11 +6,16 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from httpx import ASGITransport
 
+from bioimageflow.dataframe_tool import DataFrameTool
+from bioimageflow_core.environment import EnvironmentSpec
+from bioimageflow_core.tool import IOModel, ProcessingTool
+from bioimageflow_core.types import ImagePath, Semantic
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -21,16 +26,6 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
-
-
-# ---- Mock tool fixtures -----------------------------------------------------
-# Tool classes must be defined at module level so ``Workflow.from_dict``
-# can re-import them via the module's ``__name__``.
-
-from bioimageflow.dataframe_tool import DataFrameTool
-from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
-from bioimageflow_core.types import ImagePath, Semantic
 
 
 class _ProcInputs(IOModel):
@@ -105,11 +100,13 @@ class _FakeExecManager:
 async def _make_client(
     tmp_path: Path | None = None,
     execution_manager: Any | None = None,
+    workflow_store: Any | None = None,
 ) -> httpx.AsyncClient:
     config = AppConfig(
         tool_registry=_test_registry(),
         storage_path=tmp_path,
         execution_manager=execution_manager,
+        workflow_store=workflow_store,
     )
     app = create_app(config)
     transport = ASGITransport(app=app)
@@ -153,6 +150,33 @@ async def test_put_valid_graph(client: httpx.AsyncClient) -> None:
     data = resp.json()
     assert data["valid"] is True
     assert "n1" in data["node_statuses"]
+
+
+async def test_put_graph_resolves_workflow_storage_path(tmp_path: Path) -> None:
+    workflow_store = MagicMock()
+    workflow_storage = tmp_path / "workflows" / "wf_a"
+    workflow_store.get_storage_path.return_value = workflow_storage
+    c = await _make_client(tmp_path=tmp_path, workflow_store=workflow_store)
+    body = {
+        "graph": {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "n1",
+                    "tool_name": "MockProcessingTool",
+                    "position": [0, 0],
+                    "parameters": {"input_image": "/tmp/x.tif"},
+                }
+            ],
+            "edges": [],
+        },
+        "workflow_name": "wf_a",
+    }
+    async with c:
+        resp = await c.put("/api/v1/graph", json=body)
+
+    assert resp.status_code == 200
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
 
 
 async def test_put_missing_tool(client: httpx.AsyncClient) -> None:
@@ -362,8 +386,6 @@ def _common_tools_registry() -> ToolRegistryService:
     for tool_name in ("Files", "Generate", "CrossJoin", "JoinOnColumn"):
         cls = _load_common_tools_class(tool_name)
         if cls is not None:
-            from bioimageflow.validation import serialize_tool_metadata
-            meta = serialize_tool_metadata(cls)
             reg._register_tool_from_class(
                 cls, tool_name, "bioimageflow_common_tools", "0.1.1",
             )

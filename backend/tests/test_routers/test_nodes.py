@@ -32,6 +32,22 @@ async def _client(result_store: MagicMock, thumbnail_manager: MagicMock | None =
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
+async def _client_with_workflow_store(
+    result_store: MagicMock,
+    workflow_store: MagicMock,
+    thumbnail_manager: MagicMock | None = None,
+):
+    app = create_app(
+        AppConfig(
+            result_store=result_store,
+            workflow_store=workflow_store,
+            thumbnail_manager=thumbnail_manager or _default_thumbnail_mock(),
+        )
+    )
+    transport = ASGITransport(app=app)
+    return httpx.AsyncClient(transport=transport, base_url="http://test")
+
+
 def _default_thumbnail_mock() -> MagicMock:
     """A no-op manager whose async API returns a small placeholder PNG."""
     from unittest.mock import AsyncMock
@@ -133,6 +149,26 @@ async def test_get_node_data_forwards_tool_name() -> None:
     assert store.get_column_types.call_args.kwargs["tool_name"] == "ToolA"
 
 
+async def test_get_node_data_resolves_workflow_storage_path(tmp_path: Path) -> None:
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"x": [1]})
+    store.get_column_types.return_value = {"x": "int"}
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path / "workflows" / "wf_a"
+    async with await _client_with_workflow_store(store, workflow_store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/data",
+            params={"workflow_name": "wf_a"},
+        )
+
+    assert resp.status_code == 200
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
+    assert (
+        store.get_latest_dataframe.call_args.kwargs["storage_path"]
+        == tmp_path / "workflows" / "wf_a"
+    )
+
+
 async def test_download_csv(tmp_path: Path) -> None:
     csv = tmp_path / "dataframe.csv"
     csv.write_text("x\n1\n")
@@ -144,6 +180,27 @@ async def test_download_csv(tmp_path: Path) -> None:
     assert "text/csv" in resp.headers["content-type"]
     assert "n1.csv" in resp.headers["content-disposition"]
     assert resp.text == "x\n1\n"
+
+
+async def test_download_csv_resolves_workflow_storage_path(tmp_path: Path) -> None:
+    csv = tmp_path / "dataframe.csv"
+    csv.write_text("x\n1\n")
+    store = MagicMock()
+    store.get_csv_path.return_value = csv
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path / "workflows" / "wf_a"
+    async with await _client_with_workflow_store(store, workflow_store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/data/csv",
+            params={"workflow_name": "wf_a"},
+        )
+
+    assert resp.status_code == 200
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
+    assert (
+        store.get_csv_path.call_args.kwargs["storage_path"]
+        == tmp_path / "workflows" / "wf_a"
+    )
 
 
 async def test_thumbnail_endpoint() -> None:

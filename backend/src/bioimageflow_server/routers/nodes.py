@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -13,6 +14,8 @@ from bioimageflow_server.services.result_store import (
     ResultStoreService,
 )
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
+from bioimageflow_server.services.workflow_context import resolve_workflow_storage_path
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
 
@@ -33,18 +36,38 @@ def get_thumbnail_manager() -> ThumbnailManager:
     raise RuntimeError("ThumbnailManager dependency is not configured")
 
 
+def get_workflow_store() -> WorkflowStoreService | None:
+    return None
+
+
+def _workflow_storage_path(
+    workflow_name: str | None,
+    workflow_store: WorkflowStoreService | None,
+) -> Path | None:
+    try:
+        return resolve_workflow_storage_path(workflow_name, workflow_store, None)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Workflow '{workflow_name}' not found",
+        ) from exc
+
+
 @router.get("/{node_id}/data", response_model=NodeDataResponse)
 async def get_node_data(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
     page: Annotated[int, Query(ge=0)] = 0,
     page_size: Annotated[int, Query(ge=1, le=500)] = 50,
     sort_by: str | None = None,
     sort_order: Literal["asc", "desc"] = "asc",
     tool_name: str | None = None,
+    workflow_name: str | None = None,
 ) -> NodeDataResponse:
+    storage_path = _workflow_storage_path(workflow_name, workflow_store)
     try:
-        df = result_store.get_latest_dataframe(node_id)
+        df = result_store.get_latest_dataframe(node_id, storage_path=storage_path)
     except ResultDataNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if df is None:
@@ -90,8 +113,11 @@ async def get_node_data(
 async def download_node_csv(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+    workflow_name: str | None = None,
 ) -> FileResponse:
-    csv_path = result_store.get_csv_path(node_id)
+    storage_path = _workflow_storage_path(workflow_name, workflow_store)
+    csv_path = result_store.get_csv_path(node_id, storage_path=storage_path)
     if csv_path is None:
         raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
     return FileResponse(
@@ -106,12 +132,15 @@ async def get_node_thumbnail(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     thumbnail_manager: Annotated[ThumbnailManager, Depends(get_thumbnail_manager)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
     col: str,
     row: Annotated[int, Query(ge=0)] = 0,
     size: Annotated[int, Query(ge=16, le=1024)] = 128,
+    workflow_name: str | None = None,
 ) -> Response:
+    storage_path = _workflow_storage_path(workflow_name, workflow_store)
     try:
-        df = result_store.get_latest_dataframe(node_id)
+        df = result_store.get_latest_dataframe(node_id, storage_path=storage_path)
     except ResultDataNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if df is None:

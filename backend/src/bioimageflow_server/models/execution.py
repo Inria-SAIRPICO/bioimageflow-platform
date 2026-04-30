@@ -12,6 +12,7 @@ class ExecutionRequest(BaseModel):
 
     graph: dict[str, Any]
     nodes: list[str] | None = None
+    workflow_name: str | None = None
 
 
 class ProgressInfo(BaseModel):

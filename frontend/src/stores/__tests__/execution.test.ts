@@ -8,10 +8,12 @@ vi.mock('@/api/client', () => ({
 import { useExecutionStore } from '../execution'
 import { useLoggerStore } from '../logger'
 import { useErrorStore } from '../errors'
+import { api } from '@/api/client'
 
 describe('execution store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.mocked(api.post).mockReset()
   })
 
   it('mirrors execution failures into the logger and preserves full error details', () => {
@@ -46,6 +48,34 @@ describe('execution store', () => {
       detail: 'node_a: segmentation failed',
       nodeId: 'node_a',
       fullDetail: expect.stringContaining('ValueError: bad image'),
+    })
+  })
+
+  it('posts workflow_name when starting execution', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'started' } })
+    const execution = useExecutionStore()
+    const graph = { nodes: [], edges: [] }
+
+    await execution.run(graph, undefined, 'wf_a')
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/execution/run', {
+      graph,
+      nodes: undefined,
+      workflow_name: 'wf_a',
+    })
+  })
+
+  it('posts workflow_name when clearing cache', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { node_statuses: {} } })
+    const execution = useExecutionStore()
+    const graph = { nodes: [], edges: [] }
+
+    await execution.clear(graph, ['n1'], 'wf_a')
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/execution/clear', {
+      graph,
+      nodes: ['n1'],
+      workflow_name: 'wf_a',
     })
   })
 })

@@ -6,6 +6,7 @@ import { api } from '@/api/client'
 
 const props = defineProps<{
   nodeId: string
+  workflowName?: string | null
   row: number
   col: string
   value: string
@@ -29,11 +30,17 @@ const fetchFailed = ref(false)
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
-const baseUrl = computed(
-  () =>
-    `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/thumbnail` +
-    `?row=${props.row}&col=${encodeURIComponent(props.col)}&size=128`,
-)
+const baseUrl = computed(() => {
+  const params = new URLSearchParams({
+    row: String(props.row),
+    col: props.col,
+    size: '128',
+  })
+  if (props.workflowName && props.workflowName.trim() !== '') {
+    params.set('workflow_name', props.workflowName)
+  }
+  return `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/thumbnail?${params.toString()}`
+})
 
 let abort: AbortController | null = null
 let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -103,7 +110,8 @@ function reset() {
 }
 
 watch(
-  () => `${props.nodeId}::${props.row}::${props.col}::${props.value}`,
+  () =>
+    `${props.nodeId}::${props.workflowName ?? ''}::${props.row}::${props.col}::${props.value}`,
   () => reset(),
   { immediate: true },
 )

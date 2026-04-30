@@ -49,15 +49,24 @@ function isPathColumn(col: string): boolean {
 function toggleSort(col: string) {
   const current = pageState.value
   const order = current.sortBy === col && current.sortOrder === 'asc' ? 'desc' : 'asc'
-  void store.setSort(props.nodeId, col, order, { toolName: props.toolName })
+  void store.setSort(props.nodeId, col, order, {
+    toolName: props.toolName,
+    workflowName: props.workflowName,
+  })
 }
 
 function onPage(event: { page: number; rows: number }) {
   if (event.rows !== pageState.value.pageSize) {
-    void store.setPageSize(props.nodeId, event.rows, { toolName: props.toolName })
+    void store.setPageSize(props.nodeId, event.rows, {
+      toolName: props.toolName,
+      workflowName: props.workflowName,
+    })
     return
   }
-  void store.setPage(props.nodeId, event.page, { toolName: props.toolName })
+  void store.setPage(props.nodeId, event.page, {
+    toolName: props.toolName,
+    workflowName: props.workflowName,
+  })
 }
 </script>
 
@@ -73,7 +82,7 @@ function onPage(event: { page: number; rows: number }) {
         label="CSV"
         size="small"
         :data-testid="`download-csv-${nodeId}`"
-        @click="store.downloadCsv(nodeId)"
+        @click="store.downloadCsv(nodeId, workflowName)"
       />
     </div>
 

@@ -12,6 +12,7 @@ vi.mock('@/api/client', () => ({
 import RunButton from '../RunButton.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useWorkflowStore } from '@/stores/workflow'
 import type { ValidationResult } from '@/api/types'
 
 function mountButton(opts: {
@@ -97,7 +98,27 @@ describe('RunButton', () => {
     await nextTick()
     await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
     await nextTick()
-    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'])
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], null)
+  })
+
+  it('passes the active workflow name to run', async () => {
+    const { wrapper } = mountButton()
+    const exec = useExecutionStore()
+    const workflows = useWorkflowStore()
+    workflows.current = {
+      name: 'wf_a',
+      display_name: 'Workflow A',
+      description: null,
+      storage_path: '/tmp/workflows/wf_a',
+      path: '/tmp/workflows/wf_a.json',
+      last_modified: '2026-01-01T00:00:00Z',
+    }
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a')
   })
 
   it('Stop button is only visible while running', async () => {

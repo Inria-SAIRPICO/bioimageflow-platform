@@ -600,6 +600,8 @@ export interface components {
             graph: components["schemas"]["GraphState"];
             /** Nodes */
             nodes: string[];
+            /** Workflow Name */
+            workflow_name?: string | null;
         };
         /**
          * ColumnRefEdge
@@ -651,6 +653,8 @@ export interface components {
             };
             /** Nodes */
             nodes?: string[] | null;
+            /** Workflow Name */
+            workflow_name?: string | null;
         };
         /**
          * GraphState
@@ -661,6 +665,15 @@ export interface components {
             nodes: components["schemas"]["NodeState"][];
             /** Edges */
             edges: (components["schemas"]["ColumnRefEdge"] | components["schemas"]["PositionalEdge"])[];
+        };
+        /**
+         * GraphValidationRequest
+         * @description Request to validate a graph in an optional workflow context.
+         */
+        GraphValidationRequest: {
+            graph: components["schemas"]["GraphState"];
+            /** Workflow Name */
+            workflow_name?: string | null;
         };
         /**
          * GraphValidationError
@@ -1278,6 +1291,7 @@ export type ColumnRefEdge = components['schemas']['ColumnRefEdge'];
 export type Dataset = components['schemas']['Dataset'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
 export type GraphState = components['schemas']['GraphState'];
+export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
@@ -1777,7 +1791,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GraphState"];
+                "application/json": components["schemas"]["GraphState"] | components["schemas"]["GraphValidationRequest"];
             };
         };
         responses: {
@@ -2370,6 +2384,7 @@ export interface operations {
                 sort_by?: string | null;
                 sort_order?: "asc" | "desc";
                 tool_name?: string | null;
+                workflow_name?: string | null;
             };
             header?: never;
             path: {
@@ -2401,7 +2416,9 @@ export interface operations {
     };
     download_node_csv_api_v1_nodes__node_id__data_csv_get: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path: {
                 node_id: string;
@@ -2436,6 +2453,7 @@ export interface operations {
                 col: string;
                 row?: number;
                 size?: number;
+                workflow_name?: string | null;
             };
             header?: never;
             path: {

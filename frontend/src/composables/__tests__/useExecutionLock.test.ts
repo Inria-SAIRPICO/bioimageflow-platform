@@ -64,7 +64,7 @@ describe('useExecutionLock', () => {
     })
 
     expect(flushNow).toHaveBeenCalled()
-    expect(runSpy).toHaveBeenCalledWith(graph, undefined)
+    expect(runSpy).toHaveBeenCalledWith(graph, undefined, undefined)
   })
 
   it('lockForExecution aborts if validation fails after flush', async () => {
@@ -117,7 +117,7 @@ describe('useExecutionLock', () => {
       graphSync: { flushNow, validationResult },
     })
 
-    expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'])
+    expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'], undefined)
   })
 
   it('unlockAfterExecution triggers a graph re-validation via PUT /graph', async () => {
@@ -130,8 +130,8 @@ describe('useExecutionLock', () => {
     await unlockAfterExecution({ nodes: [], edges: [] })
 
     expect(mockedApi.put).toHaveBeenCalledWith('/api/v1/graph', {
-      nodes: [],
-      edges: [],
+      graph: { nodes: [], edges: [] },
+      workflow_name: null,
     })
   })
 })

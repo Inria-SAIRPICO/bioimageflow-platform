@@ -7,7 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from bioimageflow_server.models.graph import GraphState, NodeOutputSchemaResponse
+from bioimageflow_server.models.graph import (
+    GraphState,
+    GraphValidationRequest,
+    NodeOutputSchemaResponse,
+)
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import (
     ParameterPatchRequest,
@@ -21,6 +25,8 @@ from bioimageflow_server.services.graph_validator import (
 )
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_context import resolve_workflow_storage_path
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
@@ -43,6 +49,10 @@ def get_dev_mode() -> bool:
 
 def get_session_manager() -> SessionManager:  # pragma: no cover
     raise RuntimeError("session_manager dependency not configured")
+
+
+def get_workflow_store() -> WorkflowStoreService | None:
+    return None
 
 
 def get_settings() -> Settings | None:
@@ -73,18 +83,36 @@ def _contains_binding(value: Any) -> bool:
 
 @router.put("")
 async def validate_graph_endpoint(
-    graph: GraphState,
+    body: GraphState | GraphValidationRequest,
     registry: ToolRegistryService = Depends(get_tool_registry),
     storage_path: Path | None = Depends(get_storage_path),
     execution_manager: Any | None = Depends(get_execution_manager),
     dev_mode: bool = Depends(get_dev_mode),
     session_manager: SessionManager = Depends(get_session_manager),
     settings: Settings | None = Depends(get_settings),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ValidationResult:
     _ensure_unlocked(execution_manager)
+    if isinstance(body, GraphValidationRequest):
+        graph = body.graph
+        workflow_name = body.workflow_name
+    else:
+        graph = body
+        workflow_name = None
+    try:
+        validation_storage_path = resolve_workflow_storage_path(
+            workflow_name,
+            workflow_store,
+            storage_path,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Workflow '{workflow_name}' not found",
+        ) from exc
     return _validate_graph(
         graph, registry, session_manager,
-        storage_path=storage_path, dev_mode=dev_mode, settings=settings,
+        storage_path=validation_storage_path, dev_mode=dev_mode, settings=settings,
     )
 
 

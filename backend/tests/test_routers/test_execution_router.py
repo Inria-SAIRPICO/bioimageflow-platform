@@ -144,11 +144,13 @@ async def _make_client(
     tmp_path: Path,
     execution_manager: Any = None,
     tool_registry: ToolRegistryService | None = None,
+    workflow_store: Any = None,
 ) -> httpx.AsyncClient:
     config = AppConfig(
         storage_path=tmp_path,
         execution_manager=execution_manager,
         tool_registry=tool_registry,
+        workflow_store=workflow_store,
     )
     app = create_app(config)
     transport = ASGITransport(app=app)
@@ -213,6 +215,46 @@ async def test_run_passes_nodes_subset(idle_client) -> None:
     # graph as first arg, nodes as second
     assert call_args.args[0].nodes[0].id == "n1"
     assert call_args.kwargs.get("nodes") == ["n1"] or call_args.args[1] == ["n1"]
+
+
+async def test_run_resolves_workflow_storage_path(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = MagicMock()
+    workflow_storage = tmp_path / "workflows" / "wf_a"
+    workflow_store.get_storage_path.return_value = workflow_storage
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
+    async with c:
+        resp = await c.post(
+            "/api/v1/execution/run",
+            json={"graph": _minimal_graph(), "workflow_name": "wf_a"},
+        )
+
+    assert resp.status_code == 202
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
+    assert em.start.call_args.kwargs["storage_path"] == workflow_storage
+
+
+async def test_run_without_workflow_uses_fallback_storage(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = MagicMock()
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
+    async with c:
+        resp = await c.post(
+            "/api/v1/execution/run",
+            json={"graph": _minimal_graph()},
+        )
+
+    assert resp.status_code == 202
+    workflow_store.get_storage_path.assert_not_called()
+    assert em.start.call_args.kwargs["storage_path"] == tmp_path
 
 
 # ---- POST /execution/stop ---------------------------------------------------
@@ -310,6 +352,47 @@ async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
     body = resp.json()
     assert body["node_statuses"]["a"]["status"] == "unexecuted"
     assert body["node_statuses"]["b"]["status"] == "out_of_date"
+
+
+async def test_clear_resolves_workflow_storage_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = MagicMock()
+    workflow_storage = tmp_path / "workflows" / "wf_a"
+    workflow_store.get_storage_path.return_value = workflow_storage
+    seen: dict[str, Path | None] = {}
+
+    def _fake_clear(nodes, graph, registry, storage_path, session_manager=None):
+        seen["storage_path"] = storage_path
+        return {
+            "a": NodeStatus(node_id="a", status="unexecuted", cached=False),
+        }
+
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.execution.clear_node_cache",
+        _fake_clear,
+    )
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        tool_registry=_make_registry(),
+        workflow_store=workflow_store,
+    )
+    async with c:
+        resp = await c.post(
+            "/api/v1/execution/clear",
+            json={
+                "graph": _minimal_graph(),
+                "nodes": ["a"],
+                "workflow_name": "wf_a",
+            },
+        )
+
+    assert resp.status_code == 200
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
+    assert seen["storage_path"] == workflow_storage
 
 
 # ---- GET /execution/status --------------------------------------------------

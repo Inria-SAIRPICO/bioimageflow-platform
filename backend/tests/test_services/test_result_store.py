@@ -162,3 +162,20 @@ def test_get_csv_path_and_has_data(tmp_path: Path) -> None:
     assert store.has_data("n1") is True
     assert store.get_csv_path("missing") is None
     assert store.has_data("missing") is False
+
+
+def test_methods_accept_storage_path_override(tmp_path: Path, monkeypatch) -> None:
+    fallback = tmp_path / "fallback"
+    override = tmp_path / "override"
+    hash_dir = _hash_dir(override, "n1", "20260101_000000_hash")
+    (hash_dir / "dataframe.csv").write_text("x\n1\n")
+
+    monkeypatch.setattr(
+        "bioimageflow_server.services.result_store.cache_load",
+        lambda path: pd.DataFrame({"x": [1]}),
+    )
+    store = _store(fallback)
+
+    assert store.get_latest_dataframe("n1", storage_path=override) is not None
+    assert store.get_csv_path("n1", storage_path=override) == hash_dir / "dataframe.csv"
+    assert store.has_data("n1", storage_path=override) is True

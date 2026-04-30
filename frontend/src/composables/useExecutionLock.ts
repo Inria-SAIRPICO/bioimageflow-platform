@@ -14,6 +14,7 @@ export interface LockForExecutionOptions {
   graph: GraphState
   nodes?: string[]
   graphSync: ExecutionGraphSync
+  workflowName?: string | null
 }
 
 export function useExecutionLock() {
@@ -34,7 +35,7 @@ export function useExecutionLock() {
   async function lockForExecution(
     options: LockForExecutionOptions,
   ): Promise<void> {
-    const { graph, nodes, graphSync } = options
+    const { graph, nodes, graphSync, workflowName } = options
     // 1. Flush any pending debounced PUT /graph so the server has the
     //    latest state and its validation result is fresh.
     await graphSync.flushNow()
@@ -49,13 +50,19 @@ export function useExecutionLock() {
     }
 
     // 3. Kick off the run.
-    await exec.run(graph, nodes)
+    await exec.run(graph, nodes, workflowName)
   }
 
-  async function unlockAfterExecution(graph: GraphState): Promise<void> {
+  async function unlockAfterExecution(
+    graph: GraphState,
+    workflowName?: string | null,
+  ): Promise<void> {
     // After execution completes, re-validate the full graph so node
     // statuses reflect the cached/executed outputs authoritatively.
-    await api.put('/api/v1/graph', graph)
+    await api.put('/api/v1/graph', {
+      graph,
+      workflow_name: workflowName ?? null,
+    })
   }
 
   return {
