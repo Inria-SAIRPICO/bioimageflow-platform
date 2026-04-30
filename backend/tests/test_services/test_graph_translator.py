@@ -297,10 +297,28 @@ def test_persisted_sections_keep_graph_lossless_and_split_gui(
     assert errors == []
     assert GraphState.model_validate(graph_section) == graph
     assert workflow_section["nodes"][0]["tool_class"] == "TProcTool"
+    assert workflow_section["nodes"][0]["output_templates"] == {"mask": "mask.tif"}
     assert gui_section["nodes"]["n"]["position"] == [12.0, 34.0]
     assert gui_section["nodes"]["n"]["collapsed"] is True
     assert gui_section["nodes"]["n"]["resources"] == {"cpu": 2}
     assert gui_section["nodes"]["n"]["output_templates"] == {"mask": "mask.tif"}
+
+
+def test_lib_dict_to_graph_state_reads_output_templates_without_gui() -> None:
+    graph = lib_dict_to_graph_state(
+        {
+            "nodes": [
+                {
+                    "name": "n",
+                    "tool_class": "TProcTool",
+                    "constants": {},
+                    "output_templates": {"mask": "custom_{row_index}.tif"},
+                },
+            ],
+            "edges": [],
+        }
+    )
+    assert graph.nodes[0].output_templates == {"mask": "custom_{row_index}.tif"}
 
 
 def test_lib_dict_to_graph_state_roundtrip_with_edges_and_constants(

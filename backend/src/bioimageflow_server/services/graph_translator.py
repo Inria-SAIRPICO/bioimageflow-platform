@@ -156,7 +156,10 @@ def lib_dict_to_graph_state(
                 resources=cast(dict[str, Any], gui_node.get("resources", {})),
                 output_templates=cast(
                     dict[str, str],
-                    gui_node.get("output_templates", {}),
+                    gui_node.get(
+                        "output_templates",
+                        raw_node.get("output_templates", {}),
+                    ),
                 ),
                 enabled=bool(raw_node.get("enabled", True)),
                 collapsed=bool(gui_node.get("collapsed", False)),
@@ -489,6 +492,8 @@ def graph_state_to_lib_dict(
             node_dict["tool_package_version"] = pkg_ver
         if not node.enabled:
             node_dict["enabled"] = False
+        if node.output_templates:
+            node_dict["output_templates"] = dict(node.output_templates)
 
         connected_inputs = connected_inputs_by_target.get(node.id, set())
         for key, value in node.parameters.items():
