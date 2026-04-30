@@ -17,6 +17,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 const mockedGet = vi.mocked(api.get)
+const mockedPost = vi.mocked(api.post)
 
 const DataTableStub = defineComponent({
   props: {
@@ -378,5 +379,30 @@ describe('DataTablePanel', () => {
     expect(wrapper.text()).toContain('/data/results/cell_mask.tif')
     await wrapper.find('[data-testid="path-copy"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/cell_mask.tif')
+  })
+
+  it('opens regular path cells through the editor helper and clipboard fallback', async () => {
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        opened: false,
+        method: 'clipboard',
+        url: null,
+        path: '/data/results/measurements.json',
+        message: 'Path copied - open in your local editor.',
+      },
+    })
+    const wrapper = mount(PathCell, {
+      props: { value: '/data/results/measurements.json' },
+      global: { plugins: [createPinia(), PrimeVue] },
+    })
+
+    const open = wrapper.find('[data-testid="path-open"]')
+    expect(open.attributes('disabled')).toBeUndefined()
+    await open.trigger('click')
+
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open', {
+      path: '/data/results/measurements.json',
+    })
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/measurements.json')
   })
 })

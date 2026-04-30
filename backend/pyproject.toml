@@ -44,6 +44,7 @@ packages = ["src/bioimageflow_server"]
 "src/bioimageflow_server/data/default_known_packages.txt" = "bioimageflow_server/data/default_known_packages.txt"
 "src/bioimageflow_server/_external/napari_manager.py" = "bioimageflow_server/_external/napari_manager.py"
 "src/bioimageflow_server/_external/thumbnail_generator.py" = "bioimageflow_server/_external/thumbnail_generator.py"
+"src/bioimageflow_server/_external/opener" = "bioimageflow_server/_external/opener"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

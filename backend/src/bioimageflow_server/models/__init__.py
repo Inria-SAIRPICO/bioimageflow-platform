@@ -1,6 +1,12 @@
 """Pydantic models for the BioImageFlow server API."""
 
 from bioimageflow_server.models.errors import ErrorResponse
+from bioimageflow_server.models.editor import (
+    EditorOpenMethod,
+    EditorOpenRequest,
+    EditorOpenResponse,
+    EditorStatus,
+)
 from bioimageflow_server.models.execution import (
     ExecutionRequest,
     ExecutionResult,
@@ -24,6 +30,7 @@ from bioimageflow_server.models.tools import (
     ToolCreate,
     ToolMetadata,
     ToolRename,
+    ToolSourceResponse,
 )
 from bioimageflow_server.models.validation import (
     GraphValidationError,
@@ -61,6 +68,10 @@ __all__ = [
     "ClientMessage",
     "ColumnRefEdge",
     "Edge",
+    "EditorOpenMethod",
+    "EditorOpenRequest",
+    "EditorOpenResponse",
+    "EditorStatus",
     "EnvironmentStatusMessage",
     "ErrorMessage",
     "ErrorResponse",
@@ -93,6 +104,7 @@ __all__ = [
     "ToolMetadata",
     "ToolReloadMessage",
     "ToolRename",
+    "ToolSourceResponse",
     "ValidationResult",
     "WorkflowCreate",
     "WorkflowFile",

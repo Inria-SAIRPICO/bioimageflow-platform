@@ -364,6 +364,7 @@ const menuItems = computed<MenuItem[]>(() => [
       panelToggle('Nodes', 'nodePanel'),
       panelToggle('Data Table', 'dataTable'),
       panelToggle('Logger', 'logger'),
+      panelToggle('Code Editor', 'codeEditor'),
     ],
   },
   {

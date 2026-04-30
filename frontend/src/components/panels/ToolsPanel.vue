@@ -14,6 +14,7 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import type { ToolMetadata } from '@/api/types'
 import { api } from '@/api/client'
+import { openPathWithEditor } from '@/api/editor'
 
 const emit = defineEmits<{
   'add-tool': [toolName: string]
@@ -391,8 +392,8 @@ function getDocumentation(toolName: string): string {
 async function openInEditor(toolName: string) {
   if (!settingsStore.isDesktop) return
   try {
-    const { data } = await api.get<{ source: string }>(`/api/v1/tools/${toolName}/source`)
-    await api.post('/api/v1/editor/open', { file_path: data.source })
+    const { data } = await api.get<{ path: string }>(`/api/v1/tools/${toolName}/source`)
+    await openPathWithEditor(data.path, toast)
   } catch (e: unknown) {
     toolRegistry.error = e instanceof Error ? e.message : String(e)
   }

@@ -101,6 +101,13 @@ class ToolRename(BaseModel):
     new_name: str
 
 
+class ToolSourceResponse(BaseModel):
+    tool_name: str
+    path: str
+    source_kind: Literal["package", "custom"]
+    editable: bool
+
+
 # --- App configuration ---
 
 
@@ -127,6 +134,7 @@ class AppConfig:
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
     workflow_store: WorkflowStoreService | None = None
+    editor_service: Any | None = None
     # Set True in tests that don't want a watchdog Observer running. The
     # production app builds the service inside ``create_app`` from the
     # resolved registry + connection_manager + tool-store path.

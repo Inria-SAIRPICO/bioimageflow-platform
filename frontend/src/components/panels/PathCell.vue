@@ -3,11 +3,10 @@ import { computed } from 'vue'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
-import { useSettingsStore } from '@/stores/settings'
+import { openPathWithEditor } from '@/api/editor'
 
 const props = defineProps<{ value: string }>()
 
-const settingsStore = useSettingsStore()
 let toast: ReturnType<typeof useToast> | null = null
 try {
   toast = useToast()
@@ -21,25 +20,14 @@ const filename = computed(() => {
   return parts.length > 0 ? parts[parts.length - 1] : props.value
 })
 
-const hasEditor = computed(() => {
-  const editor = settingsStore.settings?.external_editor
-  return typeof editor === 'string' && editor.trim() !== ''
-})
-
 function showError(detail: string) {
   toast?.add({ severity: 'error', summary: 'Action failed', detail, life: 3000 })
 }
 
 async function openEditor() {
-  if (!hasEditor.value) return
   try {
-    await api.post('/api/v1/editor/open', { path: props.value })
+    await openPathWithEditor(props.value, toast)
   } catch (exc: any) {
-    if (exc?.response?.status === 404) {
-      await navigator.clipboard?.writeText(props.value)
-      toast?.add({ severity: 'info', summary: 'Path copied to clipboard', life: 3000 })
-      return
-    }
     showError(exc?.response?.data?.detail ?? exc?.message ?? 'Could not open path')
   }
 }
@@ -83,8 +71,7 @@ async function reveal() {
       icon="pi pi-file-edit"
       text
       size="small"
-      title="Configure an external editor in Settings"
-      :disabled="!hasEditor"
+      title="Open in editor"
       data-testid="path-open"
       @click="openEditor"
     />

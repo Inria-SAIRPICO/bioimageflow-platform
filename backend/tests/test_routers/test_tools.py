@@ -24,14 +24,11 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
-from bioimageflow_server.services.known_packages import KnownPackagesService
-from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
     PackageNetworkError,
     PackageNotFoundError,
 )
-from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 pytestmark = pytest.mark.anyio
@@ -414,6 +411,57 @@ async def test_get_source_success(workflow_root: Path):
         resp = await client.get("/api/v1/tools/MyTool/source")
     assert resp.status_code == 200
     assert "my_tool.py" in resp.json()["path"]
+    assert resp.json()["source_kind"] == "custom"
+    assert resp.json()["editable"] is True
+
+
+async def test_get_source_for_package_tool_returns_real_path():
+    class LocalTool:
+        pass
+
+    reg = ToolRegistryService()
+    reg.register_tool("LocalTool", _make_tool("LocalTool"), tool_class=LocalTool)
+    config = AppConfig(tool_registry=reg)
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools/LocalTool/source")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["tool_name"] == "LocalTool"
+    assert data["source_kind"] == "package"
+    assert data["editable"] is False
+    assert Path(data["path"]).exists()
+    assert not data["path"].startswith("<package:")
+
+
+async def test_get_source_prefers_workflow_custom_file(workflow_root: Path):
+    class MyTool:
+        pass
+
+    tools_dir = workflow_root / "tools"
+    tools_dir.mkdir(parents=True)
+    custom_path = tools_dir / "my_tool.py"
+    custom_path.write_text("class MyTool: pass")
+
+    reg = ToolRegistryService()
+    reg.register_tool("MyTool", _make_tool("MyTool"), tool_class=MyTool)
+    config = AppConfig(tool_registry=reg, workflow_root=workflow_root)
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools/MyTool/source")
+
+    assert resp.status_code == 200
+    assert resp.json()["path"] == str(custom_path)
+    assert resp.json()["source_kind"] == "custom"
+    assert resp.json()["editable"] is True
+
+
+async def test_get_source_for_package_tool_without_resolvable_source_404():
+    reg = ToolRegistryService()
+    reg.register_tool("GhostPackageTool", _make_tool("GhostPackageTool"))
+    config = AppConfig(tool_registry=reg)
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools/GhostPackageTool/source")
+    assert resp.status_code == 404
+    assert "could not be resolved" in resp.json()["detail"]
 
 
 async def test_get_source_not_found(workflow_root: Path):

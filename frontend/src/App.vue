@@ -6,6 +6,7 @@ import NodePanel from './components/panels/NodePanel.vue'
 import SettingsPanel from './components/panels/SettingsPanel.vue'
 import LoggerPanel from './components/panels/LoggerPanel.vue'
 import DataTablePanel from './components/panels/DataTablePanel.vue'
+import CodeEditorPanel from './components/panels/CodeEditorPanel.vue'
 
 export default defineComponent({
   components: {
@@ -14,6 +15,7 @@ export default defineComponent({
     nodePanel: NodePanel,
     logger: LoggerPanel,
     dataTable: DataTablePanel,
+    codeEditor: CodeEditorPanel,
   },
 })
 </script>
@@ -65,6 +67,7 @@ useExecutionLock()
 
 onMounted(() => {
   websocket.connect()
+  window.addEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
   if (shortcutEnabled) {
     window.addEventListener('keydown', onPreferencesShortcut)
   }
@@ -73,6 +76,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   dockviewDisposables.splice(0).forEach((disposable) => disposable.dispose())
   websocket.disconnect()
+  window.removeEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
   }
@@ -102,7 +106,7 @@ const dockviewDisposables: DockviewIDisposable[] = []
 
 // --- Dockview setup ---
 
-const panelKeys = ['tools', 'nodePanel', 'dataTable', 'logger'] as const
+const panelKeys = ['tools', 'nodePanel', 'dataTable', 'logger', 'codeEditor'] as const
 type DockPanelKey = typeof panelKeys[number]
 
 function isDockPanelKey(id: string): id is DockPanelKey {
@@ -168,6 +172,14 @@ function onDockviewReady(event: DockviewReadyEvent) {
   dataTablePanel.api.setActive()
 }
 
+function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
+  uiStore.setCodeEditorTarget(event.detail.url, event.detail.path)
+  queueMicrotask(() => {
+    const panel = dockviewApi.value?.getPanel('codeEditor')
+    panel?.api.setActive()
+  })
+}
+
 // --- Panel visibility sync ---
 
 watch(
@@ -208,6 +220,8 @@ function getPanelAddOptions(key: string) {
       }
       return { id: 'logger', component: 'logger', title: 'Logger', initialHeight: 250, position: { direction: 'below' as const } }
     }
+    case 'codeEditor':
+      return { id: 'codeEditor', component: 'codeEditor', title: 'Code Editor', initialHeight: 360, position: { direction: 'below' as const } }
     default:
       throw new Error(`Unknown panel key: ${key}`)
   }
