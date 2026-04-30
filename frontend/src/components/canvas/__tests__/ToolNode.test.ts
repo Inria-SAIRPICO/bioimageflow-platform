@@ -155,6 +155,55 @@ describe('ToolNode', () => {
     expect(w.find('.tool-node').classes()).toContain('tool-missing')
   })
 
+  it('renders sub-workflow pins from published inputs and outputs', () => {
+    const w = factory(makeData({
+      toolName: '__sub_workflow__',
+      tool: null,
+      published_inputs: [{
+        name: 'image',
+        internal_node_id: 'load',
+        internal_field: 'image',
+        kind: 'input',
+        schema: { type: 'Path' },
+      }],
+      published_outputs: [{
+        name: 'mask',
+        internal_node_id: 'segment',
+        internal_output: 'mask',
+        schema: { type: 'ImagePath' },
+      }],
+    }))
+
+    expect(w.find('.tool-node').classes()).toContain('sub-workflow')
+    const inputPins = w.find('.body-inputs').findAllComponents({ name: 'InputPin' })
+    expect(inputPins).toHaveLength(1)
+    expect(inputPins[0].props('fieldName')).toBe('image')
+    expect(inputPins[0].props('fieldType')).toBe('Path')
+    const outputPins = w.find('.body-outputs').findAllComponents({ name: 'OutputPin' })
+    expect(outputPins).toHaveLength(1)
+    expect(outputPins[0].props('fieldName')).toBe('mask')
+    expect(outputPins[0].props('fieldType')).toBe('ImagePath')
+  })
+
+  it('marks readonly sub-workflows without hiding published pins', () => {
+    const w = factory(makeData({
+      toolName: '__sub_workflow__',
+      tool: null,
+      published_inputs: [{
+        name: 'image',
+        internal_node_id: '',
+        internal_field: 'image',
+        kind: 'input',
+        schema: { type: 'Path' },
+      }],
+      published_outputs: [],
+      sub_workflow_readonly_reason: 'Class-based sub-workflow',
+    }))
+
+    expect(w.find('.tool-node').classes()).toContain('readonly-sub-workflow')
+    expect(w.find('.body-inputs').findAllComponents({ name: 'InputPin' })).toHaveLength(1)
+  })
+
   it('DataFrameTool with empty outputs and dynamic_outputs=false renders no body output pins', () => {
     const tool = makeTool({
       tool_type: 'DataFrameTool',

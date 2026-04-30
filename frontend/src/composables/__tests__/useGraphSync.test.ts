@@ -433,4 +433,60 @@ describe('serializeGraph', () => {
       positional_index: 0,
     })
   })
+
+  it('preserves optional sub-workflow graph fields', () => {
+    const result = serializeGraph({
+      nodes: [{
+        id: 'outer',
+        type: 'sub_workflow',
+        position: { x: 100, y: 200 },
+        data: {
+          name: 'Outer',
+          toolName: '__sub_workflow__',
+          parameters: { image: '/tmp/input.tif' },
+          sub_workflow: {
+            nodes: [{
+              id: 'inner',
+              name: 'Inner',
+              tool_name: 'TProcTool',
+              position: [1, 2],
+              parameters: { diameter: 7 },
+              resources: {},
+              output_templates: {},
+              enabled: true,
+              collapsed: false,
+            }],
+            edges: [],
+          },
+          published_inputs: [{
+            name: 'image',
+            internal_node_id: 'inner',
+            internal_field: 'input_image',
+            kind: 'input',
+            schema: { type: 'Path' },
+            default: null,
+          }],
+          published_outputs: [{
+            name: 'mask',
+            internal_node_id: 'inner',
+            internal_output: 'mask',
+            schema: { type: 'Path' },
+          }],
+          sub_workflow_readonly_reason: null,
+        },
+      }],
+      edges: [],
+    })
+
+    expect(result.nodes[0]).toMatchObject({
+      tool_name: '__sub_workflow__',
+      sub_workflow: {
+        nodes: [expect.objectContaining({ id: 'inner' })],
+        edges: [],
+      },
+      published_inputs: [expect.objectContaining({ name: 'image' })],
+      published_outputs: [expect.objectContaining({ name: 'mask' })],
+      sub_workflow_readonly_reason: null,
+    })
+  })
 })

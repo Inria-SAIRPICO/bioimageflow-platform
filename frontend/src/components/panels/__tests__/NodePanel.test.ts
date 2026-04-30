@@ -335,6 +335,62 @@ describe('NodePanel', () => {
     })
   })
 
+  describe('sub-workflow publishing controls', () => {
+    it('publishes and unpublishes an internal parameter with a stable default name', async () => {
+      const data = makeNodeData({
+        subWorkflowContext: {
+          parentNodeId: 'sub_1',
+          published_inputs: [],
+          published_outputs: [],
+        },
+      })
+      const w = mountPanel(data)
+
+      const buttons = w.findAll('[data-testid="publish-input-toggle"]')
+      const sigmaButton = buttons[1]
+      await sigmaButton.trigger('click')
+      await w.vm.$nextTick()
+
+      expect((data as any).subWorkflowContext.published_inputs).toEqual([
+        expect.objectContaining({
+          name: 'node-1.sigma',
+          internal_node_id: 'node-1',
+          internal_field: 'sigma',
+          kind: 'parameter',
+          schema: data.tool.inputs.sigma,
+          default: 1.0,
+        }),
+      ])
+      expect(w.find('[data-testid="published-input-name-sigma"]').exists()).toBe(true)
+
+      await sigmaButton.trigger('click')
+      expect((data as any).subWorkflowContext.published_inputs).toEqual([])
+    })
+
+    it('prevents publishing an output with a name already used by an input', async () => {
+      const data = makeNodeData({
+        subWorkflowContext: {
+          parentNodeId: 'sub_1',
+          published_inputs: [{
+            name: 'node-1.result',
+            internal_node_id: 'node-1',
+            internal_field: 'sigma',
+            kind: 'parameter',
+            schema: {},
+            default: 1.0,
+          }],
+          published_outputs: [],
+        },
+      })
+      const w = mountPanel(data)
+
+      await w.find('[data-testid="publish-output-toggle-result"]').trigger('click')
+
+      expect((data as any).subWorkflowContext.published_outputs).toEqual([])
+      expect(w.find('[data-testid="publish-name-error"]').text()).toContain('already used')
+    })
+  })
+
   // --- Path input: file/folder pickers (pywebview bridge) ---
 
   describe('path input widgets', () => {

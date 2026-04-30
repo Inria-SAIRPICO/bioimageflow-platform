@@ -84,7 +84,8 @@ export function graphStateToVueFlow(
       pinnedInputs,
       output_templates: node.output_templates ?? {},
     }
-    if (hasSubWorkflowFields(node as any)) {
+    const isSubWorkflow = hasSubWorkflowFields(node as any)
+    if (isSubWorkflow) {
       data.sub_workflow = (node as any).sub_workflow ?? null
       data.published_inputs = (node as any).published_inputs ?? []
       data.published_outputs = (node as any).published_outputs ?? []
@@ -94,7 +95,7 @@ export function graphStateToVueFlow(
 
     return {
       id: node.id,
-      type: 'tool',
+      type: isSubWorkflow ? 'sub_workflow' : 'tool',
       position: { x: node.position[0], y: node.position[1] },
       data,
     }

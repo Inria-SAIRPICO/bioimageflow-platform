@@ -16,7 +16,12 @@ import { useGraphSync } from '@/composables/useGraphSync'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
 import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
-import type { GraphValidationError, InputFieldSchema } from '@/api/types'
+import type {
+  GraphValidationError,
+  InputFieldSchema,
+  PublishedInput,
+  PublishedOutput,
+} from '@/api/types'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
 // `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
@@ -72,6 +77,7 @@ const selectedNode = computed(() => {
 })
 
 const nodeData = computed(() => selectedNode.value?.data ?? null)
+const publishNameError = ref<string | null>(null)
 
 const editingName = ref(false)
 const nameInput = ref('')
@@ -232,6 +238,133 @@ function isSliderField(field: InputFieldSchema): boolean {
   return field.type === 'float' && field.min != null && field.max != null && field.step != null
 }
 
+const subWorkflowContext = computed(() => nodeData.value?.subWorkflowContext ?? null)
+
+function selectedInternalNodeId(): string {
+  return selectedNode.value?.id ?? ''
+}
+
+function usedPublishedNames(except?: string): Set<string> {
+  const ctx = subWorkflowContext.value
+  const used = new Set<string>()
+  if (!ctx) return used
+  for (const item of [
+    ...(ctx.published_inputs ?? []),
+    ...(ctx.published_outputs ?? []),
+  ]) {
+    if (item.name !== except) used.add(item.name)
+  }
+  return used
+}
+
+function defaultPublishedName(fieldName: string): string {
+  return `${selectedInternalNodeId()}.${fieldName}`
+}
+
+function inputPublishIndex(fieldName: string): number {
+  const ctx = subWorkflowContext.value
+  if (!ctx) return -1
+  return (ctx.published_inputs ?? []).findIndex((item: PublishedInput) => (
+    item.internal_node_id === selectedInternalNodeId() && item.internal_field === fieldName
+  ))
+}
+
+function outputPublishIndex(outputName: string): number {
+  const ctx = subWorkflowContext.value
+  if (!ctx) return -1
+  return (ctx.published_outputs ?? []).findIndex((item: PublishedOutput) => (
+    item.internal_node_id === selectedInternalNodeId() && item.internal_output === outputName
+  ))
+}
+
+function isInputPublished(fieldName: string): boolean {
+  return inputPublishIndex(fieldName) >= 0
+}
+
+function isOutputPublished(outputName: string): boolean {
+  return outputPublishIndex(outputName) >= 0
+}
+
+function togglePublishInput(fieldName: string, field: InputFieldSchema) {
+  const ctx = subWorkflowContext.value
+  if (!ctx || !nodeData.value) return
+  publishNameError.value = null
+  ctx.published_inputs ??= []
+  const existingIndex = inputPublishIndex(fieldName)
+  if (existingIndex >= 0) {
+    ctx.published_inputs.splice(existingIndex, 1)
+    return
+  }
+
+  const name = defaultPublishedName(fieldName)
+  if (usedPublishedNames().has(name)) {
+    publishNameError.value = `Published name '${name}' is already used.`
+    return
+  }
+  ctx.published_inputs.push({
+    name,
+    internal_node_id: selectedInternalNodeId(),
+    internal_field: fieldName,
+    kind: canConnect(field) ? 'input' : 'parameter',
+    schema: field,
+    default: nodeData.value.parameters?.[fieldName] ?? field.default ?? null,
+  })
+}
+
+function updatePublishedInputName(fieldName: string, value: string) {
+  const ctx = subWorkflowContext.value
+  if (!ctx) return
+  const index = inputPublishIndex(fieldName)
+  if (index < 0) return
+  const next = value.trim()
+  if (!next) return
+  if (usedPublishedNames(ctx.published_inputs[index].name).has(next)) {
+    publishNameError.value = `Published name '${next}' is already used.`
+    return
+  }
+  publishNameError.value = null
+  ctx.published_inputs[index].name = next
+}
+
+function togglePublishOutput(outputName: string, field: OutputFieldSchema) {
+  const ctx = subWorkflowContext.value
+  if (!ctx) return
+  publishNameError.value = null
+  ctx.published_outputs ??= []
+  const existingIndex = outputPublishIndex(outputName)
+  if (existingIndex >= 0) {
+    ctx.published_outputs.splice(existingIndex, 1)
+    return
+  }
+
+  const name = defaultPublishedName(outputName)
+  if (usedPublishedNames().has(name)) {
+    publishNameError.value = `Published name '${name}' is already used.`
+    return
+  }
+  ctx.published_outputs.push({
+    name,
+    internal_node_id: selectedInternalNodeId(),
+    internal_output: outputName,
+    schema: field,
+  })
+}
+
+function updatePublishedOutputName(outputName: string, value: string) {
+  const ctx = subWorkflowContext.value
+  if (!ctx) return
+  const index = outputPublishIndex(outputName)
+  if (index < 0) return
+  const next = value.trim()
+  if (!next) return
+  if (usedPublishedNames(ctx.published_outputs[index].name).has(next)) {
+    publishNameError.value = `Published name '${next}' is already used.`
+    return
+  }
+  publishNameError.value = null
+  ctx.published_outputs[index].name = next
+}
+
 async function pickFile(key: string, type: string) {
   const path = await pickFileNative({
     parameterName: key,
@@ -323,11 +456,27 @@ async function pickFolder(key: string) {
       <div v-if="nodeData.tool" class="parameters-section">
         <h4>Parameters</h4>
         <div
+          v-if="publishNameError"
+          class="publish-name-error"
+          data-testid="publish-name-error"
+        >
+          {{ publishNameError }}
+        </div>
+        <div
           v-for="[key, field] in Object.entries(nodeData.tool.inputs)"
           :key="key"
           class="param-row"
         >
           <div class="param-header">
+            <Button
+              v-if="subWorkflowContext"
+              :icon="isInputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
+              class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
+              :title="isInputPublished(key) ? 'Unpublish input' : 'Publish input'"
+              :aria-pressed="isInputPublished(key)"
+              @click="togglePublishInput(key, field as InputFieldSchema)"
+              data-testid="publish-input-toggle"
+            />
             <!-- Pin visibility toggle (icon-only, before the label) -->
             <Button
               v-if="canConnect(field as InputFieldSchema)"
@@ -364,6 +513,14 @@ async function pickFolder(key: string) {
               />
             </span>
           </div>
+
+          <InputText
+            v-if="subWorkflowContext && isInputPublished(key)"
+            :model-value="subWorkflowContext.published_inputs[inputPublishIndex(key)].name"
+            class="published-name-input"
+            :data-testid="`published-input-name-${key}`"
+            @update:model-value="updatePublishedInputName(key, $event as string)"
+          />
 
           <!-- Fix 18: Always-visible help text -->
           <small
@@ -496,9 +653,25 @@ async function pickFolder(key: string) {
           class="output-row"
         >
           <div class="output-header">
+            <Button
+              v-if="subWorkflowContext"
+              :icon="isOutputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
+              class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
+              :title="isOutputPublished(key) ? 'Unpublish output' : 'Publish output'"
+              :aria-pressed="isOutputPublished(key)"
+              :data-testid="`publish-output-toggle-${key}`"
+              @click="togglePublishOutput(key, field as OutputFieldSchema)"
+            />
             <span class="output-name">{{ key }}</span>
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
           </div>
+          <InputText
+            v-if="subWorkflowContext && isOutputPublished(key)"
+            :model-value="subWorkflowContext.published_outputs[outputPublishIndex(key)].name"
+            class="published-name-input"
+            :data-testid="`published-output-name-${key}`"
+            @update:model-value="updatePublishedOutputName(key, $event as string)"
+          />
           <!-- Editable path template — ProcessingTool outputs only.
                DataFrameTool Outputs are column declarations, not file paths. -->
           <InputText
@@ -935,6 +1108,21 @@ h4 {
 
 .none-toggle-btn[aria-pressed='true'] {
   color: var(--p-orange-500);
+}
+
+.publish-toggle-btn[aria-pressed='true'] {
+  color: var(--p-primary-color);
+}
+
+.published-name-input {
+  width: 100%;
+  font-size: 12px;
+}
+
+.publish-name-error {
+  color: var(--p-red-700, #b91c1c);
+  font-size: 12px;
+  margin-bottom: 8px;
 }
 
 .null-indicator {

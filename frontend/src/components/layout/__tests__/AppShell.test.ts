@@ -8,6 +8,7 @@ import App from '@/App.vue'
 import MenuBar from '@/components/layout/MenuBar.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 
 const { connectMock, disconnectMock } = vi.hoisted(() => ({
   connectMock: vi.fn(),
@@ -269,5 +270,82 @@ describe('AppShell', () => {
     expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
     expect(mockDockviewApi.addPanel.mock.calls[5][0].id).toBe('codeEditor')
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
+  })
+
+  it('opens a Dockview tab for sub-workflow sessions', async () => {
+    mountApp()
+    await flushPromises()
+    const sessions = useSubWorkflowSessionsStore()
+    const session = sessions.openSession({
+      parentWorkflowName: 'parent',
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: { nodes: [], edges: [] },
+    })
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+      detail: { sessionId: session.id },
+    }))
+    await flushPromises()
+
+    const lastCall = mockDockviewApi.addPanel.mock.calls[
+      mockDockviewApi.addPanel.mock.calls.length - 1
+    ]?.[0]
+    expect(lastCall).toMatchObject({
+      component: 'subWorkflowEditor',
+      title: 'Sub 1',
+      params: { sessionId: session.id },
+    })
+    expect(lastCall.id).toContain('sub-workflow:')
+    expect(panels.get(lastCall.id).api.setActive).toHaveBeenCalled()
+  })
+
+  it('keeps a dirty sub-workflow session open when direct tab close is cancelled', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mountApp()
+    await flushPromises()
+    const sessions = useSubWorkflowSessionsStore()
+    const session = sessions.openSession({
+      parentWorkflowName: 'parent',
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: { nodes: [], edges: [] },
+    })
+    sessions.updateDraft(session.id, {
+      nodes: [{
+        id: 'inner',
+        name: 'inner',
+        tool_name: 'tool',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    })
+    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+      detail: { sessionId: session.id },
+    }))
+    await flushPromises()
+    const panel = panels.get(
+      mockDockviewApi.addPanel.mock.calls[
+        mockDockviewApi.addPanel.mock.calls.length - 1
+      ]?.[0].id,
+    )
+
+    emitDockviewPanelRemoved(panel)
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(sessions.sessionById(session.id)).toBeDefined()
+    const reopenedCall = mockDockviewApi.addPanel.mock.calls[
+      mockDockviewApi.addPanel.mock.calls.length - 1
+    ]?.[0]
+    expect(reopenedCall.params).toEqual({
+      sessionId: session.id,
+    })
+    confirmSpy.mockRestore()
   })
 })

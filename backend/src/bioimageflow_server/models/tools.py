@@ -167,13 +167,6 @@ def validate_tool_class_name(value: str) -> str:
     return name
 
 
-class ToolSourceResponse(BaseModel):
-    tool_name: str
-    path: str
-    source_kind: Literal["package", "custom"]
-    editable: bool
-
-
 # --- App configuration ---
 
 

@@ -914,6 +914,20 @@ export interface components {
              * @default false
              */
             collapsed: boolean;
+            /** Sub Workflow */
+            sub_workflow?: components["schemas"]["GraphState"] | null;
+            /**
+             * Published Inputs
+             * @default []
+             */
+            published_inputs?: components["schemas"]["PublishedInput"][];
+            /**
+             * Published Outputs
+             * @default []
+             */
+            published_outputs?: components["schemas"]["PublishedOutput"][];
+            /** Sub Workflow Readonly Reason */
+            sub_workflow_readonly_reason?: string | null;
         };
         /**
          * NodeStatus
@@ -1046,6 +1060,45 @@ export interface components {
             target_node: string;
             /** Positional Index */
             positional_index: number;
+        };
+        /**
+         * PublishedInput
+         * @description An internal sub-workflow field exposed as an outer input pin.
+         */
+        PublishedInput: {
+            /** Name */
+            name: string;
+            /** Internal Node Id */
+            internal_node_id: string;
+            /** Internal Field */
+            internal_field: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "parameter" | "input";
+            /** Schema */
+            schema?: {
+                [key: string]: unknown;
+            } | null;
+            /** Default */
+            default?: unknown;
+        };
+        /**
+         * PublishedOutput
+         * @description An internal sub-workflow output exposed as an outer output pin.
+         */
+        PublishedOutput: {
+            /** Name */
+            name: string;
+            /** Internal Node Id */
+            internal_node_id: string;
+            /** Internal Output */
+            internal_output: string;
+            /** Schema */
+            schema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * RevealRequest
@@ -1478,6 +1531,8 @@ export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse
 export type PackageInfo = components['schemas']['PackageInfo'];
 export type ParameterPatchRequest = components['schemas']['ParameterPatchRequest'];
 export type PositionalEdge = components['schemas']['PositionalEdge'];
+export type PublishedInput = components['schemas']['PublishedInput'];
+export type PublishedOutput = components['schemas']['PublishedOutput'];
 export type RevealRequest = components['schemas']['RevealRequest'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
 export type ToolCreate = components['schemas']['ToolCreate'];

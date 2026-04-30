@@ -13,6 +13,7 @@ const props = defineProps<{
   toolName?: string | null
   workflowName?: string | null
   disabled?: boolean
+  columnAliases?: Record<string, string>
 }>()
 
 const store = useDataTableStore()
@@ -54,6 +55,10 @@ function toggleSort(col: string) {
     toolName: props.toolName,
     workflowName: props.workflowName,
   })
+}
+
+function displayColumnName(col: string): string {
+  return props.columnAliases?.[col] ?? col
 }
 
 function onPage(event: { page: number; rows: number }) {
@@ -130,7 +135,7 @@ function onPage(event: { page: number; rows: number }) {
               type="button"
               @click="toggleSort(col)"
             >
-              <span>{{ col }}</span>
+              <span>{{ displayColumnName(col) }}</span>
               <span class="node-data-table__type">{{ data.column_types[col] ?? 'str' }}</span>
             </button>
           </template>

@@ -214,12 +214,14 @@ import CanvasView from '../CanvasView.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { _resetClipboardForTest } from '@/utils/clipboard'
+import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 
-function mountCanvas(propsData: { nodes?: any[]; edges?: any[] } = {}) {
+function mountCanvas(propsData: { nodes?: any[]; edges?: any[]; subWorkflowSessionId?: string } = {}) {
   return mount(CanvasView, {
     props: {
       nodes: propsData.nodes ?? [],
       edges: propsData.edges ?? [],
+      subWorkflowSessionId: propsData.subWorkflowSessionId,
     },
     attachTo: document.body,
   })
@@ -1124,6 +1126,114 @@ describe('CanvasView', () => {
 
       const vm = w.vm as any
       expect(vm.clipboardData).not.toBeNull()
+      w.unmount()
+    })
+
+    it('createSelectedSubWorkflow replaces selected nodes with a sub-workflow node', () => {
+      const blurTool = makeTool()
+      const thresholdTool = makeThresholdTool()
+      mockNodes = [
+        {
+          id: 'source',
+          selected: false,
+          data: { name: 'Source', toolName: 'gaussian_blur', tool: blurTool, parameters: {}, connectedInputs: {} },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'blur_1',
+          selected: true,
+          data: { name: 'Blur 1', toolName: 'gaussian_blur', tool: blurTool, parameters: {}, connectedInputs: {} },
+          position: { x: 100, y: 0 },
+        },
+        {
+          id: 'threshold_1',
+          selected: true,
+          data: { name: 'Threshold 1', toolName: 'threshold', tool: thresholdTool, parameters: {}, connectedInputs: {} },
+          position: { x: 300, y: 0 },
+        },
+      ]
+      mockEdges = [
+        { id: 'e-in', source: 'source', target: 'blur_1', sourceHandle: 'result', targetHandle: 'image', type: 'column_ref' },
+        { id: 'e-inner', source: 'blur_1', target: 'threshold_1', sourceHandle: 'result', targetHandle: 'mask', type: 'column_ref' },
+      ]
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.createSelectedSubWorkflow()
+
+      const subNode = mockNodes.find((n: any) => n.data?.toolName === '__sub_workflow__')
+      expect(subNode).toBeDefined()
+      expect(mockNodes.find((n: any) => n.id === 'blur_1')).toBeUndefined()
+      expect(subNode.data.sub_workflow.nodes.map((n: any) => n.id)).toEqual(['blur_1', 'threshold_1'])
+      expect(mockEdges[0]).toMatchObject({
+        source: 'source',
+        target: subNode.id,
+        targetHandle: 'blur_1.image',
+      })
+      expect(w.emitted('graph-changed')).toBeTruthy()
+      w.unmount()
+    })
+
+    it('edits a sub-workflow session draft and applies it on Ctrl+S', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: {
+          nodes: [
+            {
+              id: 'inner_1',
+              name: 'Inner 1',
+              tool_name: 'gaussian_blur',
+              position: [0, 0],
+              parameters: {},
+              resources: {},
+              output_templates: {},
+              enabled: true,
+              collapsed: false,
+            },
+          ],
+          edges: [],
+        },
+      })
+      const applied = vi.fn()
+      window.addEventListener('bioimageflow:apply-sub-workflow-session', applied)
+
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+
+      sessions.updateDraft(session.id, {
+        nodes: [{
+          id: 'inner_1',
+          name: 'Inner 1',
+          tool_name: 'gaussian_blur',
+          position: [0, 0],
+          parameters: { sigma: 2 },
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      })
+
+      expect(sessions.isDirty(session.id)).toBe(true)
+      await w.find('.canvas-view').trigger('keydown', { key: 's', ctrlKey: true })
+
+      expect(applied).toHaveBeenCalledTimes(1)
+      expect((applied.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+        parentNodeId: 'sub_1',
+        graph: {
+          nodes: [expect.objectContaining({
+            id: 'inner_1',
+            parameters: { sigma: 2 },
+          })],
+        },
+      })
+      expect(sessions.isDirty(session.id)).toBe(false)
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      window.removeEventListener('bioimageflow:apply-sub-workflow-session', applied)
       w.unmount()
     })
 

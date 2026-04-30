@@ -7,6 +7,7 @@ import ToolNode from './ToolNode.vue'
 import ColumnRefEdge from './ColumnRefEdge.vue'
 import PositionalEdge from './PositionalEdge.vue'
 import CanvasErrorBanner from './CanvasErrorBanner.vue'
+import NodeContextMenu from './NodeContextMenu.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useUIStore } from '@/stores/ui'
 import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
@@ -26,17 +27,24 @@ import { useValidationErrors } from '@/composables/useValidationErrors'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useHotReload } from '@/composables/useHotReload'
 import { useExecutionStore } from '@/stores/execution'
+import { useDataTableStore } from '@/stores/dataTable'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
+import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
 import type { GraphState, MissingTool, NodeState } from '@/api/types'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
+import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 
 const emit = defineEmits<{
   'graph-changed': [payload: { nodes: any[]; edges: any[] }]
   'node-selected': [nodeIds: string[]]
+}>()
+
+const props = defineProps<{
+  subWorkflowSessionId?: string
 }>()
 
 // Vue Flow's NodeTypesObject/EdgeTypesObject uses very strict component
@@ -44,6 +52,7 @@ const emit = defineEmits<{
 // contract (`key -> component`) is what VueFlow actually uses.
 const nodeTypes = {
   tool: markRaw(ToolNode),
+  sub_workflow: markRaw(ToolNode),
 } as unknown as Record<string, object>
 
 const edgeTypes = {
@@ -54,8 +63,11 @@ const edgeTypes = {
 const toolRegistryStore = useToolRegistryStore()
 const uiStore = useUIStore()
 const workflowStore = useWorkflowStore()
+const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const autoSave = useAutoSave()
 const resolvedOutputsStore = useResolvedOutputsStore()
+const dataTableStore = useDataTableStore()
+const isSubWorkflowEditor = props.subWorkflowSessionId != null && props.subWorkflowSessionId !== ''
 
 // Provide the resolved-outputs map so ToolNode can read it via inject.
 provide('bioimageflow:resolvedOutputs', resolvedOutputsStore.resolvedOutputsByNodeId)
@@ -137,6 +149,12 @@ watch(
 
 const clipboardData = ref<ClipboardPayload | null>(getMemoryClipboardPayload())
 const canvasRef = ref<HTMLDivElement | null>(null)
+const nodeContextMenu = ref<{
+  nodeId: string
+  position: { x: number; y: number }
+  enabled: boolean
+  canOpenSubWorkflow: boolean
+} | null>(null)
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
 let isApplyingGraphState = false
 
@@ -164,11 +182,13 @@ async function applyGraphState(
     // no visible path.
     await nextTick()
     setEdges(vueFlowGraph.edges)
-    syncGraph(vueFlowGraph)
-    if (dirty) {
-      workflowStore.markDirty()
-    } else {
-      workflowStore.markClean()
+    if (!isSubWorkflowEditor) {
+      syncGraph(vueFlowGraph)
+      if (dirty) {
+        workflowStore.markDirty()
+      } else {
+        workflowStore.markClean()
+      }
     }
   } finally {
     isApplyingGraphState = false
@@ -270,6 +290,64 @@ function handleToolDeletedEvent(event: Event) {
   if (changed) emitGraphChanged()
 }
 
+function closeNodeContextMenu() {
+  nodeContextMenu.value = null
+}
+
+function onNodeContextMenu(payload: any) {
+  const event = payload.event
+  const node = payload.node
+  if (!event || !node || typeof event.clientX !== 'number') return
+  event.preventDefault()
+  const rect = canvasRef.value?.getBoundingClientRect()
+  nodeContextMenu.value = {
+    nodeId: node.id,
+    position: {
+      x: event.clientX - (rect?.left ?? 0),
+      y: event.clientY - (rect?.top ?? 0),
+    },
+    enabled: node.data?.enabled !== false,
+    canOpenSubWorkflow: node.data?.sub_workflow != null,
+  }
+}
+
+function onNodeDoubleClick(payload: any) {
+  const node = payload.node
+  if (!node?.data?.sub_workflow) return
+  openSubWorkflow(node.id)
+}
+
+function runContextSubWorkflowAction() {
+  const menu = nodeContextMenu.value
+  if (!menu) return
+  if (menu.canOpenSubWorkflow) {
+    openSubWorkflow(menu.nodeId)
+  } else {
+    createSelectedSubWorkflow()
+  }
+  closeNodeContextMenu()
+}
+
+function toggleContextNodeEnabled() {
+  const menu = nodeContextMenu.value
+  if (!menu) return
+  const node = getNodes.value.find((n: any) => n.id === menu.nodeId)
+  if (!node?.data) return
+  node.data.enabled = node.data.enabled === false
+  closeNodeContextMenu()
+  emitGraphChanged()
+}
+
+function deleteContextNode() {
+  const menu = nodeContextMenu.value
+  if (!menu) return
+  for (const node of getNodes.value as any[]) {
+    node.selected = node.id === menu.nodeId
+  }
+  closeNodeContextMenu()
+  deleteSelected()
+}
+
 // Hot-reload watcher: subscribes to toolRegistryStore.tools mutations
 // driven by useWebSocket and updates affected canvas nodes (badge,
 // schema swap, optimistic out_of_date, flushNow). useToast throws when
@@ -304,13 +382,30 @@ useHotReload({
       },
 })
 
+async function loadSubWorkflowSessionDraft() {
+  const sessionId = props.subWorkflowSessionId
+  if (!sessionId) return
+  const session = subWorkflowSessionsStore.sessionById(sessionId)
+  await applyGraphState(session?.draft ?? { nodes: [], edges: [] })
+}
+
 onMounted(async () => {
-  window.addEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
-  window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
-  window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
-  window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
+  if (!isSubWorkflowEditor) {
+    window.addEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
+    window.addEventListener(
+      'bioimageflow:apply-sub-workflow-session',
+      handleApplySubWorkflowSessionEvent as EventListener,
+    )
+    window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
+    window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
+    window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
+  }
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
+  }
+  if (isSubWorkflowEditor) {
+    await loadSubWorkflowSessionDraft()
+    return
   }
   const recovered = await recoverStartupWorkflow()
   await applyGraphState(
@@ -321,10 +416,16 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
-  window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
-  window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
-  window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
+  if (!isSubWorkflowEditor) {
+    window.removeEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
+    window.removeEventListener(
+      'bioimageflow:apply-sub-workflow-session',
+      handleApplySubWorkflowSessionEvent as EventListener,
+    )
+    window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
+    window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
+    window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
+  }
 })
 
 // --- Node drag tracking (undo support) ---
@@ -472,6 +573,9 @@ watch(
     enabled: n.data?.enabled,
     pinnedInputs: n.data?.pinnedInputs,
     output_templates: n.data?.output_templates,
+    sub_workflow: n.data?.sub_workflow,
+    published_inputs: n.data?.published_inputs,
+    published_outputs: n.data?.published_outputs,
   })),
   () => {
     if (isApplyingGraphState) return
@@ -1219,6 +1323,83 @@ async function pasteFromClipboard() {
   emitGraphChanged()
 }
 
+function createSelectedSubWorkflow() {
+  if (isLocked.value) return
+  const selectedIds = new Set(
+    getNodes.value.filter((n: any) => n.selected).map((n: any) => n.id),
+  )
+  if (selectedIds.size === 0) return
+
+  const id = generateNodeId('__sub_workflow__', getNodes.value.map((n: any) => n.id))
+  const name = generateNodeName(
+    'SubWorkflow',
+    getNodes.value.map((n: any) => n.data?.name ?? ''),
+    'Sub-workflow',
+  )
+  const result = createSubWorkflowFromSelection({
+    nodes: getNodes.value,
+    edges: getEdges.value,
+    selectedNodeIds: selectedIds,
+    subWorkflowId: id,
+    subWorkflowName: name,
+  })
+  setNodes(result.nodes as any)
+  setEdges(result.edges)
+  uiStore.setSelectedNodes([id])
+  emitGraphChanged()
+}
+
+function openSubWorkflow(nodeId: string) {
+  const node = getNodes.value.find((n: any) => n.id === nodeId)
+  if (!node?.data?.sub_workflow) return null
+  const session = subWorkflowSessionsStore.openSession({
+    parentWorkflowName: workflowStore.currentName,
+    parentNodeId: node.id,
+    parentNodeName: node.data.name ?? node.id,
+    graph: node.data.sub_workflow,
+    readonlyReason: node.data.sub_workflow_readonly_reason ?? null,
+  })
+  window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+    detail: { sessionId: session.id, parentNodeId: node.id },
+  }))
+  return session
+}
+
+function applySubWorkflowDraft(parentNodeId: string, graph: GraphState) {
+  const node = getNodes.value.find((n: any) => n.id === parentNodeId)
+  if (!node?.data) return
+  node.data.sub_workflow = JSON.parse(JSON.stringify(graph))
+  if (node.data.status === 'executed') {
+    node.data.status = 'out_of_date'
+  }
+  dataTableStore.clearCache(parentNodeId)
+  emitGraphChanged()
+}
+
+function saveSubWorkflowSession() {
+  const sessionId = props.subWorkflowSessionId
+  if (!sessionId) return
+  const session = subWorkflowSessionsStore.sessionById(sessionId)
+  if (!session) return
+  const graph = subWorkflowSessionsStore.saveSession(sessionId)
+  window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
+    detail: {
+      sessionId,
+      parentNodeId: session.parentNodeId,
+      graph,
+    },
+  }))
+}
+
+function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
+  parentNodeId?: string
+  graph?: GraphState
+}>) {
+  const detail = event.detail
+  if (!detail?.parentNodeId || !detail.graph) return
+  applySubWorkflowDraft(detail.parentNodeId, detail.graph)
+}
+
 function selectAll() {
   for (const node of getNodes.value) {
     node.selected = true
@@ -1269,6 +1450,9 @@ function handleEditCommandEvent(event: CustomEvent<{ command?: string }>) {
     case 'select-all':
       selectAll()
       break
+    case 'create-sub-workflow':
+      createSelectedSubWorkflow()
+      break
   }
 }
 
@@ -1302,8 +1486,10 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   if (meta && event.key === 's') {
-    if (locked) {
-      event.preventDefault()
+    event.preventDefault()
+    if (locked) return
+    if (isSubWorkflowEditor) {
+      saveSubWorkflowSession()
     }
     return
   }
@@ -1366,6 +1552,11 @@ function emitGraphChanged() {
   for (const n of state.nodes) {
     markProvisional(n.id, 'unexecuted')
   }
+  if (isSubWorkflowEditor && props.subWorkflowSessionId) {
+    subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, serializeGraph(state))
+    emit('graph-changed', state)
+    return
+  }
   syncGraph(state as any)
   markDirtyAndAutoSave(state)
   emit('graph-changed', state)
@@ -1378,6 +1569,10 @@ defineExpose({
   copySelected,
   pasteFromClipboard,
   selectAll,
+  createSelectedSubWorkflow,
+  openSubWorkflow,
+  applySubWorkflowDraft,
+  saveSubWorkflowSession,
   isValidConnection,
   clipboardData,
   patchParameters,
@@ -1402,10 +1597,25 @@ defineExpose({
       :is-valid-connection="isValidConnection"
       :edges-updatable="true"
       fit-view-on-init
+      @node-context-menu="onNodeContextMenu"
+      @node-double-click="onNodeDoubleClick"
     >
       <Background :variant="'dots'" :gap="16" :size="1" />
       <Controls />
     </VueFlow>
+    <NodeContextMenu
+      v-if="nodeContextMenu"
+      :node-id="nodeContextMenu.nodeId"
+      :position="nodeContextMenu.position"
+      :enabled="nodeContextMenu.enabled"
+      :can-open-sub-workflow="nodeContextMenu.canOpenSubWorkflow"
+      @rename="closeNodeContextMenu"
+      @enable-toggle="toggleContextNodeEnabled"
+      @create-sub-workflow="runContextSubWorkflowAction"
+      @open-sub-workflow="runContextSubWorkflowAction"
+      @delete="deleteContextNode"
+      @close="closeNodeContextMenu"
+    />
   </div>
 </template>
 

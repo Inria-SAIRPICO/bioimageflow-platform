@@ -1,22 +1,50 @@
 """Graph state models: nodes, edges, and the full graph."""
 
+from __future__ import annotations
+
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Discriminator
+from pydantic import BaseModel, ConfigDict, Discriminator, Field
+
+
+class PublishedInput(BaseModel):
+    """An internal sub-workflow field exposed as an outer input pin."""
+
+    name: str
+    internal_node_id: str
+    internal_field: str
+    kind: Literal["parameter", "input"]
+    schema: dict[str, Any] | None = None
+    default: Any | None = None
+
+
+class PublishedOutput(BaseModel):
+    """An internal sub-workflow output exposed as an outer output pin."""
+
+    name: str
+    internal_node_id: str
+    internal_output: str
+    schema: dict[str, Any] | None = None
 
 
 class NodeState(BaseModel):
     """A single node in the processing graph."""
+
+    model_config = ConfigDict(json_schema_mode_override="validation")
 
     id: str
     name: str
     tool_name: str
     position: tuple[float, float]
     parameters: dict[str, Any]
-    resources: dict[str, Any] = {}
-    output_templates: dict[str, str] = {}
+    resources: dict[str, Any] = Field(default_factory=dict)
+    output_templates: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
     collapsed: bool = False
+    sub_workflow: GraphState | None = None
+    published_inputs: list[PublishedInput] = Field(default_factory=list)
+    published_outputs: list[PublishedOutput] = Field(default_factory=list)
+    sub_workflow_readonly_reason: str | None = None
 
 
 class ColumnRefEdge(BaseModel):
@@ -45,6 +73,8 @@ Edge = Annotated[ColumnRefEdge | PositionalEdge, Discriminator("type")]
 
 class GraphState(BaseModel):
     """Complete graph state with nodes and edges."""
+
+    model_config = ConfigDict(json_schema_mode_override="validation")
 
     nodes: list[NodeState]
     edges: list[Edge]

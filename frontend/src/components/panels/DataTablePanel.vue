@@ -60,6 +60,17 @@ function toolName(nodeId: string): string | null {
   return nodeById.value[nodeId]?.tool_name ?? null
 }
 
+function columnAliases(nodeId: string): Record<string, string> {
+  const aliases: Record<string, string> = {}
+  const publishedOutputs = nodeById.value[nodeId]?.published_outputs ?? []
+  for (const published of publishedOutputs) {
+    aliases[published.name] = published.name
+    aliases[`${published.internal_node_id}.${published.internal_output}`] = published.name
+    aliases[published.internal_output] ??= published.name
+  }
+  return aliases
+}
+
 function fetchIfMissing(nodeId: string) {
   if (!dataTableStore.getNodeData(nodeId) && !dataTableStore.isLoading(nodeId)) {
     void dataTableStore.fetchNodeData(nodeId, {
@@ -164,6 +175,7 @@ onBeforeUnmount(() => scope?.stop())
           :tool-name="toolName(nodeId)"
           :workflow-name="workflowStore.currentName"
           :disabled="nodeById[nodeId]?.enabled === false"
+          :column-aliases="columnAliases(nodeId)"
         />
       </section>
     </template>
