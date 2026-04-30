@@ -10,7 +10,13 @@ import CanvasErrorBanner from './CanvasErrorBanner.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useUIStore } from '@/stores/ui'
 import { generateNodeId, generateNodeName } from '@/utils/nodeIdGenerator'
-import { serializeSelection, deserializeSelection } from '@/utils/clipboard'
+import {
+  getMemoryClipboardPayload,
+  prepareClipboardPaste,
+  readClipboardPayloadResult,
+  serializeGraphSelection,
+  writeClipboardPayload,
+} from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
 import { serializeGraph, useGraphSync } from '@/composables/useGraphSync'
 import { useAutoSave } from '@/composables/useAutoSave'
@@ -25,7 +31,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import type { GraphState, MissingTool, NodeState } from '@/api/types'
 import { useToast } from 'primevue/usetoast'
-import type { ClipboardData } from '@/utils/clipboard'
+import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
 
 const emit = defineEmits<{
@@ -129,7 +135,7 @@ watch(
   { deep: true },
 )
 
-const clipboardData = ref<ClipboardData | null>(null)
+const clipboardData = ref<ClipboardPayload | null>(getMemoryClipboardPayload())
 const canvasRef = ref<HTMLDivElement | null>(null)
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
 let isApplyingGraphState = false
@@ -244,6 +250,14 @@ try {
   hotReloadToast = useToast()
 } catch {
   /* no ToastService — useHotReload still runs without the toast surface */
+}
+let clipboardToast: ReturnType<typeof useToast> | null = hotReloadToast
+if (clipboardToast === null) {
+  try {
+    clipboardToast = useToast()
+  } catch {
+    /* no ToastService — clipboard operations still work without toasts */
+  }
 }
 useHotReload({
   toast: hotReloadToast === null
@@ -943,94 +957,229 @@ function copySelected() {
   )
   if (selectedIds.size === 0) return
 
-  const nodesForClip = getNodes.value
-    .filter((n: any) => selectedIds.has(n.id))
-    .map((n: any) => ({
-      id: n.id,
-      name: n.data?.name ?? '',
-      tool_name: n.data?.toolName ?? '',
-      position: [n.position?.x ?? 0, n.position?.y ?? 0] as [number, number],
-      parameters: n.data?.parameters ?? {},
-    }))
-
-  const edgesForClip = getEdges.value
-    .filter((e: any) => selectedIds.has(e.source) && selectedIds.has(e.target))
-    .map((e: any) => ({
-      id: e.id,
-      source_node: e.source,
-      target_node: e.target,
-      source_output: e.sourceHandle ?? '',
-      target_input: e.targetHandle ?? '',
-    }))
-
-  clipboardData.value = serializeSelection(nodesForClip, edgesForClip, selectedIds)
+  const graph = serializeGraph({
+    nodes: getNodes.value,
+    edges: getEdges.value,
+  })
+  const payload = serializeGraphSelection(
+    graph,
+    selectedIds,
+    toolRegistryStore.getToolByName,
+    { sourceWorkflowName: workflowStore.currentName ?? undefined },
+  )
+  clipboardData.value = payload
+  void writeClipboardPayload(payload)
 }
 
-function pasteFromClipboard() {
-  if (isLocked.value) return
-  if (!clipboardData.value) return
+function ensureClipboardToast(): ReturnType<typeof useToast> | null {
+  return clipboardToast
+}
 
-  const existingIds = getNodes.value.map((n: any) => n.id)
-  const existingNames = getNodes.value.map((n: any) => n.data?.name ?? '')
+function summarizeNames(names: string[], limit = 3): string {
+  const unique = [...new Set(names)].filter(Boolean)
+  if (unique.length <= limit) return unique.join(', ')
+  return `${unique.slice(0, limit).join(', ')} and ${unique.length - limit} more`
+}
 
-  const deserialized = deserializeSelection(
-    clipboardData.value,
-    existingIds,
-    existingNames,
-  )
+function showPasteSummary(summary: PasteSummary) {
+  const toast = ensureClipboardToast()
+  if (!toast) return
+  const hasParameterDefaults =
+    summary.parameterResets.length > 0
+    || summary.omittedRequiredParameters.length > 0
 
-  // Create Vue Flow nodes from deserialized data
-  const newNodes = deserialized.nodes.map((n) => {
-    const tool = toolRegistryStore.getToolByName(n.tool_name)
-    const pinnedInputs: Record<string, boolean> = {}
-    const output_templates: Record<string, string> = {}
-    if (tool) {
-      for (const [key, field] of Object.entries(tool.inputs)) {
-        if (field.connectable !== 'never') {
-          const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
-          pinnedInputs[key] = isPathType && field.required
-        }
+  if (summary.missingTools.length > 0) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Some pasted tools are missing',
+      detail: summarizeNames(summary.missingTools),
+      life: 5000,
+    })
+  }
+  if (summary.versionMismatches.length > 0) {
+    const versionDetails = summary.versionMismatches.map((item) => {
+      const from = item.sourceVersion ?? 'unknown'
+      const to = item.targetVersion ?? 'unknown'
+      return `${item.nodeName} (${item.packageName ?? 'package'} ${from} -> ${to})`
+    })
+    toast.add({
+      severity: 'warn',
+      summary: 'Pasted tool versions differ',
+      detail: `${summarizeNames(versionDetails)}${hasParameterDefaults ? '. Some parameters were reset to defaults.' : ''}`,
+      life: 5000,
+    })
+  }
+  if (
+    summary.parameterResets.length > 0
+    || summary.removedParameters.length > 0
+    || summary.omittedRequiredParameters.length > 0
+  ) {
+    const affected = [
+      ...summary.parameterResets,
+      ...summary.removedParameters,
+      ...summary.omittedRequiredParameters,
+    ].map((item) => item.nodeName)
+    toast.add({
+      severity: 'warn',
+      summary: 'Pasted parameters were reconciled',
+      detail: summarizeNames(affected),
+      life: 5000,
+    })
+  }
+}
+
+function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
+  const tool = toolRegistryStore.getToolByName(n.tool_name)
+  const pinnedInputs: Record<string, boolean> = {}
+  const output_templates: Record<string, string> = {
+    ...(n.output_templates ?? {}),
+  }
+  if (tool) {
+    for (const [key, field] of Object.entries(tool.inputs)) {
+      if (field.connectable !== 'never') {
+        const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
+        pinnedInputs[key] = isPathType && field.required
       }
-      // ProcessingTool only — see comment in createNodeForTool.
-      if (tool.tool_type !== 'DataFrameTool') {
-        for (const [key, rawField] of Object.entries(tool.outputs)) {
-          const field = rawField as { type?: string; default?: string } | undefined
-          if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
-            output_templates[key] = field.default || ''
-          }
+    }
+    // ProcessingTool only — see comment in createNodeForTool.
+    if (tool.tool_type !== 'DataFrameTool') {
+      for (const [key, rawField] of Object.entries(tool.outputs)) {
+        const field = rawField as { type?: string; default?: string } | undefined
+        if (
+          field
+          && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')
+          && !(key in output_templates)
+        ) {
+          output_templates[key] = field.default || ''
         }
       }
     }
+  }
+  return {
+    id: n.id,
+    type: 'tool',
+    position: { x: n.position[0], y: n.position[1] },
+    data: {
+      name: n.name,
+      toolName: n.tool_name,
+      tool: tool ?? null,
+      status: 'unexecuted',
+      parameters: n.parameters,
+      resources: n.resources ?? {},
+      collapsed: n.collapsed ?? false,
+      enabled: n.enabled ?? true,
+      connectedInputs: {},
+      pinnedInputs,
+      output_templates,
+      sub_workflow: n.sub_workflow ?? null,
+      published_inputs: n.published_inputs ?? [],
+      published_outputs: n.published_outputs ?? [],
+      sub_workflow_readonly_reason: n.sub_workflow_readonly_reason ?? null,
+    },
+  }
+}
+
+function vueFlowEdgeFromClipboardEdge(e: ClipboardPayload['edges'][number]) {
+  if (e.type === 'positional') {
     return {
-      id: n.id,
-      type: 'tool',
-      position: { x: n.position[0], y: n.position[1] },
-      data: {
-        name: n.name,
-        toolName: n.tool_name,
-        tool: tool ?? null,
-        status: 'unexecuted',
-        parameters: n.parameters,
-        collapsed: false,
-        enabled: true,
-        connectedInputs: {},
-        pinnedInputs,
-        output_templates,
-      },
+      id: e.id,
+      source: e.source_node,
+      target: e.target_node,
+      sourceHandle: '__dataframe_out',
+      targetHandle: `__positional_${e.positional_index}`,
+      type: 'positional',
     }
-  })
-
-  const newEdges = deserialized.edges.map((e) => ({
+  }
+  return {
     id: e.id,
     source: e.source_node,
     target: e.target_node,
     sourceHandle: e.source_output,
     targetHandle: e.target_input,
     type: 'column_ref',
-  }))
+  }
+}
 
+function currentVueFlowState(): { nodes: any[]; edges: any[] } {
+  return {
+    nodes: getNodes.value.map((n: any) => ({ ...n })),
+    edges: getEdges.value.map((e: any) => ({ ...e })),
+  }
+}
+
+function populateConnectedInputsForPastedNodes(nodes: any[], edges: any[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  for (const edge of edges) {
+    const targetNode = byId.get(edge.target)
+    if (!targetNode) continue
+    const targetHandle = edge.targetHandle ?? ''
+    if (!targetHandle) continue
+    const sourceHandle = edge.sourceHandle ?? 'output'
+    targetNode.data.connectedInputs = {
+      ...(targetNode.data.connectedInputs ?? {}),
+      [targetHandle]: `${edge.source}.${sourceHandle}`,
+    }
+  }
+}
+
+async function pasteFromClipboard() {
+  if (isLocked.value) return
+  const readResult = await readClipboardPayloadResult()
+  if (readResult.kind === 'empty') return
+  if (readResult.kind === 'invalid') {
+    const toast = ensureClipboardToast()
+    toast?.add({
+      severity: 'warn',
+      summary: 'Clipboard does not contain BioImageFlow nodes',
+      detail: readResult.reason,
+      life: 5000,
+    })
+    return
+  }
+  if (readResult.kind === 'unsupported_version') {
+    const toast = ensureClipboardToast()
+    toast?.add({
+      severity: 'warn',
+      summary: 'Unsupported clipboard version',
+      detail: `Clipboard version ${String(readResult.version)} is not supported.`,
+      life: 5000,
+    })
+    return
+  }
+  const payload = readResult.payload
+  clipboardData.value = payload
+
+  const existingIds = getNodes.value.map((n: any) => n.id)
+  const existingNames = getNodes.value.map((n: any) => n.data?.name ?? '')
+
+  const prepared = prepareClipboardPaste(
+    payload,
+    {
+      existingIds,
+      existingNames,
+      existingEdgeIds: getEdges.value.map((edge: any) => edge.id),
+      getToolByName: toolRegistryStore.getToolByName,
+    },
+  )
+  if (prepared.nodes.length === 0) {
+    const toast = ensureClipboardToast()
+    toast?.add({
+      severity: 'warn',
+      summary: 'No tools found',
+      detail: 'No tools found for the pasted nodes. Install the required packages first.',
+      life: 5000,
+    })
+    return
+  }
+
+  const newNodes = prepared.nodes.map(vueFlowNodeFromClipboardNode)
+  const newEdges = prepared.edges.map(vueFlowEdgeFromClipboardEdge)
+  populateConnectedInputsForPastedNodes(newNodes, newEdges)
+
+  undoRedo.push(currentVueFlowState())
   addNodes(newNodes)
   addEdges(newEdges)
+  showPasteSummary(prepared.summary)
   emitGraphChanged()
 }
 
@@ -1158,10 +1307,7 @@ function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
 }
 
 function emitGraphChanged() {
-  const state = {
-    nodes: getNodes.value.map((n: any) => ({ ...n })),
-    edges: getEdges.value.map((e: any) => ({ ...e })),
-  }
+  const state = currentVueFlowState()
   undoRedo.push(state)
   // Update the reconciliation node list to match the current graph.
   reconciliationNodes.value = state.nodes.map((n: any) => ({
@@ -1170,6 +1316,14 @@ function emitGraphChanged() {
     tool_name: n.data?.toolName ?? '',
     position: [n.position?.x ?? 0, n.position?.y ?? 0],
     parameters: n.data?.parameters ?? {},
+    resources: n.data?.resources ?? {},
+    output_templates: n.data?.output_templates ?? {},
+    enabled: n.data?.enabled ?? true,
+    collapsed: n.data?.collapsed ?? false,
+    sub_workflow: n.data?.sub_workflow ?? null,
+    published_inputs: n.data?.published_inputs ?? [],
+    published_outputs: n.data?.published_outputs ?? [],
+    sub_workflow_readonly_reason: n.data?.sub_workflow_readonly_reason ?? null,
   })) as NodeState[]
   // Mark all nodes provisional during the debounce window so the UI can
   // render a desaturated status indicator until the server response lands.

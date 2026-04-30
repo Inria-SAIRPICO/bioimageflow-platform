@@ -14,11 +14,27 @@ type Edge = ColumnRefEdge | PositionalEdge
 
 export type SyncState = 'idle' | 'pending' | 'error'
 
+function deepCloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function hasSubWorkflowFields(data: Record<string, any> | undefined): boolean {
+  if (!data) return false
+  return data.toolName === '__sub_workflow__'
+    || (data.sub_workflow !== undefined && data.sub_workflow !== null)
+    || (Array.isArray(data.published_inputs) && data.published_inputs.length > 0)
+    || (Array.isArray(data.published_outputs) && data.published_outputs.length > 0)
+    || (
+      data.sub_workflow_readonly_reason !== undefined
+      && data.sub_workflow_readonly_reason !== null
+    )
+}
+
 /**
  * Serialise a Vue Flow node object into the backend NodeState format.
  */
 function serializeNode(n: any): NodeState {
-  return {
+  const node = {
     id: n.id,
     name: n.data?.name ?? n.id,
     tool_name: n.data?.toolName ?? '',
@@ -28,7 +44,20 @@ function serializeNode(n: any): NodeState {
     output_templates: n.data?.output_templates ?? {},
     enabled: n.data?.enabled ?? true,
     collapsed: n.data?.collapsed ?? false,
+  } as NodeState & Record<string, unknown>
+  if (hasSubWorkflowFields(n.data)) {
+    for (const key of [
+      'sub_workflow',
+      'published_inputs',
+      'published_outputs',
+      'sub_workflow_readonly_reason',
+    ]) {
+      if (n.data?.[key] !== undefined) {
+        node[key] = deepCloneJson(n.data[key])
+      }
+    }
   }
+  return node as NodeState
 }
 
 /**

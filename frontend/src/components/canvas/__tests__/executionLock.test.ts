@@ -105,6 +105,7 @@ vi.mock('@/api/client', () => ({
 import CanvasView from '../CanvasView.vue'
 import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
+import { _resetClipboardForTest, writeClipboardPayload } from '@/utils/clipboard'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -121,6 +122,7 @@ function mountCanvas() {
 describe('CanvasView execution lock', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    _resetClipboardForTest()
     mockedApi.get.mockResolvedValue({ data: [] })
     mockedApi.post.mockResolvedValue({
       data: {
@@ -198,6 +200,29 @@ describe('CanvasView execution lock', () => {
     const vm = w.vm as any
     vm.copySelected()
     expect(vm.clipboardData).toBeNull()
+    w.unmount()
+  })
+
+  it('pasteFromClipboard is a no-op when locked', async () => {
+    const w = mountCanvas()
+    await writeClipboardPayload({
+      bioimageflow_clipboard: true,
+      clipboard_version: 2,
+      nodes: [{
+        id: 'a',
+        name: 'A',
+        tool_name: 'T',
+        position: [0, 0],
+        parameters: {},
+      }],
+      edges: [],
+    })
+    const exec = useExecutionStore()
+    exec.state = 'running'
+    await nextTick()
+    const vm = w.vm as any
+    await vm.pasteFromClipboard()
+    expect(mockNodes).toEqual([])
     w.unmount()
   })
 

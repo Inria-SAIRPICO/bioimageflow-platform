@@ -5,6 +5,17 @@ export interface VueFlowGraph {
   edges: any[]
 }
 
+function hasSubWorkflowFields(node: Record<string, any>): boolean {
+  return node.tool_name === '__sub_workflow__'
+    || (node.sub_workflow !== undefined && node.sub_workflow !== null)
+    || (Array.isArray(node.published_inputs) && node.published_inputs.length > 0)
+    || (Array.isArray(node.published_outputs) && node.published_outputs.length > 0)
+    || (
+      node.sub_workflow_readonly_reason !== undefined
+      && node.sub_workflow_readonly_reason !== null
+    )
+}
+
 function sourceLabel(edge: any): string {
   const source = edge.source
   const sourceHandle = edge.sourceHandle ?? 'output'
@@ -59,24 +70,33 @@ export function graphStateToVueFlow(
       }
     }
 
+    const data: Record<string, unknown> = {
+      name: node.name,
+      toolName: node.tool_name,
+      tool: tool ?? null,
+      missingTool: missingByNode.get(node.id) ?? null,
+      status: 'unexecuted',
+      parameters: node.parameters ?? {},
+      resources: node.resources ?? {},
+      collapsed: node.collapsed ?? false,
+      enabled: node.enabled ?? true,
+      connectedInputs: connectedInputsByNode.get(node.id) ?? {},
+      pinnedInputs,
+      output_templates: node.output_templates ?? {},
+    }
+    if (hasSubWorkflowFields(node as any)) {
+      data.sub_workflow = (node as any).sub_workflow ?? null
+      data.published_inputs = (node as any).published_inputs ?? []
+      data.published_outputs = (node as any).published_outputs ?? []
+      data.sub_workflow_readonly_reason =
+        (node as any).sub_workflow_readonly_reason ?? null
+    }
+
     return {
       id: node.id,
       type: 'tool',
       position: { x: node.position[0], y: node.position[1] },
-      data: {
-        name: node.name,
-        toolName: node.tool_name,
-        tool: tool ?? null,
-        missingTool: missingByNode.get(node.id) ?? null,
-        status: 'unexecuted',
-        parameters: node.parameters ?? {},
-        resources: node.resources ?? {},
-        collapsed: node.collapsed ?? false,
-        enabled: node.enabled ?? true,
-        connectedInputs: connectedInputsByNode.get(node.id) ?? {},
-        pinnedInputs,
-        output_templates: node.output_templates ?? {},
-      },
+      data,
     }
   })
 
