@@ -90,6 +90,44 @@ describe('ImageCell', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
+  it('shows a pending thumbnail indicator while generation is still running', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeFetchResponse('pending', PENDING_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountCell()
+    await flushPromises()
+
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(false)
+    expect(wrapper.find('.image-cell__pending').exists()).toBe(true)
+    expect(wrapper.find('.image-cell__unavailable').exists()).toBe(false)
+    expect(wrapper.find('.image-cell__pending').attributes('aria-label')).toBe(
+      'thumbnail generating',
+    )
+  })
+
+  it('shows a pending thumbnail indicator while the first request is in flight', async () => {
+    let resolveFetch!: (response: Response) => void
+    const fetchMock = vi.fn().mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountCell()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(false)
+    expect(wrapper.find('.image-cell__pending').exists()).toBe(true)
+    expect(wrapper.find('.image-cell__unavailable').exists()).toBe(false)
+
+    resolveFetch(makeFetchResponse('ready', READY_BYTES))
+    await flushPromises()
+
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)
+    expect(wrapper.find('.image-cell__pending').exists()).toBe(false)
+  })
+
   it('cache-busts retries with a versioned query param', async () => {
     const fetchMock = vi
       .fn()
@@ -111,12 +149,12 @@ describe('ImageCell', () => {
     expect(secondUrl).toMatch(/\/api\/v1\/nodes\/n1\/thumbnail/)
   })
 
-  it('stops retrying after the max attempts and shows the placeholder marker', async () => {
+  it('stops retrying after the max attempts and shows thumbnail unavailable', async () => {
     // Always pending — exhaust retries.
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('pending', PENDING_BYTES))
     vi.stubGlobal('fetch', fetchMock)
 
-    mountCell()
+    const wrapper = mountCell()
     await flushPromises()
     // Advance plenty so any reasonable retry schedule completes.
     for (let i = 0; i < 10; i++) {
@@ -128,18 +166,22 @@ describe('ImageCell', () => {
     // tight retry loop fails this test loudly.
     expect(calls).toBeGreaterThan(1)
     expect(calls).toBeLessThanOrEqual(8)
+    expect(wrapper.find('.image-cell__unavailable').exists()).toBe(true)
+    expect(wrapper.find('.image-cell__pending').exists()).toBe(false)
   })
 
-  it('shows the placeholder fallback when the fetch errors out', async () => {
+  it('shows the unavailable fallback when the fetch errors out', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell()
     await flushPromises()
 
-    // No <img> rendered; the placeholder div is shown
     expect(wrapper.find('img.image-cell__thumb').exists()).toBe(false)
-    expect(wrapper.find('.image-cell__placeholder').exists()).toBe(true)
+    expect(wrapper.find('.image-cell__unavailable').exists()).toBe(true)
+    expect(wrapper.find('.image-cell__unavailable').attributes('aria-label')).toBe(
+      'thumbnail unavailable',
+    )
   })
 
   it('keeps Open in Napari enabled after a launch failure so the action can be retried', async () => {

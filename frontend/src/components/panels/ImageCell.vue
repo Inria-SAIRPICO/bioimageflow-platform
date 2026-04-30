@@ -21,6 +21,7 @@ try {
 
 const napariDisabled = ref(false)
 const blobUrl = ref<string | null>(null)
+const thumbnailPending = ref(false)
 const fetchFailed = ref(false)
 
 // Backoff schedule for "pending" retries. ~30 s total budget across 5
@@ -67,6 +68,8 @@ function revokeBlob() {
 async function fetchThumbnail() {
   abort?.abort()
   abort = new AbortController()
+  thumbnailPending.value = true
+  fetchFailed.value = false
   const versioned = `${baseUrl.value}&_v=${retryAttempt}`
   try {
     const response = await fetch(versioned, { signal: abort.signal })
@@ -74,12 +77,16 @@ async function fetchThumbnail() {
       throw new Error(`HTTP ${response.status}`)
     }
     const status = response.headers.get('X-Thumbnail-Status')
-    const blob = await response.blob()
-    revokeBlob()
-    blobUrl.value = URL.createObjectURL(blob)
-    fetchFailed.value = false
-
-    if (status === 'pending' && retryAttempt < RETRY_DELAYS_MS.length) {
+    if (status === 'pending') {
+      revokeBlob()
+      fetchFailed.value = false
+      if (retryAttempt >= RETRY_DELAYS_MS.length) {
+        thumbnailPending.value = false
+        fetchFailed.value = true
+        clearTimer()
+        return
+      }
+      thumbnailPending.value = true
       const delay = RETRY_DELAYS_MS[retryAttempt]
       retryAttempt += 1
       clearTimer()
@@ -87,13 +94,19 @@ async function fetchThumbnail() {
         retryTimer = null
         void fetchThumbnail()
       }, delay)
-    } else {
-      // Either ready, or exhausted retries — stop polling.
-      clearTimer()
+      return
     }
+
+    const blob = await response.blob()
+    revokeBlob()
+    blobUrl.value = URL.createObjectURL(blob)
+    thumbnailPending.value = false
+    fetchFailed.value = false
+    clearTimer()
   } catch (exc) {
     if ((exc as DOMException)?.name === 'AbortError') return
     revokeBlob()
+    thumbnailPending.value = false
     fetchFailed.value = true
     clearTimer()
   }
@@ -104,6 +117,7 @@ function reset() {
   abort?.abort()
   abort = null
   revokeBlob()
+  thumbnailPending.value = false
   fetchFailed.value = false
   retryAttempt = 0
   void fetchThumbnail()
@@ -167,8 +181,13 @@ async function reveal() {
       alt=""
     >
     <div
+      v-else-if="thumbnailPending"
+      class="image-cell__pending"
+      aria-label="thumbnail generating"
+    />
+    <div
       v-else
-      class="image-cell__placeholder"
+      class="image-cell__unavailable"
       aria-label="thumbnail unavailable"
     />
     <div class="image-cell__actions">
@@ -202,7 +221,8 @@ async function reveal() {
 }
 
 .image-cell__thumb,
-.image-cell__placeholder {
+.image-cell__pending,
+.image-cell__unavailable {
   width: 48px;
   height: 48px;
   object-fit: contain;
@@ -210,12 +230,23 @@ async function reveal() {
   background: var(--p-surface-100);
 }
 
-.image-cell__placeholder {
+.image-cell__pending,
+.image-cell__unavailable {
   position: relative;
 }
 
-.image-cell__placeholder::before,
-.image-cell__placeholder::after {
+.image-cell__pending::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 3px solid var(--p-surface-300);
+  border-top-color: var(--p-primary-color);
+  border-radius: 999px;
+  animation: image-cell-spin 0.9s linear infinite;
+}
+
+.image-cell__unavailable::before,
+.image-cell__unavailable::after {
   content: "";
   position: absolute;
   left: 10px;
@@ -224,12 +255,18 @@ async function reveal() {
   border-top: 2px solid var(--p-text-muted-color);
 }
 
-.image-cell__placeholder::before {
+.image-cell__unavailable::before {
   transform: rotate(45deg);
 }
 
-.image-cell__placeholder::after {
+.image-cell__unavailable::after {
   transform: rotate(-45deg);
+}
+
+@keyframes image-cell-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .image-cell__actions {

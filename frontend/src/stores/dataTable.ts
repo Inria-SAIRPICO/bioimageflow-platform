@@ -17,6 +17,7 @@ interface FetchOpts {
   pageSize?: number
   sortBy?: string | null
   sortOrder?: 'asc' | 'desc'
+  retryAttempt?: number
 }
 
 function errorMessage(exc: unknown): string {
@@ -27,14 +28,26 @@ function errorMessage(exc: unknown): string {
   return exc instanceof Error ? exc.message : String(exc)
 }
 
+function errorStatus(exc: unknown): number | null {
+  if (typeof exc === 'object' && exc !== null && 'response' in exc) {
+    const response = (exc as { response?: { status?: number } }).response
+    return response?.status ?? null
+  }
+  return null
+}
+
+const NOT_READY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
+
 export const useDataTableStore = defineStore('dataTable', () => {
   const nodeDataCache = reactive<Record<string, NodeDataResponse>>({})
   const paginationState = reactive<Record<string, DataTablePageState>>({})
   const loading = reactive<Record<string, boolean>>({})
   const errors = reactive<Record<string, string | null>>({})
+  const pending = reactive<Record<string, boolean>>({})
 
   const inflightController = new Map<string, AbortController>()
   const requestIds = new Map<string, number>()
+  const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   function stateFor(nodeId: string): DataTablePageState {
     if (!paginationState[nodeId]) {
@@ -48,7 +61,46 @@ export const useDataTableStore = defineStore('dataTable', () => {
     return paginationState[nodeId]
   }
 
+  function clearRetry(nodeId: string) {
+    const timer = retryTimers.get(nodeId)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      retryTimers.delete(nodeId)
+    }
+  }
+
+  function scheduleNotReadyRetry(
+    nodeId: string,
+    opts: FetchOpts,
+    retryAttempt: number,
+    requestId: number,
+    detail: string,
+  ) {
+    clearRetry(nodeId)
+    const delay = NOT_READY_RETRY_DELAYS_MS[retryAttempt]
+    if (delay === undefined) {
+      pending[nodeId] = false
+      errors[nodeId] = detail
+      return
+    }
+
+    pending[nodeId] = true
+    errors[nodeId] = null
+    retryTimers.set(
+      nodeId,
+      setTimeout(() => {
+        retryTimers.delete(nodeId)
+        if (requestIds.get(nodeId) !== requestId) return
+        void fetchNodeData(nodeId, {
+          ...opts,
+          retryAttempt: retryAttempt + 1,
+        })
+      }, delay),
+    )
+  }
+
   async function fetchNodeData(nodeId: string, opts: FetchOpts = {}) {
+    const retryAttempt = opts.retryAttempt ?? 0
     const current = stateFor(nodeId)
     const nextState: DataTablePageState = {
       page: opts.page ?? current.page,
@@ -58,6 +110,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
     }
     paginationState[nodeId] = nextState
 
+    clearRetry(nodeId)
     inflightController.get(nodeId)?.abort()
     const controller = new AbortController()
     inflightController.set(nodeId, controller)
@@ -85,12 +138,20 @@ export const useDataTableStore = defineStore('dataTable', () => {
       )
       if (requestIds.get(nodeId) === requestId) {
         nodeDataCache[nodeId] = data
+        pending[nodeId] = false
       }
     } catch (exc: unknown) {
       const maybeCanceled = exc as { name?: string; code?: string }
       if (maybeCanceled.name !== 'CanceledError' && maybeCanceled.code !== 'ERR_CANCELED') {
-        errors[nodeId] = errorMessage(exc)
-        delete nodeDataCache[nodeId]
+        const message = errorMessage(exc)
+        if (errorStatus(exc) === 409 && requestIds.get(nodeId) === requestId) {
+          delete nodeDataCache[nodeId]
+          scheduleNotReadyRetry(nodeId, opts, retryAttempt, requestId, message)
+        } else {
+          pending[nodeId] = false
+          errors[nodeId] = message
+          delete nodeDataCache[nodeId]
+        }
       }
     } finally {
       if (requestIds.get(nodeId) === requestId) {
@@ -126,6 +187,8 @@ export const useDataTableStore = defineStore('dataTable', () => {
       delete paginationState[key]
       delete errors[key]
       delete loading[key]
+      delete pending[key]
+      clearRetry(key)
       inflightController.get(key)?.abort()
       inflightController.delete(key)
     }
@@ -176,12 +239,14 @@ export const useDataTableStore = defineStore('dataTable', () => {
   const getNodeData = computed(() => (nodeId: string) => nodeDataCache[nodeId])
   const isLoading = computed(() => (nodeId: string) => loading[nodeId] === true)
   const getError = computed(() => (nodeId: string) => errors[nodeId] ?? null)
+  const isPending = computed(() => (nodeId: string) => pending[nodeId] === true)
 
   return {
     nodeDataCache,
     paginationState,
     loading,
     errors,
+    pending,
     fetchNodeData,
     downloadCsv,
     clearCache,
@@ -191,5 +256,6 @@ export const useDataTableStore = defineStore('dataTable', () => {
     getNodeData,
     isLoading,
     getError,
+    isPending,
   }
 })
