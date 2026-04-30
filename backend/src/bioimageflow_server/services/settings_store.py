@@ -16,7 +16,13 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
-from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.models.settings import OMEROInstance, OMEROInstancePatch, Settings
+from bioimageflow_server.services.omero_credentials import (
+    KeyringOmeroCredentialStore,
+    OmeroCredentialError,
+    OmeroCredentialKey,
+    OmeroCredentialStore,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -32,9 +38,11 @@ class SettingsStore:
         path: Path,
         *,
         deployment_mode: Literal["desktop", "webapp"] = "desktop",
+        omero_credentials: OmeroCredentialStore | None = None,
     ) -> None:
         self.path = path
         self._deployment_mode: Literal["desktop", "webapp"] = deployment_mode
+        self._omero_credentials = omero_credentials or KeyringOmeroCredentialStore()
         self._current: Settings | None = None
         self._lock = asyncio.Lock()
 
@@ -107,9 +115,7 @@ class SettingsStore:
         # Strip envelope + unknown keys before validation so a downgrade
         # from a future schema doesn't crash on `extra="forbid"`.
         payload = {
-            k: v
-            for k, v in data.items()
-            if k != "settings_version" and k in Settings.model_fields
+            k: v for k, v in data.items() if k != "settings_version" and k in Settings.model_fields
         }
         # Ensure deployment_mode is present (it's required on the model).
         payload.setdefault("deployment_mode", self._deployment_mode)
@@ -139,11 +145,33 @@ class SettingsStore:
             # NOTE: ``model_copy(update=changes)`` does NOT run validators in
             # Pydantic v2. Use ``model_validate`` over the merged dict so
             # extra="forbid" and custom validators apply.
-            merged = {**self._current.model_dump(), **changes}
+            merged = {
+                **self._current.model_dump(),
+                **self._strip_omero_passwords(changes),
+            }
             candidate = Settings.model_validate(merged)
-            self._write_atomic(candidate)
+            written_password_keys = self._write_omero_passwords(changes, candidate)
+            try:
+                self._write_atomic(candidate)
+            except Exception:
+                for key in written_password_keys:
+                    try:
+                        self._omero_credentials.delete_password(key)
+                    except OmeroCredentialError:
+                        logger.warning(
+                            "Failed to roll back OMERO credential %s after settings write failure",
+                            key.username,
+                            exc_info=True,
+                        )
+                raise
+            self._cleanup_removed_omero_passwords(self._current, candidate)
             self._current = candidate
             return self._current
+
+    def omero_password_stored(self, instance: OMEROInstance) -> bool:
+        """Return whether keyring has a stored password for ``instance``."""
+        key = OmeroCredentialKey.from_instance(instance)
+        return self._omero_credentials.get_password(key) is not None
 
     async def flush(self) -> None:
         """No-op in v1 (writes are synchronous inside :meth:`patch`).
@@ -182,3 +210,75 @@ class SettingsStore:
                     tmp.unlink()
                 except OSError:
                     pass
+
+    def _strip_omero_passwords(self, changes: dict[str, Any]) -> dict[str, Any]:
+        if "omero_instances" not in changes:
+            return changes
+        stripped = dict(changes)
+        instances = changes["omero_instances"]
+        if not isinstance(instances, list):
+            stripped["omero_instances"] = instances
+            return stripped
+        stripped["omero_instances"] = [
+            {key: value for key, value in item.items() if key != "password"}
+            if isinstance(item, dict)
+            else item
+            for item in instances
+        ]
+        return stripped
+
+    def _write_omero_passwords(
+        self, changes: dict[str, Any], candidate: Settings
+    ) -> list[OmeroCredentialKey]:
+        if "omero_instances" not in changes:
+            return []
+        raw_instances = changes["omero_instances"]
+        if not isinstance(raw_instances, list):
+            return []
+
+        to_write: list[tuple[OmeroCredentialKey, str]] = []
+        for index, raw_instance in enumerate(raw_instances):
+            if not isinstance(raw_instance, dict) or "password" not in raw_instance:
+                continue
+            patch_instance = OMEROInstancePatch.model_validate(raw_instance)
+            if patch_instance.password is None:
+                continue
+            key = OmeroCredentialKey.from_instance(candidate.omero_instances[index])
+            to_write.append((key, patch_instance.password))
+
+        written: list[OmeroCredentialKey] = []
+        try:
+            for key, password in to_write:
+                self._omero_credentials.set_password(key, password)
+                written.append(key)
+        except Exception:
+            for key in written:
+                try:
+                    self._omero_credentials.delete_password(key)
+                except OmeroCredentialError:
+                    logger.warning(
+                        "Failed to roll back OMERO credential %s after keyring write failure",
+                        key.username,
+                        exc_info=True,
+                    )
+            raise
+        return written
+
+    def _cleanup_removed_omero_passwords(self, previous: Settings, candidate: Settings) -> None:
+        old_keys = [
+            OmeroCredentialKey.from_instance(instance) for instance in previous.omero_instances
+        ]
+        new_keys = {
+            OmeroCredentialKey.from_instance(instance) for instance in candidate.omero_instances
+        }
+        for key in old_keys:
+            if key in new_keys:
+                continue
+            try:
+                self._omero_credentials.delete_password(key)
+            except OmeroCredentialError:
+                logger.warning(
+                    "Failed to delete removed OMERO credential %s",
+                    key.username,
+                    exc_info=True,
+                )

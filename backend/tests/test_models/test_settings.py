@@ -22,6 +22,28 @@ class TestOMEROInstance:
         assert inst.name == "Production OMERO"
         assert inst.port == 4065
 
+    def test_trims_metadata_and_empty_name_becomes_none(self):
+        inst = OMEROInstance(
+            name="  ",
+            host="  omero.example.com  ",
+            username="  admin  ",
+        )
+        assert inst.name is None
+        assert inst.host == "omero.example.com"
+        assert inst.username == "admin"
+
+    @pytest.mark.parametrize("field", ["host", "username"])
+    def test_requires_non_empty_host_and_username(self, field: str):
+        payload = {"host": "omero.example.com", "username": "admin"}
+        payload[field] = "  "
+        with pytest.raises(ValidationError):
+            OMEROInstance.model_validate(payload)
+
+    @pytest.mark.parametrize("port", [0, 65536])
+    def test_rejects_invalid_tcp_ports(self, port: int):
+        with pytest.raises(ValidationError):
+            OMEROInstance(host="omero.example.com", username="admin", port=port)
+
 
 class TestSettings:
     def test_full_construction(self):
@@ -56,9 +78,7 @@ class TestSettings:
 
     def test_invalid_deployment_mode(self):
         with pytest.raises(ValidationError):
-            Settings.model_validate(
-                {"deployment_mode": "cloud", "output_data_folder": "/out"}
-            )
+            Settings.model_validate({"deployment_mode": "cloud", "output_data_folder": "/out"})
 
     def test_invalid_execution_engine(self):
         with pytest.raises(ValidationError):
@@ -85,6 +105,41 @@ class TestSettings:
         )
         assert len(s.omero_instances) == 2
         assert s.omero_instances[0].host == "omero1.example.com"
+
+    def test_omero_effective_names_must_be_unique(self):
+        with pytest.raises(ValidationError):
+            Settings(
+                deployment_mode="desktop",
+                omero_instances=[
+                    OMEROInstance(name="prod", host="omero1.example.com", username="a"),
+                    OMEROInstance(name=" prod ", host="omero2.example.com", username="b"),
+                ],
+            )
+
+    def test_omero_default_display_names_must_be_unique(self):
+        with pytest.raises(ValidationError):
+            Settings(
+                deployment_mode="desktop",
+                omero_instances=[
+                    OMEROInstance(host="omero.example.com", username="admin"),
+                    OMEROInstance(host="omero.example.com", port=4065, username="admin"),
+                ],
+            )
+
+    def test_omero_password_is_not_a_persisted_model_field(self):
+        with pytest.raises(ValidationError):
+            Settings.model_validate(
+                {
+                    "deployment_mode": "desktop",
+                    "omero_instances": [
+                        {
+                            "host": "omero.example.com",
+                            "username": "admin",
+                            "password": "secret",
+                        }
+                    ],
+                }
+            )
 
     def test_json_roundtrip(self):
         s = Settings(
@@ -135,9 +190,7 @@ class TestSettings:
         assert s.max_upload_size == 2 * 1024**3
 
     def test_max_upload_size_override(self):
-        s = Settings(
-            deployment_mode="desktop", output_data_folder="/out", max_upload_size=500_000
-        )
+        s = Settings(deployment_mode="desktop", output_data_folder="/out", max_upload_size=500_000)
         assert s.max_upload_size == 500_000
 
     def test_resolved_datasets_root_uses_output_folder_by_default(self):
@@ -186,9 +239,7 @@ class TestSettings:
 
     def test_unknown_field_is_rejected(self):
         with pytest.raises(ValidationError):
-            Settings.model_validate(
-                {"deployment_mode": "desktop", "foo": 1}
-            )
+            Settings.model_validate({"deployment_mode": "desktop", "foo": 1})
 
     def test_dev_mode_false_accepted_at_model_layer(self):
         # Router rejects this in GUI mode; the model itself stays permissive

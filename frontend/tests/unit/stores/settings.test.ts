@@ -118,6 +118,104 @@ describe('settings store', () => {
     expect(store.settings).toEqual(original)
   })
 
+  it('updateSettings sends OMERO password without storing it optimistically', async () => {
+    const settings = {
+      deployment_mode: 'desktop' as const,
+      output_data_folder: '/out',
+      omero_instances: [
+        {
+          name: null,
+          host: 'omero.example.com',
+          port: 4064,
+          username: 'admin',
+          password_stored: false,
+        },
+      ],
+    }
+    mockedApi.get.mockResolvedValueOnce({ data: settings })
+    let resolvePatch: (value: { data: unknown }) => void = () => undefined
+    mockedApi.patch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePatch = resolve
+        }),
+    )
+
+    const store = useSettingsStore()
+    await store.fetchSettings()
+    const patchPromise = store.updateSettings({
+      omero_instances: [
+        {
+          name: null,
+          host: 'omero.example.com',
+          port: 4064,
+          username: 'admin',
+          password: 'secret',
+        },
+      ],
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockedApi.patch).toHaveBeenCalledWith('/api/v1/settings', {
+      omero_instances: [
+        {
+          name: null,
+          host: 'omero.example.com',
+          port: 4064,
+          username: 'admin',
+          password: 'secret',
+        },
+      ],
+    })
+    expect(JSON.stringify(store.settings)).not.toContain('secret')
+
+    resolvePatch({
+      data: {
+        ...settings,
+        omero_instances: [{ ...settings.omero_instances[0], password_stored: true }],
+      },
+    })
+    await patchPromise
+    expect(store.settings?.omero_instances[0].password_stored).toBe(true)
+    expect(JSON.stringify(store.settings)).not.toContain('secret')
+  })
+
+  it('failed OMERO password save restores previous settings without raw password', async () => {
+    const settings = {
+      deployment_mode: 'desktop' as const,
+      output_data_folder: '/out',
+      omero_instances: [
+        {
+          name: null,
+          host: 'omero.example.com',
+          port: 4064,
+          username: 'admin',
+          password_stored: false,
+        },
+      ],
+    }
+    mockedApi.get.mockResolvedValueOnce({ data: settings })
+    mockedApi.patch.mockRejectedValueOnce(new Error('keyring unavailable'))
+
+    const store = useSettingsStore()
+    await store.fetchSettings()
+    await store.updateSettings({
+      omero_instances: [
+        {
+          name: null,
+          host: 'omero.example.com',
+          port: 4064,
+          username: 'admin',
+          password: 'secret',
+        },
+      ],
+    })
+
+    expect(store.error).toBe('keyring unavailable')
+    expect(store.settings).toEqual(settings)
+    expect(JSON.stringify(store.settings)).not.toContain('secret')
+  })
+
   it('updateSettings 422 surfaces server detail', async () => {
     mockedApi.get.mockResolvedValueOnce({
       data: { deployment_mode: 'desktop', output_data_folder: '/out' },

@@ -15,6 +15,7 @@ dependencies = [
     "pandas>=2.0",
     "Pillow>=10.0",
     "tifffile>=2024.0",
+    "keyring>=25.0",
     "bioimageflow-core>=0.1.0",
     "bioimageflow>=0.1.1",
 ]

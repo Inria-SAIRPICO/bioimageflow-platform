@@ -6,7 +6,7 @@ import posixpath
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _DEFAULT_MAX_UPLOAD_SIZE = 2 * 1024**3  # 2 GB (v1 §2.4.10)
@@ -17,10 +17,52 @@ _CACHE_MAX_AGE_PATTERN = re.compile(r"^\d+[smhd]$")
 class OMEROInstance(BaseModel):
     """OMERO server connection configuration."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = None
     host: str
-    port: int = 4064
+    port: int = Field(default=4064, ge=1, le=65535)
     username: str
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _trim_optional_name(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @field_validator("host", "username", mode="before")
+    @classmethod
+    def _trim_required_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("host", "username")
+    @classmethod
+    def _require_non_empty_text(cls, value: str) -> str:
+        if not value:
+            raise ValueError("OMERO host and username must be non-empty")
+        return value
+
+    def effective_name(self) -> str:
+        """Return the display name used for uniqueness checks."""
+        return self.name or f"{self.host}:{self.username}"
+
+
+class OMEROInstancePatch(OMEROInstance):
+    """API-facing OMERO instance patch with transient password input."""
+
+    password: str | None = None
+
+
+class OMEROInstanceResponse(OMEROInstance):
+    """API-facing OMERO instance response with non-secret password state."""
+
+    password_stored: bool
 
 
 class Settings(BaseModel):
@@ -55,10 +97,18 @@ class Settings(BaseModel):
         if value is None:
             return None
         if not _CACHE_MAX_AGE_PATTERN.match(value):
-            raise ValueError(
-                "cache_max_age must match '<int><s|m|h|d>' (e.g., '30d', '1h')"
-            )
+            raise ValueError("cache_max_age must match '<int><s|m|h|d>' (e.g., '30d', '1h')")
         return value
+
+    @model_validator(mode="after")
+    def _validate_unique_omero_instance_names(self) -> "Settings":
+        seen: set[str] = set()
+        for instance in self.omero_instances:
+            effective_name = instance.effective_name()
+            if effective_name in seen:
+                raise ValueError("OMERO instance names must be unique")
+            seen.add(effective_name)
+        return self
 
     def resolved_datasets_root(self) -> str:
         """Return `datasets_root` if set, else `<output_data_folder>/datasets`."""
