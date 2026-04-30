@@ -12,7 +12,10 @@ and tool class indexing. This service wraps it with:
 
 from __future__ import annotations
 
+import inspect
+import importlib.util
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +54,8 @@ class ToolRegistryService:
         self._tools: dict[str, ToolMetadata] = {}
         self._lib_registry = LibToolRegistry()
         self._packages: dict[str, PackageInfo] = {}
+        self._sources: dict[str, Path] = {}
+        self._custom_roots: set[Path] = set()
         # Tracked from the most recent ``scan_tool_store`` call. Used by
         # ``resolve_package_for_path`` to map watchdog file events back to
         # ``(package, version)`` pairs.
@@ -86,10 +91,7 @@ class ToolRegistryService:
             # class, we load oldest-first and let the newest call win.
             # (Lex sort treats `0.1.10` < `0.1.9`, which is wrong for
             # multi-digit versions.)
-            ver_dirs = [
-                d for d in pkg_dir.iterdir()
-                if d.is_dir() and not d.name.startswith(".")
-            ]
+            ver_dirs = [d for d in pkg_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
             ver_dirs.sort(key=lambda d: _version_sort_key(d.name))
 
             installed_versions: list[str] = []
@@ -106,12 +108,11 @@ class ToolRegistryService:
 
                 try:
                     lib_metas = self._lib_registry.register_package(
-                        package_name, version,
+                        package_name,
+                        version,
                     )
                 except Exception:
-                    logger.exception(
-                        "Failed to load %s==%s", package_name, version
-                    )
+                    logger.exception("Failed to load %s==%s", package_name, version)
                     continue
 
                 tool_names = [m.class_name for m in lib_metas]
@@ -130,7 +131,10 @@ class ToolRegistryService:
                 tool_cls = self._lib_registry.get_class(class_name)
                 if tool_cls is not None:
                     self._register_tool_from_class(
-                        tool_cls, class_name, package_name, version,
+                        tool_cls,
+                        class_name,
+                        package_name,
+                        version,
                     )
 
             if installed_versions:
@@ -163,10 +167,16 @@ class ToolRegistryService:
         class_name: str,
         package: str,
         version: str,
+        *,
+        source_kind: str = "package",
+        editable: bool = False,
+        source_path: Path | None = None,
     ) -> None:
         """Extract metadata from a tool class and register it."""
         display_name = getattr(tool_cls, "display_name", None) or class_name
-        documentation = getattr(tool_cls, "documentation", "") or getattr(tool_cls, "__doc__", "") or ""
+        documentation = (
+            getattr(tool_cls, "documentation", "") or getattr(tool_cls, "__doc__", "") or ""
+        )
         tags = list(getattr(tool_cls, "tags", []))
         category = getattr(tool_cls, "category", None)
         categories = [category.value] if category is not None else []
@@ -181,8 +191,7 @@ class ToolRegistryService:
         try:
             inputs_raw = serialize_input_schema(tool_cls)
             inputs_dict: dict[str, InputFieldSchema] = {
-                name: InputFieldSchema.model_validate(spec)
-                for name, spec in inputs_raw.items()
+                name: InputFieldSchema.model_validate(spec) for name, spec in inputs_raw.items()
             }
         except SchemaSerializationError as exc:
             logger.warning("Failed to serialize inputs for %s: %s", class_name, exc)
@@ -219,8 +228,13 @@ class ToolRegistryService:
                 inputs=inputs_dict,
                 outputs=outputs_dict,
                 environment=environment,
+                source_kind=source_kind,  # type: ignore[arg-type]
+                editable=editable,
             ),
+            tool_class=tool_cls,
         )
+        if source_path is not None:
+            self._sources[class_name] = source_path.resolve()
 
     # -- tools --
 
@@ -233,6 +247,11 @@ class ToolRegistryService:
         self._tools[class_name] = metadata
         if tool_class is not None:
             self._lib_registry._classes[class_name] = tool_class
+
+    def forget_tool(self, class_name: str) -> None:
+        self._tools.pop(class_name, None)
+        self._sources.pop(class_name, None)
+        self._lib_registry.forget(class_name)
 
     def get_tool(self, class_name: str) -> ToolMetadata | None:
         return self._tools.get(class_name)
@@ -251,9 +270,7 @@ class ToolRegistryService:
         try:
             from bioimageflow.tool_loader import load_versioned_package
 
-            module = load_versioned_package(
-                metadata.package, metadata.package_version
-            )
+            module = load_versioned_package(metadata.package, metadata.package_version)
             resolved = getattr(module, class_name, None)
             if resolved is not None:
                 self._lib_registry._classes[class_name] = resolved
@@ -263,6 +280,157 @@ class ToolRegistryService:
 
     def list_tools(self) -> list[ToolMetadata]:
         return list(self._tools.values())
+
+    def register_custom_tools_directory(self, root: Path) -> dict[str, ToolMetadata]:
+        """Load all importable custom tool files under ``root``."""
+        resolved_root = root.resolve()
+        self._custom_roots.add(resolved_root)
+        registered: dict[str, ToolMetadata] = {}
+        if not resolved_root.exists():
+            return registered
+
+        for path in sorted(resolved_root.glob("*.py")):
+            if path.name.startswith("."):
+                continue
+            try:
+                for class_name in self._discover_tool_class_names(path):
+                    registered[class_name] = self.register_custom_tool_file(path, class_name)
+            except Exception:
+                logger.exception("Failed to load custom tool source: %s", path)
+        return registered
+
+    def register_custom_tool_file(self, path: Path, class_name: str) -> ToolMetadata:
+        """Load one custom tool source file and register its metadata."""
+        resolved = path.resolve()
+        self._custom_roots.add(resolved.parent)
+        module_name = f"bioimageflow_custom_{resolved.stem}_{resolved.stat().st_mtime_ns}"
+        spec = importlib.util.spec_from_file_location(module_name, resolved)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load custom tool source: {resolved}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        tool_cls = getattr(module, class_name, None)
+        if not isinstance(tool_cls, type):
+            raise ImportError(f"Tool class '{class_name}' not found in {resolved}")
+        self._register_tool_from_class(
+            tool_cls,
+            class_name,
+            "__custom__",
+            "local",
+            source_kind="custom",
+            editable=True,
+            source_path=resolved,
+        )
+        package = self._packages.get("__custom__")
+        if package is None:
+            package = PackageInfo(
+                name="__custom__",
+                installed_versions=["local"],
+                available_versions=["local"],
+                active_version="local",
+                tools={"local": []},
+                environment_status="stopped",
+            )
+            self.register_package("__custom__", package)
+        tools = package.tools.setdefault("local", [])
+        if class_name not in tools:
+            tools.append(class_name)
+            tools.sort()
+        return self._tools[class_name]
+
+    def unregister_custom_tool(self, class_name: str) -> None:
+        self.forget_tool(class_name)
+        package = self._packages.get("__custom__")
+        if package is None:
+            return
+        tools = package.tools.get("local", [])
+        package.tools["local"] = [name for name in tools if name != class_name]
+        if not package.tools["local"]:
+            self._packages.pop("__custom__", None)
+
+    def resolve_custom_tool_for_path(self, path: Path) -> str | None:
+        try:
+            resolved = Path(path).resolve()
+        except OSError:
+            return None
+        for class_name, source in self._sources.items():
+            if source != resolved:
+                continue
+            meta = self._tools.get(class_name)
+            if meta is not None and meta.source_kind == "custom":
+                return class_name
+        if resolved.suffix != ".py" or not resolved.exists():
+            return None
+        if not self._is_under_custom_root(resolved):
+            return None
+        discovered = self._discover_tool_class_names(resolved)
+        if not discovered:
+            return None
+        class_name = discovered[0]
+        self._sources[class_name] = resolved
+        return class_name
+
+    def _is_under_custom_root(self, path: Path) -> bool:
+        for root in self._custom_roots:
+            try:
+                path.relative_to(root)
+            except ValueError:
+                continue
+            return True
+        return False
+
+    def _discover_tool_class_names(self, path: Path) -> list[str]:
+        """Return tool class names defined by a custom source file."""
+        resolved = path.resolve()
+        module_name = f"bioimageflow_custom_discovery_{resolved.stem}_{resolved.stat().st_mtime_ns}"
+        spec = importlib.util.spec_from_file_location(module_name, resolved)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load custom tool source: {resolved}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+            from bioimageflow import DataFrameTool
+            from bioimageflow_core import ProcessingTool
+
+            names: list[str] = []
+            for name, value in vars(module).items():
+                if not isinstance(value, type):
+                    continue
+                if getattr(value, "__module__", None) != module.__name__:
+                    continue
+                if issubclass(value, (ProcessingTool, DataFrameTool)):
+                    names.append(name)
+            return names
+        finally:
+            sys.modules.pop(module_name, None)
+
+    def reload_custom_tool(self, class_name: str) -> dict[str, ToolMetadata]:
+        source = self._sources.get(class_name)
+        if source is None:
+            raise FileNotFoundError(class_name)
+        if not source.exists():
+            self.unregister_custom_tool(class_name)
+            raise FileNotFoundError(source)
+        self.unregister_custom_tool(class_name)
+        metadata = self.register_custom_tool_file(source, class_name)
+        return {class_name: metadata}
+
+    def resolve_tool_source(self, class_name: str) -> Path | None:
+        source = self._sources.get(class_name)
+        if source is not None:
+            return source
+        tool_cls = self.get_tool_class(class_name)
+        if tool_cls is None:
+            return None
+        try:
+            source_file = inspect.getsourcefile(tool_cls)
+        except TypeError:
+            return None
+        if source_file is None:
+            return None
+        return Path(source_file).resolve()
 
     # -- packages --
 
@@ -294,18 +462,15 @@ class ToolRegistryService:
         if pkg is None:
             raise ValueError(f"Package '{package_name}' is not registered")
         if version not in pkg.installed_versions:
-            raise ValueError(
-                f"Version '{version}' is not installed for "
-                f"'{package_name}'"
-            )
+            raise ValueError(f"Version '{version}' is not installed for '{package_name}'")
 
         try:
             lib_metas = self._lib_registry.register_package(package_name, version)
         except FileNotFoundError:
             logger.warning(
-                "set_active_version: %s==%s not found on disk; "
-                "skipping lib registry refresh",
-                package_name, version,
+                "set_active_version: %s==%s not found on disk; skipping lib registry refresh",
+                package_name,
+                version,
             )
             # Still record the user's choice on the package info so the GUI
             # reflects the requested active version even when the lib
@@ -325,7 +490,10 @@ class ToolRegistryService:
             # Drop the stale entry so _register_tool_from_class refills it.
             self._tools.pop(class_name, None)
             self._register_tool_from_class(
-                tool_cls, class_name, package_name, version,
+                tool_cls,
+                class_name,
+                package_name,
+                version,
             )
 
     # -- hot reload --
@@ -334,6 +502,11 @@ class ToolRegistryService:
         """Return the current platform metadata for tools matching
         ``(package, version)``. Empty if nothing is loaded for that pair.
         """
+        if package == "__custom__" and version != "local":
+            meta = self._tools.get(version)
+            if meta is not None and meta.source_kind == "custom":
+                return {version: meta}
+            return {}
         return {
             name: meta
             for name, meta in self._tools.items()
@@ -350,6 +523,9 @@ class ToolRegistryService:
         (e.g. a stray README directly under ``<store>/<pkg>``) is treated
         as out-of-scope.
         """
+        custom_class = self.resolve_custom_tool_for_path(path)
+        if custom_class is not None:
+            return "__custom__", custom_class
         if self._store_path is None:
             return None
         try:
@@ -364,9 +540,7 @@ class ToolRegistryService:
             return None
         return parts[0], parts[1]
 
-    def reload_package(
-        self, package: str, version: str
-    ) -> dict[str, ToolMetadata]:
+    def reload_package(self, package: str, version: str) -> dict[str, ToolMetadata]:
         """Unload + load + re-index a single ``(package, version)`` pair.
 
         Preserves the user's chosen ``active_version`` for the package by
@@ -376,8 +550,12 @@ class ToolRegistryService:
         platform metadata, then re-raises so the caller can broadcast
         a ``system_error`` and surface the failure in the GUI.
         """
+        if package == "__custom__":
+            return self.reload_custom_tool(version)
+
         if self._store_path is None:
             from bioimageflow.paths import get_tool_store_path
+
             self._store_path = get_tool_store_path()
 
         # Snapshot prior state for rollback. We hold strong refs to the
@@ -419,7 +597,10 @@ class ToolRegistryService:
                 if tool_cls is None:
                     continue
                 self._register_tool_from_class(
-                    tool_cls, class_name, package, version,
+                    tool_cls,
+                    class_name,
+                    package,
+                    version,
                 )
         except Exception:
             # Restore prior state — hold the prior class objects strongly
@@ -441,7 +622,9 @@ class ToolRegistryService:
                 logger.warning(
                     "reload_package: could not restore active version "
                     "%s==%s after reloading inactive %s",
-                    package, active_version, version,
+                    package,
+                    active_version,
+                    version,
                 )
 
         return self.snapshot(package, version)

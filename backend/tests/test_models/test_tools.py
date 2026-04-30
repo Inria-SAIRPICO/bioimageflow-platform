@@ -8,8 +8,12 @@ from bioimageflow_server.models.tools import (
     OutputFieldSchema,
     PackageInfo,
     ToolCreate,
+    ToolCreateResponse,
+    ToolDeleteResponse,
     ToolMetadata,
     ToolRename,
+    ToolRenameResponse,
+    ToolUsageResponse,
 )
 
 pytestmark = pytest.mark.anyio
@@ -126,9 +130,63 @@ def test_tool_create():
     assert tc.tool_type == "ProcessingTool"
 
 
+@pytest.mark.parametrize("name", ["class", "myTool", "My Tool", "../MyTool", "My/Tool"])
+def test_tool_create_rejects_invalid_class_names(name: str):
+    with pytest.raises(ValueError):
+        ToolCreate(name=name, tool_type="ProcessingTool")
+
+
+def test_tool_create_rejects_invalid_tool_type():
+    with pytest.raises(ValueError):
+        ToolCreate(name="MyTool", tool_type="SourceTool")
+
+
 def test_tool_rename():
     tr = ToolRename(new_name="BetterName")
     assert tr.new_name == "BetterName"
+
+
+@pytest.mark.parametrize("name", ["for", "betterName", "Better Name", "Better/Name"])
+def test_tool_rename_rejects_invalid_class_names(name: str):
+    with pytest.raises(ValueError):
+        ToolRename(new_name=name)
+
+
+def test_tool_metadata_source_defaults_to_package_not_editable():
+    meta = ToolMetadata(
+        name="PkgTool",
+        display_name="Pkg Tool",
+        package="pkg",
+        package_version="1.0",
+        tool_type="ProcessingTool",
+    )
+    assert meta.source_kind == "package"
+    assert meta.editable is False
+
+
+def test_custom_tool_response_models_round_trip(tmp_path):
+    path = tmp_path / "tools" / "my_tool.py"
+    create = ToolCreateResponse(
+        name="MyTool",
+        tool_type="ProcessingTool",
+        path=str(path),
+    )
+    usage = ToolUsageResponse(
+        tool_name="MyTool",
+        affected_workflows=["wf"],
+    )
+    rename = ToolRenameResponse(old_name="MyTool", new_name="BetterTool", path=str(path))
+    delete = ToolDeleteResponse(
+        deleted=True,
+        warning="Tool is used by saved workflows.",
+        affected_workflows=["wf"],
+    )
+
+    assert create.source_kind == "custom"
+    assert create.editable is True
+    assert usage.in_open_workflow is None
+    assert rename.old_name == "MyTool"
+    assert delete.deleted is True
 
 
 def test_app_config_defaults():

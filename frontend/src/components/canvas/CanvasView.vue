@@ -232,6 +232,38 @@ async function handleApplyGraphEvent(event: Event) {
   await applyGraphState(detail.graph, detail.missingTools ?? [], detail.dirty ?? false)
 }
 
+function handleToolRenamedEvent(event: Event) {
+  const detail = (event as CustomEvent<{ old_name: string; new_name: string }>).detail
+  if (!detail?.old_name || !detail?.new_name) return
+  let changed = false
+  const fresh = toolRegistryStore.getToolByName(detail.new_name) ?? null
+  for (const node of getNodes.value as any[]) {
+    if (node.data?.toolName !== detail.old_name) continue
+    node.data.toolName = detail.new_name
+    node.data.tool = fresh
+    node.data.missingTool = null
+    changed = true
+  }
+  if (changed) emitGraphChanged()
+}
+
+function handleToolDeletedEvent(event: Event) {
+  const detail = (event as CustomEvent<{ tool_name: string }>).detail
+  if (!detail?.tool_name) return
+  let changed = false
+  for (const node of getNodes.value as any[]) {
+    if (node.data?.toolName !== detail.tool_name) continue
+    node.data.tool = null
+    node.data.missingTool = {
+      node_id: node.id,
+      tool_name: detail.tool_name,
+      installed_versions: [],
+    }
+    changed = true
+  }
+  if (changed) emitGraphChanged()
+}
+
 // Hot-reload watcher: subscribes to toolRegistryStore.tools mutations
 // driven by useWebSocket and updates affected canvas nodes (badge,
 // schema swap, optimistic out_of_date, flushNow). useToast throws when
@@ -261,6 +293,8 @@ useHotReload({
 onMounted(async () => {
   window.addEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
   window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
+  window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
+  window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
@@ -275,6 +309,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
   window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
+  window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
+  window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
 })
 
 // --- Node drag tracking (undo support) ---

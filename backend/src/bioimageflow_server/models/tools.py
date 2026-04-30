@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import keyword
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
@@ -70,6 +72,8 @@ class ToolMetadata(BaseModel):
     inputs: dict[str, InputFieldSchema] = {}
     outputs: dict[str, Any] = {}
     environment: dict[str, Any] | None = None
+    source_kind: Literal["package", "custom"] = "package"
+    editable: bool = False
 
 
 # --- Package info ---
@@ -96,9 +100,71 @@ class ToolCreate(BaseModel):
     name: str
     tool_type: Literal["ProcessingTool", "DataFrameTool"]
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return validate_tool_class_name(value)
+
 
 class ToolRename(BaseModel):
     new_name: str
+
+    @field_validator("new_name")
+    @classmethod
+    def validate_new_name(cls, value: str) -> str:
+        return validate_tool_class_name(value)
+
+
+class ToolCreateResponse(BaseModel):
+    name: str
+    tool_type: Literal["ProcessingTool", "DataFrameTool"]
+    path: str
+    source_kind: Literal["custom"] = "custom"
+    editable: Literal[True] = True
+
+
+class ToolUsageResponse(BaseModel):
+    tool_name: str
+    affected_workflows: list[str]
+    in_open_workflow: bool | None = None
+
+
+class ToolRenameResponse(BaseModel):
+    old_name: str
+    new_name: str
+    path: str
+
+
+class ToolDeleteResponse(BaseModel):
+    deleted: Literal[True] = True
+    warning: str | None = None
+    affected_workflows: list[str]
+
+
+class ToolSourceResponse(BaseModel):
+    tool_name: str
+    path: str
+    source_kind: Literal["package", "custom"]
+    editable: bool
+
+
+_PATH_SEPARATORS = {"/", "\\"}
+_WHITESPACE_RE = re.compile(r"\s")
+
+
+def validate_tool_class_name(value: str) -> str:
+    name = value.strip()
+    if name != value or not name:
+        raise ValueError("Tool class name must not be empty or padded with whitespace")
+    if any(sep in name for sep in _PATH_SEPARATORS) or ".." in name:
+        raise ValueError("Tool class name must not contain path separators")
+    if _WHITESPACE_RE.search(name):
+        raise ValueError("Tool class name must not contain spaces")
+    if not name.isidentifier() or keyword.iskeyword(name):
+        raise ValueError("Tool class name must be a valid Python identifier")
+    if not name[0].isupper():
+        raise ValueError("Tool class name must start with an uppercase letter")
+    return name
 
 
 # --- App configuration ---

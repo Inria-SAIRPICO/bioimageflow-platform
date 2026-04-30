@@ -1,7 +1,14 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
-import type { ToolMetadata, PackageInfo } from '@/api/types'
+import type {
+  PackageInfo,
+  ToolCreateResponse,
+  ToolDeleteResponse,
+  ToolMetadata,
+  ToolRenameResponse,
+  ToolUsageResponse,
+} from '@/api/types'
 
 export interface ToolReloadPayload {
   type: 'tool_reload'
@@ -18,6 +25,7 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
   const tools = ref<ToolMetadata[]>([])
   const packages = ref<PackageInfo[]>([])
   const error = ref<string | null>(null)
+  const customToolBusy = ref(false)
 
   async function fetchTools() {
     try {
@@ -64,6 +72,62 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     if (!tool) return 'unknown'
     const pkg = packages.value.find((p) => p.name === tool.package)
     return pkg?.environment_status ?? 'unknown'
+  }
+
+  async function createTool(body: {
+    name: string
+    tool_type: 'ProcessingTool' | 'DataFrameTool'
+  }): Promise<ToolCreateResponse> {
+    customToolBusy.value = true
+    try {
+      const { data } = await api.post<ToolCreateResponse>('/api/v1/tools', body)
+      await Promise.all([fetchTools(), fetchPackages()])
+      error.value = null
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      customToolBusy.value = false
+    }
+  }
+
+  async function getToolUsage(toolName: string): Promise<ToolUsageResponse> {
+    const { data } = await api.get<ToolUsageResponse>(`/api/v1/tools/${toolName}/usage`)
+    return data
+  }
+
+  async function renameTool(toolName: string, newName: string): Promise<ToolRenameResponse> {
+    customToolBusy.value = true
+    try {
+      const { data } = await api.patch<ToolRenameResponse>(
+        `/api/v1/tools/${toolName}`,
+        { new_name: newName },
+      )
+      await Promise.all([fetchTools(), fetchPackages()])
+      error.value = null
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      customToolBusy.value = false
+    }
+  }
+
+  async function deleteTool(toolName: string): Promise<ToolDeleteResponse> {
+    customToolBusy.value = true
+    try {
+      const { data } = await api.delete<ToolDeleteResponse>(`/api/v1/tools/${toolName}`)
+      await Promise.all([fetchTools(), fetchPackages()])
+      error.value = null
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    } finally {
+      customToolBusy.value = false
+    }
   }
 
   function applyToolReload(payload: ToolReloadPayload) {
@@ -131,8 +195,13 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     tools,
     packages,
     error,
+    customToolBusy,
     fetchTools,
     fetchPackages,
+    createTool,
+    getToolUsage,
+    renameTool,
+    deleteTool,
     getToolByName,
     searchTools,
     getEnvStatusForTool,

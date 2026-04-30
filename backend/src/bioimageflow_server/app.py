@@ -69,11 +69,12 @@ from bioimageflow_server.routers.tools import (
     get_package_installer,
     get_tool_registry,
     get_workflow_root,
+    get_workflow_store as tools_get_workflow_store,
     router as tools_router,
 )
 from bioimageflow_server.routers.workflows import (
     get_execution_manager as workflows_get_execution_manager,
-    get_workflow_store,
+    get_workflow_store as workflows_get_workflow_store,
     router as workflows_router,
 )
 from bioimageflow_server.services.execution import (
@@ -128,9 +129,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # Resolve Settings once: caller-supplied wins, otherwise build a minimal
     # default. Used for both the ExecutionManager and the dev_mode dependency.
     _deployment_mode = (
-        config.deployment_mode
-        if config.deployment_mode in ("desktop", "webapp")
-        else "desktop"
+        config.deployment_mode if config.deployment_mode in ("desktop", "webapp") else "desktop"
     )
     resolved_settings: Settings = config.settings or Settings(
         deployment_mode=_deployment_mode,
@@ -146,9 +145,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         execution_manager: Any = config.execution_manager
     else:
         settings_provider = (
-            (lambda: config.settings_store.get())
-            if config.settings_store is not None
-            else None
+            (lambda: config.settings_store.get()) if config.settings_store is not None else None
         )
         execution_manager = ExecutionManager(
             event_bus=event_bus,
@@ -170,6 +167,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         tool_registry=registry,
         storage_base_dir=resolved_storage_path / "workflows",
     )
+    custom_tools_root = workflow_root / "tools"
+    if custom_tools_root.exists():
+        registry.register_custom_tools_directory(custom_tools_root)
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
         cache_dir=resolved_storage_path / ".thumbnails",
         env_path=resolved_settings.thumbnail_env_path,
@@ -181,6 +181,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     _owns_pypi = config.pypi_versions is None
 
     from bioimageflow.paths import get_tool_store_path
+
     tool_store_path = get_tool_store_path()
 
     if config.disable_hot_reload:
@@ -228,9 +229,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 exc,
             )
         except Exception as exc:  # noqa: BLE001
-            logging.getLogger(__name__).warning(
-                "Initial PyPI refresh crashed: %r", exc
-            )
+            logging.getLogger(__name__).warning("Initial PyPI refresh crashed: %r", exc)
 
         nonlocal ws_log_handler
         if ws_manager is not None:
@@ -244,11 +243,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         hot_reload_started = False
         if hot_reload is not None:
             try:
+                custom_tools_root.mkdir(parents=True, exist_ok=True)
+                registry.register_custom_tools_directory(custom_tools_root)
                 await hot_reload.start(tool_store_path)
+                hot_reload.add_watch_root(custom_tools_root)
                 hot_reload_started = True
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).warning(
-                    "Tool hot-reload failed to start: %r", exc, exc_info=exc,
+                    "Tool hot-reload failed to start: %r",
+                    exc,
+                    exc_info=exc,
                 )
 
         try:
@@ -281,9 +285,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     )
             if ws_manager is not None:
                 if ws_log_handler is not None:
-                    logging.getLogger("bioimageflow").removeHandler(
-                        ws_log_handler
-                    )
+                    logging.getLogger("bioimageflow").removeHandler(ws_log_handler)
                     logging.getLogger("wetlands").removeHandler(ws_log_handler)
                 ws_manager._loop = None
             if config.settings_store is not None:
@@ -385,7 +387,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
     app.dependency_overrides[execution_get_workflow_store] = lambda: workflow_store
-    app.dependency_overrides[get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[workflows_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[tools_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
 
     def _live_dev_mode() -> bool:
@@ -404,8 +407,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
     app.dependency_overrides[nodes_get_workflow_store] = lambda: workflow_store
 
-    if config.workflow_root is not None:
-        app.dependency_overrides[get_workflow_root] = lambda: config.workflow_root
+    app.dependency_overrides[get_workflow_root] = lambda: workflow_root
 
     app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
     app.dependency_overrides[get_package_installer] = lambda: installer
@@ -414,8 +416,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # Datasets router needs both values present; fall back to Settings-derived
     # defaults when AppConfig leaves them unset so bare `create_app()` (e.g.
     # `uvicorn ... --factory`) produces a working server.
-    datasets_root = config.datasets_root if config.datasets_root is not None else get_home() / "datasets"
-    max_upload_size = config.max_upload_size if config.max_upload_size is not None else _DEFAULT_MAX_UPLOAD_SIZE
+    datasets_root = (
+        config.datasets_root if config.datasets_root is not None else get_home() / "datasets"
+    )
+    max_upload_size = (
+        config.max_upload_size if config.max_upload_size is not None else _DEFAULT_MAX_UPLOAD_SIZE
+    )
     app.dependency_overrides[get_datasets_root] = lambda: datasets_root
     app.dependency_overrides[get_max_upload_size] = lambda: max_upload_size
 
