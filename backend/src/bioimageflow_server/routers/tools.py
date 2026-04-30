@@ -18,7 +18,7 @@ from bioimageflow_server.models.tools import (
     ToolSourceResponse,
     ToolUsageResponse,
 )
-from bioimageflow_server.services.custom_tools import CustomToolService
+from bioimageflow_server.services.custom_tools import CustomToolService, name_to_snake
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
@@ -95,6 +95,16 @@ async def get_tool_source(
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_root: Path | None = Depends(get_workflow_root),
 ) -> ToolSourceResponse:
+    if workflow_root is not None:
+        custom_source = workflow_root / "tools" / f"{name_to_snake(tool_name)}.py"
+        if custom_source.exists():
+            return ToolSourceResponse(
+                tool_name=tool_name,
+                path=str(custom_source),
+                source_kind="custom",
+                editable=True,
+            )
+
     tool = registry.get_tool(tool_name)
     path = registry.resolve_tool_source(tool_name)
     if tool is not None and path is not None:
