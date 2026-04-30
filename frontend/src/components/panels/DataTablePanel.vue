@@ -45,7 +45,10 @@ const allTerminalDisabled = computed(() =>
 const allDisplayedWithoutData = computed(() =>
   displayedNodeIds.value.length > 0 &&
   displayedNodeIds.value.every((id) =>
-    !dataTableStore.getNodeData(id) && !dataTableStore.isLoading(id),
+    !dataTableStore.getNodeData(id) &&
+    !dataTableStore.isLoading(id) &&
+    !dataTableStore.isPending(id) &&
+    !dataTableStore.getError(id),
   ),
 )
 

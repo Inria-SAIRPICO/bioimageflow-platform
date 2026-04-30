@@ -19,6 +19,7 @@ const store = useDataTableStore()
 
 const data = computed(() => store.getNodeData(props.nodeId))
 const loading = computed(() => store.isLoading(props.nodeId))
+const pending = computed(() => store.isPending(props.nodeId))
 const error = computed(() => store.getError(props.nodeId))
 const pageState = computed(() => store.paginationState[props.nodeId] ?? {
   page: 0,
@@ -91,6 +92,12 @@ function onPage(event: { page: number; rows: number }) {
       class="node-data-table__message"
     >
       {{ error }}
+    </div>
+    <div
+      v-else-if="pending && !data"
+      class="node-data-table__message"
+    >
+      Preparing output data...
     </div>
     <div
       v-else-if="loading && !data"

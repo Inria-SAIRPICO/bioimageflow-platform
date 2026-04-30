@@ -8,11 +8,15 @@ import NodeDataTable from '../NodeDataTable.vue'
 import PathCell from '../PathCell.vue'
 import { useUIStore } from '@/stores/ui'
 import { useDataTableStore } from '@/stores/dataTable'
+import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
+import { api } from '@/api/client'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
 }))
+
+const mockedGet = vi.mocked(api.get)
 
 const DataTableStub = defineComponent({
   props: {
@@ -55,6 +59,7 @@ describe('DataTablePanel', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -128,6 +133,240 @@ describe('DataTablePanel', () => {
     expect(wrapper.text()).toContain('/data/results/cell_mask.tif')
     await wrapper.find('[data-testid="path-copy"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/cell_mask.tif')
+  })
+
+  it('renders and copies regular path columns in node data tables', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const dataTableStore = useDataTableStore()
+    dataTableStore.nodeDataCache['node-1'] = {
+      columns: ['csv_path'],
+      index: ['0'],
+      rows: [{ csv_path: '/data/results/measurements.csv' }],
+      absolute_rows: [0],
+      total_rows: 1,
+      page: 0,
+      page_size: 50,
+      column_types: { csv_path: 'Path' },
+    }
+
+    const wrapper = mount(NodeDataTable, {
+      props: { nodeId: 'node-1' },
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          DataTable: DataTableStub,
+          Column: ColumnStub,
+          ImageCell: { template: '<div data-testid="image-cell" />' },
+          Paginator: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('/data/results/measurements.csv')
+    await wrapper.find('[data-testid="path-copy"]').trigger('click')
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/measurements.csv')
+  })
+
+  it('keeps a selected executed node in a preparing state after 409 and refreshes on executed status', async () => {
+    vi.useFakeTimers()
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const uiStore = useUIStore()
+    const executionStore = useExecutionStore()
+    uiStore.setSelectedNodes(['node-1'])
+    executionStore.nodeStatuses = {
+      'node-1': { node_id: 'node-1', status: 'unexecuted', cached: false },
+    }
+
+    const { currentGraph } = useGraphSync()
+    currentGraph.value = {
+      nodes: [
+        {
+          id: 'node-1',
+          name: 'Files 1',
+          tool_name: 'files',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        },
+      ],
+      edges: [],
+    }
+
+    mockedGet
+      .mockRejectedValueOnce({ response: { status: 409, data: { detail: 'not ready' } } })
+      .mockResolvedValueOnce({
+        data: {
+          columns: ['path'],
+          index: ['0'],
+          rows: [{ path: '/tmp/out.csv' }],
+          absolute_rows: [0],
+          total_rows: 1,
+          page: 0,
+          page_size: 50,
+          column_types: { path: 'Path' },
+        },
+      })
+
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          DataTable: DataTableStub,
+          Column: ColumnStub,
+          ImageCell: { template: '<div data-testid="image-cell" />' },
+          Paginator: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('No output data available. Execute the workflow')
+    expect(wrapper.text()).toContain('Preparing output data')
+    expect(mockedGet).toHaveBeenCalledTimes(1)
+
+    executionStore.applyNodeState({ node_id: 'node-1', status: 'executed', cached: false })
+    await flushPromises()
+
+    expect(mockedGet).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('/tmp/out.csv')
+    vi.useRealTimers()
+  })
+
+  it('retries a not-ready data response without showing the no-output empty state', async () => {
+    vi.useFakeTimers()
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const uiStore = useUIStore()
+    uiStore.setSelectedNodes(['node-1'])
+
+    const { currentGraph } = useGraphSync()
+    currentGraph.value = {
+      nodes: [
+        {
+          id: 'node-1',
+          name: 'Files 1',
+          tool_name: 'files',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        },
+      ],
+      edges: [],
+    }
+
+    mockedGet
+      .mockRejectedValueOnce({ response: { status: 409, data: { detail: 'not ready' } } })
+      .mockResolvedValueOnce({
+        data: {
+          columns: ['path'],
+          index: ['0'],
+          rows: [{ path: '/tmp/retried.csv' }],
+          absolute_rows: [0],
+          total_rows: 1,
+          page: 0,
+          page_size: 50,
+          column_types: { path: 'Path' },
+        },
+      })
+
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          DataTable: DataTableStub,
+          Column: ColumnStub,
+          ImageCell: { template: '<div data-testid="image-cell" />' },
+          Paginator: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Preparing output data')
+    expect(wrapper.text()).not.toContain('No output data available. Execute the workflow')
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await flushPromises()
+
+    expect(mockedGet).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('/tmp/retried.csv')
+    vi.useRealTimers()
+  })
+
+  it('does not show stale cached rows while an executed-node refresh is not ready', async () => {
+    vi.useFakeTimers()
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const uiStore = useUIStore()
+    const executionStore = useExecutionStore()
+    const dataTableStore = useDataTableStore()
+    uiStore.setSelectedNodes(['node-1'])
+    executionStore.nodeStatuses = {
+      'node-1': { node_id: 'node-1', status: 'unexecuted', cached: false },
+    }
+    dataTableStore.nodeDataCache['node-1'] = {
+      columns: ['path'],
+      index: ['0'],
+      rows: [{ path: '/tmp/stale-before-run.csv' }],
+      absolute_rows: [0],
+      total_rows: 1,
+      page: 0,
+      page_size: 50,
+      column_types: { path: 'Path' },
+    }
+
+    const { currentGraph } = useGraphSync()
+    currentGraph.value = {
+      nodes: [
+        {
+          id: 'node-1',
+          name: 'Files 1',
+          tool_name: 'files',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        },
+      ],
+      edges: [],
+    }
+
+    mockedGet.mockRejectedValueOnce({
+      response: { status: 409, data: { detail: 'not ready after execution' } },
+    })
+
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          DataTable: DataTableStub,
+          Column: ColumnStub,
+          ImageCell: { template: '<div data-testid="image-cell" />' },
+          Paginator: true,
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('/tmp/stale-before-run.csv')
+
+    executionStore.applyNodeState({ node_id: 'node-1', status: 'executed', cached: false })
+    await flushPromises()
+
+    expect(mockedGet).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Preparing output data')
+    expect(wrapper.text()).not.toContain('/tmp/stale-before-run.csv')
+    vi.useRealTimers()
   })
 
   it('shows and copies the full path from path cells', async () => {
