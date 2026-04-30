@@ -14,14 +14,20 @@ from pydantic import ValidationError
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import (
+    ExportedWorkflow,
+    LocalToolReference,
+    RequiredPackage,
     WorkflowCreate,
+    WorkflowExportDocument,
     WorkflowFile,
     WorkflowInfo,
+    WorkflowImportResponse,
     WorkflowSaveBody,
     WorkflowUpdate,
     canonical_workflow_name,
 )
 from bioimageflow_server.services.graph_translator import (
+    collect_required_packages,
     _detect_missing_packages,
     _detect_missing_tools,
     graph_state_to_persisted_sections,
@@ -29,6 +35,58 @@ from bioimageflow_server.services.graph_translator import (
     rebind_lib_dict_versions,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+
+class WorkflowImportParseError(ValueError):
+    """Raised when an import upload is not parseable JSON."""
+
+
+class WorkflowImportValidationError(ValueError):
+    """Raised when an import upload is JSON but not a supported export document."""
+
+
+def _merge_export_requirements(
+    primary: tuple[list[RequiredPackage], list[LocalToolReference]],
+    fallback: tuple[list[RequiredPackage], list[LocalToolReference]],
+) -> tuple[list[RequiredPackage], list[LocalToolReference]]:
+    package_map = {
+        (package.name, package.version): package for package in [*primary[0], *fallback[0]]
+    }
+    local_map: dict[str, list[str]] = {}
+    for tool in [*primary[1], *fallback[1]]:
+        node_ids = local_map.setdefault(tool.tool_name, [])
+        for node_id in tool.node_ids:
+            if node_id not in node_ids:
+                node_ids.append(node_id)
+    return (
+        [package_map[key] for key in sorted(package_map)],
+        [
+            LocalToolReference(tool_name=tool_name, node_ids=node_ids)
+            for tool_name, node_ids in sorted(local_map.items())
+        ],
+    )
+
+
+def _graph_nodes_missing_from_library(
+    graph: dict[str, Any],
+    library: dict[str, Any],
+) -> dict[str, Any]:
+    library_node_ids = {
+        str(node.get("id") or node.get("name"))
+        for node in library.get("nodes", [])
+        if isinstance(node, dict) and (node.get("id") or node.get("name"))
+    }
+    graph_nodes = graph.get("nodes", [])
+    if not isinstance(graph_nodes, list) or not library_node_ids:
+        return graph
+    graph_fallback = dict(graph)
+    graph_fallback["nodes"] = [
+        node
+        for node in graph_nodes
+        if not isinstance(node, dict)
+        or str(node.get("id") or node.get("name")) not in library_node_ids
+    ]
+    return graph_fallback
 
 
 class WorkflowStoreService:
@@ -181,6 +239,106 @@ class WorkflowStoreService:
             suffix += 1
         return candidate
 
+    def export_workflow(self, name: str) -> WorkflowExportDocument:
+        path = self._path_for(name)
+        raw = self._read_raw(name)
+        info = self._metadata_from_raw(name, raw, path)
+        graph = raw.get("graph", {})
+        library = raw.get("workflow", {})
+        gui = raw.get("gui", {})
+        metadata = raw.get("metadata", {})
+        if not isinstance(graph, dict):
+            graph = {}
+        if not isinstance(library, dict):
+            library = {}
+        if not isinstance(gui, dict):
+            gui = {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        required_packages, local_tools = _merge_export_requirements(
+            collect_required_packages(library, self.tool_registry),
+            collect_required_packages(
+                _graph_nodes_missing_from_library(graph, library),
+                self.tool_registry,
+            ),
+        )
+        return WorkflowExportDocument(
+            exported_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            workflow=ExportedWorkflow(
+                name=info.name,
+                display_name=info.display_name,
+                description=info.description,
+                storage_path=info.storage_path,
+                graph=cast(dict[str, Any], json.loads(json.dumps(graph))),
+                library=cast(dict[str, Any], json.loads(json.dumps(library))),
+                gui=cast(dict[str, Any], json.loads(json.dumps(gui))),
+                metadata=cast(dict[str, Any], json.loads(json.dumps(metadata))),
+            ),
+            required_packages=required_packages,
+            local_tools=local_tools,
+        )
+
+    def parse_import_document(self, raw_json: bytes | str) -> WorkflowExportDocument:
+        try:
+            payload = json.loads(raw_json)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise WorkflowImportParseError("Malformed JSON import file") from exc
+        if not isinstance(payload, dict):
+            raise WorkflowImportValidationError("Workflow import file must contain a JSON object")
+        workflow = payload.get("workflow")
+        if isinstance(workflow, dict) and "graph" not in workflow:
+            library = workflow.get("library")
+            gui = workflow.get("gui")
+            if isinstance(library, dict):
+                workflow["graph"] = lib_dict_to_graph_state(
+                    library,
+                    gui if isinstance(gui, dict) else None,
+                ).model_dump(mode="json")
+        try:
+            return WorkflowExportDocument.model_validate(payload)
+        except ValidationError as exc:
+            raise WorkflowImportValidationError(str(exc)) from exc
+
+    def import_workflow(
+        self,
+        document: WorkflowExportDocument,
+        *,
+        name_override: str | None = None,
+    ) -> WorkflowImportResponse:
+        imported_name = self._validate_name(name_override or document.workflow.name)
+        if self._has_name_collision(imported_name):
+            raise FileExistsError(imported_name)
+
+        GraphState.model_validate(document.workflow.graph)
+        graph = cast(dict[str, Any], json.loads(json.dumps(document.workflow.graph)))
+        library = cast(
+            dict[str, Any],
+            json.loads(json.dumps(document.workflow.library)),
+        )
+        gui = cast(dict[str, Any], json.loads(json.dumps(document.workflow.gui)))
+        metadata = cast(
+            dict[str, Any],
+            json.loads(json.dumps(document.workflow.metadata)),
+        )
+        metadata["display_name"] = document.workflow.display_name or imported_name
+        metadata["description"] = document.workflow.description
+        metadata["storage_path"] = str(self._managed_storage_path(imported_name))
+
+        raw = {
+            "graph": graph,
+            "workflow": library,
+            "gui": gui,
+            "metadata": metadata,
+        }
+        self._set_workflow_storage_path(raw, metadata["storage_path"])
+        self._write_raw(imported_name, raw)
+        loaded = self.get_workflow(imported_name)
+        return WorkflowImportResponse(
+            info=loaded.info,
+            missing_packages=loaded.missing_packages,
+            missing_tools=loaded.missing_tools,
+        )
+
     def list_workflows(self) -> list[WorkflowInfo]:
         if not self.root_dir.exists():
             return []
@@ -288,8 +446,8 @@ class WorkflowStoreService:
                 duplicate_metadata["display_name"] = patch.display_name or new_name
                 if patch.description is not None:
                     duplicate_metadata["description"] = patch.description
-                duplicate_metadata["storage_path"] = (
-                    patch.storage_path or str(self._managed_storage_path(new_name))
+                duplicate_metadata["storage_path"] = patch.storage_path or str(
+                    self._managed_storage_path(new_name)
                 )
                 self._set_workflow_storage_path(
                     duplicate,

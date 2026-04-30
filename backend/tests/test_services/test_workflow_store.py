@@ -8,10 +8,19 @@ from pathlib import Path
 import pytest
 
 from bioimageflow_server.models.graph import ColumnRefEdge, GraphState, NodeState
-from bioimageflow_server.models.tools import PackageInfo
-from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody, WorkflowUpdate
+from bioimageflow_server.models.tools import PackageInfo, ToolMetadata
+from bioimageflow_server.models.workflow import (
+    ExportedWorkflow,
+    WorkflowCreate,
+    WorkflowExportDocument,
+    WorkflowSaveBody,
+    WorkflowUpdate,
+)
+from bioimageflow_server.services.workflow_store import (
+    WorkflowImportParseError,
+    WorkflowStoreService,
+)
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
 @pytest.fixture
@@ -35,6 +44,36 @@ def store(tmp_path: Path, registry: ToolRegistryService) -> WorkflowStoreService
         root_dir=tmp_path / "workflows",
         tool_registry=registry,
         storage_base_dir=tmp_path / "outputs",
+    )
+
+
+def _export_document(
+    *,
+    name: str = "imported",
+    library: dict | None = None,
+    graph: dict | None = None,
+    gui: dict | None = None,
+    metadata: dict | None = None,
+) -> WorkflowExportDocument:
+    return WorkflowExportDocument(
+        exported_at="2026-04-30T10:30:00Z",
+        workflow=ExportedWorkflow(
+            name=name,
+            display_name="Imported",
+            description="desc",
+            storage_path="/other/machine/outputs/imported",
+            graph=graph or {"nodes": [], "edges": []},
+            library=library or {"nodes": [], "edges": []},
+            gui=gui or {"nodes": {}},
+            metadata=metadata
+            or {
+                "display_name": "Imported",
+                "description": "desc",
+                "storage_path": "/other/machine/outputs/imported",
+            },
+        ),
+        required_packages=[],
+        local_tools=[],
     )
 
 
@@ -155,9 +194,7 @@ def test_display_name_update_renames_file_and_managed_storage(
     assert (store.storage_base_dir / "new_workflow" / "result.txt").read_text() == "kept"
     raw = json.loads((store.root_dir / "new_workflow.json").read_text())
     assert raw["metadata"]["storage_path"] == str(store.storage_base_dir / "new_workflow")
-    assert raw["workflow"]["config"]["storage_path"] == str(
-        store.storage_base_dir / "new_workflow"
-    )
+    assert raw["workflow"]["config"]["storage_path"] == str(store.storage_base_dir / "new_workflow")
 
 
 def test_display_name_update_rejects_existing_target_managed_storage_without_old_source(
@@ -324,3 +361,415 @@ def test_suggest_name_skips_managed_storage_collisions(
     (store.storage_base_dir / "wf_2").mkdir(parents=True)
 
     assert store.suggest_name("wf") == "wf_3"
+
+
+def test_export_workflow_preserves_raw_sections_and_required_packages(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {
+            "nodes": [
+                {
+                    "id": "n1",
+                    "name": "Node",
+                    "tool_name": "ExistingTool",
+                    "position": [1, 2],
+                    "parameters": {},
+                }
+            ],
+            "edges": [],
+            "sub_workflow": {"kept": True},
+        },
+        "workflow": {
+            "nodes": [
+                {
+                    "name": "n1",
+                    "tool_class": "ExistingTool",
+                    "tool_package": "missing-pkg",
+                    "tool_package_version": "1.0.0",
+                },
+                {
+                    "name": "n2",
+                    "tool_class": "ExistingTool",
+                    "tool_package": "missing-pkg",
+                    "tool_package_version": "1.0.0",
+                },
+            ],
+            "edges": [],
+        },
+        "gui": {"nodes": {"n1": {"position": [1, 2]}}},
+        "metadata": {
+            "display_name": "Workflow",
+            "description": "desc",
+            "storage_path": "/tmp/old",
+        },
+    }
+    store.root_dir.mkdir(parents=True, exist_ok=True)
+    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+
+    document = store.export_workflow("wf")
+
+    assert document.bioimageflow_export is True
+    assert document.export_version == "1.0"
+    assert document.workflow.name == "wf"
+    assert document.workflow.graph == raw["graph"]
+    assert document.workflow.library == raw["workflow"]
+    assert document.workflow.gui == raw["gui"]
+    assert document.workflow.metadata == raw["metadata"]
+    assert [item.model_dump() for item in document.required_packages] == [
+        {"name": "missing-pkg", "version": "1.0.0"}
+    ]
+    assert document.local_tools == []
+
+
+def test_export_workflow_falls_back_to_registry_and_marks_local_tools(
+    store: WorkflowStoreService,
+    registry: ToolRegistryService,
+) -> None:
+    registry.register_tool(
+        "RegistryTool",
+        ToolMetadata(
+            name="RegistryTool",
+            display_name="Registry Tool",
+            package="registry-pkg",
+            package_version="2.0.0",
+            tool_type="ProcessingTool",
+        ),
+    )
+    raw = {
+        "graph": {"nodes": [], "edges": []},
+        "workflow": {
+            "nodes": [
+                {"name": "registry_1", "tool_class": "RegistryTool"},
+                {"name": "local_1", "tool_class": "LocalTool"},
+                {"name": "local_2", "tool_class": "LocalTool"},
+            ],
+            "edges": [],
+        },
+        "gui": {"nodes": {}},
+        "metadata": {"display_name": "Workflow"},
+    }
+    store.root_dir.mkdir(parents=True, exist_ok=True)
+    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+
+    document = store.export_workflow("wf")
+
+    assert [item.model_dump() for item in document.required_packages] == [
+        {"name": "registry-pkg", "version": "2.0.0"}
+    ]
+    assert len(document.local_tools) == 1
+    assert document.local_tools[0].tool_name == "LocalTool"
+    assert document.local_tools[0].node_ids == ["local_1", "local_2"]
+
+
+def test_export_workflow_marks_graph_only_local_tools(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {
+            "nodes": [
+                {
+                    "id": "local_1",
+                    "name": "Local",
+                    "tool_name": "LocalTool",
+                    "position": [0, 0],
+                    "parameters": {},
+                }
+            ],
+            "edges": [],
+        },
+        "workflow": {"nodes": [], "edges": []},
+        "gui": {"nodes": {}},
+        "metadata": {"display_name": "Workflow"},
+    }
+    store.root_dir.mkdir(parents=True, exist_ok=True)
+    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+
+    document = store.export_workflow("wf")
+
+    assert document.required_packages == []
+    assert len(document.local_tools) == 1
+    assert document.local_tools[0].tool_name == "LocalTool"
+    assert document.local_tools[0].node_ids == ["local_1"]
+
+
+def test_export_workflow_collects_nested_sub_workflow_packages(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {"nodes": [], "edges": []},
+        "workflow": {
+            "nodes": [
+                {
+                    "name": "sub_1",
+                    "tool_class": "__sub_workflow__",
+                    "sub_workflow": {
+                        "nodes": [
+                            {
+                                "name": "inner_1",
+                                "tool_class": "InnerTool",
+                                "tool_package": "inner-pkg",
+                                "tool_package_version": "0.1.0",
+                            }
+                        ],
+                        "edges": [],
+                    },
+                }
+            ],
+            "edges": [],
+        },
+        "gui": {"nodes": {}},
+        "metadata": {"display_name": "Workflow"},
+    }
+    store.root_dir.mkdir(parents=True, exist_ok=True)
+    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+
+    document = store.export_workflow("wf")
+
+    assert [item.model_dump() for item in document.required_packages] == [
+        {"name": "inner-pkg", "version": "0.1.0"}
+    ]
+
+
+def test_parse_import_document_rejects_malformed_json(
+    store: WorkflowStoreService,
+) -> None:
+    with pytest.raises(WorkflowImportParseError):
+        store.parse_import_document(b"{bad json")
+
+
+def test_parse_import_document_rejects_non_utf_json(
+    store: WorkflowStoreService,
+) -> None:
+    with pytest.raises(WorkflowImportParseError):
+        store.parse_import_document(b"\xff")
+
+
+def test_parse_import_document_reconstructs_missing_graph_from_library(
+    store: WorkflowStoreService,
+) -> None:
+    payload = {
+        "bioimageflow_export": True,
+        "export_version": "1.0",
+        "exported_at": "2026-04-30T10:30:00Z",
+        "workflow": {
+            "name": "legacy",
+            "display_name": "Legacy",
+            "description": None,
+            "storage_path": None,
+            "library": {
+                "nodes": [
+                    {
+                        "name": "n1",
+                        "display_name": "Node",
+                        "tool_class": "ExistingTool",
+                        "constants": {"threshold": 3},
+                    }
+                ],
+                "edges": [],
+            },
+            "gui": {"nodes": {"n1": {"position": [4, 5]}}},
+            "metadata": {},
+        },
+        "required_packages": [],
+        "local_tools": [],
+    }
+
+    document = store.parse_import_document(json.dumps(payload).encode())
+
+    assert document.workflow.graph["nodes"][0]["id"] == "n1"
+    assert document.workflow.graph["nodes"][0]["position"] == [4.0, 5.0]
+    assert document.workflow.graph["nodes"][0]["parameters"] == {"threshold": 3}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"bioimageflow_export": True, "export_version": "2.0"},
+        {
+            "bioimageflow_export": True,
+            "export_version": "1.0",
+            "exported_at": "2026-04-30T10:30:00Z",
+            "workflow": {
+                "name": "wf",
+                "display_name": "Workflow",
+                "description": None,
+                "storage_path": None,
+                "graph": [],
+                "library": {"nodes": [], "edges": []},
+                "gui": {"nodes": {}},
+                "metadata": {},
+            },
+            "required_packages": [],
+            "local_tools": [],
+        },
+    ],
+)
+def test_parse_import_document_rejects_invalid_payloads(
+    store: WorkflowStoreService,
+    payload: dict,
+) -> None:
+    with pytest.raises(ValueError):
+        store.parse_import_document(json.dumps(payload).encode())
+
+
+def test_import_workflow_saves_with_managed_storage_path(
+    store: WorkflowStoreService,
+) -> None:
+    document = _export_document(name="imported")
+
+    response = store.import_workflow(document)
+
+    assert response.info.name == "imported"
+    assert response.info.display_name == "Imported"
+    assert response.info.storage_path == str(store.storage_base_dir / "imported")
+    assert [item.name for item in store.list_workflows()] == ["imported"]
+    raw = json.loads((store.root_dir / "imported.json").read_text(encoding="utf-8"))
+    assert raw["metadata"]["storage_path"] == str(store.storage_base_dir / "imported")
+    assert raw["workflow"]["config"]["storage_path"] == str(store.storage_base_dir / "imported")
+
+
+def test_import_workflow_name_override_and_conflict(
+    store: WorkflowStoreService,
+) -> None:
+    store.create_workflow(WorkflowCreate(name="imported"))
+    document = _export_document(name="imported")
+
+    with pytest.raises(FileExistsError):
+        store.import_workflow(document)
+
+    response = store.import_workflow(document, name_override="imported_copy")
+
+    assert response.info.name == "imported_copy"
+    assert (store.root_dir / "imported_copy.json").exists()
+
+
+def test_import_workflow_reports_missing_packages_and_tools(
+    store: WorkflowStoreService,
+) -> None:
+    library = {
+        "nodes": [
+            {
+                "name": "removed_1",
+                "tool_class": "RemovedTool",
+                "tool_package": "missing-pkg",
+                "tool_package_version": "9.9.9",
+            }
+        ],
+        "edges": [],
+    }
+    graph = {
+        "nodes": [
+            {
+                "id": "removed_1",
+                "name": "Removed",
+                "tool_name": "RemovedTool",
+                "position": [0, 0],
+                "parameters": {},
+            }
+        ],
+        "edges": [],
+    }
+    document = _export_document(name="imported", library=library, graph=graph)
+
+    response = store.import_workflow(document)
+
+    assert response.missing_packages[0].package_name == "missing-pkg"
+    assert response.missing_packages[0].required_version == "9.9.9"
+    assert response.missing_tools[0].node_id == "removed_1"
+    assert response.missing_tools[0].tool_name == "RemovedTool"
+
+
+def test_import_workflow_preserves_sub_workflow_without_missing_outer_marker(
+    store: WorkflowStoreService,
+    registry: ToolRegistryService,
+) -> None:
+    registry.register_tool(
+        "ExistingTool",
+        ToolMetadata(
+            name="ExistingTool",
+            display_name="Existing Tool",
+            package="missing-pkg",
+            package_version="1.0.0",
+            tool_type="ProcessingTool",
+        ),
+    )
+    sub_workflow = {
+        "nodes": [
+            {
+                "name": "inner_1",
+                "tool_class": "ExistingTool",
+                "tool_package": "missing-pkg",
+                "tool_package_version": "1.0.0",
+            }
+        ],
+        "edges": [],
+    }
+    library = {
+        "nodes": [
+            {
+                "name": "sub_1",
+                "tool_class": "__sub_workflow__",
+                "sub_workflow": sub_workflow,
+            }
+        ],
+        "edges": [],
+    }
+    document = _export_document(
+        name="imported",
+        library=library,
+        graph={
+            "nodes": [
+                {
+                    "id": "sub_1",
+                    "name": "Sub",
+                    "tool_name": "__sub_workflow__",
+                    "position": [0, 0],
+                    "parameters": {},
+                }
+            ],
+            "edges": [],
+        },
+    )
+
+    response = store.import_workflow(document)
+
+    assert response.missing_packages == []
+    assert response.missing_tools == []
+    raw = json.loads((store.root_dir / "imported.json").read_text(encoding="utf-8"))
+    assert raw["workflow"]["nodes"][0]["sub_workflow"] == sub_workflow
+
+
+def test_import_workflow_preserves_raw_graph_nested_sub_workflow_fields(
+    store: WorkflowStoreService,
+) -> None:
+    graph = {
+        "nodes": [
+            {
+                "id": "sub_1",
+                "name": "Sub",
+                "tool_name": "__sub_workflow__",
+                "position": [0, 0],
+                "parameters": {},
+                "sub_workflow": {
+                    "nodes": [
+                        {
+                            "id": "inner_1",
+                            "name": "Inner",
+                            "tool_name": "InnerTool",
+                            "position": [1, 2],
+                            "parameters": {},
+                        }
+                    ],
+                    "edges": [],
+                },
+            }
+        ],
+        "edges": [],
+    }
+    document = _export_document(name="imported", graph=graph)
+
+    store.import_workflow(document)
+
+    raw = json.loads((store.root_dir / "imported.json").read_text(encoding="utf-8"))
+    assert raw["graph"]["nodes"][0]["sub_workflow"] == graph["nodes"][0]["sub_workflow"]

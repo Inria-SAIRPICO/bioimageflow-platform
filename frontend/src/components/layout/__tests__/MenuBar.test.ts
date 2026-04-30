@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { AxiosError } from 'axios'
 import PrimeVue from 'primevue/config'
 import Aura from '@primevue/themes/aura'
 
@@ -128,10 +129,71 @@ describe('MenuBar', () => {
       const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
       const labels = workflow.items.map((item: any) => item.label)
 
-      expect(labels).toEqual(['New', 'Open', 'Save', 'Save As', 'Delete'])
+      expect(labels).toEqual(['New', 'Open', 'Save', 'Save As', 'Import', 'Export', 'Delete'])
       expect(labels).not.toContain('Dependencies')
       expect(labels).not.toContain('Use Installed Versions')
       expect(workflow.items.find((item: any) => item.label === 'Save As').icon).toBe('pi pi-copy')
+      expect(workflow.items.find((item: any) => item.label === 'Import').icon).toBe('pi pi-upload')
+      expect(workflow.items.find((item: any) => item.label === 'Export').icon).toBe('pi pi-download')
+    })
+
+    it('disables Export when no workflow is active', () => {
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      expect(workflow.items.find((item: any) => item.label === 'Export').disabled).toBe(true)
+    })
+
+    it('calls the workflow export action for the current workflow', async () => {
+      const workflow = useWorkflowStore()
+      workflow.current = {
+        name: 'cell_segmentation',
+        display_name: 'Cell segmentation',
+        path: '/tmp/cell_segmentation.json',
+        last_modified: '2026-04-29T00:00:00Z',
+      }
+      const exportWorkflow = vi
+        .spyOn(workflow, 'exportWorkflow')
+        .mockResolvedValue(undefined)
+
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      await workflowMenu.items.find((item: any) => item.label === 'Export').command()
+
+      expect(exportWorkflow).toHaveBeenCalledWith('cell_segmentation')
+    })
+
+    it('shows the import rename dialog when upload returns a conflict', async () => {
+      apiMocks.post.mockRejectedValueOnce(new AxiosError(
+        'conflict',
+        undefined,
+        undefined,
+        undefined,
+        {
+          status: 409,
+          statusText: 'Conflict',
+          headers: {},
+          config: {} as any,
+          data: {
+            detail: "Workflow 'wf' already exists",
+            suggested_name: 'wf_2',
+          },
+        },
+      ))
+      const wrapper = mountMenuBar()
+      const input = wrapper.find('[data-testid="workflow-import-input"]')
+      Object.defineProperty(input.element, 'files', {
+        value: [new File(['{}'], 'wf.bioimageflow.json', { type: 'application/json' })],
+        configurable: true,
+      })
+
+      await input.trigger('change')
+      await flushPromises()
+
+      const vm = wrapper.vm as any
+      expect(vm.importRenameDialogVisible).toBe(true)
     })
 
     it('shows an edit-name affordance when a workflow is active', async () => {

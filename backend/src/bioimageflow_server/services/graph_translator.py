@@ -24,7 +24,12 @@ from bioimageflow_server.models.graph import (
     PositionalEdge,
 )
 from bioimageflow_server.models.validation import GraphValidationError
-from bioimageflow_server.models.workflow import MissingPackage, MissingTool
+from bioimageflow_server.models.workflow import (
+    LocalToolReference,
+    MissingPackage,
+    MissingTool,
+    RequiredPackage,
+)
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 try:
@@ -43,6 +48,7 @@ POSITIONAL_KEY = "__positional__"
 # ``None`` (unlimited) to a very large integer at translation time.
 # Documented in plan §"Cross-Plan Notes #8".
 _UNLIMITED_MAX_EXECUTIONS = 2**31 - 1
+_SUB_WORKFLOW_TOOL_NAMES = {"__sub_workflow__"}
 
 
 @dataclass
@@ -142,10 +148,11 @@ def lib_dict_to_graph_state(
         else:
             position = (0.0, 0.0)
         constants = raw_node.get("constants", {})
-        parameters = {
-            str(key): _deserialize_constant_envelope(value)
-            for key, value in constants.items()
-        } if isinstance(constants, dict) else {}
+        parameters = (
+            {str(key): _deserialize_constant_envelope(value) for key, value in constants.items()}
+            if isinstance(constants, dict)
+            else {}
+        )
         nodes.append(
             NodeState(
                 id=node_id,
@@ -248,7 +255,8 @@ def rebind_lib_dict_versions(
         version = (
             package.active_version
             if package is not None and package.active_version is not None
-            else metadata.package_version if metadata is not None
+            else metadata.package_version
+            if metadata is not None
             else None
         )
         if version is None:
@@ -258,14 +266,95 @@ def rebind_lib_dict_versions(
     return rebound
 
 
+def _iter_workflow_nodes(workflow_data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return workflow nodes, including tolerant nested sub-workflow payloads."""
+    nodes: list[dict[str, Any]] = []
+    seen_containers: set[int] = set()
+
+    def visit(container: dict[str, Any]) -> None:
+        container_id = id(container)
+        if container_id in seen_containers:
+            return
+        seen_containers.add(container_id)
+        raw_nodes = container.get("nodes", [])
+        if isinstance(raw_nodes, list):
+            for raw_node in raw_nodes:
+                if not isinstance(raw_node, dict):
+                    continue
+                nodes.append(raw_node)
+                for key in ("sub_workflow", "workflow", "library", "config"):
+                    nested = raw_node.get(key)
+                    if isinstance(nested, dict):
+                        visit(nested)
+                for nested in raw_node.values():
+                    if (
+                        isinstance(nested, dict)
+                        and nested.get("nodes") is not raw_nodes
+                        and isinstance(nested.get("nodes"), list)
+                    ):
+                        visit(nested)
+
+        for key in ("sub_workflow", "workflow", "library", "config"):
+            nested = container.get(key)
+            if isinstance(nested, dict):
+                visit(nested)
+
+    visit(workflow_data)
+    return nodes
+
+
+def collect_required_packages(
+    workflow_data: dict[str, Any],
+    registry: ToolRegistryService,
+) -> tuple[list[RequiredPackage], list[LocalToolReference]]:
+    """Collect package requirements and non-portable local tool references."""
+    packages: dict[tuple[str, str], RequiredPackage] = {}
+    local_tools: dict[str, list[str]] = {}
+
+    for node in _iter_workflow_nodes(workflow_data):
+        tool_name = str(node.get("tool_class") or node.get("tool_name") or "")
+        node_id = str(node.get("id") or node.get("name") or "")
+        package_name = node.get("tool_package")
+        package_version = node.get("tool_package_version")
+
+        if isinstance(package_name, str) and isinstance(package_version, str):
+            packages.setdefault(
+                (package_name, package_version),
+                RequiredPackage(name=package_name, version=package_version),
+            )
+            continue
+
+        metadata = registry.get_tool(tool_name) if tool_name else None
+        if metadata is not None:
+            packages.setdefault(
+                (metadata.package, metadata.package_version),
+                RequiredPackage(
+                    name=metadata.package,
+                    version=metadata.package_version,
+                ),
+            )
+            continue
+
+        if tool_name and tool_name not in _SUB_WORKFLOW_TOOL_NAMES:
+            local_tools.setdefault(tool_name, [])
+            if node_id:
+                local_tools[tool_name].append(node_id)
+
+    return (
+        [packages[key] for key in sorted(packages)],
+        [
+            LocalToolReference(tool_name=tool_name, node_ids=node_ids)
+            for tool_name, node_ids in sorted(local_tools.items())
+        ],
+    )
+
+
 def _detect_missing_packages(
     workflow_data: dict[str, Any],
     registry: ToolRegistryService,
 ) -> list[MissingPackage]:
     missing: dict[tuple[str, str], MissingPackage] = {}
-    for node in workflow_data.get("nodes", []):
-        if not isinstance(node, dict):
-            continue
+    for node in _iter_workflow_nodes(workflow_data):
         package_name = node.get("tool_package")
         required_version = node.get("tool_package_version")
         node_id = str(node.get("name") or "")
@@ -294,12 +383,12 @@ def _detect_missing_tools(
     registry: ToolRegistryService,
 ) -> list[MissingTool]:
     missing: list[MissingTool] = []
-    for node in workflow_data.get("nodes", []):
-        if not isinstance(node, dict):
-            continue
+    for node in _iter_workflow_nodes(workflow_data):
         node_id = str(node.get("name") or "")
         tool_name = str(node.get("tool_class") or node.get("tool_name") or "")
         if not node_id or not tool_name:
+            continue
+        if tool_name in _SUB_WORKFLOW_TOOL_NAMES:
             continue
         package_name = node.get("tool_package")
         required_version = node.get("tool_package_version")
@@ -316,9 +405,7 @@ def _detect_missing_tools(
                 node_id=node_id,
                 tool_name=tool_name,
                 package_name=package_name if isinstance(package_name, str) else None,
-                required_version=(
-                    required_version if isinstance(required_version, str) else None
-                ),
+                required_version=(required_version if isinstance(required_version, str) else None),
                 installed_versions=list(installed_versions),
             )
         )
@@ -386,8 +473,7 @@ def graph_state_to_lib_dict(
                 GraphValidationError(
                     type="missing_package",
                     detail=(
-                        f"Package '{metadata.package}=={metadata.package_version}'"
-                        f" is not installed"
+                        f"Package '{metadata.package}=={metadata.package_version}' is not installed"
                     ),
                     node=node.id,
                 )
@@ -417,10 +503,7 @@ def graph_state_to_lib_dict(
             errors.append(
                 GraphValidationError(
                     type="invalid_edge_id",
-                    detail=(
-                        f"Edge {edge.id} references unknown source node: "
-                        f"{edge.source_node}"
-                    ),
+                    detail=(f"Edge {edge.id} references unknown source node: {edge.source_node}"),
                     edge_id=edge.id,
                 )
             )
@@ -428,10 +511,7 @@ def graph_state_to_lib_dict(
             errors.append(
                 GraphValidationError(
                     type="invalid_edge_id",
-                    detail=(
-                        f"Edge {edge.id} references unknown target node: "
-                        f"{edge.target_node}"
-                    ),
+                    detail=(f"Edge {edge.id} references unknown target node: {edge.target_node}"),
                     edge_id=edge.id,
                 )
             )
@@ -461,9 +541,7 @@ def graph_state_to_lib_dict(
     # parameter widget) would clobber the upstream value.
     connected_inputs_by_target: dict[str, set[str]] = {}
     for edge in column_edges:
-        connected_inputs_by_target.setdefault(edge.target_node, set()).add(
-            edge.target_input
-        )
+        connected_inputs_by_target.setdefault(edge.target_node, set()).add(edge.target_input)
 
     # --- Emit nodes. ---
     nodes_data: list[dict[str, Any]] = []
@@ -483,9 +561,7 @@ def graph_state_to_lib_dict(
             "tool_class": class_name,
             "tool_module": canonical_module,
             "constants": {},
-            "args": [
-                e.source_node for e in positional_by_target.get(node.id, [])
-            ],
+            "args": [e.source_node for e in positional_by_target.get(node.id, [])],
         }
         if pkg and pkg_ver:
             node_dict["tool_package"] = pkg

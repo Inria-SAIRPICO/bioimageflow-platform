@@ -11,6 +11,7 @@ import type {
   WorkflowCreate,
   WorkflowFile,
   WorkflowInfo,
+  WorkflowImportResponse,
   WorkflowUpdate,
 } from '@/api/types'
 
@@ -31,6 +32,25 @@ function conflictFromError(err: unknown): WorkflowConflictError | null {
     data.detail ?? 'Workflow already exists',
     data.suggested_name,
   )
+}
+
+function filenameFromDisposition(disposition: unknown, fallback: string): string {
+  if (typeof disposition !== 'string') return fallback
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utfMatch?.[1]) return decodeURIComponent(utfMatch[1].replace(/"/g, ''))
+  const match = disposition.match(/filename="?([^";]+)"?/i)
+  return match?.[1] ?? fallback
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.URL.revokeObjectURL(url)
 }
 
 export const useWorkflowStore = defineStore('workflow', () => {
@@ -139,6 +159,44 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  async function exportWorkflow(name: string): Promise<void> {
+    const response = await api.post<Blob>(
+      `/api/v1/workflows/${name}/export`,
+      undefined,
+      { responseType: 'blob' },
+    )
+    const filename = filenameFromDisposition(
+      response.headers?.['content-disposition'],
+      `${name}.bioimageflow.json`,
+    )
+    downloadBlob(response.data, filename)
+  }
+
+  async function importWorkflow(
+    file: File,
+    options: { nameOverride?: string } = {},
+  ): Promise<WorkflowImportResponse> {
+    const body = new FormData()
+    body.append('file', file)
+    if (options.nameOverride) {
+      body.append('name_override', options.nameOverride)
+    }
+    try {
+      const { data } = await api.post<WorkflowImportResponse>(
+        '/api/v1/workflows/import',
+        body,
+      )
+      upsertWorkflow(data.info)
+      missingPackages.value = data.missing_packages ?? []
+      missingTools.value = data.missing_tools ?? []
+      return data
+    } catch (err: unknown) {
+      const conflict = conflictFromError(err)
+      if (conflict) throw conflict
+      throw err
+    }
+  }
+
   async function patchWorkflow(
     name: string,
     patch: WorkflowUpdate,
@@ -198,6 +256,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     loadWorkflow,
     saveWorkflow,
     deleteWorkflow,
+    exportWorkflow,
+    importWorkflow,
     patchWorkflow,
     rebindVersions,
     markDirty,
