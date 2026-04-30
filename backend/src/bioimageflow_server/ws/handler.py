@@ -15,6 +15,7 @@ import asyncio
 import concurrent.futures
 import logging
 import time
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -236,6 +237,13 @@ class ConnectionManager:
             },
         }
         self._enqueue_all(payload)
+
+    async def send_status_snapshot(self, websocket: Any, status: Any) -> None:
+        state = self._states.get(websocket)
+        if state is None:
+            return
+        payload = _status_snapshot_payload(status)
+        self._enqueue_one(state, payload)
 
     async def broadcast_tool_reload(
         self, tool_name: str, tool_metadata: dict
@@ -464,10 +472,50 @@ def _level_to_number(name: str) -> int:
     return value if isinstance(value, int) else 0
 
 
+def _dump_plain(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return _dump_plain(value.model_dump())
+    if isinstance(value, dict):
+        return {k: _dump_plain(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_dump_plain(v) for v in value]
+    return value
+
+
+def _status_snapshot_payload(status: Any) -> dict[str, Any]:
+    if hasattr(status, "model_dump"):
+        payload = status.model_dump()
+    elif isinstance(status, dict):
+        payload = dict(status)
+    else:
+        payload = {
+            "state": getattr(status, "state"),
+            "last_result": getattr(status, "last_result", None),
+            "progress": getattr(status, "progress", None),
+        }
+
+    node_statuses = getattr(status, "node_statuses", None)
+    if node_statuses is None:
+        node_statuses = payload.get("node_statuses", {})
+
+    return {
+        "type": "status_snapshot",
+        "state": payload.get("state", "idle"),
+        "last_result": _dump_plain(payload.get("last_result")),
+        "progress": _dump_plain(payload.get("progress")),
+        "node_statuses": _dump_plain(node_statuses or {}),
+    }
+
+
 # ---- /ws endpoint (Task 3 lives here too) -----------------------------------
 
 
-def register_ws(app: FastAPI, manager: ConnectionManager) -> None:
+def register_ws(
+    app: FastAPI,
+    manager: ConnectionManager,
+    *,
+    status_provider: Callable[[], Any] | None = None,
+) -> None:
     """Register the /ws route on ``app`` using the given ``ConnectionManager``.
 
     Accepts client connections, parses incoming messages against ``ClientMessage``,
@@ -478,6 +526,15 @@ def register_ws(app: FastAPI, manager: ConnectionManager) -> None:
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await manager.connect(websocket)
+        if status_provider is not None:
+            try:
+                await manager.send_status_snapshot(websocket, status_provider())
+            except Exception as exc:  # noqa: BLE001
+                _logger.warning(
+                    "Failed to send WebSocket status snapshot: %r",
+                    exc,
+                    exc_info=exc,
+                )
         try:
             while True:
                 try:

@@ -59,6 +59,14 @@ class ExecutionCompleteMessage(_MessageBase):
     node_statuses: dict[str, Any]
 
 
+class StatusSnapshotMessage(_MessageBase):
+    type: Literal["status_snapshot"] = "status_snapshot"
+    state: Literal["running", "idle"]
+    last_result: dict[str, Any] | None = None
+    progress: dict[str, Any] | None = None
+    node_statuses: dict[str, Any] = {}
+
+
 class ToolReloadMessage(_MessageBase):
     type: Literal["tool_reload"] = "tool_reload"
     tool_name: str
@@ -120,6 +128,7 @@ ServerMessage = Annotated[
         NodeStateMessage,
         LogMessage,
         ExecutionCompleteMessage,
+        StatusSnapshotMessage,
         ToolReloadMessage,
         ToolRemovedMessage,
         SystemErrorMessage,
@@ -150,6 +159,7 @@ __all__ = [
     "ServerMessage",
     "SubscribeLogsMessage",
     "SystemErrorMessage",
+    "StatusSnapshotMessage",
     "ToolReloadMessage",
     "ToolRemovedMessage",
 ]

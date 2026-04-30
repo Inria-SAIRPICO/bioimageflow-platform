@@ -41,6 +41,10 @@ interface ExecutionStatusResponse extends ExecutionStatus {
   node_statuses?: Record<string, NodeStatus>
 }
 
+interface ExecutionStatusSnapshot extends ExecutionStatus {
+  node_statuses?: Record<string, NodeStatus>
+}
+
 interface ClearResponse {
   node_statuses: Record<string, NodeStatus>
 }
@@ -175,10 +179,14 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyProgress(p: ProgressInfo) {
+    state.value = 'running'
     progress.value = p
   }
 
   function applyNodeState(msg: NodeStateMessage) {
+    if (msg.status === 'running') {
+      state.value = 'running'
+    }
     nodeStatuses.value = {
       ...nodeStatuses.value,
       [msg.node_id]: {
@@ -188,6 +196,15 @@ export const useExecutionStore = defineStore('execution', () => {
         error: msg.error ?? null,
         traceback: msg.traceback ?? null,
       },
+    }
+  }
+
+  function applyStatusSnapshot(snapshot: ExecutionStatusSnapshot) {
+    state.value = snapshot.state
+    lastResult.value = snapshot.last_result
+    progress.value = snapshot.progress
+    if (snapshot.node_statuses) {
+      nodeStatuses.value = { ...snapshot.node_statuses }
     }
   }
 
@@ -264,6 +281,7 @@ export const useExecutionStore = defineStore('execution', () => {
     clear,
     applyProgress,
     applyNodeState,
+    applyStatusSnapshot,
     applyExecutionComplete,
   }
 })

@@ -7,6 +7,7 @@ const executionStoreMock = {
   applyProgress: vi.fn(),
   applyNodeState: vi.fn(),
   applyExecutionComplete: vi.fn(),
+  applyStatusSnapshot: vi.fn(),
   fetchStatus: vi.fn(async () => {}),
 }
 
@@ -239,6 +240,30 @@ describe('useWebSocket', () => {
     })
 
     expect(executionStoreMock.applyExecutionComplete).toHaveBeenCalledTimes(1)
+  })
+
+  it('dispatches status_snapshot to executionStore.applyStatusSnapshot', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    useWebSocket().connect('ws://test/ws')
+    latestSocket().open()
+
+    latestSocket().receive({
+      type: 'status_snapshot',
+      state: 'running',
+      last_result: null,
+      progress: { node_id: 'n1', row: 2, total_rows: 5 },
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'running', cached: false },
+      },
+    })
+
+    expect(executionStoreMock.applyStatusSnapshot).toHaveBeenCalledTimes(1)
+    expect(executionStoreMock.applyStatusSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: 'running',
+        progress: { node_id: 'n1', row: 2, total_rows: 5 },
+      }),
+    )
   })
 
   it('dispatches tool_reload to toolRegistryStore.applyToolReload', async () => {
@@ -504,7 +529,7 @@ describe('useWebSocket', () => {
     }
   })
 
-  it('successful reconnect executes recovery sequence', async () => {
+  it('successful reconnect does not fetch execution status over REST', async () => {
     const { useWebSocket } = await import('@/composables/useWebSocket')
     useWebSocket().connect('ws://test/ws')
     latestSocket().open()
@@ -518,10 +543,23 @@ describe('useWebSocket', () => {
     await flushMicrotasks()
     // New socket opens
     latestSocket().open()
+    latestSocket().receive({
+      type: 'status_snapshot',
+      state: 'running',
+      last_result: null,
+      progress: { node_id: 'n1', row: 1, total_rows: 3 },
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'running', cached: false },
+      },
+    })
     await flushMicrotasks()
 
-    expect(executionStoreMock.fetchStatus).toHaveBeenCalled()
+    expect(executionStoreMock.fetchStatus).not.toHaveBeenCalled()
+    expect(executionStoreMock.applyStatusSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'running' }),
+    )
     expect(toolRegistryStoreMock.fetchTools).toHaveBeenCalled()
+    expect(subscribeMessages(latestSocket())).toHaveLength(1)
   })
 
   it('reconnect sends an unfiltered subscription instead of replaying display filters', async () => {

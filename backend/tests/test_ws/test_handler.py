@@ -303,6 +303,44 @@ async def test_broadcast_execution_complete_serializes_pydantic_node_statuses() 
     assert payload["node_statuses"]["n2"]["error"] == "boom"
 
 
+async def test_send_status_snapshot_serializes_pydantic_node_statuses() -> None:
+    from bioimageflow_server.models.validation import NodeStatus
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.send_status_snapshot(
+        ws,
+        {
+            "state": "running",
+            "last_result": None,
+            "progress": {"node_id": "n1", "row": 2, "total_rows": 5},
+            "node_statuses": {
+                "n1": NodeStatus(node_id="n1", status="running", cached=False),
+            },
+        },
+    )
+    await _drain(mgr)
+
+    assert ws.sent[0] == {
+        "type": "status_snapshot",
+        "state": "running",
+        "last_result": None,
+        "progress": {"node_id": "n1", "row": 2, "total_rows": 5},
+        "node_statuses": {
+            "n1": {
+                "node_id": "n1",
+                "status": "running",
+                "cached": False,
+                "error": None,
+                "traceback": None,
+            }
+        },
+    }
+
+
 async def test_broadcast_tool_reload() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -704,7 +742,7 @@ async def test_disconnect_stops_sender_task() -> None:
 # These use FastAPI TestClient (sync context manager, which runs its own loop).
 
 
-def _make_app_with_ws():
+def _make_app_with_ws(status_provider=None):
     from contextlib import asynccontextmanager
 
     from fastapi import FastAPI
@@ -720,7 +758,7 @@ def _make_app_with_ws():
         manager._loop = None  # type: ignore[attr-defined]
 
     app = FastAPI(lifespan=_lifespan)
-    register_ws(app, manager)
+    register_ws(app, manager, status_provider=status_provider)
     return app, manager
 
 
@@ -737,6 +775,28 @@ def test_endpoint_connect_no_initial_message() -> None:
             ws.send_json({"type": "subscribe_logs", "message_id": "m1"})
             msg = ws.receive_json()
             assert msg == {"type": "ack", "ref": "m1"}
+
+
+def test_endpoint_sends_initial_status_snapshot_when_provider_configured() -> None:
+    from fastapi.testclient import TestClient
+
+    app, _ = _make_app_with_ws(
+        status_provider=lambda: {
+            "state": "running",
+            "last_result": None,
+            "progress": {"node_id": "n1", "row": 2, "total_rows": 5},
+            "node_statuses": {
+                "n1": {"node_id": "n1", "status": "running", "cached": False}
+            },
+        }
+    )
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "status_snapshot"
+            assert msg["state"] == "running"
+            assert msg["progress"]["row"] == 2
+            assert msg["node_statuses"]["n1"]["status"] == "running"
 
 
 def test_endpoint_subscribe_logs_without_message_id_no_ack() -> None:
@@ -824,7 +884,7 @@ def test_endpoint_clean_disconnect() -> None:
 
     app, manager = _make_app_with_ws()
     with TestClient(app) as client:
-        with client.websocket_connect("/ws") as ws:
+        with client.websocket_connect("/ws"):
             pass  # close immediately
         # After closing, the server-side should have removed the connection.
         # Give the loop a moment to process the disconnect.

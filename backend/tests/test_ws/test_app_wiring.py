@@ -57,6 +57,7 @@ def test_models_package_reexports_ws_messages() -> None:
         "ProgressMessage",
         "NodeStateMessage",
         "LogMessage",
+        "StatusSnapshotMessage",
         "SubscribeLogsMessage",
         "ServerMessage",
         "ClientMessage",
@@ -105,6 +106,8 @@ def test_integration_subscribe_ack_roundtrip() -> None:
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
+            snapshot = ws.receive_json()
+            assert snapshot["type"] == "status_snapshot"
             ws.send_json({"type": "subscribe_logs", "message_id": "m1"})
             msg = ws.receive_json()
             assert msg == {"type": "ack", "ref": "m1"}
