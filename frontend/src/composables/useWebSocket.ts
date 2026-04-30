@@ -140,6 +140,15 @@ function dispatch(raw: unknown) {
         'applyToolReload',
         msg,
       )
+      mirrorToolReloadToLogger(msg)
+      break
+    case 'tool_removed':
+      callIfExists(
+        useToolRegistryStore() as unknown as Record<string, unknown>,
+        'applyToolRemoved',
+        msg,
+      )
+      mirrorToolRemovedToLogger(msg)
       break
     case 'package_install':
       callIfExists(
@@ -155,6 +164,10 @@ function dispatch(raw: unknown) {
         'applyEnvironmentStatus',
         msg,
       )
+      mirrorEnvironmentStatusToLogger(msg)
+      break
+    case 'system_error':
+      mirrorSystemError(msg)
       break
     case 'ack': {
       const ref = msg.ref as string | undefined
@@ -201,17 +214,62 @@ function dispatch(raw: unknown) {
   }
 }
 
+function addSystemLog(level: string, message: string, timestamp?: number) {
+  useLoggerStore().addEntry({
+    level,
+    message,
+    nodeId: null,
+    timestamp: typeof timestamp === 'number' && Number.isFinite(timestamp)
+      ? timestamp
+      : Date.now() / 1000,
+  })
+}
+
+function mirrorToolReloadToLogger(msg: Record<string, unknown>) {
+  if (typeof msg.tool_name !== 'string') return
+  addSystemLog('INFO', `Tool loaded: ${msg.tool_name}`)
+}
+
+function mirrorToolRemovedToLogger(msg: Record<string, unknown>) {
+  if (typeof msg.tool_name !== 'string') return
+  addSystemLog('WARNING', `Tool removed: ${msg.tool_name}`)
+}
+
 function mirrorPackageInstallToLogger(msg: Record<string, unknown>) {
   if (typeof msg.package_name !== 'string' || typeof msg.status !== 'string') return
   const detail = typeof msg.detail === 'string' && msg.detail.length > 0
     ? `: ${msg.detail}`
     : ''
-  useLoggerStore().addEntry({
-    level: msg.status === 'failed' ? 'ERROR' : 'INFO',
-    message: `Package ${msg.package_name} ${msg.status}${detail}`,
-    nodeId: null,
-    timestamp: Date.now() / 1000,
-  })
+  addSystemLog(
+    msg.status === 'failed' ? 'ERROR' : 'INFO',
+    `Package ${msg.package_name} ${msg.status}${detail}`,
+  )
+}
+
+function mirrorEnvironmentStatusToLogger(msg: Record<string, unknown>) {
+  if (typeof msg.env_name !== 'string' || typeof msg.status !== 'string') return
+  addSystemLog('INFO', `Environment ${msg.env_name} ${msg.status}`)
+}
+
+function mirrorSystemError(msg: Record<string, unknown>) {
+  const code = typeof msg.code === 'string' ? msg.code : 'system_error'
+  const detail = typeof msg.detail === 'string' ? msg.detail : 'Server system error'
+  const fullDetail = `${code}: ${detail}`
+  addSystemLog(
+    'ERROR',
+    fullDetail,
+    typeof msg.timestamp === 'number' ? msg.timestamp : undefined,
+  )
+  try {
+    useErrorStore().report({
+      kind: 'websocket_error',
+      detail: fullDetail,
+      fullDetail,
+      logToLogger: false,
+    })
+  } catch {
+    /* */
+  }
 }
 
 function sendUnfilteredLogSubscription() {

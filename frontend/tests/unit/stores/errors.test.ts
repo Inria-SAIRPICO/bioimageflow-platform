@@ -1,6 +1,7 @@
 import { setActivePinia, createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useErrorStore } from '@/stores/errors'
+import { useLoggerStore } from '@/stores/logger'
 
 describe('useErrorStore', () => {
   beforeEach(() => {
@@ -49,6 +50,27 @@ describe('useErrorStore', () => {
     expect(entry.field).toBe('graph')
     expect(entry.status).toBe(500)
     expect(entry.nodeId).toBe('n1')
+  })
+
+  it('report() mirrors the full error detail to the logger', () => {
+    const store = useErrorStore()
+    const logger = useLoggerStore()
+
+    store.report({
+      kind: 'execution_failed',
+      detail: 'node failed',
+      fullDetail: 'node failed\nTraceback line 1\nTraceback line 2',
+      nodeId: 'n1',
+      status: 500,
+      field: 'image',
+    })
+
+    expect(logger.entries).toHaveLength(1)
+    expect(logger.entries[0]).toMatchObject({
+      level: 'ERROR',
+      message: 'node failed\nTraceback line 1\nTraceback line 2',
+      nodeId: 'n1',
+    })
   })
 
   it('report() with the same kind twice produces two entries', () => {

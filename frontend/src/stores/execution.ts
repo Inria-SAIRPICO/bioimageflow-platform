@@ -93,7 +93,11 @@ export const useExecutionStore = defineStore('execution', () => {
     }
   }
 
-  async function run(graph: GraphState, nodes?: string[]) {
+  async function run(
+    graph: GraphState,
+    nodes?: string[],
+    workflowName?: string | null,
+  ) {
     if (state.value === 'running') {
       throw new Error('already running')
     }
@@ -105,8 +109,20 @@ export const useExecutionStore = defineStore('execution', () => {
     progress.value = null
     nodeStatuses.value = {}
     try {
-      await api.post('/api/v1/execution/run', { graph, nodes })
+      await api.post('/api/v1/execution/run', {
+        graph,
+        nodes,
+        workflow_name: workflowName ?? null,
+      })
       state.value = 'running'
+      useLoggerStore().addEntry({
+        level: 'INFO',
+        message: nodes?.length
+          ? `Execution started for ${nodes.length} selected node${nodes.length === 1 ? '' : 's'}`
+          : 'Execution started',
+        nodeId: null,
+        timestamp: Date.now() / 1000,
+      })
     } catch (e: unknown) {
       state.value = 'idle'
       const err = e as RunError
@@ -117,22 +133,44 @@ export const useExecutionStore = defineStore('execution', () => {
         validationErrors.value = err.response?.data?.errors ?? []
       }
       error.value = messageFromError(err)
+      useLoggerStore().addEntry({
+        level: 'ERROR',
+        message: error.value,
+        nodeId: null,
+        timestamp: Date.now() / 1000,
+      })
       throw e
     }
   }
 
   async function stop() {
     await api.post('/api/v1/execution/stop')
+    useLoggerStore().addEntry({
+      level: 'INFO',
+      message: 'Execution stop requested',
+      nodeId: null,
+      timestamp: Date.now() / 1000,
+    })
   }
 
-  async function clear(graph: GraphState, nodeIds: string[]) {
+  async function clear(
+    graph: GraphState,
+    nodeIds: string[],
+    workflowName?: string | null,
+  ) {
     const { data } = await api.post<ClearResponse>(
       '/api/v1/execution/clear',
-      { graph, nodes: nodeIds },
+      { graph, nodes: nodeIds, workflow_name: workflowName ?? null },
     )
     if (data?.node_statuses) {
       nodeStatuses.value = { ...nodeStatuses.value, ...data.node_statuses }
     }
+    useLoggerStore().addEntry({
+      level: 'INFO',
+      message: `Execution cache cleared for ${nodeIds.length} node${nodeIds.length === 1 ? '' : 's'}`,
+      nodeId: null,
+      timestamp: Date.now() / 1000,
+    })
     return data
   }
 
@@ -162,40 +200,7 @@ export const useExecutionStore = defineStore('execution', () => {
     }
 
     if (!payload.success) {
-      _logFailure(payload)
       _reportFailure(payload)
-    }
-  }
-
-  function _logFailure(payload: ExecutionResult): void {
-    const logger = useLoggerStore()
-    const timestamp = Date.now() / 1000
-    const failedEntries = Object.entries(payload.node_statuses ?? {}).filter(
-      ([, s]) => s.status === 'failed',
-    )
-
-    for (const [nodeId, status] of failedEntries) {
-      const parts = [
-        status.error ?? 'Execution failed',
-        status.traceback ? status.traceback : null,
-      ].filter((part): part is string => Boolean(part))
-      logger.addEntry({
-        level: 'ERROR',
-        message: parts.join('\n'),
-        nodeId,
-        timestamp,
-      })
-    }
-
-    if (failedEntries.length === 0) {
-      for (const err of payload.errors ?? []) {
-        logger.addEntry({
-          level: 'ERROR',
-          message: stringifyExecutionError(err),
-          nodeId: null,
-          timestamp,
-        })
-      }
     }
   }
 

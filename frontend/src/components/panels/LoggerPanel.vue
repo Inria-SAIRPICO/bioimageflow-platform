@@ -209,7 +209,10 @@ watch(
         :icon="autoScope ? 'pi pi-link' : 'pi pi-unlink'"
         :severity="autoScope ? undefined : 'secondary'"
         :outlined="!autoScope"
-        :class="{ 'logger-panel__auto-scope--active': autoScope }"
+        :class="{
+          'logger-panel__auto-scope--active': autoScope,
+          'logger-panel__auto-scope--inactive': !autoScope,
+        }"
         text
         aria-label="Auto-scope to selected node"
         data-testid="log-auto-scope"
@@ -328,6 +331,16 @@ watch(
   width: 12rem;
 }
 
+.logger-panel__auto-scope--active {
+  color: var(--p-primary-color, #2563eb);
+}
+
+.logger-panel__auto-scope--inactive {
+  color: var(--p-text-color, #111827);
+  background: var(--p-surface-100, #f3f4f6);
+  border: 1px solid var(--p-surface-300, #d1d5db);
+}
+
 .logger-panel__search-wrap {
   display: inline-flex;
   align-items: center;
@@ -337,11 +350,6 @@ watch(
 .logger-panel__search {
   width: 16rem;
   min-width: 10rem;
-}
-
-.logger-panel__auto-scope--active {
-  background: var(--p-primary-50, #eff6ff);
-  box-shadow: inset 0 0 0 1px var(--p-primary-color, #2563eb);
 }
 
 .logger-panel__list {

@@ -123,6 +123,7 @@ describe('LoggerPanel', () => {
     expect(button.find('.pi-link').exists()).toBe(true)
     await button.trigger('click')
     expect(button.classes()).not.toContain('logger-panel__auto-scope--active')
+    expect(button.classes()).toContain('logger-panel__auto-scope--inactive')
     expect(button.find('.pi-unlink').exists()).toBe(true)
   })
 

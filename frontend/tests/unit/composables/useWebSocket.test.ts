@@ -12,6 +12,7 @@ const executionStoreMock = {
 
 const toolRegistryStoreMock = {
   applyToolReload: vi.fn(),
+  applyToolRemoved: vi.fn(),
   applyPackageInstall: vi.fn(),
   applyEnvironmentStatus: vi.fn(),
   fetchTools: vi.fn(async () => {}),
@@ -252,6 +253,33 @@ describe('useWebSocket', () => {
     })
 
     expect(toolRegistryStoreMock.applyToolReload).toHaveBeenCalledTimes(1)
+    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'INFO',
+        message: 'Tool loaded: t1',
+        nodeId: null,
+      }),
+    )
+  })
+
+  it('dispatches tool_removed to toolRegistryStore.applyToolRemoved and logs it', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    useWebSocket().connect('ws://test/ws')
+    latestSocket().open()
+
+    latestSocket().receive({
+      type: 'tool_removed',
+      tool_name: 'OldTool',
+    })
+
+    expect(toolRegistryStoreMock.applyToolRemoved).toHaveBeenCalledTimes(1)
+    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'WARNING',
+        message: 'Tool removed: OldTool',
+        nodeId: null,
+      }),
+    )
   })
 
   it('dispatches package_install to toolRegistryStore.applyPackageInstall', async () => {
@@ -310,6 +338,40 @@ describe('useWebSocket', () => {
     })
 
     expect(toolRegistryStoreMock.applyEnvironmentStatus).toHaveBeenCalledTimes(1)
+    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'INFO',
+        message: 'Environment napari running',
+        nodeId: null,
+      }),
+    )
+  })
+
+  it('routes system_error to error history and logger with server details', async () => {
+    const { useWebSocket } = await import('@/composables/useWebSocket')
+    useWebSocket().connect('ws://test/ws')
+    latestSocket().open()
+
+    latestSocket().receive({
+      type: 'system_error',
+      code: 'thumbnail_failed',
+      detail: 'Thumbnail generation failed',
+      timestamp: 12.5,
+    })
+
+    expect(errorStoreMock.report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'websocket_error',
+        detail: 'thumbnail_failed: Thumbnail generation failed',
+        fullDetail: 'thumbnail_failed: Thumbnail generation failed',
+      }),
+    )
+    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith({
+      level: 'ERROR',
+      message: 'thumbnail_failed: Thumbnail generation failed',
+      nodeId: null,
+      timestamp: 12.5,
+    })
   })
 
   it('ack resolves the pending Promise for the matching message_id', async () => {

@@ -5,6 +5,7 @@ import PrimeVue from 'primevue/config'
 import ConfirmationService from 'primevue/confirmationservice'
 import Aura from '@primevue/themes/aura'
 import App from '@/App.vue'
+import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 
 const { connectMock, disconnectMock } = vi.hoisted(() => ({
@@ -125,6 +126,25 @@ describe('AppShell', () => {
     expect(panelIds).toContain('nodePanel')
     expect(panelIds).toContain('dataTable')
     expect(panelIds).toContain('logger')
+  })
+
+  it('makes the Data Table the active bottom panel by default', async () => {
+    mountApp()
+    await flushPromises()
+
+    expect(panels.get('dataTable').api.setActive).toHaveBeenCalledTimes(1)
+    expect(panels.get('logger').api.setActive).not.toHaveBeenCalled()
+  })
+
+  it('does not poll execution status while execution is running', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+    useExecutionStore().state = 'running'
+
+    mountApp()
+    await flushPromises()
+
+    expect(setIntervalSpy).not.toHaveBeenCalled()
+    setIntervalSpy.mockRestore()
   })
 
   it('tools panel has initialWidth of 320', async () => {

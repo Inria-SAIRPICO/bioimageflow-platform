@@ -29,7 +29,6 @@ import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetBrowserStore } from './stores/datasetBrowser'
-import { useExecutionStore } from './stores/execution'
 import { useFileDrop } from './composables/useFileDrop'
 import { useExecutionLock } from './composables/useExecutionLock'
 import { useSettingsPanel } from './composables/useSettingsPanel'
@@ -57,32 +56,12 @@ const shortcutEnabled = isMac() || isPywebview()
 
 const uiStore = useUIStore()
 const datasetBrowserStore = useDatasetBrowserStore()
-const executionStore = useExecutionStore()
 const websocket = useWebSocket()
-let statusPollTimer: ReturnType<typeof setInterval> | null = null
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
 // executionStore.isRunning anywhere in the tree. The composable has a
 // side-effectful watch; the return values are unused here.
 useExecutionLock()
-
-function stopStatusPolling() {
-  if (statusPollTimer !== null) {
-    clearInterval(statusPollTimer)
-    statusPollTimer = null
-  }
-}
-
-function startStatusPolling() {
-  if (statusPollTimer !== null) return
-  statusPollTimer = setInterval(() => {
-    if (!executionStore.isRunning) {
-      stopStatusPolling()
-      return
-    }
-    void executionStore.fetchStatus()
-  }, 1000)
-}
 
 onMounted(() => {
   websocket.connect()
@@ -92,21 +71,11 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  stopStatusPolling()
   websocket.disconnect()
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
   }
 })
-
-watch(
-  () => executionStore.state,
-  (state) => {
-    if (state === 'running') startStatusPolling()
-    else stopStatusPolling()
-  },
-  { immediate: true },
-)
 
 // Server-side upload cap default (2 GB, matches backend default). Used for
 // the client-side pre-upload size check in DatasetBrowser. The authoritative
@@ -158,7 +127,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
     position: { referencePanel: 'canvas', direction: 'right' },
   })
 
-  api.addPanel({
+  const dataTablePanel = api.addPanel({
     id: 'dataTable',
     component: 'dataTable',
     title: 'Data Table',
@@ -175,6 +144,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
       direction: 'within',
     },
   })
+  dataTablePanel.api.setActive()
 }
 
 // --- Panel visibility sync ---

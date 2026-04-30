@@ -89,12 +89,19 @@ describe('execution store', () => {
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/run', {
       graph,
       nodes: undefined,
+      workflow_name: null,
     })
     expect(store.state).toBe('running')
     expect(store.lastResult).toBeNull()
     expect(store.progress).toBeNull()
     expect(store.nodeStatuses).toEqual({})
-    expect(logger.entries).toEqual([])
+    expect(logger.entries).toEqual([
+      expect.objectContaining({
+        level: 'INFO',
+        message: 'Execution started',
+        nodeId: null,
+      }),
+    ])
   })
 
   it('run with nodes passes node list', async () => {
@@ -108,6 +115,7 @@ describe('execution store', () => {
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/run', {
       graph,
       nodes,
+      workflow_name: null,
     })
   })
 
@@ -150,6 +158,13 @@ describe('execution store', () => {
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/stop')
     // Per F1: stop waits for server, does not immediately change state.
     expect(store.state).toBe('running')
+    expect(useLoggerStore().entries).toEqual([
+      expect.objectContaining({
+        level: 'INFO',
+        message: 'Execution stop requested',
+        nodeId: null,
+      }),
+    ])
   })
 
   it('clear sends {graph, nodes} and merges returned node_statuses', async () => {
@@ -168,10 +183,18 @@ describe('execution store', () => {
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/clear', {
       graph,
       nodes: ['n1', 'n2'],
+      workflow_name: null,
     })
     expect(result).toEqual(responseData)
     expect(store.nodeStatuses.n1.status).toBe('unexecuted')
     expect(store.nodeStatuses.n2.status).toBe('out_of_date')
+    expect(useLoggerStore().entries).toEqual([
+      expect.objectContaining({
+        level: 'INFO',
+        message: 'Execution cache cleared for 2 nodes',
+        nodeId: null,
+      }),
+    ])
   })
 
   it('applyProgress updates progress', () => {

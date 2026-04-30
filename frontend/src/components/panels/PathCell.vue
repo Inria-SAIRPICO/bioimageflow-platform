@@ -44,6 +44,15 @@ async function openEditor() {
   }
 }
 
+async function copyPath() {
+  try {
+    await navigator.clipboard?.writeText(props.value)
+    toast?.add({ severity: 'info', summary: 'Path copied to clipboard', life: 3000 })
+  } catch (exc: any) {
+    showError(exc?.message ?? 'Could not copy path')
+  }
+}
+
 async function reveal() {
   try {
     await api.post('/api/v1/fs/reveal', { path: props.value })
@@ -55,10 +64,21 @@ async function reveal() {
 
 <template>
   <div class="path-cell">
-    <span
-      class="path-cell__name"
-      :title="value"
-    >{{ filename }}</span>
+    <div class="path-cell__text">
+      <span
+        class="path-cell__path"
+        :title="value"
+      >{{ value }}</span>
+      <span class="path-cell__name">{{ filename }}</span>
+    </div>
+    <Button
+      icon="pi pi-copy"
+      text
+      size="small"
+      title="Copy path"
+      data-testid="path-copy"
+      @click="copyPath"
+    />
     <Button
       icon="pi pi-file-edit"
       text
@@ -84,13 +104,27 @@ async function reveal() {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  min-width: 180px;
+  min-width: 260px;
 }
 
-.path-cell__name {
+.path-cell__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.path-cell__path {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 220px;
+  max-width: 320px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8125rem;
+}
+
+.path-cell__name {
+  color: var(--p-text-muted-color);
+  font-size: 0.75rem;
 }
 </style>

@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useLoggerStore } from '@/stores/logger'
 
 export type ErrorKind =
   | 'graph_sync_error'
@@ -36,7 +37,9 @@ export interface ErrorEntry {
 export type ErrorReportInput = Omit<
   ErrorEntry,
   'id' | 'timestamp' | 'dismissed'
->
+> & {
+  logToLogger?: boolean
+}
 
 let _idCounter = 0
 function generateId(): string {
@@ -94,6 +97,14 @@ export const useErrorStore = defineStore('errors', () => {
       timers.set(id, t)
     }
     errors.value.push(entry)
+    if (input.logToLogger !== false) {
+      useLoggerStore().addEntry({
+        level: 'ERROR',
+        message: input.fullDetail ?? input.detail,
+        nodeId: input.nodeId ?? null,
+        timestamp: entry.timestamp / 1000,
+      })
+    }
     return id
   }
 

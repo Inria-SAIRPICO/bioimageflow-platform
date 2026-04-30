@@ -132,6 +132,7 @@ watch(
 const clipboardData = ref<ClipboardData | null>(null)
 const canvasRef = ref<HTMLDivElement | null>(null)
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
+let isApplyingGraphState = false
 
 // --- Workflow startup / graph application ---
 
@@ -145,21 +146,26 @@ async function applyGraphState(
     toolRegistryStore.getToolByName,
     missingTools,
   )
-  setNodes([])
-  setEdges([])
-  await nextTick()
-  setNodes(vueFlowGraph.nodes)
-  // Wait for node components (and their <Handle> DOM elements) to mount
-  // before setting edges — Vue Flow resolves edge endpoints against live
-  // handle elements, so edges added in the same tick as nodes render with
-  // no visible path.
-  await nextTick()
-  setEdges(vueFlowGraph.edges)
-  syncGraph(vueFlowGraph)
-  if (dirty) {
-    workflowStore.markDirty()
-  } else {
-    workflowStore.markClean()
+  isApplyingGraphState = true
+  try {
+    setNodes([])
+    setEdges([])
+    await nextTick()
+    setNodes(vueFlowGraph.nodes)
+    // Wait for node components (and their <Handle> DOM elements) to mount
+    // before setting edges — Vue Flow resolves edge endpoints against live
+    // handle elements, so edges added in the same tick as nodes render with
+    // no visible path.
+    await nextTick()
+    setEdges(vueFlowGraph.edges)
+    syncGraph(vueFlowGraph)
+    if (dirty) {
+      workflowStore.markDirty()
+    } else {
+      workflowStore.markClean()
+    }
+  } finally {
+    isApplyingGraphState = false
   }
 }
 
@@ -187,9 +193,20 @@ async function recoverStartupWorkflow() {
 
   if (targetName && exists) {
     const serverGraph = await workflowStore.loadWorkflow(targetName)
+    const serverModified = Date.parse(workflowStore.current?.last_modified ?? '')
+    const autoSaveIsFresh =
+      autoSaved?.name === targetName &&
+      (!Number.isFinite(serverModified) || autoSaved.timestamp > serverModified)
+    if (
+      autoSaved?.name === targetName &&
+      Number.isFinite(serverModified) &&
+      !autoSaveIsFresh
+    ) {
+      await autoSave.clearAutoSave(targetName)
+    }
     return {
-      graph: autoSaved?.name === targetName ? autoSaved.graph : serverGraph,
-      dirty: autoSaved?.name === targetName,
+      graph: autoSaveIsFresh ? autoSaved.graph : serverGraph,
+      dirty: autoSaveIsFresh,
     }
   }
 
@@ -401,6 +418,7 @@ watch(
     output_templates: n.data?.output_templates,
   })),
   () => {
+    if (isApplyingGraphState) return
     emitGraphChanged()
   },
   { deep: true },
@@ -420,8 +438,10 @@ watch(
 watch(
   () => toolRegistryStore.tools,
   (tools) => {
+    if (isApplyingGraphState) return
     if (!tools || tools.length === 0) return
     const byName = new Map(tools.map((t) => [t.name, t]))
+    let changed = false
     for (const n of getNodes.value as any[]) {
       const toolName = n.data?.toolName
       if (!toolName) continue
@@ -435,8 +455,11 @@ watch(
       if (n.data.status === 'executed') {
         n.data.status = 'out_of_date'
       }
+      changed = true
     }
-    emitGraphChanged()
+    if (changed) {
+      emitGraphChanged()
+    }
   },
   { deep: false },
 )

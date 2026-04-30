@@ -1248,6 +1248,107 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('does not autosave or sync a partial graph while restoring a clean workflow', async () => {
+      const name = 'saved'
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [savedEdge('e1', 'a', 'b')]
+      const graph = { nodes, edges }
+
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows') {
+          return Promise.resolve({
+            data: [{ name, display_name: 'Saved workflow' }],
+          })
+        }
+        if (url === `/api/v1/workflows/${name}`) {
+          return Promise.resolve({
+            data: {
+              info: { name, display_name: 'Saved workflow' },
+              graph,
+              missing_packages: [],
+              missing_tools: [],
+            },
+          })
+        }
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
+        return Promise.resolve({ data: {} })
+      })
+      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(name)
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(1)
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+        edges: [expect.objectContaining({ id: 'e1' })],
+      }))
+
+      w.unmount()
+    })
+
+    it('ignores stale autosave entries older than the server workflow', async () => {
+      const name = 'saved'
+      const serverGraph = {
+        nodes: [savedNode('a', 100), savedNode('b', 400)],
+        edges: [savedEdge('e1', 'a', 'b')],
+      }
+      const staleGraph = {
+        nodes: [savedNode('stale', 100)],
+        edges: [],
+      }
+      const lastModified = '2026-04-30T12:00:00.000Z'
+
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows') {
+          return Promise.resolve({
+            data: [{
+              name,
+              display_name: 'Saved workflow',
+              path: '/tmp/saved.bioflow',
+              last_modified: lastModified,
+            }],
+          })
+        }
+        if (url === `/api/v1/workflows/${name}`) {
+          return Promise.resolve({
+            data: {
+              info: {
+                name,
+                display_name: 'Saved workflow',
+                path: '/tmp/saved.bioflow',
+                last_modified: lastModified,
+              },
+              graph: serverGraph,
+              missing_packages: [],
+              missing_tools: [],
+            },
+          })
+        }
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
+        return Promise.resolve({ data: {} })
+      })
+      autoSaveMocks.loadMostRecentAutoSave.mockResolvedValueOnce({
+        name,
+        graph: staleGraph,
+        timestamp: Date.parse(lastModified) - 1000,
+      })
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['a', 'b'])
+      expect(mockEdges).toHaveLength(1)
+      expect(mockEdges[0].id).toBe('e1')
+      expect(autoSaveMocks.clearAutoSave).toHaveBeenCalledWith(name)
+
+      w.unmount()
+    })
+
     it('sets nodes before edges so Vue Flow handles exist when edges attach', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]

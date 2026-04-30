@@ -11,6 +11,7 @@ import { useDataTableStore } from '@/stores/dataTable'
 const props = defineProps<{
   nodeId: string
   toolName?: string | null
+  workflowName?: string | null
   disabled?: boolean
 }>()
 
@@ -41,7 +42,8 @@ function isImageColumn(col: string): boolean {
 }
 
 function isPathColumn(col: string): boolean {
-  return data.value?.column_types[col] === 'Path'
+  const type = data.value?.column_types[col]
+  return type === 'Path' || type === 'ImagePath'
 }
 
 function toggleSort(col: string) {
@@ -117,13 +119,22 @@ function onPage(event: { page: number; rows: number }) {
             </button>
           </template>
           <template #body="slotProps">
-            <ImageCell
+            <div
               v-if="isImageColumn(col)"
-              :node-id="nodeId"
-              :row="slotProps.data.__absoluteRow"
-              :col="col"
-              :value="String(slotProps.data[col] ?? '')"
-            />
+              class="node-data-table__image-path"
+            >
+              <ImageCell
+                :node-id="nodeId"
+                :workflow-name="workflowName"
+                :row="slotProps.data.__absoluteRow"
+                :col="col"
+                :value="String(slotProps.data[col] ?? '')"
+              />
+              <PathCell
+                v-if="isPathColumn(col)"
+                :value="String(slotProps.data[col] ?? '')"
+              />
+            </div>
             <PathCell
               v-else-if="isPathColumn(col)"
               :value="String(slotProps.data[col] ?? '')"
@@ -179,5 +190,11 @@ function onPage(event: { page: number; rows: number }) {
 .node-data-table__type {
   color: var(--p-text-muted-color);
   font-size: 0.75rem;
+}
+
+.node-data-table__image-path {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 </style>
