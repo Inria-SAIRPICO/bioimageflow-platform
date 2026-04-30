@@ -30,6 +30,10 @@ from bioimageflow_server.routers.datasets import (
     router as datasets_router,
 )
 from bioimageflow_server.routers.filesystem import router as filesystem_router
+from bioimageflow_server.routers.editor import (
+    get_editor_service,
+    router as editor_router,
+)
 from bioimageflow_server.routers.graph import (
     get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
@@ -79,6 +83,7 @@ from bioimageflow_server.routers.workflows import (
 from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
+from bioimageflow_server.services.editor import EditorService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
 from bioimageflow_server.services.session_manager import SessionManager
@@ -210,6 +215,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     napari_launcher = config.napari_launcher or NapariLauncher(
         napari_env_path=resolved_settings.napari_env_path,
         connection_manager=ws_manager,
+    )
+
+    def _live_settings() -> Settings:
+        if config.settings_store is not None:
+            return config.settings_store.get()
+        return resolved_settings
+
+    editor_service = config.editor_service or EditorService(
+        settings_provider=_live_settings,
     )
 
     ws_log_handler = None
@@ -360,6 +374,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(tools_router, prefix="/api/v1")
     app.include_router(dev_router, prefix="/api/v1")
     app.include_router(filesystem_router, prefix="/api/v1")
+    app.include_router(editor_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
@@ -393,13 +408,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return config.settings_store.get().dev_mode
         return resolved_settings.dev_mode
 
-    def _live_settings() -> Settings:
-        if config.settings_store is not None:
-            return config.settings_store.get()
-        return resolved_settings
-
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings
+    app.dependency_overrides[get_editor_service] = lambda: editor_service
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
     app.dependency_overrides[nodes_get_workflow_store] = lambda: workflow_store

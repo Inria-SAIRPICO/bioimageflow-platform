@@ -515,8 +515,10 @@ describe('ToolsPanel', () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings = makeSettings({ deployment_mode: 'desktop' })
 
-    mockedApi.get.mockResolvedValueOnce({ data: { source: '/path/to/tool.py' } })
-    mockedApi.post.mockResolvedValueOnce({ data: {} })
+    mockedApi.get.mockResolvedValueOnce({ data: { path: '/path/to/tool.py' } })
+    mockedApi.post.mockResolvedValueOnce({
+      data: { opened: true, method: 'external', url: null, path: '/path/to/tool.py', message: null },
+    })
 
     const vm = wrapper.vm as unknown as {
       openInEditor: (name: string) => Promise<void>
@@ -525,7 +527,7 @@ describe('ToolsPanel', () => {
 
     expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/threshold/source')
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
-      file_path: '/path/to/tool.py',
+      path: '/path/to/tool.py',
     })
   })
 

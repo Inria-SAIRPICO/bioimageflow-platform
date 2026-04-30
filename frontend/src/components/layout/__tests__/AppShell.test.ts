@@ -145,7 +145,7 @@ describe('AppShell', () => {
     expect(connectMock).toHaveBeenCalledTimes(1)
   })
 
-  it('registers all 5 panels on ready', async () => {
+  it('registers the default panels on ready', async () => {
     const wrapper = mountApp()
     await flushPromises()
     expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(5)
@@ -156,6 +156,7 @@ describe('AppShell', () => {
     expect(panelIds).toContain('nodePanel')
     expect(panelIds).toContain('dataTable')
     expect(panelIds).toContain('logger')
+    expect(panelIds).not.toContain('codeEditor')
   })
 
   it('makes the Data Table the active bottom panel by default', async () => {
@@ -253,5 +254,20 @@ describe('AppShell', () => {
   it('canvas panel is not toggleable', () => {
     const store = useUIStore()
     expect('canvas' in store.panels).toBe(false)
+  })
+
+  it('creates and activates the Code Editor panel on embedded open events', async () => {
+    mountApp()
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+      detail: { url: 'http://127.0.0.1:32344', path: '/tmp/tool.py' },
+    }))
+    await flushPromises()
+
+    expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
+    expect(mockDockviewApi.addPanel.mock.calls[5][0].id).toBe('codeEditor')
+    expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
   })
 })

@@ -13,6 +13,7 @@ and tool class indexing. This service wraps it with:
 from __future__ import annotations
 
 import logging
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -260,6 +261,18 @@ class ToolRegistryService:
             return resolved
         except Exception:
             return None
+
+    def resolve_tool_source(self, class_name: str) -> Path | None:
+        tool_cls = self.get_tool_class(class_name)
+        if tool_cls is None:
+            return None
+        source = inspect.getsourcefile(tool_cls)
+        if source is None:
+            return None
+        path = Path(source).resolve()
+        if not path.exists():
+            return None
+        return path
 
     def list_tools(self) -> list[ToolMetadata]:
         return list(self._tools.values())

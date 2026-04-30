@@ -13,6 +13,7 @@ from bioimageflow_server.models.tools import (
     ToolCreate,
     ToolMetadata,
     ToolRename,
+    ToolSourceResponse,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
@@ -58,6 +59,13 @@ def _name_to_snake(name: str) -> str:
 def _name_to_display(name: str) -> str:
     spaced = _CAMEL_BOUNDARY.sub(" ", name)
     return spaced.replace("_", " ").strip()
+
+
+def _custom_tool_source(workflow_root: Path | None, tool_name: str) -> Path | None:
+    if workflow_root is None:
+        return None
+    path = workflow_root / "tools" / f"{_name_to_snake(tool_name)}.py"
+    return path if path.exists() else None
 
 
 # ---------------------------------------------------------------------------
@@ -135,21 +143,35 @@ async def refresh_packages(
     return {"status": "refreshed"}
 
 
-@router.get("/{tool_name}/source")
+@router.get("/{tool_name}/source", response_model=ToolSourceResponse)
 async def get_tool_source(
     tool_name: str,
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_root: Path | None = Depends(get_workflow_root),
-) -> dict[str, str]:
+) -> ToolSourceResponse:
+    custom_source = _custom_tool_source(workflow_root, tool_name)
+    if custom_source is not None:
+        return ToolSourceResponse(
+            tool_name=tool_name,
+            path=str(custom_source),
+            source_kind="custom",
+            editable=True,
+        )
+
     tool = registry.get_tool(tool_name)
     if tool is not None:
-        return {"tool_name": tool_name, "path": f"<package:{tool.package}>/{tool.name}"}
-    # Fallback: check user-created tools in workflow_root
-    if workflow_root is not None:
-        snake = _name_to_snake(tool_name)
-        path = workflow_root / "tools" / f"{snake}.py"
-        if path.exists():
-            return {"tool_name": tool_name, "path": str(path)}
+        source = registry.resolve_tool_source(tool_name)
+        if source is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Source for package tool '{tool_name}' could not be resolved",
+            )
+        return ToolSourceResponse(
+            tool_name=tool_name,
+            path=str(source),
+            source_kind="package",
+            editable=False,
+        )
     raise HTTPException(status_code=404, detail=f"Source for '{tool_name}' not found")
 
 

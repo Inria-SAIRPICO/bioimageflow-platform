@@ -86,13 +86,13 @@ describe('MenuBar', () => {
     expect(labels).toEqual(['Workflow', 'Edit', 'Execution', 'View', 'Help'])
   })
 
-  it('View menu has 4 panel toggle items', () => {
+  it('View menu has 5 panel toggle items', () => {
     const wrapper = mountMenuBar()
     const vm = wrapper.vm as any
     const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
-    expect(viewMenu.items).toHaveLength(4)
+    expect(viewMenu.items).toHaveLength(5)
     const toggleLabels = viewMenu.items.map((item: any) => item.label)
-    expect(toggleLabels).toEqual(['Tools Panel', 'Nodes', 'Data Table', 'Logger'])
+    expect(toggleLabels).toEqual(['Tools Panel', 'Nodes', 'Data Table', 'Logger', 'Code Editor'])
   })
 
   it('View toggle items reflect uiStore.panels state', () => {

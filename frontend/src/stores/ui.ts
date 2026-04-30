@@ -7,12 +7,15 @@ export const useUIStore = defineStore('ui', () => {
   const activeWorkflowName = ref<string | null>(null)
   const hasUnsavedChanges = ref(false)
   const isExecutionLocked = ref(false)
+  const codeEditorUrl = ref<string | null>(null)
+  const codeEditorPath = ref<string | null>(null)
 
   const panels = reactive({
     tools: true,
     nodePanel: true,
     dataTable: true,
     logger: true,
+    codeEditor: false,
   })
 
   const hasSelection = computed(() => selectedNodeIds.value.length > 0)
@@ -66,12 +69,20 @@ export const useUIStore = defineStore('ui', () => {
     panels[panel] = visible
   }
 
+  function setCodeEditorTarget(url: string, path: string) {
+    codeEditorUrl.value = url
+    codeEditorPath.value = path
+    panels.codeEditor = true
+  }
+
   return {
     selectedNodeIds,
     graphNodes,
     activeWorkflowName,
     hasUnsavedChanges,
     isExecutionLocked,
+    codeEditorUrl,
+    codeEditorPath,
     panels,
     hasSelection,
     isSingleSelection,
@@ -86,5 +97,6 @@ export const useUIStore = defineStore('ui', () => {
     setExecutionLocked,
     togglePanel,
     setPanelVisible,
+    setCodeEditorTarget,
   }
 })
