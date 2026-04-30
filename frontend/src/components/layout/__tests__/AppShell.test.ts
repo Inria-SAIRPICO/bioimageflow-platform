@@ -5,6 +5,7 @@ import PrimeVue from 'primevue/config'
 import ConfirmationService from 'primevue/confirmationservice'
 import Aura from '@primevue/themes/aura'
 import App from '@/App.vue'
+import MenuBar from '@/components/layout/MenuBar.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 
@@ -21,7 +22,12 @@ globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
 }))
 
 // Mock dockview-vue at module level
-const mockDockviewApi = { addPanel: vi.fn(), getPanel: vi.fn(), removePanel: vi.fn() }
+const mockDockviewApi = {
+  addPanel: vi.fn(),
+  getPanel: vi.fn(),
+  removePanel: vi.fn(),
+  onDidRemovePanel: vi.fn(),
+}
 vi.mock('dockview-vue', () => ({
   DockviewVue: {
     name: 'DockviewVue',
@@ -59,10 +65,24 @@ Object.defineProperty(window, 'matchMedia', {
 
 let pinia: ReturnType<typeof createPinia>
 const panels = new Map<string, any>()
+const removePanelListeners = new Set<(panel: any) => void>()
+
+function emitDockviewPanelRemoved(panel: any) {
+  panels.delete(panel.id)
+  removePanelListeners.forEach((listener) => listener(panel))
+}
+
+function getViewMenuItem(wrapper: ReturnType<typeof mount>, label: string) {
+  const menuBar = wrapper.findComponent(MenuBar)
+  const vm = menuBar.vm as any
+  const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
+  return viewMenu.items.find((item: any) => item.label === label)
+}
 
 function mountApp() {
   // Reset mock state
   panels.clear()
+  removePanelListeners.clear()
   mockDockviewApi.addPanel.mockReset()
   mockDockviewApi.addPanel.mockImplementation((options: any) => {
     const panel = { id: options.id, api: { setVisible: vi.fn(), setActive: vi.fn() } }
@@ -72,7 +92,17 @@ function mountApp() {
   mockDockviewApi.getPanel.mockReset()
   mockDockviewApi.getPanel.mockImplementation((id: string) => panels.get(id))
   mockDockviewApi.removePanel.mockReset()
-  mockDockviewApi.removePanel.mockImplementation((panel: any) => panels.delete(panel.id))
+  mockDockviewApi.removePanel.mockImplementation((panel: any) => {
+    panels.delete(panel.id)
+    removePanelListeners.forEach((listener) => listener(panel))
+  })
+  mockDockviewApi.onDidRemovePanel.mockReset()
+  mockDockviewApi.onDidRemovePanel.mockImplementation((listener: (panel: any) => void) => {
+    removePanelListeners.add(listener)
+    return {
+      dispose: () => removePanelListeners.delete(listener),
+    }
+  })
 
   return mount(App, {
     global: {
@@ -196,6 +226,28 @@ describe('AppShell', () => {
     const lastCall = mockDockviewApi.addPanel.mock.calls[5][0]
     expect(lastCall.id).toBe('tools')
     expect(lastCall.initialWidth).toBe(320)
+  })
+
+  it('syncs direct Dockview panel close with store and View menu state', async () => {
+    const wrapper = mountApp()
+    await flushPromises()
+
+    const store = useUIStore()
+    expect(store.panels.tools).toBe(true)
+    expect(getViewMenuItem(wrapper, 'Tools Panel').icon).toBe('pi pi-check')
+
+    emitDockviewPanelRemoved(panels.get('tools'))
+    await flushPromises()
+
+    expect(store.panels.tools).toBe(false)
+    expect(getViewMenuItem(wrapper, 'Tools Panel').icon).toBeUndefined()
+
+    getViewMenuItem(wrapper, 'Tools Panel').command()
+    await flushPromises()
+
+    expect(store.panels.tools).toBe(true)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
+    expect(mockDockviewApi.addPanel.mock.calls[5][0].id).toBe('tools')
   })
 
   it('canvas panel is not toggleable', () => {
