@@ -66,6 +66,12 @@ function stringifyExecutionError(err: Record<string, unknown>): string {
   return detail ?? error ?? JSON.stringify(err)
 }
 
+function stringifyExecutionErrorWithTraceback(err: Record<string, unknown>): string {
+  const summary = stringifyExecutionError(err)
+  const tb = typeof err.traceback === 'string' ? err.traceback : null
+  return tb ? `${summary}\n${tb}` : summary
+}
+
 export const useExecutionStore = defineStore('execution', () => {
   const state = ref<'running' | 'idle'>('idle')
   const lastResult = ref<ExecutionResult | null>(null)
@@ -101,7 +107,6 @@ export const useExecutionStore = defineStore('execution', () => {
     if (state.value === 'running') {
       throw new Error('already running')
     }
-    useLoggerStore().clearEntries()
     error.value = null
     isConflict.value = false
     validationErrors.value = []
@@ -115,14 +120,6 @@ export const useExecutionStore = defineStore('execution', () => {
         workflow_name: workflowName ?? null,
       })
       state.value = 'running'
-      useLoggerStore().addEntry({
-        level: 'INFO',
-        message: nodes?.length
-          ? `Execution started for ${nodes.length} selected node${nodes.length === 1 ? '' : 's'}`
-          : 'Execution started',
-        nodeId: null,
-        timestamp: Date.now() / 1000,
-      })
     } catch (e: unknown) {
       state.value = 'idle'
       const err = e as RunError
@@ -145,12 +142,6 @@ export const useExecutionStore = defineStore('execution', () => {
 
   async function stop() {
     await api.post('/api/v1/execution/stop')
-    useLoggerStore().addEntry({
-      level: 'INFO',
-      message: 'Execution stop requested',
-      nodeId: null,
-      timestamp: Date.now() / 1000,
-    })
   }
 
   async function clear(
@@ -228,7 +219,7 @@ export const useExecutionStore = defineStore('execution', () => {
         .join('\n\n')
     } else if (payload.errors?.length) {
       detail = stringifyExecutionError(payload.errors[0]!)
-      fullDetail = payload.errors.map(stringifyExecutionError).join('\n\n')
+      fullDetail = payload.errors.map(stringifyExecutionErrorWithTraceback).join('\n\n')
     } else {
       detail = 'Execution failed'
     }
@@ -240,6 +231,7 @@ export const useExecutionStore = defineStore('execution', () => {
         detail,
         ...(fullDetail ? { fullDetail } : {}),
         ...(nodeId ? { nodeId } : {}),
+        logToLogger: false,
       })
     } catch (e) {
       // Best-effort: in test contexts the composable may not have access

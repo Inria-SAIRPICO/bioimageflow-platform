@@ -16,10 +16,16 @@ describe('execution store', () => {
     vi.mocked(api.post).mockReset()
   })
 
-  it('mirrors execution failures into the logger and preserves full error details', () => {
+  it('preserves execution failure details without duplicating backend logger entries', () => {
     const execution = useExecutionStore()
     const logger = useLoggerStore()
     const errors = useErrorStore()
+    logger.addEntry({
+      level: 'ERROR',
+      nodeId: 'node_a',
+      message: 'Node node_a failed: segmentation failed\nTraceback...\nValueError: bad image',
+      timestamp: 1,
+    })
 
     execution.state = 'running'
     execution.applyExecutionComplete({
@@ -36,13 +42,8 @@ describe('execution store', () => {
       },
     })
 
-    expect(logger.entries).toEqual([
-      expect.objectContaining({
-        level: 'ERROR',
-        nodeId: 'node_a',
-        message: expect.stringContaining('segmentation failed'),
-      }),
-    ])
+    expect(logger.entries).toHaveLength(1)
+    expect(logger.entries[0]!.message).toContain('ValueError: bad image')
     expect(errors.errors[0]).toMatchObject({
       kind: 'execution_failed',
       detail: 'node_a: segmentation failed',

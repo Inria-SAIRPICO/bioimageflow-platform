@@ -282,7 +282,7 @@ describe('useWebSocket', () => {
     )
   })
 
-  it('dispatches package_install to toolRegistryStore.applyPackageInstall', async () => {
+  it('dispatches package_install without synthesizing frontend logs', async () => {
     const { useWebSocket } = await import('@/composables/useWebSocket')
     useWebSocket().connect('ws://test/ws')
     latestSocket().open()
@@ -294,17 +294,12 @@ describe('useWebSocket', () => {
     })
 
     expect(toolRegistryStoreMock.applyPackageInstall).toHaveBeenCalledTimes(1)
-    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
-      expect.objectContaining({
-        level: 'INFO',
-        message: 'Package pkg installing',
-        nodeId: null,
-        timestamp: expect.any(Number),
-      }),
+    expect(loggerStoreMock.addEntry).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Package pkg installing' }),
     )
   })
 
-  it('mirrors failed package_install messages as ERROR logs with detail', async () => {
+  it('does not mirror failed package_install messages as frontend logs', async () => {
     const { useWebSocket } = await import('@/composables/useWebSocket')
     useWebSocket().connect('ws://test/ws')
     latestSocket().open()
@@ -317,16 +312,10 @@ describe('useWebSocket', () => {
       detail: 'network unavailable',
     })
 
-    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
-      expect.objectContaining({
-        level: 'ERROR',
-        message: 'Package pkg failed: network unavailable',
-        nodeId: null,
-      }),
-    )
+    expect(loggerStoreMock.addEntry).not.toHaveBeenCalled()
   })
 
-  it('dispatches environment_status to toolRegistryStore.applyEnvironmentStatus', async () => {
+  it('dispatches environment_status without synthesizing frontend logs', async () => {
     const { useWebSocket } = await import('@/composables/useWebSocket')
     useWebSocket().connect('ws://test/ws')
     latestSocket().open()
@@ -338,12 +327,8 @@ describe('useWebSocket', () => {
     })
 
     expect(toolRegistryStoreMock.applyEnvironmentStatus).toHaveBeenCalledTimes(1)
-    expect(loggerStoreMock.addEntry).toHaveBeenCalledWith(
-      expect.objectContaining({
-        level: 'INFO',
-        message: 'Environment napari running',
-        nodeId: null,
-      }),
+    expect(loggerStoreMock.addEntry).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Environment napari running' }),
     )
   })
 

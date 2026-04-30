@@ -62,7 +62,7 @@ describe('execution store', () => {
     expect(store.nodeStatuses.n2.status).toBe('running')
   })
 
-  it('run sends POST, resets nodeStatuses, and sets running on success', async () => {
+  it('run sends POST, resets nodeStatuses, preserves logs, and waits for backend logs', async () => {
     const graph = { nodes: [], edges: [] }
     mockedApi.post.mockResolvedValueOnce({ data: { status: 'started' } })
 
@@ -98,7 +98,7 @@ describe('execution store', () => {
     expect(logger.entries).toEqual([
       expect.objectContaining({
         level: 'INFO',
-        message: 'Execution started',
+        message: 'old run',
         nodeId: null,
       }),
     ])
@@ -148,20 +148,27 @@ describe('execution store', () => {
     expect(store.validationErrors[0].type).toBe('cycle_detected')
   })
 
-  it('stop sends POST /execution/stop and does not change state locally', async () => {
+  it('stop sends POST /execution/stop and waits for backend log messages', async () => {
     mockedApi.post.mockResolvedValueOnce({ data: {} })
 
     const store = useExecutionStore()
+    const logger = useLoggerStore()
+    logger.addEntry({
+      level: 'INFO',
+      message: 'pre-existing',
+      nodeId: null,
+      timestamp: 1,
+    })
     store.state = 'running'
     await store.stop()
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/stop')
     // Per F1: stop waits for server, does not immediately change state.
     expect(store.state).toBe('running')
-    expect(useLoggerStore().entries).toEqual([
+    expect(logger.entries).toEqual([
       expect.objectContaining({
         level: 'INFO',
-        message: 'Execution stop requested',
+        message: 'pre-existing',
         nodeId: null,
       }),
     ])
@@ -290,6 +297,13 @@ describe('execution store', () => {
       const errorsModule = await import('@/stores/errors')
       const errorStore = errorsModule.useErrorStore()
       const store = useExecutionStore()
+      const logger = useLoggerStore()
+      logger.addEntry({
+        level: 'ERROR',
+        message: 'Node b failed: b broke\ntb',
+        nodeId: 'b',
+        timestamp: 1,
+      })
 
       store.applyExecutionComplete({
         success: false,
@@ -310,16 +324,25 @@ describe('execution store', () => {
       expect(entry.kind).toBe('execution_failed')
       expect(entry.nodeId).toBe('b')
       expect(entry.detail).toContain('b broke')
+      expect(entry.fullDetail).toContain('tb')
+      expect(logger.entries).toHaveLength(1)
+      expect(logger.entries[0]!.message).toBe('Node b failed: b broke\ntb')
     })
 
-    it('falls back to top-level errors[0].detail when no failed node is present', async () => {
+    it('preserves top-level workflow tracebacks in Error History when no failed node is present', async () => {
       const errorsModule = await import('@/stores/errors')
       const errorStore = errorsModule.useErrorStore()
       const store = useExecutionStore()
 
       store.applyExecutionComplete({
         success: false,
-        errors: [{ detail: 'pre-execution validation failed' }],
+        errors: [
+          {
+            type: 'RuntimeError',
+            detail: 'pre-execution validation failed',
+            traceback: 'Traceback line 1\nTraceback line 2',
+          },
+        ],
         node_statuses: {},
       })
       expect(errorStore.errors).toHaveLength(1)
@@ -327,6 +350,8 @@ describe('execution store', () => {
       expect(errorStore.errors[0]!.detail).toContain(
         'pre-execution validation failed',
       )
+      expect(errorStore.errors[0]!.fullDetail).toContain('Traceback line 2')
+      expect(useLoggerStore().entries).toEqual([])
     })
 
     it('emits one report even when multiple nodes failed', async () => {

@@ -6,7 +6,6 @@ import asyncio
 import logging
 import threading
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -32,6 +31,12 @@ class _StubManager:
         timestamp: float,
     ) -> None:
         self.broadcast_calls.append((level, message, node_id, timestamp))
+
+
+def _remove_handler(logger_name: str, handler: logging.Handler) -> None:
+    logger = logging.getLogger(logger_name)
+    if handler in logger.handlers:
+        logger.removeHandler(handler)
 
 
 async def test_extracts_node_id_from_logger_name() -> None:
@@ -131,7 +136,6 @@ async def test_handler_does_not_crash_when_loop_closed() -> None:
 
 async def test_attach_to_bioimageflow_logger() -> None:
     from bioimageflow_server.ws.logging_bridge import (
-        WebSocketLogHandler,
         attach_ws_log_handler,
     )
 
@@ -151,7 +155,8 @@ async def test_attach_to_bioimageflow_logger() -> None:
         # Propagation preserved (spec: keep terminal logging)
         assert bioimageflow_logger.propagate is True
     finally:
-        bioimageflow_logger.removeHandler(handler)
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
         bioimageflow_logger.setLevel(saved_level)
 
 
@@ -171,7 +176,8 @@ async def test_attach_preserves_explicit_logger_level() -> None:
         try:
             assert bioimageflow_logger.level == logging.WARNING
         finally:
-            bioimageflow_logger.removeHandler(handler)
+            _remove_handler("bioimageflow", handler)
+            _remove_handler("wetlands", handler)
     finally:
         bioimageflow_logger.setLevel(saved_level)
 
@@ -197,7 +203,8 @@ async def test_emit_via_logger_triggers_broadcast() -> None:
         assert message == "hello"
         assert node_id == "test_node"
     finally:
-        logging.getLogger("bioimageflow").removeHandler(handler)
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
 
 
 async def test_emit_framework_logger_triggers_broadcast_with_null_node() -> None:
@@ -221,7 +228,59 @@ async def test_emit_framework_logger_triggers_broadcast_with_null_node() -> None
         assert message == "framework warning"
         assert node_id is None
     finally:
-        logging.getLogger("bioimageflow").removeHandler(handler)
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
+
+
+async def test_emit_wetlands_logger_triggers_broadcast_with_null_node() -> None:
+    """Wetlands environment/process records should reach the frontend logger."""
+    from bioimageflow_server.ws.logging_bridge import attach_ws_log_handler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = attach_ws_log_handler(mgr, loop)
+    try:
+        logging.getLogger("wetlands.environment").info("env ready")
+
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if mgr.broadcast_calls:
+                break
+
+        assert len(mgr.broadcast_calls) == 1
+        level, message, node_id, _ = mgr.broadcast_calls[0]
+        assert level == "INFO"
+        assert message == "env ready"
+        assert node_id is None
+    finally:
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
+
+
+async def test_exception_traceback_is_in_broadcast_message() -> None:
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = WebSocketLogHandler(mgr, loop=loop)
+    logging.getLogger("bioimageflow").addHandler(handler)
+    try:
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError:
+            logging.getLogger("bioimageflow.node.x").exception("node exploded")
+
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if mgr.broadcast_calls:
+                break
+
+        assert mgr.broadcast_calls
+        assert "Traceback" in mgr.broadcast_calls[0][1]
+        assert "RuntimeError" in mgr.broadcast_calls[0][1]
+    finally:
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
 
 
 async def test_node_logs_are_not_duplicated_by_framework_handler() -> None:
@@ -244,7 +303,8 @@ async def test_node_logs_are_not_duplicated_by_framework_handler() -> None:
         assert mgr.broadcast_calls[0][1] == "node failed"
         assert mgr.broadcast_calls[0][2] == "segmenter_1"
     finally:
-        logging.getLogger("bioimageflow").removeHandler(handler)
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
 
 
 async def test_emit_from_background_thread() -> None:
@@ -321,7 +381,8 @@ async def test_recursion_guard_prevents_infinite_loop() -> None:
         # so only the outer emit reaches broadcast_log in the same call stack.)
         assert emit_count["n"] == 1
     finally:
-        logging.getLogger("bioimageflow").removeHandler(handler)
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)
 
 
 async def test_internal_ws_logger_is_not_captured() -> None:
@@ -343,4 +404,5 @@ async def test_internal_ws_logger_is_not_captured() -> None:
 
         assert mgr.broadcast_calls == []
     finally:
-        logging.getLogger("bioimageflow").removeHandler(handler)
+        _remove_handler("bioimageflow", handler)
+        _remove_handler("wetlands", handler)

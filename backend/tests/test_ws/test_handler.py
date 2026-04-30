@@ -556,6 +556,54 @@ async def test_publish_execution_complete_schedules_broadcast() -> None:
             scheduled_coro.close()
 
 
+async def test_publish_environment_status_schedules_broadcast() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    loop = asyncio.get_running_loop()
+    mgr = ConnectionManager(loop=loop)
+
+    with patch.object(mgr, "broadcast_environment_status") as mock_broadcast:
+        async def _fake(*args, **kwargs):
+            return None
+
+        mock_broadcast.side_effect = _fake
+
+        with patch(
+            "bioimageflow_server.ws.handler.asyncio.run_coroutine_threadsafe"
+        ) as mock_schedule:
+            fut = MagicMock()
+            mock_schedule.return_value = fut
+            mgr.publish_environment_status("napari", "running")
+            mock_schedule.assert_called_once()
+            scheduled_coro, scheduled_loop = mock_schedule.call_args.args
+            assert scheduled_loop is loop
+            scheduled_coro.close()
+
+
+async def test_publish_package_install_schedules_broadcast() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    loop = asyncio.get_running_loop()
+    mgr = ConnectionManager(loop=loop)
+
+    with patch.object(mgr, "broadcast_package_install") as mock_broadcast:
+        async def _fake(*args, **kwargs):
+            return None
+
+        mock_broadcast.side_effect = _fake
+
+        with patch(
+            "bioimageflow_server.ws.handler.asyncio.run_coroutine_threadsafe"
+        ) as mock_schedule:
+            fut = MagicMock()
+            mock_schedule.return_value = fut
+            mgr.publish_package_install("pkg", "installing", None)
+            mock_schedule.assert_called_once()
+            scheduled_coro, scheduled_loop = mock_schedule.call_args.args
+            assert scheduled_loop is loop
+            scheduled_coro.close()
+
+
 async def test_publish_from_background_thread() -> None:
     """Calling publish_* from a non-event-loop thread schedules on stored loop."""
     from bioimageflow_server.ws.handler import ConnectionManager
@@ -824,7 +872,7 @@ def test_endpoint_clean_disconnect() -> None:
 
     app, manager = _make_app_with_ws()
     with TestClient(app) as client:
-        with client.websocket_connect("/ws") as ws:
+        with client.websocket_connect("/ws"):
             pass  # close immediately
         # After closing, the server-side should have removed the connection.
         # Give the loop a moment to process the disconnect.

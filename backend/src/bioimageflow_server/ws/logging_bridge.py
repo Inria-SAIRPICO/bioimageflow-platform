@@ -1,4 +1,4 @@
-"""Python logging.Handler that forwards BioImageFlow records to WS clients."""
+"""Python logging.Handler that forwards execution-environment records to WS clients."""
 
 from __future__ import annotations
 
@@ -92,18 +92,25 @@ def _extract_node_id(logger_name: str) -> str | None:
 
 
 def _is_bioimageflow_record(logger_name: str) -> bool:
-    return logger_name == "bioimageflow" or logger_name.startswith("bioimageflow.")
+    return (
+        logger_name == "bioimageflow"
+        or logger_name.startswith("bioimageflow.")
+        or logger_name == "wetlands"
+        or logger_name.startswith("wetlands.")
+    )
 
 
 def attach_ws_log_handler(
     manager: "ConnectionManager",
     loop: asyncio.AbstractEventLoop,
 ) -> WebSocketLogHandler:
-    """Attach a ``WebSocketLogHandler`` to the ``bioimageflow`` logger.
+    """Attach a ``WebSocketLogHandler`` to execution-related library loggers.
 
     Attaching at the framework root captures both framework-level records
     (``bioimageflow`` / ``bioimageflow.engine``) and per-node records
     (``bioimageflow.node.<node_id>``) once through normal logger propagation.
+    The Wetlands root is attached too so environment/process lifecycle logs
+    reach subscribers alongside BioImageFlow execution logs.
     Propagation is **not** disabled: keeping it on preserves terminal/file
     logging in dev environments. The recursion guard + dedicated
     ``bioimageflow_server.ws`` internal logger prevent self-capture loops.
@@ -118,6 +125,10 @@ def attach_ws_log_handler(
     # going to *other* handlers (terminal/file) attached to the same logger.
     if bioimageflow_logger.level == logging.NOTSET:
         bioimageflow_logger.setLevel(logging.DEBUG)
+    wetlands_logger = logging.getLogger("wetlands")
+    wetlands_logger.addHandler(handler)
+    if wetlands_logger.level == logging.NOTSET:
+        wetlands_logger.setLevel(logging.DEBUG)
     return handler
 
 
