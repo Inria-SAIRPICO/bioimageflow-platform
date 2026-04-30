@@ -170,6 +170,65 @@ describe('DataTablePanel', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/measurements.csv')
   })
 
+  it('labels sub-workflow output table columns with published output names', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const uiStore = useUIStore()
+    const dataTableStore = useDataTableStore()
+    uiStore.setSelectedNodes(['sub_1'])
+    dataTableStore.nodeDataCache.sub_1 = {
+      columns: ['segment_1.mask'],
+      index: ['0'],
+      rows: [{ 'segment_1.mask': '/data/results/mask.tif' }],
+      absolute_rows: [0],
+      total_rows: 1,
+      page: 0,
+      page_size: 50,
+      column_types: { 'segment_1.mask': 'ImagePath' },
+    }
+
+    const { currentGraph } = useGraphSync()
+    currentGraph.value = {
+      nodes: [
+        {
+          id: 'sub_1',
+          name: 'Segment and measure',
+          tool_name: '__sub_workflow__',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+          published_outputs: [{
+            name: 'mask',
+            internal_node_id: 'segment_1',
+            internal_output: 'mask',
+            schema: { type: 'ImagePath' },
+          }],
+        },
+      ],
+      edges: [],
+    }
+
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          DataTable: DataTableStub,
+          Column: ColumnStub,
+          ImageCell: { template: '<div data-testid="image-cell" />' },
+          Paginator: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('mask')
+    expect(wrapper.text()).not.toContain('segment_1.maskImagePath')
+    expect(wrapper.text()).toContain('/data/results/mask.tif')
+  })
+
   it('keeps a selected executed node in a preparing state after 409 and refreshes on executed status', async () => {
     vi.useFakeTimers()
     const pinia = createPinia()

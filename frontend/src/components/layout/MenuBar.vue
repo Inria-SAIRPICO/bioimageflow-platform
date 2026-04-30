@@ -342,6 +342,7 @@ async function confirmDeleteWorkflow(): Promise<void> {
 }
 
 function onGlobalKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented) return
   const meta = event.metaKey || event.ctrlKey
   if (meta && event.key === 's') {
     event.preventDefault()

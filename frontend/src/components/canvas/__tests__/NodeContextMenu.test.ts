@@ -3,12 +3,13 @@ import { mount } from '@vue/test-utils'
 import NodeContextMenu from '../NodeContextMenu.vue'
 
 describe('NodeContextMenu', () => {
-  function factory(enabled = true) {
+  function factory(options: { enabled?: boolean; canOpenSubWorkflow?: boolean } = {}) {
     return mount(NodeContextMenu, {
       props: {
         nodeId: 'node-1',
         position: { x: 100, y: 200 },
-        enabled,
+        enabled: options.enabled ?? true,
+        canOpenSubWorkflow: options.canOpenSubWorkflow ?? false,
       },
     })
   }
@@ -25,12 +26,12 @@ describe('NodeContextMenu', () => {
   })
 
   it('shows "Disable" when enabled', () => {
-    const w = factory(true)
+    const w = factory({ enabled: true })
     expect(w.findAll('li')[1].text()).toBe('Disable')
   })
 
   it('shows "Enable" when disabled', () => {
-    const w = factory(false)
+    const w = factory({ enabled: false })
     expect(w.findAll('li')[1].text()).toBe('Enable')
   })
 
@@ -60,6 +61,14 @@ describe('NodeContextMenu', () => {
     const w = factory()
     await w.findAll('li')[2].trigger('click')
     expect(w.emitted('create-sub-workflow')).toBeTruthy()
+  })
+
+  it('emits open-sub-workflow when the target already has a sub-workflow', async () => {
+    const w = factory({ canOpenSubWorkflow: true })
+    await w.findAll('li')[2].trigger('click')
+    expect(w.text()).toContain('Open Sub-workflow')
+    expect(w.emitted('open-sub-workflow')).toBeTruthy()
+    expect(w.emitted('create-sub-workflow')).toBeFalsy()
   })
 
   it('emits delete on fourth item click', async () => {

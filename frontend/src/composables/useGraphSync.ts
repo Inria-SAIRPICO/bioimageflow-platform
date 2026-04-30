@@ -34,26 +34,27 @@ function hasSubWorkflowFields(data: Record<string, any> | undefined): boolean {
  * Serialise a Vue Flow node object into the backend NodeState format.
  */
 function serializeNode(n: any): NodeState {
+  const data = n.data ?? {}
   const node = {
     id: n.id,
-    name: n.data?.name ?? n.id,
-    tool_name: n.data?.toolName ?? '',
+    name: data.name ?? n.id,
+    tool_name: data.toolName ?? '',
     position: [n.position?.x ?? 0, n.position?.y ?? 0],
-    parameters: n.data?.parameters ?? {},
-    resources: n.data?.resources ?? {},
-    output_templates: n.data?.output_templates ?? {},
-    enabled: n.data?.enabled ?? true,
-    collapsed: n.data?.collapsed ?? false,
+    parameters: data.parameters ?? {},
+    resources: data.resources ?? {},
+    output_templates: data.output_templates ?? {},
+    enabled: data.enabled ?? true,
+    collapsed: data.collapsed ?? false,
   } as NodeState & Record<string, unknown>
-  if (hasSubWorkflowFields(n.data)) {
+  if (hasSubWorkflowFields(data)) {
     for (const key of [
       'sub_workflow',
       'published_inputs',
       'published_outputs',
       'sub_workflow_readonly_reason',
     ]) {
-      if (n.data?.[key] !== undefined) {
-        node[key] = deepCloneJson(n.data[key])
+      if (data[key] !== undefined) {
+        node[key] = deepCloneJson(data[key])
       }
     }
   }

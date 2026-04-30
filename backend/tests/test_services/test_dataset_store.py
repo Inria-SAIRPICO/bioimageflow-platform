@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import os
 from collections.abc import AsyncIterable
 from pathlib import Path
 

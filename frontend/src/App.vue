@@ -7,6 +7,7 @@ import SettingsPanel from './components/panels/SettingsPanel.vue'
 import LoggerPanel from './components/panels/LoggerPanel.vue'
 import DataTablePanel from './components/panels/DataTablePanel.vue'
 import CodeEditorPanel from './components/panels/CodeEditorPanel.vue'
+import SubWorkflowEditorPanel from './components/panels/SubWorkflowEditorPanel.vue'
 
 export default defineComponent({
   components: {
@@ -16,6 +17,7 @@ export default defineComponent({
     logger: LoggerPanel,
     dataTable: DataTablePanel,
     codeEditor: CodeEditorPanel,
+    subWorkflowEditor: SubWorkflowEditorPanel,
   },
 })
 </script>
@@ -36,6 +38,7 @@ import { useExecutionLock } from './composables/useExecutionLock'
 import { useSettingsPanel } from './composables/useSettingsPanel'
 import { isDesktop as isPywebview } from './utils/nativeDialogs'
 import { useWebSocket } from './composables/useWebSocket'
+import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
 
 function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
@@ -59,6 +62,7 @@ const shortcutEnabled = isMac() || isPywebview()
 const uiStore = useUIStore()
 const datasetBrowserStore = useDatasetBrowserStore()
 const websocket = useWebSocket()
+const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
 // executionStore.isRunning anywhere in the tree. The composable has a
@@ -68,6 +72,14 @@ useExecutionLock()
 onMounted(() => {
   websocket.connect()
   window.addEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
+  window.addEventListener(
+    'bioimageflow:sub-workflow-session-opened',
+    onSubWorkflowSessionOpened as EventListener,
+  )
+  window.addEventListener(
+    'bioimageflow:close-sub-workflow-session',
+    onCloseSubWorkflowSession as EventListener,
+  )
   if (shortcutEnabled) {
     window.addEventListener('keydown', onPreferencesShortcut)
   }
@@ -77,6 +89,14 @@ onBeforeUnmount(() => {
   dockviewDisposables.splice(0).forEach((disposable) => disposable.dispose())
   websocket.disconnect()
   window.removeEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
+  window.removeEventListener(
+    'bioimageflow:sub-workflow-session-opened',
+    onSubWorkflowSessionOpened as EventListener,
+  )
+  window.removeEventListener(
+    'bioimageflow:close-sub-workflow-session',
+    onCloseSubWorkflowSession as EventListener,
+  )
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
   }
@@ -103,6 +123,7 @@ watchEffect(() => {
 
 const dockviewApi = shallowRef<DockviewApi | null>(null)
 const dockviewDisposables: DockviewIDisposable[] = []
+const confirmedSubWorkflowPanelCloses = new Set<string>()
 
 // --- Dockview setup ---
 
@@ -111,6 +132,15 @@ type DockPanelKey = typeof panelKeys[number]
 
 function isDockPanelKey(id: string): id is DockPanelKey {
   return panelKeys.includes(id as DockPanelKey)
+}
+
+function subWorkflowPanelId(sessionId: string): string {
+  return `sub-workflow:${encodeURIComponent(sessionId)}`
+}
+
+function sessionIdFromSubWorkflowPanelId(panelId: string): string | null {
+  if (!panelId.startsWith('sub-workflow:')) return null
+  return decodeURIComponent(panelId.slice('sub-workflow:'.length))
 }
 
 function onDockviewReady(event: DockviewReadyEvent) {
@@ -125,7 +155,26 @@ function onDockviewReady(event: DockviewReadyEvent) {
             uiStore.setPanelVisible(panelId, false)
           }
         })
+        return
       }
+      const sessionId = sessionIdFromSubWorkflowPanelId(panel.id)
+      if (!sessionId) {
+        return
+      }
+      if (confirmedSubWorkflowPanelCloses.delete(panel.id)) {
+        subWorkflowSessionsStore.closeSession(sessionId)
+        return
+      }
+      const session = subWorkflowSessionsStore.sessionById(sessionId)
+      if (!session) return
+      if (
+        subWorkflowSessionsStore.isDirty(sessionId) &&
+        !window.confirm(`Discard unsaved changes to sub-workflow '${session.parentNodeName}'?`)
+      ) {
+        queueMicrotask(() => openSubWorkflowPanel(sessionId))
+        return
+      }
+      subWorkflowSessionsStore.closeSession(sessionId)
     }),
   )
 
@@ -178,6 +227,52 @@ function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
     const panel = dockviewApi.value?.getPanel('codeEditor')
     panel?.api.setActive()
   })
+}
+
+function openSubWorkflowPanel(sessionId: string): void {
+  const api = dockviewApi.value
+  const session = subWorkflowSessionsStore.sessionById(sessionId)
+  if (!api || !session) return
+  const panelId = subWorkflowPanelId(sessionId)
+  const existing = api.getPanel(panelId)
+  if (existing) {
+    existing.api.setActive()
+    return
+  }
+  const canvasPanel = api.getPanel('canvas')
+  const panel = api.addPanel({
+    id: panelId,
+    component: 'subWorkflowEditor',
+    title: session.parentNodeName,
+    params: { sessionId },
+    position: canvasPanel
+      ? { referencePanel: 'canvas', direction: 'within' }
+      : { direction: 'below' },
+  })
+  panel.api.setActive()
+}
+
+function onSubWorkflowSessionOpened(event: CustomEvent<{ sessionId?: string }>) {
+  const sessionId = event.detail?.sessionId
+  if (!sessionId) return
+  openSubWorkflowPanel(sessionId)
+}
+
+function onCloseSubWorkflowSession(event: CustomEvent<{
+  sessionId?: string
+  discardConfirmed?: boolean
+}>) {
+  const sessionId = event.detail?.sessionId
+  if (!sessionId) return
+  const panel = dockviewApi.value?.getPanel(subWorkflowPanelId(sessionId))
+  if (!panel) {
+    subWorkflowSessionsStore.closeSession(sessionId)
+    return
+  }
+  if (event.detail?.discardConfirmed) {
+    confirmedSubWorkflowPanelCloses.add(panel.id)
+  }
+  dockviewApi.value?.removePanel(panel)
 }
 
 // --- Panel visibility sync ---

@@ -63,7 +63,11 @@ export const useLoggerStore = defineStore('logger', () => {
           return false
         }
       }
-      if (nodeId !== null && entry.nodeId !== nodeId) return false
+      if (
+        nodeId !== null &&
+        entry.nodeId !== nodeId &&
+        !entry.nodeId?.startsWith(`${nodeId}/`)
+      ) return false
       if (query && !entry.message.toLowerCase().includes(query)) return false
       return true
     })
@@ -119,7 +123,9 @@ export const useLoggerStore = defineStore('logger', () => {
   }
 
   function nodeEntries(nodeId: string) {
-    return computed(() => entries.value.filter((entry) => entry.nodeId === nodeId))
+    return computed(() => entries.value.filter((entry) => (
+      entry.nodeId === nodeId || entry.nodeId?.startsWith(`${nodeId}/`)
+    )))
   }
 
   function getLastSubscription(): LogSubscription {

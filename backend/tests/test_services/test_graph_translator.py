@@ -17,6 +17,8 @@ from bioimageflow_server.models.graph import (
     GraphState,
     NodeState,
     PositionalEdge,
+    PublishedInput,
+    PublishedOutput,
 )
 from bioimageflow_server.models.tools import PackageInfo, ToolMetadata
 from bioimageflow_server.services.graph_translator import (
@@ -271,6 +273,8 @@ def test_error_path_flattened_into_detail() -> None:
     out = lib_validation_error_to_graph_error(err)
     assert "outer_sw/inner_sw" in out.detail
     assert "n must be >= 0" in out.detail
+    assert out.node == "outer_sw/inner_sw/inner"
+
 
 def test_persisted_sections_keep_graph_lossless_and_split_gui(
     registry: ToolRegistryService,
@@ -531,3 +535,441 @@ def test_no_settings_preserves_legacy_defaults(
     assert config["engine"] == "sequential"
     assert config["max_executions"] == 0
     assert config["max_age"] is None
+
+
+# ---- GUI-created sub-workflows ----------------------------------------
+
+
+def test_library_surface_supports_config_sub_workflows() -> None:
+    """B1 verification: installed library exposes the v2 sub-workflow APIs.
+
+    The platform translator can therefore derive config-driven
+    ``type=sub_workflow`` nodes directly. A small platform shim adds the
+    class-level proxy ``Inputs`` expected by the installed validator.
+    """
+    from bioimageflow import SubWorkflow, Workflow, ValidationError
+
+    assert callable(SubWorkflow.from_config)
+    assert callable(Workflow.from_dict)
+    assert callable(Workflow.to_dict)
+    assert callable(Workflow.plan)
+    err = ValidationError(kind="parameter_invalid", message="bad", path=("outer",))
+    assert err.path == ("outer",)
+
+
+def test_generated_sub_workflow_config_validates_in_library(
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow import Workflow
+
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="outer",
+                name="Outer",
+                tool_name="__sub_workflow__",
+                position=(0, 0),
+                parameters={"image": "/tmp/input.tif"},
+                sub_workflow=GraphState(
+                    nodes=[
+                        NodeState(
+                            id="seg",
+                            name="seg",
+                            tool_name="TProcTool",
+                            position=(0, 0),
+                            parameters={"input_image": None, "diameter": 9.0},
+                        ),
+                    ],
+                    edges=[],
+                ),
+                published_inputs=[
+                    PublishedInput(
+                        name="image",
+                        internal_node_id="seg",
+                        internal_field="input_image",
+                        kind="input",
+                        schema={"type": "Path"},
+                    ),
+                ],
+                published_outputs=[
+                    PublishedOutput(
+                        name="mask",
+                        internal_node_id="seg",
+                        internal_output="mask",
+                        schema={"type": "Path"},
+                    ),
+                ],
+            ),
+        ],
+        edges=[],
+    )
+
+    result = graph_state_to_lib_dict(graph, registry)
+    workflow, build_errors = Workflow.from_dict(
+        result.lib_dict,
+        validate_only=True,
+        partial=True,
+        auto_install=False,
+    )
+
+    assert result.errors == []
+    assert build_errors == []
+    assert workflow.validate() == []
+
+
+def test_sub_workflow_node_derives_config(registry: ToolRegistryService) -> None:
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="outer",
+                name="Outer",
+                tool_name="__sub_workflow__",
+                position=(0, 0),
+                parameters={"image": "/tmp/input.tif"},
+                sub_workflow=GraphState(
+                    nodes=[
+                        NodeState(
+                            id="seg",
+                            name="seg",
+                            tool_name="TProcTool",
+                            position=(0, 0),
+                            parameters={"input_image": None, "diameter": 9.0},
+                        ),
+                    ],
+                    edges=[],
+                ),
+                published_inputs=[
+                    PublishedInput(
+                        name="image",
+                        internal_node_id="seg",
+                        internal_field="input_image",
+                        kind="input",
+                        schema={"type": "Path"},
+                    ),
+                ],
+                published_outputs=[
+                    PublishedOutput(
+                        name="mask",
+                        internal_node_id="seg",
+                        internal_output="mask",
+                        schema={"type": "Path"},
+                    ),
+                ],
+            ),
+        ],
+        edges=[],
+    )
+
+    result = graph_state_to_lib_dict(graph, registry)
+
+    assert result.errors == []
+    [node_dict] = result.lib_dict["nodes"]
+    assert node_dict["type"] == "sub_workflow"
+    assert node_dict["sub_workflow_type"] == "config"
+    assert node_dict["constants"]["image"] == {
+        "__type__": "str",
+        "value": "/tmp/input.tif",
+    }
+    config = node_dict["config"]
+    assert config["name"] == "outer"
+    assert config["inputs"] == {"image": {"type": "Path"}}
+    assert config["outputs"] == {"mask": {"type": "Path"}}
+    assert config["nodes"][0]["name"] == "seg"
+    assert config["nodes"][0]["inputs"]["input_image"] == {"from_input": "image"}
+    assert config["nodes"][0]["inputs"]["diameter"] == 9.0
+    assert config["output_mapping"] == {
+        "mask": {"from_node": "seg", "column": "mask"},
+    }
+
+
+def test_nested_sub_workflow_node_derives_inline_config(
+    registry: ToolRegistryService,
+) -> None:
+    inner_graph = GraphState(
+        nodes=[
+            NodeState(
+                id="leaf",
+                name="leaf",
+                tool_name="TProcTool",
+                position=(0, 0),
+                parameters={"input_image": None},
+            ),
+        ],
+        edges=[],
+    )
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="outer",
+                name="Outer",
+                tool_name="__sub_workflow__",
+                position=(0, 0),
+                parameters={},
+                sub_workflow=GraphState(
+                    nodes=[
+                        NodeState(
+                            id="inner",
+                            name="Inner",
+                            tool_name="__sub_workflow__",
+                            position=(0, 0),
+                            parameters={},
+                            sub_workflow=inner_graph,
+                            published_inputs=[
+                                PublishedInput(
+                                    name="image",
+                                    internal_node_id="leaf",
+                                    internal_field="input_image",
+                                    kind="input",
+                                    schema={"type": "Path"},
+                                ),
+                            ],
+                            published_outputs=[
+                                PublishedOutput(
+                                    name="mask",
+                                    internal_node_id="leaf",
+                                    internal_output="mask",
+                                    schema={"type": "Path"},
+                                ),
+                            ],
+                        ),
+                    ],
+                    edges=[],
+                ),
+                published_outputs=[
+                    PublishedOutput(
+                        name="mask",
+                        internal_node_id="inner",
+                        internal_output="mask",
+                        schema={"type": "Path"},
+                    ),
+                ],
+            ),
+        ],
+        edges=[],
+    )
+
+    result = graph_state_to_lib_dict(graph, registry)
+
+    assert result.errors == []
+    nested = result.lib_dict["nodes"][0]["config"]["nodes"][0]
+    assert nested["type"] == "sub_workflow"
+    assert nested["config"]["nodes"][0]["name"] == "leaf"
+
+
+def test_sub_workflow_internal_nodes_are_dependency_ordered(
+    registry: ToolRegistryService,
+) -> None:
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="outer",
+                name="Outer",
+                tool_name="__sub_workflow__",
+                position=(0, 0),
+                parameters={},
+                sub_workflow=GraphState(
+                    nodes=[
+                        NodeState(
+                            id="dst",
+                            name="dst",
+                            tool_name="TProcTool",
+                            position=(0, 0),
+                            parameters={},
+                        ),
+                        NodeState(
+                            id="src",
+                            name="src",
+                            tool_name="TProcTool",
+                            position=(0, 0),
+                            parameters={"input_image": "/a"},
+                        ),
+                    ],
+                    edges=[
+                        ColumnRefEdge(
+                            id="e",
+                            source_node="src",
+                            target_node="dst",
+                            source_output="mask",
+                            target_input="input_image",
+                        ),
+                    ],
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    result = graph_state_to_lib_dict(graph, registry)
+
+    names = [node["name"] for node in result.lib_dict["nodes"][0]["config"]["nodes"]]
+    assert names == ["src", "dst"]
+
+
+def test_sub_workflow_internal_disabled_node_is_serialized(
+    registry: ToolRegistryService,
+) -> None:
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="outer",
+                name="Outer",
+                tool_name="__sub_workflow__",
+                position=(0, 0),
+                parameters={},
+                sub_workflow=GraphState(
+                    nodes=[
+                        NodeState(
+                            id="inner",
+                            name="inner",
+                            tool_name="TProcTool",
+                            position=(0, 0),
+                            parameters={},
+                            enabled=False,
+                        ),
+                    ],
+                    edges=[],
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    result = graph_state_to_lib_dict(graph, registry)
+
+    inner = result.lib_dict["nodes"][0]["config"]["nodes"][0]
+    assert inner["enabled"] is False
+
+
+def test_sub_workflow_published_output_unknown_target_is_error(
+    registry: ToolRegistryService,
+) -> None:
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="outer",
+                name="Outer",
+                tool_name="__sub_workflow__",
+                position=(0, 0),
+                parameters={},
+                sub_workflow=GraphState(nodes=[], edges=[]),
+                published_outputs=[
+                    PublishedOutput(
+                        name="mask",
+                        internal_node_id="missing",
+                        internal_output="mask",
+                        schema={"type": "Path"},
+                    ),
+                ],
+            ),
+        ],
+        edges=[],
+    )
+
+    result = graph_state_to_lib_dict(graph, registry)
+
+    assert any(
+        e.type == "parameter_invalid"
+        and e.node == "outer"
+        and e.field == "mask"
+        and "targets unknown internal node" in e.detail
+        for e in result.errors
+    )
+
+
+def test_sub_workflow_structural_errors_are_scoped(
+    registry: ToolRegistryService,
+) -> None:
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="outer",
+                name="Outer",
+                tool_name="__sub_workflow__",
+                position=(0, 0),
+                parameters={},
+                sub_workflow=GraphState(
+                    nodes=[
+                        NodeState(
+                            id="dup",
+                            name="a",
+                            tool_name="TProcTool",
+                            position=(0, 0),
+                            parameters={},
+                        ),
+                        NodeState(
+                            id="dup",
+                            name="b",
+                            tool_name="TProcTool",
+                            position=(0, 0),
+                            parameters={},
+                        ),
+                    ],
+                    edges=[
+                        ColumnRefEdge(
+                            id="dangling",
+                            source_node="missing",
+                            target_node="dup",
+                            source_output="mask",
+                            target_input="input_image",
+                        ),
+                    ],
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    result = graph_state_to_lib_dict(graph, registry)
+
+    assert any(
+        e.type == "invalid_node_id" and e.node == "outer/dup"
+        for e in result.errors
+    )
+    assert any(
+        e.type == "invalid_edge_id" and e.edge_id == "dangling"
+        for e in result.errors
+    )
+
+
+def test_lib_dict_to_graph_state_reconstructs_config_sub_workflow() -> None:
+    graph = lib_dict_to_graph_state(
+        {
+            "nodes": [
+                {
+                    "name": "outer",
+                    "type": "sub_workflow",
+                    "sub_workflow_type": "config",
+                    "constants": {"image": {"__type__": "str", "value": "/a"}},
+                    "config": {
+                        "name": "outer",
+                        "inputs": {"image": {"type": "Path"}},
+                        "outputs": {"mask": {"type": "Path"}},
+                        "nodes": [
+                            {
+                                "name": "seg",
+                                "tool_class": "TProcTool",
+                                "tool_module": "tests.fake",
+                                "inputs": {
+                                    "input_image": {"from_input": "image"},
+                                    "diameter": 5.0,
+                                },
+                            }
+                        ],
+                        "output_mapping": {
+                            "mask": {"from_node": "seg", "column": "mask"},
+                        },
+                    },
+                },
+            ],
+            "edges": [],
+        }
+    )
+
+    [outer] = graph.nodes
+    assert outer.tool_name == "__sub_workflow__"
+    assert outer.parameters == {"image": "/a"}
+    assert outer.sub_workflow is not None
+    assert outer.sub_workflow.nodes[0].tool_name == "TProcTool"
+    assert outer.sub_workflow.nodes[0].parameters == {"diameter": 5.0}
+    assert outer.published_inputs[0].name == "image"
+    assert outer.published_outputs[0].name == "mask"

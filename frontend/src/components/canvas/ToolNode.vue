@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
-import type { MissingTool, ToolMetadata, NodeOutputSchemaResponse } from '@/api/types'
+import type {
+  MissingTool,
+  NodeOutputSchemaResponse,
+  PublishedInput,
+  PublishedOutput,
+  ToolMetadata,
+} from '@/api/types'
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 
@@ -16,6 +22,10 @@ export interface NodeData {
   connectedInputs: Record<string, string>
   pinnedInputs: Record<string, boolean>
   output_templates: Record<string, string>
+  sub_workflow?: unknown
+  published_inputs?: PublishedInput[]
+  published_outputs?: PublishedOutput[]
+  sub_workflow_readonly_reason?: string | null
   provisional?: boolean
   // Set by useHotReload when this node's tool source was edited.
   // Cleared when the user clicks the refresh-icon badge.
@@ -44,7 +54,22 @@ const resolvedOutputsByNodeId = inject<Record<string, NodeOutputSchemaResponse>>
   {},
 )
 
+const isSubWorkflow = computed(() => {
+  return props.data.toolName === '__sub_workflow__' || props.data.sub_workflow != null
+})
+
+function publishedFieldType(schema: { [key: string]: unknown } | null | undefined): string {
+  const rawType = schema?.type
+  return typeof rawType === 'string' && rawType.length > 0 ? rawType : 'any'
+}
+
 const connectableInputs = computed(() => {
+  if (isSubWorkflow.value) {
+    return (props.data.published_inputs ?? []).map((published) => [
+      published.name,
+      { type: publishedFieldType(published.schema) },
+    ] as [string, { type: string }])
+  }
   if (!props.data.tool) return []
   return Object.entries(props.data.tool.inputs).filter(
     ([name, field]) => field.connectable !== 'never' && (props.data.pinnedInputs[name] !== false),
@@ -82,6 +107,14 @@ const positionalInputCount = computed(() => {
  * Shape: `[name, { type }, placeholder?]`
  */
 const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
+  if (isSubWorkflow.value) {
+    return (props.data.published_outputs ?? []).map((published) => [
+      published.name,
+      { type: publishedFieldType(published.schema) },
+      false,
+    ])
+  }
+
   const tool = props.data.tool
   if (!tool) return []
 
@@ -164,6 +197,8 @@ function onDismissBadge(event: MouseEvent) {
         disabled: !data.enabled,
         provisional: data.provisional,
         collapsed: data.collapsed,
+        'sub-workflow': isSubWorkflow,
+        'readonly-sub-workflow': isSubWorkflow && data.sub_workflow_readonly_reason,
         'missing-tool': data.missingTool,
         'tool-missing': data.toolMissing,
       },
@@ -255,6 +290,14 @@ function onDismissBadge(event: MouseEvent) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   color: var(--p-text-color);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sub-workflow {
+  border-width: 4px;
+}
+
+.readonly-sub-workflow {
+  border-style: double;
 }
 
 .node-header {
@@ -417,7 +460,8 @@ function onDismissBadge(event: MouseEvent) {
 </style>
 
 <style>
-.vue-flow__node-tool.selected .tool-node {
+.vue-flow__node-tool.selected .tool-node,
+.vue-flow__node-sub_workflow.selected .tool-node {
   border-color: var(--p-primary-color);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-primary-color) 25%, transparent);
 }

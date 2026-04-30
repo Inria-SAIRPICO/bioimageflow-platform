@@ -5,6 +5,7 @@ const props = defineProps<{
   nodeId: string
   position: { x: number; y: number }
   enabled: boolean
+  canOpenSubWorkflow?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -12,8 +13,17 @@ const emit = defineEmits<{
   'rename': []
   'delete': []
   'create-sub-workflow': []
+  'open-sub-workflow': []
   'close': []
 }>()
+
+function onSubWorkflowAction() {
+  if (props.canOpenSubWorkflow) {
+    emit('open-sub-workflow')
+  } else {
+    emit('create-sub-workflow')
+  }
+}
 
 const menuRef = ref<HTMLElement | null>(null)
 
@@ -53,8 +63,8 @@ onUnmounted(() => {
       <li @click="emit('enable-toggle')">
         {{ enabled ? 'Disable' : 'Enable' }}
       </li>
-      <li @click="emit('create-sub-workflow')">
-        Create Sub-workflow
+      <li @click="onSubWorkflowAction">
+        {{ canOpenSubWorkflow ? 'Open Sub-workflow' : 'Create Sub-workflow' }}
       </li>
       <li @click="emit('delete')">
         Delete

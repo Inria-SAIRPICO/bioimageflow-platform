@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 
-from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import IOModel, ProcessingTool
 from bioimageflow_core.types import ImagePath, Semantic

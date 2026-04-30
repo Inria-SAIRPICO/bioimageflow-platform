@@ -13,7 +13,6 @@ from httpx import ASGITransport
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.napari import NapariStatus
 from bioimageflow_server.models.tools import AppConfig
-from bioimageflow_server.routers.napari import get_napari_launcher
 from bioimageflow_server.services.napari_launcher import (
     NapariLauncher,
     NapariLaunchError,

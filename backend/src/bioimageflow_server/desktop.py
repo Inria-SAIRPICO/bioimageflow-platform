@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 import threading
 import time
-import urllib.request
-import urllib.error
 
 import uvicorn
 import webview
