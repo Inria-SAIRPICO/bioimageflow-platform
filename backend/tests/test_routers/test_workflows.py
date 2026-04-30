@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -106,6 +107,135 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert deleted.json() == {"deleted": True}
 
 
+async def test_export_workflow_download_response(client: httpx.AsyncClient) -> None:
+    assert (
+        await client.post(
+            "/api/v1/workflows",
+            json={"name": "wf", "display_name": "Workflow"},
+        )
+    ).status_code == 201
+
+    response = await client.post("/api/v1/workflows/wf/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["content-disposition"] == 'attachment; filename="wf.bioimageflow.json"'
+    body = response.json()
+    assert body["bioimageflow_export"] is True
+    assert body["export_version"] == "1.0"
+    assert body["workflow"]["name"] == "wf"
+    assert body["workflow"]["graph"] == {"nodes": [], "edges": []}
+    assert body["workflow"]["library"]["nodes"] == []
+
+
+async def test_export_unknown_workflow_returns_404(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post("/api/v1/workflows/missing/export")
+
+    assert response.status_code == 404
+
+
+async def test_import_workflow_upload_success(client: httpx.AsyncClient) -> None:
+    document = {
+        "bioimageflow_export": True,
+        "export_version": "1.0",
+        "exported_at": "2026-04-30T10:30:00Z",
+        "workflow": {
+            "name": "imported",
+            "display_name": "Imported",
+            "description": None,
+            "storage_path": "/other/machine/imported",
+            "graph": {"nodes": [], "edges": []},
+            "library": {"nodes": [], "edges": []},
+            "gui": {"nodes": {}},
+            "metadata": {
+                "display_name": "Imported",
+                "storage_path": "/other/machine/imported",
+            },
+        },
+        "required_packages": [],
+        "local_tools": [],
+    }
+
+    response = await client.post(
+        "/api/v1/workflows/import",
+        files={"file": ("imported.bioimageflow.json", json.dumps(document), "application/json")},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["info"]["name"] == "imported"
+    assert body["info"]["display_name"] == "Imported"
+    assert body["missing_packages"] == []
+    assert body["missing_tools"] == []
+
+    listing = await client.get("/api/v1/workflows")
+    assert [item["name"] for item in listing.json()] == ["imported"]
+
+
+async def test_import_workflow_conflict_and_name_override(
+    client: httpx.AsyncClient,
+) -> None:
+    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+    document = {
+        "bioimageflow_export": True,
+        "export_version": "1.0",
+        "exported_at": "2026-04-30T10:30:00Z",
+        "workflow": {
+            "name": "wf",
+            "display_name": "Workflow",
+            "description": None,
+            "storage_path": None,
+            "graph": {"nodes": [], "edges": []},
+            "library": {"nodes": [], "edges": []},
+            "gui": {"nodes": {}},
+            "metadata": {},
+        },
+        "required_packages": [],
+        "local_tools": [],
+    }
+
+    conflict = await client.post(
+        "/api/v1/workflows/import",
+        files={"file": ("wf.bioimageflow.json", json.dumps(document), "application/json")},
+    )
+
+    assert conflict.status_code == 409
+    assert conflict.json()["suggested_name"] == "wf_2"
+
+    renamed = await client.post(
+        "/api/v1/workflows/import",
+        data={"name_override": "wf_2"},
+        files={"file": ("wf.bioimageflow.json", json.dumps(document), "application/json")},
+    )
+
+    assert renamed.status_code == 201
+    assert renamed.json()["info"]["name"] == "wf_2"
+
+
+async def test_import_workflow_malformed_and_invalid_payloads(
+    client: httpx.AsyncClient,
+) -> None:
+    malformed = await client.post(
+        "/api/v1/workflows/import",
+        files={"file": ("bad.bioimageflow.json", "{bad", "application/json")},
+    )
+    assert malformed.status_code == 400
+
+    invalid = await client.post(
+        "/api/v1/workflows/import",
+        files={
+            "file": (
+                "bad.bioimageflow.json",
+                json.dumps({"bioimageflow_export": True, "export_version": "2.0"}),
+                "application/json",
+            )
+        },
+    )
+    assert invalid.status_code == 422
+
+
 async def test_create_conflict_preserves_suggested_name(
     client: httpx.AsyncClient,
 ) -> None:
@@ -162,19 +292,20 @@ async def test_patch_invalid_explicit_new_name_returns_400(
     assert "Workflow name must start" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("method,path", [
-    ("put", "/api/v1/workflows/wf"),
-    ("patch", "/api/v1/workflows/wf"),
-    ("delete", "/api/v1/workflows/wf"),
-])
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("put", "/api/v1/workflows/wf"),
+        ("patch", "/api/v1/workflows/wf"),
+        ("delete", "/api/v1/workflows/wf"),
+    ],
+)
 async def test_mutations_return_423_while_execution_running(
     locked_client: httpx.AsyncClient,
     method: str,
     path: str,
 ) -> None:
-    assert (
-        await locked_client.post("/api/v1/workflows", json={"name": "wf"})
-    ).status_code == 201
+    assert (await locked_client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
 
     if method == "put":
         response = await locked_client.put(path, json={"graph": {"nodes": [], "edges": []}})
@@ -182,5 +313,34 @@ async def test_mutations_return_423_while_execution_running(
         response = await locked_client.patch(path, json={"action": "update", "display_name": "x"})
     else:
         response = await locked_client.delete(path)
+
+    assert response.status_code == 423
+
+
+async def test_import_returns_423_while_execution_running(
+    locked_client: httpx.AsyncClient,
+) -> None:
+    document = {
+        "bioimageflow_export": True,
+        "export_version": "1.0",
+        "exported_at": "2026-04-30T10:30:00Z",
+        "workflow": {
+            "name": "imported",
+            "display_name": "Imported",
+            "description": None,
+            "storage_path": None,
+            "graph": {"nodes": [], "edges": []},
+            "library": {"nodes": [], "edges": []},
+            "gui": {"nodes": {}},
+            "metadata": {},
+        },
+        "required_packages": [],
+        "local_tools": [],
+    }
+
+    response = await locked_client.post(
+        "/api/v1/workflows/import",
+        files={"file": ("imported.bioimageflow.json", json.dumps(document), "application/json")},
+    )
 
     assert response.status_code == 423

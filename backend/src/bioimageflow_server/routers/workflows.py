@@ -4,17 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowFile,
     WorkflowInfo,
+    WorkflowImportResponse,
     WorkflowSaveBody,
     WorkflowUpdate,
 )
-from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_store import (
+    WorkflowImportParseError,
+    WorkflowImportValidationError,
+    WorkflowStoreService,
+)
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -71,6 +77,56 @@ async def get_workflow(
         return store.get_workflow(name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
+
+
+@router.post("/{name}/export")
+async def export_workflow(
+    name: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> JSONResponse:
+    try:
+        document = store.export_workflow(name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
+    filename = f"{document.workflow.name}.bioimageflow.json"
+    return JSONResponse(
+        content=document.model_dump(mode="json"),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.post(
+    "/import",
+    response_model=WorkflowImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_workflow(
+    file: UploadFile = File(...),
+    name_override: str | None = Form(default=None),
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    execution_manager: Any | None = Depends(get_execution_manager),
+) -> WorkflowImportResponse | JSONResponse:
+    _ensure_unlocked(execution_manager)
+    raw_json = await file.read()
+    try:
+        document = store.parse_import_document(raw_json)
+        return store.import_workflow(document, name_override=name_override)
+    except WorkflowImportParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (WorkflowImportValidationError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        workflow_name = str(exc.args[0]) if exc.args else name_override or "workflow"
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "conflict",
+                "detail": f"Workflow '{workflow_name}' already exists",
+                "suggested_name": store.suggest_name(workflow_name),
+            },
+        )
 
 
 @router.put("/{name}", response_model=WorkflowInfo)

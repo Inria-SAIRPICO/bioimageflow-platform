@@ -17,9 +17,7 @@ _WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 def canonical_workflow_name(value: str) -> str:
     """Return the workflow ID generated from a user-facing display name."""
     ascii_value = (
-        unicodedata.normalize("NFKD", value.strip())
-        .encode("ascii", "ignore")
-        .decode("ascii")
+        unicodedata.normalize("NFKD", value.strip()).encode("ascii", "ignore").decode("ascii")
     )
     normalized = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_value)
     normalized = re.sub(r"_+", "_", normalized).strip("_").lower()
@@ -89,6 +87,61 @@ class MissingTool(BaseModel):
     package_name: str | None = None
     required_version: str | None = None
     installed_versions: list[str] = Field(default_factory=list)
+
+
+class RequiredPackage(BaseModel):
+    """Package/version requirement recorded in a portable export."""
+
+    name: str
+    version: str
+
+
+class LocalToolReference(BaseModel):
+    """Reference to a local/custom tool that cannot be exported portably yet."""
+
+    tool_name: str
+    node_ids: list[str] = Field(default_factory=list)
+    reason: Literal["custom_tool_not_portable"] = "custom_tool_not_portable"
+
+
+class ExportedWorkflow(BaseModel):
+    """Raw persisted workflow sections carried by a portable export."""
+
+    name: str
+    display_name: str
+    description: str | None = None
+    storage_path: str | None = None
+    graph: dict[str, Any]
+    library: dict[str, Any]
+    gui: dict[str, Any]
+    metadata: dict[str, Any]
+
+
+class WorkflowExportDocument(BaseModel):
+    """Portable workflow export file."""
+
+    bioimageflow_export: Literal[True] = True
+    export_version: Literal["1.0"] = "1.0"
+    exported_at: str
+    workflow: ExportedWorkflow
+    required_packages: list[RequiredPackage] = Field(default_factory=list)
+    local_tools: list[LocalToolReference] = Field(default_factory=list)
+
+
+class WorkflowImportResponse(BaseModel):
+    """Workflow import success response."""
+
+    info: WorkflowInfo
+    missing_packages: list[MissingPackage] = Field(default_factory=list)
+    missing_tools: list[MissingTool] = Field(default_factory=list)
+
+
+class WorkflowImportConflictResponse(BaseModel):
+    """Workflow import conflict response."""
+
+    error: Literal["conflict"] = "conflict"
+    detail: str
+    suggested_name: str
 
 
 class WorkflowFile(BaseModel):

@@ -5,8 +5,14 @@ from pydantic import ValidationError
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import (
+    ExportedWorkflow,
+    LocalToolReference,
     MissingPackage,
     MissingTool,
+    RequiredPackage,
+    WorkflowExportDocument,
+    WorkflowImportConflictResponse,
+    WorkflowImportResponse,
     WorkflowCreate,
     WorkflowFile,
     WorkflowInfo,
@@ -151,3 +157,102 @@ class TestMissingModels:
     def test_missing_tool_defaults(self):
         missing = MissingTool(node_id="node_1", tool_name="MissingTool")
         assert missing.installed_versions == []
+
+
+class TestWorkflowImportExportModels:
+    def test_export_document_roundtrip(self):
+        document = WorkflowExportDocument(
+            exported_at="2026-04-30T10:30:00Z",
+            workflow=ExportedWorkflow(
+                name="wf",
+                display_name="Workflow",
+                description=None,
+                storage_path=None,
+                graph={"nodes": [], "edges": []},
+                library={"nodes": [], "edges": []},
+                gui={"nodes": {}},
+                metadata={"display_name": "Workflow"},
+            ),
+            required_packages=[RequiredPackage(name="pkg", version="1.0.0")],
+            local_tools=[
+                LocalToolReference(
+                    tool_name="LocalTool",
+                    node_ids=["local_1"],
+                    reason="custom_tool_not_portable",
+                )
+            ],
+        )
+
+        rebuilt = WorkflowExportDocument.model_validate_json(document.model_dump_json())
+
+        assert rebuilt.bioimageflow_export is True
+        assert rebuilt.export_version == "1.0"
+        assert rebuilt.workflow.library == {"nodes": [], "edges": []}
+        assert rebuilt.required_packages[0].name == "pkg"
+        assert rebuilt.local_tools[0].node_ids == ["local_1"]
+
+    def test_export_marker_and_version_are_strict(self):
+        payload = {
+            "bioimageflow_export": False,
+            "export_version": "2.0",
+            "exported_at": "2026-04-30T10:30:00Z",
+            "workflow": {
+                "name": "wf",
+                "display_name": "Workflow",
+                "description": None,
+                "storage_path": None,
+                "graph": {"nodes": [], "edges": []},
+                "library": {"nodes": [], "edges": []},
+                "gui": {"nodes": {}},
+                "metadata": {},
+            },
+            "required_packages": [],
+            "local_tools": [],
+        }
+
+        with pytest.raises(ValidationError):
+            WorkflowExportDocument.model_validate(payload)
+
+    def test_required_sections_must_be_objects(self):
+        with pytest.raises(ValidationError):
+            ExportedWorkflow(
+                name="wf",
+                display_name="Workflow",
+                description=None,
+                storage_path=None,
+                graph=[],
+                library={"nodes": [], "edges": []},
+                gui={"nodes": {}},
+                metadata={},
+            )
+
+    def test_import_response_shape_omits_graph(self):
+        info = WorkflowInfo(
+            name="wf",
+            display_name="Workflow",
+            path="/workflows/wf.json",
+            last_modified="2026-04-30T10:30:00Z",
+        )
+        response = WorkflowImportResponse(
+            info=info,
+            missing_packages=[MissingPackage(package_name="pkg", required_version="1.0")],
+            missing_tools=[MissingTool(node_id="n1", tool_name="Tool")],
+        )
+
+        dumped = response.model_dump()
+
+        assert dumped["info"]["name"] == "wf"
+        assert "graph" not in dumped
+        assert dumped["missing_packages"][0]["package_name"] == "pkg"
+
+    def test_conflict_response_shape(self):
+        response = WorkflowImportConflictResponse(
+            detail="Workflow 'wf' already exists",
+            suggested_name="wf_2",
+        )
+
+        assert response.model_dump() == {
+            "error": "conflict",
+            "detail": "Workflow 'wf' already exists",
+            "suggested_name": "wf_2",
+        }

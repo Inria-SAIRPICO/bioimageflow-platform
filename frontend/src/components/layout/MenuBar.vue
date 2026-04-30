@@ -16,6 +16,7 @@ import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
 import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
 import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue'
+import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue'
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState } from '@/api/types'
@@ -55,7 +56,12 @@ const deleteDialogVisible = ref(false)
 const discardDialogVisible = ref(false)
 const aboutDialogVisible = ref(false)
 const renameDialogVisible = ref(false)
+const importRenameDialogVisible = ref(false)
+const importRenameName = ref('')
 const renameDisplayName = ref('')
+const importFileInput = ref<HTMLInputElement | null>(null)
+const pendingImportFile = ref<File | null>(null)
+const dependencyDialogVisible = ref(false)
 const pendingDiscardAction = ref<(() => void | Promise<void>) | null>(null)
 
 function panelToggle(label: string, panelKey: keyof typeof uiStore.panels): MenuItem {
@@ -85,6 +91,10 @@ function applyGraph(graph: GraphState, dirty = false): void {
 function showError(summary: string, err: unknown): void {
   const detail = err instanceof Error ? err.message : String(err)
   toast?.add({ severity: 'error', summary, detail })
+}
+
+function hasMissingImportDependencies(): boolean {
+  return workflowStore.missingPackages.length > 0 || workflowStore.missingTools.length > 0
 }
 
 function runAfterDiscard(action: () => void | Promise<void>): void {
@@ -206,6 +216,95 @@ async function saveWorkflow(): Promise<void> {
   }
 }
 
+async function exportCurrentWorkflow(): Promise<void> {
+  const name = workflowStore.currentName
+  if (!name) return
+  try {
+    await workflowStore.exportWorkflow(name)
+  } catch (err: unknown) {
+    showError('Export workflow failed', err)
+  }
+}
+
+function chooseImportFile(): void {
+  runAfterDiscard(() => {
+    importFileInput.value?.click()
+  })
+}
+
+async function openImportedWorkflow(name: string): Promise<void> {
+  const graph = await workflowStore.loadWorkflow(name)
+  applyGraph(graph)
+  if (hasMissingImportDependencies()) {
+    dependencyDialogVisible.value = true
+    return
+  }
+  toast?.add({
+    severity: 'success',
+    summary: 'Workflow imported',
+    detail: workflowStore.current?.display_name ?? name,
+    life: 2500,
+  })
+}
+
+async function finishImport(file: File, nameOverride?: string): Promise<void> {
+  const response = await workflowStore.importWorkflow(file, { nameOverride })
+  await openImportedWorkflow(response.info.name)
+  pendingImportFile.value = null
+}
+
+async function onImportFileSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  pendingImportFile.value = file
+  try {
+    await finishImport(file)
+  } catch (err: unknown) {
+    if (err instanceof WorkflowConflictError && err.suggestedName) {
+      importRenameName.value = err.suggestedName
+      importRenameDialogVisible.value = true
+      return
+    }
+    pendingImportFile.value = null
+    showError('Import workflow failed', err)
+  }
+}
+
+async function confirmImportRename(): Promise<void> {
+  const file = pendingImportFile.value
+  const nameOverride = importRenameName.value.trim()
+  if (!file || !nameOverride) return
+  try {
+    await finishImport(file, nameOverride)
+    importRenameDialogVisible.value = false
+  } catch (err: unknown) {
+    if (err instanceof WorkflowConflictError && err.suggestedName) {
+      importRenameName.value = err.suggestedName
+      toast?.add({
+        severity: 'warn',
+        summary: 'Workflow already exists',
+        detail: `Suggested name: ${err.suggestedName}`,
+        life: 5000,
+      })
+      return
+    }
+    pendingImportFile.value = null
+    showError('Import workflow failed', err)
+  }
+}
+
+async function rebindImportedDependencies(): Promise<void> {
+  try {
+    const graph = await workflowStore.rebindVersions()
+    dependencyDialogVisible.value = false
+    applyGraph(graph)
+  } catch (err: unknown) {
+    showError('Dependency rebind failed', err)
+  }
+}
+
 function saveWorkflowAs(): void {
   workflowDialogMode.value = 'save-as'
   const baseName = workflowStore.currentName ?? 'Untitled'
@@ -311,6 +410,8 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'Open', icon: 'pi pi-folder-open', disabled: executionStore.isRunning, command: openWorkflow },
       { label: 'Save', icon: 'pi pi-save', disabled: executionStore.isRunning, command: saveWorkflow },
       { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isRunning, command: saveWorkflowAs },
+      { label: 'Import', icon: 'pi pi-upload', disabled: executionStore.isRunning, command: chooseImportFile },
+      { label: 'Export', icon: 'pi pi-download', disabled: executionStore.isRunning || !workflowStore.currentName, command: exportCurrentWorkflow },
       { label: 'Delete', icon: 'pi pi-trash', disabled: executionStore.isRunning || !workflowStore.currentName, command: deleteWorkflow },
     ],
   },
@@ -402,10 +503,25 @@ function onHistoryNavigate(nodeId: string) {
   historyPanelOpen.value = false
 }
 
-defineExpose({ menuItems, historyPanelOpen, aboutDialogVisible, renameDialogVisible })
+defineExpose({
+  menuItems,
+  historyPanelOpen,
+  aboutDialogVisible,
+  renameDialogVisible,
+  importRenameDialogVisible,
+  dependencyDialogVisible,
+})
 </script>
 
 <template>
+  <input
+    ref="importFileInput"
+    type="file"
+    accept=".bioimageflow.json,application/json"
+    hidden
+    data-testid="workflow-import-input"
+    @change="onImportFileSelected"
+  >
   <Menubar :model="menuItems" data-testid="app-menubar">
     <template #end>
       <div class="workflow-actions">
@@ -462,6 +578,13 @@ defineExpose({ menuItems, historyPanelOpen, aboutDialogVisible, renameDialogVisi
     @confirm="confirmDeleteWorkflow"
   />
 
+  <MissingPackageDialog
+    v-model:visible="dependencyDialogVisible"
+    :packages="workflowStore.missingPackages"
+    :tools="workflowStore.missingTools"
+    @rebind="rebindImportedDependencies"
+  />
+
   <Dialog
     v-model:visible="discardDialogVisible"
     modal
@@ -509,6 +632,39 @@ defineExpose({ menuItems, historyPanelOpen, aboutDialogVisible, renameDialogVisi
         :disabled="!renameDisplayName.trim()"
         data-testid="rename-workflow-submit"
         @click="submitRename"
+      />
+    </template>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="importRenameDialogVisible"
+    modal
+    header="Rename imported workflow"
+    :style="{ width: '380px' }"
+    data-testid="import-rename-dialog"
+  >
+    <label class="rename-field">
+      <span>Name</span>
+      <InputText
+        v-model="importRenameName"
+        autofocus
+        autocomplete="off"
+        data-testid="import-rename-input"
+        @keydown.enter="confirmImportRename"
+      />
+    </label>
+    <template #footer>
+      <Button
+        label="Cancel"
+        text
+        @click="importRenameDialogVisible = false; pendingImportFile = null"
+      />
+      <Button
+        label="Import"
+        icon="pi pi-check"
+        :disabled="!importRenameName.trim()"
+        data-testid="import-rename-submit"
+        @click="confirmImportRename"
       />
     </template>
   </Dialog>

@@ -449,6 +449,40 @@ export interface paths {
         patch: operations["patch_workflow_api_v1_workflows__name__patch"];
         trace?: never;
     };
+    "/api/v1/workflows/{name}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Workflow */
+        post: operations["export_workflow_api_v1_workflows__name__export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Workflow */
+        post: operations["import_workflow_api_v1_workflows_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/{name}/rebind-versions": {
         parameters: {
             query?: never;
@@ -590,6 +624,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_import_workflow_api_v1_workflows_import_post */
+        Body_import_workflow_api_v1_workflows_import_post: {
+            /** File */
+            file: string;
+            /** Name Override */
+            name_override?: string | null;
+        };
         /** Body_upload_datasets_api_v1_datasets_upload_post */
         Body_upload_datasets_api_v1_datasets_upload_post: {
             /** Files */
@@ -667,15 +708,6 @@ export interface components {
             edges: (components["schemas"]["ColumnRefEdge"] | components["schemas"]["PositionalEdge"])[];
         };
         /**
-         * GraphValidationRequest
-         * @description Request to validate a graph in an optional workflow context.
-         */
-        GraphValidationRequest: {
-            graph: components["schemas"]["GraphState"];
-            /** Workflow Name */
-            workflow_name?: string | null;
-        };
-        /**
          * GraphValidationError
          * @description A single validation error detected in the graph.
          */
@@ -693,6 +725,15 @@ export interface components {
             edge_id?: string | null;
             /** Field */
             field?: string | null;
+        };
+        /**
+         * GraphValidationRequest
+         * @description Request to validate a graph in an optional workflow context.
+         */
+        GraphValidationRequest: {
+            graph: components["schemas"]["GraphState"];
+            /** Workflow Name */
+            workflow_name?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -995,6 +1036,8 @@ export interface components {
             external_editor?: string | null;
             /** Napari Env Path */
             napari_env_path?: string | null;
+            /** Thumbnail Env Path */
+            thumbnail_env_path?: string | null;
             /**
              * Omero Instances
              * @default []
@@ -1235,6 +1278,17 @@ export interface components {
             missing_tools?: components["schemas"]["MissingTool"][];
         };
         /**
+         * WorkflowImportResponse
+         * @description Workflow import success response.
+         */
+        WorkflowImportResponse: {
+            info: components["schemas"]["WorkflowInfo"];
+            /** Missing Packages */
+            missing_packages?: components["schemas"]["MissingPackage"][];
+            /** Missing Tools */
+            missing_tools?: components["schemas"]["MissingTool"][];
+        };
+        /**
          * WorkflowInfo
          * @description Workflow list item returned by GET /workflows.
          */
@@ -1285,14 +1339,15 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type BodyImportWorkflowApiV1WorkflowsImportPost = components['schemas']['Body_import_workflow_api_v1_workflows_import_post'];
 export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['Body_upload_datasets_api_v1_datasets_upload_post'];
 export type ClearRequest = components['schemas']['ClearRequest'];
 export type ColumnRefEdge = components['schemas']['ColumnRefEdge'];
 export type Dataset = components['schemas']['Dataset'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
 export type GraphState = components['schemas']['GraphState'];
-export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
+export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
 export type MissingPackage = components['schemas']['MissingPackage'];
@@ -1319,6 +1374,7 @@ export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
 export type WorkflowFile = components['schemas']['WorkflowFile'];
+export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
 export type WorkflowInfo = components['schemas']['WorkflowInfo'];
 export type WorkflowSaveBody = components['schemas']['WorkflowSaveBody'];
 export type WorkflowUpdate = components['schemas']['WorkflowUpdate'];
@@ -2255,6 +2311,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_workflow_api_v1_workflows__name__export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_workflow_api_v1_workflows_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_workflow_api_v1_workflows_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowImportResponse"];
                 };
             };
             /** @description Validation Error */
