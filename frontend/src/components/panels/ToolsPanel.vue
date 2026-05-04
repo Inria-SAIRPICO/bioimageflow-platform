@@ -381,6 +381,7 @@ const activeDoc = ref<string | null>(null)
 
 /** Single active documentation panel inside the manage dialog */
 const manageActiveDoc = ref<string | null>(null)
+const toolEnvStatuses = ref<Record<string, string>>({})
 
 function toggleDocumentation(toolName: string) {
   activeDoc.value = activeDoc.value === toolName ? null : toolName
@@ -490,10 +491,23 @@ function getEnvStatus(packageName: string): string {
 }
 
 function getToolEnvName(tool: ToolMetadata): string {
-  return tool.environment?.name || tool.name
+  const name = tool.environment?.name
+  return typeof name === 'string' ? name : ''
 }
 
 function getToolEnvStatus(tool: ToolMetadata): string {
+  const envName = getToolEnvName(tool)
+  if (!envName) return 'unavailable'
+  const localStatus = toolEnvStatuses.value[envName]
+  if (localStatus) return localStatus
+
+  const packageEnvNames = new Set(
+    toolRegistry.tools
+      .filter((candidate) => candidate.package === tool.package)
+      .map((candidate) => candidate.environment?.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  )
+  if (packageEnvNames.size > 1) return 'stopped'
   return toolRegistry.getEnvStatusForTool(tool.name)
 }
 
@@ -515,10 +529,13 @@ async function toggleToolEnvironment(tool: ToolMetadata) {
   try {
     const status = getToolEnvStatus(tool)
     const envName = getToolEnvName(tool)
+    if (!envName || status === 'unavailable') return
     if (status === 'running') {
-      await api.post(`/api/v1/tools/environments/${envName}/stop`)
+      const { data } = await api.post(`/api/v1/tools/environments/${envName}/stop`)
+      toolEnvStatuses.value = { ...toolEnvStatuses.value, [envName]: data?.status ?? 'stopped' }
     } else {
-      await api.post(`/api/v1/tools/environments/${envName}/start`)
+      const { data } = await api.post(`/api/v1/tools/environments/${envName}/start`)
+      toolEnvStatuses.value = { ...toolEnvStatuses.value, [envName]: data?.status ?? 'running' }
     }
     await toolRegistry.fetchPackages()
   } catch (e: unknown) {
@@ -649,6 +666,7 @@ defineExpose({
                   class="tool-list-power-btn"
                   :class="`env-${getToolEnvStatus(tool)}`"
                   :data-testid="`tool-power-${tool.name}`"
+                  :disabled="getToolEnvStatus(tool) === 'unavailable'"
                   :title="getToolEnvStatus(tool)"
                   @click.stop="toggleToolEnvironment(tool)"
                 />
@@ -883,6 +901,7 @@ defineExpose({
                   text
                   size="small"
                   :class="`env-${getToolEnvStatus(node.data.tool)}`"
+                  :disabled="getToolEnvStatus(node.data.tool) === 'unavailable'"
                   :title="getToolEnvStatus(node.data.tool)"
                   :data-testid="`tool-env-toggle-${node.data.name}`"
                   @click="toggleToolEnvironment(node.data.tool)"

@@ -126,11 +126,15 @@ def _service(
     command: str | None = None,
     embedded: _Embedded | None = None,
     launcher: _RecorderLauncher | None = None,
+    embedded_startup_timeout: float = 10.0,
+    embedded_poll_interval: float = 0.2,
 ) -> EditorService:
     return EditorService(
         settings_provider=lambda: _settings(command),
         process_launcher=launcher or _RecorderLauncher(),
         embedded_manager=embedded or _Embedded(),
+        embedded_startup_timeout=embedded_startup_timeout,
+        embedded_poll_interval=embedded_poll_interval,
     )
 
 
@@ -272,6 +276,70 @@ def test_default_embedded_editor_launches_when_not_already_running(tmp_path: Pat
     assert embedded.opened == [tool]
     assert response.method == EditorOpenMethod.EMBEDDED
     assert response.url == "http://127.0.0.1:32344"
+
+
+def test_default_embedded_editor_waits_until_control_endpoint_is_ready(
+    tmp_path: Path,
+) -> None:
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = _LaunchableEmbedded()
+    status_calls = 0
+
+    def delayed_status() -> EditorStatus:
+        nonlocal status_calls
+        status_calls += 1
+        if embedded.launches and status_calls >= 3:
+            return EditorStatus(
+                available=True,
+                url=embedded.url,
+                version=None,
+                control_available=True,
+            )
+        return EditorStatus(
+            available=bool(embedded.launches),
+            url=embedded.url if embedded.launches else None,
+            version=None,
+            control_available=False,
+        )
+
+    embedded.status = delayed_status  # type: ignore[method-assign]
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=1.0,
+        embedded_poll_interval=0.001,
+    )
+
+    response = service.open_path(str(tool))
+
+    assert status_calls >= 3
+    assert embedded.opened == [tool]
+    assert response.method == EditorOpenMethod.EMBEDDED
+
+
+def test_default_embedded_editor_does_not_report_opened_without_opener(
+    tmp_path: Path,
+) -> None:
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = _LaunchableEmbedded()
+    embedded.status = lambda: EditorStatus(  # type: ignore[method-assign]
+        available=bool(embedded.launches),
+        url=embedded.url if embedded.launches else None,
+        version=None,
+        control_available=False,
+    )
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=0.0,
+        embedded_poll_interval=0.0,
+    )
+
+    response = service.open_path(str(tool))
+
+    assert embedded.opened == []
+    assert response.method == EditorOpenMethod.CLIPBOARD
+    assert response.opened is False
 
 
 def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> None:

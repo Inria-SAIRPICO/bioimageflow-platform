@@ -616,6 +616,20 @@ async def test_stop_environment_delegates_to_environment_service():
     assert envs.stopped == ["myenv"]
 
 
+async def test_start_environment_for_tool_without_environment_returns_stopped():
+    registry = ToolRegistryService()
+    registry.register_tool("NoEnvTool", _make_tool("NoEnvTool"))
+    registry.register_package("pkg", _make_package("pkg"))
+    config = AppConfig(tool_registry=registry)
+
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/environments/NoEnvTool/start")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"environment": "NoEnvTool", "status": "stopped"}
+    assert registry.get_package("pkg").environment_status == "stopped"
+
+
 async def test_get_source_success(workflow_root: Path):
     config = AppConfig(
         tool_registry=ToolRegistryService(),

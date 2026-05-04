@@ -34,10 +34,11 @@ class ToolEnvironmentService:
         tools = self._tools_for_environment(env_name)
         if not tools:
             return "creating"
+        spec = next((self._environment_spec(tool) for tool in tools), None)
+        if spec is None:
+            return "stopped"
         self._set_status(tools, "creating")
-        spec = self._environment_spec(tools[0])
-        if spec is not None:
-            await anyio_to_thread.run_sync(self._manager.get_or_create, spec)
+        await anyio_to_thread.run_sync(self._manager.get_or_create, spec)
         self._set_status(tools, "running")
         return "running"
 
