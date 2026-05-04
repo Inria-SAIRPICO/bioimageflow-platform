@@ -15,7 +15,6 @@ import { useSettingsStore } from '@/stores/settings'
 import type { ToolCreateResponse, ToolMetadata, ToolSourceResponse } from '@/api/types'
 import { api } from '@/api/client'
 import { openPathWithEditor } from '@/api/editor'
-import { isDesktop as isPywebviewDesktop } from '@/utils/nativeDialogs'
 
 const emit = defineEmits<{
   'add-tool': [toolName: string]
@@ -51,8 +50,7 @@ function markBusy(key: string, on: boolean) {
 
 const filteredTools = computed(() => toolRegistry.searchTools(searchQuery.value))
 const localToolActionsAvailable = computed(() => {
-  if (settingsStore.isWebapp) return false
-  return settingsStore.isDesktop || isPywebviewDesktop()
+  return settingsStore.settings?.deployment_mode !== 'webapp'
 })
 
 /** Tools grouped by their primary category for the sidebar list. The list

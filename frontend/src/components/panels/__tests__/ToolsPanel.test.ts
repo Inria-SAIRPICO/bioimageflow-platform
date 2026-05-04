@@ -211,8 +211,7 @@ describe('ToolsPanel', () => {
     expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(true)
   })
 
-  it('renders create tool button in pywebview before settings load', () => {
-    setPywebviewDesktop(true)
+  it('renders create tool button before settings load', () => {
     const wrapper = mountPanel({ settings: null })
     expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(true)
   })

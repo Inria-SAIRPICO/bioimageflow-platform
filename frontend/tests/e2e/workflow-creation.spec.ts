@@ -18,9 +18,40 @@ test.describe('workflow creation', () => {
     // Create Tool button present
     await expect(page.locator('[data-testid="create-tool-btn"]')).toBeVisible()
 
-    // TreeTable headers rendered
-    const headers = page.locator('.p-treetable-thead th')
-    await expect(headers).toHaveCount(5)
+    // Tool list rendered
+    await expect(page.locator('[data-testid="tool-list"]')).toBeVisible()
+  })
+
+  test('desktop shell shows Create Tool even when settings are unavailable', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'pywebview', {
+        configurable: true,
+        value: {
+          api: {
+            select_file: async () => null,
+            select_files: async () => [],
+            select_folder: async () => null,
+            save_file: async () => null,
+            set_title: async () => undefined,
+            reveal_path: async () => undefined,
+          },
+        },
+      })
+    })
+    await page.route('**/api/v1/settings', (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'not_found', detail: 'settings unavailable' }),
+      }),
+    )
+
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+
+    await expect(page.locator('[data-testid="tool-search"]')).toBeVisible()
+    await expect(page.locator('[data-testid="create-tool-btn"]')).toBeVisible()
   })
 
   test('Tools Panel fetches tools from backend successfully', async ({ page }) => {
