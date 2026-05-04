@@ -86,6 +86,9 @@ class WebSocketLogHandler(logging.Handler):
 
         if active is not None and _is_wetlands_context_terminal(message):
             self._wetlands_active_nodes.pop(key, None)
+            for active_key, active_node in list(self._wetlands_active_nodes.items()):
+                if active_node == active:
+                    self._wetlands_active_nodes.pop(active_key, None)
             if not self._wetlands_active_nodes:
                 self._wetlands_active_nodes.clear()
 
