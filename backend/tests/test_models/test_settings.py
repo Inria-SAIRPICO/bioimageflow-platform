@@ -71,6 +71,11 @@ class TestSettings:
         assert s.cache_max_age is None
         assert s.keyboard_shortcuts == {}
         assert s.dev_mode is True
+        assert s.enable_unsafe_webapp_features is False
+
+    def test_unsafe_webapp_features_flag(self):
+        s = Settings(deployment_mode="webapp", enable_unsafe_webapp_features=True)
+        assert s.enable_unsafe_webapp_features is True
 
     def test_output_data_folder_overridable(self):
         s = Settings(deployment_mode="desktop", output_data_folder="/tmp/x")

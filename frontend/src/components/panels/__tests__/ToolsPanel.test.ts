@@ -134,6 +134,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     cache_max_age: null,
     keyboard_shortcuts: {},
     dev_mode: true,
+    enable_unsafe_webapp_features: false,
     datasets_root: null,
     max_upload_size: 2147483648,
     resolved_tool_store_path: '~/.bioimageflow/tool_packages/',
@@ -222,6 +223,16 @@ describe('ToolsPanel', () => {
       settings: makeSettings({ deployment_mode: 'webapp' }),
     })
     expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(false)
+  })
+
+  it('shows create tool button in webapp mode when unsafe webapp features are enabled', () => {
+    const wrapper = mountPanel({
+      settings: makeSettings({
+        deployment_mode: 'webapp',
+        enable_unsafe_webapp_features: true,
+      }),
+    })
+    expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(true)
   })
 
   it('renders manage tools button', () => {
@@ -653,7 +664,7 @@ describe('ToolsPanel', () => {
     expect(vm.isEditableTool(store.getToolByName('threshold')!)).toBe(false)
   })
 
-  it('openInEditor does nothing in webapp mode', async () => {
+  it('openInEditor does nothing in webapp mode when unsafe webapp features are disabled', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
@@ -675,6 +686,42 @@ describe('ToolsPanel', () => {
 
     expect(mockedApi.get).not.toHaveBeenCalled()
     expect(mockedApi.post).not.toHaveBeenCalled()
+  })
+
+  it('openInEditor works in webapp mode when unsafe webapp features are enabled', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const settingsStore = useSettingsStore()
+    settingsStore.settings = makeSettings({
+      deployment_mode: 'webapp',
+      enable_unsafe_webapp_features: true,
+    })
+
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        tool_name: 'threshold',
+        path: '/path/to/tool.py',
+        source_kind: 'package',
+        editable: false,
+      },
+    })
+    mockedApi.post.mockResolvedValueOnce({
+      data: { opened: true, method: 'external', url: null, path: '/path/to/tool.py', message: null },
+    })
+
+    const vm = wrapper.vm as unknown as {
+      openInEditor: (name: string) => Promise<void>
+    }
+    await vm.openInEditor('threshold')
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/threshold/source')
+    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
+      path: '/path/to/tool.py',
+    })
   })
 
   // --- Task 16: Environment controls tests ---

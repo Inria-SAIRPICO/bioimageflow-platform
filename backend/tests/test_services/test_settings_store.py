@@ -97,6 +97,21 @@ class TestLoad:
         result = await store.load()
         assert result.external_editor == "vim"
 
+    async def test_file_loads_unsafe_webapp_features_flag(self, tmp_path: Path) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "settings_version": 1,
+                    "deployment_mode": "webapp",
+                    "enable_unsafe_webapp_features": True,
+                }
+            )
+        )
+        store = SettingsStore(path=path, deployment_mode="webapp")
+        result = await store.load()
+        assert result.enable_unsafe_webapp_features is True
+
     async def test_file_with_future_version_returns_defaults_without_overwrite(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:

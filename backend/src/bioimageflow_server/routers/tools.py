@@ -42,6 +42,10 @@ def get_deployment_mode() -> str:  # pragma: no cover
     return "desktop"
 
 
+def get_unsafe_webapp_features_enabled() -> bool:  # pragma: no cover
+    return False
+
+
 def get_package_installer() -> Any:  # pragma: no cover
     return None
 
@@ -136,9 +140,10 @@ async def create_tool(
     body: ToolCreate,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
+    unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
     registry: ToolRegistryService = Depends(get_tool_registry),
 ) -> ToolCreateResponse:
-    if mode == "webapp":
+    if mode == "webapp" and not unsafe_webapp_features_enabled:
         raise HTTPException(status_code=403, detail="Tool creation disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
@@ -175,9 +180,10 @@ async def rename_tool(
     body: ToolRename,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
+    unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
     registry: ToolRegistryService = Depends(get_tool_registry),
 ) -> ToolRenameResponse:
-    if mode == "webapp":
+    if mode == "webapp" and not unsafe_webapp_features_enabled:
         raise HTTPException(status_code=403, detail="Tool renaming disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
@@ -203,10 +209,11 @@ async def delete_tool(
     tool_name: str,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
+    unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ToolDeleteResponse:
-    if mode == "webapp":
+    if mode == "webapp" and not unsafe_webapp_features_enabled:
         raise HTTPException(status_code=403, detail="Tool deletion disabled in webapp mode")
     if workflow_root is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")

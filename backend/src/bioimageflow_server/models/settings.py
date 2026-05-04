@@ -88,6 +88,7 @@ class Settings(BaseModel):
     cache_max_age: str | None = None
     keyboard_shortcuts: dict[str, str] = {}
     dev_mode: bool = True
+    enable_unsafe_webapp_features: bool = False
     datasets_root: str | None = None
     max_upload_size: int = _DEFAULT_MAX_UPLOAD_SIZE
 

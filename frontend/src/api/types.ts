@@ -1168,6 +1168,11 @@ export interface components {
              * @default true
              */
             dev_mode: boolean;
+            /**
+             * Enable Unsafe Webapp Features
+             * @default false
+             */
+            enable_unsafe_webapp_features: boolean;
             /** Datasets Root */
             datasets_root?: string | null;
             /**

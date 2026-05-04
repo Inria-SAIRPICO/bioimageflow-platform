@@ -91,6 +91,11 @@ async def patch_settings(
     body: dict[str, Any],
     store: SettingsStore = Depends(get_settings_store),
 ) -> SettingsResponse:
+    if "enable_unsafe_webapp_features" in body:
+        raise HTTPException(
+            status_code=422,
+            detail="enable_unsafe_webapp_features can only be changed in the settings file",
+        )
     if "dev_mode" in body and body["dev_mode"] is False:
         raise HTTPException(
             status_code=422,

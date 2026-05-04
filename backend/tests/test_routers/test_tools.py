@@ -25,6 +25,7 @@ from bioimageflow_server.models.tools import (
     ToolMetadata,
 )
 from bioimageflow_server.models.graph import GraphState, NodeState
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
@@ -73,18 +74,21 @@ async def _client(config: AppConfig) -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.fixture
-async def populated_client() -> AsyncIterator[httpx.AsyncClient]:
+async def populated_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
     reg = ToolRegistryService()
     reg.register_tool("Cellpose", _make_tool("Cellpose"))
     reg.register_package("cellpose", _make_package("cellpose"))
-    config = AppConfig(tool_registry=reg)
+    config = AppConfig(tool_registry=reg, workflow_root=tmp_path / "workflow")
     async for c in _client(config):
         yield c
 
 
 @pytest.fixture
-async def empty_client() -> AsyncIterator[httpx.AsyncClient]:
-    config = AppConfig(tool_registry=ToolRegistryService())
+async def empty_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        workflow_root=tmp_path / "workflow",
+    )
     async for c in _client(config):
         yield c
 
@@ -269,6 +273,25 @@ async def test_create_tool_webapp_forbidden(workflow_root: Path):
             json={"name": "Foo", "tool_type": "ProcessingTool"},
         )
     assert resp.status_code == 403
+
+
+async def test_create_tool_webapp_allowed_by_unsafe_debug_flag(workflow_root: Path):
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        workflow_root=workflow_root,
+        deployment_mode="webapp",
+        settings=Settings(
+            deployment_mode="webapp",
+            enable_unsafe_webapp_features=True,
+        ),
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools",
+            json={"name": "Foo", "tool_type": "ProcessingTool"},
+        )
+    assert resp.status_code == 201
+    assert (workflow_root / "tools" / "foo.py").exists()
 
 
 async def test_create_tool_duplicate(workflow_root: Path):

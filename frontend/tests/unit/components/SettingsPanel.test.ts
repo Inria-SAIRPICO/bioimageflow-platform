@@ -53,6 +53,7 @@ const baseSettings = {
   cache_max_age: null,
   keyboard_shortcuts: {},
   dev_mode: true,
+  enable_unsafe_webapp_features: false,
   datasets_root: null,
   max_upload_size: 2147483648,
   resolved_tool_store_path: '/Users/me/.bioimageflow/tool_packages',

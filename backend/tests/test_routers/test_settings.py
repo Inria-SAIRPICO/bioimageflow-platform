@@ -153,6 +153,16 @@ class TestPatchSettings:
         response = await settings_client.patch("/api/v1/settings", json={"dev_mode": True})
         assert response.status_code == 200
 
+    async def test_patch_unsafe_webapp_features_rejected(
+        self, settings_client: httpx.AsyncClient
+    ) -> None:
+        response = await settings_client.patch(
+            "/api/v1/settings",
+            json={"enable_unsafe_webapp_features": True},
+        )
+        assert response.status_code == 422
+        assert "settings file" in response.json()["detail"]
+
     async def test_patch_empty_body(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch("/api/v1/settings", json={})
         assert response.status_code == 200

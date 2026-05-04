@@ -64,6 +64,21 @@ describe('settings store', () => {
     expect(store.isDesktop).toBe(false)
   })
 
+  it('unsafeWebappFeaturesEnabled reflects the file-backed debug flag', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        deployment_mode: 'webapp',
+        output_data_folder: '/out',
+        enable_unsafe_webapp_features: true,
+      },
+    })
+
+    const store = useSettingsStore()
+    await store.fetchSettings()
+
+    expect(store.unsafeWebappFeaturesEnabled).toBe(true)
+  })
+
   it('updateSettings sends PATCH and updates local state', async () => {
     mockedApi.get.mockResolvedValueOnce({
       data: { deployment_mode: 'desktop', output_data_folder: '/out' },

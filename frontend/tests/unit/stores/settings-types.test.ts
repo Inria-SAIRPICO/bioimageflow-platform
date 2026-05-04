@@ -31,6 +31,7 @@ describe('settings and execution type structures', () => {
       cache_max_age: '7d',
       keyboard_shortcuts: { run: 'Ctrl+R' },
       dev_mode: true,
+      enable_unsafe_webapp_features: true,
     }
     expect(settings.execution_engine).toBe('parsl')
   })

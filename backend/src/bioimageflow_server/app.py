@@ -73,6 +73,7 @@ from bioimageflow_server.routers.tools import (
     get_package_installer,
     get_tool_environment_service,
     get_tool_registry,
+    get_unsafe_webapp_features_enabled,
     get_workflow_root,
     get_workflow_store as tools_get_workflow_store,
     router as tools_router,
@@ -428,6 +429,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workflow_root] = lambda: workflow_root
 
     app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
+    app.dependency_overrides[get_unsafe_webapp_features_enabled] = (
+        lambda: _live_settings().enable_unsafe_webapp_features
+    )
     app.dependency_overrides[get_package_installer] = lambda: installer
     app.dependency_overrides[get_package_catalog] = lambda: catalog
     app.dependency_overrides[get_tool_environment_service] = lambda: tool_environment_service

@@ -50,7 +50,10 @@ function markBusy(key: string, on: boolean) {
 
 const filteredTools = computed(() => toolRegistry.searchTools(searchQuery.value))
 const localToolActionsAvailable = computed(() => {
-  return settingsStore.settings?.deployment_mode !== 'webapp'
+  return (
+    settingsStore.settings?.deployment_mode !== 'webapp'
+    || settingsStore.settings?.enable_unsafe_webapp_features === true
+  )
 })
 
 /** Tools grouped by their primary category for the sidebar list. The list

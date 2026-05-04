@@ -29,6 +29,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const isLoaded = computed(() => settings.value !== null)
   const isDesktop = computed(() => settings.value?.deployment_mode === 'desktop')
   const isWebapp = computed(() => settings.value?.deployment_mode === 'webapp')
+  const unsafeWebappFeaturesEnabled = computed(
+    () => settings.value?.enable_unsafe_webapp_features === true,
+  )
 
   async function fetchSettings() {
     try {
@@ -89,6 +92,7 @@ export const useSettingsStore = defineStore('settings', () => {
     isLoaded,
     isDesktop,
     isWebapp,
+    unsafeWebappFeaturesEnabled,
     fetchSettings,
     updateSettings,
   }
