@@ -555,6 +555,45 @@ class TestExecutionManagerResult:
         assert em.last_result.errors
         assert "kaboom" in str(em.last_result.errors[0])
 
+    async def test_wetlands_payload_is_summarized_for_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        command_message = (
+            "Command '['atlas', '-ref', '/tmp/blobs.txt', '-i', "
+            "'/Users/amasson/Documents/DemoData/FISH/.DS_Store', '-o', "
+            "'/tmp/out', '-rad', '59']' died with <Signals.SIGABRT: 6>."
+        )
+        payload = {
+            "exception": command_message,
+            "traceback": [
+                '  File "/tmp/module_executor.py", line 194, in execution_worker\n',
+                "    result = execute_function(message, lock, connection)\n",
+            ],
+        }
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(events=[_ProgressEventStub("atlas_1", "started")])
+        wf.raise_exc = RuntimeError(payload)
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        await em.start(_graph_with([("atlas_1", True)]))
+        await _drain(em)
+
+        assert em.last_result is not None
+        assert em.last_result.success is False
+        error = em.last_result.errors[0]
+        assert error["detail"] == (
+            "External command 'atlas' crashed with signal SIGABRT while "
+            "processing '/Users/amasson/Documents/DemoData/FISH/.DS_Store'. "
+            "The selected input appears to be a hidden/system file, not image data."
+        )
+        assert "{'exception':" not in error["detail"]
+        assert "Remote traceback:" in error["traceback"]
+        assert "Local traceback:" in error["traceback"]
+        status = em.last_result.node_statuses["atlas_1"]
+        assert status.error == error["detail"]
+        assert status.traceback == error["traceback"]
+
     async def test_failed_execution_is_logged(
         self,
         monkeypatch: pytest.MonkeyPatch,
