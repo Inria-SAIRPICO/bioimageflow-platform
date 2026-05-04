@@ -63,6 +63,20 @@ describe('ImageCell', () => {
     expect(img.attributes('src')).toBe('blob:mock-url')
   })
 
+  it('requests and renders doubled thumbnails', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountCell()
+    await flushPromises()
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost')
+    expect(url.searchParams.get('size')).toBe('256')
+    const thumb = wrapper.find('[data-testid="image-thumbnail"]')
+    expect(thumb.attributes('style')).toContain('width: 96px')
+    expect(thumb.attributes('style')).toContain('height: 96px')
+  })
+
   it('retries when the server replies "pending" until it gets "ready"', async () => {
     const fetchMock = vi
       .fn()

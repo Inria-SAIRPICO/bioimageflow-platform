@@ -708,6 +708,84 @@ describe('ToolsPanel', () => {
     )
   })
 
+  it('tool environment controls use the declared tool environment name', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.tools = store.tools.map((tool) =>
+      tool.name === 'cellpose'
+        ? { ...tool, environment: { name: 'cellpose-env', dependencies: { pip: ['cellpose'] } } }
+        : tool,
+    )
+
+    mockedApi.post.mockResolvedValueOnce({ data: {} })
+    mockedApi.get.mockResolvedValueOnce({ data: mockPackages })
+
+    const vm = wrapper.vm as unknown as {
+      toggleToolEnvironment: (tool: ToolMetadata) => Promise<void>
+    }
+    await vm.toggleToolEnvironment(store.getToolByName('cellpose')!)
+
+    expect(mockedApi.post).toHaveBeenCalledWith(
+      '/api/v1/tools/environments/cellpose-env/start',
+    )
+  })
+
+  it('does not start tools without a declared environment', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+
+    const vm = wrapper.vm as unknown as {
+      getToolEnvStatus: (tool: ToolMetadata) => string
+      toggleToolEnvironment: (tool: ToolMetadata) => Promise<void>
+    }
+    const threshold = store.getToolByName('threshold')!
+
+    expect(vm.getToolEnvStatus(threshold)).toBe('unavailable')
+    await vm.toggleToolEnvironment(threshold)
+
+    expect(mockedApi.post).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tools/environments/'),
+    )
+  })
+
+  it('keeps explicit environments in the same package independently scoped', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.tools = store.tools.map((tool) => {
+      if (tool.name === 'threshold') {
+        return { ...tool, environment: { name: 'threshold-env', dependencies: {} } }
+      }
+      if (tool.name === 'gaussian_blur') {
+        return { ...tool, environment: { name: 'blur-env', dependencies: {} } }
+      }
+      return tool
+    })
+
+    mockedApi.post.mockResolvedValueOnce({ data: { status: 'running' } })
+    mockedApi.get.mockResolvedValueOnce({ data: [{ ...mockPackages[0], environment_status: 'running' }] })
+
+    const vm = wrapper.vm as unknown as {
+      getToolEnvStatus: (tool: ToolMetadata) => string
+      toggleToolEnvironment: (tool: ToolMetadata) => Promise<void>
+    }
+    await vm.toggleToolEnvironment(store.getToolByName('threshold')!)
+
+    expect(vm.getToolEnvStatus(store.getToolByName('threshold')!)).toBe('running')
+    expect(vm.getToolEnvStatus(store.getToolByName('gaussian_blur')!)).toBe('stopped')
+  })
+
   // --- Versions column test ---
 
   it('treeNodes includes version data from packages', async () => {

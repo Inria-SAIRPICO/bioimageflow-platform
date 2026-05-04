@@ -156,6 +156,28 @@ async def test_install_resolves_latest_when_no_version(
     assert calls[0][2] == "bioimageflow-core"
 
 
+async def test_install_common_tools_uses_local_checkout_without_pypi(
+    installer: PypiPackageInstaller,
+    tool_store: Path,
+    registry: MagicMock,
+    pypi: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        installer_module,
+        "ensure_installed",
+        _ensure_installed_failure_factory("network should not be used"),
+    )
+
+    await installer.install("bioimageflow_common_tools", version=None)
+
+    pypi.get_latest_stable.assert_not_called()
+    installed = tool_store / "bioimageflow_common_tools" / "0.1.4" / "bioimageflow_common_tools"
+    assert (installed / "__init__.py").exists()
+    assert (installed / "atlas.py").exists()
+    registry.scan_tool_store.assert_called_once_with(tool_store)
+
+
 async def test_install_not_found_raises_package_not_found(
     installer: PypiPackageInstaller,
     monkeypatch: pytest.MonkeyPatch,

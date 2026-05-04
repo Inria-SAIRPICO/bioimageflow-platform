@@ -576,6 +576,60 @@ async def test_stop_environment():
     assert resp.json()["status"] == "stopped"
 
 
+class _FakeToolEnvironmentService:
+    def __init__(self) -> None:
+        self.started: list[str] = []
+        self.stopped: list[str] = []
+
+    async def start(self, env_name: str) -> str:
+        self.started.append(env_name)
+        return "running"
+
+    async def stop(self, env_name: str) -> str:
+        self.stopped.append(env_name)
+        return "stopped"
+
+
+async def test_start_environment_delegates_to_environment_service():
+    envs = _FakeToolEnvironmentService()
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        tool_environment_service=envs,
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/environments/myenv/start")
+    assert resp.status_code == 200
+    assert resp.json() == {"environment": "myenv", "status": "running"}
+    assert envs.started == ["myenv"]
+
+
+async def test_stop_environment_delegates_to_environment_service():
+    envs = _FakeToolEnvironmentService()
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        tool_environment_service=envs,
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/environments/myenv/stop")
+    assert resp.status_code == 200
+    assert resp.json() == {"environment": "myenv", "status": "stopped"}
+    assert envs.stopped == ["myenv"]
+
+
+async def test_start_environment_for_tool_without_environment_returns_stopped():
+    registry = ToolRegistryService()
+    registry.register_tool("NoEnvTool", _make_tool("NoEnvTool"))
+    registry.register_package("pkg", _make_package("pkg"))
+    config = AppConfig(tool_registry=registry)
+
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/environments/NoEnvTool/start")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"environment": "NoEnvTool", "status": "stopped"}
+    assert registry.get_package("pkg").environment_status == "stopped"
+
+
 async def test_get_source_success(workflow_root: Path):
     config = AppConfig(
         tool_registry=ToolRegistryService(),

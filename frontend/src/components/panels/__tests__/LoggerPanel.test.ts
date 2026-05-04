@@ -120,11 +120,26 @@ describe('LoggerPanel', () => {
     const button = w.find('[data-testid="log-auto-scope"]')
 
     expect(button.classes()).toContain('logger-panel__auto-scope--active')
-    expect(button.find('.pi-link').exists()).toBe(true)
+    let icon = button.find('.logger-panel__auto-scope-icon')
+    expect(icon.exists()).toBe(true)
+    expect(icon.classes()).toEqual(
+      expect.arrayContaining([
+        'pi',
+        'pi-link',
+        'logger-panel__auto-scope-icon--active',
+      ]),
+    )
     await button.trigger('click')
     expect(button.classes()).not.toContain('logger-panel__auto-scope--active')
     expect(button.classes()).toContain('logger-panel__auto-scope--inactive')
-    expect(button.find('.pi-unlink').exists()).toBe(true)
+    icon = button.find('.logger-panel__auto-scope-icon')
+    expect(icon.classes()).toEqual(
+      expect.arrayContaining([
+        'pi',
+        'pi-unlink',
+        'logger-panel__auto-scope-icon--inactive',
+      ]),
+    )
   })
 
   it('manual node filters are not overridden by canvas selection', async () => {

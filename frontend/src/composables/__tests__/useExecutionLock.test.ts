@@ -120,6 +120,46 @@ describe('useExecutionLock', () => {
     expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'], undefined)
   })
 
+  it('lockForExecution ignores validation errors outside the selected execution set', async () => {
+    const { lockForExecution } = useExecutionLock()
+    const exec = useExecutionStore()
+
+    const flushNow = vi.fn(async () => {})
+    const validationResult = ref<ValidationResult | null>({
+      valid: false,
+      node_statuses: {},
+      errors: [
+        {
+          type: 'missing_connection',
+          detail: 'downstream is not executable',
+          node: 'downstream',
+          edge_id: null,
+          field: 'input_image',
+        },
+      ],
+    })
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+    const graph = {
+      nodes: [
+        { id: 'source' },
+        { id: 'selected' },
+        { id: 'downstream' },
+      ],
+      edges: [
+        { id: 'e1', source_node: 'source', target_node: 'selected' },
+        { id: 'e2', source_node: 'selected', target_node: 'downstream' },
+      ],
+    }
+
+    await lockForExecution({
+      graph: graph as never,
+      nodes: ['selected'],
+      graphSync: { flushNow, validationResult },
+    })
+
+    expect(runSpy).toHaveBeenCalledWith(graph, ['selected'], undefined)
+  })
+
   it('unlockAfterExecution triggers a graph re-validation via PUT /graph', async () => {
     const { unlockAfterExecution } = useExecutionLock()
 

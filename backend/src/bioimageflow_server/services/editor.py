@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import time
 from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
@@ -209,10 +210,14 @@ class EditorService:
         settings_provider: SettingsProvider,
         process_launcher: ProcessLauncher = _default_process_launcher,
         embedded_manager: EmbeddedCodeServerManager | None = None,
+        embedded_startup_timeout: float = 10.0,
+        embedded_poll_interval: float = 0.2,
     ) -> None:
         self._settings_provider = settings_provider
         self._process_launcher = process_launcher
         self._embedded = embedded_manager or EmbeddedCodeServerManager()
+        self._embedded_startup_timeout = embedded_startup_timeout
+        self._embedded_poll_interval = embedded_poll_interval
 
     def get_status(self) -> EditorStatus:
         return self._embedded.status()
@@ -237,6 +242,16 @@ class EditorService:
             except Exception:
                 pass
 
+        launch = getattr(self._embedded, "launch", None)
+        if callable(launch):
+            try:
+                launch()
+                response = self._open_after_embedded_launch(normalized)
+                if response is not None:
+                    return response
+            except Exception:
+                pass
+
         return EditorOpenResponse(
             opened=False,
             method=EditorOpenMethod.CLIPBOARD,
@@ -244,6 +259,16 @@ class EditorService:
             path=str(normalized),
             message=CLIPBOARD_MESSAGE,
         )
+
+    def _open_after_embedded_launch(self, path: Path) -> EditorOpenResponse | None:
+        deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
+        while True:
+            status = self._embedded.status()
+            if status.available and status.control_available:
+                return self._embedded.open_path(path)
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(max(0.0, self._embedded_poll_interval))
 
     def _normalize_path(self, path: str) -> Path:
         candidate = Path(path).expanduser()

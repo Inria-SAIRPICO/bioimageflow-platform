@@ -381,6 +381,7 @@ const activeDoc = ref<string | null>(null)
 
 /** Single active documentation panel inside the manage dialog */
 const manageActiveDoc = ref<string | null>(null)
+const toolEnvStatuses = ref<Record<string, string>>({})
 
 function toggleDocumentation(toolName: string) {
   activeDoc.value = activeDoc.value === toolName ? null : toolName
@@ -489,6 +490,27 @@ function getEnvStatus(packageName: string): string {
   return pkg?.environment_status ?? 'unknown'
 }
 
+function getToolEnvName(tool: ToolMetadata): string {
+  const name = tool.environment?.name
+  return typeof name === 'string' ? name : ''
+}
+
+function getToolEnvStatus(tool: ToolMetadata): string {
+  const envName = getToolEnvName(tool)
+  if (!envName) return 'unavailable'
+  const localStatus = toolEnvStatuses.value[envName]
+  if (localStatus) return localStatus
+
+  const packageEnvNames = new Set(
+    toolRegistry.tools
+      .filter((candidate) => candidate.package === tool.package)
+      .map((candidate) => candidate.environment?.name)
+      .filter((name): name is string => typeof name === 'string' && name.length > 0),
+  )
+  if (packageEnvNames.size > 1) return 'stopped'
+  return toolRegistry.getEnvStatusForTool(tool.name)
+}
+
 async function toggleEnvironment(packageName: string) {
   try {
     const status = getEnvStatus(packageName)
@@ -496,6 +518,24 @@ async function toggleEnvironment(packageName: string) {
       await api.post(`/api/v1/tools/environments/${packageName}/stop`)
     } else {
       await api.post(`/api/v1/tools/environments/${packageName}/start`)
+    }
+    await toolRegistry.fetchPackages()
+  } catch (e: unknown) {
+    toolRegistry.error = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function toggleToolEnvironment(tool: ToolMetadata) {
+  try {
+    const status = getToolEnvStatus(tool)
+    const envName = getToolEnvName(tool)
+    if (!envName || status === 'unavailable') return
+    if (status === 'running') {
+      const { data } = await api.post(`/api/v1/tools/environments/${envName}/stop`)
+      toolEnvStatuses.value = { ...toolEnvStatuses.value, [envName]: data?.status ?? 'stopped' }
+    } else {
+      const { data } = await api.post(`/api/v1/tools/environments/${envName}/start`)
+      toolEnvStatuses.value = { ...toolEnvStatuses.value, [envName]: data?.status ?? 'running' }
     }
     await toolRegistry.fetchPackages()
   } catch (e: unknown) {
@@ -532,7 +572,10 @@ defineExpose({
   renameCustomTool,
   requestDeleteCustomTool,
   getEnvStatus,
+  getToolEnvName,
+  getToolEnvStatus,
   toggleEnvironment,
+  toggleToolEnvironment,
   isVersionsExpanded,
   toggleVersionsExpanded,
   isBusy,
@@ -621,10 +664,11 @@ defineExpose({
                   text
                   size="small"
                   class="tool-list-power-btn"
-                  :class="`env-${toolRegistry.getEnvStatusForTool(tool.name)}`"
+                  :class="`env-${getToolEnvStatus(tool)}`"
                   :data-testid="`tool-power-${tool.name}`"
-                  :title="toolRegistry.getEnvStatusForTool(tool.name)"
-                  @click.stop="toggleEnvironment(tool.package)"
+                  :disabled="getToolEnvStatus(tool) === 'unavailable'"
+                  :title="getToolEnvStatus(tool)"
+                  @click.stop="toggleToolEnvironment(tool)"
                 />
               </span>
             </div>
@@ -848,16 +892,19 @@ defineExpose({
                 <span
                   :data-testid="`tool-env-status-${node.data.name}`"
                   class="env-badge"
-                  :class="`env-${toolRegistry.getEnvStatusForTool(node.data.name)}`"
+                  :class="`env-${getToolEnvStatus(node.data.tool)}`"
                 >
-                  {{ toolRegistry.getEnvStatusForTool(node.data.name) }}
+                  {{ getToolEnvStatus(node.data.tool) }}
                 </span>
                 <Button
                   icon="pi pi-power-off"
                   text
                   size="small"
+                  :class="`env-${getToolEnvStatus(node.data.tool)}`"
+                  :disabled="getToolEnvStatus(node.data.tool) === 'unavailable'"
+                  :title="getToolEnvStatus(node.data.tool)"
                   :data-testid="`tool-env-toggle-${node.data.name}`"
-                  @click="toggleEnvironment(node.data.tool.package)"
+                  @click="toggleToolEnvironment(node.data.tool)"
                 />
               </div>
             </template>

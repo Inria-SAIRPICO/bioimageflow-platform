@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -107,6 +108,10 @@ class PypiPackageInstaller(PackageInstallerService):
 
     async def install(self, package_name: str, version: str | None = None) -> None:
         async with self._operation_lock:
+            if package_name == "bioimageflow_common_tools":
+                await self._install_local_common_tools()
+                return
+
             if version is None:
                 version = await self._pypi.get_latest_stable(package_name)
 
@@ -151,6 +156,36 @@ class PypiPackageInstaller(PackageInstallerService):
                 await anyio_to_thread.run_sync(
                     self._registry.scan_tool_store, self._tool_store
                 )
+
+    async def _install_local_common_tools(self) -> None:
+        source_root = _local_common_tools_root()
+        if source_root is None:
+            raise PackageNotFoundError("Local bioimageflow-common-tools checkout not found")
+        version = _project_version(source_root)
+        package_name = "bioimageflow_common_tools"
+        target_root = self._tool_store / package_name / version
+        target_package = target_root / package_name
+
+        if self._hot_reload is not None:
+            self._hot_reload.suppress()
+
+        try:
+            if target_root.exists():
+                await anyio_to_thread.run_sync(shutil.rmtree, target_root)
+            await anyio_to_thread.run_sync(
+                shutil.copytree,
+                source_root / package_name,
+                target_package,
+            )
+        except Exception:
+            if self._hot_reload is not None:
+                self._hot_reload.resume(emit_batch=False)
+            raise
+
+        if self._hot_reload is not None:
+            self._hot_reload.resume(emit_batch=True)
+        else:
+            await anyio_to_thread.run_sync(self._registry.scan_tool_store, self._tool_store)
 
     async def uninstall(self, package_name: str, version: str | None = None) -> None:
         async with self._operation_lock:
@@ -199,3 +234,22 @@ def _remove_tree(target: Path) -> None:
             exc_info=True,
         )
         shutil.rmtree(target)
+
+
+def _local_common_tools_root() -> Path | None:
+    root = Path(__file__).resolve()
+    for parent in root.parents:
+        candidate = parent / "bioimageflow" / "packages" / "bioimageflow-common-tools"
+        if (candidate / "pyproject.toml").is_file() and (
+            candidate / "bioimageflow_common_tools" / "__init__.py"
+        ).is_file():
+            return candidate
+    return None
+
+
+def _project_version(project_root: Path) -> str:
+    data = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
+    version = data.get("project", {}).get("version")
+    if not isinstance(version, str) or not version:
+        raise PackageNotFoundError(f"Cannot read version from {project_root / 'pyproject.toml'}")
+    return version

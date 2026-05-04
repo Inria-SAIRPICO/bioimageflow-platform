@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from bioimageflow_server.models.graph import GraphState, NodeState
+from bioimageflow_server.models.graph import ColumnRefEdge, GraphState, NodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services import execution as execution_module
 from bioimageflow_server.services.execution import (
@@ -304,6 +304,49 @@ class TestExecutionManagerLifecycle:
         with pytest.raises(ExecutionConflictError):
             await em.start(_graph_with([("n1", True)]))
         await _drain(em)
+
+    async def test_run_selected_builds_only_selected_nodes_and_upstream(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        wf = _FakeWorkflow()
+        wf.nodes = {node_id: object() for node_id in ["source", "selected"]}
+        builder = _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        graph = GraphState(
+            nodes=[
+                NodeState(
+                    id=node_id,
+                    name=node_id,
+                    tool_name="tool",
+                    position=(0.0, 0.0),
+                    parameters={},
+                )
+                for node_id in ["source", "selected", "downstream"]
+            ],
+            edges=[
+                ColumnRefEdge(
+                    id="e1",
+                    source_node="source",
+                    target_node="selected",
+                    source_output="out",
+                    target_input="in",
+                ),
+                ColumnRefEdge(
+                    id="e2",
+                    source_node="selected",
+                    target_node="downstream",
+                    source_output="out",
+                    target_input="in",
+                ),
+            ],
+        )
+
+        await em.start(graph, nodes=["selected"])
+        await _drain(em)
+
+        built_graph = builder.call_args.args[0]
+        assert {node.id for node in built_graph.nodes} == {"source", "selected"}
+        assert [edge.id for edge in built_graph.edges] == ["e1"]
 
 
 class TestExecutionManagerProgress:

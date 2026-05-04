@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.result_store import ResultStoreService
     from bioimageflow_server.services.settings_store import SettingsStore
     from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
+    from bioimageflow_server.services.tool_environments import ToolEnvironmentService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
     from bioimageflow_server.services.workflow_store import WorkflowStoreService
     from bioimageflow_server.ws.handler import ConnectionManager
@@ -194,6 +195,7 @@ class AppConfig:
     napari_launcher: NapariLauncher | None = None
     workflow_store: WorkflowStoreService | None = None
     editor_service: Any | None = None
+    tool_environment_service: ToolEnvironmentService | None = None
     # Set True in tests that don't want a watchdog Observer running. The
     # production app builds the service inside ``create_app`` from the
     # resolved registry + connection_manager + tool-store path.

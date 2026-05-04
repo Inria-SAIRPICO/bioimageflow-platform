@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
+import PathCell from './PathCell.vue'
 
 const props = defineProps<{
   nodeId: string
@@ -10,6 +11,7 @@ const props = defineProps<{
   row: number
   col: string
   value: string
+  showPath?: boolean
 }>()
 
 let toast: ReturnType<typeof useToast> | null = null
@@ -29,13 +31,20 @@ const fetchFailed = ref(false)
 // server. The frontend gives up after this; the user can scroll away
 // and back to retrigger.
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
+const THUMBNAIL_REQUEST_SIZE = 256
+const THUMBNAIL_RENDER_SIZE = 96
 
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
+const shouldShowPath = computed(() => props.showPath ?? true)
+const thumbnailStyle = {
+  width: `${THUMBNAIL_RENDER_SIZE}px`,
+  height: `${THUMBNAIL_RENDER_SIZE}px`,
+}
 const baseUrl = computed(() => {
   const params = new URLSearchParams({
     row: String(props.row),
     col: props.col,
-    size: '128',
+    size: String(THUMBNAIL_REQUEST_SIZE),
   })
   if (props.workflowName && props.workflowName.trim() !== '') {
     params.set('workflow_name', props.workflowName)
@@ -163,6 +172,15 @@ async function openNapari(event: MouseEvent) {
   }
 }
 
+async function copyPath() {
+  try {
+    await navigator.clipboard?.writeText(props.value)
+    toast?.add({ severity: 'info', summary: 'Path copied to clipboard', life: 3000 })
+  } catch (exc: any) {
+    showError(exc?.message ?? 'Could not copy path')
+  }
+}
+
 async function reveal() {
   try {
     await api.post('/api/v1/fs/reveal', { path: props.value })
@@ -177,18 +195,29 @@ async function reveal() {
     <img
       v-if="blobUrl !== null && !fetchFailed"
       class="image-cell__thumb"
+      data-testid="image-thumbnail"
       :src="blobUrl"
+      :style="thumbnailStyle"
       alt=""
     >
     <div
       v-else-if="thumbnailPending"
       class="image-cell__pending"
+      data-testid="image-thumbnail"
       aria-label="thumbnail generating"
+      :style="thumbnailStyle"
     />
     <div
       v-else
       class="image-cell__unavailable"
+      data-testid="image-thumbnail"
       aria-label="thumbnail unavailable"
+      :style="thumbnailStyle"
+    />
+    <PathCell
+      v-if="shouldShowPath"
+      :value="value"
+      :show-actions="false"
     />
     <div class="image-cell__actions">
       <Button
@@ -208,6 +237,15 @@ async function reveal() {
         :data-testid="`reveal-${row}-${colSlug}`"
         @click="reveal"
       />
+      <Button
+        v-if="shouldShowPath"
+        icon="pi pi-copy"
+        text
+        size="small"
+        title="Copy path"
+        data-testid="path-copy"
+        @click="copyPath"
+      />
     </div>
   </div>
 </template>
@@ -217,17 +255,16 @@ async function reveal() {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-width: 150px;
+  min-width: 450px;
 }
 
 .image-cell__thumb,
 .image-cell__pending,
 .image-cell__unavailable {
-  width: 48px;
-  height: 48px;
   object-fit: contain;
   border: 1px solid var(--p-surface-300);
   background: var(--p-surface-100);
+  flex: 0 0 auto;
 }
 
 .image-cell__pending,

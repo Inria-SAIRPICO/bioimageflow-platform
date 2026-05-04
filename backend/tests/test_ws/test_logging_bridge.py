@@ -257,6 +257,91 @@ async def test_emit_wetlands_logger_triggers_broadcast_with_null_node() -> None:
         _remove_handler("wetlands", handler)
 
 
+async def test_wetlands_execute_context_scopes_following_output_to_node() -> None:
+    """Wetlands stdout/stderr records following an Execute line stay node-scoped."""
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = WebSocketLogHandler(mgr, loop=loop)
+
+    execute_record = logging.getLogger("wetlands.worker").makeRecord(
+        "wetlands.worker",
+        logging.INFO,
+        "f",
+        1,
+        "Execute worker.run(({'run_dir': 'bif_data/workflows/w/data/atlas_1/run'},))",
+        None,
+        None,
+    )
+    stdout_record = logging.getLogger("wetlands.worker").makeRecord(
+        "wetlands.worker",
+        logging.INFO,
+        "f",
+        2,
+        "Running Atlas spot detection...",
+        None,
+        None,
+    )
+    handler.emit(execute_record)
+    handler.emit(stdout_record)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if len(mgr.broadcast_calls) >= 2:
+            break
+
+    assert [call[2] for call in mgr.broadcast_calls] == ["atlas_1", "atlas_1"]
+
+
+async def test_wetlands_exit_clears_fallback_node_scope() -> None:
+    """A terminal record on a different Wetlands channel must clear node scope."""
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    loop = asyncio.get_running_loop()
+    handler = WebSocketLogHandler(mgr, loop=loop)
+
+    records = [
+        logging.getLogger("wetlands.worker").makeRecord(
+            "wetlands.worker",
+            logging.INFO,
+            "f",
+            1,
+            "INFO:123:main:Execute worker.run(({'run_dir': 'bif_data/workflows/w/data/atlas_1/run'},))",
+            None,
+            None,
+        ),
+        logging.getLogger("wetlands.worker").makeRecord(
+            "wetlands.worker",
+            logging.INFO,
+            "f",
+            2,
+            "INFO:123:stdout:exit",
+            None,
+            None,
+        ),
+        logging.getLogger("wetlands.worker").makeRecord(
+            "wetlands.worker",
+            logging.INFO,
+            "f",
+            3,
+            "INFO:123:stdout:unrelated environment output",
+            None,
+            None,
+        ),
+    ]
+    for record in records:
+        handler.emit(record)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if len(mgr.broadcast_calls) >= 3:
+            break
+
+    assert [call[2] for call in mgr.broadcast_calls] == ["atlas_1", "atlas_1", None]
+
+
 async def test_exception_traceback_is_in_broadcast_message() -> None:
     from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
 

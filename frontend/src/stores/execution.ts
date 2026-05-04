@@ -76,6 +76,22 @@ function stringifyExecutionErrorWithTraceback(err: Record<string, unknown>): str
   return tb ? `${summary}\n${tb}` : summary
 }
 
+function hasExistingFailureLog(
+  nodeId: string | undefined,
+  detail: string,
+  fullDetail: string | undefined,
+): boolean {
+  const logger = useLoggerStore()
+  const errorText = detail.includes(': ') ? detail.split(': ').slice(1).join(': ') : detail
+  const traceback = fullDetail?.split('\n').slice(1).join('\n') ?? ''
+  return logger.entries.some((entry) => {
+    if (entry.level !== 'ERROR') return false
+    if ((nodeId ?? null) !== entry.nodeId) return false
+    if (!entry.message.includes(errorText)) return false
+    return !traceback || entry.message.includes(traceback)
+  })
+}
+
 export const useExecutionStore = defineStore('execution', () => {
   const state = ref<'running' | 'idle'>('idle')
   const lastResult = ref<ExecutionResult | null>(null)
@@ -248,7 +264,7 @@ export const useExecutionStore = defineStore('execution', () => {
         detail,
         ...(fullDetail ? { fullDetail } : {}),
         ...(nodeId ? { nodeId } : {}),
-        logToLogger: false,
+        logToLogger: !hasExistingFailureLog(nodeId, detail, fullDetail),
       })
     } catch (e) {
       // Best-effort: in test contexts the composable may not have access

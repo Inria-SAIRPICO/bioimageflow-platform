@@ -150,10 +150,7 @@ function onPage(event: { page: number; rows: number }) {
                 :row="slotProps.data.__absoluteRow"
                 :col="col"
                 :value="String(slotProps.data[col] ?? '')"
-              />
-              <PathCell
-                v-if="isPathColumn(col)"
-                :value="String(slotProps.data[col] ?? '')"
+                :show-path="isPathColumn(col)"
               />
             </div>
             <PathCell
