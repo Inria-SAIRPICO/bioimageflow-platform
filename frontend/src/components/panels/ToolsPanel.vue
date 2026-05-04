@@ -489,6 +489,14 @@ function getEnvStatus(packageName: string): string {
   return pkg?.environment_status ?? 'unknown'
 }
 
+function getToolEnvName(tool: ToolMetadata): string {
+  return tool.environment?.name || tool.name
+}
+
+function getToolEnvStatus(tool: ToolMetadata): string {
+  return toolRegistry.getEnvStatusForTool(tool.name)
+}
+
 async function toggleEnvironment(packageName: string) {
   try {
     const status = getEnvStatus(packageName)
@@ -496,6 +504,21 @@ async function toggleEnvironment(packageName: string) {
       await api.post(`/api/v1/tools/environments/${packageName}/stop`)
     } else {
       await api.post(`/api/v1/tools/environments/${packageName}/start`)
+    }
+    await toolRegistry.fetchPackages()
+  } catch (e: unknown) {
+    toolRegistry.error = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function toggleToolEnvironment(tool: ToolMetadata) {
+  try {
+    const status = getToolEnvStatus(tool)
+    const envName = getToolEnvName(tool)
+    if (status === 'running') {
+      await api.post(`/api/v1/tools/environments/${envName}/stop`)
+    } else {
+      await api.post(`/api/v1/tools/environments/${envName}/start`)
     }
     await toolRegistry.fetchPackages()
   } catch (e: unknown) {
@@ -532,7 +555,10 @@ defineExpose({
   renameCustomTool,
   requestDeleteCustomTool,
   getEnvStatus,
+  getToolEnvName,
+  getToolEnvStatus,
   toggleEnvironment,
+  toggleToolEnvironment,
   isVersionsExpanded,
   toggleVersionsExpanded,
   isBusy,
@@ -621,10 +647,10 @@ defineExpose({
                   text
                   size="small"
                   class="tool-list-power-btn"
-                  :class="`env-${toolRegistry.getEnvStatusForTool(tool.name)}`"
+                  :class="`env-${getToolEnvStatus(tool)}`"
                   :data-testid="`tool-power-${tool.name}`"
-                  :title="toolRegistry.getEnvStatusForTool(tool.name)"
-                  @click.stop="toggleEnvironment(tool.package)"
+                  :title="getToolEnvStatus(tool)"
+                  @click.stop="toggleToolEnvironment(tool)"
                 />
               </span>
             </div>
@@ -848,16 +874,18 @@ defineExpose({
                 <span
                   :data-testid="`tool-env-status-${node.data.name}`"
                   class="env-badge"
-                  :class="`env-${toolRegistry.getEnvStatusForTool(node.data.name)}`"
+                  :class="`env-${getToolEnvStatus(node.data.tool)}`"
                 >
-                  {{ toolRegistry.getEnvStatusForTool(node.data.name) }}
+                  {{ getToolEnvStatus(node.data.tool) }}
                 </span>
                 <Button
                   icon="pi pi-power-off"
                   text
                   size="small"
+                  :class="`env-${getToolEnvStatus(node.data.tool)}`"
+                  :title="getToolEnvStatus(node.data.tool)"
                   :data-testid="`tool-env-toggle-${node.data.name}`"
-                  @click="toggleEnvironment(node.data.tool.package)"
+                  @click="toggleToolEnvironment(node.data.tool)"
                 />
               </div>
             </template>

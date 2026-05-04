@@ -237,6 +237,23 @@ class EditorService:
             except Exception:
                 pass
 
+        launch = getattr(self._embedded, "launch", None)
+        if callable(launch):
+            try:
+                launch()
+                status = self._embedded.status()
+                if status.available and status.control_available:
+                    return self._embedded.open_path(normalized)
+                if status.available:
+                    return EditorOpenResponse(
+                        opened=True,
+                        method=EditorOpenMethod.EMBEDDED,
+                        url=status.url,
+                        path=str(normalized),
+                    )
+            except Exception:
+                pass
+
         return EditorOpenResponse(
             opened=False,
             method=EditorOpenMethod.CLIPBOARD,

@@ -54,6 +54,42 @@ class _Embedded:
         return self.open_response
 
 
+class _LaunchableEmbedded(_Embedded):
+    def __init__(self, *, url: str = "http://127.0.0.1:32344") -> None:
+        super().__init__(
+            status=EditorStatus(
+                available=False,
+                url=None,
+                version=None,
+                control_available=False,
+            )
+        )
+        self.launches = 0
+        self.url = url
+
+    def status(self) -> EditorStatus:
+        if self.launches:
+            return EditorStatus(
+                available=True,
+                url=self.url,
+                version=None,
+                control_available=True,
+            )
+        return self.status_value
+
+    def launch(self) -> None:
+        self.launches += 1
+
+    def open_path(self, path: Path) -> EditorOpenResponse:
+        self.opened.append(path)
+        return EditorOpenResponse(
+            opened=True,
+            method=EditorOpenMethod.EMBEDDED,
+            url=self.url,
+            path=str(path),
+        )
+
+
 class _EnvironmentManager:
     def __init__(self) -> None:
         self.created: list[tuple[str, dict[str, object], bool]] = []
@@ -222,6 +258,20 @@ def test_clipboard_fallback_when_no_editor_available(tmp_path: Path) -> None:
         path=str(tool),
         message="Path copied - open in your local editor.",
     )
+
+
+def test_default_embedded_editor_launches_when_not_already_running(tmp_path: Path) -> None:
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = _LaunchableEmbedded()
+    service = _service(embedded=embedded)
+
+    response = service.open_path(str(tool))
+
+    assert embedded.launches == 1
+    assert embedded.opened == [tool]
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert response.url == "http://127.0.0.1:32344"
 
 
 def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> None:

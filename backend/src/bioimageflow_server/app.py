@@ -71,6 +71,7 @@ from bioimageflow_server.routers.tools import (
     get_deployment_mode,
     get_package_catalog,
     get_package_installer,
+    get_tool_environment_service,
     get_tool_registry,
     get_workflow_root,
     get_workflow_store as tools_get_workflow_store,
@@ -96,6 +97,7 @@ from bioimageflow_server.services.package_installer import (
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
+from bioimageflow_server.services.tool_environments import ToolEnvironmentService
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -209,6 +211,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     catalog = config.package_catalog or PackageCatalogService(
         registry=registry, known=known, pypi=pypi
+    )
+    tool_environment_service = config.tool_environment_service or ToolEnvironmentService(
+        registry=registry,
+        catalog=catalog,
+    )
+    tool_environment_service = config.tool_environment_service or ToolEnvironmentService(
+        registry=registry,
+        catalog=catalog,
     )
 
     # Always instantiate a launcher (cheap config + state). The expensive
@@ -423,6 +433,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
     app.dependency_overrides[get_package_installer] = lambda: installer
     app.dependency_overrides[get_package_catalog] = lambda: catalog
+    app.dependency_overrides[get_tool_environment_service] = lambda: tool_environment_service
 
     # Datasets router needs both values present; fall back to Settings-derived
     # defaults when AppConfig leaves them unset so bare `create_app()` (e.g.

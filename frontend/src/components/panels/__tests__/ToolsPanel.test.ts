@@ -708,6 +708,32 @@ describe('ToolsPanel', () => {
     )
   })
 
+  it('tool environment controls use the declared tool environment name', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.tools = store.tools.map((tool) =>
+      tool.name === 'cellpose'
+        ? { ...tool, environment: { name: 'cellpose-env', dependencies: { pip: ['cellpose'] } } }
+        : tool,
+    )
+
+    mockedApi.post.mockResolvedValueOnce({ data: {} })
+    mockedApi.get.mockResolvedValueOnce({ data: mockPackages })
+
+    const vm = wrapper.vm as unknown as {
+      toggleToolEnvironment: (tool: ToolMetadata) => Promise<void>
+    }
+    await vm.toggleToolEnvironment(store.getToolByName('cellpose')!)
+
+    expect(mockedApi.post).toHaveBeenCalledWith(
+      '/api/v1/tools/environments/cellpose-env/start',
+    )
+  })
+
   // --- Versions column test ---
 
   it('treeNodes includes version data from packages', async () => {

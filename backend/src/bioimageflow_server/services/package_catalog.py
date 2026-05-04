@@ -115,6 +115,16 @@ class PackageCatalogService:
             update={"active_version": version},
         )
 
+    def update_environment_status(self, package_name: str, status: str) -> None:
+        if self._snapshot is None:
+            return
+        existing = self._snapshot.get(package_name)
+        if existing is None:
+            return
+        self._snapshot[package_name] = existing.model_copy(
+            update={"environment_status": status},
+        )
+
 
 def _merge_versions(installed: list[str], available: list[str]) -> list[str]:
     merged = list({*installed, *available})

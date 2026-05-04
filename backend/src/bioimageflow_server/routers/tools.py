@@ -54,6 +54,10 @@ def get_workflow_store() -> WorkflowStoreService | None:  # pragma: no cover
     return None
 
 
+def get_tool_environment_service() -> Any:  # pragma: no cover
+    return None
+
+
 # ---------------------------------------------------------------------------
 # GET endpoints
 # ---------------------------------------------------------------------------
@@ -304,13 +308,25 @@ async def uninstall_package(
 
 
 @router.post("/environments/{env_name}/start")
-async def start_environment(env_name: str) -> dict[str, str]:
-    return {"environment": env_name, "status": "creating"}
+async def start_environment(
+    env_name: str,
+    service: Any = Depends(get_tool_environment_service),
+) -> dict[str, str]:
+    if service is None:
+        return {"environment": env_name, "status": "creating"}
+    status = await service.start(env_name)
+    return {"environment": env_name, "status": status}
 
 
 @router.post("/environments/{env_name}/stop")
-async def stop_environment(env_name: str) -> dict[str, str]:
-    return {"environment": env_name, "status": "stopped"}
+async def stop_environment(
+    env_name: str,
+    service: Any = Depends(get_tool_environment_service),
+) -> dict[str, str]:
+    if service is None:
+        return {"environment": env_name, "status": "stopped"}
+    status = await service.stop(env_name)
+    return {"environment": env_name, "status": status}
 
 
 # ---------------------------------------------------------------------------
