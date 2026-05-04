@@ -178,7 +178,13 @@ void props
             <dd>{{ selectedEntry.field }}</dd>
           </template>
           <dt>Detail</dt>
-          <dd>{{ selectedEntry.fullDetail || selectedEntry.detail }}</dd>
+          <dd>
+            <pre
+              v-if="selectedEntry.fullDetail"
+              class="error-details-traceback"
+            >{{ selectedEntry.fullDetail }}</pre>
+            <span v-else>{{ selectedEntry.detail }}</span>
+          </dd>
         </dl>
         <template #footer>
           <Button label="Close" text @click="selectedEntry = null" />
@@ -304,7 +310,21 @@ void props
 
 .error-details dd {
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.error-details-traceback {
+  margin: 0;
+  max-height: min(60vh, 32rem);
+  overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  background: var(--p-surface-50, #f8fafc);
+  border: 1px solid var(--p-surface-border, #e5e7eb);
+  border-radius: 6px;
+  padding: 0.75rem;
 }
 </style>
