@@ -6,6 +6,10 @@ import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExec
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
+import {
+  outOfDateNodeIdsForExecution,
+  validationErrorsForExecution,
+} from '@/utils/executionSelection'
 import type { GraphState, ValidationResult } from '@/api/types'
 
 const props = defineProps<{
@@ -77,16 +81,14 @@ function onConfirmDialogVisibilityChange(visible: boolean) {
   }
 }
 
-function findOutOfDateNodes(): string[] {
+function findOutOfDateNodes(nodes?: string[]): string[] {
   const result: ValidationResult | null = props.graphSync.validationResult.value
   if (!result || !result.node_statuses) return []
-  return Object.values(result.node_statuses)
-    .filter((ns) => ns.status === 'out_of_date')
-    .map((ns) => ns.node_id)
+  return outOfDateNodeIdsForExecution(result.node_statuses, props.graph, nodes)
 }
 
 async function runCore(nodes?: string[]) {
-  const outOfDate = findOutOfDateNodes()
+  const outOfDate = findOutOfDateNodes(nodes)
   if (outOfDate.length > 0) {
     const ok = await confirmOutOfDate(outOfDate)
     if (!ok) return
@@ -116,7 +118,11 @@ async function runCore(nodes?: string[]) {
       const errs =
         exec.validationErrors.length > 0
           ? exec.validationErrors
-          : props.graphSync.validationResult.value?.errors ?? []
+          : validationErrorsForExecution(
+              props.graphSync.validationResult.value?.errors ?? [],
+              props.graph,
+              nodes,
+            )
       const firstBadNode = errs.find((e) => e.node)?.node
       if (firstBadNode) {
         ui.setSelectedNodes([firstBadNode])

@@ -223,8 +223,14 @@ class ExecutionManager:
         self._node_statuses = {}
         self._current_node_id = None
 
+        live_settings = (
+            self._settings_provider() if self._settings_provider else self.settings
+        )
+        run_storage_path = storage_path if storage_path is not None else self.storage_path
+        build_graph = _execution_subgraph(graph, nodes) if nodes else graph
+
         # Seed disabled nodes so they appear in the final result.
-        for node in graph.nodes:
+        for node in build_graph.nodes:
             if not node.enabled:
                 self._node_statuses[node.id] = NodeStatus(
                     node_id=node.id,
@@ -234,16 +240,13 @@ class ExecutionManager:
 
         on_progress = self._make_progress_callback()
 
-        live_settings = (
-            self._settings_provider() if self._settings_provider else self.settings
-        )
-        run_storage_path = storage_path if storage_path is not None else self.storage_path
-
         # Prefer the session's cached workflow — avoids a redundant
         # build_workflow() call when validation already loaded the graph.
+        # For Run Selected, rebuild a pruned upstream-only graph so
+        # unrelated downstream validation errors cannot block the subset.
         session = (
             self.session_manager.session
-            if self.session_manager is not None
+            if self.session_manager is not None and not nodes
             else None
         )
         session_storage_path = (
@@ -289,7 +292,7 @@ class ExecutionManager:
         else:
             try:
                 build_result = build_workflow(
-                    graph,
+                    build_graph,
                     self.tool_registry,
                     storage_path=run_storage_path,
                     on_progress=on_progress,
@@ -613,6 +616,39 @@ def _format_workflow_failure_message(message: str, tb: str | None) -> str:
     if tb:
         return f"Workflow execution failed: {message}\n{tb}"
     return f"Workflow execution failed: {message}"
+
+
+def _execution_subgraph(graph: GraphState, node_ids: list[str] | None) -> GraphState:
+    """Return selected target nodes plus all transitive upstream dependencies."""
+    if not node_ids:
+        return graph
+
+    requested = set(node_ids)
+    known = {node.id for node in graph.nodes}
+    executable = requested & known
+    if not executable:
+        return GraphState(nodes=[], edges=[])
+
+    incoming: dict[str, list[str]] = {}
+    for edge in graph.edges:
+        incoming.setdefault(edge.target_node, []).append(edge.source_node)
+
+    stack = list(executable)
+    while stack:
+        node_id = stack.pop()
+        for upstream in incoming.get(node_id, []):
+            if upstream in known and upstream not in executable:
+                executable.add(upstream)
+                stack.append(upstream)
+
+    return GraphState(
+        nodes=[node for node in graph.nodes if node.id in executable],
+        edges=[
+            edge
+            for edge in graph.edges
+            if edge.source_node in executable and edge.target_node in executable
+        ],
+    )
 
 
 # ---- Cache clearer ----------------------------------------------------------

@@ -163,6 +163,30 @@ describe('RunButton', () => {
     )
   })
 
+  it('Run Selected does not prompt for out-of-date nodes outside the selected execution set', async () => {
+    const { wrapper } = mountButton({
+      validationResult: {
+        valid: true,
+        node_statuses: {
+          downstream: { node_id: 'downstream', status: 'out_of_date', cached: false },
+        },
+        errors: [],
+      },
+    })
+    const exec = useExecutionStore()
+    const ui = useUIStore()
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+    ui.setSelectedNodes(['selected'])
+    await nextTick()
+
+    await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="out-of-date-confirm"]').exists()).toBe(false)
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['selected'], null)
+  })
+
   it('run proceeds after confirm', async () => {
     const { wrapper } = mountButton({
       validationResult: {

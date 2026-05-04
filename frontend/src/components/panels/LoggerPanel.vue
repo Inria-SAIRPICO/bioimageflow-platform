@@ -206,7 +206,6 @@ watch(
       />
 
       <Button
-        :icon="autoScope ? 'pi pi-link' : 'pi pi-unlink'"
         :severity="autoScope ? undefined : 'secondary'"
         :outlined="!autoScope"
         :class="{
@@ -217,7 +216,21 @@ watch(
         aria-label="Auto-scope to selected node"
         data-testid="log-auto-scope"
         @click="toggleAutoScope"
-      />
+      >
+        <template #icon>
+          <span
+            :class="[
+              'pi',
+              autoScope ? 'pi-link' : 'pi-unlink',
+              'logger-panel__auto-scope-icon',
+              autoScope
+                ? 'logger-panel__auto-scope-icon--active'
+                : 'logger-panel__auto-scope-icon--inactive',
+            ]"
+            aria-hidden="true"
+          />
+        </template>
+      </Button>
 
       <span class="logger-panel__search-wrap">
         <InputText
@@ -339,6 +352,26 @@ watch(
   color: var(--p-text-color, #111827);
   background: var(--p-surface-100, #f3f4f6);
   border: 1px solid var(--p-surface-300, #d1d5db);
+}
+
+.logger-panel__auto-scope-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  color: currentColor;
+  opacity: 1;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.logger-panel__auto-scope-icon--active {
+  color: var(--p-primary-color, #2563eb);
+}
+
+.logger-panel__auto-scope-icon--inactive {
+  color: var(--p-text-color, #111827);
 }
 
 .logger-panel__search-wrap {

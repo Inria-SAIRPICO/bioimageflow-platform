@@ -404,7 +404,13 @@ describe('execution store', () => {
         'pre-execution validation failed',
       )
       expect(errorStore.errors[0]!.fullDetail).toContain('Traceback line 2')
-      expect(useLoggerStore().entries).toEqual([])
+      expect(useLoggerStore().entries).toEqual([
+        expect.objectContaining({
+          level: 'ERROR',
+          message: expect.stringContaining('Traceback line 2'),
+          nodeId: null,
+        }),
+      ])
     })
 
     it('emits one report even when multiple nodes failed', async () => {

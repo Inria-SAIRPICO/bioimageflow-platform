@@ -3,6 +3,7 @@ import { computed, watch, type Ref } from 'vue'
 import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { validationErrorsForExecution } from '@/utils/executionSelection'
 import type { GraphState, ValidationResult } from '@/api/types'
 
 export interface ExecutionGraphSync {
@@ -43,7 +44,14 @@ export function useExecutionLock() {
     // 2. If validation failed, abort the run. The caller (F5 Run button)
     //    is responsible for surfacing this to the user via a toast.
     const result = graphSync.validationResult.value
-    if (result && result.valid === false) {
+    const blockingErrors = result
+      ? validationErrorsForExecution(result.errors ?? [], graph, nodes)
+      : []
+    if (
+      result &&
+      result.valid === false &&
+      (blockingErrors.length > 0 || (result.errors ?? []).length === 0)
+    ) {
       throw new Error(
         'Validation errors found — fix them before running',
       )
