@@ -15,6 +15,7 @@ import { useSettingsStore } from '@/stores/settings'
 import type { ToolCreateResponse, ToolMetadata, ToolSourceResponse } from '@/api/types'
 import { api } from '@/api/client'
 import { openPathWithEditor } from '@/api/editor'
+import { isDesktop as isPywebviewDesktop } from '@/utils/nativeDialogs'
 
 const emit = defineEmits<{
   'add-tool': [toolName: string]
@@ -49,6 +50,10 @@ function markBusy(key: string, on: boolean) {
 }
 
 const filteredTools = computed(() => toolRegistry.searchTools(searchQuery.value))
+const localToolActionsAvailable = computed(() => {
+  if (settingsStore.isWebapp) return false
+  return settingsStore.isDesktop || isPywebviewDesktop()
+})
 
 /** Tools grouped by their primary category for the sidebar list. The list
  * is rendered as a tree (category -> tool rows), mirroring the package tree
@@ -397,7 +402,7 @@ function getDocumentation(toolName: string): string {
 }
 
 async function openInEditor(toolName: string) {
-  if (!settingsStore.isDesktop) return
+  if (!localToolActionsAvailable.value) return
   try {
     const { data } = await api.get<ToolSourceResponse>(`/api/v1/tools/${toolName}/source`)
     await openPathWithEditor(data.path, toast)
@@ -692,7 +697,7 @@ defineExpose({
     <!-- Create tool button at the bottom -->
     <div class="tools-panel-footer">
       <Button
-        v-if="settingsStore.isDesktop"
+        v-if="localToolActionsAvailable"
         label="Create Tool"
         icon="pi pi-plus"
         data-testid="create-tool-btn"
@@ -863,7 +868,7 @@ defineExpose({
                   @click.stop="toggleManageDocumentation(node.data.name)"
                 />
                 <Button
-                  v-if="settingsStore.isDesktop"
+                  v-if="localToolActionsAvailable"
                   icon="pi pi-pencil"
                   text
                   size="small"
@@ -871,7 +876,7 @@ defineExpose({
                   @click.stop="openInEditor(node.data.name)"
                 />
                 <Button
-                  v-if="settingsStore.isDesktop && isEditableTool(node.data.tool)"
+                  v-if="localToolActionsAvailable && isEditableTool(node.data.tool)"
                   icon="pi pi-file-edit"
                   text
                   size="small"
@@ -880,7 +885,7 @@ defineExpose({
                   @click.stop="renameCustomTool(node.data.tool)"
                 />
                 <Button
-                  v-if="settingsStore.isDesktop && isEditableTool(node.data.tool)"
+                  v-if="localToolActionsAvailable && isEditableTool(node.data.tool)"
                   icon="pi pi-trash"
                   text
                   size="small"

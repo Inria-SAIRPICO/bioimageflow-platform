@@ -142,7 +142,25 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
   }
 }
 
-function mountPanel() {
+function setPywebviewDesktop(enabled: boolean) {
+  Object.defineProperty(window, 'pywebview', {
+    configurable: true,
+    value: enabled
+      ? {
+          api: {
+            select_file: vi.fn(),
+            select_files: vi.fn(),
+            select_folder: vi.fn(),
+            save_file: vi.fn(),
+            set_title: vi.fn(),
+            reveal_path: vi.fn(),
+          },
+        }
+      : undefined,
+  })
+}
+
+function mountPanel(options: { settings?: Settings | null } = {}) {
   // Mock fetchTools and fetchPackages calls in onMounted
   mockedApi.get.mockImplementation((url: string) => {
     if (url === '/api/v1/tools') return Promise.resolve({ data: mockTools })
@@ -153,7 +171,9 @@ function mountPanel() {
   const pinia = createPinia()
   setActivePinia(pinia)
   const settingsStore = useSettingsStore()
-  settingsStore.settings = makeSettings({ deployment_mode: 'desktop' })
+  settingsStore.settings = options.settings === undefined
+    ? makeSettings({ deployment_mode: 'desktop' })
+    : options.settings
   return mount(ToolsPanel, {
     global: {
       plugins: [pinia, PrimeVue, ConfirmationService, ToastService],
@@ -176,6 +196,7 @@ describe('ToolsPanel', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     requireMock.mockReset()
+    setPywebviewDesktop(false)
   })
 
   // --- Task 12: Basic component tests ---
@@ -188,6 +209,20 @@ describe('ToolsPanel', () => {
   it('renders create tool button', () => {
     const wrapper = mountPanel()
     expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(true)
+  })
+
+  it('renders create tool button in pywebview before settings load', () => {
+    setPywebviewDesktop(true)
+    const wrapper = mountPanel({ settings: null })
+    expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(true)
+  })
+
+  it('hides create tool button when loaded settings explicitly say webapp', () => {
+    setPywebviewDesktop(true)
+    const wrapper = mountPanel({
+      settings: makeSettings({ deployment_mode: 'webapp' }),
+    })
+    expect(wrapper.find('[data-testid="create-tool-btn"]').exists()).toBe(false)
   })
 
   it('renders manage tools button', () => {
