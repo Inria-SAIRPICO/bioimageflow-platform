@@ -16,7 +16,9 @@ the background task guarantees at most one execution.
 from __future__ import annotations
 
 import asyncio
+import ast
 import logging
+import re
 import time
 import traceback
 from collections.abc import Callable
@@ -534,13 +536,14 @@ class ExecutionManager:
                     )
             else:
                 success = False
-                tb = "".join(
+                local_tb = "".join(
                     traceback.format_exception(type(exc), exc, exc.__traceback__)
                 )
+                detail, tb = _format_exception_for_client(exc, local_tb)
                 errors.append(
                     {
                         "type": type(exc).__name__,
-                        "detail": str(exc),
+                        "detail": detail,
                         "traceback": tb,
                     }
                 )
@@ -560,7 +563,7 @@ class ExecutionManager:
                             node_id=target_id,
                             status="failed",
                             cached=False,
-                            error=str(exc),
+                            error=detail,
                             traceback=tb,
                         )
                     elif current.status == "failed":
@@ -568,9 +571,9 @@ class ExecutionManager:
                 if should_publish_error_log:
                     self.event_bus.publish_log(
                         "ERROR",
-                        _format_node_failure_message(target_id, str(exc), tb)
+                        _format_node_failure_message(target_id, detail, tb)
                         if target_id is not None
-                        else _format_workflow_failure_message(str(exc), tb),
+                        else _format_workflow_failure_message(detail, tb),
                         target_id,
                         time.time(),
                     )
@@ -613,6 +616,110 @@ def _format_workflow_failure_message(message: str, tb: str | None) -> str:
     if tb:
         return f"Workflow execution failed: {message}\n{tb}"
     return f"Workflow execution failed: {message}"
+
+
+def _format_exception_for_client(exc: BaseException, local_tb: str) -> tuple[str, str]:
+    """Return a short UI detail plus formatted diagnostics for ``exc``.
+
+    Wetlands wraps worker failures in an exception payload shaped like
+    ``{"exception": "...", "traceback": [...]}``. Showing ``str(exc)`` exposes
+    that Python dict in the frontend. Instead, keep the payload in the details
+    text and make the row/toast message readable.
+    """
+    payload = _extract_remote_exception_payload(exc)
+    if payload is None:
+        message = str(exc).strip() or type(exc).__name__
+        return _summarize_failure_message(message), local_tb
+
+    remote_message = str(payload.get("exception") or "").strip()
+    summary = _summarize_failure_message(remote_message or str(exc))
+    remote_tb = _format_remote_traceback(payload.get("traceback"))
+
+    detail_parts: list[str] = []
+    if remote_message:
+        detail_parts.append(f"Remote error:\n{remote_message}")
+    if remote_tb:
+        detail_parts.append(f"Remote traceback:\n{remote_tb.rstrip()}")
+    if local_tb:
+        detail_parts.append(f"Local traceback:\n{local_tb.rstrip()}")
+    return summary, "\n\n".join(detail_parts)
+
+
+def _extract_remote_exception_payload(exc: BaseException) -> dict[str, Any] | None:
+    for arg in exc.args:
+        if isinstance(arg, dict) and "exception" in arg:
+            return arg
+        if not isinstance(arg, str):
+            continue
+        text = arg.strip()
+        if not (text.startswith("{") and "exception" in text):
+            continue
+        try:
+            parsed = ast.literal_eval(text)
+        except (SyntaxError, ValueError):
+            continue
+        if isinstance(parsed, dict) and "exception" in parsed:
+            return parsed
+    return None
+
+
+def _format_remote_traceback(value: object) -> str:
+    if isinstance(value, list):
+        return "".join(str(line) for line in value)
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _summarize_failure_message(message: str) -> str:
+    command_summary = _summarize_command_failure(message)
+    if command_summary is not None:
+        return command_summary
+    first_line = next((line.strip() for line in message.splitlines() if line.strip()), "")
+    return first_line or "Execution failed"
+
+
+def _summarize_command_failure(message: str) -> str | None:
+    match = re.search(
+        r"Command '?(\[.*?\])'? (?:died with <Signals\.([A-Z0-9_]+): \d+>|"
+        r"returned non-zero exit status (\d+))",
+        message,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        return None
+    try:
+        command = ast.literal_eval(match.group(1))
+    except (SyntaxError, ValueError):
+        command = []
+    if not isinstance(command, list) or not command:
+        return None
+
+    executable = Path(str(command[0])).name
+    input_path = _option_value(command, "-i") or _option_value(command, "--input")
+    input_clause = f" while processing {input_path!r}" if input_path else ""
+
+    if match.group(2):
+        detail = (
+            f"External command {executable!r} crashed with signal "
+            f"{match.group(2)}{input_clause}."
+        )
+    else:
+        detail = (
+            f"External command {executable!r} failed with exit status "
+            f"{match.group(3)}{input_clause}."
+        )
+
+    if input_path and Path(input_path).name.startswith("."):
+        detail += " The selected input appears to be a hidden/system file, not image data."
+    return detail
+
+
+def _option_value(command: list[object], option: str) -> str | None:
+    for index, value in enumerate(command):
+        if value == option and index + 1 < len(command):
+            return str(command[index + 1])
+    return None
 
 
 # ---- Cache clearer ----------------------------------------------------------
