@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
-import { openPathWithEditor } from '@/api/editor'
 
-const props = defineProps<{ value: string }>()
+const props = withDefaults(defineProps<{
+  value: string
+  showActions?: boolean
+}>(), {
+  showActions: true,
+})
 
 let toast: ReturnType<typeof useToast> | null = null
 try {
@@ -20,16 +24,18 @@ const filename = computed(() => {
   return parts.length > 0 ? parts[parts.length - 1] : props.value
 })
 
+const editing = ref(false)
+const input = ref<HTMLInputElement | null>(null)
+
 function showError(detail: string) {
   toast?.add({ severity: 'error', summary: 'Action failed', detail, life: 3000 })
 }
 
-async function openEditor() {
-  try {
-    await openPathWithEditor(props.value, toast)
-  } catch (exc: any) {
-    showError(exc?.response?.data?.detail ?? exc?.message ?? 'Could not open path')
-  }
+async function editPath() {
+  editing.value = true
+  await nextTick()
+  input.value?.focus()
+  input.value?.select()
 }
 
 async function copyPath() {
@@ -53,36 +59,47 @@ async function reveal() {
 <template>
   <div class="path-cell">
     <div class="path-cell__text">
-      <span
-        class="path-cell__path"
+      <input
+        v-if="editing"
+        ref="input"
+        class="path-cell__input"
+        data-testid="path-input"
+        :value="value"
+        readonly
         :title="value"
-      >{{ value }}</span>
+        @blur="editing = false"
+        @keydown.escape="editing = false"
+      >
+      <button
+        v-else
+        class="path-cell__path"
+        type="button"
+        :title="value"
+        data-testid="path-display"
+        @click="editPath"
+      >
+        {{ value }}
+      </button>
       <span class="path-cell__name">{{ filename }}</span>
     </div>
-    <Button
-      icon="pi pi-copy"
-      text
-      size="small"
-      title="Copy path"
-      data-testid="path-copy"
-      @click="copyPath"
-    />
-    <Button
-      icon="pi pi-file-edit"
-      text
-      size="small"
-      title="Open in editor"
-      data-testid="path-open"
-      @click="openEditor"
-    />
-    <Button
-      icon="pi pi-folder-open"
-      text
-      size="small"
-      title="Reveal in file browser"
-      data-testid="path-reveal"
-      @click="reveal"
-    />
+    <template v-if="showActions">
+      <Button
+        icon="pi pi-folder-open"
+        text
+        size="small"
+        title="Reveal in file browser"
+        data-testid="path-reveal"
+        @click="reveal"
+      />
+      <Button
+        icon="pi pi-copy"
+        text
+        size="small"
+        title="Copy path"
+        data-testid="path-copy"
+        @click="copyPath"
+      />
+    </template>
   </div>
 </template>
 
@@ -102,12 +119,31 @@ async function reveal() {
 }
 
 .path-cell__path {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 320px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: text;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.8125rem;
+  padding: 0;
+  text-align: left;
+}
+
+.path-cell__input {
+  width: min(520px, 48vw);
+  max-width: 520px;
+  border: 1px solid var(--p-primary-color);
+  border-radius: 4px;
+  background: var(--p-surface-0);
+  color: var(--p-text-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8125rem;
+  padding: 0.125rem 0.25rem;
 }
 
 .path-cell__name {

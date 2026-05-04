@@ -48,6 +48,13 @@ const ColumnStub = defineComponent({
   },
 })
 
+const ImageCellStub = defineComponent({
+  props: {
+    value: { type: String, required: true },
+  },
+  template: '<div data-testid="image-cell">{{ value }}</div>',
+})
+
 describe('DataTablePanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -102,7 +109,7 @@ describe('DataTablePanel', () => {
     expect(wrapper.find('[data-testid="node-data-table-node-1"]').exists()).toBe(false)
   })
 
-  it('renders image file paths in node data tables so they can be copied', async () => {
+  it('renders image path rows as thumbnail, path, Napari, reveal, copy only', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const dataTableStore = useDataTableStore()
@@ -116,6 +123,22 @@ describe('DataTablePanel', () => {
       page_size: 50,
       column_types: { mask: 'ImagePath' },
     }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(new Blob(['png'], { type: 'image/png' }), {
+          status: 200,
+          headers: { 'X-Thumbnail-Status': 'ready' },
+        }),
+      ),
+    )
+    if (typeof URL.createObjectURL !== 'function') {
+      ;(URL as any).createObjectURL = vi.fn(() => 'blob:mock-url')
+      ;(URL as any).revokeObjectURL = vi.fn()
+    } else {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url')
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    }
 
     const wrapper = mount(NodeDataTable, {
       props: { nodeId: 'node-1' },
@@ -124,14 +147,26 @@ describe('DataTablePanel', () => {
         stubs: {
           DataTable: DataTableStub,
           Column: ColumnStub,
-          ImageCell: { template: '<div data-testid="image-cell" />' },
           Paginator: true,
         },
       },
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('/data/results/cell_mask.tif')
+    const row = wrapper.find('.node-data-table__image-path')
+    expect(row.exists()).toBe(true)
+    const orderedTestIds = Array.from(row.element.querySelectorAll('[data-testid]')).map((el) =>
+      el.getAttribute('data-testid'),
+    )
+    expect(orderedTestIds).toEqual([
+      'image-thumbnail',
+      'path-display',
+      'open-napari-0-mask',
+      'reveal-0-mask',
+      'path-copy',
+    ])
+    expect(row.find('[data-testid="path-open"]').exists()).toBe(false)
+
     await wrapper.find('[data-testid="path-copy"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/cell_mask.tif')
   })
@@ -158,7 +193,7 @@ describe('DataTablePanel', () => {
         stubs: {
           DataTable: DataTableStub,
           Column: ColumnStub,
-          ImageCell: { template: '<div data-testid="image-cell" />' },
+          ImageCell: ImageCellStub,
           Paginator: true,
         },
       },
@@ -217,7 +252,7 @@ describe('DataTablePanel', () => {
         stubs: {
           DataTable: DataTableStub,
           Column: ColumnStub,
-          ImageCell: { template: '<div data-testid="image-cell" />' },
+          ImageCell: ImageCellStub,
           Paginator: true,
         },
       },
@@ -279,7 +314,7 @@ describe('DataTablePanel', () => {
         stubs: {
           DataTable: DataTableStub,
           Column: ColumnStub,
-          ImageCell: { template: '<div data-testid="image-cell" />' },
+          ImageCell: ImageCellStub,
           Paginator: true,
         },
       },
@@ -344,7 +379,7 @@ describe('DataTablePanel', () => {
         stubs: {
           DataTable: DataTableStub,
           Column: ColumnStub,
-          ImageCell: { template: '<div data-testid="image-cell" />' },
+          ImageCell: ImageCellStub,
           Paginator: true,
         },
       },
@@ -412,7 +447,7 @@ describe('DataTablePanel', () => {
         stubs: {
           DataTable: DataTableStub,
           Column: ColumnStub,
-          ImageCell: { template: '<div data-testid="image-cell" />' },
+          ImageCell: ImageCellStub,
           Paginator: true,
         },
       },
@@ -436,32 +471,27 @@ describe('DataTablePanel', () => {
     })
 
     expect(wrapper.text()).toContain('/data/results/cell_mask.tif')
+    await wrapper.find('[data-testid="path-display"]').trigger('click')
+    const input = wrapper.find<HTMLInputElement>('[data-testid="path-input"]')
+    expect(input.exists()).toBe(true)
+    expect(input.element.value).toBe('/data/results/cell_mask.tif')
+    expect(wrapper.text()).toContain('cell_mask.tif')
+
     await wrapper.find('[data-testid="path-copy"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/cell_mask.tif')
   })
 
-  it('opens regular path cells through the editor helper and clipboard fallback', async () => {
-    mockedPost.mockResolvedValueOnce({
-      data: {
-        opened: false,
-        method: 'clipboard',
-        url: null,
-        path: '/data/results/measurements.json',
-        message: 'Path copied - open in your local editor.',
-      },
-    })
+  it('does not show the editor action for regular path cells', async () => {
     const wrapper = mount(PathCell, {
       props: { value: '/data/results/measurements.json' },
       global: { plugins: [createPinia(), PrimeVue] },
     })
 
-    const open = wrapper.find('[data-testid="path-open"]')
-    expect(open.attributes('disabled')).toBeUndefined()
-    await open.trigger('click')
+    expect(wrapper.find('[data-testid="path-open"]').exists()).toBe(false)
 
-    expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open', {
+    await wrapper.find('[data-testid="path-reveal"]').trigger('click')
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/fs/reveal', {
       path: '/data/results/measurements.json',
     })
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/measurements.json')
   })
 })
