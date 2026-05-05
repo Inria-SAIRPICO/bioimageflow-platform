@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -99,6 +100,24 @@ class FakeRegistry:
                     self._state.pop(key, None)
         else:
             self._state.pop((pkg, version), None)
+
+
+class BlockingObserver:
+    """Observer fake whose stop method simulates watchdog shutdown hangs."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.stop_started = threading.Event()
+        self.finished = threading.Event()
+        self.join_called = False
+
+    def stop(self) -> None:
+        self.stop_started.set()
+        self.release.wait(timeout=5.0)
+
+    def join(self, timeout: float | None = None) -> None:
+        self.join_called = True
+        self.finished.set()
 
 
 def _meta(name: str, *, package: str = "dummy", version: str = "1.0.0") -> ToolMetadata:
@@ -526,6 +545,37 @@ async def test_stop_cancels_pending_timer(tmp_path):
 
     cm.broadcast_tool_reload.assert_not_awaited()
     assert reg.reload_calls == []
+
+
+async def test_stop_returns_when_observer_stop_blocks(tmp_path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    reg = FakeRegistry(tmp_path)
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    observer = BlockingObserver()
+
+    svc = ToolHotReloadService(
+        registry=reg,
+        connection_manager=cm,
+        debounce_ms=15,
+        stop_timeout_s=0.05,
+    )
+    svc._observer = observer  # type: ignore[assignment]
+
+    started = time.monotonic()
+    await svc.stop()
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.5
+    assert observer.stop_started.is_set()
+    assert svc._observer is None
+
+    observer.release.set()
+    assert await _wait_for(lambda: observer.finished.is_set(), timeout=1.0)
+    assert observer.join_called
 
 
 async def test_concurrent_suppress_resume_thread_safety(tmp_path):

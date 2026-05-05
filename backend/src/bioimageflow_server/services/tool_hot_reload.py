@@ -36,6 +36,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_STOP_POLL_INTERVAL_SECONDS = 0.01
+
 
 # Editor temp-file noise that watchdog's PatternMatchingEventHandler
 # filters out before our handler runs. Defined at module scope so tests
@@ -58,10 +60,12 @@ class ToolHotReloadService:
         registry: "ToolRegistryService",
         connection_manager: "ConnectionManager",
         debounce_ms: int = 500,
+        stop_timeout_s: float = 2.0,
     ) -> None:
         self._registry = registry
         self._cm = connection_manager
         self._debounce_s = debounce_ms / 1000.0
+        self._stop_timeout_s = stop_timeout_s
         self._observer: Observer | None = None
         self._handler: PatternMatchingEventHandler | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -117,16 +121,43 @@ class ToolHotReloadService:
                 handle.cancel()
             self._timers.clear()
 
-        if self._observer is not None:
-            self._observer.stop()
-            # Hop the join off the event loop so we don't block it.
+        observer = self._observer
+        self._observer = None
+        if observer is None:
+            return
+
+        loop = asyncio.get_running_loop()
+        done = threading.Event()
+        errors: list[BaseException] = []
+
+        def _stop_observer() -> None:
             try:
-                await asyncio.get_running_loop().run_in_executor(None, self._observer.join, 2.0)
-            except RuntimeError:
-                # No running loop (very unlikely during shutdown).
-                self._observer.join(timeout=2.0)
-            self._observer = None
-            self._handler = None
+                observer.stop()
+                observer.join(timeout=self._stop_timeout_s)
+            except BaseException as exc:  # pragma: no cover - defensive.
+                errors.append(exc)
+            finally:
+                done.set()
+
+        thread = threading.Thread(
+            target=_stop_observer,
+            name="bioimageflow-hot-reload-stop",
+            daemon=True,
+        )
+        thread.start()
+
+        deadline = loop.time() + self._stop_timeout_s
+        while not done.is_set() and loop.time() < deadline:
+            await asyncio.sleep(_STOP_POLL_INTERVAL_SECONDS)
+
+        if done.is_set() and errors:
+            raise errors[0]
+        if not done.is_set():
+            logger.warning(
+                "Tool hot-reload observer did not stop within %.1fs",
+                self._stop_timeout_s,
+            )
+        self._handler = None
 
     # -- suppress / resume ----------------------------------------------
 
