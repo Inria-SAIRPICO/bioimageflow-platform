@@ -315,8 +315,28 @@ function getPanelAddOptions(key: string) {
       }
       return { id: 'logger', component: 'logger', title: 'Logger', initialHeight: 250, position: { direction: 'below' as const } }
     }
-    case 'codeEditor':
-      return { id: 'codeEditor', component: 'codeEditor', title: 'Code Editor', initialHeight: 360, position: { direction: 'below' as const } }
+    case 'codeEditor': {
+      const nodePanel = dockviewApi.value?.getPanel('nodePanel')
+      if (nodePanel) {
+        return {
+          id: 'codeEditor',
+          component: 'codeEditor',
+          title: 'Code Editor',
+          initialWidth: 520,
+          position: { referencePanel: 'nodePanel' as const, direction: 'right' as const },
+        }
+      }
+      const canvasPanel = dockviewApi.value?.getPanel('canvas')
+      return {
+        id: 'codeEditor',
+        component: 'codeEditor',
+        title: 'Code Editor',
+        initialWidth: 520,
+        position: canvasPanel
+          ? { referencePanel: 'canvas' as const, direction: 'right' as const }
+          : { direction: 'right' as const },
+      }
+    }
     default:
       throw new Error(`Unknown panel key: ${key}`)
   }

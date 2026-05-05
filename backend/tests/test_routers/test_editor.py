@@ -19,7 +19,7 @@ class _EditorStub:
         self.response = response
         self.paths: list[str] = []
 
-    def get_status(self) -> EditorStatus:
+    def get_status(self, *, launch: bool = False) -> EditorStatus:
         return EditorStatus(
             available=True,
             url="http://127.0.0.1:32344",

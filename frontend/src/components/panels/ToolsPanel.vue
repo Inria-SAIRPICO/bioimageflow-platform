@@ -402,11 +402,21 @@ function getDocumentation(toolName: string): string {
   return tool?.documentation ?? ''
 }
 
+function parentPath(path: string): string {
+  const slash = path.lastIndexOf('/')
+  const backslash = path.lastIndexOf('\\')
+  const index = Math.max(slash, backslash)
+  if (index < 0) return path
+  if (index === 0) return path.slice(0, 1)
+  if (index === 2 && /^[A-Za-z]:[\\/]/.test(path)) return path.slice(0, 3)
+  return path.slice(0, index)
+}
+
 async function openInEditor(toolName: string) {
   if (!localToolActionsAvailable.value) return
   try {
     const { data } = await api.get<ToolSourceResponse>(`/api/v1/tools/${toolName}/source`)
-    await openPathWithEditor(data.path, toast)
+    await openPathWithEditor(parentPath(data.path), toast)
   } catch (e: unknown) {
     toolRegistry.error = e instanceof Error ? e.message : String(e)
   }
@@ -573,6 +583,7 @@ defineExpose({
   toggleDocumentation,
   toggleManageDocumentation,
   getDocumentation,
+  parentPath,
   openInEditor,
   isEditableTool,
   renameCustomTool,

@@ -26,8 +26,10 @@ type Toast = {
   }) => void
 }
 
-export async function getEditorStatus(): Promise<EditorStatus> {
-  const { data } = await api.get<EditorStatus>('/api/v1/editor/status')
+export async function getEditorStatus(options: { launch?: boolean } = {}): Promise<EditorStatus> {
+  const { data } = options.launch
+    ? await api.get<EditorStatus>('/api/v1/editor/status', { params: { launch: true } })
+    : await api.get<EditorStatus>('/api/v1/editor/status')
   return data
 }
 

@@ -596,7 +596,7 @@ describe('ToolsPanel', () => {
       },
     })
     mockedApi.post.mockResolvedValueOnce({
-      data: { opened: true, method: 'external', url: null, path: '/path/to/tool.py', message: null },
+      data: { opened: true, method: 'external', url: null, path: '/path/to', message: null },
     })
 
     const vm = wrapper.vm as unknown as {
@@ -606,8 +606,20 @@ describe('ToolsPanel', () => {
 
     expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/threshold/source')
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
-      path: '/path/to/tool.py',
+      path: '/path/to',
     })
+  })
+
+  it('derives a tool source folder from POSIX and Windows source files', async () => {
+    const wrapper = mountPanel()
+    const vm = wrapper.vm as unknown as {
+      parentPath: (path: string) => string
+    }
+
+    expect(vm.parentPath('/path/to/tool.py')).toBe('/path/to')
+    expect(vm.parentPath('/tool.py')).toBe('/')
+    expect(vm.parentPath('C:\\tools\\tool.py')).toBe('C:\\tools')
+    expect(vm.parentPath('C:\\tool.py')).toBe('C:\\')
   })
 
   it('openInEditor copies the path when editor backend returns clipboard fallback', async () => {
@@ -634,7 +646,7 @@ describe('ToolsPanel', () => {
       data: {
         opened: false,
         method: 'clipboard',
-        path: '/path/to/tool.py',
+        path: '/path/to',
         url: null,
         message: null,
       },
@@ -645,7 +657,7 @@ describe('ToolsPanel', () => {
     }
     await vm.openInEditor('threshold')
 
-    expect(writeText).toHaveBeenCalledWith('/path/to/tool.py')
+    expect(writeText).toHaveBeenCalledWith('/path/to')
   })
 
   it('custom tool actions are only available for editable custom tools', async () => {
@@ -710,7 +722,7 @@ describe('ToolsPanel', () => {
       },
     })
     mockedApi.post.mockResolvedValueOnce({
-      data: { opened: true, method: 'external', url: null, path: '/path/to/tool.py', message: null },
+      data: { opened: true, method: 'external', url: null, path: '/path/to', message: null },
     })
 
     const vm = wrapper.vm as unknown as {
@@ -720,7 +732,7 @@ describe('ToolsPanel', () => {
 
     expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/threshold/source')
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
-      path: '/path/to/tool.py',
+      path: '/path/to',
     })
   })
 

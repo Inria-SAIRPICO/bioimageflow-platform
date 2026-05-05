@@ -9,7 +9,7 @@ from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -189,9 +189,21 @@ class EmbeddedCodeServerManager:
         *,
         opener: OpenerCall = _default_opener_call,
     ) -> EditorOpenResponse:
+        if path.is_dir():
+            return EditorOpenResponse(
+                opened=True,
+                method=EditorOpenMethod.EMBEDDED,
+                url=f"{self.editor_url}/?{urlencode({'folder': str(path)})}",
+                path=str(path),
+            )
+
         ok = opener(
             f"{self.control_url}/open",
-            {"path": str(path), "type": "file", "new_window": "false"},
+            {
+                "path": str(path),
+                "type": "file",
+                "new_window": "false",
+            },
         )
         if not ok:
             raise ConnectionError("embedded editor opener is unavailable")
@@ -219,8 +231,19 @@ class EditorService:
         self._embedded_startup_timeout = embedded_startup_timeout
         self._embedded_poll_interval = embedded_poll_interval
 
-    def get_status(self) -> EditorStatus:
-        return self._embedded.status()
+    def get_status(self, *, launch: bool = False) -> EditorStatus:
+        status = self._embedded.status()
+        if not launch or status.available:
+            return status
+
+        start = getattr(self._embedded, "launch", None)
+        if callable(start):
+            try:
+                start()
+            except Exception:
+                return self._embedded.status()
+
+        return self._wait_for_embedded_status()
 
     def open_path(self, path: str) -> EditorOpenResponse:
         normalized = self._normalize_path(path)
@@ -236,7 +259,7 @@ class EditorService:
             )
 
         status = self._embedded.status()
-        if status.available and status.control_available:
+        if status.available and (normalized.is_dir() or status.control_available):
             try:
                 return self._embedded.open_path(normalized)
             except Exception:
@@ -264,11 +287,19 @@ class EditorService:
         deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
         while True:
             status = self._embedded.status()
-            if status.available and status.control_available:
+            if status.available and (path.is_dir() or status.control_available):
                 return self._embedded.open_path(path)
             if time.monotonic() >= deadline:
                 return None
             time.sleep(max(0.0, self._embedded_poll_interval))
+
+    def _wait_for_embedded_status(self) -> EditorStatus:
+        deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
+        last_status = self._embedded.status()
+        while not last_status.available and time.monotonic() < deadline:
+            time.sleep(max(0.0, self._embedded_poll_interval))
+            last_status = self._embedded.status()
+        return last_status
 
     def _normalize_path(self, path: str) -> Path:
         candidate = Path(path).expanduser()

@@ -135,13 +135,20 @@ The Code Editor Panel is a Dockview panel containing an iframe that loads code-s
 
 Returns the current state of code-server and its URL.
 
+Optional query parameter:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `launch` | `bool` | `false` | When `true`, the backend may start the embedded code-server before returning status. Used when the Code Editor Panel is opened directly from the menu. |
+
 **Response:**
 
 ```json
 {
   "available": true,
   "url": "http://localhost:8443",
-  "version": "4.23.0"
+  "version": "4.23.0",
+  "control_available": true
 }
 ```
 
@@ -151,7 +158,8 @@ If code-server is not installed or not running:
 {
   "available": false,
   "url": null,
-  "version": null
+  "version": null,
+  "control_available": false
 }
 ```
 
@@ -178,7 +186,7 @@ Opens a file or folder in the code editor.
 
 **Panel behavior:**
 - The Code Editor Panel is a tab in the Dockview layout. It can be docked, resized, and collapsed like any other panel.
-- On first use, the panel checks `GET /editor/status`. If code-server is available, the iframe loads. If not, the panel shows a message: "code-server is not available. Configure an external editor in Settings."
+- On first use, the panel checks `GET /editor/status?launch=true`. If code-server is available, the iframe loads. If not, the panel shows a message: "code-server is not available. Configure an external editor in Settings."
 - Opening a tool's source folder (from the Tools Panel "Open in editor" button) sends `POST /editor/open` with the folder path and activates the Code Editor Panel.
 
 **Interactions with tool development:**
@@ -191,6 +199,9 @@ The Settings Panel (Section 3.13 of the full spec) includes a Code Editor sectio
 | Field | Widget | Description |
 |-------|--------|-------------|
 | **External editor command** | Text input | Command template for opening files in an external editor. Placeholder: `code {file_path}`. The `{file_path}` token is replaced with the actual path. |
+| **Enable unsafe webapp features** | File-only boolean | Debug switch for local webapp-mode development. Default `false`. Exposed by `GET /settings`, rejected by `PATCH /settings`. |
+
+`enable_unsafe_webapp_features` only affects `deployment_mode === "webapp"`. With the default `false` value, local source-editing actions are disabled: tool creation, rename, and delete are hidden in the frontend and rejected by the backend, and tool source-opening controls are hidden in the frontend. Setting it to `true` re-enables local debugging actions that can modify or open server-side code: creating tools, renaming custom tools, deleting custom tools, and opening tool source paths in the code editor. This setting is unsafe for hosted or multi-user deployments and must be changed only in the settings file or server-side configuration, never from the GUI.
 
 **Editor resolution order:**
 1. If an external editor command is configured and non-empty, use it (launch the command).
@@ -586,7 +597,7 @@ The template class name and environment name are dynamically replaced with the u
 - **Tool hot-reload:** Newly created tools are immediately watched by the file watcher. Edits trigger hot-reload as with any other tool.
 - **Code Editor Panel:** After creation, the tool source is automatically opened in the Code Editor Panel for immediate editing.
 - **Tools Panel:** Custom tools appear in the panel with a "Custom" badge and support drag-and-drop onto the canvas.
-- **Webapp mode security:** `POST /tools`, `DELETE /tools/{tool_name}`, and `PATCH /tools/{tool_name}` are disabled in webapp mode (403 Forbidden). The "Create Tool" button is hidden when `deployment_mode === "webapp"`.
+- **Webapp mode security:** `POST /tools`, `DELETE /tools/{tool_name}`, and `PATCH /tools/{tool_name}` are disabled in webapp mode (403 Forbidden), and source-opening controls are hidden, unless `enable_unsafe_webapp_features === true`. The "Create Tool" button is hidden when `deployment_mode === "webapp"` and the unsafe debug flag is false.
 
 ---
 
@@ -609,8 +620,8 @@ New and modified endpoints introduced in v2:
 | Endpoint | Change |
 |----------|--------|
 | `PUT /api/v1/graph` | Now validates sub-workflow internal DAGs recursively. Errors reference scoped node paths. |
-| `GET /api/v1/settings` | Response includes `external_editor` field for code editor fallback. |
-| `PATCH /api/v1/settings` | Accepts `external_editor` field updates. |
+| `GET /api/v1/settings` | Response includes `external_editor` and `enable_unsafe_webapp_features` fields for code editor fallback and webapp debugging. |
+| `PATCH /api/v1/settings` | Accepts `external_editor` field updates. Rejects `enable_unsafe_webapp_features`; that flag is file-only. |
 
 ---
 

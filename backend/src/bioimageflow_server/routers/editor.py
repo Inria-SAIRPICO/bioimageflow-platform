@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from functools import partial
+
+import anyio
 from fastapi import APIRouter, Depends, HTTPException
 
 from bioimageflow_server.models.editor import (
@@ -25,9 +28,10 @@ def get_editor_service() -> EditorService:  # pragma: no cover
 
 @router.get("/status", response_model=EditorStatus)
 async def get_editor_status(
+    launch: bool = False,
     service: EditorService = Depends(get_editor_service),
 ) -> EditorStatus:
-    return service.get_status()
+    return await anyio.to_thread.run_sync(partial(service.get_status, launch=launch))
 
 
 @router.post("/open", response_model=EditorOpenResponse)
@@ -36,7 +40,7 @@ async def open_editor_path(
     service: EditorService = Depends(get_editor_service),
 ) -> EditorOpenResponse:
     try:
-        return service.open_path(body.path)
+        return await anyio.to_thread.run_sync(service.open_path, body.path)
     except EditorPathNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Path not found: {exc}") from exc
     except EditorPathError as exc:

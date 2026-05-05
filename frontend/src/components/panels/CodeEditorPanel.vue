@@ -1,13 +1,31 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUIStore } from '@/stores/ui'
+import { getEditorStatus } from '@/api/editor'
 
 const uiStore = useUIStore()
 const { codeEditorUrl, codeEditorPath } = storeToRefs(uiStore)
 const failed = ref(false)
+const loading = ref(false)
 
 const available = computed(() => Boolean(codeEditorUrl.value) && !failed.value)
+
+onMounted(async () => {
+  if (codeEditorUrl.value) return
+  loading.value = true
+  try {
+    const status = await getEditorStatus({ launch: true })
+    if (status.available && status.url) {
+      uiStore.setCodeEditorTarget(status.url, codeEditorPath.value ?? '')
+      failed.value = false
+    }
+  } catch {
+    // The unavailable state below is the user-facing fallback.
+  } finally {
+    loading.value = false
+  }
+})
 </script>
 
 <template>
@@ -20,6 +38,9 @@ const available = computed(() => Boolean(codeEditorUrl.value) && !failed.value)
       :title="codeEditorPath ? `Code editor - ${codeEditorPath}` : 'Code editor'"
       @error="failed = true"
     />
+    <div v-else-if="loading" class="code-editor-panel__unavailable" data-testid="code-editor-loading">
+      Starting code-server...
+    </div>
     <div v-else class="code-editor-panel__unavailable" data-testid="code-editor-unavailable">
       code-server is not available. Configure an external editor in Settings.
     </div>

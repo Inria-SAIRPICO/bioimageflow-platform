@@ -27,6 +27,18 @@ describe('editor api helpers', () => {
     expect(mockedGet).toHaveBeenCalledWith('/api/v1/editor/status')
   })
 
+  it('can request editor startup while fetching status', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: { available: true, url: 'http://127.0.0.1:32344', version: '4.106.2', control_available: true },
+    })
+
+    await getEditorStatus({ launch: true })
+
+    expect(mockedGet).toHaveBeenCalledWith('/api/v1/editor/status', {
+      params: { launch: true },
+    })
+  })
+
   it('shows success for external editor responses', async () => {
     const toast = { add: vi.fn() }
     mockedPost.mockResolvedValueOnce({

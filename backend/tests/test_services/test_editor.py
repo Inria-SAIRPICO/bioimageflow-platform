@@ -264,6 +264,17 @@ def test_clipboard_fallback_when_no_editor_available(tmp_path: Path) -> None:
     )
 
 
+def test_status_can_launch_default_embedded_editor() -> None:
+    embedded = _LaunchableEmbedded()
+    service = _service(embedded=embedded)
+
+    status = service.get_status(launch=True)
+
+    assert embedded.launches == 1
+    assert status.available is True
+    assert status.url == "http://127.0.0.1:32344"
+
+
 def test_default_embedded_editor_launches_when_not_already_running(tmp_path: Path) -> None:
     tool = tmp_path / "tool.py"
     tool.write_text("print('x')")
@@ -340,6 +351,31 @@ def test_default_embedded_editor_does_not_report_opened_without_opener(
     assert embedded.opened == []
     assert response.method == EditorOpenMethod.CLIPBOARD
     assert response.opened is False
+
+
+def test_embedded_folder_open_does_not_require_control_endpoint(tmp_path: Path) -> None:
+    tool_dir = tmp_path / "tool_package"
+    tool_dir.mkdir()
+    embedded = _Embedded(
+        status=EditorStatus(
+            available=True,
+            url="http://127.0.0.1:32344",
+            version=None,
+            control_available=False,
+        ),
+        open_response=EditorOpenResponse(
+            opened=True,
+            method=EditorOpenMethod.EMBEDDED,
+            url="http://127.0.0.1:32344/?folder=x",
+            path=str(tool_dir),
+        ),
+    )
+    service = _service(embedded=embedded)
+
+    response = service.open_path(str(tool_dir))
+
+    assert embedded.opened == [tool_dir]
+    assert response.method == EditorOpenMethod.EMBEDDED
 
 
 def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> None:
@@ -456,3 +492,20 @@ def test_embedded_manager_open_path_calls_opener_with_file_type(tmp_path: Path) 
         )
     ]
     assert response.method == EditorOpenMethod.EMBEDDED
+
+
+def test_embedded_manager_open_path_calls_opener_with_folder_type(tmp_path: Path) -> None:
+    opened: list[tuple[str, dict[str, str]]] = []
+    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver")
+    tool_dir = tmp_path / "tool_package"
+    tool_dir.mkdir()
+
+    def opener(url: str, params: dict[str, str]) -> bool:
+        opened.append((url, params))
+        return True
+
+    response = manager.open_path(tool_dir, opener=opener)
+
+    assert opened == []
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert response.url == f"http://127.0.0.1:32344/?folder={str(tool_dir).replace('/', '%2F')}"

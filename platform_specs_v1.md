@@ -615,7 +615,10 @@ class Settings(BaseModel):
     cache_max_executions: int | None = None         # Max cached executions per node (None = unlimited)
     cache_max_age: str | None = None                # Max cache age (e.g., "30d", None = unlimited)
     dev_mode: bool = True                           # Always true in GUI mode (cache invalidation on code change)
+    enable_unsafe_webapp_features: bool = False     # Debug-only; enables local source-editing actions in webapp mode
 ```
+
+`enable_unsafe_webapp_features` is a file-only debug switch for local testing of webapp mode. It is ignored in desktop mode. In webapp mode, the default `false` value keeps local source-editing features disabled; setting it to `true` re-enables actions that can modify or open server-side code, such as creating, renaming, deleting, and opening custom tool scripts. The Settings API must expose the value in `GET /settings` but reject attempts to change it through `PATCH /settings`.
 
 #### 2.4.7 File System Helpers
 

@@ -268,7 +268,13 @@ describe('AppShell', () => {
 
     expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344')
     expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
-    expect(mockDockviewApi.addPanel.mock.calls[5][0].id).toBe('codeEditor')
+    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[5][0]
+    expect(codeEditorCall.id).toBe('codeEditor')
+    expect(codeEditorCall.initialWidth).toBe(520)
+    expect(codeEditorCall.position).toEqual({
+      referencePanel: 'nodePanel',
+      direction: 'right',
+    })
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
   })
 
