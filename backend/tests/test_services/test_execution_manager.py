@@ -594,6 +594,43 @@ class TestExecutionManagerResult:
         assert status.error == error["detail"]
         assert status.traceback == error["traceback"]
 
+    async def test_failed_progress_without_message_is_enriched_from_task_exception(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        payload = {
+            "exception": "Implement Chameau2.process_row",
+            "traceback": [
+                '  File "/tmp/worker.py", line 1, in run_process_row\n',
+                '    raise NotImplementedError("Implement Chameau2.process_row")\n',
+            ],
+        }
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(
+            events=[
+                _ProgressEventStub("chameau2_1", "started"),
+                _ProgressEventStub("chameau2_1", "failed"),
+            ],
+        )
+        wf.raise_exc = RuntimeError(payload)
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        await em.start(_graph_with([("chameau2_1", True)]))
+        await _drain(em)
+
+        assert em.last_result is not None
+        status = em.last_result.node_statuses["chameau2_1"]
+        assert status.status == "failed"
+        assert status.error == "Implement Chameau2.process_row"
+        assert status.traceback is not None
+        assert "Remote traceback:" in status.traceback
+        failed_updates = [
+            event
+            for event in bus.node_state_events
+            if event[0] == "chameau2_1" and event[1] == "failed"
+        ]
+        assert failed_updates[-1][3] == "Implement Chameau2.process_row"
+
     async def test_failed_execution_is_logged(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -558,6 +558,10 @@ class ExecutionManager:
                 # Attribute the failure to the currently-running node if
                 # no explicit "failed" event was seen.
                 target_id = self._current_node_id
+                if target_id is None:
+                    target_id = _single_failed_node_without_error(
+                        self._node_statuses
+                    )
                 should_publish_error_log = True
                 if target_id is not None and target_id in self._node_statuses:
                     current = self._node_statuses[target_id]
@@ -568,6 +572,20 @@ class ExecutionManager:
                             cached=False,
                             error=detail,
                             traceback=tb,
+                        )
+                        self.event_bus.publish_node_state(
+                            target_id, "failed", False, detail, tb
+                        )
+                    elif current.status == "failed" and not current.error:
+                        self._node_statuses[target_id] = NodeStatus(
+                            node_id=target_id,
+                            status="failed",
+                            cached=False,
+                            error=detail,
+                            traceback=tb,
+                        )
+                        self.event_bus.publish_node_state(
+                            target_id, "failed", False, detail, tb
                         )
                     elif current.status == "failed":
                         should_publish_error_log = False
@@ -619,6 +637,17 @@ def _format_workflow_failure_message(message: str, tb: str | None) -> str:
     if tb:
         return f"Workflow execution failed: {message}\n{tb}"
     return f"Workflow execution failed: {message}"
+
+
+def _single_failed_node_without_error(
+    node_statuses: dict[str, NodeStatus],
+) -> str | None:
+    failed = [
+        node_id
+        for node_id, status in node_statuses.items()
+        if status.status == "failed" and not status.error
+    ]
+    return failed[0] if len(failed) == 1 else None
 
 
 def _format_exception_for_client(exc: BaseException, local_tb: str) -> tuple[str, str]:
