@@ -88,6 +88,8 @@ class ExecutionEventBus(Protocol):
         timestamp: float,
     ) -> None: ...
 
+    def publish_environment_status(self, env_name: str, status: str) -> None: ...
+
 
 class NullEventBus:
     """No-op event bus used when no transport is attached."""
@@ -119,6 +121,9 @@ class NullEventBus:
         node_id: str | None,
         timestamp: float,
     ) -> None:
+        return None
+
+    def publish_environment_status(self, env_name: str, status: str) -> None:
         return None
 
 
@@ -317,6 +322,7 @@ class ExecutionManager:
                 raise WorkflowBuildError(errors)
 
         self._workflow = workflow
+        self._attach_environment_status_hook(workflow)
 
         # Resolve execution targets. If caller passed an explicit subset,
         # look them up on workflow.nodes; otherwise pass none and let
@@ -497,6 +503,47 @@ class ExecutionManager:
 
         return _on_progress
 
+    def _attach_environment_status_hook(self, workflow: Any) -> None:
+        """Publish Wetlands environment lifecycle changes during execution.
+
+        The library owns environment startup inside ``WetlandsEnvManager``.
+        Hooking the per-workflow manager keeps the platform UI in sync for
+        automatic starts triggered by ``workflow.compute()``.
+        """
+        engine = getattr(workflow, "_engine", None)
+        manager = getattr(engine, "_env_manager", None)
+        get_or_create = getattr(manager, "get_or_create", None)
+        if manager is None or not callable(get_or_create):
+            return
+        if getattr(manager, "_bioimageflow_platform_env_status_hooked", False):
+            return
+
+        def _get_or_create_with_status(env_spec: Any, *args: Any, **kwargs: Any) -> Any:
+            env_name = getattr(env_spec, "name", None)
+            already_running = _wetlands_env_is_running(manager, env_name)
+            if isinstance(env_name, str) and env_name:
+                self._publish_environment_status(
+                    env_name,
+                    "running" if already_running else "creating",
+                )
+            try:
+                env = get_or_create(env_spec, *args, **kwargs)
+            except Exception:
+                if isinstance(env_name, str) and env_name and not already_running:
+                    self._publish_environment_status(env_name, "stopped")
+                raise
+            if isinstance(env_name, str) and env_name:
+                self._publish_environment_status(env_name, "running")
+            return env
+
+        setattr(manager, "get_or_create", _get_or_create_with_status)
+        setattr(manager, "_bioimageflow_platform_env_status_hooked", True)
+
+    def _publish_environment_status(self, env_name: str, status: str) -> None:
+        publish = getattr(self.event_bus, "publish_environment_status", None)
+        if callable(publish):
+            publish(env_name, status)
+
     def _on_run_done(self, task: asyncio.Task) -> None:
         """Called on the event loop when the background task finishes."""
         try:
@@ -648,6 +695,13 @@ def _single_failed_node_without_error(
         if status.status == "failed" and not status.error
     ]
     return failed[0] if len(failed) == 1 else None
+
+
+def _wetlands_env_is_running(manager: Any, env_name: Any) -> bool:
+    if not isinstance(env_name, str) or not env_name:
+        return False
+    envs = getattr(manager, "_envs", None)
+    return isinstance(envs, dict) and env_name in envs
 
 
 def _format_exception_for_client(exc: BaseException, local_tb: str) -> tuple[str, str]:

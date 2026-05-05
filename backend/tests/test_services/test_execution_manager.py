@@ -79,6 +79,7 @@ class RecordingEventBus:
         self.node_state_events: list[tuple[str, str, bool, str | None, str | None]] = []
         self.complete_events: list[tuple[bool, list, dict]] = []
         self.log_events: list[tuple[str, str, str | None, float]] = []
+        self.environment_events: list[tuple[str, str]] = []
 
     def publish_progress(
         self, node_id: str, status: str, row: int, total_rows: int, timestamp: float
@@ -108,6 +109,9 @@ class RecordingEventBus:
         timestamp: float,
     ) -> None:
         self.log_events.append((level, message, node_id, timestamp))
+
+    def publish_environment_status(self, env_name: str, status: str) -> None:
+        self.environment_events.append((env_name, status))
 
 
 @dataclass
@@ -148,6 +152,26 @@ class _FakeWorkflow:
 
     def cancel(self) -> None:
         self.cancel_called = True
+
+
+class _EnvSpecStub:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _FakeWetlandsManager:
+    def __init__(self) -> None:
+        self._envs: dict[str, object] = {}
+        self.calls: list[str] = []
+        self.raise_exc: BaseException | None = None
+
+    def get_or_create(self, env_spec: _EnvSpecStub) -> object:
+        self.calls.append(env_spec.name)
+        if self.raise_exc is not None:
+            raise self.raise_exc
+        env = object()
+        self._envs[env_spec.name] = env
+        return env
 
 
 def _settings(dev_mode: bool = True) -> Settings:
@@ -256,6 +280,60 @@ class TestExecutionManagerLifecycle:
         messages = [event[1] for event in bus.log_events]
         assert any("Execution started for workflow terminals" in message for message in messages)
         assert any("Workflow execution completed successfully" in message for message in messages)
+
+    async def test_execution_publishes_environment_status_from_wetlands_start(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _WorkflowWithWetlands(_FakeWorkflow):
+            def __init__(self) -> None:
+                super().__init__()
+                self.manager = _FakeWetlandsManager()
+                self._engine = type("Engine", (), {"_env_manager": self.manager})()
+
+            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+                self._engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
+                return super().compute(*targets, dev_mode=dev_mode)
+
+        bus = RecordingEventBus()
+        wf = _WorkflowWithWetlands()
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+
+        assert wf.manager.calls == ["cellpose-env"]
+        assert bus.environment_events == [
+            ("cellpose-env", "creating"),
+            ("cellpose-env", "running"),
+        ]
+
+    async def test_execution_marks_environment_stopped_when_wetlands_start_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _WorkflowWithFailingWetlands(_FakeWorkflow):
+            def __init__(self) -> None:
+                super().__init__()
+                self.manager = _FakeWetlandsManager()
+                self.manager.raise_exc = RuntimeError("solve failed")
+                self._engine = type("Engine", (), {"_env_manager": self.manager})()
+
+            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+                self._engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
+                return {}
+
+        bus = RecordingEventBus()
+        wf = _WorkflowWithFailingWetlands()
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+
+        assert bus.environment_events == [
+            ("cellpose-env", "creating"),
+            ("cellpose-env", "stopped"),
+        ]
 
     async def test_start_clears_previous_result(
         self, monkeypatch: pytest.MonkeyPatch
