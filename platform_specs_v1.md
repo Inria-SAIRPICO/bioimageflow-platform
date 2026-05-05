@@ -1,5 +1,7 @@
 # BioImageFlow Platform Specifications — v1 (MVP)
 
+The library specs are at /Users/amasson/Travail/bioimageflow-platform/bioimageflow/docs/source/specs.md . Make sure you read this first.
+
 This is the desktop-only MVP specification for the BioImageFlow GUI. It covers the core feature set needed for a fully functional single-user desktop application. For the comprehensive reference including webapp mode, sub-workflows, and planned future features, see `platform_specs_full.md`.
 
 ---
