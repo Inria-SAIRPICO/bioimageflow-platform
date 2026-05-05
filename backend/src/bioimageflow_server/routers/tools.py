@@ -108,7 +108,7 @@ async def get_tool_source(
         if custom_source.exists():
             return ToolSourceResponse(
                 tool_name=tool_name,
-                path=str(custom_source),
+                path=str(custom_source.resolve()),
                 source_kind="custom",
                 editable=True,
             )

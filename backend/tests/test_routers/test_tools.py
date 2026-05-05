@@ -710,6 +710,30 @@ async def test_get_source_prefers_workflow_custom_file(workflow_root: Path):
     assert resp.json()["editable"] is True
 
 
+async def test_get_source_returns_absolute_custom_path_for_relative_workflow_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        workflow_root=Path("workflow"),
+        disable_hot_reload=True,
+    )
+    async for client in _client(config):
+        create_resp = await client.post(
+            "/api/v1/tools",
+            json={"name": "MyTool", "tool_type": "ProcessingTool"},
+        )
+        resp = await client.get("/api/v1/tools/MyTool/source")
+
+    assert create_resp.status_code == 201
+    assert resp.status_code == 200
+    path = Path(resp.json()["path"])
+    assert path.is_absolute()
+    assert path == tmp_path / "workflow" / "tools" / "my_tool.py"
+
+
 async def test_get_source_for_package_tool_without_resolvable_source_404():
     reg = ToolRegistryService()
     reg.register_tool("GhostPackageTool", _make_tool("GhostPackageTool"))
