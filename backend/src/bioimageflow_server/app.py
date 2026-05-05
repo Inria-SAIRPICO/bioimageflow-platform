@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
-from bioimageflow.paths import get_home
+from bioimageflow.env_manager import configure_wetlands
+from bioimageflow.paths import get_home, get_wetlands_path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,6 +126,12 @@ _STATUS_TO_ERROR: dict[int, str] = {
 def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
         config = AppConfig()
+
+    # Configure the process-wide BioImageFlow/Wetlands manager before any
+    # service can initialize it through a direct get_shared_environment_manager()
+    # call. Plain Wetlands defaults to cwd-relative ./wetlands; BioImageFlow
+    # state must instead follow bioimageflow.paths.
+    configure_wetlands(wetlands_instance_path=get_wetlands_path())
 
     # Build the package services graph up front so the lifespan hook can
     # close owned resources (e.g. the PyPI httpx client).

@@ -61,6 +61,16 @@ The server uses the BioImageFlow **tool store** (`~/.bioimageflow/tool_packages/
 
 Tools are indexed by **class name** (the unique tool identifier; `BaseTool.display_name` is the human-readable label) and organized by `tags`. The tool store directory can be overridden via the `BIOIMAGEFLOW_TOOL_STORE` environment variable.
 
+**BioImageFlow state paths:** The platform must resolve BioImageFlow-owned state paths through `bioimageflow.paths` (`packages/bioimageflow/bioimageflow/paths.py`). Unless explicitly overridden, the BioImageFlow home is `~/.bioimageflow`, the tool store is `~/.bioimageflow/tool_packages`, and the Wetlands instance path is `~/.bioimageflow/wetlands`. Supported overrides are:
+
+| Variable | Effect |
+|----------|--------|
+| `BIOIMAGEFLOW_HOME` | Changes the base directory for BioImageFlow state (`tool_packages`, `wetlands`, settings, etc.) unless a more specific variable is set. |
+| `BIOIMAGEFLOW_TOOL_STORE` | Overrides only the tool store path. |
+| `BIOIMAGEFLOW_WETLANDS` | Overrides only the Wetlands instance path. |
+
+The platform must not rely on Wetlands' own `EnvironmentManager()` default for BioImageFlow-managed environments. Plain Wetlands defaults `wetlands_instance_path` to cwd-relative `./wetlands`; this can happen if a service calls Wetlands directly (or calls `bioimageflow.env_manager.get_shared_environment_manager()` before BioImageFlow has configured it) instead of going through `bioimageflow.paths.get_wetlands_path()` / `WetlandsEnvManager`. Because Wetlands uses a process-wide shared manager, the first initialization in the process fixes the Wetlands path for later callers. Tool execution, manual tool environment controls, Napari, thumbnails, and embedded code-server must therefore all use the same BioImageFlow-resolved Wetlands path, unless the user explicitly configured a custom environment path for that feature.
+
 **Version management:** Version is a property of the package, not of individual nodes. Multiple versions of the same package can be installed simultaneously in the tool store. The Tools Panel (Section 3.4) shows installed packages with a version list allowing the user to install, uninstall, or select the active version for the current workflow. A workflow uses **one version per package**. Changing the active package version for a workflow marks all nodes using tools from that package as Out-of-date (with a confirmation dialog).
 
 ### 2.4 REST API
@@ -1165,6 +1175,7 @@ OMERO integration is provided through dedicated tools (ProcessingTools with OMER
 
 - **Output data folder** path display + "Reveal in file browser" button (desktop mode only)
 - **Tool store path** display (default: `~/.bioimageflow/tool_packages/`)
+- **Wetlands path** display (default: `~/.bioimageflow/wetlands/`, resolved by `bioimageflow.paths.get_wetlands_path()`)
 
 #### 3.13.6 Keyboard Shortcuts
 

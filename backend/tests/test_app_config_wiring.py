@@ -166,6 +166,41 @@ async def test_custom_catalog_override_preserved(empty_tool_store: Path):
     assert app.dependency_overrides[get_package_catalog]() is stub
 
 
+def test_create_app_configures_bioimageflow_wetlands_path(
+    empty_tool_store: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    wetlands_path = tmp_path / "bioimageflow-home" / "wetlands"
+    calls: list[dict[str, Path]] = []
+
+    monkeypatch.setattr(
+        "bioimageflow_server.app.get_wetlands_path",
+        lambda: wetlands_path,
+    )
+
+    def _configure_wetlands(**kwargs: Path) -> None:
+        calls.append(dict(kwargs))
+
+    monkeypatch.setattr(
+        "bioimageflow_server.app.configure_wetlands",
+        _configure_wetlands,
+    )
+
+    create_app(
+        config=AppConfig(
+            tool_registry=ToolRegistryService(),
+            known_packages=KnownPackagesService(
+                user_path=empty_tool_store / "no_user",
+                bundled_path=empty_tool_store / "no_bundled",
+            ),
+            pypi_versions=_FakePypi(),
+        )
+    )
+
+    assert calls == [{"wetlands_instance_path": wetlands_path}]
+
+
 # ---------------------------------------------------------------------------
 # Task 7.3 — lifespan calls catalog.refresh() on startup
 # ---------------------------------------------------------------------------
