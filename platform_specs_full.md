@@ -96,7 +96,10 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 
 **Tool metadata response (from `GET /tools`):**
 
-The backend calls `get_inputs_schema(tool)` (from `bioimageflow.validation`) to produce the input schema. This function reads `GUIMeta` annotations from tool `Inputs` fields.
+The backend uses the library's canonical serializers
+(`serialize_input_schema`, `serialize_output_schema`, and
+`serialize_tool_metadata`) for tool schemas. These serializers read
+`ImageSpec` and `GUIMeta` annotations from `Inputs`/`Outputs` fields.
 
 ```json
 {
@@ -105,64 +108,121 @@ The backend calls `get_inputs_schema(tool)` (from `bioimageflow.validation`) to 
   "package": "bioimageflow-cellpose",
   "package_version": "1.2.0",
   "tool_type": "ProcessingTool",
+  "accepts_upstream": true,
+  "dynamic_outputs": false,
   "documentation": "Segment cells using Cellpose models.",
   "tags": ["segmentation", "deep-learning"],
-  "categories": ["Segmentation"],
+  "categories": ["segmentation"],
   "inputs": {
     "input_image": {
       "type": "ImagePath",
-      "connectable": true,
+      "required": true,
+      "nullable": false,
+      "connectable": "by_default",
       "default": null,
-      "description": "Input intensity image"
+      "display_name": "Input image",
+      "description": "Input intensity image",
+      "group": null,
+      "min": null,
+      "max": null,
+      "step": null,
+      "choices": null,
+      "image_spec": {"semantics": ["intensity"], "layouts": ["YX", "CYX"], "dtypes": [], "formats": []}
     },
     "diameter": {
       "type": "float",
-      "connectable": false,
+      "required": false,
+      "nullable": false,
+      "connectable": "not_by_default",
       "default": 30.0,
+      "display_name": "Cell diameter",
+      "description": "Expected cell diameter in pixels",
+      "group": "general",
       "min": 1.0,
       "max": 500.0,
       "step": 0.5,
-      "group": "general",
-      "description": "Expected cell diameter in pixels"
+      "choices": null,
+      "image_spec": null
     },
     "model_type": {
-      "type": "Literal['cyto', 'cyto2', 'nuclei']",
-      "connectable": false,
+      "type": "str",
+      "required": false,
+      "nullable": false,
+      "connectable": "never",
       "default": "cyto2",
-      "description": "Cellpose model to use"
+      "display_name": "Model",
+      "description": "Cellpose model to use",
+      "group": null,
+      "min": null,
+      "max": null,
+      "step": null,
+      "choices": ["cyto", "cyto2", "nuclei"],
+      "image_spec": null
     }
   },
   "outputs": {
-    "mask": {"type": "ImagePath"},
-    "cell_count": {"type": "int"}
+    "mask": {"type": "ImagePath", "default": "{input_image.stem}_mask{ext}", "template": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
+    "cell_count": {"type": "int", "default": null, "image_spec": null}
   },
   "environment": {"python": "3.11", "conda": ["cellpose"], "pip": []}
 }
 ```
 
-The `connectable`, `min`, `max`, `step`, and `group` fields come from `GUIMeta` annotations on the tool's `Inputs` fields. Fields without `GUIMeta` default to `connectable: true` (backward-compatible). See `bioimageflow_core.tool.GUIMeta`.
+The `connectable`, `display_name`, `description`, `min`, `max`, `step`, and
+`group` fields come from `GUIMeta` annotations. Fields without `GUIMeta`
+default to `connectable: "not_by_default"`.
 
 **Endpoint roles:** `GET /tools` returns tool-level metadata (inputs schema, outputs, environment) for graph construction and the Node Panel. `GET /tools/packages` returns package-level metadata (installed/available versions, environment status) for the Tools Panel table. The data intentionally overlaps (both include package name and version) for convenience — the frontend uses `GET /tools/packages` to populate the Tools Panel, and `GET /tools` to resolve tool schemas when building nodes.
 
 **Example tool definition with GUIMeta:**
 ```python
-from bioimageflow_core import ProcessingTool, IOModel, ImagePath, Semantic, Arguments, GUIMeta
-from typing import Annotated
+from typing import Annotated, Any, Literal
+
+from bioimageflow_core import (
+    Arguments,
+    Connectable,
+    GUIMeta,
+    IOModel,
+    ImagePath,
+    Layout,
+    ProcessingTool,
+    Semantic,
+    Template,
+)
 
 class CellposeSegmenter(ProcessingTool):
     display_name = "Cellpose Segmenter"
     environment = cellpose_env
 
     class Inputs(IOModel):
-        input_image: ImagePath(semantics=Semantic.INTENSITY)
-        diameter: Annotated[float, GUIMeta(connectable=False, min=1.0, max=500.0, step=0.5)] = 30.0
-        model_type: Annotated[Literal["cyto", "cyto2", "nuclei"], GUIMeta(connectable=False)] = "cyto2"
+        input_image: Annotated[
+            ImagePath(
+                semantics={Semantic.INTENSITY},
+                layouts={Layout.PLANAR, Layout.PLANAR_CHANNEL},
+            ),
+            GUIMeta(
+                display_name="Input image",
+                description="Input intensity image.",
+                connectable=Connectable.BY_DEFAULT,
+            ),
+        ]
+        diameter: Annotated[
+            float,
+            GUIMeta(min=1.0, max=500.0, step=0.5, group="general"),
+        ] = 30.0
+        model_type: Annotated[
+            Literal["cyto", "cyto2", "nuclei"],
+            GUIMeta(connectable=Connectable.NEVER),
+        ] = "cyto2"
 
     class Outputs(IOModel):
-        mask: ImagePath(semantics=Semantic.LABEL) = "{input_image.stem}_mask_{row_index}.png"
+        mask: Annotated[
+            ImagePath(semantics={Semantic.LABEL}, layouts={Layout.PLANAR}),
+            GUIMeta(display_name="Segmentation mask"),
+        ] = Template("{input_image.stem}_mask{ext}")
         cell_count: int
 
-    def process_row(self, arguments: Arguments) -> Outputs:
+    def process_row(self, arguments: Arguments, *, context: Any = None) -> Outputs:
         ...
 ```
 
@@ -808,7 +868,7 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 Input and output pins are the connection points on nodes.
 
 - **Output pins** (right side): One per field in `Outputs`. Label shows the field name. Tooltip shows the type.
-- **Input pins** (left side): Only for inputs where `connectable` is `true` (declared by the tool author via `GUIMeta`). Fields without `GUIMeta` default to `connectable: true`. When a connectable input is connected, the corresponding parameter field in the Node Panel shows the source (e.g., `"cellpose_segmenter_1.mask"`) and the input widget is hidden.
+- **Input pins** (left side): Only for inputs where `connectable` is `"by_default"` or `"not_by_default"` (declared by the tool author via `GUIMeta`). Fields without `GUIMeta` default to `"not_by_default"`. When a connectable input is connected, the corresponding parameter field in the Node Panel shows the source (e.g., `"cellpose_segmenter_1.mask"`) and the input widget is hidden.
 
 For **DataFrameTool** nodes: positional upstream connections appear as numbered input pins ("1", "2", ...) on the left side. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap (e.g., removing pin 1 causes pin 2 to become pin 1). Positional pin order can be changed by disconnecting and reconnecting edges in the desired order.
 
@@ -869,55 +929,99 @@ Multiple versions of the same package can be installed simultaneously. Each work
 
 ProcessingTool template:
 ```python
-from bioimageflow_core import ProcessingTool, IOModel, ImagePath, Semantic, Arguments, EnvironmentSpec, GUIMeta
-from typing import Annotated
 from pathlib import Path
+from typing import Annotated, Any
 
-my_tool_env = EnvironmentSpec(
-    name="my_tool",
-    dependencies={"conda": [], "pip": [], "python": "3.12"}
+from bioimageflow_core import (
+    Arguments,
+    Category,
+    Connectable,
+    GENERAL_ENV,
+    GUIMeta,
+    IOModel,
+    ImagePath,
+    Layout,
+    ProcessingTool,
+    Semantic,
+    Template,
 )
 
 class MyTool(ProcessingTool):
     display_name = "My Tool"
     documentation = "Description of what this tool does."
-    tags = ["category"]
-    environment = my_tool_env
+    category = Category.IMAGE_PROCESSING
+    tags = ["custom"]
+    environment = GENERAL_ENV
 
     class Inputs(IOModel):
-        input_image: ImagePath(semantics=Semantic.INTENSITY)
+        input_image: Annotated[
+            ImagePath(
+                semantics={Semantic.INTENSITY},
+                layouts={Layout.PLANAR, Layout.PLANAR_CHANNEL},
+            ),
+            GUIMeta(
+                display_name="Input image",
+                description="Image to process.",
+                connectable=Connectable.BY_DEFAULT,
+            ),
+        ]
         # Example scalar parameter:
-        # threshold: Annotated[float, GUIMeta(connectable=False, min=0.0, max=1.0, step=0.01)] = 0.5
+        # threshold: Annotated[float, GUIMeta(min=0.0, max=1.0, step=0.01)] = 0.5
 
     class Outputs(IOModel):
-        output_image: ImagePath(semantics=Semantic.INTENSITY) = "{input_image.stem}_output_{row_index}.tif"
+        output_image: Annotated[
+            ImagePath(semantics={Semantic.INTENSITY}),
+            GUIMeta(
+                display_name="Output image",
+                description="Processed output image.",
+            ),
+        ] = Template("{input_image.stem}_out{ext}")
 
-    def process_row(self, arguments: Arguments) -> Outputs:
-        image = arguments.load("input_image")
-        # Process image here
-        result = image
-        return self.Outputs(output_image=arguments.resolve_path("output_image"))
+    def process_row(self, arguments: Arguments, *, context: Any = None) -> Outputs:
+        import shutil
+
+        input_path = Path(arguments.input_image)
+        output_path = Path(arguments.output_image)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Replace this pass-through copy with your processing code.
+        shutil.copyfile(input_path, output_path)
+        return self.Outputs(output_image=output_path)
 ```
+
+The common-tools package often spells image fields as
+`Annotated[Path, ImageSpec(...), GUIMeta(...)]`. The platform scaffold uses the
+shorter equivalent `Annotated[ImagePath(...), GUIMeta(...)]`: `ImagePath(...)`
+is a convenience factory for `Annotated[Path, ImageSpec(...)]`, and the current
+library serializers flatten nested `Annotated` metadata correctly.
 
 DataFrameTool template:
 ```python
+from typing import Annotated, Any
+
 from bioimageflow import DataFrameTool, Passthrough
-from bioimageflow_core import IOModel, Arguments
+from bioimageflow_core import Category, Connectable, GUIMeta, IOModel
 
 class MyTransform(DataFrameTool):
     display_name = "My Transform"
     documentation = "Description of what this transform does."
-    tags = ["dataframe"]
+    category = Category.UTILITIES
+    tags = ["custom"]
 
     class Inputs(IOModel):
-        pass  # Add parameters here
+        column_name: Annotated[str, GUIMeta(
+            display_name="Column name",
+            description="Optional column name used by your transform.",
+            connectable=Connectable.NEVER,
+        )] = ""
 
     class Outputs(Passthrough):
         pass  # Use Passthrough to preserve input columns, or IOModel for explicit schema
 
-    def transform(self, df, arguments):
-        # Transform the DataFrame here
-        return df
+    def transform(self, df: Any, arguments: Any) -> Any:
+        result = df.copy()
+        # Transform the DataFrame here.
+        return result
 ```
 
 **Drag and drop:** Tools can be dragged from the table onto the canvas to create nodes.
@@ -974,19 +1078,20 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `Path` (file) | Text input + "Select File" button | Desktop: native dialog. Webapp: opens Dataset Browser. |
 | `Path` (directory) | Text input + "Select Folder" button | Desktop: native dialog. Webapp: opens Dataset Browser. |
 | `ImagePath` | Text input + "Select File" button (filtered by format spec) | Same as Path |
-| `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable=True`, not user-editable. |
+| `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always connectable, not user-editable. |
 | `tuple`, `list` | Inline list editor | -- |
 
 When a connectable input is **connected** (pin has an edge), the input field is replaced by a read-only label showing the source: `"segmenter_1.mask"`.
 
 #### 3.5.4 Output Fields
 
-Each output field from `Outputs` is displayed with editable path templates for path-typed outputs:
+Each output field from `Outputs` is displayed with editable path templates for path-typed outputs **on `ProcessingTool` nodes only**:
 
 - **Label:** Field name
 - **Type badge:** Visual indicator of the type (ImagePath, int, etc.)
-- **Path template editor:** For path-typed outputs (`Path`, `ImagePath`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
+- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImagePath`, `MaskPath`), a text input showing the current output path template (e.g., `{input_image.stem}_mask{ext}`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine. Available variables include `node_name`, `row_index`, `timestamp`, `{input_field.stem}`, `{input_field.name}`, `{input_field.ext}`, `{input_field.exts}`, and `{column:name}`. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's `Template(...)` default is used; otherwise the library's built-in default is used.
 - **Non-path outputs** (int, float, str, etc.) are shown read-only.
+- **`DataFrameTool` outputs are column declarations, not file paths.** No path-template editor is shown for DataFrameTool outputs, even when a declared column is typed as `Path`/`ImagePath`.
 - **Publish toggle** (+ icon): When this node is inside a sub-workflow, each output field has a publish toggle. Published outputs become sub-workflow Outputs (visible as output pins on the parent SubWorkflowNode). By default, terminal node outputs are published.
 
 #### 3.5.4b Resource Configuration

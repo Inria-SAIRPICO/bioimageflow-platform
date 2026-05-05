@@ -538,59 +538,106 @@ Custom tools are placed in the current workflow's `tools/` directory (`workflow_
 #### ProcessingTool Template
 
 ```python
-from bioimageflow_core import ProcessingTool, IOModel, ImagePath, Semantic, Arguments, EnvironmentSpec, GUIMeta
-from typing import Annotated
 from pathlib import Path
+from typing import Annotated, Any
 
-my_tool_env = EnvironmentSpec(
-    name="my_tool",
-    dependencies={"conda": [], "pip": [], "python": "3.12"}
+from bioimageflow_core import (
+    Arguments,
+    Category,
+    Connectable,
+    GENERAL_ENV,
+    GUIMeta,
+    IOModel,
+    ImagePath,
+    Layout,
+    ProcessingTool,
+    Semantic,
+    Template,
 )
 
 class MyTool(ProcessingTool):
     display_name = "My Tool"
     documentation = "Description of what this tool does."
-    tags = ["category"]
-    environment = my_tool_env
+    category = Category.IMAGE_PROCESSING
+    tags = ["custom"]
+    environment = GENERAL_ENV
 
     class Inputs(IOModel):
-        input_image: ImagePath(semantics=Semantic.INTENSITY)
+        input_image: Annotated[
+            ImagePath(
+                semantics={Semantic.INTENSITY},
+                layouts={Layout.PLANAR, Layout.PLANAR_CHANNEL},
+            ),
+            GUIMeta(
+                display_name="Input image",
+                description="Image to process.",
+                connectable=Connectable.BY_DEFAULT,
+            ),
+        ]
         # Example scalar parameter:
-        # threshold: Annotated[float, GUIMeta(connectable=False, min=0.0, max=1.0, step=0.01)] = 0.5
+        # threshold: Annotated[float, GUIMeta(min=0.0, max=1.0, step=0.01)] = 0.5
 
     class Outputs(IOModel):
-        output_image: ImagePath(semantics=Semantic.INTENSITY) = "{input_image.stem}_output_{row_index}.tif"
+        output_image: Annotated[
+            ImagePath(semantics={Semantic.INTENSITY}),
+            GUIMeta(
+                display_name="Output image",
+                description="Processed output image.",
+            ),
+        ] = Template("{input_image.stem}_out{ext}")
 
-    def process_row(self, arguments: Arguments) -> Outputs:
-        image = arguments.load("input_image")
-        # Process image here
-        result = image
-        return self.Outputs(output_image=arguments.resolve_path("output_image"))
+    def process_row(self, arguments: Arguments, *, context: Any = None) -> Outputs:
+        import shutil
+
+        input_path = Path(arguments.input_image)
+        output_path = Path(arguments.output_image)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Replace this pass-through copy with your processing code.
+        shutil.copyfile(input_path, output_path)
+        return self.Outputs(output_image=output_path)
 ```
+
+The common-tools package often spells image fields as
+`Annotated[Path, ImageSpec(...), GUIMeta(...)]`. The platform scaffold uses the
+shorter equivalent `Annotated[ImagePath(...), GUIMeta(...)]`: `ImagePath(...)`
+is a convenience factory for `Annotated[Path, ImageSpec(...)]`, and the current
+library serializers flatten nested `Annotated` metadata correctly.
 
 #### DataFrameTool Template
 
 ```python
+from typing import Annotated, Any
+
 from bioimageflow import DataFrameTool, Passthrough
-from bioimageflow_core import IOModel, Arguments
+from bioimageflow_core import Category, Connectable, GUIMeta, IOModel
 
 class MyTransform(DataFrameTool):
     display_name = "My Transform"
     documentation = "Description of what this transform does."
-    tags = ["dataframe"]
+    category = Category.UTILITIES
+    tags = ["custom"]
 
     class Inputs(IOModel):
-        pass  # Add parameters here
+        column_name: Annotated[str, GUIMeta(
+            display_name="Column name",
+            description="Optional column name used by your transform.",
+            connectable=Connectable.NEVER,
+        )] = ""
 
     class Outputs(Passthrough):
         pass  # Use Passthrough to preserve input columns, or IOModel for explicit schema
 
-    def transform(self, df, arguments):
-        # Transform the DataFrame here
-        return df
+    def transform(self, df: Any, arguments: Any) -> Any:
+        result = df.copy()
+        # Transform the DataFrame here.
+        return result
 ```
 
-The template class name and environment name are dynamically replaced with the user-provided name (converted to appropriate casing).
+The template class name is dynamically replaced with the user-provided name
+(converted to appropriate casing). ProcessingTool output path defaults must use
+`Template(...)`; raw string or `Path` defaults are rejected by the library for
+path-typed outputs.
 
 ### 5.5 Integration with v1 Features
 

@@ -123,6 +123,7 @@ Per-field `OutputFieldSchema`:
 |-----|------|-------|
 | `type` | `string` | Display name. |
 | `default` | `any` | Path-template string for `Path`-typed outputs (e.g. `"{input_image.stem}_mask{ext}"`), or `null`. |
+| `template` | `string \| null` | Present when the output default was declared with `Template(...)`; same pattern as `default` for path-template defaults. |
 | `image_spec` | `object \| null` | Same shape as on inputs. |
 
 **Passthrough outputs (`DataFrameTool`):** when the tool's `Outputs` class subclasses `bioimageflow.Passthrough`, the `outputs` dict on `ToolMetadata` is the marker `{"_passthrough": true}` instead of a per-field dict — frontends render "inherits columns from upstream."
@@ -148,7 +149,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
   "dynamic_outputs": false,
   "documentation": "Segment cells using Cellpose models.",
   "tags": ["segmentation", "deep-learning"],
-  "categories": ["Segmentation"],
+  "categories": ["segmentation"],
   "inputs": {
     "input_image": {
       "type": "ImagePath",
@@ -191,7 +192,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
     }
   },
   "outputs": {
-    "mask": {"type": "ImagePath", "default": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
+    "mask": {"type": "ImagePath", "default": "{input_image.stem}_mask{ext}", "template": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
     "cell_count": {"type": "int", "default": null, "image_spec": null}
   },
   "environment": {"python": "3.11", "conda": ["cellpose"], "pip": []}
@@ -202,23 +203,53 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 
 **Example tool definition with GUIMeta:**
 ```python
-from bioimageflow_core import ProcessingTool, IOModel, ImagePath, Semantic, Arguments, GUIMeta
-from typing import Annotated
+from typing import Annotated, Any, Literal
+
+from bioimageflow_core import (
+    Arguments,
+    Connectable,
+    GUIMeta,
+    IOModel,
+    ImagePath,
+    Layout,
+    ProcessingTool,
+    Semantic,
+    Template,
+)
 
 class CellposeSegmenter(ProcessingTool):
     display_name = "Cellpose Segmenter"
     environment = cellpose_env
 
     class Inputs(IOModel):
-        input_image: ImagePath(semantics=Semantic.INTENSITY)
-        diameter: Annotated[float, GUIMeta(connectable=False, min=1.0, max=500.0, step=0.5)] = 30.0
-        model_type: Annotated[Literal["cyto", "cyto2", "nuclei"], GUIMeta(connectable=False)] = "cyto2"
+        input_image: Annotated[
+            ImagePath(
+                semantics={Semantic.INTENSITY},
+                layouts={Layout.PLANAR, Layout.PLANAR_CHANNEL},
+            ),
+            GUIMeta(
+                display_name="Input image",
+                description="Input intensity image.",
+                connectable=Connectable.BY_DEFAULT,
+            ),
+        ]
+        diameter: Annotated[
+            float,
+            GUIMeta(min=1.0, max=500.0, step=0.5, group="general"),
+        ] = 30.0
+        model_type: Annotated[
+            Literal["cyto", "cyto2", "nuclei"],
+            GUIMeta(connectable=Connectable.NEVER),
+        ] = "cyto2"
 
     class Outputs(IOModel):
-        mask: ImagePath(semantics=Semantic.LABEL) = "{input_image.stem}_mask_{row_index}.png"
+        mask: Annotated[
+            ImagePath(semantics={Semantic.LABEL}, layouts={Layout.PLANAR}),
+            GUIMeta(display_name="Segmentation mask"),
+        ] = Template("{input_image.stem}_mask{ext}")
         cell_count: int
 
-    def process_row(self, arguments: Arguments) -> Outputs:
+    def process_row(self, arguments: Arguments, *, context: Any = None) -> Outputs:
         ...
 ```
 

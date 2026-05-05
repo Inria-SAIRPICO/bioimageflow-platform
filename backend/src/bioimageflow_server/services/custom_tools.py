@@ -26,11 +26,18 @@ def name_to_display(name: str) -> str:
 _PROCESSING_TEMPLATE = '''\
 """Custom ProcessingTool: {display_name}."""
 
+from pathlib import Path
+from typing import Annotated, Any
+
 from bioimageflow_core import (
     Arguments,
+    Category,
+    Connectable,
     GENERAL_ENV,
+    GUIMeta,
     IOModel,
     ImagePath,
+    Layout,
     ProcessingTool,
     Semantic,
     Template,
@@ -41,38 +48,77 @@ class {class_name}(ProcessingTool):
     """Processing tool that operates on individual rows."""
 
     display_name = "{display_name}"
+    documentation = "Describe what this custom processing tool does."
+    category = Category.IMAGE_PROCESSING
+    tags = ["custom"]
     environment = GENERAL_ENV
 
     class Inputs(IOModel):
-        input_image: ImagePath(semantics=Semantic.INTENSITY)
+        input_image: Annotated[
+            ImagePath(
+                semantics={{Semantic.INTENSITY}},
+                layouts={{Layout.PLANAR, Layout.PLANAR_CHANNEL}},
+            ),
+            GUIMeta(
+                display_name="Input image",
+                description="Image to process.",
+                connectable=Connectable.BY_DEFAULT,
+            ),
+        ]
 
     class Outputs(IOModel):
-        output_image: ImagePath(semantics=Semantic.INTENSITY) = Template("{{input_image.stem}}_out{{ext}}")
+        output_image: Annotated[
+            ImagePath(semantics={{Semantic.INTENSITY}}),
+            GUIMeta(
+                display_name="Output image",
+                description="Processed output image.",
+            ),
+        ] = Template("{{input_image.stem}}_out{{ext}}")
 
-    def process_row(self, arguments: Arguments) -> "Outputs":
-        raise NotImplementedError("Implement {class_name}.process_row")
+    def process_row(self, arguments: Arguments, *, context: Any = None) -> "Outputs":
+        import shutil
+
+        input_path = Path(arguments.input_image)
+        output_path = Path(arguments.output_image)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Replace this pass-through copy with your processing code.
+        shutil.copyfile(input_path, output_path)
+        return self.Outputs(output_image=output_path)
 '''
 
 _DATAFRAME_TEMPLATE = '''\
 """Custom DataFrameTool: {display_name}."""
 
+from typing import Annotated, Any
+
 from bioimageflow import DataFrameTool, Passthrough
-from bioimageflow_core import Arguments, IOModel
+from bioimageflow_core import Category, Connectable, GUIMeta, IOModel
 
 
 class {class_name}(DataFrameTool):
     """DataFrame tool that transforms an entire dataframe."""
 
     display_name = "{display_name}"
+    documentation = "Describe what this custom dataframe transform does."
+    category = Category.UTILITIES
+    tags = ["custom"]
 
     class Inputs(IOModel):
-        pass
+        column_name: Annotated[str, GUIMeta(
+            display_name="Column name",
+            description="Optional column name used by your transform.",
+            connectable=Connectable.NEVER,
+        )] = ""
 
     class Outputs(Passthrough):
         pass
 
-    def transform(self, df, arguments: Arguments):
-        raise NotImplementedError("Implement {class_name}.transform")
+    def transform(self, df: Any, arguments: Any) -> Any:
+        result = df.copy()
+
+        # Modify result here. Passthrough outputs preserve upstream columns.
+        return result
 '''
 
 _TEMPLATES = {

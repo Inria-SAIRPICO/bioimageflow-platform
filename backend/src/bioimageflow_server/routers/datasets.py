@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterable
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile
 
 from bioimageflow_server.models.datasets import (
     Dataset,
@@ -140,11 +140,16 @@ async def upload_datasets(
     return UploadResponse(uploaded=uploaded, errors=errors)
 
 
-@router.delete("/{dataset_id}", status_code=204)
+@router.delete(
+    "/{dataset_id}",
+    status_code=204,
+    response_class=Response,
+    response_model=None,
+)
 async def delete_dataset(
     dataset_id: str,
     store: DatasetStore = Depends(get_dataset_store),
-) -> None:
+) -> Response:
     try:
         store.delete(dataset_id)
     except PathTraversalError as exc:
@@ -154,6 +159,7 @@ async def delete_dataset(
         ) from exc
     except DatasetNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------------
