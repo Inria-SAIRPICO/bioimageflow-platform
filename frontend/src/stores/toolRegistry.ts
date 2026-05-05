@@ -21,9 +21,16 @@ export interface ToolRemovedPayload {
   tool_name: string
 }
 
+export interface EnvironmentStatusPayload {
+  type: 'environment_status'
+  env_name: string
+  status: string
+}
+
 export const useToolRegistryStore = defineStore('toolRegistry', () => {
   const tools = ref<ToolMetadata[]>([])
   const packages = ref<PackageInfo[]>([])
+  const environmentStatuses = ref<Record<string, string>>({})
   const error = ref<string | null>(null)
   const customToolBusy = ref(false)
 
@@ -51,6 +58,11 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     return tools.value.find((t) => t.name === name)
   }
 
+  function getToolEnvironmentName(tool: ToolMetadata): string {
+    const envName = tool.environment?.name
+    return typeof envName === 'string' ? envName : ''
+  }
+
   function searchTools(query: string): ToolMetadata[] {
     if (!query) return tools.value
     const tokens = query.toLowerCase().split(/\s+/).filter(Boolean)
@@ -70,8 +82,55 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
   function getEnvStatusForTool(toolName: string): string {
     const tool = tools.value.find((t) => t.name === toolName)
     if (!tool) return 'unknown'
+    const envName = getToolEnvironmentName(tool)
+    if (envName && environmentStatuses.value[envName]) {
+      return environmentStatuses.value[envName]
+    }
+    if (environmentStatuses.value[tool.name]) {
+      return environmentStatuses.value[tool.name]
+    }
+    if (environmentStatuses.value[tool.package]) {
+      return environmentStatuses.value[tool.package]
+    }
     const pkg = packages.value.find((p) => p.name === tool.package)
     return pkg?.environment_status ?? 'unknown'
+  }
+
+  function packageNamesForEnvironment(envName: string): Set<string> {
+    const packageNames = new Set<string>()
+    for (const pkg of packages.value) {
+      if (pkg.name === envName) packageNames.add(pkg.name)
+    }
+    for (const tool of tools.value) {
+      if (
+        tool.package === envName ||
+        tool.name === envName ||
+        getToolEnvironmentName(tool) === envName
+      ) {
+        packageNames.add(tool.package)
+      }
+    }
+    return packageNames
+  }
+
+  function applyEnvironmentStatus(payload: EnvironmentStatusPayload) {
+    const envName = payload.env_name
+    const status = payload.status
+    if (!envName || !status) return
+
+    environmentStatuses.value = {
+      ...environmentStatuses.value,
+      [envName]: status,
+    }
+
+    const packageNames = packageNamesForEnvironment(envName)
+    if (packageNames.size === 0) return
+
+    packages.value = packages.value.map((pkg) => (
+      packageNames.has(pkg.name)
+        ? { ...pkg, environment_status: status }
+        : pkg
+    ))
   }
 
   async function createTool(body: {
@@ -194,6 +253,7 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
   return {
     tools,
     packages,
+    environmentStatuses,
     error,
     customToolBusy,
     fetchTools,
@@ -205,6 +265,7 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     getToolByName,
     searchTools,
     getEnvStatusForTool,
+    applyEnvironmentStatus,
     applyToolReload,
     applyToolRemoved,
   }

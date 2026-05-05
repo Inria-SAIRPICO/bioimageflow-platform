@@ -327,6 +327,53 @@ describe('toolRegistry store', () => {
     })
   })
 
+  describe('applyEnvironmentStatus', () => {
+    it('updates package status for a websocket environment name', async () => {
+      const tools = mockTools.map((tool) =>
+        tool.name === 'cellpose'
+          ? { ...tool, environment: { name: 'cellpose-env', dependencies: { pip: ['cellpose'] } } }
+          : tool,
+      )
+      mockedApi.get
+        .mockResolvedValueOnce({ data: tools })
+        .mockResolvedValueOnce({ data: mockPackages })
+      const store = useToolRegistryStore()
+      await store.fetchTools()
+      await store.fetchPackages()
+
+      store.applyEnvironmentStatus({
+        type: 'environment_status',
+        env_name: 'cellpose-env',
+        status: 'running',
+      })
+
+      expect(store.environmentStatuses['cellpose-env']).toBe('running')
+      expect(store.getEnvStatusForTool('cellpose')).toBe('running')
+      expect(
+        store.packages.find((p) => p.name === 'bioimageflow-cellpose')!
+          .environment_status,
+      ).toBe('running')
+    })
+
+    it('updates package status when the backend reports the package name as the environment name', async () => {
+      mockedApi.get.mockResolvedValueOnce({ data: mockPackages })
+      const store = useToolRegistryStore()
+      await store.fetchPackages()
+
+      store.applyEnvironmentStatus({
+        type: 'environment_status',
+        env_name: 'bioimageflow-core',
+        status: 'stopped',
+      })
+
+      expect(store.environmentStatuses['bioimageflow-core']).toBe('stopped')
+      expect(
+        store.packages.find((p) => p.name === 'bioimageflow-core')!
+          .environment_status,
+      ).toBe('stopped')
+    })
+  })
+
   describe('reactivity', () => {
     it('applyToolReload triggers a watcher on tools', async () => {
       const { watch, nextTick } = await import('vue')

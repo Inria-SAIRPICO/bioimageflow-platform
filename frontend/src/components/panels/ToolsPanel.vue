@@ -397,7 +397,6 @@ const activeDoc = ref<string | null>(null)
 
 /** Single active documentation panel inside the manage dialog */
 const manageActiveDoc = ref<string | null>(null)
-const toolEnvStatuses = ref<Record<string, string>>({})
 
 function toggleDocumentation(toolName: string) {
   activeDoc.value = activeDoc.value === toolName ? null : toolName
@@ -521,6 +520,8 @@ async function requestDeleteCustomTool(tool: ToolMetadata) {
 // --- Environment controls (Task 16) ---
 
 function getEnvStatus(packageName: string): string {
+  const liveStatus = toolRegistry.environmentStatuses[packageName]
+  if (liveStatus) return liveStatus
   const pkg = toolRegistry.packages.find((p) => p.name === packageName)
   return pkg?.environment_status ?? 'unknown'
 }
@@ -533,8 +534,8 @@ function getToolEnvName(tool: ToolMetadata): string {
 function getToolEnvStatus(tool: ToolMetadata): string {
   const envName = getToolEnvName(tool)
   if (!envName) return 'unavailable'
-  const localStatus = toolEnvStatuses.value[envName]
-  if (localStatus) return localStatus
+  const statusByEnvName = toolRegistry.environmentStatuses[envName]
+  if (statusByEnvName) return statusByEnvName
 
   const packageEnvNames = new Set(
     toolRegistry.tools
@@ -550,9 +551,19 @@ async function toggleEnvironment(packageName: string) {
   try {
     const status = getEnvStatus(packageName)
     if (status === 'running') {
-      await api.post(`/api/v1/tools/environments/${packageName}/stop`)
+      const { data } = await api.post(`/api/v1/tools/environments/${packageName}/stop`)
+      toolRegistry.applyEnvironmentStatus({
+        type: 'environment_status',
+        env_name: packageName,
+        status: data?.status ?? 'stopped',
+      })
     } else {
-      await api.post(`/api/v1/tools/environments/${packageName}/start`)
+      const { data } = await api.post(`/api/v1/tools/environments/${packageName}/start`)
+      toolRegistry.applyEnvironmentStatus({
+        type: 'environment_status',
+        env_name: packageName,
+        status: data?.status ?? 'running',
+      })
     }
     await toolRegistry.fetchPackages()
   } catch (e: unknown) {
@@ -567,10 +578,18 @@ async function toggleToolEnvironment(tool: ToolMetadata) {
     if (!envName || status === 'unavailable') return
     if (status === 'running') {
       const { data } = await api.post(`/api/v1/tools/environments/${envName}/stop`)
-      toolEnvStatuses.value = { ...toolEnvStatuses.value, [envName]: data?.status ?? 'stopped' }
+      toolRegistry.applyEnvironmentStatus({
+        type: 'environment_status',
+        env_name: envName,
+        status: data?.status ?? 'stopped',
+      })
     } else {
       const { data } = await api.post(`/api/v1/tools/environments/${envName}/start`)
-      toolEnvStatuses.value = { ...toolEnvStatuses.value, [envName]: data?.status ?? 'running' }
+      toolRegistry.applyEnvironmentStatus({
+        type: 'environment_status',
+        env_name: envName,
+        status: data?.status ?? 'running',
+      })
     }
     await toolRegistry.fetchPackages()
   } catch (e: unknown) {
