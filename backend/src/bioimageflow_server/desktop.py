@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import urllib.request
 
 import uvicorn
 import webview
@@ -28,7 +29,9 @@ class DesktopApi:
 
     # ---- File dialogs ----
 
-    def select_file(self, title: str = "Select File", file_types: list[str] | None = None) -> str | None:
+    def select_file(
+        self, title: str = "Select File", file_types: list[str] | None = None
+    ) -> str | None:
         """Open a native file picker and return the selected path, or None.
 
         ``title`` is part of the API contract but not supported by pywebview's
@@ -46,7 +49,9 @@ class DesktopApi:
             return str(result[0])
         return None
 
-    def select_files(self, title: str = "Select Files", file_types: list[str] | None = None) -> list[str]:
+    def select_files(
+        self, title: str = "Select Files", file_types: list[str] | None = None
+    ) -> list[str]:
         """Open a native file picker allowing multiple selection.
 
         ``title`` is part of the API contract but not supported by pywebview's
@@ -179,11 +184,15 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
     )
     server_thread.start()
 
-    _wait_for_server(server, server_thread)
+    display_host = "127.0.0.1" if host == "0.0.0.0" else host
+    _wait_for_server(
+        server,
+        server_thread,
+        health_url=f"http://{display_host}:{port}/api/v1/health",
+    )
 
     api = DesktopApi()
 
-    display_host = "127.0.0.1" if host == "0.0.0.0" else host
     window_url = "http://localhost:5173" if dev else f"http://{display_host}:{port}"
     logger.info("Window URL: %s (dev=%s)", window_url, dev)
 
@@ -275,6 +284,7 @@ def _shutdown(
 def _wait_for_server(
     server: uvicorn.Server,
     server_thread: threading.Thread,
+    health_url: str,
     timeout: float = 10.0,
     interval: float = 0.1,
 ) -> None:
@@ -288,7 +298,11 @@ def _wait_for_server(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if server.started:
-            return
+            try:
+                with urllib.request.urlopen(health_url, timeout=interval):
+                    return
+            except OSError:
+                pass
         if not server_thread.is_alive():
             raise RuntimeError(
                 "Backend server failed to start. The uvicorn thread exited "
@@ -297,6 +311,7 @@ def _wait_for_server(
             )
         time.sleep(interval)
     raise TimeoutError(f"Server did not become ready within {timeout}s")
+
 
 if __name__ == "__main__":
     main_desktop()

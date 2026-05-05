@@ -20,6 +20,8 @@ from bioimageflow_server.services.package_installer import (
     PackageNetworkError,
     PackageNotFoundError,
     PypiPackageInstaller,
+    _local_common_tools_root,
+    _project_version,
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -172,7 +174,10 @@ async def test_install_common_tools_uses_local_checkout_without_pypi(
     await installer.install("bioimageflow_common_tools", version=None)
 
     pypi.get_latest_stable.assert_not_called()
-    installed = tool_store / "bioimageflow_common_tools" / "0.1.4" / "bioimageflow_common_tools"
+    source_root = _local_common_tools_root()
+    assert source_root is not None
+    version = _project_version(source_root)
+    installed = tool_store / "bioimageflow_common_tools" / version / "bioimageflow_common_tools"
     assert (installed / "__init__.py").exists()
     assert (installed / "atlas.py").exists()
     registry.scan_tool_store.assert_called_once_with(tool_store)
@@ -185,9 +190,7 @@ async def test_install_not_found_raises_package_not_found(
     monkeypatch.setattr(
         installer_module,
         "ensure_installed",
-        _ensure_installed_failure_factory(
-            "ERROR: No matching distribution found for foo==9.9.9"
-        ),
+        _ensure_installed_failure_factory("ERROR: No matching distribution found for foo==9.9.9"),
     )
     with pytest.raises(PackageNotFoundError):
         await installer.install("foo", "9.9.9")
@@ -234,9 +237,7 @@ async def test_install_network_error_raises_network_error(
     monkeypatch.setattr(
         installer_module,
         "ensure_installed",
-        _ensure_installed_failure_factory(
-            "error: network timeout while fetching metadata"
-        ),
+        _ensure_installed_failure_factory("error: network timeout while fetching metadata"),
     )
     with pytest.raises(PackageNetworkError):
         await installer.install("foo", "1.0")
@@ -363,9 +364,7 @@ async def test_install_failure_resumes_with_emit_batch_false(
     monkeypatch.setattr(
         installer_module,
         "ensure_installed",
-        _ensure_installed_failure_factory(
-            "ERROR: No matching distribution found for foo==9.9.9"
-        ),
+        _ensure_installed_failure_factory("ERROR: No matching distribution found for foo==9.9.9"),
     )
 
     with pytest.raises(PackageNotFoundError):

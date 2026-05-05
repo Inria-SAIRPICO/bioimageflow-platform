@@ -33,6 +33,7 @@ from bioimageflow_core import (
     ImagePath,
     ProcessingTool,
     Semantic,
+    Template,
 )
 
 
@@ -46,7 +47,7 @@ class {class_name}(ProcessingTool):
         input_image: ImagePath(semantics=Semantic.INTENSITY)
 
     class Outputs(IOModel):
-        output_image: ImagePath(semantics=Semantic.INTENSITY) = "{{input_image.stem}}_out{{ext}}"
+        output_image: ImagePath(semantics=Semantic.INTENSITY) = Template("{{input_image.stem}}_out{{ext}}")
 
     def process_row(self, arguments: Arguments) -> "Outputs":
         raise NotImplementedError("Implement {class_name}.process_row")
