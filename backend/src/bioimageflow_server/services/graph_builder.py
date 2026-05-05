@@ -58,7 +58,7 @@ def build_workflow(
         partial=True,
         storage_path_override=storage_path,
         on_progress=on_progress,
-        use_wetlands=False,
+        use_wetlands=True,
         auto_install=False,
     )
     assert isinstance(result, tuple)

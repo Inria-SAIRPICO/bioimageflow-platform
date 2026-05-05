@@ -137,6 +137,27 @@ def test_single_valid_node(registry: ToolRegistryService) -> None:
     assert workflow.nodes["n1"].name == "n1"
 
 
+def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
+    """GUI-built workflows must execute processing tools through Wetlands."""
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="n1",
+                name="n1",
+                tool_name="MockProcessingTool",
+                position=(0, 0),
+                parameters={"input_image": "/tmp/x.tif"},
+            )
+        ],
+        edges=[],
+    )
+
+    workflow, errors, _disabled = build_workflow(graph, registry)
+
+    assert errors == []
+    assert workflow.use_wetlands is True
+
+
 def test_missing_tool_error(registry: ToolRegistryService) -> None:
     graph = GraphState(
         nodes=[
