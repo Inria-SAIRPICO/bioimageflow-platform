@@ -673,8 +673,42 @@ defineExpose({
                   text
                   size="small"
                   class="tool-list-info-btn"
+                  title="Tool information"
                   :data-testid="`tool-info-${tool.name}`"
                   @click.stop="toggleDocumentation(tool.name)"
+                />
+                <Button
+                  v-if="localToolActionsAvailable && isEditableTool(tool)"
+                  icon="pi pi-code"
+                  text
+                  size="small"
+                  class="tool-list-action-btn"
+                  title="Open tool script"
+                  :data-testid="`tool-open-script-${tool.name}`"
+                  @click.stop="openInEditor(tool.name)"
+                />
+                <Button
+                  v-if="localToolActionsAvailable && isEditableTool(tool)"
+                  icon="pi pi-file-edit"
+                  text
+                  size="small"
+                  class="tool-list-action-btn"
+                  title="Rename tool"
+                  :disabled="toolRegistry.customToolBusy"
+                  :data-testid="`tool-rename-${tool.name}`"
+                  @click.stop="renameCustomTool(tool)"
+                />
+                <Button
+                  v-if="localToolActionsAvailable && isEditableTool(tool)"
+                  icon="pi pi-trash"
+                  text
+                  size="small"
+                  severity="danger"
+                  class="tool-list-action-btn"
+                  title="Delete tool"
+                  :disabled="toolRegistry.customToolBusy"
+                  :data-testid="`tool-delete-${tool.name}`"
+                  @click.stop="requestDeleteCustomTool(tool)"
                 />
                 <Button
                   icon="pi pi-power-off"
@@ -731,6 +765,8 @@ defineExpose({
           text
           size="small"
           class="tool-doc-close-btn"
+          aria-label="Close documentation"
+          title="Close documentation"
           data-testid="tool-doc-close"
           @click="activeDoc = null"
         />
@@ -876,6 +912,8 @@ defineExpose({
                   icon="pi pi-info-circle"
                   text
                   size="small"
+                  aria-label="Tool information"
+                  title="Tool information"
                   :data-testid="`manage-tool-info-${node.data.name}`"
                   @click.stop="toggleManageDocumentation(node.data.name)"
                 />
@@ -884,6 +922,8 @@ defineExpose({
                   icon="pi pi-pencil"
                   text
                   size="small"
+                  aria-label="Open tool script"
+                  title="Open tool script"
                   :data-testid="`manage-tool-edit-${node.data.name}`"
                   @click.stop="openInEditor(node.data.name)"
                 />
@@ -892,6 +932,8 @@ defineExpose({
                   icon="pi pi-file-edit"
                   text
                   size="small"
+                  aria-label="Rename tool"
+                  title="Rename tool"
                   :disabled="toolRegistry.customToolBusy"
                   :data-testid="`manage-tool-rename-${node.data.name}`"
                   @click.stop="renameCustomTool(node.data.tool)"
@@ -902,6 +944,8 @@ defineExpose({
                   text
                   size="small"
                   severity="danger"
+                  aria-label="Delete tool"
+                  title="Delete tool"
                   :disabled="toolRegistry.customToolBusy"
                   :data-testid="`manage-tool-delete-${node.data.name}`"
                   @click.stop="requestDeleteCustomTool(node.data.tool)"
@@ -945,6 +989,8 @@ defineExpose({
               text
               size="small"
               class="tool-doc-close-btn"
+              aria-label="Close documentation"
+              title="Close documentation"
               data-testid="manage-tool-doc-close"
               @click="manageActiveDoc = null"
             />
@@ -1049,6 +1095,8 @@ defineExpose({
 .tool-list-name {
   font-size: 13px;
   font-weight: 500;
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1063,6 +1111,7 @@ defineExpose({
 }
 
 .tool-list-info-btn,
+.tool-list-action-btn,
 .tool-list-power-btn {
   width: 24px;
   height: 24px;
@@ -1073,6 +1122,7 @@ defineExpose({
 }
 
 .tool-list-info-btn :deep(.p-button-icon),
+.tool-list-action-btn :deep(.p-button-icon),
 .tool-list-power-btn :deep(.p-button-icon) {
   line-height: 1;
 }

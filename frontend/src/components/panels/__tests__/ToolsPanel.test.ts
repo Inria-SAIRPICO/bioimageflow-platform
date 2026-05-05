@@ -676,6 +676,105 @@ describe('ToolsPanel', () => {
     expect(vm.isEditableTool(store.getToolByName('threshold')!)).toBe(false)
   })
 
+  it('renders main-list custom tool script, rename, and delete actions only for custom tools', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    expect(wrapper.find('[data-testid="tool-open-script-MyCustomTool"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tool-rename-MyCustomTool"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tool-delete-MyCustomTool"]').exists()).toBe(true)
+
+    expect(wrapper.find('[data-testid="tool-open-script-threshold"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tool-rename-threshold"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tool-delete-threshold"]').exists()).toBe(false)
+  })
+
+  it('main-list custom open script button opens the tool source without adding a node', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.get.mockClear()
+    mockedApi.post.mockClear()
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        tool_name: 'MyCustomTool',
+        path: '/workflow/tools/my_custom_tool.py',
+        source_kind: 'custom',
+        editable: true,
+      },
+    })
+    mockedApi.post.mockResolvedValueOnce({
+      data: {
+        opened: true,
+        method: 'external',
+        url: null,
+        path: '/workflow/tools',
+        message: null,
+      },
+    })
+
+    await wrapper.find('[data-testid="tool-open-script-MyCustomTool"]').trigger('click')
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/MyCustomTool/source')
+    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
+      path: '/workflow/tools',
+    })
+    expect(wrapper.emitted('add-tool')).toBeUndefined()
+  })
+
+  it('main-list custom rename button renames the tool without adding a node', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('RenamedTool')
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.patch.mockResolvedValueOnce({
+      data: {
+        old_name: 'MyCustomTool',
+        new_name: 'RenamedTool',
+        path: '/workflow/tools/renamed_tool.py',
+      },
+    })
+    mockedApi.get.mockResolvedValue({ data: [] })
+
+    await wrapper.find('[data-testid="tool-rename-MyCustomTool"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.patch).toHaveBeenCalledWith('/api/v1/tools/MyCustomTool', {
+      new_name: 'RenamedTool',
+    })
+    expect(wrapper.emitted('add-tool')).toBeUndefined()
+    promptSpy.mockRestore()
+  })
+
+  it('main-list custom delete button checks usage and opens confirmation without adding a node', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.get.mockClear()
+    mockedApi.get.mockResolvedValueOnce({ data: { affected_workflows: [] } })
+
+    await wrapper.find('[data-testid="tool-delete-MyCustomTool"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/MyCustomTool/usage')
+    expect(requireMock).toHaveBeenCalledWith(expect.objectContaining({
+      header: 'Delete Custom Tool',
+    }))
+    expect(wrapper.emitted('add-tool')).toBeUndefined()
+  })
+
   it('openInEditor does nothing in webapp mode when unsafe webapp features are disabled', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
