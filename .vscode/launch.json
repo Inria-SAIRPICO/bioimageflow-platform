@@ -1,20 +1,77 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Backend: FastAPI dev server",
-      "type": "python",
-      "request": "launch",
-      "module": "bioimageflow_server",
-      "cwd": "${workspaceFolder}/backend",
-      "args": [
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8000",
-        "--dev"
-      ],
-      "justMyCode": true
-    }
-  ]
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Desktop",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "bioimageflow_server.desktop",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/backend",
+            "python": "${workspaceFolder}/backend/.venv/bin/python"
+        },
+        {
+            "name": "Backend",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "bioimageflow_server.app:create_app", 
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+                "--reload",
+                "--reload-exclude",
+                ".pixi/*"
+            ],
+            "env": {
+                // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
+            },
+            "python": "${workspaceFolder}/backend/.venv/bin/python",
+            "justMyCode": false,
+            // "console": "integratedTerminal",
+            "autoReload": {
+                "enable": true
+            },
+            "windows": {
+                "python": "${workspaceFolder}/backend/.venv/bin/python3.exe",
+            }
+        },
+        {
+            // WARNING: BUILD THE FRONTEND BEFORE USING
+            // (OUT-OF-DATE: MODIFY THE "Build Frontend" TASK WHEN UPDATING THE WORKTREE PATH)
+            "name": "Backend-worktree",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "bioimageflow_server.app:create_app", 
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend",
+            "env": {
+                // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
+            },
+            "python": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend/.venv/bin/python",
+            "justMyCode": false,
+            // "console": "integratedTerminal",
+            // "preLaunchTask": "Build Frontend",
+            "autoReload": {
+                "enable": true
+            },
+            "windows": {
+                "python": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend/.venv/bin/python3.exe",
+            }
+        }
+    ]
 }

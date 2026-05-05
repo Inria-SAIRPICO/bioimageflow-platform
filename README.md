@@ -20,8 +20,6 @@ The platform follows a **client-server model**:
 
 The frontend owns all graph state. The backend is stateless between requests for graph editing -- each request sends the full graph as JSON. The backend holds only transient execution state during workflow runs.
 
-For local development, start with the browser workflow unless you specifically need the native desktop shell.
-
 ## Prerequisites
 
 - **Python** >= 3.12
@@ -60,7 +58,7 @@ Keep the frontend's hot-module-replacement while iterating on UI code.
 ```bash
 cd backend
 uv sync --extra dev
-uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload
+uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude ".pixi/*"
 ```
 
 **2. Frontend** (second terminal):
