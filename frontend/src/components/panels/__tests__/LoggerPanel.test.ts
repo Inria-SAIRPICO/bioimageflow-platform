@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
@@ -7,6 +9,9 @@ import ToggleButton from 'primevue/togglebutton'
 import LoggerPanel from '../LoggerPanel.vue'
 import { useLoggerStore } from '@/stores/logger'
 import { useUIStore } from '@/stores/ui'
+
+const require = createRequire(import.meta.url)
+const primeIconsCss = readFileSync(require.resolve('primeicons/primeicons.css'), 'utf8')
 
 function mountPanel() {
   const pinia = createPinia()
@@ -125,10 +130,11 @@ describe('LoggerPanel', () => {
     expect(icon.classes()).toEqual(
       expect.arrayContaining([
         'pi',
-        'pi-link',
+        'pi-filter',
         'logger-panel__auto-scope-icon--active',
       ]),
     )
+    expect(primeIconsCss).toContain('.pi-filter:before')
     await button.trigger('click')
     expect(button.classes()).not.toContain('logger-panel__auto-scope--active')
     expect(button.classes()).toContain('logger-panel__auto-scope--inactive')
@@ -136,10 +142,11 @@ describe('LoggerPanel', () => {
     expect(icon.classes()).toEqual(
       expect.arrayContaining([
         'pi',
-        'pi-unlink',
+        'pi-filter-slash',
         'logger-panel__auto-scope-icon--inactive',
       ]),
     )
+    expect(primeIconsCss).toContain('.pi-filter-slash:before')
   })
 
   it('manual node filters are not overridden by canvas selection', async () => {

@@ -182,6 +182,7 @@ function removeRow(index: number) {
             text
             rounded
             aria-label="Save OMERO instance"
+            title="Save OMERO instance"
             @click="emitRows(index)"
           />
           <Button
@@ -189,6 +190,7 @@ function removeRow(index: number) {
             text
             rounded
             aria-label="Duplicate OMERO instance"
+            title="Duplicate OMERO instance"
             @click="duplicateRow(index)"
           />
           <Button
@@ -197,6 +199,7 @@ function removeRow(index: number) {
             rounded
             severity="danger"
             aria-label="Remove OMERO instance"
+            title="Remove OMERO instance"
             @click="removeRow(index)"
           />
         </div>

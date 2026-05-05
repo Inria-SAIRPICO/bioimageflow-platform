@@ -99,6 +99,7 @@ void props
             size="small"
             text
             aria-label="Close"
+            title="Close"
             @click="onClose"
           />
         </header>
@@ -127,6 +128,7 @@ void props
                 text
                 rounded
                 aria-label="Dismiss"
+                title="Dismiss"
                 class="error-row-dismiss"
                 @click="onDismiss(entry.id)"
               />

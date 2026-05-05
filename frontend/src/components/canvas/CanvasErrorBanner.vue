@@ -53,6 +53,7 @@ function onDismiss() {
       size="small"
       text
       aria-label="Dismiss"
+      title="Dismiss"
       class="banner-dismiss"
       @click="onDismiss"
     />

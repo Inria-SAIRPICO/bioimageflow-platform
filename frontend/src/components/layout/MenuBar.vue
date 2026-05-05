@@ -536,6 +536,7 @@ defineExpose({
           rounded
           size="small"
           aria-label="Rename workflow"
+          title="Rename workflow"
           data-testid="workflow-title-edit"
           :disabled="executionStore.isRunning"
           @click="openRenameDialog"

@@ -214,6 +214,7 @@ watch(
         }"
         text
         aria-label="Auto-scope to selected node"
+        title="Auto-scope to selected node"
         data-testid="log-auto-scope"
         @click="toggleAutoScope"
       >
@@ -221,7 +222,7 @@ watch(
           <span
             :class="[
               'pi',
-              autoScope ? 'pi-link' : 'pi-unlink',
+              autoScope ? 'pi-filter' : 'pi-filter-slash',
               'logger-panel__auto-scope-icon',
               autoScope
                 ? 'logger-panel__auto-scope-icon--active'
@@ -245,6 +246,7 @@ watch(
           icon="pi pi-times"
           text
           aria-label="Clear search"
+          title="Clear search"
           data-testid="log-search-clear"
           @click="clearSearch"
         />
@@ -255,6 +257,7 @@ watch(
         :severity="logger.autoScroll ? undefined : 'secondary'"
         text
         aria-label="Auto-scroll"
+        title="Auto-scroll"
         data-testid="log-auto-scroll"
         @click="logger.setAutoScroll(!logger.autoScroll)"
       />
@@ -262,6 +265,7 @@ watch(
       <Button
         icon="pi pi-filter-slash"
         aria-label="Clear filters"
+        title="Clear filters"
         text
         data-testid="log-clear-filters"
         @click="clearFilters"
@@ -269,6 +273,7 @@ watch(
       <Button
         icon="pi pi-trash"
         aria-label="Clear logs"
+        title="Clear logs"
         text
         severity="danger"
         data-testid="log-clear"
