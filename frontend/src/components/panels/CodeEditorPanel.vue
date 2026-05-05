@@ -5,15 +5,19 @@ import { useUIStore } from '@/stores/ui'
 import { getEditorStatus } from '@/api/editor'
 
 const uiStore = useUIStore()
-const { codeEditorUrl, codeEditorPath } = storeToRefs(uiStore)
+const { codeEditorUrl, codeEditorPath, codeEditorOpening } = storeToRefs(uiStore)
 const failed = ref(false)
-const loading = ref(false)
+const statusLoading = ref(false)
 
-const available = computed(() => Boolean(codeEditorUrl.value) && !failed.value)
+const loading = computed(() => statusLoading.value || codeEditorOpening.value)
+const loadingMessage = computed(() => (
+  codeEditorOpening.value ? 'Opening code editor...' : 'Starting code-server...'
+))
+const available = computed(() => Boolean(codeEditorUrl.value) && !failed.value && !loading.value)
 
 onMounted(async () => {
-  if (codeEditorUrl.value) return
-  loading.value = true
+  if (codeEditorUrl.value || codeEditorOpening.value) return
+  statusLoading.value = true
   try {
     const status = await getEditorStatus({ launch: true })
     if (status.available && status.url) {
@@ -23,7 +27,7 @@ onMounted(async () => {
   } catch {
     // The unavailable state below is the user-facing fallback.
   } finally {
-    loading.value = false
+    statusLoading.value = false
   }
 })
 </script>
@@ -38,8 +42,9 @@ onMounted(async () => {
       :title="codeEditorPath ? `Code editor - ${codeEditorPath}` : 'Code editor'"
       @error="failed = true"
     />
-    <div v-else-if="loading" class="code-editor-panel__unavailable" data-testid="code-editor-loading">
-      Starting code-server...
+    <div v-else-if="loading" class="code-editor-panel__loading" data-testid="code-editor-loading">
+      <i class="pi pi-spin pi-spinner" aria-hidden="true" />
+      <span>{{ loadingMessage }}</span>
     </div>
     <div v-else class="code-editor-panel__unavailable" data-testid="code-editor-unavailable">
       code-server is not available. Configure an external editor in Settings.
@@ -69,5 +74,20 @@ onMounted(async () => {
   padding: 1rem;
   color: var(--p-text-muted-color);
   text-align: center;
+}
+
+.code-editor-panel__loading {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 1rem;
+  color: var(--p-text-muted-color);
+  text-align: center;
+}
+
+.code-editor-panel__loading .pi {
+  font-size: 1.125rem;
 }
 </style>

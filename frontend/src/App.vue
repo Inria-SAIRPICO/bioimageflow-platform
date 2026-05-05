@@ -71,7 +71,12 @@ useExecutionLock()
 
 onMounted(() => {
   websocket.connect()
+  window.addEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
   window.addEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
+  window.addEventListener(
+    'bif:open-code-editor-loading-finished',
+    onCodeEditorLoadingFinished as EventListener,
+  )
   window.addEventListener(
     'bioimageflow:sub-workflow-session-opened',
     onSubWorkflowSessionOpened as EventListener,
@@ -88,7 +93,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   dockviewDisposables.splice(0).forEach((disposable) => disposable.dispose())
   websocket.disconnect()
+  window.removeEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
   window.removeEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
+  window.removeEventListener(
+    'bif:open-code-editor-loading-finished',
+    onCodeEditorLoadingFinished as EventListener,
+  )
   window.removeEventListener(
     'bioimageflow:sub-workflow-session-opened',
     onSubWorkflowSessionOpened as EventListener,
@@ -221,12 +231,25 @@ function onDockviewReady(event: DockviewReadyEvent) {
   dataTablePanel.api.setActive()
 }
 
-function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
-  uiStore.setCodeEditorTarget(event.detail.url, event.detail.path)
+function activateCodeEditorPanel() {
   queueMicrotask(() => {
     const panel = dockviewApi.value?.getPanel('codeEditor')
     panel?.api.setActive()
   })
+}
+
+function onCodeEditorLoading(event: CustomEvent<{ path?: string }>) {
+  uiStore.setCodeEditorOpening(event.detail?.path ?? '')
+  activateCodeEditorPanel()
+}
+
+function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
+  uiStore.setCodeEditorTarget(event.detail.url, event.detail.path)
+  activateCodeEditorPanel()
+}
+
+function onCodeEditorLoadingFinished(event: CustomEvent<{ path?: string }>) {
+  uiStore.clearCodeEditorOpening(event.detail?.path)
 }
 
 function openSubWorkflowPanel(sessionId: string): void {

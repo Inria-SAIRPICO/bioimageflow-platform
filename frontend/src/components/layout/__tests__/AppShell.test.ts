@@ -278,6 +278,28 @@ describe('AppShell', () => {
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
   })
 
+  it('creates and activates the Code Editor panel while embedded editor is opening', async () => {
+    mountApp()
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
+      detail: { path: '/tmp/tool.py' },
+    }))
+    await flushPromises()
+
+    const store = useUIStore()
+    expect(store.codeEditorPath).toBe('/tmp/tool.py')
+    expect(store.codeEditorOpening).toBe(true)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
+    expect(mockDockviewApi.addPanel.mock.calls[5][0].id).toBe('codeEditor')
+    expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished'))
+    await flushPromises()
+
+    expect(store.codeEditorOpening).toBe(false)
+  })
+
   it('opens a Dockview tab for sub-workflow sessions', async () => {
     mountApp()
     await flushPromises()

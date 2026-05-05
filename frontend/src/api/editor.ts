@@ -26,6 +26,10 @@ type Toast = {
   }) => void
 }
 
+export interface OpenPathWithEditorOptions {
+  showEmbeddedLoading?: boolean
+}
+
 export async function getEditorStatus(options: { launch?: boolean } = {}): Promise<EditorStatus> {
   const { data } = options.launch
     ? await api.get<EditorStatus>('/api/v1/editor/status', { params: { launch: true } })
@@ -38,10 +42,36 @@ export async function openEditorPath(path: string): Promise<EditorOpenResponse> 
   return data
 }
 
-export async function openPathWithEditor(path: string, toast?: Toast | null): Promise<EditorOpenResponse> {
-  const response = await openEditorPath(path)
-  await handleEditorOpenResponse(response, toast)
-  return response
+export function showCodeEditorLoading(path = ''): void {
+  window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
+    detail: { path },
+  }))
+}
+
+export function finishCodeEditorLoading(path?: string): void {
+  window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished', {
+    detail: { path },
+  }))
+}
+
+export async function openPathWithEditor(
+  path: string,
+  toast?: Toast | null,
+  options?: OpenPathWithEditorOptions,
+): Promise<EditorOpenResponse> {
+  const showEmbeddedLoading = options?.showEmbeddedLoading === true
+  if (showEmbeddedLoading) {
+    showCodeEditorLoading(path)
+  }
+  try {
+    const response = await openEditorPath(path)
+    await handleEditorOpenResponse(response, toast)
+    return response
+  } finally {
+    if (showEmbeddedLoading) {
+      finishCodeEditorLoading(path)
+    }
+  }
 }
 
 export async function handleEditorOpenResponse(

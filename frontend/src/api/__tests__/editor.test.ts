@@ -74,6 +74,40 @@ describe('editor api helpers', () => {
     window.removeEventListener('bif:open-code-editor', listener)
   })
 
+  it('dispatches loading events around slow embedded open requests', async () => {
+    const events: string[] = []
+    let loadingDetail: unknown
+    const onLoading = vi.fn((event: Event) => {
+      loadingDetail = (event as CustomEvent).detail
+      events.push('loading')
+    })
+    const onOpen = vi.fn(() => events.push('open'))
+    const onFinished = vi.fn(() => events.push('finished'))
+    window.addEventListener('bif:open-code-editor-loading', onLoading)
+    window.addEventListener('bif:open-code-editor', onOpen)
+    window.addEventListener('bif:open-code-editor-loading-finished', onFinished)
+    mockedPost.mockImplementationOnce(async () => {
+      events.push('post')
+      return {
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: 'http://127.0.0.1:32344',
+          path: '/tmp/tool.py',
+          message: null,
+        },
+      }
+    })
+
+    await openPathWithEditor('/tmp/tool.py', null, { showEmbeddedLoading: true })
+
+    expect(events).toEqual(['loading', 'post', 'open', 'finished'])
+    expect(loadingDetail).toEqual({ path: '/tmp/tool.py' })
+    window.removeEventListener('bif:open-code-editor-loading', onLoading)
+    window.removeEventListener('bif:open-code-editor', onOpen)
+    window.removeEventListener('bif:open-code-editor-loading-finished', onFinished)
+  })
+
   it('copies the path for clipboard fallback responses', async () => {
     const toast = { add: vi.fn() }
     mockedPost.mockResolvedValueOnce({

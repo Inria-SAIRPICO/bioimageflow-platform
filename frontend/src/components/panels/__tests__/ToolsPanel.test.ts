@@ -610,6 +610,50 @@ describe('ToolsPanel', () => {
     })
   })
 
+  it('opens the code editor loading dock before source lookup finishes', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const loadingDetails: unknown[] = []
+    const onLoading = vi.fn((event: Event) => {
+      loadingDetails.push((event as CustomEvent).detail)
+    })
+    window.addEventListener('bif:open-code-editor-loading', onLoading)
+
+    let resolveSource!: (value: unknown) => void
+    mockedApi.get.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSource = resolve
+    }))
+    mockedApi.post.mockResolvedValueOnce({
+      data: { opened: true, method: 'embedded', url: 'http://127.0.0.1:32344', path: '/path/to', message: null },
+    })
+
+    const vm = wrapper.vm as unknown as {
+      openInEditor: (name: string) => Promise<void>
+    }
+    const openPromise = vm.openInEditor('threshold')
+
+    expect(onLoading).toHaveBeenCalledTimes(1)
+    expect(loadingDetails[0]).toEqual({ path: '' })
+    expect(mockedApi.post).not.toHaveBeenCalled()
+
+    resolveSource({
+      data: {
+        tool_name: 'threshold',
+        path: '/path/to/tool.py',
+        source_kind: 'package',
+        editable: false,
+      },
+    })
+    await openPromise
+
+    expect(loadingDetails).toEqual([{ path: '' }, { path: '/path/to' }])
+    window.removeEventListener('bif:open-code-editor-loading', onLoading)
+  })
+
   it('derives a tool source folder from POSIX and Windows source files', async () => {
     const wrapper = mountPanel()
     const vm = wrapper.vm as unknown as {

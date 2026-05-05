@@ -47,6 +47,20 @@ describe('CodeEditorPanel', () => {
     )
   })
 
+  it('shows the opening state without checking status during an embedded open request', async () => {
+    const store = useUIStore()
+    store.setCodeEditorOpening('/tmp/tool.py')
+
+    const wrapper = mount(CodeEditorPanel)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="code-editor-loading"]').text()).toBe(
+      'Opening code editor...',
+    )
+    expect(wrapper.find('.pi-spinner').exists()).toBe(true)
+    expect(mockedGetEditorStatus).not.toHaveBeenCalled()
+  })
+
   it('renders an iframe when the embedded editor is available', () => {
     const store = useUIStore()
     store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')

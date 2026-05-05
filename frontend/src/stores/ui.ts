@@ -9,6 +9,7 @@ export const useUIStore = defineStore('ui', () => {
   const isExecutionLocked = ref(false)
   const codeEditorUrl = ref<string | null>(null)
   const codeEditorPath = ref<string | null>(null)
+  const codeEditorOpening = ref(false)
 
   const panels = reactive({
     tools: true,
@@ -72,7 +73,19 @@ export const useUIStore = defineStore('ui', () => {
   function setCodeEditorTarget(url: string, path: string) {
     codeEditorUrl.value = url
     codeEditorPath.value = path
+    codeEditorOpening.value = false
     panels.codeEditor = true
+  }
+
+  function setCodeEditorOpening(path: string) {
+    codeEditorPath.value = path
+    codeEditorOpening.value = true
+    panels.codeEditor = true
+  }
+
+  function clearCodeEditorOpening(path?: string) {
+    if (path !== undefined && codeEditorPath.value !== path) return
+    codeEditorOpening.value = false
   }
 
   return {
@@ -83,6 +96,7 @@ export const useUIStore = defineStore('ui', () => {
     isExecutionLocked,
     codeEditorUrl,
     codeEditorPath,
+    codeEditorOpening,
     panels,
     hasSelection,
     isSingleSelection,
@@ -98,5 +112,7 @@ export const useUIStore = defineStore('ui', () => {
     togglePanel,
     setPanelVisible,
     setCodeEditorTarget,
+    setCodeEditorOpening,
+    clearCodeEditorOpening,
   }
 })

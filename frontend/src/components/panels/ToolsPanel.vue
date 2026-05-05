@@ -14,7 +14,11 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import type { ToolCreateResponse, ToolMetadata, ToolSourceResponse } from '@/api/types'
 import { api } from '@/api/client'
-import { openPathWithEditor } from '@/api/editor'
+import {
+  finishCodeEditorLoading,
+  openPathWithEditor,
+  showCodeEditorLoading,
+} from '@/api/editor'
 
 const emit = defineEmits<{
   'add-tool': [toolName: string]
@@ -55,6 +59,10 @@ const localToolActionsAvailable = computed(() => {
     || settingsStore.settings?.enable_unsafe_webapp_features === true
   )
 })
+
+function shouldShowEmbeddedEditorLoading(): boolean {
+  return !settingsStore.settings?.external_editor?.trim()
+}
 
 /** Tools grouped by their primary category for the sidebar list. The list
  * is rendered as a tree (category -> tool rows), mirroring the package tree
@@ -196,7 +204,9 @@ async function onToolCreated(response: ToolCreateResponse) {
   showCreateDialog.value = false
   if (response.path) {
     try {
-      await openPathWithEditor(response.path, toast)
+      await openPathWithEditor(response.path, toast, {
+        showEmbeddedLoading: shouldShowEmbeddedEditorLoading(),
+      })
     } catch (e: unknown) {
       toolRegistry.error = e instanceof Error ? e.message : String(e)
     }
@@ -414,10 +424,19 @@ function parentPath(path: string): string {
 
 async function openInEditor(toolName: string) {
   if (!localToolActionsAvailable.value) return
+  const showEmbeddedLoading = shouldShowEmbeddedEditorLoading()
+  if (showEmbeddedLoading) {
+    showCodeEditorLoading()
+  }
   try {
     const { data } = await api.get<ToolSourceResponse>(`/api/v1/tools/${toolName}/source`)
-    await openPathWithEditor(parentPath(data.path), toast)
+    await openPathWithEditor(parentPath(data.path), toast, {
+      showEmbeddedLoading,
+    })
   } catch (e: unknown) {
+    if (showEmbeddedLoading) {
+      finishCodeEditorLoading()
+    }
     toolRegistry.error = e instanceof Error ? e.message : String(e)
   }
 }
