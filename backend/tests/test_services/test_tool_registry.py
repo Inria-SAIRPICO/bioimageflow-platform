@@ -139,6 +139,7 @@ def test_processing_tool_atlas_has_correct_type_and_accepts_upstream():
     meta = _register("Atlas")
     assert meta.tool_type == "ProcessingTool"
     assert meta.accepts_upstream is True
+    assert meta.dataframe_output is True
 
 
 def test_scan_tool_store_picks_latest_version_by_default(tmp_path, monkeypatch):
@@ -591,5 +592,4 @@ def test_scan_tool_store_registers_common_tools():
         f"common-tools registration regression: {missing} not registered. "
         f"Likely cause: package __init__.py uses absolute imports."
     )
-
 

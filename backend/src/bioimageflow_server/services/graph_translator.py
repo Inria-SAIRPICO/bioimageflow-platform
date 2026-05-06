@@ -769,6 +769,53 @@ def _split_edges(
     return positional_by_target, column_edges
 
 
+def _filter_positional_edges(
+    positional_by_target: dict[str, list[PositionalEdge]],
+    tool_info: dict[str, tuple[type, str | None, str | None, str]],
+    errors: list[GraphValidationError],
+) -> dict[str, list[PositionalEdge]]:
+    """Keep only positional edges whose target can consume DataFrames."""
+    from bioimageflow.dataframe_tool import DataFrameTool
+
+    filtered: dict[str, list[PositionalEdge]] = {}
+    for target, pos_edges in positional_by_target.items():
+        target_info = tool_info.get(target)
+        target_cls = target_info[0] if target_info is not None else None
+        is_dataframe_tool = (
+            isinstance(target_cls, type) and issubclass(target_cls, DataFrameTool)
+        )
+        accepts_upstream = bool(
+            getattr(target_cls, "accepts_upstream", True)
+        ) if target_cls is not None else False
+
+        if is_dataframe_tool and accepts_upstream:
+            filtered[target] = pos_edges
+            continue
+
+        error_type = "source_tool_upstream" if is_dataframe_tool else "parameter_invalid"
+        if is_dataframe_tool:
+            detail = (
+                f"Tool '{target_cls.__name__}' is a source tool "
+                "(accepts_upstream=False) and does not accept upstream DataFrames."
+            )
+        else:
+            tool_name = target_cls.__name__ if target_cls is not None else target
+            detail = (
+                f"Tool '{tool_name}' is not a DataFrameTool and cannot accept "
+                "positional DataFrame inputs."
+            )
+        for edge in pos_edges:
+            errors.append(
+                GraphValidationError(
+                    type=error_type,
+                    detail=detail,
+                    node=target,
+                    edge_id=edge.id,
+                )
+            )
+    return filtered
+
+
 def _ordered_sub_workflow_nodes(
     graph: GraphState,
     column_edges: list[ColumnRefEdge],
@@ -1022,6 +1069,9 @@ def graph_state_to_lib_dict(
         duplicate_node_ids,
     )
     positional_by_target, column_edges = _split_edges(valid_edges)
+    positional_by_target = _filter_positional_edges(
+        positional_by_target, tool_info, errors
+    )
 
     # Fields that already receive their value from a column_ref edge must
     # not be re-emitted as constants — the library's engine merges

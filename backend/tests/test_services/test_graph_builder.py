@@ -79,13 +79,16 @@ _TOOL_CLASSES: dict[str, type] = {
 }
 
 
-def _make_metadata(name: str) -> ToolMetadata:
+def _make_metadata(name: str, cls: type) -> ToolMetadata:
+    tool_type = "DataFrameTool" if issubclass(cls, DataFrameTool) else "ProcessingTool"
     return ToolMetadata(
         name=name,
         display_name=name,
         package="test-package",
         package_version="1.0.0",
-        tool_type="ProcessingTool",
+        tool_type=tool_type,
+        accepts_upstream=bool(getattr(cls, "accepts_upstream", True)),
+        dataframe_output=True,
         documentation="",
     )
 
@@ -95,7 +98,7 @@ def registry() -> ToolRegistryService:
     """A registry populated with mock tools."""
     reg = ToolRegistryService()
     for name, cls in _TOOL_CLASSES.items():
-        reg.register_tool(name, _make_metadata(name), tool_class=cls)
+        reg.register_tool(name, _make_metadata(name, cls), tool_class=cls)
     return reg
 
 
@@ -157,6 +160,48 @@ def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
 
     assert errors == []
     assert workflow.use_wetlands is True
+
+
+def test_processing_tool_can_feed_dataframe_tool_positionally(
+    registry: ToolRegistryService,
+) -> None:
+    """A ProcessingTool node's whole output DataFrame may feed a DataFrameTool."""
+    metadata = registry.get_tool("MockDataFrameTool")
+    assert metadata is not None
+    assert metadata.tool_type == "DataFrameTool"
+    assert metadata.dataframe_output is True
+
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="proc",
+                name="proc",
+                tool_name="MockProcessingTool",
+                position=(0, 0),
+                parameters={"input_image": "/tmp/x.tif"},
+            ),
+            NodeState(
+                id="df",
+                name="df",
+                tool_name="MockDataFrameTool",
+                position=(100, 0),
+                parameters={},
+            ),
+        ],
+        edges=[
+            PositionalEdge(
+                id="e1",
+                source_node="proc",
+                target_node="df",
+                positional_index=0,
+            )
+        ],
+    )
+
+    workflow, errors, _disabled = build_workflow(graph, registry)
+
+    assert errors == []
+    assert workflow.nodes["df"]._args == [workflow.nodes["proc"]]
 
 
 def test_missing_tool_error(registry: ToolRegistryService) -> None:

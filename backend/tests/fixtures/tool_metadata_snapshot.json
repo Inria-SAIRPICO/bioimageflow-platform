@@ -3,6 +3,7 @@
   "categories": [
     "segmentation"
   ],
+  "dataframe_output": true,
   "display_name": "Cellpose SAM",
   "documentation": "Segment cells or nuclei using the Cellpose algorithm. Produces a labeled mask image.",
   "dynamic_outputs": false,

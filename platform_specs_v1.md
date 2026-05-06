@@ -133,8 +133,9 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 | Key | Type | Notes |
 |-----|------|-------|
 | `tool_type` | `"ProcessingTool" \| "DataFrameTool"` | Discriminator for rendering and pin logic. |
-| `accepts_upstream` | `boolean` | `false` means the tool refuses positional upstream `DataFrameTool` connections. The canvas hides positional pins. |
+| `accepts_upstream` | `boolean` | `false` means the tool refuses positional upstream DataFrame connections. The canvas hides positional input pins. |
 | `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits via `POST /graph/nodes/{node_id}/output_schema`. |
+| `dataframe_output` | `boolean` | `true` means the node exposes its full output DataFrame via the `__dataframe_out` header pin. This is `true` for both `ProcessingTool` and `DataFrameTool` nodes in the current library. |
 
 **The `"any"` type.** The library reserves `"any"` (per library `specs.md` §2.4) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
@@ -147,6 +148,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
   "tool_type": "ProcessingTool",
   "accepts_upstream": true,
   "dynamic_outputs": false,
+  "dataframe_output": true,
   "documentation": "Segment cells using Cellpose models.",
   "tags": ["segmentation", "deep-learning"],
   "categories": ["segmentation"],
@@ -879,7 +881,7 @@ The central canvas where users build the DAG visually.
 
 A node represents an instance of a tool in the workflow. The node template is divided into three regions:
 
-- **Header:** Tool name, category badge, and **DataFrame-level pins** (header pins). DataFrameTool nodes render square header pins for positional DataFrame inputs (left) and a single DataFrame output (right). ProcessingTool nodes have no header pins.
+- **Header:** Tool name, category badge, and **DataFrame-level pins** (header pins). DataFrameTool nodes render square header pins for positional DataFrame inputs (left, when `accepts_upstream === true`) and a single DataFrame output (right). ProcessingTool nodes render the DataFrame output pin only.
 - **Body:** Per-column output pins and per-field input pins (body pins). Round, type-colored, matching the existing column/field semantics.
 - **Footer:** Status indicator (color-coded dot), GPU badge, provisional indicator.
 
@@ -889,7 +891,7 @@ Per-tool-type header pin rules:
 |---|---|---|
 | Source DataFrameTool (`accepts_upstream: false`, e.g. `Files`, `Generate`) | None | `__dataframe_out` |
 | Merge / transform DataFrameTool (`accepts_upstream: true`, e.g. `CrossJoin`, `FilterRows`) | Positional (`__positional_0`, `__positional_1`, ..., auto-grow) | `__dataframe_out` |
-| ProcessingTool | None | None |
+| ProcessingTool | None | `__dataframe_out` |
 
 **Node creation:**
 - Drag a tool from the Tools Panel onto the canvas
@@ -928,7 +930,7 @@ Disabled nodes are rendered at reduced opacity. Nodes downstream of a disabled n
 
 Edges represent data flow between nodes. There are two kinds of edges (see [Section 2.4.3](#243-graph-schema-and-validation)), each visually distinct:
 
-- **Positional edges** (`PositionalEdge`): Connect a DataFrameTool's header DataFrame output pin (`__dataframe_out`) to another DataFrameTool's header positional input pin (`__positional_*`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves anchored on header-region pins.
+- **Positional edges** (`PositionalEdge`): Connect a node's header DataFrame output pin (`__dataframe_out`) to a DataFrameTool's header positional input pin (`__positional_*`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves anchored on header-region pins.
 - **Column reference edges** (`ColumnRefEdge`): Connect a body output pin (column name) to a body input pin (field name). Represent `ColumnRef` bindings for `ProcessingTool` inputs. Rendered as **solid, type-colored, thinner (2px)** bezier curves anchored on body-region pins.
 
 **Cross-region rejection:** Header pins can only connect to header pins; body pins can only connect to body pins. Dragging a header output to a body input (or vice versa) is rejected client-side.
@@ -958,10 +960,10 @@ Pins are the connection points on nodes. They are divided into two visual catego
 Header pins appear in the node header region and carry whole-DataFrame connections (positional edges).
 
 - **Visual style:** Square (~14px), neutral gray fill (#7A7A80), distinct from the `"any"` wildcard color (#B0A060) and from body type-colored pins.
-- **DataFrame output pin** (`__dataframe_out`, right side): Present on all DataFrameTool nodes. Represents the tool's output DataFrame.
+- **DataFrame output pin** (`__dataframe_out`, right side): Present on nodes whose tool metadata has `dataframe_output === true` (currently all `ProcessingTool` and `DataFrameTool` nodes). Represents the node's full output DataFrame.
 - **Positional input pins** (`__positional_0`, `__positional_1`, ..., left side): Present on DataFrameTool nodes with `accepts_upstream === true`. Numbered "1", "2", etc. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap.
 - Source-only DataFrameTools (`accepts_upstream === false`, e.g. `Files`, `Generate`) render no positional input pins. Edge-creation onto a positional handle of such a tool is rejected client-side. The backend additionally rejects any graph containing such an edge with a `source_tool_upstream` validation error.
-- ProcessingTool nodes have **no header pins**.
+- ProcessingTool nodes have no header input pins, but do have the `__dataframe_out` header output pin so their full result DataFrame can feed a downstream `DataFrameTool` such as an aggregator.
 
 **Body pins (column-level / field-level)**
 

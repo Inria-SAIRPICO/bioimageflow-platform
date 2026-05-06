@@ -86,10 +86,14 @@ const showsPositionalPins = computed(() => {
 })
 
 /**
- * Whether to show header pins (DataFrame-level).
- * DataFrameTools get header pins; ProcessingTools do not.
+ * Whether to show the DataFrame-level output pin.
+ * Every executable tool produces a result DataFrame; ProcessingTool body
+ * outputs remain the per-column schema for that DataFrame.
  */
-const showsHeaderPins = computed(() => isDataFrameTool.value)
+const showsHeaderOutputPin = computed(() => {
+  if (!props.data.tool) return false
+  return props.data.tool.dataframe_output !== false
+})
 
 const positionalInputCount = computed(() => {
   // For DataFrameTools that accept upstream: number of connected positional inputs + 1 spare
@@ -244,7 +248,7 @@ function onDismissBadge(event: MouseEvent) {
       </div>
       <div class="header-outputs">
         <OutputPin
-          v-if="showsHeaderPins"
+          v-if="showsHeaderOutputPin"
           field-name="__dataframe_out"
           field-type="DataFrame"
           variant="header"

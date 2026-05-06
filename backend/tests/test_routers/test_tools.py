@@ -107,14 +107,16 @@ async def test_get_tools_populated(populated_client: httpx.AsyncClient):
 
 
 async def test_get_tools_returns_new_metadata_fields(populated_client: httpx.AsyncClient):
-    """GET /tools must surface accepts_upstream and dynamic_outputs."""
+    """GET /tools must surface graph-level metadata fields."""
     resp = await populated_client.get("/api/v1/tools")
     assert resp.status_code == 200
     tool = resp.json()[0]
     assert "accepts_upstream" in tool
     assert "dynamic_outputs" in tool
+    assert "dataframe_output" in tool
     assert tool["accepts_upstream"] is True
     assert tool["dynamic_outputs"] is False
+    assert tool["dataframe_output"] is True
 
 
 async def test_get_tools_empty(empty_client: httpx.AsyncClient):
