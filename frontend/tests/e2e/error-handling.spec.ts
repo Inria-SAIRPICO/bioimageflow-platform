@@ -4,11 +4,14 @@ import { test, expect } from '@playwright/test'
  * E2E coverage for the three-level error handling system (spec §3.11).
  *
  * Each test exercises one user-visible aspect of the error UI without
- * depending on a custom failing-tool mock in the backend. The tests assume
- * at least one tool is installed for parameter/edge tests; they skip if not.
+ * depending on a custom failing-tool mock in the backend. The Playwright
+ * backend exposes the dev seed router, so these tests create their own
+ * deterministic tool registry.
  */
 test.describe('error handling', () => {
   test.beforeEach(async ({ page }) => {
+    const seed = await page.request.post('/api/v1/dev/seed')
+    expect(seed.ok()).toBeTruthy()
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
   })
@@ -70,44 +73,67 @@ test.describe('error handling', () => {
   test('cycle detection produces a global banner above the canvas', async ({
     page,
   }) => {
-    // Pick the first installed tool; skip if none.
-    const tool = await page.evaluate(async () => {
-      const res = await fetch('/api/v1/tools')
-      const tools = await res.json()
-      return Array.isArray(tools) && tools.length > 0 ? tools[0] : null
-    })
-    test.skip(tool === null, 'no tools installed in backend')
-
-    // Build a 2-node cycle: a -> b -> a, using the first available tool's
-    // outputs/inputs heuristically. The backend's cycle detector should fire
-    // on the structural cycle regardless of types; this test exercises the
-    // banner UI not the validator's edge-type policy.
-    const validation = await page.evaluate(async (toolName: string) => {
-      const res = await fetch('/api/v1/graph', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nodes: [
-            { id: 'a', name: 'a', tool_name: toolName, position: [0, 0], parameters: {} },
-            { id: 'b', name: 'b', tool_name: toolName, position: [200, 0], parameters: {} },
-          ],
-          edges: [
-            { type: 'positional', id: 'e1', source_node: 'a', target_node: 'b', positional_index: 0 },
-            { type: 'positional', id: 'e2', source_node: 'b', target_node: 'a', positional_index: 0 },
-          ],
-        }),
+    // Drive the same graph-sync singleton used by CanvasView so this covers
+    // both backend validation and the UI banner fed by the validation result.
+    const validation = await page.evaluate(async () => {
+      const mod = await import('/src/composables/useGraphSync.ts')
+      const sync = mod.useGraphSync()
+      sync.syncGraph({
+        nodes: [
+          {
+            id: 'a',
+            position: { x: 0, y: 0 },
+            data: {
+              name: 'Increment Numbers A',
+              toolName: 'IncrementNumbers',
+              parameters: {},
+            },
+          },
+          {
+            id: 'b',
+            position: { x: 220, y: 0 },
+            data: {
+              name: 'Increment Numbers B',
+              toolName: 'IncrementNumbers',
+              parameters: {},
+            },
+          },
+        ],
+        edges: [
+          {
+            id: 'e1',
+            source: 'a',
+            target: 'b',
+            sourceHandle: 'number_plus_one',
+            targetHandle: 'number',
+          },
+          {
+            id: 'e2',
+            source: 'b',
+            target: 'a',
+            sourceHandle: 'number_plus_one',
+            targetHandle: 'number',
+          },
+        ],
       })
-      return res.json()
-    }, tool.name)
+      await sync.flushNow()
+      return sync.validationResult.value
+    })
 
-    // The validation response should flag a cycle. If the backend's tool
-    // does not allow positional input the test still verifies the API
-    // returns errors; the banner test then runs only when cycle_detected
-    // is present.
-    const hasCycle = (validation.errors ?? []).some(
+    expect(validation?.valid).toBe(false)
+    expect(validation?.errors ?? []).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'cycle_detected' }),
+      ]),
+    )
+    await expect(page.locator('.canvas-error-banner')).toBeVisible()
+    await expect(page.getByTestId('canvas-error-row').first()).toContainText(
+      /cycle/i,
+    )
+    const hasCycle = (validation?.errors ?? []).some(
       (e: { type: string }) => e.type === 'cycle_detected',
     )
-    test.skip(!hasCycle, 'tool does not allow positional input — cycle case unreachable')
+    expect(hasCycle).toBe(true)
   })
 
   test('error history "Clear all" wipes the history', async ({ page }) => {

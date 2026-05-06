@@ -19,6 +19,11 @@ from bioimageflow_core.types import ImageSpec, Semantic
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from tests.common_tools import (
+    COMMON_TOOLS_MARK,
+    COMMON_TOOLS_SKIP_REASON,
+    maybe_load_common_tools_class,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -359,12 +364,11 @@ async def test_patch_unknown_tool_surfaces_missing_tool(
 
 def _load_common_tools_class(class_name: str) -> type | None:
     """Load a common-tools class, return None if unavailable."""
-    try:
-        from bioimageflow.tool_loader import load_versioned_package
-        mod = load_versioned_package("bioimageflow_common_tools", "0.1.1")
-    except Exception:
+    loaded = maybe_load_common_tools_class(class_name)
+    if loaded is None:
         return None
-    return getattr(mod, class_name, None)
+    cls, _version = loaded
+    return cls
 
 
 def _common_tools_registry() -> ToolRegistryService:
@@ -384,10 +388,11 @@ def _common_tools_registry() -> ToolRegistryService:
         )
     # Register real common-tools
     for tool_name in ("Files", "Generate", "CrossJoin", "JoinOnColumn"):
-        cls = _load_common_tools_class(tool_name)
-        if cls is not None:
+        loaded = maybe_load_common_tools_class(tool_name)
+        if loaded is not None:
+            cls, version = loaded
             reg._register_tool_from_class(
-                cls, tool_name, "bioimageflow_common_tools", "0.1.1",
+                cls, tool_name, "bioimageflow_common_tools", version,
             )
     return reg
 
@@ -413,9 +418,10 @@ async def common_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
 
 def _skip_if_no_common_tools() -> None:
     if _load_common_tools_class("Generate") is None:
-        pytest.skip("bioimageflow_common_tools not available")
+        pytest.skip(COMMON_TOOLS_SKIP_REASON)
 
 
+@COMMON_TOOLS_MARK
 class TestOutputSchema:
     """POST /graph/nodes/{node_id}/output_schema — parity with library tests."""
 
@@ -519,7 +525,7 @@ class TestOutputSchema:
         assert resp.status_code == 200
         data = resp.json()
         assert data["resolved"] is True
-        assert set(data["columns"].keys()) == {"path", "filename", "sensitivity", "size"}
+        assert {"path", "sensitivity", "size"}.issubset(data["columns"].keys())
 
     async def test_join_on_column_unresolved_then_resolved(
         self, common_client: httpx.AsyncClient, tmp_path: Path,

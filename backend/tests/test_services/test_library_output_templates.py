@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from bioimageflow import Workflow
+from bioimageflow.engine import DefaultEngine
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import IOModel, ProcessingTool
 
@@ -17,7 +18,7 @@ class _TemplateTool(ProcessingTool):
     Inputs = IOModel
     Outputs = _TemplateOutputs
 
-    def process_row(self, arguments: Any) -> _TemplateOutputs:
+    def process_row(self, arguments: Any, *, context: Any = None) -> _TemplateOutputs:
         output_path = Path(arguments.result)
         output_path.write_text("ok")
         return _TemplateOutputs(result=output_path)
@@ -43,10 +44,9 @@ def test_workflow_from_dict_uses_node_output_template(tmp_path: Path) -> None:
     workflow = Workflow.from_dict(
         _workflow_dict("custom_{row_index}.txt"),
         storage_path_override=tmp_path,
-        use_wetlands=False,
     )
 
-    df = workflow.compute()
+    df = workflow.compute(engine=DefaultEngine())
     output_path = Path(df.at["0", "result"])
 
     assert output_path.name == "custom_0.txt"
@@ -61,16 +61,14 @@ def test_output_template_changes_execution_signature(tmp_path: Path) -> None:
     workflow_a = Workflow.from_dict(
         _workflow_dict("first_{row_index}.txt"),
         storage_path_override=tmp_path,
-        use_wetlands=False,
     )
-    df_a = workflow_a.compute()
+    df_a = workflow_a.compute(engine=DefaultEngine())
 
     workflow_b = Workflow.from_dict(
         _workflow_dict("second_{row_index}.txt"),
         storage_path_override=tmp_path,
-        use_wetlands=False,
     )
-    df_b = workflow_b.compute()
+    df_b = workflow_b.compute(engine=DefaultEngine())
 
     first_path = Path(df_a.at["0", "result"])
     second_path = Path(df_b.at["0", "result"])

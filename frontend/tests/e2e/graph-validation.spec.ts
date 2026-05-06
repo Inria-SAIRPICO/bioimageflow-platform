@@ -4,12 +4,13 @@ import { test, expect } from '@playwright/test'
  * E2E coverage for the graph validation flow.
  *
  * These tests exercise the PUT /graph and PATCH /graph/nodes/{id}/parameters
- * endpoints via the canvas. They rely on at least one tool being installed
- * in the backend's tool registry; if no tools are present the tests are
- * skipped (rather than failing).
+ * endpoints via the canvas. The Playwright backend exposes the dev seed
+ * router, so these tests create their own deterministic tool registry.
  */
 test.describe('graph validation', () => {
   test.beforeEach(async ({ page }) => {
+    const seed = await page.request.post('/api/v1/dev/seed')
+    expect(seed.ok()).toBeTruthy()
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
     await expect(page.locator('.dv-tab').filter({ hasText: 'Tools' })).toBeVisible()
@@ -58,13 +59,12 @@ test.describe('graph validation', () => {
   })
 
   test('PUT /graph with a tool node returns a node status', async ({ page }) => {
-    // Look up the first installed tool; skip the test if none exist.
     const tool = await page.evaluate(async () => {
       const res = await fetch('/api/v1/tools')
-      const tools = await res.json()
-      return Array.isArray(tools) && tools.length > 0 ? tools[0] : null
+      const tools = (await res.json()) as Array<{ name: string }>
+      return tools.find((candidate) => candidate.name === 'SeedNumbers')
     })
-    test.skip(tool === null, 'no tools installed in backend')
+    expect(tool, '/api/v1/dev/seed must register SeedNumbers').toBeTruthy()
 
     const result = await page.evaluate(async (toolName: string) => {
       const res = await fetch('/api/v1/graph', {
@@ -84,7 +84,7 @@ test.describe('graph validation', () => {
         }),
       })
       return { status: res.status, body: await res.json() }
-    }, tool.name)
+    }, tool!.name)
 
     expect(result.status).toBe(200)
     expect(result.body.node_statuses).toHaveProperty('n1')

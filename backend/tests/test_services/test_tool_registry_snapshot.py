@@ -5,7 +5,7 @@ This snapshot locks the wire format of `ToolMetadata` produced by
 fixture JSON and coordinate with the frontend generated types plus
 `platform_specs_v1.md`.
 
-The picked tool (`CellposeSAM` from `bioimageflow_common_tools`) exercises:
+The local Cellpose-like fixture tool exercises:
 - `ImageFile` inputs with `ImageSpec` (semantics, layouts).
 - `GUIMeta` annotations with `min` / `max` / `step` / `display_name`.
 - Required vs. defaulted inputs.
@@ -13,13 +13,25 @@ The picked tool (`CellposeSAM` from `bioimageflow_common_tools`) exercises:
   `int` field.
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
+from typing import Annotated, Any
 
 import pytest
 
+from bioimageflow_core import (
+    Arguments,
+    Category,
+    Connectable,
+    GENERAL_ENV,
+    GUIMeta,
+    IOModel,
+    ImageSpec,
+    Layout,
+    ProcessingTool,
+    Semantic,
+    Template,
+)
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 FIXTURE_PATH = (
@@ -27,28 +39,71 @@ FIXTURE_PATH = (
 )
 
 
+class SnapshotInputs(IOModel):
+    input_image: Annotated[
+        Path,
+        ImageSpec(
+            semantics={Semantic.INTENSITY},
+            layouts={Layout.PLANAR, Layout.PLANAR_CHANNEL},
+        ),
+        GUIMeta(
+            display_name="Input image",
+            description="Fluorescence or brightfield image to segment.",
+            connectable=Connectable.BY_DEFAULT,
+        ),
+    ]
+    diameter: Annotated[
+        float,
+        GUIMeta(
+            display_name="Cell diameter",
+            description="Approximate cell diameter in pixels.",
+            min=0.0,
+            max=500.0,
+            step=0.5,
+        ),
+    ] = 0.0
+    model_type: Annotated[
+        str,
+        GUIMeta(display_name="Model", description="Pretrained model name."),
+    ] = "cyto3"
+
+
+class SnapshotOutputs(IOModel):
+    mask: Annotated[
+        Path,
+        ImageSpec(semantics={Semantic.LABEL}, layouts={Layout.PLANAR}),
+        GUIMeta(display_name="Mask", description="Labeled segmentation mask."),
+    ] = Template("{input_image.stem}_mask{ext}")
+    cell_count: int
+
+
+class SnapshotCellpose(ProcessingTool):
+    display_name = "Snapshot Cellpose"
+    documentation = "Cellpose-like local fixture for metadata serialization tests."
+    category = Category.SEGMENTATION
+    tags = ["segmentation", "cellpose", "snapshot"]
+    environment = GENERAL_ENV
+    Inputs = SnapshotInputs
+    Outputs = SnapshotOutputs
+
+    def process_row(self, arguments: Arguments, *, context: Any = None) -> Any:
+        return {}
+
+
 @pytest.fixture
 def registry_with_cellpose() -> ToolRegistryService:
-    pytest.importorskip("bioimageflow.tool_loader")
-    from bioimageflow.tool_loader import load_versioned_package
-
-    package_name, version = "bioimageflow_common_tools", "0.1.1"
-    try:
-        mod = load_versioned_package(package_name, version)
-    except Exception as exc:  # pragma: no cover - env-dependent
-        pytest.skip(f"{package_name}=={version} not installed: {exc}")
-
-    cls = getattr(mod, "CellposeSAM", None)
-    if cls is None:  # pragma: no cover - env-dependent
-        pytest.skip("CellposeSAM missing from bioimageflow_common_tools")
-
     reg = ToolRegistryService()
-    reg._register_tool_from_class(cls, "CellposeSAM", package_name, version)
+    reg._register_tool_from_class(
+        SnapshotCellpose,
+        "SnapshotCellpose",
+        "test-snapshot-tools",
+        "1.0.0",
+    )
     return reg
 
 
 def test_cellpose_sam_wire_format_snapshot(registry_with_cellpose: ToolRegistryService):
-    meta = registry_with_cellpose.get_tool("CellposeSAM")
+    meta = registry_with_cellpose.get_tool("SnapshotCellpose")
     assert meta is not None
 
     serialized = meta.model_dump(mode="json")
@@ -72,7 +127,7 @@ def test_cellpose_sam_wire_format_snapshot(registry_with_cellpose: ToolRegistryS
 
 def test_no_basetool_type(registry_with_cellpose: ToolRegistryService):
     """No registered tool should have tool_type == 'BaseTool'."""
-    meta = registry_with_cellpose.get_tool("CellposeSAM")
+    meta = registry_with_cellpose.get_tool("SnapshotCellpose")
     assert meta is not None
     assert meta.tool_type != "BaseTool"
     # The Literal type on ToolMetadata already excludes BaseTool, but

@@ -200,3 +200,6 @@ class AppConfig:
     # production app builds the service inside ``create_app`` from the
     # resolved registry + connection_manager + tool-store path.
     disable_hot_reload: bool = False
+    # Expose the test/demo seeding router. Production app factories keep this
+    # disabled so `/api/v1/dev/*` cannot mutate a real registry.
+    enable_dev_router: bool = False

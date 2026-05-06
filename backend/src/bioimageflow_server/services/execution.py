@@ -33,7 +33,7 @@ from bioimageflow_server.models.execution import (
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
-from bioimageflow_server.services.graph_builder import build_workflow
+from bioimageflow_server.services.graph_builder import build_workflow, graph_requires_wetlands
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
@@ -266,6 +266,10 @@ class ExecutionManager:
             try:
                 workflow = session.to_workflow()
                 workflow.on_progress = on_progress
+                workflow.use_wetlands = graph_requires_wetlands(
+                    build_graph,
+                    self.tool_registry,
+                )
             except Exception as exc:
                 self.state = "idle"
                 raise WorkflowBuildError(

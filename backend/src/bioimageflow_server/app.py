@@ -398,7 +398,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(tools_router, prefix="/api/v1")
-    app.include_router(dev_router, prefix="/api/v1")
+    if config.enable_dev_router:
+        app.include_router(dev_router, prefix="/api/v1")
     app.include_router(filesystem_router, prefix="/api/v1")
     app.include_router(editor_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")

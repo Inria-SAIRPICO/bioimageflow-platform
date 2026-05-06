@@ -10,7 +10,9 @@ test.describe('app shell', () => {
     // Verify all 5 menu items
     const menubar = page.locator('[data-testid="app-menubar"]')
     for (const label of ['Workflow', 'Edit', 'Execution', 'View', 'Help']) {
-      await expect(menubar.getByText(label)).toBeVisible()
+      await expect(
+        menubar.getByRole('menuitem', { name: label, exact: true }),
+      ).toBeVisible()
     }
   })
 
@@ -23,13 +25,19 @@ test.describe('app shell', () => {
     await expect(toolsTab).toHaveCount(1, { timeout: 2000 })
 
     // Toggle Tools off via View menu
-    await page.locator('[data-testid="app-menubar"]').getByText('View').click()
-    await page.getByText('Tools Panel').click()
+    await page
+      .locator('[data-testid="app-menubar"]')
+      .getByRole('menuitem', { name: 'View', exact: true })
+      .click()
+    await page.getByRole('menuitem', { name: 'Tools Panel', exact: true }).click()
     await expect(toolsTab).toHaveCount(0, { timeout: 2000 })
 
     // Toggle Tools back on
-    await page.locator('[data-testid="app-menubar"]').getByText('View').click()
-    await page.getByText('Tools Panel').click()
+    await page
+      .locator('[data-testid="app-menubar"]')
+      .getByRole('menuitem', { name: 'View', exact: true })
+      .click()
+    await page.getByRole('menuitem', { name: 'Tools Panel', exact: true }).click()
     await expect(toolsTab).toHaveCount(1, { timeout: 2000 })
   })
 })

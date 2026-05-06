@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
+
 import pandas as pd
 from bioimageflow.cache import cache_load
 
@@ -61,7 +63,7 @@ class ResultStoreService:
     ) -> dict[str, str]:
         declared = self._declared_output_types(tool_name)
         return {
-            str(column): declared.get(str(column), self._infer_series_type(df[column]))
+            str(column): declared.get(str(column), self._infer_series_type(cast(pd.Series, df[column])))
             for column in df.columns
         }
 

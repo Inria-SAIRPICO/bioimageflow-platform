@@ -8,7 +8,7 @@
 import { test, expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-const API_BASE = 'http://127.0.0.1:8000'
+const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
 type ToolMetadata = {
   name: string

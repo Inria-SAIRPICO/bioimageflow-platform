@@ -32,7 +32,7 @@ class SettingsResponse(Settings):
 
     model_config = ConfigDict(extra="allow")
 
-    omero_instances: list[OMEROInstanceResponse] = []
+    omero_instances: list[OMEROInstanceResponse] = []  # pyright: ignore[reportIncompatibleVariableOverride]
     resolved_tool_store_path: str
     resolved_output_data_folder: str
 

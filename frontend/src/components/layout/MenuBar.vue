@@ -325,6 +325,7 @@ async function confirmDeleteWorkflow(): Promise<void> {
   if (!name) return
   try {
     await workflowStore.deleteWorkflow(name)
+    deleteDialogVisible.value = false
     const graph = { nodes: [], edges: [] }
     const names = new Set(workflowStore.workflows.map((workflow) => workflow.name))
     let nextName = 'Untitled'
@@ -334,7 +335,6 @@ async function confirmDeleteWorkflow(): Promise<void> {
       suffix += 1
     }
     await workflowStore.createWorkflow({ name: nextName, display_name: nextName })
-    deleteDialogVisible.value = false
     applyGraph(graph)
   } catch (err: unknown) {
     showError('Delete workflow failed', err)

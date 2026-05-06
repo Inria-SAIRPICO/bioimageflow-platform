@@ -12,6 +12,7 @@ from bioimageflow_server.models.tools import (
     ToolMetadata,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from tests.common_tools import COMMON_TOOLS_MARK, PACKAGE_NAME, load_common_tools_class
 
 pytestmark = pytest.mark.anyio
 
@@ -100,41 +101,34 @@ def test_register_multiple_packages_and_list():
 
 def _load_common_tools_class(class_name: str) -> type:
     """Load a tool class from bioimageflow_common_tools, skipping if unavailable."""
-    pytest.importorskip("bioimageflow.tool_loader")
-    from bioimageflow.tool_loader import load_versioned_package
-
-    package_name, version = "bioimageflow_common_tools", "0.1.1"
-    try:
-        mod = load_versioned_package(package_name, version)
-    except Exception as exc:
-        pytest.skip(f"{package_name}=={version} not installed: {exc}")
-    cls = getattr(mod, class_name, None)
-    if cls is None:
-        pytest.skip(f"{class_name} missing from {package_name}")
+    cls, _version = load_common_tools_class(class_name)
     return cls
 
 
 def _register(class_name: str) -> ToolMetadata:
-    cls = _load_common_tools_class(class_name)
+    cls, version = load_common_tools_class(class_name)
     reg = ToolRegistryService()
-    reg._register_tool_from_class(cls, class_name, "bioimageflow_common_tools", "0.1.1")
+    reg._register_tool_from_class(cls, class_name, PACKAGE_NAME, version)
     meta = reg.get_tool(class_name)
     assert meta is not None
     return meta
 
 
+@COMMON_TOOLS_MARK
 def test_files_accepts_upstream_is_false():
     meta = _register("Files")
     assert meta.tool_type == "DataFrameTool"
     assert meta.accepts_upstream is False
 
 
+@COMMON_TOOLS_MARK
 def test_inner_join_accepts_upstream_is_true():
     meta = _register("InnerJoin")
     assert meta.tool_type == "DataFrameTool"
     assert meta.accepts_upstream is True
 
 
+@COMMON_TOOLS_MARK
 def test_processing_tool_atlas_has_correct_type_and_accepts_upstream():
     meta = _register("Atlas")
     assert meta.tool_type == "ProcessingTool"
@@ -559,6 +553,7 @@ def test_scan_tool_store_refreshes_existing_entries(
     assert "truncate" in after.inputs
 
 
+@COMMON_TOOLS_MARK
 def test_scan_tool_store_registers_common_tools():
     """End-to-end regression: scanning the real tool store must surface
     every tool re-exported from bioimageflow_common_tools' __init__.py.
@@ -574,7 +569,7 @@ def test_scan_tool_store_registers_common_tools():
     store_path = get_tool_store_path()
     common_tools_dir = store_path / "bioimageflow_common_tools"
     if not common_tools_dir.exists():
-        pytest.skip("bioimageflow_common_tools not installed in tool store")
+        load_common_tools_class("Files")
 
     reg = ToolRegistryService()
     reg.scan_tool_store()
@@ -591,5 +586,3 @@ def test_scan_tool_store_registers_common_tools():
         f"common-tools registration regression: {missing} not registered. "
         f"Likely cause: package __init__.py uses absolute imports."
     )
-
-

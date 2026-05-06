@@ -1,13 +1,17 @@
 """
-E2E integration tests using chrome-devtools CLI.
+Manual chrome-devtools CLI harness.
+
+This file is intentionally outside frontend/tests/e2e so Playwright
+certification discovery only sees the maintained *.spec.ts coverage.
 
 Prerequisites:
-  - Backend running on port 8000
+  - Isolated E2E backend running on port 8000
+    (cd backend && uv run uvicorn tests.e2e_app:create_app --factory --host 127.0.0.1 --port 8000)
   - Frontend running on port 5173
   - Chrome open with chrome-devtools daemon started
 
 Run:
-  python frontend/tests/e2e/test_e2e_chrome_devtools.py
+  python frontend/tests/manual/chrome_devtools_harness.py
 """
 
 from __future__ import annotations
@@ -215,7 +219,7 @@ def test_02_seed_and_tools_appear():
     print("TEST 02: Seeded tools appear in TreeTable")
 
     data = seed_backend()
-    assert data["tools"] == 3 and data["packages"] == 2, f"Seed failed: {data}"
+    assert data["tools"] == 5 and data["packages"] == 3, f"Seed failed: {data}"
 
     navigate(BASE_URL)
     snap = snapshot()
@@ -448,8 +452,10 @@ def test_15_api_tools_via_proxy():
     }""")
 
     assert isinstance(tools, list), f"Expected list, got {type(tools)}"
-    assert len(tools) == 3, f"Expected 3 tools, got {len(tools)}"
+    assert len(tools) == 5, f"Expected 5 tools, got {len(tools)}"
     names = {t["name"] for t in tools}
+    assert "SeedNumbers" in names
+    assert "IncrementNumbers" in names
     assert "CellposeSegmenter" in names
     assert "GaussianBlur" in names
     assert "ThresholdBinarize" in names
@@ -466,8 +472,9 @@ def test_16_api_packages_via_proxy():
     }""")
 
     assert isinstance(packages, list), f"Expected list, got {type(packages)}"
-    assert len(packages) == 2, f"Expected 2 packages, got {len(packages)}"
+    assert len(packages) == 3, f"Expected 3 packages, got {len(packages)}"
     names = {p["name"] for p in packages}
+    assert "bioimageflow-dev-seed" in names
     assert "bioimageflow-cellpose" in names
     assert "bioimageflow-filters" in names
     print("  PASS")

@@ -3,57 +3,31 @@
   "categories": [
     "segmentation"
   ],
-  "display_name": "Cellpose SAM",
-  "documentation": "Segment cells or nuclei using the Cellpose algorithm. Produces a labeled mask image.",
+  "display_name": "Snapshot Cellpose",
+  "documentation": "Cellpose-like local fixture for metadata serialization tests.",
   "dynamic_outputs": false,
+  "editable": false,
   "inputs": {
-    "cellprob_threshold": {
-      "choices": null,
-      "connectable": "not_by_default",
-      "default": 0.0,
-      "description": "Threshold on the network's cell-probability output (sigmoid input, typically in the range -6 to +6). Pixels above this threshold are used to run the flow dynamics and form ROIs. Decrease the threshold if Cellpose is not returning as many ROIs as expected; increase it if Cellpose is returning too many ROIs, particularly from dim areas.",
-      "display_name": "Cell probability threshold",
-      "group": null,
-      "image_spec": null,
-      "max": 6.0,
-      "min": -6.0,
-      "required": false,
-      "step": 0.5,
-      "type": "float"
-    },
     "diameter": {
       "choices": null,
       "connectable": "not_by_default",
       "default": 0.0,
-      "description": "Approximate cell diameter in pixels. Set to 0 for automatic estimation.",
+      "description": "Approximate cell diameter in pixels.",
       "display_name": "Cell diameter",
       "group": null,
       "image_spec": null,
       "max": 500.0,
       "min": 0.0,
+      "nullable": false,
       "required": false,
       "step": 0.5,
-      "type": "float"
-    },
-    "flow_threshold": {
-      "choices": null,
-      "connectable": "not_by_default",
-      "default": 0.4,
-      "description": "Maximum allowed mean squared error between the flows recomputed from predicted ROIs and the flows predicted by the network. Increase this threshold if Cellpose is not returning as many ROIs as expected; decrease it if Cellpose is returning too many ill-shaped ROIs.",
-      "display_name": "Flow threshold",
-      "group": null,
-      "image_spec": null,
-      "max": 1.0,
-      "min": 0.0,
-      "required": false,
-      "step": 0.05,
       "type": "float"
     },
     "input_image": {
       "choices": null,
       "connectable": "by_default",
       "default": null,
-      "description": "Fluorescence or brightfield image to segment (2D intensity, optionally multi-channel).",
+      "description": "Fluorescence or brightfield image to segment.",
       "display_name": "Input image",
       "group": null,
       "image_spec": {
@@ -69,6 +43,7 @@
       },
       "max": null,
       "min": null,
+      "nullable": false,
       "required": true,
       "step": null,
       "type": "ImageFile"
@@ -77,18 +52,19 @@
       "choices": null,
       "connectable": "not_by_default",
       "default": "cyto3",
-      "description": "Cellpose pretrained model name (e.g. 'cyto3', 'nuclei').",
+      "description": "Pretrained model name.",
       "display_name": "Model",
       "group": null,
       "image_spec": null,
       "max": null,
       "min": null,
+      "nullable": false,
       "required": false,
       "step": null,
       "type": "str"
     }
   },
-  "name": "CellposeSAM",
+  "name": "SnapshotCellpose",
   "outputs": {
     "cell_count": {
       "default": null,
@@ -96,7 +72,11 @@
       "type": "int"
     },
     "mask": {
+      "connectable": "not_by_default",
       "default": "{input_image.stem}_mask{ext}",
+      "description": "Labeled segmentation mask.",
+      "display_name": "Mask",
+      "group": null,
       "image_spec": {
         "dtypes": [],
         "formats": [],
@@ -107,15 +87,20 @@
           "label"
         ]
       },
+      "max": null,
+      "min": null,
+      "step": null,
+      "template": "{input_image.stem}_mask{ext}",
       "type": "ImageFile"
     }
   },
-  "package": "bioimageflow_common_tools",
-  "package_version": "0.1.1",
+  "package": "test-snapshot-tools",
+  "package_version": "1.0.0",
+  "source_kind": "package",
   "tags": [
     "segmentation",
     "cellpose",
-    "deep learning"
+    "snapshot"
   ],
   "tool_type": "ProcessingTool"
 }
