@@ -55,6 +55,18 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py312"
 
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+include = ["src/bioimageflow_server"]
+exclude = ["src/bioimageflow_server/_external"]
+reportMissingTypeStubs = false
+
 [tool.uv.sources]
 bioimageflow-core = { path = "../bioimageflow/packages/bioimageflow-core", editable = true }
 bioimageflow = { path = "../bioimageflow/packages/bioimageflow", editable = true }
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.409",
+]

@@ -1,8 +1,6 @@
 """Entrypoint for `python -m bioimageflow_server`."""
 
 import argparse
-from pathlib import Path
-
 import uvicorn
 
 
@@ -21,18 +19,6 @@ _RELOAD_EXCLUDES = [
     "**/envs/*",
     "**/site-packages/*",
 ]
-
-
-def _reload_kwargs(enabled: bool) -> dict[str, object]:
-    if not enabled:
-        return {"reload": False}
-    package_dir = Path(__file__).resolve().parent
-    return {
-        "reload": True,
-        "reload_dirs": [str(package_dir)],
-        "reload_includes": ["*.py"],
-        "reload_excludes": _RELOAD_EXCLUDES,
-    }
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -65,13 +51,27 @@ def main(argv: list[str] | None = None) -> None:
         from bioimageflow_server.desktop import start_desktop
 
         start_desktop(host=args.host, port=args.port, dev=args.dev)
+    elif args.dev:
+        from pathlib import Path
+
+        package_dir = Path(__file__).resolve().parent
+        uvicorn.run(
+            "bioimageflow_server.app:create_app",
+            factory=True,
+            host=args.host,
+            port=args.port,
+            reload=True,
+            reload_dirs=[str(package_dir)],
+            reload_includes=["*.py"],
+            reload_excludes=_RELOAD_EXCLUDES,
+        )
     else:
         uvicorn.run(
             "bioimageflow_server.app:create_app",
             factory=True,
             host=args.host,
             port=args.port,
-            **_reload_kwargs(args.dev),
+            reload=False,
         )
 
 

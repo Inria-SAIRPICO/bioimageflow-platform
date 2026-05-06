@@ -24,7 +24,7 @@
                 "--host",
                 "127.0.0.1",
                 "--port",
-                "8000",
+                "8008",
                 "--reload",
                 "--reload-exclude",
                 ".pixi/*"
@@ -55,7 +55,7 @@
                 "--host",
                 "127.0.0.1",
                 "--port",
-                "8000",
+                "800",
                 "--reload"
             ],
             "cwd": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend",

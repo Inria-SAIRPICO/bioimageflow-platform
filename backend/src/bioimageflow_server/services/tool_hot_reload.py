@@ -19,15 +19,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from watchdog.events import (
     FileSystemEvent,
     PatternMatchingEventHandler,
 )
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 if TYPE_CHECKING:
     from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -66,7 +68,7 @@ class ToolHotReloadService:
         self._cm = connection_manager
         self._debounce_s = debounce_ms / 1000.0
         self._stop_timeout_s = stop_timeout_s
-        self._observer: Observer | None = None
+        self._observer: BaseObserver | None = None
         self._handler: PatternMatchingEventHandler | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -82,7 +84,7 @@ class ToolHotReloadService:
         # that was already mutated by the install path.
         self._suppressed = threading.Event()
         self._pending: set[tuple[str, str]] = set()
-        self._pre_suppress_snapshots: dict[tuple[str, str], dict[str, object]] = {}
+        self._pre_suppress_snapshots: dict[tuple[str, str], dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._stopped = False
 
@@ -227,7 +229,7 @@ class ToolHotReloadService:
     def _on_any_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
-        path = Path(event.src_path)
+        path = Path(os.fsdecode(event.src_path))
         if self._loop is None or self._stopped:
             return
         # Hop to the asyncio loop where the rest of the state lives.
@@ -283,13 +285,13 @@ class ToolHotReloadService:
         prior = self._registry.snapshot(*pair)
         asyncio.create_task(self._do_reload(pair, prior))
 
-    def _fire_with_prior(self, pair: tuple[str, str], prior: dict[str, object]) -> None:
+    def _fire_with_prior(self, pair: tuple[str, str], prior: dict[str, Any]) -> None:
         """Resume()'s scheduled fire — uses the pre-suppress snapshot."""
         if self._stopped:
             return
         asyncio.create_task(self._do_reload(pair, prior))
 
-    async def _do_reload(self, pair: tuple[str, str], prior: dict) -> None:
+    async def _do_reload(self, pair: tuple[str, str], prior: dict[str, Any]) -> None:
         """Run reload + diff + broadcast for a single ``(pkg, ver)`` pair."""
         pkg, ver = pair
         try:

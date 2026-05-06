@@ -28,6 +28,7 @@ from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import (
     GraphValidationError,
     NodeStatus,
+    NodeStatusValue,
     ValidationResult,
 )
 from bioimageflow_server.services.graph_translator import (
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 # Map library NodePlanStatus string values to the platform's status labels.
-_PLAN_STATUS_MAP: dict[str, tuple[str, bool]] = {
+_PLAN_STATUS_MAP: dict[str, tuple[NodeStatusValue, bool]] = {
     "cached": ("executed", True),
     "out_of_date": ("out_of_date", False),
     "unexecuted": ("unexecuted", False),

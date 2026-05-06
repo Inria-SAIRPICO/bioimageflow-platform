@@ -42,7 +42,7 @@ class MockProcessingTool(ProcessingTool):
     Inputs = ProcInputs
     Outputs = ProcOutputs
 
-    def process_row(self, arguments: Any) -> Any:
+    def process_row(self, arguments: Any, *, context: Any = None) -> Any:
         return {}
 
 
@@ -68,7 +68,7 @@ class DownstreamTool(ProcessingTool):
     Inputs = DownstreamInputs
     Outputs = DownstreamOutputs
 
-    def process_row(self, arguments: Any) -> Any:
+    def process_row(self, arguments: Any, *, context: Any = None) -> Any:
         return {}
 
 

@@ -81,7 +81,7 @@ def _ensure_sub_workflow_proxy_validation_compat() -> None:
         return
 
     if not hasattr(_ProxyTool, "Inputs"):
-        _ProxyTool.Inputs = IOModel
+        setattr(_ProxyTool, "Inputs", IOModel)
 
 
 def _schema_for_config(schema: dict[str, Any] | None, default: Any = None) -> dict[str, Any]:

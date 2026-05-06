@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from starlette.responses import FileResponse
 
@@ -79,7 +80,8 @@ async def get_node_data(
     if sort_by is not None:
         if sort_by not in df.columns:
             raise HTTPException(status_code=422, detail=f"Unknown sort column: '{sort_by}'")
-        sorted_positions = df[sort_by].reset_index(drop=True).sort_values(
+        sort_series = cast(pd.Series, df[sort_by])
+        sorted_positions = sort_series.reset_index(drop=True).sort_values(
             ascending=(sort_order == "asc"),
             kind="mergesort",
         ).index.tolist()

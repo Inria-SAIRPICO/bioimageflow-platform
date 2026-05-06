@@ -5,18 +5,21 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 
+NodeStatusValue = Literal[
+    "unexecuted",
+    "executed",
+    "out_of_date",
+    "disabled",
+    "running",
+    "failed",
+]
+
+
 class NodeStatus(BaseModel):
     """Status of a single node after validation or execution."""
 
     node_id: str
-    status: Literal[
-        "unexecuted",
-        "executed",
-        "out_of_date",
-        "disabled",
-        "running",
-        "failed",
-    ]
+    status: NodeStatusValue
     cached: bool
     error: str | None = None
     traceback: str | None = None
