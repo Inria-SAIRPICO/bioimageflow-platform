@@ -17,12 +17,14 @@ from httpx import ASGITransport
 from bioimageflow.paths import get_home
 
 from bioimageflow_server.app import create_app
-from bioimageflow_server.models.settings import _DEFAULT_MAX_UPLOAD_SIZE
+from bioimageflow_server.models.settings import Settings, _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.datasets import (
     get_datasets_root,
     get_max_upload_size,
 )
+from bioimageflow_server.routers.execution import get_storage_path as execution_get_storage_path
+from bioimageflow_server.routers.graph import get_storage_path as graph_get_storage_path
 from bioimageflow_server.routers.nodes import (
     get_result_store,
     get_thumbnail_manager,
@@ -319,7 +321,41 @@ def test_default_node_services_use_storage_path(tmp_path: Path):
 def test_default_node_services_fall_back_to_bif_data():
     app = create_app()
     result_store = app.dependency_overrides[get_result_store]()
-    assert result_store.storage_path == Path("./bif_data")
+    assert result_store.storage_path == Path("~/bioimageflow_data/").expanduser()
+
+
+def test_default_node_services_use_settings_output_data_folder(tmp_path: Path):
+    settings = Settings(
+        deployment_mode="desktop",
+        output_data_folder=str(tmp_path / "outputs"),
+    )
+    app = create_app(AppConfig(settings=settings))
+    result_store = app.dependency_overrides[get_result_store]()
+    graph_storage = app.dependency_overrides[graph_get_storage_path]()
+    execution_storage = app.dependency_overrides[execution_get_storage_path]()
+
+    assert result_store.storage_path == tmp_path / "outputs"
+    assert graph_storage == tmp_path / "outputs"
+    assert execution_storage == tmp_path / "outputs"
+
+
+async def test_default_node_services_prefer_loaded_settings_store(
+    tmp_path: Path,
+):
+    from bioimageflow_server.services.settings_store import SettingsStore
+
+    store = SettingsStore(path=tmp_path / "settings.json")
+    await store.load()
+    await store.patch({"output_data_folder": str(tmp_path / "store-outputs")})
+
+    app = create_app(AppConfig(settings_store=store))
+    result_store = app.dependency_overrides[get_result_store]()
+    graph_storage = app.dependency_overrides[graph_get_storage_path]()
+    execution_storage = app.dependency_overrides[execution_get_storage_path]()
+
+    assert result_store.storage_path == tmp_path / "store-outputs"
+    assert graph_storage == tmp_path / "store-outputs"
+    assert execution_storage == tmp_path / "store-outputs"
 
 
 # ---------------------------------------------------------------------------

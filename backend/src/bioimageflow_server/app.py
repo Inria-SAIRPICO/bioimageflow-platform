@@ -103,6 +103,7 @@ from bioimageflow_server.services.tool_environments import ToolEnvironmentServic
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
 from bioimageflow_server.ws import (
     ConnectionManager,
     attach_ws_log_handler,
@@ -141,13 +142,21 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     session_manager = SessionManager()
 
-    # Resolve Settings once: caller-supplied wins, otherwise build a minimal
-    # default. Used for both the ExecutionManager and the dev_mode dependency.
+    # Resolve Settings once: a loaded SettingsStore wins, then caller-supplied
+    # settings, then a minimal default. Used for the initial services graph;
+    # request-time settings still go through _live_settings().
     _deployment_mode = (
         config.deployment_mode if config.deployment_mode in ("desktop", "webapp") else "desktop"
     )
-    resolved_settings: Settings = config.settings or Settings(
-        deployment_mode=_deployment_mode,
+    settings_store = config.settings_store
+    try:
+        store_settings = settings_store.get() if settings_store is not None else None
+    except RuntimeError:
+        store_settings = None
+    resolved_settings: Settings = (
+        store_settings
+        or config.settings
+        or Settings(deployment_mode=_deployment_mode)
     )
 
     # Always provide a ConnectionManager in the default app. Production launch
@@ -155,23 +164,23 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # progress / node_state / execution_complete events.
     ws_manager = config.connection_manager or ConnectionManager()
     event_bus: Any = ws_manager
+    configured_storage_path = config.storage_path or Path(resolved_settings.output_data_folder)
+    resolved_storage_path = normalize_workflow_storage_path(configured_storage_path)
+    assert resolved_storage_path is not None
 
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
-        settings_provider = (
-            (lambda: config.settings_store.get()) if config.settings_store is not None else None
-        )
+        settings_provider = (lambda: settings_store.get()) if settings_store is not None else None
         execution_manager = ExecutionManager(
             event_bus=event_bus,
             tool_registry=registry,
             settings=resolved_settings,
-            storage_path=config.storage_path,
+            storage_path=resolved_storage_path,
             session_manager=session_manager,
             settings_provider=settings_provider,
         )
 
-    resolved_storage_path = config.storage_path or Path("./bif_data")
     result_store = config.result_store or ResultStoreService(
         storage_path=resolved_storage_path,
         tool_registry=registry,
@@ -409,11 +418,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
-    app.dependency_overrides[graph_get_storage_path] = lambda: config.storage_path
+    app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[graph_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
-    app.dependency_overrides[execution_get_storage_path] = lambda: config.storage_path
+    app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
     app.dependency_overrides[execution_get_workflow_store] = lambda: workflow_store

@@ -96,6 +96,22 @@ def test_get_storage_path_reads_metadata_directly(store: WorkflowStoreService) -
     assert store.get_storage_path("wf") == Path(info.storage_path)
 
 
+def test_create_workflow_anchors_relative_storage_path_once(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(
+        WorkflowCreate(name="wf", storage_path="relative-results")
+    )
+
+    expected = Path.cwd() / "relative-results"
+    assert info.storage_path == str(expected)
+    assert store.get_storage_path("wf") == expected
+
+    raw = json.loads((store.root_dir / "wf.json").read_text())
+    assert raw["metadata"]["storage_path"] == str(expected)
+    assert raw["workflow"]["config"]["storage_path"] == str(expected)
+
+
 def test_save_preserves_invalid_graph_losslessly(store: WorkflowStoreService) -> None:
     store.create_workflow(WorkflowCreate(name="wf"))
     graph = GraphState(
@@ -170,6 +186,16 @@ def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:
     assert duplicate.display_name == "Copy"
     assert store.get_workflow("copy").info.name == "copy"
 
+    duplicate_custom = store.patch_workflow(
+        updated.name,
+        WorkflowUpdate(
+            action="duplicate",
+            new_name="copy_custom",
+            storage_path="copy-relative-results",
+        ),
+    )
+    assert duplicate_custom.storage_path == str(Path.cwd() / "copy-relative-results")
+
 
 def test_display_name_update_renames_file_and_managed_storage(
     store: WorkflowStoreService,
@@ -236,6 +262,23 @@ def test_display_name_update_preserves_custom_storage_path(
 
     assert updated.name == "new_workflow"
     assert updated.storage_path == str(custom_storage)
+
+
+def test_update_workflow_anchors_relative_storage_path_once(
+    store: WorkflowStoreService,
+) -> None:
+    store.create_workflow(WorkflowCreate(name="wf"))
+
+    updated = store.patch_workflow(
+        "wf",
+        WorkflowUpdate(action="update", storage_path="updated-relative-results"),
+    )
+
+    expected = Path.cwd() / "updated-relative-results"
+    assert updated.storage_path == str(expected)
+    raw = json.loads((store.root_dir / "wf.json").read_text())
+    assert raw["metadata"]["storage_path"] == str(expected)
+    assert raw["workflow"]["config"]["storage_path"] == str(expected)
 
 
 def test_display_name_update_rejects_managed_target_collision_with_custom_storage(

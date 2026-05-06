@@ -91,6 +91,21 @@ def test_empty_graph(registry: ToolRegistryService) -> None:
     assert result.errors == []
     assert result.lib_dict["nodes"] == []
     assert result.lib_dict["edges"] == []
+    assert result.lib_dict["config"]["storage_path"] == str(Path.cwd() / "bif_data")
+
+
+def test_storage_path_is_serialized_as_absolute_runtime_path(
+    registry: ToolRegistryService,
+) -> None:
+    result = graph_state_to_lib_dict(
+        GraphState(nodes=[], edges=[]),
+        registry,
+        storage_path=Path("relative_outputs"),
+    )
+
+    assert result.lib_dict["config"]["storage_path"] == str(
+        Path.cwd() / "relative_outputs"
+    )
 
 
 def test_single_node_with_constants(registry: ToolRegistryService) -> None:

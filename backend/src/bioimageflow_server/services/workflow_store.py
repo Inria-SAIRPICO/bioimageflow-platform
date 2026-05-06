@@ -99,9 +99,18 @@ class WorkflowStoreService:
         *,
         storage_base_dir: Path | None = None,
     ) -> None:
-        self.root_dir = root_dir
+        self.root_dir = self._normalize_storage_path(root_dir)
         self.tool_registry = tool_registry
-        self.storage_base_dir = storage_base_dir or root_dir / "outputs"
+        self.storage_base_dir = self._normalize_storage_path(
+            storage_base_dir or self.root_dir / "outputs"
+        )
+
+    @staticmethod
+    def _normalize_storage_path(path: str | Path) -> Path:
+        candidate = Path(path).expanduser()
+        if candidate.is_absolute():
+            return candidate
+        return Path.cwd() / candidate
 
     def _validate_name(self, name: str) -> str:
         return WorkflowCreate(name=name).name
@@ -112,6 +121,9 @@ class WorkflowStoreService:
 
     def _managed_storage_path(self, name: str) -> Path:
         return self.storage_base_dir / self._validate_name(name)
+
+    def _storage_path_string(self, path: str | Path) -> str:
+        return str(self._normalize_storage_path(path))
 
     def _has_name_collision(self, name: str) -> bool:
         return self._path_for(name).exists() or self._managed_storage_path(name).exists()
@@ -188,7 +200,7 @@ class WorkflowStoreService:
             metadata = {}
         storage_path = metadata.get("storage_path")
         if isinstance(storage_path, str) and storage_path:
-            return Path(storage_path)
+            return self._normalize_storage_path(storage_path)
         return self._managed_storage_path(name)
 
     def _write_raw(self, name: str, raw: dict[str, Any]) -> None:
@@ -213,10 +225,13 @@ class WorkflowStoreService:
 
     def _empty_raw(self, data: WorkflowCreate) -> dict[str, Any]:
         graph = GraphState(nodes=[], edges=[])
+        storage_path = self._storage_path_string(
+            data.storage_path or self._managed_storage_path(data.name)
+        )
         metadata = {
             "display_name": data.display_name or data.name,
             "description": data.description,
-            "storage_path": data.storage_path or str(self._managed_storage_path(data.name)),
+            "storage_path": storage_path,
         }
         graph_section, workflow_section, gui_section, _ = graph_state_to_persisted_sections(
             graph,
@@ -446,8 +461,8 @@ class WorkflowStoreService:
                 duplicate_metadata["display_name"] = patch.display_name or new_name
                 if patch.description is not None:
                     duplicate_metadata["description"] = patch.description
-                duplicate_metadata["storage_path"] = patch.storage_path or str(
-                    self._managed_storage_path(new_name)
+                duplicate_metadata["storage_path"] = self._storage_path_string(
+                    patch.storage_path or self._managed_storage_path(new_name)
                 )
                 self._set_workflow_storage_path(
                     duplicate,
@@ -472,7 +487,7 @@ class WorkflowStoreService:
         if patch.description is not None:
             metadata["description"] = patch.description
         if patch.storage_path is not None:
-            metadata["storage_path"] = patch.storage_path
+            metadata["storage_path"] = self._storage_path_string(patch.storage_path)
         elif new_name != name and self._is_managed_storage_path(
             name,
             cast(str | None, metadata.get("storage_path")),

@@ -317,6 +317,8 @@ All API endpoints use a consistent error response format:
 
 **Workflow loading — missing package resolution:** When loading a workflow that requires tool packages or versions not in the tool store (based on the `tool_package` and `tool_package_version` fields in the serialized nodes), the server returns a `missing_packages` field in the response. The frontend shows a dialog: "This workflow requires packages not installed: [list with versions]. Install them?" with an "Install All" button.
 
+**Workflow storage path normalization:** The backend resolves workflow storage roots to absolute server-side paths before handing a graph to the BioImageFlow library. If a named workflow has stored metadata, that metadata path is used; otherwise the app's configured storage root is used. Relative workflow storage paths are interpreted once by the backend and must not reach tool execution as CWD-sensitive paths. This is required because ProcessingTool wrappers may run subprocesses with `cwd=context.work_dir` while passing framework-provided input/output paths directly to the subprocess.
+
 #### 2.4.3 Graph Schema and Validation
 
 ##### Graph JSON Schema (Pydantic Models)
@@ -645,7 +647,7 @@ This ensures that if the frontend misses the `execution_complete` WebSocket mess
 class Settings(BaseModel):
     external_editor: str | None = None              # e.g., "code {file_path}"
     napari_env_path: str | None = None              # Custom Napari Conda env path
-    output_data_folder: str                         # Workflow output storage path
+    output_data_folder: str                         # Workflow output storage path; backend expands and stores it as an absolute runtime path
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     execution_engine: Literal["sequential", "parsl"] = "sequential"
     cache_max_executions: int | None = None         # Max cached executions per node (None = unlimited)

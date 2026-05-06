@@ -126,6 +126,13 @@ def _deserialize_constant_envelope(value: Any) -> Any:
     return value
 
 
+def _absolute_runtime_path(path: Path | str) -> Path:
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return Path.cwd() / candidate
+
+
 def _extract_gui_section(graph: GraphState) -> dict[str, Any]:
     return {
         "nodes": {
@@ -1106,7 +1113,10 @@ def graph_state_to_lib_dict(
                 }
             )
 
-    storage_str = str(storage_path) if storage_path is not None else "./bif_data"
+    storage_root = _absolute_runtime_path(
+        storage_path if storage_path is not None else Path("./bif_data")
+    )
+    storage_str = str(storage_root)
 
     # Cache config: derived from Settings when supplied; otherwise the legacy
     # defaults so callers that don't yet thread Settings through (validators,
