@@ -532,3 +532,28 @@ def test_positional_edge_into_source_tool_produces_source_tool_upstream_error(
     source_errs = [e for e in result.errors if e.type == "source_tool_upstream"]
     assert len(source_errs) >= 1
     assert any(e.edge_id == "e_pos" for e in source_errs)
+
+
+def test_positional_edge_into_processing_tool_is_rejected(
+    registry: ToolRegistryService, session_manager: SessionManager,
+) -> None:
+    """Forged header edges cannot target ProcessingTool nodes."""
+    graph = GraphState(
+        nodes=[
+            NodeState(id="src", name="src", tool_name="MockProcessingTool",
+                      position=(0, 0), parameters={"input_image": "/tmp/x.tif"}),
+            NodeState(id="dst", name="dst", tool_name="CompatTool",
+                      position=(100, 0), parameters={}),
+        ],
+        edges=[
+            PositionalEdge(id="e_pos", source_node="src", target_node="dst",
+                           positional_index=0),
+        ],
+    )
+    result = validate_graph(graph, registry, session_manager)
+    positional_errs = [
+        e for e in result.errors
+        if e.type == "parameter_invalid" and e.edge_id == "e_pos"
+    ]
+    assert len(positional_errs) == 1
+    assert "cannot accept positional DataFrame inputs" in positional_errs[0].detail

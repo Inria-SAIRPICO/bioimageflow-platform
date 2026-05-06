@@ -3,9 +3,12 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-const backendPort = process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'
-const backendHttp = `http://127.0.0.1:${backendPort}`
-const backendWs = `ws://127.0.0.1:${backendPort}`
+const backendPort =
+  process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ??
+  process.env.BIOIMAGEFLOW_BACKEND_PORT ??
+  '8000'
+const backendHttpUrl = `http://127.0.0.1:${backendPort}`
+const backendWsUrl = `ws://127.0.0.1:${backendPort}`
 
 export default defineConfig({
   plugins: [vue()],
@@ -17,9 +20,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': backendHttp,
+      '/api': backendHttpUrl,
       '/ws': {
-        target: backendWs,
+        target: backendWsUrl,
         ws: true,
       },
     },

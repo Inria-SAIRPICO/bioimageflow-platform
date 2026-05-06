@@ -930,6 +930,32 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('reconciles output templates when registry outputs change', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+      vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
+
+      expect(mockNodes[0].data.output_templates).toEqual({ result: '' })
+
+      store.tools = [
+        makeTool({
+          package_version: '2.0.0',
+          outputs: {
+            reference_label: { type: 'int' },
+            spot_label: { type: 'int' },
+            overlap_count: { type: 'int' },
+          },
+        }),
+      ] as any
+      await nextTick()
+
+      expect(mockNodes[0].data.output_templates).toEqual({})
+      w.unmount()
+    })
+
     it('marks executed nodes as out_of_date after a version switch', async () => {
       const store = useToolRegistryStore()
       store.tools = [makeTool({ package_version: '1.0.0' })] as any

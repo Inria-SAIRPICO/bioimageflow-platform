@@ -67,6 +67,7 @@ class ToolMetadata(BaseModel):
     tool_type: Literal["ProcessingTool", "DataFrameTool"]
     accepts_upstream: bool = True
     dynamic_outputs: bool = False
+    dataframe_output: bool = True
     documentation: str = ""
     tags: list[str] = []
     categories: list[str] = []

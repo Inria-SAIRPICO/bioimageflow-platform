@@ -79,7 +79,7 @@ describe('ToolNode', () => {
 
   it('renders output pins for all outputs', () => {
     const w = factory()
-    const pins = w.findAllComponents({ name: 'OutputPin' })
+    const pins = w.find('.body-outputs').findAllComponents({ name: 'OutputPin' })
     expect(pins).toHaveLength(1)
     expect(pins[0].props('fieldName')).toBe('result')
   })
@@ -362,6 +362,25 @@ describe('ToolNode', () => {
     expect(positionalPins).toHaveLength(0)
   })
 
+  it('ProcessingTool renders a DataFrame header output pin', () => {
+    const tool = makeTool({
+      tool_type: 'ProcessingTool',
+      dataframe_output: true,
+      outputs: {
+        result: { type: 'ImageFile' },
+      },
+    })
+    const data = makeData({ tool, connectedInputs: {} })
+    const w = factory(data)
+
+    const headerOutputs = w.find('.header-outputs')
+    const headerOutPins = headerOutputs.findAllComponents({ name: 'OutputPin' })
+    expect(headerOutPins).toHaveLength(1)
+    expect(headerOutPins[0].props('fieldName')).toBe('__dataframe_out')
+    expect(headerOutPins[0].props('fieldType')).toBe('DataFrame')
+    expect(headerOutPins[0].props('variant')).toBe('header')
+  })
+
   // --- Phase 2: dynamic outputs ---
 
   it('dynamic_outputs=true with no resolved entry renders a placeholder pin', () => {
@@ -524,7 +543,7 @@ describe('ToolNode', () => {
       expect(headerOutputs.findAllComponents({ name: 'OutputPin' })).toHaveLength(1)
     })
 
-    it('ProcessingTool: no header pins, body has per-field input + per-output-field output pins', () => {
+    it('ProcessingTool: header has DataFrame-out only, body has per-field input + per-output-field output pins', () => {
       const tool = makeTool({
         tool_type: 'ProcessingTool',
         inputs: {
@@ -538,11 +557,13 @@ describe('ToolNode', () => {
       const data = makeData({ tool, connectedInputs: {} })
       const w = factory(data)
 
-      // No header input or output pins
+      // Header has no positional inputs and one DataFrame output.
       const headerInputs = w.find('.header-inputs')
       expect(headerInputs.findAllComponents({ name: 'InputPin' })).toHaveLength(0)
       const headerOutputs = w.find('.header-outputs')
-      expect(headerOutputs.findAllComponents({ name: 'OutputPin' })).toHaveLength(0)
+      const headerOutPins = headerOutputs.findAllComponents({ name: 'OutputPin' })
+      expect(headerOutPins).toHaveLength(1)
+      expect(headerOutPins[0].props('fieldName')).toBe('__dataframe_out')
 
       // Body has per-field input pins
       const bodyInputs = w.find('.body-inputs')

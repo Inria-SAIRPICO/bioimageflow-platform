@@ -1,4 +1,5 @@
 import type { GraphState, MissingTool, ToolMetadata } from '@/api/types'
+import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 
 export interface VueFlowGraph {
   nodes: any[]
@@ -82,7 +83,7 @@ export function graphStateToVueFlow(
       enabled: node.enabled ?? true,
       connectedInputs: connectedInputsByNode.get(node.id) ?? {},
       pinnedInputs,
-      output_templates: node.output_templates ?? {},
+      output_templates: reconcileOutputTemplates(tool, node.output_templates ?? {}),
     }
     const isSubWorkflow = hasSubWorkflowFields(node as any)
     if (isSubWorkflow) {

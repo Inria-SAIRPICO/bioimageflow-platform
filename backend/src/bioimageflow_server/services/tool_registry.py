@@ -187,6 +187,7 @@ class ToolRegistryService:
         tool_type = meta["tool_type"]
         accepts_upstream = meta["accepts_upstream"]
         dynamic_outputs = meta["dynamic_outputs"]
+        dataframe_output = bool(meta.get("dataframe_output", True))
 
         try:
             inputs_raw = serialize_input_schema(tool_cls)
@@ -222,6 +223,7 @@ class ToolRegistryService:
                 tool_type=tool_type,
                 accepts_upstream=accepts_upstream,
                 dynamic_outputs=dynamic_outputs,
+                dataframe_output=dataframe_output,
                 documentation=documentation.strip(),
                 tags=tags,
                 categories=categories,

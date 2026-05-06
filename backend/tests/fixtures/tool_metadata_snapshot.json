@@ -3,6 +3,7 @@
   "categories": [
     "segmentation"
   ],
+  "dataframe_output": true,
   "display_name": "Snapshot Cellpose",
   "documentation": "Cellpose-like local fixture for metadata serialization tests.",
   "dynamic_outputs": false,

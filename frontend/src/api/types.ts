@@ -1223,6 +1223,11 @@ export interface components {
              */
             dynamic_outputs: boolean;
             /**
+             * Dataframe Output
+             * @default true
+             */
+            dataframe_output?: boolean;
+            /**
              * Documentation
              * @default
              */
