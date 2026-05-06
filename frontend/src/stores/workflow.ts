@@ -167,7 +167,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     )
     const filename = filenameFromDisposition(
       response.headers?.['content-disposition'],
-      `${name}.bioimageflow.json`,
+      `${name}.bioimageflow.zip`,
     )
     downloadBlob(response.data, filename)
   }

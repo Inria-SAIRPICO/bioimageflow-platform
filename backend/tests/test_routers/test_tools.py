@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -127,11 +128,22 @@ async def test_get_tools_empty(empty_client: httpx.AsyncClient):
 
 async def test_get_tools_discovers_existing_custom_tools(workflow_root: Path):
     registry = ToolRegistryService()
-    custom_root = workflow_root / "tools"
+    workflow_dir = workflow_root / "existing"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "workflow.json").write_text(
+        json.dumps({
+            "graph": {"nodes": [], "edges": []},
+            "workflow": {"nodes": [], "edges": []},
+            "gui": {"nodes": {}},
+            "metadata": {"display_name": "Existing"},
+        }),
+        encoding="utf-8",
+    )
+    custom_root = workflow_dir / "tools"
     custom_root.mkdir(parents=True)
     from bioimageflow_server.services.custom_tools import CustomToolService
 
-    source = CustomToolService(workflow_root, registry).render_template(
+    source = CustomToolService(workflow_dir, registry).render_template(
         "ExistingTool",
         "ProcessingTool",
     )
@@ -216,6 +228,19 @@ def workflow_root(tmp_path: Path) -> Path:
     return tmp_path / "workflow"
 
 
+async def _create_workflow(client: httpx.AsyncClient, name: str = "wf") -> None:
+    resp = await client.post("/api/v1/workflows", json={"name": name})
+    assert resp.status_code == 201
+
+
+def _workflow_params(name: str = "wf") -> dict[str, str]:
+    return {"workflow_name": name}
+
+
+def _workflow_tools_dir(workflow_root: Path, name: str = "wf") -> Path:
+    return workflow_root / name / "tools"
+
+
 async def test_create_processing_tool(workflow_root: Path):
     registry = ToolRegistryService()
     config = AppConfig(
@@ -223,13 +248,15 @@ async def test_create_processing_tool(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "MySegmenter", "tool_type": "ProcessingTool"},
         )
         tools = await client.get("/api/v1/tools")
     assert resp.status_code == 201
-    generated = workflow_root / "tools" / "my_segmenter.py"
+    generated = _workflow_tools_dir(workflow_root) / "my_segmenter.py"
     assert generated.exists()
     content = generated.read_text()
     assert "class MySegmenter" in content
@@ -251,16 +278,34 @@ async def test_create_dataframe_tool(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "StatsTool", "tool_type": "DataFrameTool"},
         )
     assert resp.status_code == 201
-    generated = workflow_root / "tools" / "stats_tool.py"
+    generated = _workflow_tools_dir(workflow_root) / "stats_tool.py"
     assert generated.exists()
     content = generated.read_text()
     assert "class StatsTool" in content
     assert "transform" in content
+
+
+async def test_create_tool_requires_workflow_name(workflow_root: Path):
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        workflow_root=workflow_root,
+    )
+    async for client in _client(config):
+        await _create_workflow(client)
+        resp = await client.post(
+            "/api/v1/tools",
+            json={"name": "GlobalTool", "tool_type": "ProcessingTool"},
+        )
+
+    assert resp.status_code == 400
+    assert not (workflow_root / "tools").exists()
 
 
 async def test_create_tool_webapp_forbidden(workflow_root: Path):
@@ -270,8 +315,10 @@ async def test_create_tool_webapp_forbidden(workflow_root: Path):
         deployment_mode="webapp",
     )
     async for client in _client(config):
+        await _create_workflow(client)
         resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "Foo", "tool_type": "ProcessingTool"},
         )
     assert resp.status_code == 403
@@ -288,12 +335,14 @@ async def test_create_tool_webapp_allowed_by_unsafe_debug_flag(workflow_root: Pa
         ),
     )
     async for client in _client(config):
+        await _create_workflow(client)
         resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "Foo", "tool_type": "ProcessingTool"},
         )
     assert resp.status_code == 201
-    assert (workflow_root / "tools" / "foo.py").exists()
+    assert (_workflow_tools_dir(workflow_root) / "foo.py").exists()
 
 
 async def test_create_tool_duplicate(workflow_root: Path):
@@ -302,12 +351,15 @@ async def test_create_tool_duplicate(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "Dup", "tool_type": "ProcessingTool"},
         )
         resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "Dup", "tool_type": "ProcessingTool"},
         )
     assert resp.status_code == 409
@@ -318,8 +370,10 @@ async def test_create_tool_rejects_registry_conflict(workflow_root: Path):
     registry.register_tool("Cellpose", _make_tool("Cellpose"))
     config = AppConfig(tool_registry=registry, workflow_root=workflow_root)
     async for client in _client(config):
+        await _create_workflow(client)
         resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "Cellpose", "tool_type": "ProcessingTool"},
         )
     assert resp.status_code == 409
@@ -328,8 +382,10 @@ async def test_create_tool_rejects_registry_conflict(workflow_root: Path):
 async def test_create_tool_invalid_name_returns_422(workflow_root: Path):
     config = AppConfig(tool_registry=ToolRegistryService(), workflow_root=workflow_root)
     async for client in _client(config):
+        await _create_workflow(client)
         resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "../BadTool", "tool_type": "ProcessingTool"},
         )
     assert resp.status_code == 422
@@ -347,15 +403,17 @@ async def test_delete_tool_success(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "Trash", "tool_type": "ProcessingTool"},
         )
-        resp = await client.delete("/api/v1/tools/Trash")
+        resp = await client.delete("/api/v1/tools/Trash", params=_workflow_params())
     assert resp.status_code == 200
     assert resp.json()["deleted"] is True
     assert resp.json()["affected_workflows"] == []
-    assert not (workflow_root / "tools" / "trash.py").exists()
+    assert not (_workflow_tools_dir(workflow_root) / "trash.py").exists()
     assert registry.get_tool("Trash") is None
 
 
@@ -365,7 +423,8 @@ async def test_delete_tool_not_found(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
-        resp = await client.delete("/api/v1/tools/Ghost")
+        await _create_workflow(client)
+        resp = await client.delete("/api/v1/tools/Ghost", params=_workflow_params())
     assert resp.status_code == 404
 
 
@@ -374,7 +433,8 @@ async def test_delete_package_tool_forbidden(workflow_root: Path):
     registry.register_tool("Cellpose", _make_tool("Cellpose"))
     config = AppConfig(tool_registry=registry, workflow_root=workflow_root)
     async for client in _client(config):
-        resp = await client.delete("/api/v1/tools/Cellpose")
+        await _create_workflow(client)
+        resp = await client.delete("/api/v1/tools/Cellpose", params=_workflow_params())
     assert resp.status_code == 400
 
 
@@ -385,20 +445,23 @@ async def test_rename_tool_success(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "OldName", "tool_type": "ProcessingTool"},
         )
         resp = await client.patch(
             "/api/v1/tools/OldName",
+            params=_workflow_params(),
             json={"new_name": "NewName"},
         )
     assert resp.status_code == 200
     body = resp.json()
     assert body["old_name"] == "OldName"
     assert body["new_name"] == "NewName"
-    assert not (workflow_root / "tools" / "old_name.py").exists()
-    renamed = workflow_root / "tools" / "new_name.py"
+    assert not (_workflow_tools_dir(workflow_root) / "old_name.py").exists()
+    renamed = _workflow_tools_dir(workflow_root) / "new_name.py"
     assert renamed.exists()
     assert "class NewName(" in renamed.read_text()
     assert registry.get_tool("OldName") is None
@@ -411,8 +474,10 @@ async def test_rename_tool_not_found(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         resp = await client.patch(
             "/api/v1/tools/Ghost",
+            params=_workflow_params(),
             json={"new_name": "Whatever"},
         )
     assert resp.status_code == 404
@@ -424,16 +489,20 @@ async def test_rename_tool_target_conflict(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "OldName", "tool_type": "ProcessingTool"},
         )
         await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "NewName", "tool_type": "ProcessingTool"},
         )
         resp = await client.patch(
             "/api/v1/tools/OldName",
+            params=_workflow_params(),
             json={"new_name": "NewName"},
         )
     assert resp.status_code == 409
@@ -468,7 +537,7 @@ async def test_tool_usage_reports_saved_workflows(workflow_root: Path):
         workflow_store=store,
     )
     async for client in _client(config):
-        resp = await client.get("/api/v1/tools/MyTool/usage")
+        resp = await client.get("/api/v1/tools/MyTool/usage", params={"workflow_name": "uses_tool"})
     assert resp.status_code == 200
     assert resp.json() == {
         "tool_name": "MyTool",
@@ -486,8 +555,10 @@ async def test_delete_reports_saved_workflow_usage(workflow_root: Path):
         workflow_store=service_store,
     )
     async for client in _client(config):
+        service_store.create_workflow(WorkflowCreate(name="wf"))
         await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "UsedTool", "tool_type": "ProcessingTool"},
         )
         service_store.create_workflow(WorkflowCreate(name="uses_tool"))
@@ -508,7 +579,7 @@ async def test_delete_reports_saved_workflow_usage(workflow_root: Path):
                 )
             ),
         )
-        resp = await client.delete("/api/v1/tools/UsedTool")
+        resp = await client.delete("/api/v1/tools/UsedTool", params=_workflow_params())
     assert resp.status_code == 200
     assert resp.json()["affected_workflows"] == ["uses_tool"]
     assert "saved workflow" in resp.json()["warning"]
@@ -661,12 +732,14 @@ async def test_get_source_success(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         # create the tool first
         await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "MyTool", "tool_type": "ProcessingTool"},
         )
-        resp = await client.get("/api/v1/tools/MyTool/source")
+        resp = await client.get("/api/v1/tools/MyTool/source", params=_workflow_params())
     assert resp.status_code == 200
     assert "my_tool.py" in resp.json()["path"]
     assert resp.json()["source_kind"] == "custom"
@@ -695,7 +768,18 @@ async def test_get_source_prefers_workflow_custom_file(workflow_root: Path):
     class MyTool:
         pass
 
-    tools_dir = workflow_root / "tools"
+    workflow_dir = workflow_root / "wf"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "workflow.json").write_text(
+        json.dumps({
+            "graph": {"nodes": [], "edges": []},
+            "workflow": {"nodes": [], "edges": []},
+            "gui": {"nodes": {}},
+            "metadata": {"display_name": "WF"},
+        }),
+        encoding="utf-8",
+    )
+    tools_dir = workflow_dir / "tools"
     tools_dir.mkdir(parents=True)
     custom_path = tools_dir / "my_tool.py"
     custom_path.write_text("class MyTool: pass")
@@ -704,7 +788,7 @@ async def test_get_source_prefers_workflow_custom_file(workflow_root: Path):
     reg.register_tool("MyTool", _make_tool("MyTool"), tool_class=MyTool)
     config = AppConfig(tool_registry=reg, workflow_root=workflow_root)
     async for client in _client(config):
-        resp = await client.get("/api/v1/tools/MyTool/source")
+        resp = await client.get("/api/v1/tools/MyTool/source", params=_workflow_params())
 
     assert resp.status_code == 200
     assert resp.json()["path"] == str(custom_path)
@@ -723,17 +807,19 @@ async def test_get_source_returns_absolute_custom_path_for_relative_workflow_roo
         disable_hot_reload=True,
     )
     async for client in _client(config):
+        await _create_workflow(client)
         create_resp = await client.post(
             "/api/v1/tools",
+            params=_workflow_params(),
             json={"name": "MyTool", "tool_type": "ProcessingTool"},
         )
-        resp = await client.get("/api/v1/tools/MyTool/source")
+        resp = await client.get("/api/v1/tools/MyTool/source", params=_workflow_params())
 
     assert create_resp.status_code == 201
     assert resp.status_code == 200
     path = Path(resp.json()["path"])
     assert path.is_absolute()
-    assert path == tmp_path / "workflow" / "tools" / "my_tool.py"
+    assert path == tmp_path / "workflow" / "wf" / "tools" / "my_tool.py"
 
 
 async def test_get_source_for_package_tool_without_resolvable_source_404():
@@ -752,7 +838,8 @@ async def test_get_source_not_found(workflow_root: Path):
         workflow_root=workflow_root,
     )
     async for client in _client(config):
-        resp = await client.get("/api/v1/tools/Ghost/source")
+        await _create_workflow(client)
+        resp = await client.get("/api/v1/tools/Ghost/source", params=_workflow_params())
     assert resp.status_code == 404
 
 

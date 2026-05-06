@@ -135,6 +135,25 @@ describe('workflow store', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:workflow')
   })
 
+  it('falls back to a BioImageFlow zip archive filename when export has no server filename', async () => {
+    const blob = new Blob(['zip'], { type: 'application/zip' })
+    vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:workflow')
+    vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: blob,
+      headers: {},
+    })
+    const store = useWorkflowStore()
+
+    await store.exportWorkflow('wf')
+
+    expect(document.querySelector('a[download="wf.bioimageflow.zip"]')).toBeNull()
+    expect(click).toHaveBeenCalled()
+  })
+
   it('uploads import files as FormData and stores missing dependency data', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       data: {
@@ -158,8 +177,8 @@ describe('workflow store', () => {
       },
     })
     const store = useWorkflowStore()
-    const file = new File(['{}'], 'workflow.bioimageflow.json', {
-      type: 'application/json',
+    const file = new File(['zip'], 'workflow.bioimageflow.zip', {
+      type: 'application/zip',
     })
 
     const response = await store.importWorkflow(file, { nameOverride: 'imported' })
@@ -168,6 +187,8 @@ describe('workflow store', () => {
     const [url, body, config] = vi.mocked(api.post).mock.calls[0]
     expect(url).toBe('/api/v1/workflows/import')
     expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('file')).toBe(file)
+    expect((body as FormData).get('name_override')).toBe('imported')
     expect(config).toBeUndefined()
     expect(store.workflows.map((workflow) => workflow.name)).toEqual(['imported'])
     expect(store.missingPackages[0].package_name).toBe('pkg')

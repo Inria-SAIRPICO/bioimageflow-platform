@@ -191,9 +191,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         tool_registry=registry,
         storage_base_dir=resolved_storage_path / "workflows",
     )
-    custom_tools_root = workflow_root / "tools"
-    if custom_tools_root.exists():
-        registry.register_custom_tools_directory(custom_tools_root)
+    for workflow_info in workflow_store.list_workflows():
+        custom_tools_root = workflow_store.workflow_tools_dir(workflow_info.name)
+        if custom_tools_root.exists():
+            registry.register_custom_tools_directory(custom_tools_root)
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
         cache_dir=resolved_storage_path / ".thumbnails",
         env_path=resolved_settings.thumbnail_env_path,
@@ -281,10 +282,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         hot_reload_started = False
         if hot_reload is not None:
             try:
-                custom_tools_root.mkdir(parents=True, exist_ok=True)
-                registry.register_custom_tools_directory(custom_tools_root)
                 await hot_reload.start(tool_store_path)
-                hot_reload.add_watch_root(custom_tools_root)
+                hot_reload.add_watch_root(workflow_root)
                 hot_reload_started = True
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).warning(

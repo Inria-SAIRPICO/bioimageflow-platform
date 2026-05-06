@@ -13,6 +13,7 @@ export const useUIStore = defineStore('ui', () => {
 
   const panels = reactive({
     tools: true,
+    workflows: true,
     nodePanel: true,
     dataTable: true,
     logger: true,

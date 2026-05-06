@@ -1185,17 +1185,57 @@ Displays real-time logs streamed via WebSocket.
 - **Log entries include:** timestamp, level, node name (if applicable), message
 - **Color coding:** DEBUG=gray, INFO=default, WARNING=yellow, ERROR=red
 
-### 3.8 Workflow Panel (Menu / Toolbar)
+### 3.8 Workflows Panel
 
-Accessed via the menu bar or a dedicated toolbar area.
+The application has a persistent **Workflows** panel, analogous to the Tools
+panel. The workflow menu may expose the same commands, but the panel is the
+primary browsing and management surface.
+
+**Workflow storage layout:**
+
+Each saved workflow is stored as one workflow directory under the configured
+workflow root:
+
+```text
+workflows/
+  my_workflow/
+    workflow.json
+    tools/
+```
+
+`workflow.json` stores the platform document for the workflow, including the
+library workflow payload, GUI state, and metadata. `tools/` stores workflow-local
+custom tools for that workflow only. The workflow directory itself is not a
+Python package and must not contain a root `__init__.py`; only the `tools/`
+directory follows the import/export structure required by the BioImageFlow
+library.
+
+Existing legacy files at `workflows/{name}.json` are supported for migration:
+when opened or saved, the platform moves them to `workflows/{name}/workflow.json`.
+
+**Panel layout:**
+
+- **Toolbar:** New, Save, Duplicate, Import, Export, Delete.
+- **Search:** Filters by workflow display name and name.
+- **Workflow list:** Each row shows the workflow display name and last modified
+  time. Rows do not show filesystem/API names or descriptions by default.
+- **Selected workflow details:** Shows the selected workflow's description,
+  filesystem/API name, storage path, and action state. The description appears
+  here, not in every list row.
+
+Clicking a workflow row selects it. Double-clicking, pressing Enter on a
+selected workflow, or using the Open action opens it, subject to the unsaved
+changes prompt.
 
 **Actions:**
 - **New workflow:** Opens a creation dialog with fields: display name (free-form), name (auto-generated from display name, editable, restricted to `[a-zA-Z0-9_-]`), description (optional, multiline), and storage path. On name conflict, the server suggests an alternative.
-- **Open workflow:** Shows list of saved workflows (display name, description, last modified). Opening a new workflow closes the current one (with save prompt).
+- **Open workflow:** Opens the selected saved workflow. Opening a new workflow closes the current one (with save prompt).
 - **Edit workflow:** Each workflow in the list has an **Edit** button that opens an "Edit workflow" dialog to modify the display name, description, and storage path. The `name` (filesystem identifier) cannot be changed after creation.
 - **Save:** Saves current workflow state including GUI state (Ctrl+S). The full graph JSON (with positions, collapsed state, etc.) is sent to `PUT /workflows/{name}`. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
 - **Save as / Duplicate:** Save under a new name
-- **Delete:** Delete with confirmation. Deletes the workflow file, all cached output data in the storage directory, and clears the auto-saved IndexedDB state for this workflow.
+- **Import / Export:** Uses the BioImageFlow library import/export API. The
+  platform does not reimplement the library archive format.
+- **Delete:** Delete with confirmation. Deletes the workflow directory, all cached output data in the storage directory, and clears the auto-saved IndexedDB state for this workflow.
 
 ### 3.9 Execution Panel (Menu / Toolbar)
 

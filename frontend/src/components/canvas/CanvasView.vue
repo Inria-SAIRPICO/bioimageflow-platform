@@ -34,6 +34,7 @@ import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
 import type { GraphState, MissingTool, NodeState } from '@/api/types'
+import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
@@ -957,6 +958,16 @@ function hasPath(from: string, to: string): boolean {
 function onDrop(event: DragEvent) {
   event.preventDefault()
   if (isLocked.value) return
+  const workflowName = event.dataTransfer?.getData('application/bioimageflow-workflow')
+  if (workflowName) {
+    const rect = (canvasRef.value as HTMLElement).getBoundingClientRect()
+    const position = project({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    })
+    void onAddWorkflowNode({ workflowName, position })
+    return
+  }
   const toolName = event.dataTransfer?.getData('application/bioimageflow-tool')
   if (!toolName) return
 
@@ -1035,6 +1046,56 @@ function onAddNode({
 
   addNodes([newNode])
   emitGraphChanged()
+}
+
+async function onAddWorkflowNode({
+  workflowName,
+  position,
+}: {
+  workflowName: string
+  position?: { x: number; y: number }
+}) {
+  if (isLocked.value) return
+  try {
+    const { data } = await api.get(`/api/v1/workflows/${workflowName}`)
+    const graph = data.graph as GraphState
+    const info = data.info as { display_name?: string; name?: string }
+    const existingIds = getNodes.value.map((n: any) => n.id)
+    const existingNames = getNodes.value.map((n: any) => n.data?.name ?? '')
+    const id = generateNodeId('__sub_workflow__', existingIds)
+    const name = generateNodeName(
+      info.display_name ?? workflowName,
+      existingNames,
+      info.display_name ?? workflowName,
+    )
+    addNodes([{
+      id,
+      type: 'sub_workflow',
+      position: position ?? { x: 0, y: 0 },
+      data: {
+        name,
+        toolName: '__sub_workflow__',
+        tool: null,
+        status: 'unexecuted',
+        parameters: {},
+        collapsed: false,
+        enabled: true,
+        connectedInputs: {},
+        pinnedInputs: {},
+        output_templates: {},
+        sub_workflow: graph,
+        source_workflow_name: workflowName,
+      },
+    }])
+    emitGraphChanged()
+  } catch (e: unknown) {
+    clipboardToast?.add({
+      severity: 'error',
+      summary: 'Open workflow failed',
+      detail: e instanceof Error ? e.message : String(e),
+      life: 5000,
+    })
+  }
 }
 
 // --- Selection + Keyboard ---
@@ -1549,6 +1610,7 @@ function emitGraphChanged() {
 // Expose for testing
 defineExpose({
   onAddNode,
+  onAddWorkflowNode,
   deleteSelected,
   copySelected,
   pasteFromClipboard,

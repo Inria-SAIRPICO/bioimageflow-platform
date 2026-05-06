@@ -64,6 +64,11 @@ const pendingImportFile = ref<File | null>(null)
 const dependencyDialogVisible = ref(false)
 const pendingDiscardAction = ref<(() => void | Promise<void>) | null>(null)
 
+type WorkflowPanelCommand = {
+  action?: 'new' | 'save' | 'duplicate' | 'import' | 'export' | 'delete' | 'open'
+  name?: string
+}
+
 function panelToggle(label: string, panelKey: keyof typeof uiStore.panels): MenuItem {
   return {
     label,
@@ -314,6 +319,55 @@ function saveWorkflowAs(): void {
   workflowDialogVisible.value = true
 }
 
+async function duplicateWorkflowByName(name: string): Promise<void> {
+  const source = workflowStore.workflows.find((workflow) => workflow.name === name)
+  const displayName = `${source?.display_name ?? name} copy`
+  try {
+    const info = await workflowStore.patchWorkflow(name, {
+      action: 'duplicate',
+      new_name: `${name}_copy`,
+      display_name: displayName,
+      description: source?.description ?? null,
+    })
+    const graph = await workflowStore.loadWorkflow(info.name)
+    applyGraph(graph)
+  } catch (err: unknown) {
+    showError('Duplicate workflow failed', err)
+  }
+}
+
+async function exportWorkflowByName(name: string): Promise<void> {
+  try {
+    await workflowStore.exportWorkflow(name)
+  } catch (err: unknown) {
+    showError('Export workflow failed', err)
+  }
+}
+
+async function deleteWorkflowByName(name: string): Promise<void> {
+  const workflow = workflowStore.workflows.find((item) => item.name === name)
+  const label = workflow?.display_name ?? name
+  if (!window.confirm(`Delete workflow '${label}'?`)) return
+  const wasCurrent = workflowStore.currentName === name
+  try {
+    await workflowStore.deleteWorkflow(name)
+    if (wasCurrent) {
+      const graph = { nodes: [], edges: [] }
+      const names = new Set(workflowStore.workflows.map((item) => item.name))
+      let nextName = 'Untitled'
+      let suffix = 2
+      while (names.has(nextName)) {
+        nextName = `Untitled_${suffix}`
+        suffix += 1
+      }
+      await workflowStore.createWorkflow({ name: nextName, display_name: nextName })
+      applyGraph(graph)
+    }
+  } catch (err: unknown) {
+    showError('Delete workflow failed', err)
+  }
+}
+
 function deleteWorkflow(): void {
   const name = workflowStore.currentName
   if (!name) return
@@ -393,14 +447,37 @@ function onBeforeUnload(): void {
   void autoSave.flushAutoSave()
 }
 
+function onWorkflowPanelCommand(event: Event): void {
+  const detail = (event as CustomEvent<WorkflowPanelCommand>).detail
+  const action = detail?.action
+  if (!action) return
+  if (action === 'new') {
+    createNewWorkflow()
+  } else if (action === 'save') {
+    void saveWorkflow()
+  } else if (action === 'import') {
+    chooseImportFile()
+  } else if (action === 'open' && detail.name) {
+    runAfterDiscard(() => onOpenWorkflow(detail.name as string))
+  } else if (action === 'duplicate' && detail.name) {
+    void duplicateWorkflowByName(detail.name)
+  } else if (action === 'export' && detail.name) {
+    void exportWorkflowByName(detail.name)
+  } else if (action === 'delete' && detail.name) {
+    void deleteWorkflowByName(detail.name)
+  }
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('beforeunload', onBeforeUnload)
+  window.addEventListener('bioimageflow:workflow-command', onWorkflowPanelCommand)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('beforeunload', onBeforeUnload)
+  window.removeEventListener('bioimageflow:workflow-command', onWorkflowPanelCommand)
 })
 
 const menuItems = computed<MenuItem[]>(() => [
@@ -463,6 +540,7 @@ const menuItems = computed<MenuItem[]>(() => [
     label: 'View',
     items: [
       panelToggle('Tools Panel', 'tools'),
+      panelToggle('Workflows Panel', 'workflows'),
       panelToggle('Nodes', 'nodePanel'),
       panelToggle('Data Table', 'dataTable'),
       panelToggle('Logger', 'logger'),
@@ -518,7 +596,7 @@ defineExpose({
   <input
     ref="importFileInput"
     type="file"
-    accept=".bioimageflow.json,application/json"
+    accept=".bioimageflow.zip,.zip,.bioimageflow.json,application/json"
     hidden
     data-testid="workflow-import-input"
     @change="onImportFileSelected"

@@ -62,6 +62,18 @@ def get_tool_environment_service() -> Any:  # pragma: no cover
     return None
 
 
+def _custom_tool_service(
+    *,
+    workflow_name: str | None,
+    workflow_root: Path | None,
+    registry: ToolRegistryService,
+    workflow_store: WorkflowStoreService | None,
+) -> CustomToolService | None:
+    if workflow_name and workflow_store is not None:
+        return CustomToolService(workflow_store.workflow_dir(workflow_name), registry)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # GET endpoints
 # ---------------------------------------------------------------------------
@@ -100,11 +112,19 @@ async def refresh_packages(
 @router.get("/{tool_name}/source", response_model=ToolSourceResponse)
 async def get_tool_source(
     tool_name: str,
+    workflow_name: str | None = None,
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_root: Path | None = Depends(get_workflow_root),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ToolSourceResponse:
-    if workflow_root is not None:
-        custom_source = workflow_root / "tools" / f"{name_to_snake(tool_name)}.py"
+    service = _custom_tool_service(
+        workflow_name=workflow_name,
+        workflow_root=workflow_root,
+        registry=registry,
+        workflow_store=workflow_store,
+    )
+    if service is not None:
+        custom_source = service.root / f"{name_to_snake(tool_name)}.py"
         if custom_source.exists():
             return ToolSourceResponse(
                 tool_name=tool_name,
@@ -138,17 +158,23 @@ async def get_tool_source(
 @router.post("", status_code=201)
 async def create_tool(
     body: ToolCreate,
+    workflow_name: str | None = None,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
     unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
     registry: ToolRegistryService = Depends(get_tool_registry),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ToolCreateResponse:
     if mode == "webapp" and not unsafe_webapp_features_enabled:
         raise HTTPException(status_code=403, detail="Tool creation disabled in webapp mode")
-    if workflow_root is None:
+    service = _custom_tool_service(
+        workflow_name=workflow_name,
+        workflow_root=workflow_root,
+        registry=registry,
+        workflow_store=workflow_store,
+    )
+    if service is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
-
-    service = CustomToolService(workflow_root, registry)
     try:
         path = service.create(body.name, body.tool_type)
     except FileExistsError as exc:
@@ -161,13 +187,19 @@ async def create_tool(
 @router.get("/{tool_name}/usage")
 async def get_tool_usage(
     tool_name: str,
+    workflow_name: str | None = None,
     workflow_root: Path | None = Depends(get_workflow_root),
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ToolUsageResponse:
-    if workflow_root is None:
+    service = _custom_tool_service(
+        workflow_name=workflow_name,
+        workflow_root=workflow_root,
+        registry=registry,
+        workflow_store=workflow_store,
+    )
+    if service is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
-    service = CustomToolService(workflow_root, registry)
     return ToolUsageResponse(
         tool_name=tool_name,
         affected_workflows=service.usage(tool_name, workflow_store),
@@ -178,17 +210,23 @@ async def get_tool_usage(
 async def rename_tool(
     tool_name: str,
     body: ToolRename,
+    workflow_name: str | None = None,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
     unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
     registry: ToolRegistryService = Depends(get_tool_registry),
+    workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ToolRenameResponse:
     if mode == "webapp" and not unsafe_webapp_features_enabled:
         raise HTTPException(status_code=403, detail="Tool renaming disabled in webapp mode")
-    if workflow_root is None:
+    service = _custom_tool_service(
+        workflow_name=workflow_name,
+        workflow_root=workflow_root,
+        registry=registry,
+        workflow_store=workflow_store,
+    )
+    if service is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
-
-    service = CustomToolService(workflow_root, registry)
     try:
         path = service.rename(tool_name, body.new_name)
     except FileNotFoundError as exc:
@@ -207,6 +245,7 @@ async def rename_tool(
 @router.delete("/{tool_name}", status_code=200)
 async def delete_tool(
     tool_name: str,
+    workflow_name: str | None = None,
     workflow_root: Path | None = Depends(get_workflow_root),
     mode: str = Depends(get_deployment_mode),
     unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
@@ -215,10 +254,14 @@ async def delete_tool(
 ) -> ToolDeleteResponse:
     if mode == "webapp" and not unsafe_webapp_features_enabled:
         raise HTTPException(status_code=403, detail="Tool deletion disabled in webapp mode")
-    if workflow_root is None:
+    service = _custom_tool_service(
+        workflow_name=workflow_name,
+        workflow_root=workflow_root,
+        registry=registry,
+        workflow_store=workflow_store,
+    )
+    if service is None:
         raise HTTPException(status_code=400, detail="No workflow root configured")
-
-    service = CustomToolService(workflow_root, registry)
     affected = service.usage(tool_name, workflow_store)
     try:
         service.delete(tool_name)

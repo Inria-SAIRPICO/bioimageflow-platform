@@ -110,6 +110,7 @@ function mountApp() {
       plugins: [pinia, [PrimeVue, { theme: { preset: Aura } }], ConfirmationService],
       stubs: {
         ToolsPanel: { template: '<div data-testid="panel-tools">Tools stub</div>' },
+        WorkflowsPanel: { template: '<div data-testid="panel-workflows">Workflows stub</div>' },
         CanvasView: { template: '<div data-testid="panel-canvas">Canvas stub</div>' },
       },
     },
@@ -149,10 +150,11 @@ describe('AppShell', () => {
   it('registers the default panels on ready', async () => {
     const wrapper = mountApp()
     await flushPromises()
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(5)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
 
     const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
     expect(panelIds).toContain('tools')
+    expect(panelIds).toContain('workflows')
     expect(panelIds).toContain('canvas')
     expect(panelIds).toContain('nodePanel')
     expect(panelIds).toContain('dataTable')
@@ -189,6 +191,20 @@ describe('AppShell', () => {
     expect(toolsCall![0].initialWidth).toBe(320)
   })
 
+  it('workflows panel docks with the tools panel', async () => {
+    mountApp()
+    await flushPromises()
+    const workflowsCall = mockDockviewApi.addPanel.mock.calls.find(
+      (call: any) => call[0].id === 'workflows',
+    )
+    expect(workflowsCall).toBeDefined()
+    expect(workflowsCall![0]).toMatchObject({
+      component: 'workflows',
+      title: 'Workflows',
+      position: { referencePanel: 'tools', direction: 'within' },
+    })
+  })
+
   it('nodePanel has initialWidth of 320', async () => {
     mountApp()
     await flushPromises()
@@ -223,9 +239,9 @@ describe('AppShell', () => {
     store.togglePanel('tools') // show again
     await flushPromises()
 
-    // addPanel called 5 times initially + 1 re-add = 6
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
-    const lastCall = mockDockviewApi.addPanel.mock.calls[5][0]
+    // addPanel called 6 times initially + 1 re-add = 7
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    const lastCall = mockDockviewApi.addPanel.mock.calls[6][0]
     expect(lastCall.id).toBe('tools')
     expect(lastCall.initialWidth).toBe(320)
   })
@@ -236,7 +252,9 @@ describe('AppShell', () => {
 
     const store = useUIStore()
     expect(store.panels.tools).toBe(true)
+    expect(store.panels.workflows).toBe(true)
     expect(getViewMenuItem(wrapper, 'Tools Panel').icon).toBe('pi pi-check')
+    expect(getViewMenuItem(wrapper, 'Workflows Panel').icon).toBe('pi pi-check')
 
     emitDockviewPanelRemoved(panels.get('tools'))
     await flushPromises()
@@ -248,8 +266,34 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(store.panels.tools).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
-    expect(mockDockviewApi.addPanel.mock.calls[5][0].id).toBe('tools')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('tools')
+  })
+
+  it('syncs the Workflows panel with the View menu', async () => {
+    const wrapper = mountApp()
+    await flushPromises()
+
+    const store = useUIStore()
+    const workflowsPanel = panels.get('workflows')
+    getViewMenuItem(wrapper, 'Workflows Panel').command()
+    await flushPromises()
+
+    expect(store.panels.workflows).toBe(false)
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(workflowsPanel)
+
+    getViewMenuItem(wrapper, 'Workflows Panel').command()
+    await flushPromises()
+
+    expect(store.panels.workflows).toBe(true)
+    const lastCall = mockDockviewApi.addPanel.mock.calls[
+      mockDockviewApi.addPanel.mock.calls.length - 1
+    ][0]
+    expect(lastCall).toMatchObject({
+      id: 'workflows',
+      component: 'workflows',
+      title: 'Workflows',
+    })
   })
 
   it('canvas panel is not toggleable', () => {
@@ -267,8 +311,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344')
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
-    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[5][0]
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[6][0]
     expect(codeEditorCall.id).toBe('codeEditor')
     expect(codeEditorCall.initialWidth).toBe(520)
     expect(codeEditorCall.position).toEqual({
@@ -290,8 +334,8 @@ describe('AppShell', () => {
     const store = useUIStore()
     expect(store.codeEditorPath).toBe('/tmp/tool.py')
     expect(store.codeEditorOpening).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
-    expect(mockDockviewApi.addPanel.mock.calls[5][0].id).toBe('codeEditor')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('codeEditor')
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
 
     window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished'))

@@ -28,16 +28,37 @@ class _ExecutionManager:
         self.is_running = is_running
 
 
+class _FakeArchiveAdapter:
+    def __init__(self, library: dict | None = None) -> None:
+        self.library = library or {"nodes": [], "edges": []}
+        self.export_calls: list[tuple[Path, Path]] = []
+        self.import_payload: bytes | None = None
+        self.extract_to: Path | None = None
+
+    def export_archive(self, workflow_path: Path, archive_path: Path) -> None:
+        self.export_calls.append((workflow_path, archive_path))
+        archive_path.write_bytes(b"fake zip")
+
+    def read_archive(self, archive_path: Path, *, extract_to: Path | None = None) -> dict:
+        self.import_payload = archive_path.read_bytes()
+        self.extract_to = extract_to
+        if extract_to is not None:
+            extract_to.mkdir(parents=True, exist_ok=True)
+        return self.library
+
+
 async def _client(
     tmp_path: Path,
     *,
     is_running: bool = False,
+    archive_adapter: _FakeArchiveAdapter | None = None,
 ) -> AsyncIterator[httpx.AsyncClient]:
     registry = ToolRegistryService()
     store = WorkflowStoreService(
         root_dir=tmp_path / "workflows",
         tool_registry=registry,
         storage_base_dir=tmp_path / "outputs",
+        archive_adapter=archive_adapter,
     )
     app = create_app(
         AppConfig(
@@ -107,25 +128,24 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert deleted.json() == {"deleted": True}
 
 
-async def test_export_workflow_download_response(client: httpx.AsyncClient) -> None:
-    assert (
-        await client.post(
-            "/api/v1/workflows",
-            json={"name": "wf", "display_name": "Workflow"},
-        )
-    ).status_code == 201
+async def test_export_workflow_download_response(tmp_path: Path) -> None:
+    archive_adapter = _FakeArchiveAdapter()
+    async for client in _client(tmp_path, archive_adapter=archive_adapter):
+        assert (
+            await client.post(
+                "/api/v1/workflows",
+                json={"name": "wf", "display_name": "Workflow"},
+            )
+        ).status_code == 201
 
-    response = await client.post("/api/v1/workflows/wf/export")
+        response = await client.post("/api/v1/workflows/wf/export")
 
+    assert archive_adapter.export_calls[0][0] == tmp_path / "workflows" / "wf" / "workflow.json"
+    assert archive_adapter.export_calls[0][1].name == "wf.bioimageflow.zip"
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/json")
-    assert response.headers["content-disposition"] == 'attachment; filename="wf.bioimageflow.json"'
-    body = response.json()
-    assert body["bioimageflow_export"] is True
-    assert body["export_version"] == "1.0"
-    assert body["workflow"]["name"] == "wf"
-    assert body["workflow"]["graph"] == {"nodes": [], "edges": []}
-    assert body["workflow"]["library"]["nodes"] == []
+    assert response.headers["content-type"].startswith("application/zip")
+    assert response.headers["content-disposition"] == 'attachment; filename="wf.bioimageflow.zip"'
+    assert response.content == b"fake zip"
 
 
 async def test_export_unknown_workflow_returns_404(
@@ -134,6 +154,39 @@ async def test_export_unknown_workflow_returns_404(
     response = await client.post("/api/v1/workflows/missing/export")
 
     assert response.status_code == 404
+
+
+async def test_import_workflow_zip_upload_success(tmp_path: Path) -> None:
+    archive_adapter = _FakeArchiveAdapter(
+        library={
+            "nodes": [
+                {
+                    "name": "n1",
+                    "display_name": "Node",
+                    "tool_class": "ExistingTool",
+                    "constants": {"threshold": 3},
+                }
+            ],
+            "edges": [],
+        }
+    )
+    async for client in _client(tmp_path, archive_adapter=archive_adapter):
+        response = await client.post(
+            "/api/v1/workflows/import",
+            files={
+                "file": (
+                    "imported.bioimageflow.zip",
+                    b"fake zip",
+                    "application/zip",
+                )
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["info"]["name"] == "imported"
+    assert archive_adapter.import_payload == b"fake zip"
+    assert archive_adapter.extract_to == tmp_path / "workflows" / "imported"
 
 
 async def test_import_workflow_upload_success(client: httpx.AsyncClient) -> None:

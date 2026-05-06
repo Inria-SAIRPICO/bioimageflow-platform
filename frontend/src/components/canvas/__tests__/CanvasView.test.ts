@@ -901,6 +901,45 @@ describe('CanvasView', () => {
       expect(mockNodes.length).toBe(0)
       w.unmount()
     })
+
+    it('workflow drop creates a sub-workflow node from the saved workflow graph', async () => {
+      const graph = {
+        nodes: [{
+          id: 'inner_1',
+          name: 'Inner 1',
+          tool_name: 'gaussian_blur',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      mockSavedWorkflow(graph, 'analysis')
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      await vm.onAddWorkflowNode({
+        workflowName: 'analysis',
+        position: { x: 125, y: 225 },
+      })
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/analysis')
+      expect(mockNodes).toHaveLength(1)
+      expect(mockNodes[0]).toMatchObject({
+        type: 'sub_workflow',
+        position: { x: 125, y: 225 },
+        data: {
+          toolName: '__sub_workflow__',
+          sub_workflow: graph,
+          source_workflow_name: 'analysis',
+        },
+      })
+      expect(w.emitted('graph-changed')).toBeTruthy()
+      w.unmount()
+    })
   })
 
   // --- Workflow-wide version switch refresh ---

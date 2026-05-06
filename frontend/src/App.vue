@@ -1,6 +1,7 @@
 <script lang="ts">
 import { defineComponent } from 'vue'
 import ToolsPanel from './components/panels/ToolsPanel.vue'
+import WorkflowsPanel from './components/panels/WorkflowsPanel.vue'
 import CanvasView from './components/canvas/CanvasView.vue'
 import NodePanel from './components/panels/NodePanel.vue'
 import SettingsPanel from './components/panels/SettingsPanel.vue'
@@ -12,6 +13,7 @@ import SubWorkflowEditorPanel from './components/panels/SubWorkflowEditorPanel.v
 export default defineComponent({
   components: {
     tools: ToolsPanel,
+    workflows: WorkflowsPanel,
     canvasView: CanvasView,
     nodePanel: NodePanel,
     logger: LoggerPanel,
@@ -137,7 +139,7 @@ const confirmedSubWorkflowPanelCloses = new Set<string>()
 
 // --- Dockview setup ---
 
-const panelKeys = ['tools', 'nodePanel', 'dataTable', 'logger', 'codeEditor'] as const
+const panelKeys = ['tools', 'workflows', 'nodePanel', 'dataTable', 'logger', 'codeEditor'] as const
 type DockPanelKey = typeof panelKeys[number]
 
 function isDockPanelKey(id: string): id is DockPanelKey {
@@ -201,6 +203,13 @@ function onDockviewReady(event: DockviewReadyEvent) {
     title: 'Tools',
     initialWidth: 320,
     position: { referencePanel: 'canvas', direction: 'left' },
+  })
+
+  api.addPanel({
+    id: 'workflows',
+    component: 'workflows',
+    title: 'Workflows',
+    position: { referencePanel: 'tools', direction: 'within' },
   })
 
   api.addPanel({
@@ -327,6 +336,13 @@ function getPanelAddOptions(key: string) {
   switch (key) {
     case 'tools':
       return { id: 'tools', component: 'tools', title: 'Tools', initialWidth: 320, position: { direction: 'left' as const } }
+    case 'workflows': {
+      const toolsPanel = dockviewApi.value?.getPanel('tools')
+      if (toolsPanel) {
+        return { id: 'workflows', component: 'workflows', title: 'Workflows', position: { referencePanel: 'tools' as const, direction: 'within' as const } }
+      }
+      return { id: 'workflows', component: 'workflows', title: 'Workflows', initialWidth: 320, position: { direction: 'left' as const } }
+    }
     case 'nodePanel':
       return { id: 'nodePanel', component: 'nodePanel', title: 'Nodes', initialWidth: 320, position: { direction: 'right' as const } }
     case 'dataTable':

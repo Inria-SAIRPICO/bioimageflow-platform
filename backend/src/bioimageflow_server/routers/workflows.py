@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from bioimageflow_server.models.workflow import (
@@ -17,6 +17,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowUpdate,
 )
 from bioimageflow_server.services.workflow_store import (
+    WorkflowArchiveError,
     WorkflowImportParseError,
     WorkflowImportValidationError,
     WorkflowStoreService,
@@ -83,14 +84,16 @@ async def get_workflow(
 async def export_workflow(
     name: str,
     store: WorkflowStoreService = Depends(get_workflow_store),
-) -> JSONResponse:
+) -> Response:
     try:
-        document = store.export_workflow(name)
+        filename, payload = store.export_workflow_archive(name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
-    filename = f"{document.workflow.name}.bioimageflow.json"
-    return JSONResponse(
-        content=document.model_dump(mode="json"),
+    except WorkflowArchiveError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Response(
+        content=payload,
+        media_type="application/zip",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
@@ -109,13 +112,19 @@ async def import_workflow(
     execution_manager: Any | None = Depends(get_execution_manager),
 ) -> WorkflowImportResponse | JSONResponse:
     _ensure_unlocked(execution_manager)
-    raw_json = await file.read()
+    raw_upload = await file.read()
     try:
-        document = store.parse_import_document(raw_json)
+        if file.filename and file.filename.endswith(".zip"):
+            return store.import_workflow_archive(
+                raw_upload,
+                filename=file.filename,
+                name_override=name_override,
+            )
+        document = store.parse_import_document(raw_upload)
         return store.import_workflow(document, name_override=name_override)
     except WorkflowImportParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except (WorkflowImportValidationError, ValidationError) as exc:
+    except (WorkflowArchiveError, WorkflowImportValidationError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except FileExistsError as exc:
         workflow_name = str(exc.args[0]) if exc.args else name_override or "workflow"

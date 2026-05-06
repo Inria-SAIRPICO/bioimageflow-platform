@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,34 @@ def store(tmp_path: Path, registry: ToolRegistryService) -> WorkflowStoreService
     )
 
 
+class _FakeArchiveAdapter:
+    def __init__(self, library: dict | None = None) -> None:
+        self.library = library or {"nodes": [], "edges": []}
+        self.export_calls: list[tuple[Path, Path]] = []
+        self.import_calls: list[Path] = []
+        self.extract_calls: list[Path] = []
+        self.import_payload: bytes | None = None
+
+    def export_archive(self, workflow_path: Path, archive_path: Path) -> None:
+        self.export_calls.append((workflow_path, archive_path))
+        archive_path.write_bytes(b"fake zip")
+
+    def read_archive(self, archive_path: Path, *, extract_to: Path | None = None) -> dict:
+        self.import_calls.append(archive_path)
+        self.import_payload = archive_path.read_bytes()
+        if extract_to is not None:
+            self.extract_calls.append(extract_to)
+            if zipfile.is_zipfile(archive_path):
+                extract_to.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(archive_path) as archive:
+                    archive.extractall(extract_to)
+        return self.library
+
+
+def _workflow_json(store: WorkflowStoreService, name: str) -> Path:
+    return store.root_dir / name / "workflow.json"
+
+
 def _export_document(
     *,
     name: str = "imported",
@@ -82,6 +111,11 @@ def test_create_list_and_get_empty_workflow(store: WorkflowStoreService) -> None
     assert info.name == "wf"
     assert info.display_name == "Workflow"
     assert info.storage_path is not None
+    assert info.path == str(_workflow_json(store, "wf"))
+    assert _workflow_json(store, "wf").exists()
+    assert (store.root_dir / "wf" / "tools").is_dir()
+    assert not (store.root_dir / "wf" / "__init__.py").exists()
+    assert not (store.root_dir / "wf.json").exists()
     assert [item.name for item in store.list_workflows()] == ["wf"]
 
     workflow = store.get_workflow("wf")
@@ -107,7 +141,7 @@ def test_create_workflow_anchors_relative_storage_path_once(
     assert info.storage_path == str(expected)
     assert store.get_storage_path("wf") == expected
 
-    raw = json.loads((store.root_dir / "wf.json").read_text())
+    raw = json.loads(_workflow_json(store, "wf").read_text())
     assert raw["metadata"]["storage_path"] == str(expected)
     assert raw["workflow"]["config"]["storage_path"] == str(expected)
 
@@ -132,7 +166,7 @@ def test_save_preserves_invalid_graph_losslessly(store: WorkflowStoreService) ->
 
     assert restored.graph == graph
     assert restored.missing_tools == []
-    raw = json.loads((store.root_dir / "wf.json").read_text())
+    raw = json.loads(_workflow_json(store, "wf").read_text())
     assert raw["graph"]["nodes"][0]["tool_name"] == "MissingTool"
     assert raw["workflow"]["nodes"] == []
 
@@ -161,6 +195,9 @@ def test_legacy_file_reports_missing_packages_and_tools(
 
     workflow = store.get_workflow("legacy")
 
+    assert not (store.root_dir / "legacy.json").exists()
+    assert _workflow_json(store, "legacy").exists()
+    assert (store.root_dir / "legacy" / "tools").is_dir()
     assert workflow.graph.nodes[0].id == "n1"
     assert workflow.missing_packages[0].package_name == "missing-pkg"
     assert workflow.missing_packages[0].required_version == "9.9.9"
@@ -170,6 +207,8 @@ def test_legacy_file_reports_missing_packages_and_tools(
 
 def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:
     store.create_workflow(WorkflowCreate(name="wf", display_name="Workflow"))
+    source_tool = store.root_dir / "wf" / "tools" / "custom_tool.py"
+    source_tool.write_text("VALUE = 1\n", encoding="utf-8")
 
     updated = store.patch_workflow(
         "wf",
@@ -185,6 +224,9 @@ def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:
     assert duplicate.name == "copy"
     assert duplicate.display_name == "Copy"
     assert store.get_workflow("copy").info.name == "copy"
+    assert (store.root_dir / "copy" / "tools" / "custom_tool.py").read_text(
+        encoding="utf-8"
+    ) == "VALUE = 1\n"
 
     duplicate_custom = store.patch_workflow(
         updated.name,
@@ -214,11 +256,12 @@ def test_display_name_update_renames_file_and_managed_storage(
     assert updated.name == "new_workflow"
     assert updated.display_name == "New workflow"
     assert not (store.root_dir / "Untitled.json").exists()
-    assert (store.root_dir / "new_workflow.json").exists()
+    assert not (store.root_dir / "Untitled").exists()
+    assert _workflow_json(store, "new_workflow").exists()
     assert updated.storage_path == str(store.storage_base_dir / "new_workflow")
     assert not old_storage.exists()
     assert (store.storage_base_dir / "new_workflow" / "result.txt").read_text() == "kept"
-    raw = json.loads((store.root_dir / "new_workflow.json").read_text())
+    raw = json.loads(_workflow_json(store, "new_workflow").read_text())
     assert raw["metadata"]["storage_path"] == str(store.storage_base_dir / "new_workflow")
     assert raw["workflow"]["config"]["storage_path"] == str(store.storage_base_dir / "new_workflow")
 
@@ -238,8 +281,8 @@ def test_display_name_update_rejects_existing_target_managed_storage_without_old
         )
 
     assert not old_storage.exists()
-    assert (store.root_dir / "Untitled.json").exists()
-    assert not (store.root_dir / "new_workflow.json").exists()
+    assert _workflow_json(store, "Untitled").exists()
+    assert not (store.root_dir / "new_workflow").exists()
 
 
 def test_display_name_update_preserves_custom_storage_path(
@@ -276,7 +319,7 @@ def test_update_workflow_anchors_relative_storage_path_once(
 
     expected = Path.cwd() / "updated-relative-results"
     assert updated.storage_path == str(expected)
-    raw = json.loads((store.root_dir / "wf.json").read_text())
+    raw = json.loads(_workflow_json(store, "wf").read_text())
     assert raw["metadata"]["storage_path"] == str(expected)
     assert raw["workflow"]["config"]["storage_path"] == str(expected)
 
@@ -321,9 +364,9 @@ def test_display_name_update_without_valid_slug_keeps_canonical_identity(
     assert updated.name == "Untitled"
     assert updated.display_name == "测试"
     assert updated.storage_path == info.storage_path
-    assert (store.root_dir / "Untitled.json").exists()
+    assert _workflow_json(store, "Untitled").exists()
     assert not (store.root_dir / ".json").exists()
-    raw = json.loads((store.root_dir / "Untitled.json").read_text())
+    raw = json.loads(_workflow_json(store, "Untitled").read_text())
     assert raw["metadata"]["display_name"] == "测试"
     assert raw["metadata"]["storage_path"] == info.storage_path
     assert raw["workflow"]["config"]["storage_path"] == info.storage_path
@@ -386,7 +429,7 @@ def test_delete_removes_only_managed_storage(
 
     store.delete_workflow("wf")
 
-    assert not (store.root_dir / "wf.json").exists()
+    assert not (store.root_dir / "wf").exists()
     assert not managed.exists()
     assert external.exists()
 
@@ -452,6 +495,8 @@ def test_export_workflow_preserves_raw_sections_and_required_packages(
 
     document = store.export_workflow("wf")
 
+    assert not (store.root_dir / "wf.json").exists()
+    assert _workflow_json(store, "wf").exists()
     assert document.bioimageflow_export is True
     assert document.export_version == "1.0"
     assert document.workflow.name == "wf"
@@ -493,7 +538,8 @@ def test_export_workflow_falls_back_to_registry_and_marks_local_tools(
         "metadata": {"display_name": "Workflow"},
     }
     store.root_dir.mkdir(parents=True, exist_ok=True)
-    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+    _workflow_json(store, "wf").parent.mkdir(parents=True)
+    _workflow_json(store, "wf").write_text(json.dumps(raw), encoding="utf-8")
 
     document = store.export_workflow("wf")
 
@@ -526,7 +572,8 @@ def test_export_workflow_marks_graph_only_local_tools(
         "metadata": {"display_name": "Workflow"},
     }
     store.root_dir.mkdir(parents=True, exist_ok=True)
-    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+    _workflow_json(store, "wf").parent.mkdir(parents=True)
+    _workflow_json(store, "wf").write_text(json.dumps(raw), encoding="utf-8")
 
     document = store.export_workflow("wf")
 
@@ -565,13 +612,35 @@ def test_export_workflow_collects_nested_sub_workflow_packages(
         "metadata": {"display_name": "Workflow"},
     }
     store.root_dir.mkdir(parents=True, exist_ok=True)
-    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+    _workflow_json(store, "wf").parent.mkdir(parents=True)
+    _workflow_json(store, "wf").write_text(json.dumps(raw), encoding="utf-8")
 
     document = store.export_workflow("wf")
 
     assert [item.model_dump() for item in document.required_packages] == [
         {"name": "inner-pkg", "version": "0.1.0"}
     ]
+
+
+def test_export_workflow_archive_delegates_to_adapter(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+) -> None:
+    archive_adapter = _FakeArchiveAdapter()
+    store = WorkflowStoreService(
+        root_dir=tmp_path / "workflows",
+        tool_registry=registry,
+        storage_base_dir=tmp_path / "outputs",
+        archive_adapter=archive_adapter,
+    )
+    store.create_workflow(WorkflowCreate(name="wf"))
+
+    filename, payload = store.export_workflow_archive("wf")
+
+    assert filename == "wf.bioimageflow.zip"
+    assert payload == b"fake zip"
+    assert archive_adapter.export_calls[0][0] == _workflow_json(store, "wf")
+    assert archive_adapter.export_calls[0][1].name == "wf.bioimageflow.zip"
 
 
 def test_parse_import_document_rejects_malformed_json(
@@ -667,9 +736,79 @@ def test_import_workflow_saves_with_managed_storage_path(
     assert response.info.display_name == "Imported"
     assert response.info.storage_path == str(store.storage_base_dir / "imported")
     assert [item.name for item in store.list_workflows()] == ["imported"]
-    raw = json.loads((store.root_dir / "imported.json").read_text(encoding="utf-8"))
+    raw = json.loads(_workflow_json(store, "imported").read_text(encoding="utf-8"))
     assert raw["metadata"]["storage_path"] == str(store.storage_base_dir / "imported")
     assert raw["workflow"]["config"]["storage_path"] == str(store.storage_base_dir / "imported")
+
+
+def test_import_workflow_archive_delegates_to_adapter_and_saves_layout(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+) -> None:
+    archive_adapter = _FakeArchiveAdapter(
+        library={
+            "nodes": [
+                {
+                    "name": "n1",
+                    "display_name": "Node",
+                    "tool_class": "ExistingTool",
+                    "constants": {"threshold": 3},
+                }
+            ],
+            "edges": [],
+        }
+    )
+    store = WorkflowStoreService(
+        root_dir=tmp_path / "workflows",
+        tool_registry=registry,
+        storage_base_dir=tmp_path / "outputs",
+        archive_adapter=archive_adapter,
+    )
+
+    response = store.import_workflow_archive(
+        b"fake zip",
+        filename="imported.bioimageflow.zip",
+    )
+
+    assert response.info.name == "imported"
+    assert archive_adapter.import_payload == b"fake zip"
+    assert archive_adapter.extract_calls == [store.root_dir / "imported"]
+    assert _workflow_json(store, "imported").exists()
+    assert (store.root_dir / "imported" / "tools").is_dir()
+    raw = json.loads(_workflow_json(store, "imported").read_text(encoding="utf-8"))
+    assert raw["workflow"]["nodes"][0]["name"] == "n1"
+    assert raw["graph"]["nodes"][0]["id"] == "n1"
+    assert raw["metadata"]["storage_path"] == str(store.storage_base_dir / "imported")
+
+
+def test_import_workflow_archive_copies_tools_from_zip_before_temp_cleanup(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+) -> None:
+    archive_adapter = _FakeArchiveAdapter()
+    store = WorkflowStoreService(
+        root_dir=tmp_path / "workflows",
+        tool_registry=registry,
+        storage_base_dir=tmp_path / "outputs",
+        archive_adapter=archive_adapter,
+    )
+    archive_path = tmp_path / "imported.bioimageflow.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("workflow.json", '{"nodes": [], "edges": []}')
+        archive.writestr("tools/__init__.py", "")
+        archive.writestr("tools/custom_tool.py", "VALUE = 1\n")
+
+    response = store.import_workflow_archive(
+        archive_path.read_bytes(),
+        filename="imported.bioimageflow.zip",
+    )
+
+    assert response.info.name == "imported"
+    assert archive_adapter.extract_calls == [store.root_dir / "imported"]
+    assert (store.root_dir / "imported" / "tools" / "__init__.py").exists()
+    assert (store.root_dir / "imported" / "tools" / "custom_tool.py").read_text(
+        encoding="utf-8"
+    ) == "VALUE = 1\n"
 
 
 def test_import_workflow_name_override_and_conflict(
@@ -684,7 +823,7 @@ def test_import_workflow_name_override_and_conflict(
     response = store.import_workflow(document, name_override="imported_copy")
 
     assert response.info.name == "imported_copy"
-    assert (store.root_dir / "imported_copy.json").exists()
+    assert _workflow_json(store, "imported_copy").exists()
 
 
 def test_import_workflow_reports_missing_packages_and_tools(
@@ -779,7 +918,7 @@ def test_import_workflow_preserves_sub_workflow_without_missing_outer_marker(
 
     assert response.missing_packages == []
     assert response.missing_tools == []
-    raw = json.loads((store.root_dir / "imported.json").read_text(encoding="utf-8"))
+    raw = json.loads(_workflow_json(store, "imported").read_text(encoding="utf-8"))
     assert raw["workflow"]["nodes"][0]["sub_workflow"] == sub_workflow
 
 
@@ -814,5 +953,5 @@ def test_import_workflow_preserves_raw_graph_nested_sub_workflow_fields(
 
     store.import_workflow(document)
 
-    raw = json.loads((store.root_dir / "imported.json").read_text(encoding="utf-8"))
+    raw = json.loads(_workflow_json(store, "imported").read_text(encoding="utf-8"))
     assert raw["graph"]["nodes"][0]["sub_workflow"] == graph["nodes"][0]["sub_workflow"]

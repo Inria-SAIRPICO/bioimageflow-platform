@@ -25,7 +25,15 @@ Sub-workflows allow grouping a set of nodes into a single reusable unit. The Bio
 
 #### From Workflow Panel
 
-Saved workflows can be **dragged from the Workflow Panel** onto the canvas, creating a SubWorkflowNode. The dragged workflow becomes the sub-workflow's internal DAG.
+Saved workflows can be dragged from the Workflows panel onto the canvas by
+using the row's drag handle. Dropping a workflow creates a SubWorkflowNode; the
+dragged workflow becomes the sub-workflow's internal DAG.
+
+The platform asks the BioImageFlow library to build and validate the
+sub-workflow. Recursive containment is rejected by the library validation layer;
+the platform surfaces that validation error in the GUI. A workflow cannot
+contain itself directly or indirectly (for example, A contains B while B
+contains A).
 
 **Default derivation:** All source node constant parameters are published as sub-workflow Inputs, and all terminal node output columns are published as sub-workflow Outputs. The user can then adjust visibility using the Publish toggle on each parameter and output field.
 
@@ -108,7 +116,10 @@ The `GraphState` model is unchanged. SubWorkflowNodes are represented as regular
 }
 ```
 
-**Validation:** The `PUT /graph` endpoint validates sub-workflows recursively. Errors within a sub-workflow reference the scoped node path (e.g., `"node": "segment_and_measure_1/cellpose_segmenter_1"`).
+**Validation:** The `PUT /graph` endpoint calls the BioImageFlow library's
+recursive sub-workflow validator and surfaces scoped errors. Errors within a
+sub-workflow reference the scoped node path (e.g.,
+`"node": "segment_and_measure_1/cellpose_segmenter_1"`).
 
 ### 1.9 Integration with v1 Features
 
@@ -298,44 +309,25 @@ When pasting into a different workflow, the following resolution steps occur:
 
 ## 4. Export/Import Workflows
 
-Allows exporting workflows to portable JSON files and importing them back, enabling workflow sharing between users and machines.
+Allows exporting workflows to portable library archives and importing them
+back, enabling workflow sharing between users and machines.
+
+The platform is a thin GUI adapter here: it delegates export and import to the
+BioImageFlow library API and must not reimplement the archive format. The
+library-defined archive contains the workflow JSON and the workflow-local
+`tools/` directory. The platform may add or restore GUI metadata only through
+documented extension points in the library workflow document.
 
 ### 4.1 Backend
 
 #### `POST /workflows/{name}/export`
 
-Exports the named workflow to a downloadable JSON file.
+Exports the named workflow by calling the BioImageFlow library export API.
 
-**Response:** The response is a JSON file download (`Content-Disposition: attachment; filename="{name}.bioimageflow.json"`). The export format includes the full workflow state (library format + GUI state) and metadata about required packages:
-
-```json
-{
-  "bioimageflow_export": true,
-  "export_version": "1.0",
-  "exported_at": "2026-04-03T10:30:00Z",
-  "workflow": {
-    "name": "my_workflow",
-    "display_name": "My Workflow",
-    "description": "A segmentation pipeline",
-    "graph": {
-      "nodes": ["..."],
-      "edges": ["..."]
-    },
-    "gui": {
-      "nodes": {
-        "cellpose_segmenter_1": {
-          "position": [350, 200],
-          "collapsed": false
-        }
-      }
-    }
-  },
-  "required_packages": [
-    {"name": "bioimageflow-cellpose", "version": "1.2.0"},
-    {"name": "bioimageflow-stardist", "version": "0.9.0"}
-  ]
-}
-```
+**Response:** The response is the library archive as a browser download
+(`Content-Disposition: attachment; filename="{name}.bioimageflow.zip"`). The
+archive structure is defined by the library and includes the workflow JSON plus
+the workflow-local `tools/` directory.
 
 **Error responses:**
 
@@ -345,15 +337,18 @@ Exports the named workflow to a downloadable JSON file.
 
 #### `POST /workflows/import`
 
-Imports a workflow from an uploaded JSON file.
+Imports a workflow by calling the BioImageFlow library import/load API.
 
-**Request:** Multipart form upload with the `.bioimageflow.json` file.
+**Request:** Multipart form upload with the `.bioimageflow.zip` file. Legacy
+`.bioimageflow.json` uploads may be accepted as a migration path only.
 
 **Behavior:**
-1. The server parses and validates the import file format.
+1. The server passes the upload to the BioImageFlow library import/load API.
 2. If a workflow with the same `name` already exists, the server returns **409 Conflict** with a suggested alternative name (e.g., `"my_workflow_2"`).
 3. The server checks `required_packages` against the tool store. If packages or versions are missing, the response includes a `missing_packages` field (same format as workflow loading — see Section 2.4.2 of the full spec).
-4. On success, the workflow is saved and can be opened normally.
+4. On success, the imported workflow is saved in the platform workflow layout
+   (`workflows/{name}/workflow.json` plus `workflows/{name}/tools/`) and can be
+   opened normally.
 
 **Response (success):**
 
@@ -391,13 +386,13 @@ If `missing_packages` is non-empty, the frontend shows a dialog: "This workflow 
 
 The Workflow Panel (Section 3.8 of the full spec) includes Export and Import actions:
 
-- **Export:** Available in the Workflow menu and as a button in the Workflow Panel. Calls `POST /workflows/{name}/export` and triggers a browser file download of the `.bioimageflow.json` file.
-- **Import:** Available in the Workflow menu and as a button in the Workflow Panel. Opens the browser's native file picker filtered to `.bioimageflow.json` files. On file selection, uploads via `POST /workflows/import`. On success, the imported workflow appears in the workflow list and can be opened. On name conflict, a dialog offers to rename or cancel.
+- **Export:** Available in the Workflow menu and as a button in the Workflow Panel. Calls `POST /workflows/{name}/export` and triggers a browser file download of the `.bioimageflow.zip` archive.
+- **Import:** Available in the Workflow menu and as a button in the Workflow Panel. Opens the browser's native file picker filtered to `.bioimageflow.zip` files. On file selection, uploads via `POST /workflows/import`. On success, the imported workflow appears in the workflow list and can be opened. On name conflict, a dialog offers to rename or cancel.
 
 ### 4.3 Integration with v1 Features
 
 - **Workflow loading:** The import endpoint reuses the same missing-package resolution flow as `GET /workflows/{name}` (v1).
-- **Sub-workflows:** Exported workflows include all sub-workflow internal DAGs in the export file. Sub-workflows are self-contained within the export.
+- **Sub-workflows:** Exported workflows include all sub-workflow internal DAGs through the library export format. Sub-workflows are self-contained within the export.
 - **Tool versions:** The `required_packages` field in the export enables the target machine to install exactly the right package versions.
 
 ---
@@ -428,7 +423,7 @@ Creates a new tool from a template.
 
 **Behavior:**
 1. The server validates the name (must be a valid Python class name, must not conflict with existing tools).
-2. A tool file is created at `workflow_root/tools/{name}.py` using the appropriate template (see Section 5.4).
+2. A tool file is created at the current workflow's `tools/{name}.py` using the appropriate template (see Section 5.4).
 3. Custom tools in this directory are auto-discovered by the server.
 4. The tool file is opened in the code editor (`POST /editor/open`).
 5. The new tool appears in the tool registry and the Tools Panel.
@@ -531,7 +526,11 @@ The Tools Panel (Section 3.4 of the full spec) includes a **Create Tool** button
 
 ### 5.3 Custom Tool Discovery
 
-Custom tools are placed in the current workflow's `tools/` directory (`workflow_root/tools/`). The server auto-discovers Python files in this directory at startup and via the file watcher (tool hot-reload from v1). Custom tools appear in the Tools Panel alongside package-installed tools, distinguished by a "Custom" badge.
+Custom tools are placed in the current workflow's `tools/` directory
+(`workflows/{workflow_name}/tools/`). The server discovers tools for the current
+workflow and refreshes that workflow-local registry when the active workflow
+changes. Custom tools appear in the Tools Panel alongside package-installed
+tools, distinguished by a "Custom" badge.
 
 ### 5.4 Tool Templates
 
@@ -657,8 +656,8 @@ New and modified endpoints introduced in v2:
 | 1 | `POST` | `/api/v1/tools` | Create a new tool from template | "Create Tool" button in Tools Panel |
 | 2 | `DELETE` | `/api/v1/tools/{tool_name}` | Delete a custom tool | Context menu on custom tool in Tools Panel |
 | 3 | `PATCH` | `/api/v1/tools/{tool_name}` | Rename a custom tool | Context menu on custom tool in Tools Panel |
-| 4 | `POST` | `/api/v1/workflows/{name}/export` | Export workflow to JSON file | "Export" in Workflow Panel menu |
-| 5 | `POST` | `/api/v1/workflows/import` | Import workflow from JSON file | "Import" in Workflow Panel menu |
+| 4 | `POST` | `/api/v1/workflows/{name}/export` | Export workflow to library archive | "Export" in Workflow Panel menu |
+| 5 | `POST` | `/api/v1/workflows/import` | Import workflow from library archive | "Import" in Workflow Panel menu |
 | 6 | `POST` | `/api/v1/editor/open` | Open file/folder in code editor | "Open in editor" from Tools Panel or Data Table |
 | 7 | `GET` | `/api/v1/editor/status` | Check code-server availability and URL | Code Editor Panel initialization |
 
@@ -666,7 +665,7 @@ New and modified endpoints introduced in v2:
 
 | Endpoint | Change |
 |----------|--------|
-| `PUT /api/v1/graph` | Now validates sub-workflow internal DAGs recursively. Errors reference scoped node paths. |
+| `PUT /api/v1/graph` | Now invokes the BioImageFlow library recursive sub-workflow validator. Errors reference scoped node paths. |
 | `GET /api/v1/settings` | Response includes `external_editor` and `enable_unsafe_webapp_features` fields for code editor fallback and webapp debugging. |
 | `PATCH /api/v1/settings` | Accepts `external_editor` field updates. Rejects `enable_unsafe_webapp_features`; that flag is file-only. |
 

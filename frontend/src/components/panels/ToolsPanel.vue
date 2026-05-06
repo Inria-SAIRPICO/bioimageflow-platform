@@ -12,6 +12,7 @@ import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
+import { useWorkflowStore } from '@/stores/workflow'
 import type { ToolCreateResponse, ToolMetadata, ToolSourceResponse } from '@/api/types'
 import { api } from '@/api/client'
 import {
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 
 const toolRegistry = useToolRegistryStore()
 const settingsStore = useSettingsStore()
+const workflowStore = useWorkflowStore()
 
 const searchQuery = ref('')
 const showCreateDialog = ref(false)
@@ -62,6 +64,14 @@ const localToolActionsAvailable = computed(() => {
 
 function shouldShowEmbeddedEditorLoading(): boolean {
   return !settingsStore.settings?.external_editor?.trim()
+}
+
+function currentWorkflowRequestConfig():
+  | { params: { workflow_name: string } }
+  | undefined {
+  return workflowStore.currentName
+    ? { params: { workflow_name: workflowStore.currentName } }
+    : undefined
 }
 
 /** Tools grouped by their primary category for the sidebar list. The list
@@ -428,7 +438,10 @@ async function openInEditor(toolName: string) {
     showCodeEditorLoading()
   }
   try {
-    const { data } = await api.get<ToolSourceResponse>(`/api/v1/tools/${toolName}/source`)
+    const requestConfig = currentWorkflowRequestConfig()
+    const { data } = requestConfig
+      ? await api.get<ToolSourceResponse>(`/api/v1/tools/${toolName}/source`, requestConfig)
+      : await api.get<ToolSourceResponse>(`/api/v1/tools/${toolName}/source`)
     await openPathWithEditor(parentPath(data.path), toast, {
       showEmbeddedLoading,
     })

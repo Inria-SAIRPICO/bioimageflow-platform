@@ -130,7 +130,7 @@ _TEMPLATES = {
 
 
 class CustomToolService:
-    """Create, rename, delete, and register tools under ``workflow_root/tools``."""
+    """Create, rename, delete, and register tools under a workflow ``tools/`` dir."""
 
     def __init__(self, workflow_root: Path, registry: ToolRegistryService) -> None:
         self.workflow_root = Path(workflow_root)
