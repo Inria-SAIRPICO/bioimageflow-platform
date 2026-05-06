@@ -31,6 +31,7 @@ import { useDataTableStore } from '@/stores/dataTable'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
+import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
 import type { GraphState, MissingTool, NodeState } from '@/api/types'
 import { useToast } from 'primevue/usetoast'
@@ -1004,18 +1005,7 @@ function onAddNode({
     }
   }
 
-  // Build default output templates for path-typed outputs.
-  // ProcessingTool only — DataFrameTool Outputs are column declarations,
-  // not file paths, and must not get an output_templates entry.
-  const output_templates: Record<string, string> = {}
-  if (tool.tool_type !== 'DataFrameTool') {
-    for (const [key, rawField] of Object.entries(tool.outputs)) {
-      const field = rawField as { type?: string; default?: string } | undefined
-      if (field && ['Path', 'ImageFile', 'MaskPath'].includes(field.type ?? '')) {
-        output_templates[key] = field.default || ''
-      }
-    }
-  }
+  const output_templates = reconcileOutputTemplates(tool)
 
   const newNode = {
     id,
@@ -1171,9 +1161,7 @@ function showPasteSummary(summary: PasteSummary) {
 function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
   const tool = toolRegistryStore.getToolByName(n.tool_name)
   const pinnedInputs: Record<string, boolean> = {}
-  const output_templates: Record<string, string> = {
-    ...(n.output_templates ?? {}),
-  }
+  let output_templates: Record<string, string> = {}
   if (tool) {
     for (const [key, field] of Object.entries(tool.inputs)) {
       if (field.connectable !== 'never') {
@@ -1181,19 +1169,7 @@ function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
         pinnedInputs[key] = isPathType && field.required
       }
     }
-    // ProcessingTool only — see comment in createNodeForTool.
-    if (tool.tool_type !== 'DataFrameTool') {
-      for (const [key, rawField] of Object.entries(tool.outputs)) {
-        const field = rawField as { type?: string; default?: string } | undefined
-        if (
-          field
-          && ['Path', 'ImageFile', 'MaskPath'].includes(field.type ?? '')
-          && !(key in output_templates)
-        ) {
-          output_templates[key] = field.default || ''
-        }
-      }
-    }
+    output_templates = reconcileOutputTemplates(tool, n.output_templates ?? {})
   }
   return {
     id: n.id,

@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useWorkflowStore } from '@/stores/workflow'
+import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import type {
   ColumnRefEdge,
   GraphState,
@@ -42,7 +43,7 @@ function serializeNode(n: any): NodeState {
     position: [n.position?.x ?? 0, n.position?.y ?? 0],
     parameters: data.parameters ?? {},
     resources: data.resources ?? {},
-    output_templates: data.output_templates ?? {},
+    output_templates: reconcileOutputTemplates(data.tool, data.output_templates ?? {}),
     enabled: data.enabled ?? true,
     collapsed: data.collapsed ?? false,
   } as NodeState & Record<string, unknown>
