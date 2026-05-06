@@ -6,10 +6,10 @@ fixture JSON and coordinate with the frontend generated types plus
 `platform_specs_v1.md`.
 
 The picked tool (`CellposeSAM` from `bioimageflow_common_tools`) exercises:
-- `ImagePath` inputs with `ImageSpec` (semantics, layouts).
+- `ImageFile` inputs with `ImageSpec` (semantics, layouts).
 - `GUIMeta` annotations with `min` / `max` / `step` / `display_name`.
 - Required vs. defaulted inputs.
-- Multiple outputs including a templated `ImagePath` default and a plain
+- Multiple outputs including a templated `ImageFile` default and a plain
   `int` field.
 """
 

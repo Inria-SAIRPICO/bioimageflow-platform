@@ -10,11 +10,11 @@ while execution recomputed (or vice versa). Now both paths go through
 implementation. These tests guard against regressions.
 """
 # pyright: reportInvalidTypeForm=false
-# Rationale: library factory types like ``ImagePath(semantics={...})`` return
-# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
+# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
+# pyright can't evaluate this runtime metadata statically.
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import pandas as pd
 import pytest
@@ -23,7 +23,7 @@ from bioimageflow.cache import cache_save
 from bioimageflow.storage import get_node_dir
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import IOModel, ProcessingTool
-from bioimageflow_core.types import ImagePath, Semantic
+from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
@@ -38,12 +38,12 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
 class _SourceInputs(IOModel):
-    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
     diameter: float = 30.0
 
 
 class _SourceOutputs(IOModel):
-    mask: ImagePath(semantics={Semantic.LABEL})
+    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class SourceTool(ProcessingTool):
@@ -56,12 +56,12 @@ class SourceTool(ProcessingTool):
 
 
 class _MidInputs(IOModel):
-    mask_input: ImagePath(semantics={Semantic.LABEL})
+    mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
     scale: float = 1.0
 
 
 class _MidOutputs(IOModel):
-    result: ImagePath(semantics={Semantic.LABEL})
+    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class MidTool(ProcessingTool):

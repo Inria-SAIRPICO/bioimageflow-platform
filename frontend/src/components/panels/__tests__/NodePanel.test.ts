@@ -22,12 +22,12 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: ['Filtering'],
     inputs: {
-      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Input image path' },
+      image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default', description: 'Input image path' },
       sigma: { type: 'float', required: true, nullable: false, connectable: 'never', default: 1.0, min: 0.1, max: 50.0, step: 0.1, description: 'Blur strength' },
       threshold: { type: 'float', required: false, nullable: true, connectable: 'never', default: 0.5, description: 'Optional threshold' },
     },
     outputs: {
-      result: { type: 'ImagePath' },
+      result: { type: 'ImageFile' },
       mask: { type: 'MaskPath' },
     },
     environment: null,
@@ -249,7 +249,7 @@ describe('NodePanel', () => {
       const tool = makeTool({
         inputs: {
           mask: {
-            type: 'ImagePath',
+            type: 'ImageFile',
             required: true,
             nullable: false,
             connectable: 'by_default',
@@ -296,7 +296,7 @@ describe('NodePanel', () => {
     it('renders editable template inputs for path-typed outputs', () => {
       const w = mountPanel(makeNodeData())
       const templateInputs = w.findAll('[data-testid="output-template"]')
-      // Both result (ImagePath) and mask (MaskPath) are path-typed
+      // Both result (ImageFile) and mask (MaskPath) are path-typed
       expect(templateInputs.length).toBe(2)
     })
 
@@ -413,14 +413,14 @@ describe('NodePanel', () => {
     function makePathTool(): ToolMetadata {
       return makeTool({
         inputs: {
-          input_image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default', description: 'Image file' },
+          input_image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default', description: 'Image file' },
           work_dir: { type: 'Path', required: true, nullable: false, connectable: 'never', description: 'Working directory' },
         },
-        outputs: { result: { type: 'ImagePath' } },
+        outputs: { result: { type: 'ImageFile' } },
       })
     }
 
-    it('renders a text input and file button for ImagePath (non-optional, no default)', () => {
+    it('renders a text input and file button for ImageFile (non-optional, no default)', () => {
       const data = makeNodeData({ tool: makePathTool(), parameters: {}, pinnedInputs: { input_image: true } })
       const w = mountPanel(data)
       // The widget must render — previously this rendered the "null" label
@@ -447,7 +447,7 @@ describe('NodePanel', () => {
       expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(false)
     })
 
-    it('renders only a file button for ImagePath (no folder button)', () => {
+    it('renders only a file button for ImageFile (no folder button)', () => {
       const data = makeNodeData({ tool: makePathTool(), parameters: {}, pinnedInputs: { input_image: true } })
       const w = mountPanel(data)
       expect(w.find('[data-testid="select-file-input_image"]').exists()).toBe(true)
@@ -484,7 +484,7 @@ describe('NodePanel', () => {
       expect(data.parameters.work_dir).toBe('/absolute/chosen/dir')
     })
 
-    it('passes image extensions to the native dialog for ImagePath fields', async () => {
+    it('passes image extensions to the native dialog for ImageFile fields', async () => {
       const api = mockPywebviewApi()
       api.select_file.mockResolvedValue('/chosen.tif')
       window.pywebview = { api }

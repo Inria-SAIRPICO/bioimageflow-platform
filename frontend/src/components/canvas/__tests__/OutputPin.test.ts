@@ -18,17 +18,17 @@ describe('OutputPin', () => {
   }
 
   it('renders field name', () => {
-    const w = factory({ fieldName: 'result', fieldType: 'ImagePath' })
+    const w = factory({ fieldName: 'result', fieldType: 'ImageFile' })
     expect(w.find('.pin-label').text()).toBe('result')
   })
 
   it('renders type badge', () => {
-    const w = factory({ fieldName: 'result', fieldType: 'ImagePath' })
-    expect(w.find('.type-badge').text()).toBe('ImagePath')
+    const w = factory({ fieldName: 'result', fieldType: 'ImageFile' })
+    expect(w.find('.type-badge').text()).toBe('ImageFile')
   })
 
   it('applies correct handle color', () => {
-    const w = factory({ fieldName: 'result', fieldType: 'ImagePath' })
+    const w = factory({ fieldName: 'result', fieldType: 'ImageFile' })
     expect(w.find('.pin-handle').attributes('style')).toContain('background-color: rgb(74, 144, 217)')
   })
 
@@ -47,7 +47,7 @@ describe('OutputPin', () => {
 
   describe('variant prop', () => {
     it('defaults to body variant with round pin styling', () => {
-      const w = factory({ fieldName: 'result', fieldType: 'ImagePath' })
+      const w = factory({ fieldName: 'result', fieldType: 'ImageFile' })
       expect(w.find('.output-pin').classes()).not.toContain('output-pin--header')
     })
 
@@ -63,7 +63,7 @@ describe('OutputPin', () => {
     })
 
     it('body variant does not add header class', () => {
-      const w = factory({ fieldName: 'result', fieldType: 'ImagePath', variant: 'body' })
+      const w = factory({ fieldName: 'result', fieldType: 'ImageFile', variant: 'body' })
       expect(w.find('.output-pin').classes()).not.toContain('output-pin--header')
     })
   })

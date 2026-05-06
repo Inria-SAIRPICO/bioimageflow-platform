@@ -31,7 +31,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         categories=["Segmentation"],
         inputs={
             "input_image": InputFieldSchema(
-                type="ImagePath",
+                type="ImageFile",
                 required=True,
                 connectable="by_default",
                 description="Input intensity image",
@@ -49,7 +49,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
             ),
         },
         outputs={
-            "mask": OutputFieldSchema(type="ImagePath"),
+            "mask": OutputFieldSchema(type="ImageFile"),
             "cell_count": OutputFieldSchema(type="int"),
         },
     ),
@@ -64,7 +64,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         categories=["Preprocessing"],
         inputs={
             "input_image": InputFieldSchema(
-                type="ImagePath",
+                type="ImageFile",
                 required=True,
                 connectable="by_default",
                 description="Image to blur",
@@ -81,7 +81,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
             ),
         },
         outputs={
-            "output_image": OutputFieldSchema(type="ImagePath"),
+            "output_image": OutputFieldSchema(type="ImageFile"),
         },
     ),
     ToolMetadata(
@@ -95,7 +95,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
         categories=["Segmentation"],
         inputs={
             "input_image": InputFieldSchema(
-                type="ImagePath",
+                type="ImageFile",
                 required=True,
                 connectable="by_default",
                 description="Image to threshold",
@@ -112,7 +112,7 @@ _SEED_TOOLS: list[ToolMetadata] = [
             ),
         },
         outputs={
-            "binary_mask": OutputFieldSchema(type="ImagePath"),
+            "binary_mask": OutputFieldSchema(type="ImageFile"),
         },
     ),
 ]

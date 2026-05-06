@@ -34,29 +34,29 @@ describe('InputPin', () => {
   }
 
   it('renders field name as label when disconnected', () => {
-    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
+    const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
     expect(w.find('.pin-label').text()).toBe('image')
   })
 
   it('shows field type in tooltip (title attribute)', () => {
-    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
-    expect(w.find('.input-pin').attributes('title')).toBe('ImagePath')
+    const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
+    expect(w.find('.input-pin').attributes('title')).toBe('ImageFile')
   })
 
   it('adds .connected class when connected', () => {
-    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: true })
+    const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: true })
     expect(w.find('.pin-handle').classes()).toContain('connected')
   })
 
   it('does not add .connected class when disconnected', () => {
-    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
+    const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
     expect(w.find('.pin-handle').classes()).not.toContain('connected')
   })
 
   it('shows sourceLabel when connected', () => {
     const w = factory({
       fieldName: 'image',
-      fieldType: 'ImagePath',
+      fieldType: 'ImageFile',
       connected: true,
       sourceLabel: 'Loader.output',
     })
@@ -64,19 +64,19 @@ describe('InputPin', () => {
   })
 
   it('applies correct border-color from getTypeColor', () => {
-    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
+    const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
     const handle = w.find('.pin-handle')
     expect(handle.attributes('style')).toContain('border-color: rgb(74, 144, 217)')
   })
 
   it('fills background when connected', () => {
-    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: true })
+    const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: true })
     const handle = w.find('.pin-handle')
     expect(handle.attributes('style')).toContain('background-color: rgb(74, 144, 217)')
   })
 
   it('transparent background when disconnected', () => {
-    const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
+    const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
     const handle = w.find('.pin-handle')
     expect(handle.attributes('style')).toContain('background-color: transparent')
   })
@@ -130,7 +130,7 @@ describe('InputPin', () => {
       const w = factory(
         {
           fieldName: 'image',
-          fieldType: 'ImagePath',
+          fieldType: 'ImageFile',
           connected: true,
           sourceLabel: 'Src.output',
         },
@@ -156,7 +156,7 @@ describe('InputPin', () => {
     it('does not call disconnect when the pin is not connected', () => {
       const disconnectEdge = vi.fn()
       const w = factory(
-        { fieldName: 'image', fieldType: 'ImagePath', connected: false },
+        { fieldName: 'image', fieldType: 'ImageFile', connected: false },
         disconnectEdge,
       )
 
@@ -180,7 +180,7 @@ describe('InputPin', () => {
 
   describe('variant prop', () => {
     it('defaults to body variant with round pin styling', () => {
-      const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false })
+      const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
       const handle = w.find('.pin-handle')
       // Body variant: round (border-radius: 50%)
       expect(handle.exists()).toBe(true)
@@ -199,7 +199,7 @@ describe('InputPin', () => {
     })
 
     it('body variant does not add header class', () => {
-      const w = factory({ fieldName: 'image', fieldType: 'ImagePath', connected: false, variant: 'body' })
+      const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false, variant: 'body' })
       expect(w.find('.input-pin').classes()).not.toContain('input-pin--header')
     })
   })

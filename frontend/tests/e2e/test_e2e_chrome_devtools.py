@@ -324,7 +324,7 @@ def test_08_node_shows_pins():
     assert_in("input_image", snap, "Input pin 'input_image' not shown")
     assert_in("mask", snap, "Output pin 'mask' not shown")
     assert_in("cell_count", snap, "Output pin 'cell_count' not shown")
-    assert_in("ImagePath", snap, "Type badge 'ImagePath' not shown")
+    assert_in("ImageFile", snap, "Type badge 'ImageFile' not shown")
     print("  PASS")
 
 
@@ -589,7 +589,7 @@ def test_22_node_add_and_connect():
         }
         if (!gaussianId || !cellposeId) return 'node ids not found: ' + JSON.stringify(nodeIds);
 
-        // GaussianBlur output_image (ImagePath) -> CellposeSegmenter input_image (ImagePath)
+        // GaussianBlur output_image (ImageFile) -> CellposeSegmenter input_image (ImageFile)
         return canvasRef.isValidConnection({
             source: gaussianId,
             target: cellposeId,

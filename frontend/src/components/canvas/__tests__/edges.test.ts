@@ -21,7 +21,7 @@ const baseEdgeProps = {
 describe('ColumnRefEdge', () => {
   it('renders an SVG path element', () => {
     const w = mount(ColumnRefEdge, {
-      props: { ...baseEdgeProps, data: { type: 'ImagePath' } } as any,
+      props: { ...baseEdgeProps, data: { type: 'ImageFile' } } as any,
     })
     const path = w.find('.vue-flow__edge-path')
     expect(path.exists()).toBe(true)
@@ -30,7 +30,7 @@ describe('ColumnRefEdge', () => {
 
   it('does NOT have edge-error class when errors is empty', () => {
     const w = mount(ColumnRefEdge, {
-      props: { ...baseEdgeProps, data: { type: 'ImagePath', errors: [] } } as any,
+      props: { ...baseEdgeProps, data: { type: 'ImageFile', errors: [] } } as any,
     })
     expect(w.find('.vue-flow__edge-path').classes()).not.toContain('edge-error')
   })
@@ -40,11 +40,11 @@ describe('ColumnRefEdge', () => {
       props: {
         ...baseEdgeProps,
         data: {
-          type: 'ImagePath',
+          type: 'ImageFile',
           errors: [
             {
               type: 'type_incompatible',
-              detail: 'Source ImagePath is not compatible with target str',
+              detail: 'Source ImageFile is not compatible with target str',
               edge_id: 'edge-1',
             },
           ],
@@ -76,9 +76,9 @@ describe('ColumnRefEdge', () => {
     expect(title.text()).toContain('incompatible types')
   })
 
-  it('applies stroke color from getTypeColor for ImagePath', () => {
+  it('applies stroke color from getTypeColor for ImageFile', () => {
     const w = mount(ColumnRefEdge, {
-      props: { ...baseEdgeProps, data: { type: 'ImagePath' } } as any,
+      props: { ...baseEdgeProps, data: { type: 'ImageFile' } } as any,
     })
     expect(w.find('.vue-flow__edge-path').attributes('stroke')).toBe('#4A90D9')
   })

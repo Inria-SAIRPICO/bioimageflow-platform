@@ -47,7 +47,7 @@ const IMAGE_EXTS = ['*.tif', '*.tiff', '*.png', '*.jpg', '*.jpeg', '*.czi', '*.l
 const MASK_EXTS = ['*.tif', '*.tiff', '*.png']
 
 function fileTypesForField(type: string): string[] {
-  if (type === 'ImagePath') return IMAGE_EXTS
+  if (type === 'ImageFile') return IMAGE_EXTS
   if (type === 'MaskPath') return MASK_EXTS
   return []
 }
@@ -216,7 +216,7 @@ function updateOutputTemplate(key: string, value: string) {
 }
 
 function isPathType(type: string): boolean {
-  return ['Path', 'ImagePath', 'MaskPath'].includes(type)
+  return ['Path', 'ImageFile', 'MaskPath'].includes(type)
 }
 
 function isOutputTemplateApplicable(field: OutputFieldSchema): boolean {

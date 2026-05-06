@@ -1,5 +1,5 @@
 export type ColumnTypeString =
-  | 'ImagePath'
+  | 'ImageFile'
   | 'ImageShared'
   | 'Path'
   | 'SharedArray'

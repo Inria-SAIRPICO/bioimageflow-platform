@@ -1,11 +1,11 @@
 """Integration tests for the graph router."""
 # pyright: reportInvalidTypeForm=false
-# Rationale: library factory types like ``ImagePath(semantics={...})`` return
-# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
+# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
+# pyright can't evaluate this runtime metadata statically.
 
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from unittest.mock import MagicMock
 
 import httpx
@@ -15,7 +15,7 @@ from httpx import ASGITransport
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import IOModel, ProcessingTool
-from bioimageflow_core.types import ImagePath, Semantic
+from bioimageflow_core.types import ImageSpec, Semantic
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -29,12 +29,12 @@ def anyio_backend() -> str:
 
 
 class _ProcInputs(IOModel):
-    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
     diameter: float = 30.0
 
 
 class _ProcOutputs(IOModel):
-    mask: ImagePath(semantics={Semantic.LABEL})
+    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class MockProcessingTool(ProcessingTool):
@@ -55,7 +55,7 @@ class MockDataFrameTool(DataFrameTool):
 
 
 class _IntInputs(IOModel):
-    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
     n: int = 1
 
 

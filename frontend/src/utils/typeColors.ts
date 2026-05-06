@@ -1,5 +1,5 @@
 const TYPE_COLOR_MAP: Record<string, string> = {
-  ImagePath: '#4A90D9',
+  ImageFile: '#4A90D9',
   ImageShared: '#4A90D9',
   MaskPath: '#AF52DE',
   Path: '#34C759',

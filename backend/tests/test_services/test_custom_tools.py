@@ -28,7 +28,7 @@ def test_processing_template_uses_current_tool_definition_patterns(tmp_path: Pat
     source = service.render_template("MySegmenter", "ProcessingTool")
 
     assert "Annotated[" in source
-    assert "ImagePath(" in source
+    assert "ImageSpec(" in source
     assert "GUIMeta(" in source
     assert "Connectable.BY_DEFAULT" in source
     assert "Template(\"{input_image.stem}_out{ext}\")" in source
@@ -46,9 +46,9 @@ def test_create_registers_custom_metadata_and_source(tmp_path: Path):
     assert meta is not None
     assert meta.source_kind == "custom"
     assert meta.editable is True
-    assert meta.inputs["input_image"].type == "ImagePath"
+    assert meta.inputs["input_image"].type == "ImageFile"
     assert meta.inputs["input_image"].connectable == "by_default"
-    assert meta.outputs["output_image"]["type"] == "ImagePath"
+    assert meta.outputs["output_image"]["type"] == "ImageFile"
     assert meta.outputs["output_image"]["template"] == "{input_image.stem}_out{ext}"
     assert registry.resolve_tool_source("MySegmenter") == path
 

@@ -1,17 +1,17 @@
 """Tests for :mod:`bioimageflow_server.services.graph_validator`."""
 # pyright: reportInvalidTypeForm=false
-# Rationale: library factory types like ``ImagePath(semantics={...})`` return
-# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
+# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
+# pyright can't evaluate this runtime metadata statically.
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import IOModel, ProcessingTool
-from bioimageflow_core.types import ImagePath, Semantic
+from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
@@ -32,12 +32,12 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
 class ProcInputs(IOModel):
-    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
     diameter: float = 30.0
 
 
 class ProcOutputs(IOModel):
-    mask: ImagePath(semantics={Semantic.LABEL})
+    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class MockProcessingTool(ProcessingTool):
@@ -50,11 +50,11 @@ class MockProcessingTool(ProcessingTool):
 
 
 class CompatInputs(IOModel):
-    mask_input: ImagePath(semantics={Semantic.LABEL})
+    mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class CompatOutputs(IOModel):
-    result: ImagePath(semantics={Semantic.LABEL})
+    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class CompatTool(ProcessingTool):
@@ -67,11 +67,11 @@ class CompatTool(ProcessingTool):
 
 
 class IncompatInputs(IOModel):
-    img: ImagePath(semantics={Semantic.DISPLACEMENT})
+    img: Annotated[Path, ImageSpec(semantics={Semantic.DISPLACEMENT})]
 
 
 class IncompatOutputs(IOModel):
-    out: ImagePath(semantics={Semantic.LABEL})
+    out: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class IncompatTool(ProcessingTool):
@@ -84,7 +84,7 @@ class IncompatTool(ProcessingTool):
 
 
 class IntParamInputs(IOModel):
-    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
     n: int = 1
 
 

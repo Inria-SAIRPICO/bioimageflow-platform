@@ -29,11 +29,11 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+      image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
       sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
-      result: { type: 'ImagePath' },
+      result: { type: 'ImageFile' },
     },
     environment: null,
     ...overrides,
@@ -170,7 +170,7 @@ describe('ToolNode', () => {
         name: 'mask',
         internal_node_id: 'segment',
         internal_output: 'mask',
-        schema: { type: 'ImagePath' },
+        schema: { type: 'ImageFile' },
       }],
     }))
 
@@ -182,7 +182,7 @@ describe('ToolNode', () => {
     const outputPins = w.find('.body-outputs').findAllComponents({ name: 'OutputPin' })
     expect(outputPins).toHaveLength(1)
     expect(outputPins[0].props('fieldName')).toBe('mask')
-    expect(outputPins[0].props('fieldType')).toBe('ImagePath')
+    expect(outputPins[0].props('fieldType')).toBe('ImageFile')
   })
 
   it('marks readonly sub-workflows without hiding published pins', () => {
@@ -348,10 +348,10 @@ describe('ToolNode', () => {
       tool_type: 'ProcessingTool',
       accepts_upstream: true,
       inputs: {
-        image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+        image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
       },
       outputs: {
-        result: { type: 'ImagePath' },
+        result: { type: 'ImageFile' },
       },
     })
     const data = makeData({ tool, connectedInputs: {} })
@@ -528,11 +528,11 @@ describe('ToolNode', () => {
       const tool = makeTool({
         tool_type: 'ProcessingTool',
         inputs: {
-          image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+          image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
           sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
         },
         outputs: {
-          result: { type: 'ImagePath' },
+          result: { type: 'ImageFile' },
         },
       })
       const data = makeData({ tool, connectedInputs: {} })

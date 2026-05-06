@@ -19,11 +19,11 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+      image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
       sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
-      result: { type: 'ImagePath' },
+      result: { type: 'ImageFile' },
     },
     environment: null,
     ...overrides,
@@ -454,10 +454,10 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('isValidConnection rejects incompatible types (str output -> ImagePath input)', () => {
+    it('isValidConnection rejects incompatible types (str output -> ImageFile input)', () => {
       const store = useToolRegistryStore()
       // A source tool that outputs `str`, and the regular blur which expects
-      // an ImagePath input. Path-family <-> non-path-family must be rejected.
+      // an ImageFile input. Path-family <-> non-path-family must be rejected.
       const stringSource = makeTool({
         name: 'string_source',
         display_name: 'String Source',
@@ -497,7 +497,7 @@ describe('CanvasView', () => {
       const w = mountCanvas()
       const vm = w.vm as any
 
-      // ImagePath -> ImagePath: compatible
+      // ImageFile -> ImageFile: compatible
       const result = vm.isValidConnection({
         source: 'blur_1',
         target: 'blur_2',
@@ -508,7 +508,7 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    // Path-family compatibility: Path / ImagePath / MaskPath share the same
+    // Path-family compatibility: Path / ImageFile / MaskPath share the same
     // runtime carrier (filesystem path). The frontend pre-flight treats them
     // as mutually compatible; the library catches semantic mismatches
     // (image_spec semantics, formats, layouts) on graph validate.
@@ -537,7 +537,7 @@ describe('CanvasView', () => {
           display_name: 'Path Sink',
           inputs: {
             any_path: { type: 'Path', required: true, nullable: false, connectable: 'by_default' },
-            image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+            image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
             mask: { type: 'MaskPath', required: true, nullable: false, connectable: 'by_default' },
           },
           outputs: {},
@@ -550,11 +550,11 @@ describe('CanvasView', () => {
           name: 'multi_path_source',
           display_name: 'Multi Path Source',
           inputs: {
-            seed: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+            seed: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
           },
           outputs: {
             any_path: { type: 'Path' },
-            image: { type: 'ImagePath' },
+            image: { type: 'ImageFile' },
             mask: { type: 'MaskPath' },
           },
         })
@@ -573,7 +573,7 @@ describe('CanvasView', () => {
         return { w, vm }
       }
 
-      it('accepts Path output -> ImagePath input (Files.path -> Atlas.input_image)', () => {
+      it('accepts Path output -> ImageFile input (Files.path -> Atlas.input_image)', () => {
         const { w, vm } = setup()
         const result = vm.isValidConnection({
           source: 'files_1',
@@ -609,7 +609,7 @@ describe('CanvasView', () => {
         w.unmount()
       })
 
-      it('accepts ImagePath output -> Path input', () => {
+      it('accepts ImageFile output -> Path input', () => {
         const { w, vm } = setup()
         const result = vm.isValidConnection({
           source: 'multi_1',
@@ -621,7 +621,7 @@ describe('CanvasView', () => {
         w.unmount()
       })
 
-      it('accepts ImagePath output -> MaskPath input', () => {
+      it('accepts ImageFile output -> MaskPath input', () => {
         const { w, vm } = setup()
         const result = vm.isValidConnection({
           source: 'multi_1',
@@ -645,7 +645,7 @@ describe('CanvasView', () => {
         w.unmount()
       })
 
-      it('accepts MaskPath output -> ImagePath input', () => {
+      it('accepts MaskPath output -> ImageFile input', () => {
         const { w, vm } = setup()
         const result = vm.isValidConnection({
           source: 'multi_1',
@@ -793,7 +793,7 @@ describe('CanvasView', () => {
       expect(node.data.collapsed).toBe(false)
       expect(node.data.enabled).toBe(true)
       expect(node.data.connectedInputs).toEqual({})
-      expect(node.data.pinnedInputs).toEqual({ image: true })  // ImagePath + required => true
+      expect(node.data.pinnedInputs).toEqual({ image: true })  // ImageFile + required => true
       expect(node.data.output_templates).toEqual({ result: '' })  // no default on output
       w.unmount()
     })
@@ -1901,7 +1901,7 @@ describe('CanvasView', () => {
       })
     }
 
-    it('accepts "any"-typed output into an ImagePath input', () => {
+    it('accepts "any"-typed output into an ImageFile input', () => {
       const store = useToolRegistryStore()
       const genTool = makeGenerateTool()
       const blurTool = makeTool()

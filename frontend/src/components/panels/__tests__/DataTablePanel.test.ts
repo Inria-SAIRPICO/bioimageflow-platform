@@ -121,7 +121,7 @@ describe('DataTablePanel', () => {
       total_rows: 1,
       page: 0,
       page_size: 50,
-      column_types: { mask: 'ImagePath' },
+      column_types: { mask: 'ImageFile' },
     }
     vi.stubGlobal(
       'fetch',
@@ -219,7 +219,7 @@ describe('DataTablePanel', () => {
       total_rows: 1,
       page: 0,
       page_size: 50,
-      column_types: { 'segment_1.mask': 'ImagePath' },
+      column_types: { 'segment_1.mask': 'ImageFile' },
     }
 
     const { currentGraph } = useGraphSync()
@@ -239,7 +239,7 @@ describe('DataTablePanel', () => {
             name: 'mask',
             internal_node_id: 'segment_1',
             internal_output: 'mask',
-            schema: { type: 'ImagePath' },
+            schema: { type: 'ImageFile' },
           }],
         },
       ],
@@ -260,7 +260,7 @@ describe('DataTablePanel', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('mask')
-    expect(wrapper.text()).not.toContain('segment_1.maskImagePath')
+    expect(wrapper.text()).not.toContain('segment_1.maskImageFile')
     expect(wrapper.text()).toContain('/data/results/mask.tif')
   })
 

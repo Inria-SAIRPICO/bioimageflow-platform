@@ -17,11 +17,11 @@ def test_node_data_response_construction() -> None:
         total_rows=1,
         page=0,
         page_size=50,
-        column_types={"mask": "ImagePath", "cell_count": "int"},
+        column_types={"mask": "ImageFile", "cell_count": "int"},
     )
     assert response.total_rows == 1
     assert response.page == 0
-    assert response.column_types["mask"] == "ImagePath"
+    assert response.column_types["mask"] == "ImageFile"
 
 
 def test_node_data_response_empty() -> None:
@@ -49,9 +49,9 @@ def test_node_data_response_unicode_columns() -> None:
         total_rows=1,
         page=0,
         page_size=50,
-        column_types={"cellen_zahl": "int", "masque_é": "ImagePath"},
+        column_types={"cellen_zahl": "int", "masque_é": "ImageFile"},
     )
-    assert response.column_types["masque_é"] == "ImagePath"
+    assert response.column_types["masque_é"] == "ImageFile"
 
 
 def test_absolute_rows_length_must_match_rows() -> None:

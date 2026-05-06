@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { getTypeColor } from '../typeColors'
 
 describe('getTypeColor', () => {
-  it('returns blue for ImagePath', () => {
-    expect(getTypeColor('ImagePath')).toBe('#4A90D9')
+  it('returns blue for ImageFile', () => {
+    expect(getTypeColor('ImageFile')).toBe('#4A90D9')
   })
 
   it('returns blue for ImageShared', () => {

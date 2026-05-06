@@ -20,19 +20,19 @@ function makeTool(name: string, inputs: Record<string, any>, outputs: Record<str
   }
 }
 
-const sourceTool = makeTool('files', {}, { image: { type: 'ImagePath' } })
+const sourceTool = makeTool('files', {}, { image: { type: 'ImageFile' } })
 const blurTool = makeTool(
   'blur',
   {
-    image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+    image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
     sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1 },
   },
-  { result: { type: 'ImagePath' } },
+  { result: { type: 'ImageFile' } },
 )
 const thresholdTool = makeTool(
   'threshold',
   {
-    image: { type: 'ImagePath', required: true, nullable: false, connectable: 'by_default' },
+    image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
     level: { type: 'float', required: false, nullable: false, connectable: 'never', default: 0.5 },
   },
   { mask: { type: 'MaskPath' } },

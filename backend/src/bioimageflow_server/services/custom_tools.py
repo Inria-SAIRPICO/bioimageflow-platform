@@ -36,7 +36,7 @@ from bioimageflow_core import (
     GENERAL_ENV,
     GUIMeta,
     IOModel,
-    ImagePath,
+    ImageSpec,
     Layout,
     ProcessingTool,
     Semantic,
@@ -55,7 +55,8 @@ class {class_name}(ProcessingTool):
 
     class Inputs(IOModel):
         input_image: Annotated[
-            ImagePath(
+            Path,
+            ImageSpec(
                 semantics={{Semantic.INTENSITY}},
                 layouts={{Layout.PLANAR, Layout.PLANAR_CHANNEL}},
             ),
@@ -68,7 +69,8 @@ class {class_name}(ProcessingTool):
 
     class Outputs(IOModel):
         output_image: Annotated[
-            ImagePath(semantics={{Semantic.INTENSITY}}),
+            Path,
+            ImageSpec(semantics={{Semantic.INTENSITY}}),
             GUIMeta(
                 display_name="Output image",
                 description="Processed output image.",

@@ -901,12 +901,12 @@ function isValidConnection(connection: {
         if (sourceType === 'any') {
           // Accept — skip type-mismatch rejection.
         } else {
-          // Path-family types (Path / ImagePath / MaskPath) all share the same
+          // Path-family types (Path / ImageFile / MaskPath) all share the same
           // runtime carrier (a filesystem path); the distinction is metadata
           // (image_spec semantics, formats, layouts). Treat them as mutually
           // compatible at the frontend pre-flight; the bioimageflow library
           // performs the authoritative semantic check on graph validate.
-          const PATH_FAMILY = new Set(['Path', 'ImagePath', 'MaskPath'])
+          const PATH_FAMILY = new Set(['Path', 'ImageFile', 'MaskPath'])
           const same = sourceType === targetInput.type
           const bothPath = PATH_FAMILY.has(sourceType) && PATH_FAMILY.has(targetInput.type)
           if (!same && !bothPath) return false
@@ -999,7 +999,7 @@ function onAddNode({
   const pinnedInputs: Record<string, boolean> = {}
   for (const [key, field] of Object.entries(tool.inputs)) {
     if (field.connectable !== 'never') {
-      const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
+      const isPathType = ['Path', 'ImageFile', 'MaskPath'].includes(field.type)
       pinnedInputs[key] = isPathType && field.required
     }
   }
@@ -1011,7 +1011,7 @@ function onAddNode({
   if (tool.tool_type !== 'DataFrameTool') {
     for (const [key, rawField] of Object.entries(tool.outputs)) {
       const field = rawField as { type?: string; default?: string } | undefined
-      if (field && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')) {
+      if (field && ['Path', 'ImageFile', 'MaskPath'].includes(field.type ?? '')) {
         output_templates[key] = field.default || ''
       }
     }
@@ -1177,7 +1177,7 @@ function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
   if (tool) {
     for (const [key, field] of Object.entries(tool.inputs)) {
       if (field.connectable !== 'never') {
-        const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
+        const isPathType = ['Path', 'ImageFile', 'MaskPath'].includes(field.type)
         pinnedInputs[key] = isPathType && field.required
       }
     }
@@ -1187,7 +1187,7 @@ function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
         const field = rawField as { type?: string; default?: string } | undefined
         if (
           field
-          && ['Path', 'ImagePath', 'MaskPath'].includes(field.type ?? '')
+          && ['Path', 'ImageFile', 'MaskPath'].includes(field.type ?? '')
           && !(key in output_templates)
         ) {
           output_templates[key] = field.default || ''

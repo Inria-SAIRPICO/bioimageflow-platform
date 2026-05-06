@@ -1,19 +1,19 @@
 """Tests for :func:`bioimageflow_server.services.execution.clear_node_cache`."""
 # pyright: reportInvalidTypeForm=false
-# Rationale: library factory types like ``ImagePath(semantics={...})`` return
-# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
+# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
+# pyright can't evaluate this runtime metadata statically.
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import IOModel, ProcessingTool
-from bioimageflow_core.types import ImagePath, Semantic
+from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
@@ -30,11 +30,11 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
 class _SrcInputs(IOModel):
-    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
 
 
 class _SrcOutputs(IOModel):
-    mask: ImagePath(semantics={Semantic.LABEL})
+    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class SrcTool(ProcessingTool):
@@ -47,11 +47,11 @@ class SrcTool(ProcessingTool):
 
 
 class _DstInputs(IOModel):
-    mask_input: ImagePath(semantics={Semantic.LABEL})
+    mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class _DstOutputs(IOModel):
-    result: ImagePath(semantics={Semantic.LABEL})
+    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class DstTool(ProcessingTool):

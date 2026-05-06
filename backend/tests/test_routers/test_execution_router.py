@@ -1,13 +1,13 @@
 """Tests for the execution router."""
 # pyright: reportInvalidTypeForm=false
-# Rationale: library factory types like ``ImagePath(semantics={...})`` return
-# ``Annotated[Path, spec]`` at runtime; pyright can't evaluate them statically.
+# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
+# pyright can't evaluate this runtime metadata statically.
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -16,7 +16,7 @@ from httpx import ASGITransport
 
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import IOModel, ProcessingTool
-from bioimageflow_core.types import ImagePath, Semantic
+from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.execution import (
@@ -37,11 +37,11 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
 class _SrcInputs(IOModel):
-    input_image: ImagePath(semantics={Semantic.INTENSITY})
+    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
 
 
 class _SrcOutputs(IOModel):
-    mask: ImagePath(semantics={Semantic.LABEL})
+    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class SrcTool(ProcessingTool):
@@ -54,11 +54,11 @@ class SrcTool(ProcessingTool):
 
 
 class _DstInputs(IOModel):
-    mask_input: ImagePath(semantics={Semantic.LABEL})
+    mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class _DstOutputs(IOModel):
-    result: ImagePath(semantics={Semantic.LABEL})
+    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
 
 
 class DstTool(ProcessingTool):

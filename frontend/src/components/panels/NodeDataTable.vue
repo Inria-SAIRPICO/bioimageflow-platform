@@ -40,12 +40,12 @@ const rowModels = computed(() => {
 
 function isImageColumn(col: string): boolean {
   const type = data.value?.column_types[col]
-  return type === 'ImagePath' || type === 'ImageShared'
+  return type === 'ImageFile' || type === 'ImageShared'
 }
 
 function isPathColumn(col: string): boolean {
   const type = data.value?.column_types[col]
-  return type === 'Path' || type === 'ImagePath'
+  return type === 'Path' || type === 'ImageFile'
 }
 
 function toggleSort(col: string) {

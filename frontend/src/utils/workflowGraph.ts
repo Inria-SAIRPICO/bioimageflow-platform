@@ -64,7 +64,7 @@ export function graphStateToVueFlow(
     if (tool) {
       for (const [key, field] of Object.entries(tool.inputs)) {
         if (field.connectable !== 'never') {
-          const isPathType = ['Path', 'ImagePath', 'MaskPath'].includes(field.type)
+          const isPathType = ['Path', 'ImageFile', 'MaskPath'].includes(field.type)
           pinnedInputs[key] = isPathType && field.required
         }
       }

@@ -130,11 +130,11 @@ def test_get_column_types_uses_registered_tool_outputs(tmp_path: Path) -> None:
         package="pkg",
         package_version="1",
         tool_type="ProcessingTool",
-        outputs={"mask": {"type": "ImagePath", "default": None, "image_spec": {}}},
+        outputs={"mask": {"type": "ImageFile", "default": None, "image_spec": {}}},
     )
     df = pd.DataFrame({"mask": ["/tmp/m.tif"], "score": [1.5]})
     assert _store(tmp_path, registry).get_column_types(df, "T") == {
-        "mask": "ImagePath",
+        "mask": "ImageFile",
         "score": "float",
     }
 

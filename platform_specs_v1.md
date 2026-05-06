@@ -105,7 +105,7 @@ Per-field `InputFieldSchema`:
 
 | Key | Type | Notes |
 |-----|------|-------|
-| `type` | `string` | Display name (e.g. `"float"`, `"int"`, `"str"`, `"bool"`, `"Path"`, `"ImagePath"`, `"ImageShared"`). |
+| `type` | `string` | Display name (e.g. `"float"`, `"int"`, `"str"`, `"bool"`, `"Path"`, `"ImageFile"`, `"ImageShared"`). |
 | `required` | `boolean` | `true` when no class-level default is set on `Inputs`. |
 | `nullable` | `boolean` | `true` when the type annotation admits `None` (i.e. `Optional[X]` or `X \| None`). Independent of `required`: a field can be required-and-nullable (user must pass *something*, and `None` counts) or non-required-and-non-nullable. GUIs use this to decide whether to expose a "set to null" affordance. |
 | `connectable` | `"never" \| "not_by_default" \| "by_default"` | Three-state. `"never"` hides the pin; the other two mean the field can accept an upstream binding. |
@@ -115,7 +115,7 @@ Per-field `InputFieldSchema`:
 | `group` | `string \| null` | From `GUIMeta.group`. |
 | `min` / `max` / `step` | `number \| null` | From `GUIMeta`. |
 | `choices` | `string[] \| null` | Populated for `Literal[...]` and `Enum` fields. |
-| `image_spec` | `object \| null` | `{semantics, layouts, dtypes, formats}` each as `string[]`, populated for `ImagePath` / `ImageShared` fields. |
+| `image_spec` | `object \| null` | `{semantics, layouts, dtypes, formats}` each as `string[]`, populated for `ImageFile` / `ImageShared` fields. |
 
 Per-field `OutputFieldSchema`:
 
@@ -152,7 +152,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
   "categories": ["segmentation"],
   "inputs": {
     "input_image": {
-      "type": "ImagePath",
+      "type": "ImageFile",
       "required": true,
       "nullable": false,
       "connectable": "by_default",
@@ -192,7 +192,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
     }
   },
   "outputs": {
-    "mask": {"type": "ImagePath", "default": "{input_image.stem}_mask{ext}", "template": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
+    "mask": {"type": "ImageFile", "default": "{input_image.stem}_mask{ext}", "template": "{input_image.stem}_mask{ext}", "image_spec": {"semantics": ["label"], "layouts": ["YX"], "dtypes": [], "formats": []}},
     "cell_count": {"type": "int", "default": null, "image_spec": null}
   },
   "environment": {"python": "3.11", "conda": ["cellpose"], "pip": []}
@@ -203,6 +203,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 
 **Example tool definition with GUIMeta:**
 ```python
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from bioimageflow_core import (
@@ -210,7 +211,7 @@ from bioimageflow_core import (
     Connectable,
     GUIMeta,
     IOModel,
-    ImagePath,
+    ImageSpec,
     Layout,
     ProcessingTool,
     Semantic,
@@ -223,7 +224,8 @@ class CellposeSegmenter(ProcessingTool):
 
     class Inputs(IOModel):
         input_image: Annotated[
-            ImagePath(
+            Path,
+            ImageSpec(
                 semantics={Semantic.INTENSITY},
                 layouts={Layout.PLANAR, Layout.PLANAR_CHANNEL},
             ),
@@ -244,7 +246,8 @@ class CellposeSegmenter(ProcessingTool):
 
     class Outputs(IOModel):
         mask: Annotated[
-            ImagePath(semantics={Semantic.LABEL}, layouts={Layout.PLANAR}),
+            Path,
+            ImageSpec(semantics={Semantic.LABEL}, layouts={Layout.PLANAR}),
             GUIMeta(display_name="Segmentation mask"),
         ] = Template("{input_image.stem}_mask{ext}")
         cell_count: int
@@ -554,7 +557,7 @@ For **parameter-only changes** (no structural change to edges/nodes), the fronte
   "total_rows": 250,
   "page": 0,
   "page_size": 50,
-  "column_types": {"mask": "ImagePath", "cell_count": "int"}
+  "column_types": {"mask": "ImageFile", "cell_count": "int"}
 }
 ```
 
@@ -941,7 +944,7 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 **Edge visuals:**
 - Edges are drawn as curved lines (bezier curves).
 - Positional edges: solid, neutral gray (#7A7A80), 2.5px stroke width.
-- Column reference edges: solid, type-colored (e.g., ImagePath = blue, scalar = gray), 2px stroke width.
+- Column reference edges: solid, type-colored (e.g., ImageFile = blue, scalar = gray), 2px stroke width.
 - Selected edges are highlighted.
 
 #### 3.3.3 Pins
@@ -1081,7 +1084,7 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `Enum` or `Literal[...]` | Dropdown | -- |
 | `Path` (file) | Text input + "Select File" button | In pywebview: native file dialog. In browser: Dataset Browser modal (Section 3.14). |
 | `Path` (directory) | Text input + "Select Folder" button | In pywebview: native folder dialog. In browser: folder selection is not offered — the button is hidden and only manual text entry or drag-and-drop is available. |
-| `ImagePath` | Text input + "Select File" button (filtered by format spec) | Same dual behavior as `Path` (file). File-type filter applies to both the native dialog and the Dataset Browser search filter. |
+| `ImageFile` | Text input + "Select File" button (filtered by format spec) | Same dual behavior as `Path` (file). File-type filter applies to both the native dialog and the Dataset Browser search filter. |
 | `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable != "never"`, not user-editable. |
 | `tuple`, `list` | Inline list editor | -- |
 
@@ -1092,10 +1095,10 @@ When a connectable input is **connected** (pin has an edge), the input field is 
 Each output field from `Outputs` is displayed with editable path templates for path-typed outputs **on `ProcessingTool` nodes only**:
 
 - **Label:** Field name
-- **Type badge:** Visual indicator of the type (ImagePath, int, etc.)
-- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImagePath`, `MaskPath`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
+- **Type badge:** Visual indicator of the type (ImageFile, int, etc.)
+- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImageFile`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
 - **Non-path outputs** (int, float, str, etc.) are shown read-only.
-- **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImagePath`/`MaskPath` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept (see `specs.md` Section 2080: *"DataFrameTool does not use output templating — it returns DataFrames directly."*). The tool's `tool_type` field on `ToolMetadata` is the gate.
+- **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImageFile` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept (see `specs.md` Section 2080: *"DataFrameTool does not use output templating — it returns DataFrames directly."*). The tool's `tool_type` field on `ToolMetadata` is the gate.
 
 #### 3.5.4b Resource Configuration
 
@@ -1154,7 +1157,7 @@ When multiple nodes are selected, their DataFrames are displayed in a **vertical
 - **Column types:** Columns are annotated with their type. Image columns show special rendering.
 - **Pagination:** Large DataFrames are paginated (server-side, via `/nodes/{node_id}/data?page=0&page_size=50`).
 - **Sorting:** Click column header to sort.
-- **Image cells:** For columns typed as `ImagePath` or `ImageShared`:
+- **Image cells:** For columns typed as `ImageFile` or `ImageShared`:
   - Show a thumbnail (loaded lazily from `/nodes/{node_id}/thumbnail?row=0&col=mask`)
   - **Open in Napari** button: Opens in Napari (`POST /napari/open`). Ctrl+Click clears existing layers.
   - **Reveal in file browser** button.

@@ -71,7 +71,7 @@
       "min": null,
       "required": true,
       "step": null,
-      "type": "ImagePath"
+      "type": "ImageFile"
     },
     "model_type": {
       "choices": null,
@@ -107,7 +107,7 @@
           "label"
         ]
       },
-      "type": "ImagePath"
+      "type": "ImageFile"
     }
   },
   "package": "bioimageflow_common_tools",
