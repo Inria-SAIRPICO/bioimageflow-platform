@@ -6,12 +6,14 @@ import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useFieldFocusTracker } from '@/composables/useFieldFocusTracker'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 
 interface NodeData {
   toolName: string
   tool: ToolMetadata
   status: string
   parameters: Record<string, unknown>
+  output_templates?: Record<string, string>
   updatedBadge?: boolean
   toolMissing?: boolean
 }
@@ -95,6 +97,10 @@ export function useHotReload(options: UseHotReloadOptions = {}) {
       }
     }
     node.data.parameters = next
+    node.data.output_templates = reconcileOutputTemplates(
+      meta,
+      node.data.output_templates ?? {},
+    )
     node.data.updatedBadge = true
     if (!isExecuting && node.data.status === 'executed') {
       node.data.status = 'out_of_date'

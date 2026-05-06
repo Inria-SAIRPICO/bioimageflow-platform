@@ -268,6 +268,10 @@ function handleToolRenamedEvent(event: Event) {
     if (node.data?.toolName !== detail.old_name) continue
     node.data.toolName = detail.new_name
     node.data.tool = fresh
+    node.data.output_templates = reconcileOutputTemplates(
+      fresh,
+      node.data.output_templates ?? {},
+    )
     node.data.missingTool = null
     changed = true
   }
@@ -611,6 +615,10 @@ watch(
       const prev = n.data.tool
       if (prev && prev.package_version === fresh.package_version) continue
       n.data.tool = fresh
+      n.data.output_templates = reconcileOutputTemplates(
+        fresh,
+        n.data.output_templates ?? {},
+      )
       // Only invalidate executed nodes — leave unexecuted/failed/disabled
       // alone so the version switch doesn't visually thrash the canvas.
       if (n.data.status === 'executed') {
