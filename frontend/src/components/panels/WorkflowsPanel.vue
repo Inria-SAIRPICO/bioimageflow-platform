@@ -212,7 +212,7 @@ defineExpose({
           @click.stop
           @dragstart.stop="onWorkflowDragStart($event, workflow)"
         >
-          <i class="pi pi-grip-vertical" aria-hidden="true" />
+          <i class="pi pi-bars" aria-hidden="true" />
         </span>
         <span class="workflow-row__name">{{ workflow.display_name }}</span>
         <span

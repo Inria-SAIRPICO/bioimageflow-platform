@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Annotated, Any
 
 from bioimageflow import DataFrameTool
 from bioimageflow_core import IOModel
+from bioimageflow_core.environment import EnvironmentSpec
+from bioimageflow_core.tool import ProcessingTool
+from bioimageflow_core.types import ImageSpec
 from fastapi import APIRouter, Depends
 
 from bioimageflow_server.models.tools import (
@@ -74,6 +78,26 @@ class IncrementNumbers(DataFrameTool):
         result = df.copy()
         result["number_plus_one"] = result["number"] + 1
         return result
+
+
+class GaussianBlurInputs(IOModel):
+    input_image: Annotated[Path, ImageSpec()]
+    sigma: float = 1.0
+
+
+class GaussianBlurOutputs(IOModel):
+    output_image: Annotated[Path, ImageSpec()]
+
+
+class GaussianBlur(ProcessingTool):
+    """Tiny executable image-processing fixture for E2E graph validation."""
+
+    environment = EnvironmentSpec(name="bioimageflow-e2e", dependencies={})
+    Inputs = GaussianBlurInputs
+    Outputs = GaussianBlurOutputs
+
+    def process_row(self, arguments: Any) -> Any:
+        return self.Outputs(output_image=Path("output.tif"))
 
 
 _SEED_TOOLS: list[ToolMetadata] = [
@@ -245,6 +269,7 @@ async def seed_tools(
         tool_class = {
             "SeedNumbers": SeedNumbers,
             "IncrementNumbers": IncrementNumbers,
+            "GaussianBlur": GaussianBlur,
         }.get(tool.name)
         registry.register_tool(tool.name, tool, tool_class=tool_class)
     for pkg in _SEED_PACKAGES:
