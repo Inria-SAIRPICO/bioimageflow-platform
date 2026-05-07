@@ -104,3 +104,7 @@ cd frontend && bun run test:e2e
 
 - `specs.md` -- BioImageFlow library specifications
 - `platform_specs_v1.md` -- MVP platform specifications
+
+## Todo
+
+- Handle .DS_Store; make error messages more clear

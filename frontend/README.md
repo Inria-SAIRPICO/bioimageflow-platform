@@ -60,6 +60,12 @@ bun run dev                      # Start Vite dev server (port 5173)
 
 The dev server proxies `/api` to `http://127.0.0.1:8000` and `/ws` to `ws://127.0.0.1:8000`. Start the backend first.
 
+To specify another backend port:
+
+```bash
+BIOIMAGEFLOW_BACKEND_PORT=8008 bun run dev
+```
+
 ## Testing
 
 ```bash

@@ -10,6 +10,7 @@ export const useUIStore = defineStore('ui', () => {
   const codeEditorUrl = ref<string | null>(null)
   const codeEditorPath = ref<string | null>(null)
   const codeEditorOpening = ref(false)
+  const codeEditorDetached = ref(false)
 
   const panels = reactive({
     tools: true,
@@ -89,6 +90,11 @@ export const useUIStore = defineStore('ui', () => {
     codeEditorOpening.value = false
   }
 
+  function setCodeEditorDetached(detached: boolean) {
+    codeEditorDetached.value = detached
+    panels.codeEditor = true
+  }
+
   return {
     selectedNodeIds,
     graphNodes,
@@ -98,6 +104,7 @@ export const useUIStore = defineStore('ui', () => {
     codeEditorUrl,
     codeEditorPath,
     codeEditorOpening,
+    codeEditorDetached,
     panels,
     hasSelection,
     isSingleSelection,
@@ -115,5 +122,6 @@ export const useUIStore = defineStore('ui', () => {
     setCodeEditorTarget,
     setCodeEditorOpening,
     clearCodeEditorOpening,
+    setCodeEditorDetached,
   }
 })

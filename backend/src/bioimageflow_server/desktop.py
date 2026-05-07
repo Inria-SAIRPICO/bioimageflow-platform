@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from urllib.parse import urlparse
 import urllib.request
 
 import uvicorn
@@ -22,6 +23,7 @@ class DesktopApi:
 
     def __init__(self) -> None:
         self._window: webview.Window | None = None
+        self._code_editor_window: webview.Window | None = None
 
     def set_window(self, window: webview.Window) -> None:
         """Bind the pywebview window reference after creation."""
@@ -126,6 +128,76 @@ class DesktopApi:
         if self._window is not None:
             self._window.set_title(title)
 
+    # ---- Code editor child window ----
+
+    def open_code_editor_window(self, url: str, title: str = "Code Editor") -> bool:
+        """Open or focus the detached code-server window.
+
+        Only local code-server URLs are accepted. This bridge intentionally does
+        not provide arbitrary native-window navigation.
+        """
+        _validate_local_editor_url(url)
+
+        if self._code_editor_window is not None:
+            self._focus_code_editor_window(title)
+            return True
+
+        window = webview.create_window(
+            title or "Code Editor",
+            url,
+            width=1200,
+            height=800,
+            min_size=(800, 600),
+            resizable=True,
+            confirm_close=False,
+        )
+        if window is None:
+            return False
+
+        self._code_editor_window = window
+
+        def on_closed(*_args: object) -> None:
+            if self._code_editor_window is window:
+                self._code_editor_window = None
+                self._notify_code_editor_window_closed()
+
+        window.events.closed += on_closed
+        return True
+
+    def close_code_editor_window(self) -> bool:
+        """Close the detached Code Editor window, if one is open."""
+        window = self._code_editor_window
+        if window is None:
+            return False
+        self._code_editor_window = None
+        try:
+            window.destroy()
+        except Exception:
+            logger.exception("Failed to close Code Editor window")
+            return False
+        return True
+
+    def _focus_code_editor_window(self, title: str) -> None:
+        window = self._code_editor_window
+        if window is None:
+            return
+        if title:
+            window.set_title(title)
+        window.restore()
+        window.show()
+
+    def _notify_code_editor_window_closed(self) -> None:
+        if self._window is None:
+            return
+        try:
+            self._window.evaluate_js(
+                "window.dispatchEvent(new CustomEvent("
+                "'bioimageflow:code-editor-window-closed'"
+                "))"
+            )
+        except Exception:
+            logger.exception("Failed to notify frontend that Code Editor window closed")
+
 
 def main_desktop() -> None:
     """Console-script entry point for ``bioimageflow-gui``.
@@ -209,11 +281,16 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
     assert window is not None, "webview.create_window returned None"
     api.set_window(window)
 
-    window.events.closing += _on_closing
+    def on_main_window_closing() -> bool:
+        api.close_code_editor_window()
+        return _on_closing()
+
+    window.events.closing += on_main_window_closing
 
     try:
         webview.start(debug=True)
     finally:
+        api.close_code_editor_window()
         # Window has been closed (or start() raised) -- run shutdown sequence
         _shutdown(server, server_thread)
 
@@ -234,6 +311,15 @@ def _on_closing() -> bool:
     # present, show a native confirmation dialog.  For now, always allow close.
     logger.debug("Window closing event received — allowing close")
     return True
+
+
+def _validate_local_editor_url(url: str) -> None:
+    """Reject non-local URLs before opening a native child window."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Code Editor window URL must use http or https")
+    if parsed.hostname not in {"localhost", "127.0.0.1"}:
+        raise ValueError("Code Editor window URL must be local")
 
 
 _SERVER_THREAD_JOIN_TIMEOUT = 5.0
