@@ -48,7 +48,9 @@ contains A).
 - **Double-click** a SubWorkflowNode to open its internal DAG in a **new tab** (same behavior as opening a workflow from the Workflow Panel).
 - The tab title shows the sub-workflow node name (e.g., `segment_and_measure_1`).
 - The user can edit internal nodes, parameters, and connections within this tab.
+- The editor session carries the parent SubWorkflowNode's published interface (`published_inputs` and `published_outputs`) alongside the internal DAG. Internal node panels use this shared session state for Publish toggles, so publishing/unpublishing a field changes the outer node interface, not only the nested graph.
 - **Save semantics:** Changes to the sub-workflow's internal DAG are applied to the parent on explicit save (Ctrl+S within the sub-workflow tab). The parent workflow does not see intermediate edits. Closing the tab with unsaved changes shows a confirmation dialog: "Discard unsaved changes to sub-workflow '{name}'?"
+- Saving a sub-workflow tab applies both the internal DAG and the published interface to the parent node. Publishing-only changes mark the tab dirty. If a published pin is renamed, existing parent edges targeting the same internal field/output are moved to the new handle. If a pin is unpublished, parent edges and stale parent-level parameter values for that pin are removed.
 - Closing the sub-workflow tab returns focus to the parent workflow tab.
 
 ### 1.4 Execution and Caching
@@ -74,6 +76,7 @@ When a parameter is published:
 - It appears as an input pin on the SubWorkflowNode in the parent workflow.
 - The parent workflow can set its value directly or connect an edge to it.
 - The value set on the SubWorkflowNode overrides the internal node's default.
+- The BioImageFlow library config represents this as a declared sub-workflow input plus an internal node binding of `{"from_input": "<published_name>"}`. The platform sends the derived config to the library validator and surfaces library errors.
 
 ### 1.6 Publish Toggle on Outputs
 
@@ -85,6 +88,7 @@ When an output is published:
 - It appears as an output pin on the SubWorkflowNode in the parent workflow.
 - Other nodes in the parent workflow can connect edges to it.
 - The published name defaults to `{node_name}.{output_field}` and can be customized.
+- The BioImageFlow library config represents this as a declared sub-workflow output plus an `output_mapping` entry from the published name to the internal node output. The library validates missing mappings, undeclared mappings, and invalid interface references.
 
 ### 1.7 Nesting
 

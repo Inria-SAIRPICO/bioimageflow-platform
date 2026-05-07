@@ -53,9 +53,40 @@ describe('useSubWorkflowSessionsStore', () => {
     session.draft.nodes[0].name = 'changed'
 
     const saved = store.saveSession(session.id)
-    saved.nodes[0].name = 'mutated after save'
+    saved.graph.nodes[0].name = 'mutated after save'
 
     expect(store.sessionById(session.id)?.draft.nodes[0].name).toBe('changed')
+    expect(store.isDirty(session.id)).toBe(false)
+  })
+
+  it('tracks published interface edits as dirty and includes them in save payload', () => {
+    const store = useSubWorkflowSessionsStore()
+    const session = store.openSession({
+      parentWorkflowName: 'parent',
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: graph('internal_1'),
+      published_inputs: [{
+        name: 'image',
+        internal_node_id: 'internal_1',
+        internal_field: 'input_image',
+        kind: 'input',
+        schema: { type: 'Path' },
+        default: null,
+      }],
+      published_outputs: [],
+    })
+
+    session.published_inputs[0].name = 'input_folder'
+
+    expect(store.isDirty(session.id)).toBe(true)
+    expect(store.dirtySessionIds).toEqual([session.id])
+
+    const saved = store.saveSession(session.id)
+    saved.published_inputs[0].name = 'changed-after-save'
+
+    expect(saved.graph.nodes[0].id).toBe('internal_1')
+    expect(store.sessionById(session.id)?.published_inputs[0].name).toBe('input_folder')
     expect(store.isDirty(session.id)).toBe(false)
   })
 

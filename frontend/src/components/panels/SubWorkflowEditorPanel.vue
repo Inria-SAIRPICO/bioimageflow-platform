@@ -21,12 +21,14 @@ const isDirty = computed(() => (
 function save() {
   const current = session.value
   if (!current) return
-  const graph = sessionsStore.saveSession(current.id)
+  const saved = sessionsStore.saveSession(current.id)
   window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
     detail: {
       sessionId: current.id,
       parentNodeId: current.parentNodeId,
-      graph,
+      graph: saved.graph,
+      published_inputs: saved.published_inputs,
+      published_outputs: saved.published_outputs,
     },
   }))
 }

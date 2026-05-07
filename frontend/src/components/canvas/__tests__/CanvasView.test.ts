@@ -1302,6 +1302,141 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('loads sub-workflow editor nodes with a shared publishing context', async () => {
+      const toolStore = useToolRegistryStore()
+      toolStore.tools = [makeTool()] as any
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: {
+          nodes: [{
+            id: 'inner_1',
+            name: 'Inner 1',
+            tool_name: 'gaussian_blur',
+            position: [0, 0],
+            parameters: {},
+            resources: {},
+            output_templates: {},
+            enabled: true,
+            collapsed: false,
+          }],
+          edges: [],
+        },
+        published_inputs: [{
+          name: 'image',
+          internal_node_id: 'inner_1',
+          internal_field: 'image',
+          kind: 'input',
+          schema: { type: 'ImageFile' },
+          default: null,
+        }],
+        published_outputs: [],
+      })
+
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+
+      const innerNode = mockNodes.find((n: any) => n.id === 'inner_1')!
+      expect(innerNode.data.subWorkflowContext.parentNodeId).toBe('sub_1')
+      expect(innerNode.data.subWorkflowContext.published_inputs)
+        .toBe(sessions.sessionById(session.id)!.published_inputs)
+
+      innerNode.data.subWorkflowContext.published_inputs[0].name = 'input_folder'
+      expect(sessions.isDirty(session.id)).toBe(true)
+      w.unmount()
+    })
+
+    it('reconciles parent pins, parameters, and edges when applying a published interface', () => {
+      const w = mountCanvas()
+      mockNodes.splice(0, mockNodes.length, {
+        id: 'sub_1',
+        type: 'sub_workflow',
+        position: { x: 0, y: 0 },
+        data: {
+          name: 'Sub 1',
+          toolName: '__sub_workflow__',
+          status: 'executed',
+          parameters: { image: '/data', removed: 'stale', keep: 42 },
+          pinnedInputs: { image: false, removed: true },
+          connectedInputs: { image: 'files.path', removed: 'files.other' },
+          published_inputs: [
+            {
+              name: 'image',
+              internal_node_id: 'files',
+              internal_field: 'input_folder',
+              kind: 'parameter',
+              schema: { type: 'Path' },
+              default: null,
+            },
+            {
+              name: 'removed',
+              internal_node_id: 'files',
+              internal_field: 'removed',
+              kind: 'parameter',
+              schema: { type: 'Path' },
+              default: null,
+            },
+          ],
+          published_outputs: [
+            {
+              name: 'labels',
+              internal_node_id: 'count',
+              internal_output: 'label_count',
+              schema: { type: 'int' },
+            },
+            {
+              name: 'gone',
+              internal_node_id: 'count',
+              internal_output: 'gone',
+              schema: { type: 'int' },
+            },
+          ],
+          sub_workflow: { nodes: [], edges: [] },
+        },
+      })
+      mockEdges.splice(
+        0,
+        mockEdges.length,
+        { id: 'e-in', source: 'files_1', target: 'sub_1', sourceHandle: 'path', targetHandle: 'image', type: 'column_ref' },
+        { id: 'e-removed-in', source: 'files_1', target: 'sub_1', sourceHandle: 'other', targetHandle: 'removed', type: 'column_ref' },
+        { id: 'e-out', source: 'sub_1', target: 'sink_1', sourceHandle: 'labels', targetHandle: 'count', type: 'column_ref' },
+        { id: 'e-removed-out', source: 'sub_1', target: 'sink_2', sourceHandle: 'gone', targetHandle: 'count', type: 'column_ref' },
+      )
+
+      const vm = w.vm as any
+      vm.applySubWorkflowDraft('sub_1', { nodes: [], edges: [] }, {
+        published_inputs: [{
+          name: 'input_folder',
+          internal_node_id: 'files',
+          internal_field: 'input_folder',
+          kind: 'parameter',
+          schema: { type: 'Path' },
+          default: null,
+        }],
+        published_outputs: [{
+          name: 'label_count',
+          internal_node_id: 'count',
+          internal_output: 'label_count',
+          schema: { type: 'int' },
+        }],
+      })
+
+      const subNode = mockNodes.find((n: any) => n.id === 'sub_1')!
+      expect(mockEdges.map((edge: any) => edge.id)).toEqual(['e-in', 'e-out'])
+      expect(mockEdges[0].targetHandle).toBe('input_folder')
+      expect(mockEdges[1].sourceHandle).toBe('label_count')
+      expect(subNode.data.parameters).toEqual({ input_folder: '/data', keep: 42 })
+      expect(subNode.data.pinnedInputs).toEqual({ input_folder: false })
+      expect(subNode.data.connectedInputs).toEqual({ input_folder: 'files_1.path' })
+      expect(subNode.data.published_inputs[0].name).toBe('input_folder')
+      expect(subNode.data.published_outputs[0].name).toBe('label_count')
+      expect(subNode.data.status).toBe('out_of_date')
+      expect(w.emitted('graph-changed')).toBeTruthy()
+      w.unmount()
+    })
+
     it('Ctrl+A selects all nodes via keydown', () => {
       mockNodes = [
         { id: 'a', selected: false, data: {}, position: { x: 0, y: 0 } },

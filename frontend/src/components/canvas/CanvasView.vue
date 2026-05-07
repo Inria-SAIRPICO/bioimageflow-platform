@@ -33,7 +33,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
-import type { GraphState, MissingTool, NodeState } from '@/api/types'
+import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput } from '@/api/types'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
@@ -160,6 +160,40 @@ const nodeContextMenu = ref<{
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
 let isApplyingGraphState = false
 
+interface SubWorkflowApplyPayload {
+  graph: GraphState
+  published_inputs?: PublishedInput[]
+  published_outputs?: PublishedOutput[]
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function currentSubWorkflowContext() {
+  if (!isSubWorkflowEditor || !props.subWorkflowSessionId) return null
+  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  if (!session) return null
+  return {
+    parentNodeId: session.parentNodeId,
+    published_inputs: session.published_inputs,
+    published_outputs: session.published_outputs,
+  }
+}
+
+function attachSubWorkflowContext(node: any) {
+  const context = currentSubWorkflowContext()
+  if (!context) return node
+  node.data ??= {}
+  node.data.subWorkflowContext = context
+  return node
+}
+
+function attachSubWorkflowContextToNodes(nodes: any[]) {
+  if (!isSubWorkflowEditor) return nodes
+  return nodes.map((node) => attachSubWorkflowContext(node))
+}
+
 // --- Workflow startup / graph application ---
 
 async function applyGraphState(
@@ -172,6 +206,7 @@ async function applyGraphState(
     toolRegistryStore.getToolByName,
     missingTools,
   )
+  attachSubWorkflowContextToNodes(vueFlowGraph.nodes)
   isApplyingGraphState = true
   try {
     setNodes([])
@@ -1044,6 +1079,7 @@ function onAddNode({
     },
   }
 
+  attachSubWorkflowContext(newNode)
   addNodes([newNode])
   emitGraphChanged()
 }
@@ -1068,7 +1104,7 @@ async function onAddWorkflowNode({
       existingNames,
       info.display_name ?? workflowName,
     )
-    addNodes([{
+    const newNode = {
       id,
       type: 'sub_workflow',
       position: position ?? { x: 0, y: 0 },
@@ -1086,7 +1122,9 @@ async function onAddWorkflowNode({
         sub_workflow: graph,
         source_workflow_name: workflowName,
       },
-    }])
+    }
+    attachSubWorkflowContext(newNode)
+    addNodes([newNode])
     emitGraphChanged()
   } catch (e: unknown) {
     clipboardToast?.add({
@@ -1357,7 +1395,9 @@ async function pasteFromClipboard() {
     return
   }
 
-  const newNodes = prepared.nodes.map(vueFlowNodeFromClipboardNode)
+  const newNodes = attachSubWorkflowContextToNodes(
+    prepared.nodes.map(vueFlowNodeFromClipboardNode),
+  )
   const newEdges = prepared.edges.map(vueFlowEdgeFromClipboardEdge)
   populateConnectedInputsForPastedNodes(newNodes, newEdges)
 
@@ -1388,6 +1428,7 @@ function createSelectedSubWorkflow() {
     subWorkflowId: id,
     subWorkflowName: name,
   })
+  attachSubWorkflowContextToNodes(result.nodes as any[])
   setNodes(result.nodes as any)
   setEdges(result.edges)
   uiStore.setSelectedNodes([id])
@@ -1402,6 +1443,8 @@ function openSubWorkflow(nodeId: string) {
     parentNodeId: node.id,
     parentNodeName: node.data.name ?? node.id,
     graph: node.data.sub_workflow,
+    published_inputs: node.data.published_inputs ?? [],
+    published_outputs: node.data.published_outputs ?? [],
     readonlyReason: node.data.sub_workflow_readonly_reason ?? null,
   })
   window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
@@ -1410,10 +1453,137 @@ function openSubWorkflow(nodeId: string) {
   return session
 }
 
-function applySubWorkflowDraft(parentNodeId: string, graph: GraphState) {
+function stablePublishedInputKey(input: PublishedInput): string {
+  return `${input.internal_node_id}:${input.internal_field}`
+}
+
+function stablePublishedOutputKey(output: PublishedOutput): string {
+  return `${output.internal_node_id}:${output.internal_output}`
+}
+
+function inputRenameMap(
+  previous: PublishedInput[],
+  next: PublishedInput[],
+): Map<string, string | null> {
+  const nextByKey = new Map(next.map((pin) => [stablePublishedInputKey(pin), pin.name]))
+  const result = new Map<string, string | null>()
+  for (const pin of previous) {
+    result.set(pin.name, nextByKey.get(stablePublishedInputKey(pin)) ?? null)
+  }
+  return result
+}
+
+function outputRenameMap(
+  previous: PublishedOutput[],
+  next: PublishedOutput[],
+): Map<string, string | null> {
+  const nextByKey = new Map(next.map((pin) => [stablePublishedOutputKey(pin), pin.name]))
+  const result = new Map<string, string | null>()
+  for (const pin of previous) {
+    result.set(pin.name, nextByKey.get(stablePublishedOutputKey(pin)) ?? null)
+  }
+  return result
+}
+
+function reconcilePublishedParentState(
+  parentNodeId: string,
+  previousInputs: PublishedInput[],
+  previousOutputs: PublishedOutput[],
+  nextInputs: PublishedInput[],
+  nextOutputs: PublishedOutput[],
+) {
+  const inputNames = new Set(nextInputs.map((pin) => pin.name))
+  const inputRenames = inputRenameMap(previousInputs, nextInputs)
+  const outputRenames = outputRenameMap(previousOutputs, nextOutputs)
+  const nextEdges: any[] = []
+
+  for (const edge of getEdges.value) {
+    if (edge.target === parentNodeId && inputRenames.has(edge.targetHandle ?? '')) {
+      const nextHandle = inputRenames.get(edge.targetHandle ?? '')
+      if (nextHandle === null) continue
+      nextEdges.push({ ...edge, targetHandle: nextHandle })
+      continue
+    }
+    if (edge.source === parentNodeId && outputRenames.has(edge.sourceHandle ?? '')) {
+      const nextHandle = outputRenames.get(edge.sourceHandle ?? '')
+      if (nextHandle === null) continue
+      nextEdges.push({ ...edge, sourceHandle: nextHandle })
+      continue
+    }
+    nextEdges.push(edge)
+  }
+  setEdges(nextEdges)
+
+  const parentNode = getNodes.value.find((n: any) => n.id === parentNodeId)
+  if (!parentNode?.data) return
+
+  const nextParameters: Record<string, unknown> = {}
+  const currentParameters = parentNode.data.parameters ?? {}
+  for (const [key, value] of Object.entries(currentParameters)) {
+    if (inputRenames.has(key)) {
+      const nextName = inputRenames.get(key)
+      if (nextName != null) nextParameters[nextName] = value
+      continue
+    }
+    if (!inputNames.has(key)) {
+      nextParameters[key] = value
+    }
+  }
+  for (const pin of nextInputs) {
+    if (!(pin.name in nextParameters) && pin.default !== null && pin.default !== undefined) {
+      nextParameters[pin.name] = pin.default
+    }
+  }
+  parentNode.data.parameters = nextParameters
+
+  const nextPinnedInputs: Record<string, boolean> = {}
+  const currentPinnedInputs = parentNode.data.pinnedInputs ?? {}
+  for (const pin of nextInputs) {
+    const previous = previousInputs.find(
+      (candidate) => stablePublishedInputKey(candidate) === stablePublishedInputKey(pin),
+    )
+    nextPinnedInputs[pin.name] = previous
+      ? currentPinnedInputs[previous.name] !== false
+      : true
+  }
+  parentNode.data.pinnedInputs = nextPinnedInputs
+
+  const connectedInputs: Record<string, string> = {}
+  for (const edge of nextEdges) {
+    if (edge.target !== parentNodeId || !edge.targetHandle) continue
+    connectedInputs[edge.targetHandle] = `${edge.source}.${edge.sourceHandle ?? 'output'}`
+  }
+  parentNode.data.connectedInputs = connectedInputs
+}
+
+function applySubWorkflowDraft(
+  parentNodeId: string,
+  graph: GraphState,
+  publishedInterface: {
+    published_inputs?: PublishedInput[]
+    published_outputs?: PublishedOutput[]
+  } = {},
+) {
   const node = getNodes.value.find((n: any) => n.id === parentNodeId)
   if (!node?.data) return
-  node.data.sub_workflow = JSON.parse(JSON.stringify(graph))
+  const previousInputs = deepClone(node.data.published_inputs ?? []) as PublishedInput[]
+  const previousOutputs = deepClone(node.data.published_outputs ?? []) as PublishedOutput[]
+  const nextInputs = deepClone(
+    publishedInterface.published_inputs ?? node.data.published_inputs ?? [],
+  ) as PublishedInput[]
+  const nextOutputs = deepClone(
+    publishedInterface.published_outputs ?? node.data.published_outputs ?? [],
+  ) as PublishedOutput[]
+  reconcilePublishedParentState(
+    parentNodeId,
+    previousInputs,
+    previousOutputs,
+    nextInputs,
+    nextOutputs,
+  )
+  node.data.sub_workflow = deepClone(graph)
+  node.data.published_inputs = nextInputs
+  node.data.published_outputs = nextOutputs
   if (node.data.status === 'executed') {
     node.data.status = 'out_of_date'
   }
@@ -1426,23 +1596,27 @@ function saveSubWorkflowSession() {
   if (!sessionId) return
   const session = subWorkflowSessionsStore.sessionById(sessionId)
   if (!session) return
-  const graph = subWorkflowSessionsStore.saveSession(sessionId)
+  const saved = subWorkflowSessionsStore.saveSession(sessionId)
   window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
     detail: {
       sessionId,
       parentNodeId: session.parentNodeId,
-      graph,
+      graph: saved.graph,
+      published_inputs: saved.published_inputs,
+      published_outputs: saved.published_outputs,
     },
   }))
 }
 
 function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
   parentNodeId?: string
-  graph?: GraphState
-}>) {
+} & Partial<SubWorkflowApplyPayload>>) {
   const detail = event.detail
   if (!detail?.parentNodeId || !detail.graph) return
-  applySubWorkflowDraft(detail.parentNodeId, detail.graph)
+  applySubWorkflowDraft(detail.parentNodeId, detail.graph, {
+    published_inputs: detail.published_inputs,
+    published_outputs: detail.published_outputs,
+  })
 }
 
 function selectAll() {
