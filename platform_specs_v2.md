@@ -49,7 +49,8 @@ contains A).
 - The tab title shows the sub-workflow node name (e.g., `segment_and_measure_1`).
 - The user can edit internal nodes, parameters, and connections within this tab.
 - The editor session carries the parent SubWorkflowNode's published interface (`published_inputs` and `published_outputs`) alongside the internal DAG. Internal node panels use this shared session state for Publish toggles, so publishing/unpublishing a field changes the outer node interface, not only the nested graph.
-- **Save semantics:** Changes to the sub-workflow's internal DAG are applied to the parent on explicit save (Ctrl+S within the sub-workflow tab). The parent workflow does not see intermediate edits. Closing the tab with unsaved changes shows a confirmation dialog: "Discard unsaved changes to sub-workflow '{name}'?"
+- A sub-workflow tab uses the same canvas and side panels as a normal workflow tab. It does not add a special Apply/Close toolbar; saving uses the normal save command for the active tab.
+- **Save semantics:** Changes to the sub-workflow's internal DAG are applied to the parent on explicit save (Ctrl+S within the sub-workflow tab or the normal Save command while that tab is active). The parent workflow does not see intermediate edits. Closing the tab with unsaved changes shows a confirmation dialog: "Discard unsaved changes to sub-workflow '{name}'?"
 - Saving a sub-workflow tab applies both the internal DAG and the published interface to the parent node. Publishing-only changes mark the tab dirty. If a published pin is renamed, existing parent edges targeting the same internal field/output are moved to the new handle. If a pin is unpublished, parent edges and stale parent-level parameter values for that pin are removed.
 - Closing the sub-workflow tab returns focus to the parent workflow tab.
 
