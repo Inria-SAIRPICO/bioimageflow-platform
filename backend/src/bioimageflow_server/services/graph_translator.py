@@ -794,6 +794,7 @@ def _filter_positional_edges(
 
         error_type = "source_tool_upstream" if is_dataframe_tool else "parameter_invalid"
         if is_dataframe_tool:
+            assert target_cls is not None
             detail = (
                 f"Tool '{target_cls.__name__}' is a source tool "
                 "(accepts_upstream=False) and does not accept upstream DataFrames."

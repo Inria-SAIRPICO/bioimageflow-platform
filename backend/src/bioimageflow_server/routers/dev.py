@@ -96,8 +96,8 @@ class GaussianBlur(ProcessingTool):
     Inputs = GaussianBlurInputs
     Outputs = GaussianBlurOutputs
 
-    def process_row(self, arguments: Any) -> Any:
-        return self.Outputs(output_image=Path("output.tif"))
+    def process_row(self, arguments: Any, *, context: Any = None) -> Any:
+        return GaussianBlurOutputs(output_image=Path("output.tif"))
 
 
 _SEED_TOOLS: list[ToolMetadata] = [
