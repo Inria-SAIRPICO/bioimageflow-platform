@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from bioimageflow import ToolRegistry as LibToolRegistry
+from bioimageflow.registry import ToolMetadata as LibToolMetadata
 from bioimageflow.tool_loader import (
     load_versioned_package,
     unload_versioned_package,
@@ -248,7 +249,7 @@ class ToolRegistryService:
     ) -> None:
         self._tools[class_name] = metadata
         if tool_class is not None:
-            self._lib_registry._classes[class_name] = tool_class
+            self._register_lib_class(class_name, metadata, tool_class)
 
     def forget_tool(self, class_name: str) -> None:
         self._tools.pop(class_name, None)
@@ -275,7 +276,7 @@ class ToolRegistryService:
             module = load_versioned_package(metadata.package, metadata.package_version)
             resolved = getattr(module, class_name, None)
             if resolved is not None:
-                self._lib_registry._classes[class_name] = resolved
+                self._register_lib_class(class_name, metadata, resolved)
             return resolved
         except Exception:
             return None
@@ -467,6 +468,12 @@ class ToolRegistryService:
             raise ValueError(f"Version '{version}' is not installed for '{package_name}'")
 
         try:
+            for class_name in pkg.tools.get(version, []):
+                self._lib_registry.forget(
+                    class_name,
+                    package=package_name,
+                    version=version,
+                )
             lib_metas = self._lib_registry.register_package(package_name, version)
         except FileNotFoundError:
             logger.warning(
@@ -610,7 +617,9 @@ class ToolRegistryService:
             self._tools.clear()
             self._tools.update(prior_snapshot)
             for class_name, cls in prior_classes.items():
-                self._lib_registry._classes[class_name] = cls
+                metadata = prior_snapshot.get(class_name)
+                if metadata is not None:
+                    self._register_lib_class(class_name, metadata, cls)
             raise
 
         # Restore active-version binding if we just reloaded an inactive
@@ -619,6 +628,17 @@ class ToolRegistryService:
         # with the active version.
         if active_version is not None and active_version != version:
             try:
+                active_tools = (
+                    pkg_info.tools.get(active_version, [])
+                    if pkg_info is not None
+                    else []
+                )
+                for class_name in active_tools:
+                    self._lib_registry.forget(
+                        class_name,
+                        package=package,
+                        version=active_version,
+                    )
                 self._lib_registry.register_package(package, active_version)
             except FileNotFoundError:
                 logger.warning(
@@ -659,3 +679,41 @@ class ToolRegistryService:
             if meta.package == name and meta.package_version == version:
                 del self._tools[class_name]
                 self._lib_registry.forget(class_name)
+
+    def _register_lib_class(
+        self,
+        class_name: str,
+        metadata: ToolMetadata,
+        tool_class: type,
+    ) -> None:
+        """Register an already-imported class in the library registry.
+
+        The library registry indexes classes by package/version/module/name.
+        Tests and custom registrations often already have the class object in
+        memory, so they bypass ``register_package`` but still need a canonical
+        registry entry for Workflow.from_dict validation.
+        """
+        module = getattr(tool_class, "__module__", "") or "__main__"
+        lib_meta = LibToolMetadata(
+            package=metadata.package,
+            version=metadata.package_version,
+            module=module,
+            class_name=class_name,
+            inputs_schema={
+                name: field.model_dump(mode="json", exclude_none=True)
+                for name, field in metadata.inputs.items()
+            },
+            outputs_schema={
+                name: (
+                    field.model_dump(mode="json", exclude_none=True)
+                    if hasattr(field, "model_dump")
+                    else field
+                )
+                for name, field in metadata.outputs.items()
+            },
+            display_name=metadata.display_name,
+            tags=tuple(metadata.tags),
+        )
+        key = self._lib_registry._key(lib_meta)
+        self._lib_registry._classes[key] = tool_class
+        self._lib_registry._metadata[key] = lib_meta

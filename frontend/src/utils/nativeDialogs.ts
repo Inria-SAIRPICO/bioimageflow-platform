@@ -20,6 +20,8 @@ declare global {
         ) => Promise<string | null>
         set_title: (title: string) => Promise<void>
         reveal_path: (path: string) => Promise<void>
+        open_code_editor_window?: (url: string, title?: string) => Promise<boolean>
+        close_code_editor_window?: () => Promise<boolean>
       }
     }
   }
@@ -28,6 +30,15 @@ declare global {
 /** True when running inside a pywebview window. */
 export function isDesktop(): boolean {
   return typeof window !== 'undefined' && window.pywebview?.api !== undefined
+}
+
+/** True when the pywebview bridge can manage a detached Code Editor window. */
+export function hasCodeEditorWindowBridge(): boolean {
+  return Boolean(
+    isDesktop() &&
+      typeof window.pywebview!.api.open_code_editor_window === 'function' &&
+      typeof window.pywebview!.api.close_code_editor_window === 'function',
+  )
 }
 
 /**
@@ -123,4 +134,20 @@ export async function revealPath(path: string): Promise<void> {
   if (isDesktop()) {
     return window.pywebview!.api.reveal_path(path)
   }
+}
+
+/** Open code-server in a native child window. No-op in browser mode. */
+export async function openCodeEditorWindow(url: string, title?: string): Promise<boolean> {
+  if (hasCodeEditorWindowBridge()) {
+    return window.pywebview!.api.open_code_editor_window!(url, title)
+  }
+  return false
+}
+
+/** Close the native Code Editor child window. No-op in browser mode. */
+export async function closeCodeEditorWindow(): Promise<boolean> {
+  if (hasCodeEditorWindowBridge()) {
+    return window.pywebview!.api.close_code_editor_window!()
+  }
+  return false
 }

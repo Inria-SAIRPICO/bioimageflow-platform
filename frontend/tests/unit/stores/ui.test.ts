@@ -94,4 +94,14 @@ describe('UI store', () => {
     store.markDirty()
     expect(store.tabTitle).toBe('BioImageFlow \u2014 My Pipeline *')
   })
+
+  it('tracks detached code editor state', () => {
+    const store = useUIStore()
+    expect(store.codeEditorDetached).toBe(false)
+
+    store.setCodeEditorDetached(true)
+
+    expect(store.codeEditorDetached).toBe(true)
+    expect(store.panels.codeEditor).toBe(true)
+  })
 })

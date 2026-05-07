@@ -52,6 +52,17 @@ def _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls):
     return mock_server, mock_thread, mock_window
 
 
+class _MockEvent:
+    """Small pywebview Event stand-in that records += handlers."""
+
+    def __init__(self):
+        self.handlers = []
+
+    def __iadd__(self, handler):
+        self.handlers.append(handler)
+        return self
+
+
 @patch("bioimageflow_server.desktop.webview")
 @patch("bioimageflow_server.desktop.uvicorn")
 @patch("bioimageflow_server.app.create_app")
@@ -329,6 +340,8 @@ class TestDesktopApiClass:
         assert callable(getattr(api, "save_file", None))
         assert callable(getattr(api, "reveal_path", None))
         assert callable(getattr(api, "set_title", None))
+        assert callable(getattr(api, "open_code_editor_window", None))
+        assert callable(getattr(api, "close_code_editor_window", None))
 
     def test_set_window(self):
         from bioimageflow_server.desktop import DesktopApi
@@ -588,6 +601,135 @@ class TestDesktopApiSetTitle:
         api = DesktopApi()
         # Should not raise
         api.set_title("Title")
+
+
+class TestDesktopApiCodeEditorWindow:
+    """Tests for DesktopApi code editor child-window management."""
+
+    @patch("bioimageflow_server.desktop.webview")
+    def test_open_code_editor_window_creates_child_window(self, mock_webview):
+        from bioimageflow_server.desktop import DesktopApi
+
+        api = DesktopApi()
+        child_window = MagicMock()
+        closed_event = _MockEvent()
+        child_window.events.closed = closed_event
+        mock_webview.create_window.return_value = child_window
+
+        assert api.open_code_editor_window(
+            "http://127.0.0.1:32344/?folder=/tmp/tool", "Tool Editor"
+        )
+
+        mock_webview.create_window.assert_called_once_with(
+            "Tool Editor",
+            "http://127.0.0.1:32344/?folder=/tmp/tool",
+            width=1200,
+            height=800,
+            min_size=(800, 600),
+            resizable=True,
+            confirm_close=False,
+        )
+        assert api._code_editor_window is child_window
+        assert len(closed_event.handlers) == 1
+
+    @patch("bioimageflow_server.desktop.webview")
+    def test_open_code_editor_window_reuses_existing_child(self, mock_webview):
+        from bioimageflow_server.desktop import DesktopApi
+
+        api = DesktopApi()
+        child_window = MagicMock()
+        child_window.events.closed = _MockEvent()
+        mock_webview.create_window.return_value = child_window
+
+        api.open_code_editor_window("http://localhost:32344", "Code Editor")
+        api.open_code_editor_window("http://localhost:32344", "Focused Editor")
+
+        mock_webview.create_window.assert_called_once()
+        child_window.set_title.assert_called_once_with("Focused Editor")
+        child_window.restore.assert_called_once()
+        child_window.show.assert_called_once()
+
+    @patch("bioimageflow_server.desktop.webview")
+    def test_close_code_editor_window_destroys_child(self, mock_webview):
+        from bioimageflow_server.desktop import DesktopApi
+
+        api = DesktopApi()
+        child_window = MagicMock()
+        child_window.events.closed = _MockEvent()
+        mock_webview.create_window.return_value = child_window
+
+        api.open_code_editor_window("http://127.0.0.1:32344", "Code Editor")
+
+        assert api.close_code_editor_window() is True
+        child_window.destroy.assert_called_once()
+        assert api._code_editor_window is None
+
+    def test_close_code_editor_window_without_child_returns_false(self):
+        from bioimageflow_server.desktop import DesktopApi
+
+        api = DesktopApi()
+
+        assert api.close_code_editor_window() is False
+
+    @patch("bioimageflow_server.desktop.webview")
+    def test_child_close_event_clears_state_and_notifies_frontend(self, mock_webview):
+        from bioimageflow_server.desktop import DesktopApi
+
+        api = DesktopApi()
+        main_window = MagicMock()
+        child_window = MagicMock()
+        closed_event = _MockEvent()
+        child_window.events.closed = closed_event
+        mock_webview.create_window.return_value = child_window
+        api.set_window(main_window)
+
+        api.open_code_editor_window("http://127.0.0.1:32344", "Code Editor")
+        on_closed = closed_event.handlers[0]
+        on_closed()
+
+        assert api._code_editor_window is None
+        main_window.evaluate_js.assert_called_once_with(
+            "window.dispatchEvent(new CustomEvent("
+            "'bioimageflow:code-editor-window-closed'"
+            "))"
+        )
+
+    @patch("bioimageflow_server.desktop.webview")
+    def test_programmatic_close_does_not_emit_manual_close_event(self, mock_webview):
+        from bioimageflow_server.desktop import DesktopApi
+
+        api = DesktopApi()
+        main_window = MagicMock()
+        child_window = MagicMock()
+        closed_event = _MockEvent()
+        child_window.events.closed = closed_event
+        mock_webview.create_window.return_value = child_window
+        api.set_window(main_window)
+
+        api.open_code_editor_window("http://127.0.0.1:32344", "Code Editor")
+        api.close_code_editor_window()
+        on_closed = closed_event.handlers[0]
+        on_closed()
+
+        main_window.evaluate_js.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://example.com",
+            "http://192.168.1.5:32344",
+            "file:///tmp/index.html",
+            "ftp://localhost/editor",
+            "not-a-url",
+        ],
+    )
+    def test_open_code_editor_window_rejects_non_local_urls(self, url):
+        from bioimageflow_server.desktop import DesktopApi
+
+        api = DesktopApi()
+
+        with pytest.raises(ValueError):
+            api.open_code_editor_window(url, "Code Editor")
 
 
 class TestStartDesktopDevUrl:
@@ -886,10 +1028,13 @@ class TestStartDesktopShutdownIntegration:
         mock_closing = MagicMock()
         mock_closing.__iadd__ = MagicMock(side_effect=lambda h: registered_handlers.append(h) or mock_closing)
         mock_window.events.closing = mock_closing
+        mock_on_closing.return_value = True
 
         start_desktop()
 
-        assert mock_on_closing in registered_handlers
+        assert len(registered_handlers) == 1
+        assert registered_handlers[0]() is True
+        mock_on_closing.assert_called_once()
 
     @patch("bioimageflow_server.desktop._shutdown")
     @patch("bioimageflow_server.desktop.webview")

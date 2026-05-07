@@ -8,6 +8,9 @@ import {
   setTitle,
   updateWindowTitle,
   revealPath,
+  hasCodeEditorWindowBridge,
+  openCodeEditorWindow,
+  closeCodeEditorWindow,
 } from '../nativeDialogs'
 
 function mockPywebviewApi() {
@@ -18,6 +21,8 @@ function mockPywebviewApi() {
     save_file: vi.fn(),
     set_title: vi.fn(),
     reveal_path: vi.fn(),
+    open_code_editor_window: vi.fn(),
+    close_code_editor_window: vi.fn(),
   }
 }
 
@@ -260,5 +265,55 @@ describe('revealPath', () => {
 
   it('does not throw in browser mode', async () => {
     await expect(revealPath('/some/path')).resolves.toBeUndefined()
+  })
+})
+
+describe('Code Editor window bridge', () => {
+  afterEach(() => {
+    delete window.pywebview
+  })
+
+  it('detects when the detached editor bridge is available', () => {
+    window.pywebview = { api: mockPywebviewApi() as any }
+
+    expect(hasCodeEditorWindowBridge()).toBe(true)
+  })
+
+  it('returns false when detached editor bridge methods are missing', () => {
+    const api = mockPywebviewApi()
+    delete (api as Partial<typeof api>).open_code_editor_window
+    window.pywebview = { api: api as any }
+
+    expect(hasCodeEditorWindowBridge()).toBe(false)
+  })
+
+  it('opens a detached code editor window when the bridge is available', async () => {
+    const api = mockPywebviewApi()
+    api.open_code_editor_window.mockResolvedValue(true)
+    window.pywebview = { api: api as any }
+
+    const result = await openCodeEditorWindow('http://127.0.0.1:32344', 'Editor')
+
+    expect(result).toBe(true)
+    expect(api.open_code_editor_window).toHaveBeenCalledWith(
+      'http://127.0.0.1:32344',
+      'Editor',
+    )
+  })
+
+  it('closes a detached code editor window when the bridge is available', async () => {
+    const api = mockPywebviewApi()
+    api.close_code_editor_window.mockResolvedValue(true)
+    window.pywebview = { api: api as any }
+
+    const result = await closeCodeEditorWindow()
+
+    expect(result).toBe(true)
+    expect(api.close_code_editor_window).toHaveBeenCalledWith()
+  })
+
+  it('no-ops detached editor calls in browser mode', async () => {
+    await expect(openCodeEditorWindow('http://127.0.0.1:32344')).resolves.toBe(false)
+    await expect(closeCodeEditorWindow()).resolves.toBe(false)
   })
 })
