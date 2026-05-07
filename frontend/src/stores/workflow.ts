@@ -87,6 +87,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     uiStore.setActiveWorkflow(info?.display_name ?? null)
   }
 
+  function activateWorkflow(name: string): WorkflowInfo | null {
+    const info = workflows.value.find((workflow) => workflow.name === name) ?? null
+    if (info) {
+      setCurrent(info)
+    }
+    return info
+  }
+
   async function fetchWorkflows(): Promise<WorkflowInfo[]> {
     isLoading.value = true
     try {
@@ -251,6 +259,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     missingTools,
     isLoading,
     error,
+    activateWorkflow,
     fetchWorkflows,
     createWorkflow,
     loadWorkflow,

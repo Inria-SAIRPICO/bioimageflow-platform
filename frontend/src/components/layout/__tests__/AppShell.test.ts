@@ -9,6 +9,7 @@ import MenuBar from '@/components/layout/MenuBar.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
+import { useWorkflowStore } from '@/stores/workflow'
 
 const { connectMock, disconnectMock } = vi.hoisted(() => ({
   connectMock: vi.fn(),
@@ -28,6 +29,7 @@ const mockDockviewApi = {
   getPanel: vi.fn(),
   removePanel: vi.fn(),
   onDidRemovePanel: vi.fn(),
+  onDidActivePanelChange: vi.fn(),
 }
 vi.mock('dockview-vue', () => ({
   DockviewVue: {
@@ -67,6 +69,7 @@ Object.defineProperty(window, 'matchMedia', {
 let pinia: ReturnType<typeof createPinia>
 const panels = new Map<string, any>()
 const removePanelListeners = new Set<(panel: any) => void>()
+const activePanelListeners = new Set<(event: any) => void>()
 
 function emitDockviewPanelRemoved(panel: any) {
   panels.delete(panel.id)
@@ -84,9 +87,20 @@ function mountApp() {
   // Reset mock state
   panels.clear()
   removePanelListeners.clear()
+  activePanelListeners.clear()
   mockDockviewApi.addPanel.mockReset()
   mockDockviewApi.addPanel.mockImplementation((options: any) => {
-    const panel = { id: options.id, api: { setVisible: vi.fn(), setActive: vi.fn() } }
+    const panel = {
+      id: options.id,
+      title: options.title,
+      params: options.params,
+      api: {
+        setVisible: vi.fn(),
+        setActive: vi.fn(() => {
+          activePanelListeners.forEach((listener) => listener({ panel }))
+        }),
+      },
+    }
     panels.set(options.id, panel)
     return panel
   })
@@ -102,6 +116,13 @@ function mountApp() {
     removePanelListeners.add(listener)
     return {
       dispose: () => removePanelListeners.delete(listener),
+    }
+  })
+  mockDockviewApi.onDidActivePanelChange.mockReset()
+  mockDockviewApi.onDidActivePanelChange.mockImplementation((listener: (event: any) => void) => {
+    activePanelListeners.add(listener)
+    return {
+      dispose: () => activePanelListeners.delete(listener),
     }
   })
 
@@ -372,6 +393,99 @@ describe('AppShell', () => {
     expect(panels.get(lastCall.id).api.setActive).toHaveBeenCalled()
   })
 
+  it('opens and activates a named canvas tab for a root workflow graph', async () => {
+    mountApp()
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'analysis',
+        workflowDisplayName: 'Analysis',
+        graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+        missingTools: [],
+        dirty: false,
+      },
+    }))
+    await flushPromises()
+
+    const lastCall = mockDockviewApi.addPanel.mock.calls[
+      mockDockviewApi.addPanel.mock.calls.length - 1
+    ]?.[0]
+    expect(lastCall).toMatchObject({
+      component: 'canvasView',
+      title: 'Analysis',
+      params: expect.objectContaining({
+        workflowName: 'analysis',
+        workflowDisplayName: 'Analysis',
+      }),
+    })
+    expect(lastCall.id).toBe('workflow:analysis')
+    expect(panels.get('workflow:analysis').api.setActive).toHaveBeenCalled()
+    expect(useUIStore().activeWorkflowName).toBe('Analysis')
+  })
+
+  it('activating a non-canvas panel keeps the current node selection', async () => {
+    mountApp()
+    await flushPromises()
+    const ui = useUIStore()
+    ui.setSelectedNodes(['node_1'])
+
+    panels.get('tools').api.setActive()
+    await flushPromises()
+
+    expect(ui.selectedNodeIds).toEqual(['node_1'])
+  })
+
+  it('reactivating the startup canvas restores that canvas workflow context', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    workflow.workflows = [
+      { name: 'analysis', display_name: 'Analysis' },
+      { name: 'other', display_name: 'Other' },
+    ] as any
+    workflow.activateWorkflow('other')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
+      detail: {
+        panelId: 'canvas',
+        workflowName: 'analysis',
+        workflowDisplayName: 'Analysis',
+      },
+    }))
+    panels.get('canvas').api.setActive()
+    await flushPromises()
+
+    expect(workflow.currentName).toBe('analysis')
+    expect(useUIStore().activeWorkflowName).toBe('Analysis')
+  })
+
+  it('reopening an already open workflow tab activates it without replacing it', async () => {
+    mountApp()
+    await flushPromises()
+    const detail = {
+      workflowName: 'analysis',
+      workflowDisplayName: 'Analysis',
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+      missingTools: [],
+      dirty: false,
+    }
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
+    await flushPromises()
+    const addCount = mockDockviewApi.addPanel.mock.calls.length
+    const removeCount = mockDockviewApi.removePanel.mock.calls.length
+    const activeCount = panels.get('workflow:analysis').api.setActive.mock.calls.length
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
+    await flushPromises()
+
+    expect(mockDockviewApi.addPanel.mock.calls.length).toBe(addCount)
+    expect(mockDockviewApi.removePanel.mock.calls.length).toBe(removeCount)
+    expect(panels.get('workflow:analysis').api.setActive.mock.calls.length)
+      .toBeGreaterThan(activeCount)
+  })
+
   it('keeps a dirty sub-workflow session open when direct tab close is cancelled', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
     mountApp()
@@ -415,9 +529,9 @@ describe('AppShell', () => {
     const reopenedCall = mockDockviewApi.addPanel.mock.calls[
       mockDockviewApi.addPanel.mock.calls.length - 1
     ]?.[0]
-    expect(reopenedCall.params).toEqual({
+    expect(reopenedCall.params).toEqual(expect.objectContaining({
       sessionId: session.id,
-    })
+    }))
     confirmSpy.mockRestore()
   })
 })

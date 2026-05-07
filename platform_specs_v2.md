@@ -20,7 +20,7 @@ Sub-workflows allow grouping a set of nodes into a single reusable unit. The Bio
    - **Inputs auto-detection:** Edges entering the selection from outside become sub-workflow input pins. Each edge creates its own pin, even if the same `(source_node, source_output)` pair feeds multiple internal nodes. This allows the user to rewire inputs independently after creation.
    - **Outputs auto-detection:** Edges leaving the selection to outside become sub-workflow output pins.
    - If the selected nodes have no external connections, the sub-workflow is valid as a **detached branch** with no inputs/outputs. It can be executed independently from the rest of the graph.
-4. The user can fine-tune the sub-workflow's interface using the **Publish toggle** (see Section 1.5): any internal parameter can be promoted to the sub-workflow's Inputs, making it configurable on the outer node.
+4. The user can fine-tune the sub-workflow's interface using the **Publish toggle** (see Section 1.5): any internal input parameter with a connectable pin (`connectable != "never"`) can be promoted to the workflow interface, making it configurable on the outer node when this workflow is used as a sub-workflow.
 5. This operation is **undoable** as a single undo step. Undoing restores all internal nodes, edges, and positions to the canvas and removes the SubWorkflowNode.
 
 #### From Workflow Panel
@@ -35,7 +35,7 @@ the platform surfaces that validation error in the GUI. A workflow cannot
 contain itself directly or indirectly (for example, A contains B while B
 contains A).
 
-**Default derivation:** All source node constant parameters are published as sub-workflow Inputs, and all terminal node output columns are published as sub-workflow Outputs. The user can then adjust visibility using the Publish toggle on each parameter and output field.
+**Default derivation:** Connectable source-node inputs are published as sub-workflow Inputs, and all terminal node output columns are published as sub-workflow Outputs. The user can then adjust visibility using the Publish toggle on each connectable input and output field.
 
 ### 1.2 Rendering
 
@@ -66,14 +66,14 @@ Per the library spec:
 
 ### 1.5 Publish Toggle on Parameters
 
-Each parameter row in the Node Panel (Section 3.5.3 of the full spec) includes a **Publish toggle** — a two-state button (+ icon). This toggle is meaningful when the node is inside a sub-workflow.
+Each connectable input row in the Node Panel (Section 3.5.3 of the full spec) includes a **Publish toggle** — a two-state button (+ icon). The toggle is shown for normal workflow tabs and sub-workflow tabs because any workflow may later be dragged into another workflow and become a SubWorkflowNode. Inputs with `connectable = "never"` do not show a Publish toggle and cannot be exposed as published input pins.
 
 | Element | Description |
 |---------|-------------|
-| **Publish toggle** | Two-state button (+ icon). When active, this parameter becomes an input of the parent SubWorkflowNode, configurable from the outer workflow. |
-| **Published name** | Text field (shown only when published). Sets the name of the corresponding input pin on the SubWorkflowNode. Defaults to `{node_name}.{parameter_name}`. Must be unique among published parameters in the sub-workflow. |
+| **Publish toggle** | Two-state button (+ icon). When active, this connectable input becomes part of the current workflow's published input interface. If the workflow is used as a SubWorkflowNode, it appears as an input pin on the outer node. |
+| **Published name** | Text field (shown only when published). Sets the name of the corresponding input pin. Defaults to `{node_name}.{parameter_name}`. Must be unique among published inputs and outputs in the active workflow. |
 
-When a parameter is published:
+When an input is published:
 - It appears as an input pin on the SubWorkflowNode in the parent workflow.
 - The parent workflow can set its value directly or connect an edge to it.
 - The value set on the SubWorkflowNode overrides the internal node's default.
@@ -97,7 +97,7 @@ Sub-workflows may contain other sub-workflows. Double-clicking a nested sub-work
 
 ### 1.8 Schema Changes
 
-The `GraphState` model is unchanged. SubWorkflowNodes are represented as regular `NodeState` entries with `tool_name` set to the sub-workflow's identifier. The sub-workflow's internal DAG is stored as a nested `GraphState` within the workflow persistence format:
+The root `GraphState` carries `published_inputs` and `published_outputs` in addition to `nodes` and `edges`. This gives every saved workflow the same published interface model as a SubWorkflowNode. SubWorkflowNodes are represented as regular `NodeState` entries with `tool_name` set to the sub-workflow's identifier. The sub-workflow's internal DAG is stored as a nested `GraphState`; the parent node also stores a snapshot of the nested graph's published interface for rendering pins and validating connections:
 
 ```json
 {
@@ -113,13 +113,19 @@ The `GraphState` model is unchanged. SubWorkflowNodes are represented as regular
         },
         "sub_workflow": {
           "nodes": ["...internal nodes..."],
-          "edges": ["...internal edges..."]
-        }
+          "edges": ["...internal edges..."],
+          "published_inputs": ["...published input descriptors..."],
+          "published_outputs": ["...published output descriptors..."]
+        },
+        "published_inputs": ["...published input descriptors..."],
+        "published_outputs": ["...published output descriptors..."]
       }
     ]
   }
 }
 ```
+
+Canvas tabs are unified: opening a saved workflow or opening a SubWorkflowNode creates a canvas tab named after that workflow/sub-workflow. The Node Panel, selected nodes, validation, and execution controls are scoped to the active canvas tab, and switching tabs updates the workflow title shown in the top bar. There is no separate sub-workflow-only editor toolbar.
 
 **Validation:** The `PUT /graph` endpoint calls the BioImageFlow library's
 recursive sub-workflow validator and surfaces scoped errors. Errors within a

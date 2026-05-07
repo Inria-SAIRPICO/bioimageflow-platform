@@ -216,12 +216,18 @@ import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { _resetClipboardForTest } from '@/utils/clipboard'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 
-function mountCanvas(propsData: { nodes?: any[]; edges?: any[]; subWorkflowSessionId?: string } = {}) {
+function mountCanvas(propsData: {
+  nodes?: any[]
+  edges?: any[]
+  subWorkflowSessionId?: string
+  params?: Record<string, unknown>
+} = {}) {
   return mount(CanvasView, {
     props: {
       nodes: propsData.nodes ?? [],
       edges: propsData.edges ?? [],
       subWorkflowSessionId: propsData.subWorkflowSessionId,
+      params: propsData.params,
     },
     attachTo: document.body,
   })
@@ -670,6 +676,87 @@ describe('CanvasView', () => {
         expect(result).toBe(false)
         w.unmount()
       })
+    })
+
+    it('validates sub-workflow published pins using their schemas when tool metadata is null', () => {
+      const store = useToolRegistryStore()
+      const filesTool = makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        inputs: {},
+        outputs: {
+          path: { type: 'Path' },
+        },
+      })
+      const stringTool = makeTool({
+        name: 'string_source',
+        display_name: 'String Source',
+        inputs: {},
+        outputs: {
+          value: { type: 'str' },
+        },
+      })
+      const sinkTool = makeTool({
+        name: 'path_sink',
+        display_name: 'Path Sink',
+        inputs: {
+          path: { type: 'Path', required: true, nullable: false, connectable: 'by_default' },
+        },
+        outputs: {},
+      })
+      store.tools = [filesTool, stringTool, sinkTool] as any
+
+      mockNodes = [
+        { id: 'files_1', data: { toolName: 'files' } },
+        { id: 'string_1', data: { toolName: 'string_source' } },
+        { id: 'sink_1', data: { toolName: 'path_sink' } },
+        {
+          id: 'sub_1',
+          type: 'sub_workflow',
+          data: {
+            toolName: '__sub_workflow__',
+            tool: null,
+            published_inputs: [{
+              name: 'image',
+              internal_node_id: 'inner',
+              internal_field: 'input_image',
+              kind: 'input',
+              schema: { type: 'ImageFile', connectable: 'by_default' },
+              default: null,
+            }],
+            published_outputs: [{
+              name: 'mask',
+              internal_node_id: 'inner',
+              internal_output: 'mask',
+              schema: { type: 'MaskPath' },
+            }],
+          },
+        },
+      ]
+
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      expect(vm.isValidConnection({
+        source: 'files_1',
+        target: 'sub_1',
+        sourceHandle: 'path',
+        targetHandle: 'image',
+      })).toBe(true)
+      expect(vm.isValidConnection({
+        source: 'sub_1',
+        target: 'sink_1',
+        sourceHandle: 'mask',
+        targetHandle: 'path',
+      })).toBe(true)
+      expect(vm.isValidConnection({
+        source: 'string_1',
+        target: 'sub_1',
+        sourceHandle: 'value',
+        targetHandle: 'image',
+      })).toBe(false)
+      w.unmount()
     })
 
     it('isValidConnection rejects cycles', () => {
@@ -1267,6 +1354,7 @@ describe('CanvasView', () => {
 
       const w = mountCanvas({ subWorkflowSessionId: session.id })
       await flushPromises()
+      graphSyncMocks.syncGraph.mockClear()
 
       sessions.updateDraft(session.id, {
         nodes: [{
@@ -1345,6 +1433,49 @@ describe('CanvasView', () => {
 
       innerNode.data.subWorkflowContext.published_inputs[0].name = 'input_folder'
       expect(sessions.isDirty(session.id)).toBe(true)
+      w.unmount()
+    })
+
+    it('loads normal workflow nodes with a shared root publishing context', async () => {
+      const toolStore = useToolRegistryStore()
+      toolStore.tools = [makeTool()] as any
+      const graph = {
+        nodes: [{
+          id: 'inner_1',
+          name: 'Inner 1',
+          tool_name: 'gaussian_blur',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+        published_inputs: [{
+          name: 'image',
+          internal_node_id: 'inner_1',
+          internal_field: 'image',
+          kind: 'input',
+          schema: { type: 'ImageFile' },
+          default: null,
+        }],
+        published_outputs: [],
+      }
+      mockSavedWorkflow(graph as any, 'analysis')
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      const innerNode = mockNodes.find((n: any) => n.id === 'inner_1')!
+      expect(innerNode.data.publicationContext.published_inputs[0].name).toBe('image')
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+        published_inputs: [expect.objectContaining({ name: 'image' })],
+      }))
+      innerNode.data.publicationContext.published_inputs[0].name = 'input_image'
+      expect(mockNodes[0].data.publicationContext.published_inputs[0].name).toBe('input_image')
       w.unmount()
     })
 
@@ -1447,6 +1578,25 @@ describe('CanvasView', () => {
       w.find('.canvas-view').trigger('keydown', { key: 'a', ctrlKey: true })
 
       expect(mockNodes.every((n: any) => n.selected)).toBe(true)
+      w.unmount()
+    })
+
+    it('ignores global edit commands when another canvas tab is active', async () => {
+      mockNodes = [
+        { id: 'a', selected: false, data: {}, position: { x: 0, y: 0 } },
+        { id: 'b', selected: false, data: {}, position: { x: 100, y: 0 } },
+      ]
+
+      const w = mountCanvas({ params: { panelId: 'workflow:a' } })
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+        detail: { panelId: 'workflow:b' },
+      }))
+      window.dispatchEvent(new CustomEvent('bioimageflow:edit-command', {
+        detail: { command: 'select-all' },
+      }))
+      await nextTick()
+
+      expect(mockNodes.every((n: any) => n.selected)).toBe(false)
       w.unmount()
     })
 

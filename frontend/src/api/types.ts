@@ -706,6 +706,16 @@ export interface components {
             nodes: components["schemas"]["NodeState"][];
             /** Edges */
             edges: (components["schemas"]["ColumnRefEdge"] | components["schemas"]["PositionalEdge"])[];
+            /**
+             * Published Inputs
+             * @default []
+             */
+            published_inputs?: components["schemas"]["PublishedInput"][];
+            /**
+             * Published Outputs
+             * @default []
+             */
+            published_outputs?: components["schemas"]["PublishedOutput"][];
         };
         /**
          * GraphValidationError

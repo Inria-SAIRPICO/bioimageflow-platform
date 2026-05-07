@@ -41,6 +41,8 @@ import { useSettingsPanel } from './composables/useSettingsPanel'
 import { isDesktop as isPywebview } from './utils/nativeDialogs'
 import { useWebSocket } from './composables/useWebSocket'
 import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
+import { useWorkflowStore } from './stores/workflow'
+import type { GraphState, MissingTool } from './api/types'
 
 function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
@@ -65,6 +67,7 @@ const uiStore = useUIStore()
 const datasetBrowserStore = useDatasetBrowserStore()
 const websocket = useWebSocket()
 const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
+const workflowStore = useWorkflowStore()
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
 // executionStore.isRunning anywhere in the tree. The composable has a
@@ -84,8 +87,16 @@ onMounted(() => {
     onSubWorkflowSessionOpened as EventListener,
   )
   window.addEventListener(
+    'bioimageflow:apply-graph',
+    onApplyGraph as EventListener,
+  )
+  window.addEventListener(
     'bioimageflow:close-sub-workflow-session',
     onCloseSubWorkflowSession as EventListener,
+  )
+  window.addEventListener(
+    'bioimageflow:canvas-context-updated',
+    onCanvasContextUpdated as EventListener,
   )
   if (shortcutEnabled) {
     window.addEventListener('keydown', onPreferencesShortcut)
@@ -106,8 +117,16 @@ onBeforeUnmount(() => {
     onSubWorkflowSessionOpened as EventListener,
   )
   window.removeEventListener(
+    'bioimageflow:apply-graph',
+    onApplyGraph as EventListener,
+  )
+  window.removeEventListener(
     'bioimageflow:close-sub-workflow-session',
     onCloseSubWorkflowSession as EventListener,
+  )
+  window.removeEventListener(
+    'bioimageflow:canvas-context-updated',
+    onCanvasContextUpdated as EventListener,
   )
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
@@ -136,6 +155,10 @@ watchEffect(() => {
 const dockviewApi = shallowRef<DockviewApi | null>(null)
 const dockviewDisposables: DockviewIDisposable[] = []
 const confirmedSubWorkflowPanelCloses = new Set<string>()
+const canvasContexts = new Map<string, {
+  workflowName: string
+  workflowDisplayName: string
+}>()
 
 // --- Dockview setup ---
 
@@ -148,6 +171,15 @@ function isDockPanelKey(id: string): id is DockPanelKey {
 
 function subWorkflowPanelId(sessionId: string): string {
   return `sub-workflow:${encodeURIComponent(sessionId)}`
+}
+
+function workflowPanelId(workflowName: string): string {
+  return `workflow:${encodeURIComponent(workflowName)}`
+}
+
+function workflowNameFromPanelId(panelId: string): string | null {
+  if (!panelId.startsWith('workflow:')) return null
+  return decodeURIComponent(panelId.slice('workflow:'.length))
 }
 
 function sessionIdFromSubWorkflowPanelId(panelId: string): string | null {
@@ -189,6 +221,19 @@ function onDockviewReady(event: DockviewReadyEvent) {
       subWorkflowSessionsStore.closeSession(sessionId)
     }),
   )
+  const activePanelChange = (api as unknown as {
+    onDidActivePanelChange?: (listener: (event: { panel?: IDockviewPanel } | IDockviewPanel) => void) => DockviewIDisposable
+  }).onDidActivePanelChange
+  if (activePanelChange) {
+    dockviewDisposables.push(
+      activePanelChange((event) => {
+        const panel = ((event as { panel?: IDockviewPanel }).panel ?? event) as
+          | IDockviewPanel
+          | undefined
+        if (panel) activateWorkflowContextForPanel(panel)
+      }),
+    )
+  }
 
   // Canvas first — it becomes the root group that others dock relative to
   api.addPanel({
@@ -276,12 +321,13 @@ function openSubWorkflowPanel(sessionId: string): void {
     id: panelId,
     component: 'subWorkflowEditor',
     title: session.parentNodeName,
-    params: { sessionId },
+    params: { sessionId, panelId },
     position: canvasPanel
       ? { referencePanel: 'canvas', direction: 'within' }
       : { direction: 'below' },
   })
   panel.api.setActive()
+  uiStore.setActiveWorkflow(session.parentNodeName)
 }
 
 function onSubWorkflowSessionOpened(event: CustomEvent<{ sessionId?: string }>) {
@@ -305,6 +351,125 @@ function onCloseSubWorkflowSession(event: CustomEvent<{
     confirmedSubWorkflowPanelCloses.add(panel.id)
   }
   dockviewApi.value?.removePanel(panel)
+}
+
+function dockviewParams(panel: IDockviewPanel): Record<string, unknown> {
+  const raw = (panel as unknown as { params?: unknown }).params
+  if (!raw || typeof raw !== 'object') return {}
+  const wrapped = (raw as { params?: unknown }).params
+  return wrapped && typeof wrapped === 'object'
+    ? wrapped as Record<string, unknown>
+    : raw as Record<string, unknown>
+}
+
+function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
+  const workflowNameFromId = workflowNameFromPanelId(panel.id)
+  const sessionId = sessionIdFromSubWorkflowPanelId(panel.id)
+  if (sessionId) {
+    uiStore.clearSelection()
+    const session = subWorkflowSessionsStore.sessionById(sessionId)
+    uiStore.setActiveWorkflow(session?.parentNodeName ?? null)
+  } else if (workflowNameFromId) {
+    uiStore.clearSelection()
+    const params = dockviewParams(panel)
+    const workflowName = typeof params.workflowName === 'string'
+      ? params.workflowName
+      : workflowNameFromId
+    if (typeof workflowName === 'string') {
+      workflowStore.activateWorkflow(workflowName)
+    }
+    const label = params.workflowDisplayName ?? workflowName
+    if (typeof label === 'string') {
+      uiStore.setActiveWorkflow(label)
+    }
+  } else if (panel.id === 'canvas') {
+    uiStore.clearSelection()
+    const context = canvasContexts.get(panel.id)
+    if (context) {
+      workflowStore.activateWorkflow(context.workflowName)
+      uiStore.setActiveWorkflow(context.workflowDisplayName)
+    } else {
+      uiStore.setActiveWorkflow(workflowStore.current?.display_name ?? null)
+    }
+  } else {
+    return
+  }
+  window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+    detail: { panelId: panel.id },
+  }))
+}
+
+function onCanvasContextUpdated(event: CustomEvent<{
+  panelId?: string
+  workflowName?: string | null
+  workflowDisplayName?: string | null
+}>) {
+  const detail = event.detail
+  if (!detail?.panelId || !detail.workflowName) return
+  canvasContexts.set(detail.panelId, {
+    workflowName: detail.workflowName,
+    workflowDisplayName: detail.workflowDisplayName ?? detail.workflowName,
+  })
+}
+
+function openWorkflowCanvasPanel(detail: {
+  graph: GraphState
+  workflowName?: string
+  workflowDisplayName?: string
+  missingTools?: MissingTool[]
+  dirty?: boolean
+}): void {
+  const api = dockviewApi.value
+  if (!api || !detail.graph) return
+  const workflowName = detail.workflowName ?? workflowStore.currentName ?? 'workflow'
+  const workflowDisplayName =
+    detail.workflowDisplayName
+    ?? workflowStore.current?.display_name
+    ?? workflowName
+  const panelId = workflowPanelId(workflowName)
+  const existing = api.getPanel(panelId)
+  if (existing) {
+    existing.api.setActive()
+    return
+  }
+  canvasContexts.set(panelId, { workflowName, workflowDisplayName })
+  const canvasPanel = api.getPanel('canvas')
+  const panel = api.addPanel({
+    id: panelId,
+    component: 'canvasView',
+    title: workflowDisplayName,
+    params: {
+      panelId,
+      workflowName,
+      workflowDisplayName,
+      graph: detail.graph,
+      missingTools: detail.missingTools ?? [],
+      dirty: detail.dirty ?? false,
+    },
+    position: canvasPanel
+      ? { referencePanel: 'canvas', direction: 'within' }
+      : { direction: 'below' },
+  })
+  panel.api.setActive()
+  uiStore.setActiveWorkflow(workflowDisplayName)
+}
+
+function onApplyGraph(event: CustomEvent<{
+  graph?: GraphState
+  workflowName?: string
+  workflowDisplayName?: string
+  missingTools?: MissingTool[]
+  dirty?: boolean
+}>) {
+  const detail = event.detail
+  if (!detail?.graph) return
+  openWorkflowCanvasPanel({
+    graph: detail.graph,
+    workflowName: detail.workflowName,
+    workflowDisplayName: detail.workflowDisplayName,
+    missingTools: detail.missingTools,
+    dirty: detail.dirty,
+  })
 }
 
 // --- Panel visibility sync ---

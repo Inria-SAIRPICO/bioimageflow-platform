@@ -324,6 +324,38 @@ def test_persisted_sections_keep_graph_lossless_and_split_gui(
     assert gui_section["nodes"]["n"]["output_templates"] == {"mask": "mask.tif"}
 
 
+def test_persisted_sections_roundtrip_root_published_interface(
+    registry: ToolRegistryService,
+) -> None:
+    graph = GraphState(
+        nodes=[],
+        edges=[],
+        published_inputs=[
+            PublishedInput(
+                name="input_image",
+                internal_node_id="load_image",
+                internal_field="image",
+                kind="input",
+                schema={"type": "ImageFile", "connectable": "by_default"},
+                default=None,
+            )
+        ],
+        published_outputs=[
+            PublishedOutput(
+                name="mask",
+                internal_node_id="segment",
+                internal_output="mask",
+                schema={"type": "MaskPath"},
+            )
+        ],
+    )
+
+    graph_section, _, _, errors = graph_state_to_persisted_sections(graph, registry)
+
+    assert errors == []
+    assert GraphState.model_validate(graph_section) == graph
+
+
 def test_lib_dict_to_graph_state_reads_output_templates_without_gui() -> None:
     graph = lib_dict_to_graph_state(
         {

@@ -7,6 +7,8 @@ import type {
   GraphState,
   NodeState,
   PositionalEdge,
+  PublishedInput,
+  PublishedOutput,
   ValidationResult,
 } from '@/api/types'
 
@@ -93,11 +95,20 @@ function serializeEdge(e: any): Edge {
 export function serializeGraph(raw: {
   nodes: any[]
   edges: any[]
+  published_inputs?: PublishedInput[]
+  published_outputs?: PublishedOutput[]
 }): GraphState {
-  return {
+  const graph = {
     nodes: raw.nodes.map(serializeNode),
     edges: raw.edges.map(serializeEdge),
+  } as GraphState
+  if (raw.published_inputs !== undefined) {
+    graph.published_inputs = deepCloneJson(raw.published_inputs)
   }
+  if (raw.published_outputs !== undefined) {
+    graph.published_outputs = deepCloneJson(raw.published_outputs)
+  }
+  return graph
 }
 
 // Module-level singleton so multiple callers (CanvasView, MenuBar, run

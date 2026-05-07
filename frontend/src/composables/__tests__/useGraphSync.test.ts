@@ -318,6 +318,36 @@ describe('useGraphSync', () => {
     expect((result.nodes[0] as any).published_outputs[0].name).toBe('result')
   })
 
+  it('serializeGraph preserves root workflow published interface fields', () => {
+    const result = serializeGraph({
+      nodes: [],
+      edges: [],
+      published_inputs: [{
+        name: 'input_image',
+        internal_node_id: 'load_image',
+        internal_field: 'image',
+        kind: 'input',
+        schema: { type: 'ImageFile', connectable: 'by_default' },
+        default: null,
+      }],
+      published_outputs: [{
+        name: 'mask',
+        internal_node_id: 'segment',
+        internal_output: 'mask',
+        schema: { type: 'MaskPath' },
+      }],
+    } as any)
+
+    expect((result as any).published_inputs).toEqual([expect.objectContaining({
+      name: 'input_image',
+      internal_node_id: 'load_image',
+    })])
+    expect((result as any).published_outputs).toEqual([expect.objectContaining({
+      name: 'mask',
+      internal_node_id: 'segment',
+    })])
+  })
+
   it('does not emit empty sub-workflow fields for regular tool nodes', () => {
     const result = serializeGraph({
       nodes: [{

@@ -5,14 +5,19 @@ import CanvasView from '@/components/canvas/CanvasView.vue'
 const props = defineProps<{
   params?: {
     sessionId?: string
+    panelId?: string
     params?: {
       sessionId?: string
+      panelId?: string
     }
   }
 }>()
 
 const sessionId = computed(() => (
   props.params?.sessionId ?? props.params?.params?.sessionId ?? ''
+))
+const panelId = computed(() => (
+  props.params?.panelId ?? props.params?.params?.panelId ?? ''
 ))
 </script>
 
@@ -21,6 +26,7 @@ const sessionId = computed(() => (
     <CanvasView
       v-if="sessionId"
       :sub-workflow-session-id="sessionId"
+      :params="{ panelId }"
     />
   </div>
 </template>

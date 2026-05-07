@@ -87,6 +87,8 @@ function applyGraph(graph: GraphState, dirty = false): void {
   window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
     detail: {
       graph,
+      workflowName: workflowStore.currentName,
+      workflowDisplayName: workflowStore.current?.display_name ?? workflowStore.currentName,
       missingTools: workflowStore.missingTools,
       dirty,
     },

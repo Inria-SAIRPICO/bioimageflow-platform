@@ -47,6 +47,22 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   subWorkflowSessionId?: string
+  params?: {
+    panelId?: string
+    workflowName?: string
+    workflowDisplayName?: string
+    graph?: GraphState
+    missingTools?: MissingTool[]
+    dirty?: boolean
+    params?: {
+      panelId?: string
+      workflowName?: string
+      workflowDisplayName?: string
+      graph?: GraphState
+      missingTools?: MissingTool[]
+      dirty?: boolean
+    }
+  }
 }>()
 
 // Vue Flow's NodeTypesObject/EdgeTypesObject uses very strict component
@@ -158,6 +174,9 @@ const nodeContextMenu = ref<{
   canOpenSubWorkflow: boolean
 } | null>(null)
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
+const rootPublishedInputs = ref<PublishedInput[]>([])
+const rootPublishedOutputs = ref<PublishedOutput[]>([])
+const isActiveCanvasTab = ref(true)
 let isApplyingGraphState = false
 
 interface SubWorkflowApplyPayload {
@@ -166,12 +185,43 @@ interface SubWorkflowApplyPayload {
   published_outputs?: PublishedOutput[]
 }
 
+interface PublicationContext {
+  parentNodeId?: string
+  published_inputs: PublishedInput[]
+  published_outputs: PublishedOutput[]
+}
+
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function currentSubWorkflowContext() {
-  if (!isSubWorkflowEditor || !props.subWorkflowSessionId) return null
+function dockviewParams() {
+  return props.params?.params ?? props.params
+}
+
+function componentPanelId(): string {
+  if (props.subWorkflowSessionId) {
+    return `sub-workflow:${encodeURIComponent(props.subWorkflowSessionId)}`
+  }
+  return dockviewParams()?.panelId ?? 'canvas'
+}
+
+function workflowIdentity() {
+  const params = dockviewParams()
+  return {
+    workflowName: params?.workflowName ?? workflowStore.currentName,
+    workflowDisplayName: params?.workflowDisplayName ?? workflowStore.current?.display_name,
+  }
+}
+
+function currentPublicationContext(): PublicationContext | null {
+  if (!isSubWorkflowEditor) {
+    return {
+      published_inputs: rootPublishedInputs.value,
+      published_outputs: rootPublishedOutputs.value,
+    }
+  }
+  if (!props.subWorkflowSessionId) return null
   const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
   if (!session) return null
   return {
@@ -181,17 +231,19 @@ function currentSubWorkflowContext() {
   }
 }
 
-function attachSubWorkflowContext(node: any) {
-  const context = currentSubWorkflowContext()
+function attachPublicationContext(node: any) {
+  const context = currentPublicationContext()
   if (!context) return node
   node.data ??= {}
-  node.data.subWorkflowContext = context
+  node.data.publicationContext = context
+  if (isSubWorkflowEditor) {
+    node.data.subWorkflowContext = context
+  }
   return node
 }
 
-function attachSubWorkflowContextToNodes(nodes: any[]) {
-  if (!isSubWorkflowEditor) return nodes
-  return nodes.map((node) => attachSubWorkflowContext(node))
+function attachPublicationContextToNodes(nodes: any[]) {
+  return nodes.map((node) => attachPublicationContext(node))
 }
 
 // --- Workflow startup / graph application ---
@@ -201,12 +253,16 @@ async function applyGraphState(
   missingTools: MissingTool[] = [],
   dirty = false,
 ) {
+  if (!isSubWorkflowEditor) {
+    rootPublishedInputs.value = deepClone(graph.published_inputs ?? []) as PublishedInput[]
+    rootPublishedOutputs.value = deepClone(graph.published_outputs ?? []) as PublishedOutput[]
+  }
   const vueFlowGraph = graphStateToVueFlow(
     graph,
     toolRegistryStore.getToolByName,
     missingTools,
   )
-  attachSubWorkflowContextToNodes(vueFlowGraph.nodes)
+  attachPublicationContextToNodes(vueFlowGraph.nodes)
   isApplyingGraphState = true
   try {
     setNodes([])
@@ -219,8 +275,16 @@ async function applyGraphState(
     // no visible path.
     await nextTick()
     setEdges(vueFlowGraph.edges)
+    syncGraph(currentVueFlowState() as any)
     if (!isSubWorkflowEditor) {
-      syncGraph(vueFlowGraph)
+      const identity = workflowIdentity()
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
+        detail: {
+          panelId: componentPanelId(),
+          workflowName: identity.workflowName,
+          workflowDisplayName: identity.workflowDisplayName,
+        },
+      }))
       if (dirty) {
         workflowStore.markDirty()
       } else {
@@ -285,14 +349,26 @@ async function recoverStartupWorkflow() {
   }
 }
 
-async function handleApplyGraphEvent(event: Event) {
-  const detail = (event as CustomEvent<{
-    graph: GraphState
-    missingTools?: MissingTool[]
-    dirty?: boolean
-  }>).detail
-  if (!detail?.graph) return
-  await applyGraphState(detail.graph, detail.missingTools ?? [], detail.dirty ?? false)
+function initialGraphFromDockviewParams(): {
+  graph: GraphState
+  missingTools?: MissingTool[]
+  dirty?: boolean
+} | null {
+  const params = dockviewParams()
+  if (!params?.graph) return null
+  return {
+    graph: params.graph,
+    missingTools: params.missingTools,
+    dirty: params.dirty,
+  }
+}
+
+function handleCanvasTabActivatedEvent(event: Event) {
+  const detail = (event as CustomEvent<{ panelId?: string }>).detail
+  isActiveCanvasTab.value = detail?.panelId === componentPanelId()
+  if (!isActiveCanvasTab.value) return
+  uiStore.setGraphNodes(getNodes.value)
+  syncGraph(currentVueFlowState() as any)
 }
 
 function handleToolRenamedEvent(event: Event) {
@@ -432,20 +508,32 @@ async function loadSubWorkflowSessionDraft() {
 
 onMounted(async () => {
   if (!isSubWorkflowEditor) {
-    window.addEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
     window.addEventListener(
       'bioimageflow:apply-sub-workflow-session',
       handleApplySubWorkflowSessionEvent as EventListener,
     )
-    window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
     window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
     window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   }
+  window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
+  window.addEventListener(
+    'bioimageflow:canvas-tab-activated',
+    handleCanvasTabActivatedEvent as EventListener,
+  )
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
   if (isSubWorkflowEditor) {
     await loadSubWorkflowSessionDraft()
+    return
+  }
+  const initialGraph = initialGraphFromDockviewParams()
+  if (initialGraph) {
+    await applyGraphState(
+      initialGraph.graph,
+      initialGraph.missingTools ?? [],
+      initialGraph.dirty ?? false,
+    )
     return
   }
   const recovered = await recoverStartupWorkflow()
@@ -458,15 +546,18 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (!isSubWorkflowEditor) {
-    window.removeEventListener('bioimageflow:apply-graph', handleApplyGraphEvent)
     window.removeEventListener(
       'bioimageflow:apply-sub-workflow-session',
       handleApplySubWorkflowSessionEvent as EventListener,
     )
-    window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
     window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
     window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   }
+  window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
+  window.removeEventListener(
+    'bioimageflow:canvas-tab-activated',
+    handleCanvasTabActivatedEvent as EventListener,
+  )
 })
 
 // --- Node drag tracking (undo support) ---
@@ -617,7 +708,17 @@ watch(
     sub_workflow: n.data?.sub_workflow,
     published_inputs: n.data?.published_inputs,
     published_outputs: n.data?.published_outputs,
-  })),
+  })).concat([{
+    id: '__root_publication_context__',
+    name: null,
+    parameters: null,
+    enabled: true,
+    pinnedInputs: null,
+    output_templates: null,
+    sub_workflow: null,
+    published_inputs: rootPublishedInputs.value,
+    published_outputs: rootPublishedOutputs.value,
+  }]),
   () => {
     if (isApplyingGraphState) return
     emitGraphChanged()
@@ -887,6 +988,51 @@ function isHeaderHandle(handle: string | null | undefined): boolean {
   return handle.startsWith('__positional_') || handle === '__dataframe_out'
 }
 
+function toolForNode(node: any): ToolMetadata | undefined {
+  return (node?.data?.tool as ToolMetadata | undefined)
+    ?? toolRegistryStore.getToolByName(node?.data?.toolName)
+}
+
+function isSubWorkflowNode(node: any): boolean {
+  return node?.data?.toolName === '__sub_workflow__' || node?.data?.sub_workflow != null
+}
+
+function publishedSchemaType(schema: unknown): string | undefined {
+  if (!schema || typeof schema !== 'object') return undefined
+  const type = (schema as { type?: unknown }).type
+  return typeof type === 'string' ? type : undefined
+}
+
+function outputTypeForHandle(node: any, handle: string): string | undefined {
+  const tool = toolForNode(node)
+  const sourceOutput = tool?.outputs?.[handle] as { type?: string } | undefined
+  let sourceType = sourceOutput?.type
+  if (!sourceType && tool?.dynamic_outputs) {
+    const resolved = resolvedOutputsStore.resolvedOutputsByNodeId[node.id]
+    if (resolved?.resolved && resolved.columns) {
+      const col = (resolved.columns as Record<string, any>)[handle]
+      sourceType = col?.type
+    }
+  }
+  if (sourceType) return sourceType
+  if (!isSubWorkflowNode(node)) return undefined
+  const published = (node.data?.published_outputs ?? []).find(
+    (item: PublishedOutput) => item.name === handle,
+  )
+  return publishedSchemaType(published?.schema)
+}
+
+function inputTypeForHandle(node: any, handle: string): string | undefined {
+  const tool = toolForNode(node)
+  const targetInput = tool?.inputs?.[handle]
+  if (targetInput?.type) return targetInput.type
+  if (!isSubWorkflowNode(node)) return undefined
+  const published = (node.data?.published_inputs ?? []).find(
+    (item: PublishedInput) => item.name === handle,
+  )
+  return publishedSchemaType(published?.schema)
+}
+
 function isValidConnection(connection: {
   source: string
   target: string
@@ -909,39 +1055,27 @@ function isValidConnection(connection: {
   // Prefer the tool metadata carried on the node itself — the registry may
   // not be populated yet during restore-on-mount (fetch is async), and a
   // missing tool here would silently fail every edge with EDGE_INVALID.
-  const sourceTool: ToolMetadata | undefined =
-    (sourceNode.data?.tool as ToolMetadata | undefined) ??
-    toolRegistryStore.getToolByName(sourceNode.data?.toolName)
-  const targetTool: ToolMetadata | undefined =
-    (targetNode.data?.tool as ToolMetadata | undefined) ??
-    toolRegistryStore.getToolByName(targetNode.data?.toolName)
-  if (!sourceTool || !targetTool) return false
+  const sourceTool = toolForNode(sourceNode)
+  const targetTool = toolForNode(targetNode)
+  if (
+    (!sourceTool && !isSubWorkflowNode(sourceNode))
+    || (!targetTool && !isSubWorkflowNode(targetNode))
+  ) {
+    return false
+  }
 
   // 1b. Reject positional edges into source DataFrameTools
   const th = connection.targetHandle ?? ''
-  if (th.startsWith('__positional_') && targetTool.accepts_upstream === false) {
+  if (th.startsWith('__positional_') && targetTool?.accepts_upstream === false) {
     return false
   }
 
   if (connection.sourceHandle && connection.targetHandle) {
     // Skip type checks for header-to-header connections (DataFrame-level)
     if (!sourceIsHeader) {
-      const sourceOutput = sourceTool.outputs[connection.sourceHandle] as
-        | { type?: string }
-        | undefined
-
-      // Also check resolved outputs for dynamic-output tools.
-      let sourceType = sourceOutput?.type
-      if (!sourceType && sourceTool.dynamic_outputs) {
-        const resolved = resolvedOutputsStore.resolvedOutputsByNodeId[connection.source]
-        if (resolved?.resolved && resolved.columns) {
-          const col = (resolved.columns as Record<string, any>)[connection.sourceHandle!]
-          sourceType = col?.type
-        }
-      }
-
-      const targetInput = targetTool.inputs[connection.targetHandle]
-      if (sourceType && targetInput?.type) {
+      const sourceType = outputTypeForHandle(sourceNode, connection.sourceHandle)
+      const targetType = inputTypeForHandle(targetNode, connection.targetHandle)
+      if (sourceType && targetType) {
         // "any" type is compatible with any consumer input type.
         if (sourceType === 'any') {
           // Accept — skip type-mismatch rejection.
@@ -952,8 +1086,8 @@ function isValidConnection(connection: {
           // compatible at the frontend pre-flight; the bioimageflow library
           // performs the authoritative semantic check on graph validate.
           const PATH_FAMILY = new Set(['Path', 'ImageFile', 'MaskPath'])
-          const same = sourceType === targetInput.type
-          const bothPath = PATH_FAMILY.has(sourceType) && PATH_FAMILY.has(targetInput.type)
+          const same = sourceType === targetType
+          const bothPath = PATH_FAMILY.has(sourceType) && PATH_FAMILY.has(targetType)
           if (!same && !bothPath) return false
         }
       }
@@ -1079,7 +1213,7 @@ function onAddNode({
     },
   }
 
-  attachSubWorkflowContext(newNode)
+  attachPublicationContext(newNode)
   addNodes([newNode])
   emitGraphChanged()
 }
@@ -1120,10 +1254,12 @@ async function onAddWorkflowNode({
         pinnedInputs: {},
         output_templates: {},
         sub_workflow: graph,
+        published_inputs: graph.published_inputs ?? [],
+        published_outputs: graph.published_outputs ?? [],
         source_workflow_name: workflowName,
       },
     }
-    attachSubWorkflowContext(newNode)
+    attachPublicationContext(newNode)
     addNodes([newNode])
     emitGraphChanged()
   } catch (e: unknown) {
@@ -1323,10 +1459,17 @@ function vueFlowEdgeFromClipboardEdge(e: ClipboardPayload['edges'][number]) {
   }
 }
 
-function currentVueFlowState(): { nodes: any[]; edges: any[] } {
+function currentVueFlowState(): {
+  nodes: any[]
+  edges: any[]
+  published_inputs?: PublishedInput[]
+  published_outputs?: PublishedOutput[]
+} {
   return {
     nodes: getNodes.value.map((n: any) => ({ ...n })),
     edges: getEdges.value.map((e: any) => ({ ...e })),
+    published_inputs: rootPublishedInputs.value,
+    published_outputs: rootPublishedOutputs.value,
   }
 }
 
@@ -1395,7 +1538,7 @@ async function pasteFromClipboard() {
     return
   }
 
-  const newNodes = attachSubWorkflowContextToNodes(
+  const newNodes = attachPublicationContextToNodes(
     prepared.nodes.map(vueFlowNodeFromClipboardNode),
   )
   const newEdges = prepared.edges.map(vueFlowEdgeFromClipboardEdge)
@@ -1428,7 +1571,7 @@ function createSelectedSubWorkflow() {
     subWorkflowId: id,
     subWorkflowName: name,
   })
-  attachSubWorkflowContextToNodes(result.nodes as any[])
+  attachPublicationContextToNodes(result.nodes as any[])
   setNodes(result.nodes as any)
   setEdges(result.edges)
   uiStore.setSelectedNodes([id])
@@ -1648,6 +1791,7 @@ function undoGraphChange() {
 }
 
 function handleEditCommandEvent(event: CustomEvent<{ command?: string }>) {
+  if (!isActiveCanvasTab.value) return
   if (isLocked.value) return
   switch (event.detail?.command) {
     case 'undo':
@@ -1772,6 +1916,7 @@ function emitGraphChanged() {
     markProvisional(n.id, 'unexecuted')
   }
   if (isSubWorkflowEditor && props.subWorkflowSessionId) {
+    syncGraph(state as any)
     subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, serializeGraph(state))
     emit('graph-changed', state)
     return

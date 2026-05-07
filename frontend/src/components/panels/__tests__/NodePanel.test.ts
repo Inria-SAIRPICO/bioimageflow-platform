@@ -336,6 +336,37 @@ describe('NodePanel', () => {
   })
 
   describe('sub-workflow publishing controls', () => {
+    it('shows publishing controls for a normal workflow context and only publishes connectable inputs', async () => {
+      const data = makeNodeData({
+        publicationContext: {
+          published_inputs: [],
+          published_outputs: [],
+        },
+      })
+      const w = mountPanel(data)
+
+      const inputButtons = w.findAll('[data-testid="publish-input-toggle"]')
+      expect(inputButtons).toHaveLength(1)
+      expect(w.find('[data-testid="publish-output-toggle-result"]').exists()).toBe(true)
+      expect(w.find('[data-testid="publish-output-toggle-mask"]').exists()).toBe(true)
+
+      await inputButtons[0].trigger('click')
+      await w.vm.$nextTick()
+
+      expect((data as any).publicationContext.published_inputs).toEqual([
+        expect.objectContaining({
+          name: 'node-1.image',
+          internal_node_id: 'node-1',
+          internal_field: 'image',
+          kind: 'input',
+        }),
+      ])
+      expect((data as any).publicationContext.published_inputs[0].schema)
+        .toStrictEqual(data.tool.inputs.image)
+      expect(w.find('[data-testid="published-input-name-image"]').exists()).toBe(true)
+      expect(w.find('[data-testid="published-input-name-sigma"]').exists()).toBe(false)
+    })
+
     it('publishes and unpublishes an internal parameter with a stable default name', async () => {
       const data = makeNodeData({
         subWorkflowContext: {
@@ -347,23 +378,23 @@ describe('NodePanel', () => {
       const w = mountPanel(data)
 
       const buttons = w.findAll('[data-testid="publish-input-toggle"]')
-      const sigmaButton = buttons[1]
-      await sigmaButton.trigger('click')
+      const imageButton = buttons[0]
+      await imageButton.trigger('click')
       await w.vm.$nextTick()
 
       expect((data as any).subWorkflowContext.published_inputs).toEqual([
         expect.objectContaining({
-          name: 'node-1.sigma',
+          name: 'node-1.image',
           internal_node_id: 'node-1',
-          internal_field: 'sigma',
-          kind: 'parameter',
-          schema: data.tool.inputs.sigma,
-          default: 1.0,
+          internal_field: 'image',
+          kind: 'input',
+          schema: data.tool.inputs.image,
+          default: null,
         }),
       ])
-      expect(w.find('[data-testid="published-input-name-sigma"]').exists()).toBe(true)
+      expect(w.find('[data-testid="published-input-name-image"]').exists()).toBe(true)
 
-      await sigmaButton.trigger('click')
+      await imageButton.trigger('click')
       expect((data as any).subWorkflowContext.published_inputs).toEqual([])
     })
 

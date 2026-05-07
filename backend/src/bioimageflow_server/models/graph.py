@@ -82,6 +82,8 @@ class GraphState(BaseModel):
 
     nodes: list[NodeState]
     edges: list[Edge]
+    published_inputs: list[PublishedInput] = Field(default_factory=list)
+    published_outputs: list[PublishedOutput] = Field(default_factory=list)
 
 
 class GraphValidationRequest(BaseModel):

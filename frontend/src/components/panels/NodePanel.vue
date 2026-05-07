@@ -238,14 +238,18 @@ function isSliderField(field: InputFieldSchema): boolean {
   return field.type === 'float' && field.min != null && field.max != null && field.step != null
 }
 
-const subWorkflowContext = computed(() => nodeData.value?.subWorkflowContext ?? null)
+const publicationContext = computed(() => (
+  nodeData.value?.publicationContext
+  ?? nodeData.value?.subWorkflowContext
+  ?? null
+))
 
 function selectedInternalNodeId(): string {
   return selectedNode.value?.id ?? ''
 }
 
 function usedPublishedNames(except?: string): Set<string> {
-  const ctx = subWorkflowContext.value
+  const ctx = publicationContext.value
   const used = new Set<string>()
   if (!ctx) return used
   for (const item of [
@@ -262,7 +266,7 @@ function defaultPublishedName(fieldName: string): string {
 }
 
 function inputPublishIndex(fieldName: string): number {
-  const ctx = subWorkflowContext.value
+  const ctx = publicationContext.value
   if (!ctx) return -1
   return (ctx.published_inputs ?? []).findIndex((item: PublishedInput) => (
     item.internal_node_id === selectedInternalNodeId() && item.internal_field === fieldName
@@ -270,7 +274,7 @@ function inputPublishIndex(fieldName: string): number {
 }
 
 function outputPublishIndex(outputName: string): number {
-  const ctx = subWorkflowContext.value
+  const ctx = publicationContext.value
   if (!ctx) return -1
   return (ctx.published_outputs ?? []).findIndex((item: PublishedOutput) => (
     item.internal_node_id === selectedInternalNodeId() && item.internal_output === outputName
@@ -286,8 +290,8 @@ function isOutputPublished(outputName: string): boolean {
 }
 
 function togglePublishInput(fieldName: string, field: InputFieldSchema) {
-  const ctx = subWorkflowContext.value
-  if (!ctx || !nodeData.value) return
+  const ctx = publicationContext.value
+  if (!ctx || !nodeData.value || !canConnect(field)) return
   publishNameError.value = null
   ctx.published_inputs ??= []
   const existingIndex = inputPublishIndex(fieldName)
@@ -305,14 +309,14 @@ function togglePublishInput(fieldName: string, field: InputFieldSchema) {
     name,
     internal_node_id: selectedInternalNodeId(),
     internal_field: fieldName,
-    kind: canConnect(field) ? 'input' : 'parameter',
+    kind: 'input',
     schema: field,
     default: nodeData.value.parameters?.[fieldName] ?? field.default ?? null,
   })
 }
 
 function updatePublishedInputName(fieldName: string, value: string) {
-  const ctx = subWorkflowContext.value
+  const ctx = publicationContext.value
   if (!ctx) return
   const index = inputPublishIndex(fieldName)
   if (index < 0) return
@@ -327,7 +331,7 @@ function updatePublishedInputName(fieldName: string, value: string) {
 }
 
 function togglePublishOutput(outputName: string, field: OutputFieldSchema) {
-  const ctx = subWorkflowContext.value
+  const ctx = publicationContext.value
   if (!ctx) return
   publishNameError.value = null
   ctx.published_outputs ??= []
@@ -351,7 +355,7 @@ function togglePublishOutput(outputName: string, field: OutputFieldSchema) {
 }
 
 function updatePublishedOutputName(outputName: string, value: string) {
-  const ctx = subWorkflowContext.value
+  const ctx = publicationContext.value
   if (!ctx) return
   const index = outputPublishIndex(outputName)
   if (index < 0) return
@@ -469,7 +473,7 @@ async function pickFolder(key: string) {
         >
           <div class="param-header">
             <Button
-              v-if="subWorkflowContext"
+              v-if="publicationContext && canConnect(field as InputFieldSchema)"
               :icon="isInputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
               class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
               :title="isInputPublished(key) ? 'Unpublish input' : 'Publish input'"
@@ -515,8 +519,8 @@ async function pickFolder(key: string) {
           </div>
 
           <InputText
-            v-if="subWorkflowContext && isInputPublished(key)"
-            :model-value="subWorkflowContext.published_inputs[inputPublishIndex(key)].name"
+            v-if="publicationContext && isInputPublished(key)"
+            :model-value="publicationContext.published_inputs[inputPublishIndex(key)].name"
             class="published-name-input"
             :data-testid="`published-input-name-${key}`"
             @update:model-value="updatePublishedInputName(key, $event as string)"
@@ -654,7 +658,7 @@ async function pickFolder(key: string) {
         >
           <div class="output-header">
             <Button
-              v-if="subWorkflowContext"
+              v-if="publicationContext"
               :icon="isOutputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
               class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
               :title="isOutputPublished(key) ? 'Unpublish output' : 'Publish output'"
@@ -666,8 +670,8 @@ async function pickFolder(key: string) {
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
           </div>
           <InputText
-            v-if="subWorkflowContext && isOutputPublished(key)"
-            :model-value="subWorkflowContext.published_outputs[outputPublishIndex(key)].name"
+            v-if="publicationContext && isOutputPublished(key)"
+            :model-value="publicationContext.published_outputs[outputPublishIndex(key)].name"
             class="published-name-input"
             :data-testid="`published-output-name-${key}`"
             @update:model-value="updatePublishedOutputName(key, $event as string)"

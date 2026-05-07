@@ -327,12 +327,21 @@ defineExpose({
 
 .workflow-row__drag {
   align-items: center;
-  color: var(--p-text-muted-color);
+  color: color-mix(in srgb, var(--p-text-color) 72%, transparent);
   cursor: grab;
   display: inline-flex;
   height: 1.75rem;
   justify-content: center;
   width: 1.5rem;
+}
+
+.workflow-row__drag:hover {
+  color: var(--p-text-color);
+}
+
+.workflow-row__drag .pi {
+  color: currentColor;
+  font-size: 1rem;
 }
 
 .workflow-row__name {
