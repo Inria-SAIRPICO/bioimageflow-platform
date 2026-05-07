@@ -98,6 +98,7 @@ onMounted(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
+  window.addEventListener('bioimageflow:popout-code-editor', onPopoutCodeEditor)
   if (shortcutEnabled) {
     window.addEventListener('keydown', onPreferencesShortcut)
   }
@@ -128,6 +129,7 @@ onBeforeUnmount(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
+  window.removeEventListener('bioimageflow:popout-code-editor', onPopoutCodeEditor)
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
   }
@@ -304,6 +306,13 @@ function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
 
 function onCodeEditorLoadingFinished(event: CustomEvent<{ path?: string }>) {
   uiStore.clearCodeEditorOpening(event.detail?.path)
+}
+
+async function onPopoutCodeEditor() {
+  const api = dockviewApi.value
+  const panel = api?.getPanel('codeEditor')
+  if (!api || !panel) return
+  await api.addPopoutGroup(panel, { popoutUrl: '/popout.html' })
 }
 
 function openSubWorkflowPanel(sessionId: string): void {
@@ -556,6 +565,7 @@ defineExpose({ dockviewApi })
     <div class="dockview-wrapper">
       <DockviewVue
         :theme="themeLight"
+        popout-url="/popout.html"
         @ready="onDockviewReady"
       />
     </div>

@@ -6,6 +6,7 @@ import { getEditorStatus } from '@/api/editor'
 import {
   closeCodeEditorWindow,
   hasCodeEditorWindowBridge,
+  isDesktop,
   openCodeEditorWindow,
 } from '@/utils/nativeDialogs'
 
@@ -28,14 +29,20 @@ const available = computed(() => (
 const editorTitle = computed(() => (
   codeEditorPath.value ? `Code editor - ${codeEditorPath.value}` : 'Code editor'
 ))
-const canPopOut = computed(() => available.value && hasCodeEditorWindowBridge())
+const canPopOut = computed(() => (
+  available.value && (!isDesktop() || hasCodeEditorWindowBridge())
+))
 
 async function popOutEditor() {
   if (!codeEditorUrl.value) return
-  const opened = await openCodeEditorWindow(codeEditorUrl.value, editorTitle.value)
-  if (opened) {
-    uiStore.setCodeEditorDetached(true)
+  if (hasCodeEditorWindowBridge()) {
+    const opened = await openCodeEditorWindow(codeEditorUrl.value, editorTitle.value)
+    if (opened) {
+      uiStore.setCodeEditorDetached(true)
+    }
+    return
   }
+  window.dispatchEvent(new CustomEvent('bioimageflow:popout-code-editor'))
 }
 
 async function restoreEditor() {

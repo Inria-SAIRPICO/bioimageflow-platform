@@ -26,6 +26,7 @@ globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
 // Mock dockview-vue at module level
 const mockDockviewApi = {
   addPanel: vi.fn(),
+  addPopoutGroup: vi.fn(),
   getPanel: vi.fn(),
   removePanel: vi.fn(),
   onDidRemovePanel: vi.fn(),
@@ -104,6 +105,8 @@ function mountApp() {
     panels.set(options.id, panel)
     return panel
   })
+  mockDockviewApi.addPopoutGroup.mockReset()
+  mockDockviewApi.addPopoutGroup.mockResolvedValue(true)
   mockDockviewApi.getPanel.mockReset()
   mockDockviewApi.getPanel.mockImplementation((id: string) => panels.get(id))
   mockDockviewApi.removePanel.mockReset()
@@ -341,6 +344,23 @@ describe('AppShell', () => {
       direction: 'right',
     })
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
+  })
+
+  it('uses Dockview popout for Code Editor pop-out events in browser mode', async () => {
+    mountApp()
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+      detail: { url: 'http://127.0.0.1:32344', path: '/tmp/tool.py' },
+    }))
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bioimageflow:popout-code-editor'))
+    await flushPromises()
+
+    expect(mockDockviewApi.addPopoutGroup).toHaveBeenCalledWith(
+      panels.get('codeEditor'),
+      { popoutUrl: '/popout.html' },
+    )
   })
 
   it('creates and activates the Code Editor panel while embedded editor is opening', async () => {
