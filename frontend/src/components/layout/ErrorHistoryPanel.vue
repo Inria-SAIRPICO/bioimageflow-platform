@@ -209,7 +209,7 @@ void props
 .error-history-panel {
   width: min(420px, 100%);
   height: 100%;
-  background: var(--p-surface-0, #fff);
+  background: var(--bif-surface, #fff);
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
@@ -248,7 +248,7 @@ void props
   border-left: 4px solid var(--p-red-500, #dc2626);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
-  background: var(--p-surface-0, #fff);
+  background: var(--bif-surface, #fff);
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -324,7 +324,7 @@ void props
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.8125rem;
   line-height: 1.45;
-  background: var(--p-surface-50, #f8fafc);
+  background: var(--bif-surface-muted, #f8fafc);
   border: 1px solid var(--p-surface-border, #e5e7eb);
   border-radius: 6px;
   padding: 0.75rem;

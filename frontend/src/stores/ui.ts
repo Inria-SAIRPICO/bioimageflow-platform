@@ -1,6 +1,33 @@
 import { ref, reactive, computed } from 'vue'
 import { defineStore } from 'pinia'
 
+export type ThemePreference = 'light' | 'dark' | 'system'
+
+const THEME_STORAGE_KEY = 'bioimageflow.theme'
+
+function isThemePreference(value: string | null): value is ThemePreference {
+  return value === 'light' || value === 'dark' || value === 'system'
+}
+
+function readStoredThemePreference(): ThemePreference {
+  if (typeof window === 'undefined') return 'system'
+  try {
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
+    return isThemePreference(stored) ? stored : 'system'
+  } catch {
+    return 'system'
+  }
+}
+
+function writeStoredThemePreference(preference: ThemePreference): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, preference)
+  } catch {
+    // Ignore unavailable storage; the in-memory setting still applies.
+  }
+}
+
 export const useUIStore = defineStore('ui', () => {
   const selectedNodeIds = ref<string[]>([])
   const graphNodes = ref<any[]>([])
@@ -11,6 +38,21 @@ export const useUIStore = defineStore('ui', () => {
   const codeEditorPath = ref<string | null>(null)
   const codeEditorOpening = ref(false)
   const codeEditorDetached = ref(false)
+  const themePreference = ref<ThemePreference>(readStoredThemePreference())
+  const systemPrefersDark = ref(false)
+
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    systemPrefersDark.value = mediaQuery.matches
+    const onSystemThemeChange = (event: MediaQueryListEvent) => {
+      systemPrefersDark.value = event.matches
+    }
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', onSystemThemeChange)
+    } else if (typeof mediaQuery.addListener === 'function') {
+      mediaQuery.addListener(onSystemThemeChange)
+    }
+  }
 
   const panels = reactive({
     tools: true,
@@ -24,6 +66,11 @@ export const useUIStore = defineStore('ui', () => {
   const hasSelection = computed(() => selectedNodeIds.value.length > 0)
   const isSingleSelection = computed(() => selectedNodeIds.value.length === 1)
   const isMultiSelection = computed(() => selectedNodeIds.value.length > 1)
+  const resolvedTheme = computed<'light' | 'dark'>(() => {
+    if (themePreference.value !== 'system') return themePreference.value
+    return systemPrefersDark.value ? 'dark' : 'light'
+  })
+  const isDarkTheme = computed(() => resolvedTheme.value === 'dark')
 
   const tabTitle = computed(() => {
     let title = 'BioImageFlow'
@@ -62,6 +109,11 @@ export const useUIStore = defineStore('ui', () => {
 
   function setExecutionLocked(locked: boolean) {
     isExecutionLocked.value = locked
+  }
+
+  function setThemePreference(preference: ThemePreference) {
+    themePreference.value = preference
+    writeStoredThemePreference(preference)
   }
 
   function togglePanel(panel: keyof typeof panels) {
@@ -105,10 +157,14 @@ export const useUIStore = defineStore('ui', () => {
     codeEditorPath,
     codeEditorOpening,
     codeEditorDetached,
+    themePreference,
+    systemPrefersDark,
     panels,
     hasSelection,
     isSingleSelection,
     isMultiSelection,
+    resolvedTheme,
+    isDarkTheme,
     tabTitle,
     setSelectedNodes,
     clearSelection,
@@ -117,6 +173,7 @@ export const useUIStore = defineStore('ui', () => {
     markDirty,
     markClean,
     setExecutionLocked,
+    setThemePreference,
     togglePanel,
     setPanelVisible,
     setCodeEditorTarget,

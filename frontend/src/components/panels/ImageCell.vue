@@ -262,8 +262,8 @@ async function reveal() {
 .image-cell__pending,
 .image-cell__unavailable {
   object-fit: contain;
-  border: 1px solid var(--p-surface-300);
-  background: var(--p-surface-100);
+  border: 1px solid var(--bif-border-strong);
+  background: var(--bif-surface-hover);
   flex: 0 0 auto;
 }
 
@@ -276,7 +276,7 @@ async function reveal() {
   content: "";
   position: absolute;
   inset: 8px;
-  border: 3px solid var(--p-surface-300);
+  border: 3px solid var(--bif-border-strong);
   border-top-color: var(--p-primary-color);
   border-radius: 999px;
   animation: image-cell-spin 0.9s linear infinite;

@@ -4,6 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BioImageFlow</title>
+    <script>
+      (() => {
+        const storageKey = 'bioimageflow.theme'
+        const darkQuery = window.matchMedia('(prefers-color-scheme: dark)')
+        const readPreference = () => {
+          try {
+            const value = window.localStorage.getItem(storageKey)
+            return value === 'light' || value === 'dark' || value === 'system'
+              ? value
+              : 'system'
+          } catch {
+            return 'system'
+          }
+        }
+        const applyTheme = () => {
+          const preference = readPreference()
+          const isDark = preference === 'dark' || (preference === 'system' && darkQuery.matches)
+          document.documentElement.classList.toggle('bif-dark-theme', isDark)
+          document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
+        }
+        applyTheme()
+        window.addEventListener('storage', (event) => {
+          if (event.key === storageKey) applyTheme()
+        })
+        darkQuery.addEventListener?.('change', applyTheme)
+      })()
+    </script>
   </head>
   <body></body>
 </html>

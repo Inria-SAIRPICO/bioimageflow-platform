@@ -99,6 +99,6 @@ li {
 }
 
 li:hover {
-  background: var(--p-surface-100);
+  background: var(--bif-surface-hover);
 }
 </style>

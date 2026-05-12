@@ -139,7 +139,7 @@ async function reveal() {
   max-width: 520px;
   border: 1px solid var(--p-primary-color);
   border-radius: 4px;
-  background: var(--p-surface-0);
+  background: var(--bif-surface);
   color: var(--p-text-color);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.8125rem;

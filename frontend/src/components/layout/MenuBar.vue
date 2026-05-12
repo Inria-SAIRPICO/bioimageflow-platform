@@ -3,10 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
+import Menu from 'primevue/menu'
 import Menubar from 'primevue/menubar'
 import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
-import { useUIStore } from '@/stores/ui'
+import { useUIStore, type ThemePreference } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useAutoSave } from '@/composables/useAutoSave'
@@ -63,6 +64,33 @@ const importFileInput = ref<HTMLInputElement | null>(null)
 const pendingImportFile = ref<File | null>(null)
 const dependencyDialogVisible = ref(false)
 const pendingDiscardAction = ref<(() => void | Promise<void>) | null>(null)
+const themeMenu = ref<{ toggle: (event: Event) => void } | null>(null)
+
+const themePreferenceLabels: Record<ThemePreference, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'System',
+}
+
+const themeButtonLabel = computed(() => {
+  const label = themePreferenceLabels[uiStore.themePreference]
+  return uiStore.themePreference === 'system'
+    ? `${label} (${themePreferenceLabels[uiStore.resolvedTheme]})`
+    : label
+})
+
+const themeButtonIcon = computed(() => {
+  if (uiStore.themePreference === 'system') return 'pi pi-desktop'
+  return uiStore.themePreference === 'dark' ? 'pi pi-moon' : 'pi pi-sun'
+})
+
+const themeMenuItems = computed<MenuItem[]>(() => (
+  (['light', 'dark', 'system'] as ThemePreference[]).map((preference) => ({
+    label: themePreferenceLabels[preference],
+    icon: uiStore.themePreference === preference ? 'pi pi-check' : undefined,
+    command: () => uiStore.setThemePreference(preference),
+  }))
+))
 
 type WorkflowPanelCommand = {
   action?: 'new' | 'save' | 'duplicate' | 'import' | 'export' | 'delete' | 'open'
@@ -75,6 +103,10 @@ function panelToggle(label: string, panelKey: keyof typeof uiStore.panels): Menu
     icon: uiStore.panels[panelKey] ? 'pi pi-check' : undefined,
     command: () => uiStore.togglePanel(panelKey),
   }
+}
+
+function toggleThemeMenu(event: Event): void {
+  themeMenu.value?.toggle(event)
 }
 
 function runDisabledReason(): string | null {
@@ -591,6 +623,9 @@ defineExpose({
   renameDialogVisible,
   importRenameDialogVisible,
   dependencyDialogVisible,
+  themeButtonIcon,
+  themeButtonLabel,
+  themeMenuItems,
 })
 </script>
 
@@ -622,6 +657,21 @@ defineExpose({
           @click="openRenameDialog"
         />
         <ErrorIndicator @open="historyPanelOpen = true" />
+        <Menu
+          ref="themeMenu"
+          :model="themeMenuItems"
+          popup
+        />
+        <Button
+          :icon="themeButtonIcon"
+          text
+          rounded
+          size="small"
+          :aria-label="`Theme: ${themeButtonLabel}`"
+          :title="`Theme: ${themeButtonLabel}`"
+          data-testid="theme-menu-button"
+          @click="toggleThemeMenu"
+        />
         <RunButton
           ref="runButtonRef"
           :graph="currentGraph"

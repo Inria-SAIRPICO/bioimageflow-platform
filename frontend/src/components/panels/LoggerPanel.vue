@@ -327,8 +327,8 @@ watch(
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--p-surface-0, #ffffff);
-  color: var(--p-surface-900, #111827);
+  background: var(--bif-surface, #ffffff);
+  color: var(--bif-text-strong, #111827);
 }
 
 .logger-panel__toolbar {
@@ -336,7 +336,7 @@ watch(
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem;
-  border-bottom: 1px solid var(--p-surface-200, #e5e7eb);
+  border-bottom: 1px solid var(--bif-border-muted, #e5e7eb);
   flex-wrap: wrap;
 }
 
@@ -355,8 +355,8 @@ watch(
 
 .logger-panel__auto-scope--inactive {
   color: var(--p-text-color, #111827);
-  background: var(--p-surface-100, #f3f4f6);
-  border: 1px solid var(--p-surface-300, #d1d5db);
+  background: var(--bif-surface-hover, #f3f4f6);
+  border: 1px solid var(--bif-border-strong, #d1d5db);
 }
 
 .logger-panel__auto-scope-icon {
@@ -404,12 +404,12 @@ watch(
   gap: 0.5rem;
   align-items: start;
   padding: 0.25rem 0.5rem;
-  border-bottom: 1px solid var(--p-surface-100, #f3f4f6);
+  border-bottom: 1px solid var(--bif-surface-hover, #f3f4f6);
 }
 
 .logger-panel__time,
 .logger-panel__node {
-  color: var(--p-surface-500, #6b7280);
+  color: var(--bif-text-subtle, #6b7280);
 }
 
 .logger-panel__node {
@@ -428,8 +428,8 @@ watch(
 }
 
 .logger-panel__level-badge--debug {
-  background: var(--p-surface-200, #e5e7eb);
-  color: var(--p-surface-700, #374151);
+  background: var(--bif-surface-active, #e5e7eb);
+  color: var(--p-text-color, #374151);
 }
 
 .logger-panel__level-badge--info {
@@ -448,7 +448,7 @@ watch(
 }
 
 .log-entry--debug {
-  color: var(--p-surface-700, #374151);
+  color: var(--p-text-color, #374151);
 }
 
 .log-entry--warning {
@@ -466,6 +466,6 @@ watch(
 
 .logger-panel__empty {
   padding: 1rem;
-  color: var(--p-surface-500, #6b7280);
+  color: var(--bif-text-subtle, #6b7280);
 }
 </style>

@@ -72,7 +72,7 @@ function onDismiss() {
   background: color-mix(
     in srgb,
     var(--p-red-500, #dc2626) 12%,
-    var(--p-surface-0, #fff)
+    var(--bif-surface, #fff)
   );
   border-bottom: 1px solid var(--p-red-500, #dc2626);
   color: var(--p-text-color, #111827);

@@ -25,9 +25,9 @@ export default defineComponent({
 </script>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
-import { themeLight, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
+import { themeDark, themeLight, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
@@ -154,6 +154,12 @@ watchEffect(() => {
   document.title = uiStore.tabTitle
 })
 
+watchEffect(() => {
+  const isDark = uiStore.isDarkTheme
+  document.documentElement.classList.toggle('bif-dark-theme', isDark)
+  document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
+})
+
 const dockviewApi = shallowRef<DockviewApi | null>(null)
 const dockviewDisposables: DockviewIDisposable[] = []
 const confirmedSubWorkflowPanelCloses = new Set<string>()
@@ -161,6 +167,7 @@ const canvasContexts = new Map<string, {
   workflowName: string
   workflowDisplayName: string
 }>()
+const dockviewTheme = computed(() => uiStore.isDarkTheme ? themeDark : themeLight)
 
 // --- Dockview setup ---
 
@@ -564,7 +571,7 @@ defineExpose({ dockviewApi })
     <ExecutionBanner />
     <div class="dockview-wrapper">
       <DockviewVue
-        :theme="themeLight"
+        :theme="dockviewTheme"
         popout-url="/popout.html"
         @ready="onDockviewReady"
       />
@@ -596,6 +603,34 @@ html, body, #app, #bioimageflow-app {
   height: 100%;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bif-app-bg);
+  color: var(--p-text-color);
+}
+
+:root {
+  --bif-app-bg: var(--p-surface-50);
+  --bif-surface: var(--p-surface-0);
+  --bif-surface-muted: var(--p-surface-50);
+  --bif-surface-hover: var(--p-surface-100);
+  --bif-surface-active: var(--p-surface-200);
+  --bif-border-muted: var(--p-surface-200);
+  --bif-border-strong: var(--p-surface-300);
+  --bif-text-strong: var(--p-surface-900);
+  --bif-text-subtle: var(--p-surface-500);
+  --bif-danger-surface: var(--p-red-50);
+}
+
+.bif-dark-theme {
+  --bif-app-bg: var(--p-surface-950);
+  --bif-surface: var(--p-surface-900);
+  --bif-surface-muted: var(--p-surface-800);
+  --bif-surface-hover: var(--p-surface-800);
+  --bif-surface-active: var(--p-surface-700);
+  --bif-border-muted: var(--p-surface-700);
+  --bif-border-strong: var(--p-surface-600);
+  --bif-text-strong: var(--p-text-color);
+  --bif-text-subtle: var(--p-text-muted-color);
+  --bif-danger-surface: color-mix(in srgb, var(--p-red-500) 12%, var(--bif-surface));
 }
 
 #bioimageflow-app {
@@ -611,6 +646,24 @@ html, body, #app, #bioimageflow-app {
 
 .dockview-wrapper > div {
   height: 100%;
+}
+
+.bif-dark-theme .vue-flow {
+  background: var(--bif-app-bg);
+}
+
+.bif-dark-theme .vue-flow__background {
+  color: var(--bif-border-muted);
+}
+
+.bif-dark-theme .vue-flow__controls {
+  box-shadow: 0 0 0 1px var(--p-content-border-color);
+}
+
+.bif-dark-theme .vue-flow__controls-button {
+  background: var(--bif-surface);
+  border-color: var(--p-content-border-color);
+  color: var(--p-text-color);
 }
 
 /* Preserve newlines in toast detail (used by the run-button validation

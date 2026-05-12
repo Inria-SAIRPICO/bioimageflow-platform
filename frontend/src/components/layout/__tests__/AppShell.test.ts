@@ -145,6 +145,9 @@ describe('AppShell', () => {
   beforeEach(() => {
     pinia = createPinia()
     setActivePinia(pinia)
+    window.localStorage.clear()
+    document.documentElement.classList.remove('bif-dark-theme')
+    document.documentElement.style.colorScheme = ''
     connectMock.mockClear()
     disconnectMock.mockClear()
   })
@@ -163,6 +166,15 @@ describe('AppShell', () => {
     const wrapper = mountApp()
     expect(wrapper.find('.dockview-wrapper').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dockview-container"]').exists()).toBe(true)
+  })
+
+  it('applies the dark theme class from the UI store', async () => {
+    useUIStore().setThemePreference('dark')
+    mountApp()
+    await flushPromises()
+
+    expect(document.documentElement.classList.contains('bif-dark-theme')).toBe(true)
+    expect(document.documentElement.style.colorScheme).toBe('dark')
   })
 
   it('connects the WebSocket on startup', async () => {

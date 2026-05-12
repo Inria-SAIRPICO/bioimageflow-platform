@@ -287,7 +287,7 @@ function onDismissBadge(event: MouseEvent) {
 
 <style scoped>
 .tool-node {
-  background: var(--p-surface-0);
+  background: var(--bif-surface);
   border: 2px solid var(--p-content-border-color);
   border-radius: 8px;
   min-width: 160px;
@@ -309,10 +309,10 @@ function onDismissBadge(event: MouseEvent) {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  border-bottom: 1px solid var(--p-surface-200);
+  border-bottom: 1px solid var(--bif-border-muted);
   cursor: pointer;
   user-select: none;
-  background: var(--p-surface-50);
+  background: var(--bif-surface-muted);
   border-radius: 6px 6px 0 0;
   margin: 0.5px;
   gap: 4px;
@@ -360,7 +360,7 @@ function onDismissBadge(event: MouseEvent) {
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--p-orange-500);
-  color: var(--p-surface-0);
+  color: var(--p-primary-contrast-color);
   font-weight: 700;
 }
 
@@ -459,7 +459,7 @@ function onDismissBadge(event: MouseEvent) {
 
 .tool-missing {
   border-color: var(--p-red-500);
-  background: var(--p-red-50, var(--p-surface-0));
+  background: var(--bif-danger-surface);
 }
 </style>
 

@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
 .traceback-pre {
   margin: 0;
   padding: 0.5rem;
-  background: var(--p-surface-100, #f3f4f6);
+  background: var(--bif-surface-hover, #f3f4f6);
   border-radius: 4px;
   font-family: ui-monospace, monospace;
   font-size: 0.8rem;

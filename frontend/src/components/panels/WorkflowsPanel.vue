@@ -271,7 +271,7 @@ defineExpose({
 
 <style scoped>
 .workflows-panel {
-  background: var(--p-surface-0);
+  background: var(--bif-surface);
   color: var(--p-text-color);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
@@ -302,7 +302,7 @@ defineExpose({
 
 .workflow-row {
   align-items: center;
-  background: var(--p-surface-0);
+  background: var(--bif-surface);
   border: 1px solid var(--p-content-border-color);
   border-radius: 6px;
   color: var(--p-text-color);
@@ -322,7 +322,7 @@ defineExpose({
 }
 
 .workflow-row--selected {
-  background: color-mix(in srgb, var(--p-primary-color) 8%, var(--p-surface-0));
+  background: color-mix(in srgb, var(--p-primary-color) 8%, var(--bif-surface));
 }
 
 .workflow-row__drag {

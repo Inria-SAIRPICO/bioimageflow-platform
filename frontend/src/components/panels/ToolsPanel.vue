@@ -1095,7 +1095,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   width: 100%;
-  background: var(--p-surface-100);
+  background: var(--bif-surface-hover);
   border: 0;
   padding: 4px 4px;
   text-align: left;
@@ -1109,7 +1109,7 @@ defineExpose({
 }
 
 .tool-category-header:hover {
-  background-color: var(--p-surface-200);
+  background-color: var(--bif-surface-active);
 }
 
 .tool-category-chevron {
@@ -1133,7 +1133,7 @@ defineExpose({
   transition: background-color 0.15s;
 }
 .tool-list-item:hover {
-  background-color: var(--p-surface-100);
+  background-color: var(--bif-surface-hover);
 }
 
 .tool-list-item-row {
@@ -1251,7 +1251,7 @@ defineExpose({
   justify-content: space-between;
   gap: 8px;
   padding: 4px 8px;
-  background: var(--p-surface-0);
+  background: var(--bif-surface);
   border: 1px solid var(--p-content-border-color);
   border-radius: 4px;
   font: inherit;
@@ -1263,7 +1263,7 @@ defineExpose({
 }
 
 .version-dropdown-toggle:hover {
-  background: var(--p-surface-100);
+  background: var(--bif-surface-hover);
 }
 
 .version-dropdown-summary {
@@ -1291,7 +1291,7 @@ defineExpose({
   left: 0;
   z-index: 20;
   min-width: 100%;
-  background: var(--p-surface-0);
+  background: var(--bif-surface);
   border: 1px solid var(--p-content-border-color);
   border-radius: 6px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.14);
@@ -1316,7 +1316,7 @@ defineExpose({
 }
 
 .version-row:hover {
-  background: var(--p-surface-100);
+  background: var(--bif-surface-hover);
 }
 
 .version-label {
@@ -1363,7 +1363,7 @@ defineExpose({
 
 .tool-documentation {
   padding: 8px 10px;
-  background: var(--p-surface-100);
+  background: var(--bif-surface-hover);
   color: var(--p-text-color);
   border-radius: 4px;
   margin: 4px 6px;

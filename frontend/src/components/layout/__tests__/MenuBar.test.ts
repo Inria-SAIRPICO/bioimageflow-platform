@@ -62,6 +62,7 @@ function mountMenuBar() {
 
 describe('MenuBar', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     pinia = createPinia()
     setActivePinia(pinia)
     toastAdd.mockClear()
@@ -127,6 +128,30 @@ describe('MenuBar', () => {
     expect(store.panels.tools).toBe(true)
     toolsToggle.command()
     expect(store.panels.tools).toBe(false)
+  })
+
+  it('renders a theme chooser button with light, dark, and system choices', () => {
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+
+    expect(wrapper.find('[data-testid="theme-menu-button"]').exists()).toBe(true)
+    expect(vm.themeMenuItems.map((item: any) => item.label)).toEqual([
+      'Light',
+      'Dark',
+      'System',
+    ])
+    expect(vm.themeButtonIcon).toBe('pi pi-desktop')
+  })
+
+  it('theme chooser updates the stored theme preference', () => {
+    const store = useUIStore()
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+
+    vm.themeMenuItems.find((item: any) => item.label === 'Dark').command()
+
+    expect(store.themePreference).toBe('dark')
+    expect(vm.themeButtonIcon).toBe('pi pi-moon')
   })
 
   describe('Workflow menu', () => {

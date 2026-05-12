@@ -133,7 +133,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 240px;
-  background: var(--p-surface-0);
+  background: var(--bif-surface);
   display: flex;
   flex-direction: column;
 }
@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
   height: 2rem;
   padding: 0.25rem 0.5rem;
   border-bottom: 1px solid var(--p-content-border-color);
-  background: var(--p-surface-50);
+  background: var(--bif-surface-muted);
 }
 
 .code-editor-panel__icon-button {
@@ -172,7 +172,7 @@ onBeforeUnmount(() => {
 .code-editor-panel__icon-button:hover {
   color: var(--p-text-color);
   border-color: var(--p-content-border-color);
-  background: var(--p-surface-100);
+  background: var(--bif-surface-hover);
 }
 
 .code-editor-panel__unavailable,

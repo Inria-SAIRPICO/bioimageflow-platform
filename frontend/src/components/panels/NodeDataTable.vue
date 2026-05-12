@@ -174,7 +174,7 @@ function onPage(event: { page: number; rows: number }) {
 
 <style scoped>
 .node-data-table {
-  border-top: 1px solid var(--p-surface-200);
+  border-top: 1px solid var(--bif-border-muted);
   padding-top: 0.5rem;
 }
 

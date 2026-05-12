@@ -56,7 +56,7 @@ function onClick() {
 }
 
 .error-indicator:hover {
-  background: var(--p-surface-100, rgba(0, 0, 0, 0.05));
+  background: var(--bif-surface-hover, rgba(0, 0, 0, 0.05));
 }
 
 .error-indicator .pi {

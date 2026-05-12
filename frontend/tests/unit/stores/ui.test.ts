@@ -1,9 +1,23 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useUIStore } from '@/stores/ui'
 
 describe('UI store', () => {
   beforeEach(() => {
+    window.localStorage.clear()
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
     setActivePinia(createPinia())
   })
 
@@ -103,5 +117,42 @@ describe('UI store', () => {
 
     expect(store.codeEditorDetached).toBe(true)
     expect(store.panels.codeEditor).toBe(true)
+  })
+
+  it('defaults to the system theme preference', () => {
+    const store = useUIStore()
+    expect(store.themePreference).toBe('system')
+    expect(store.resolvedTheme).toBe('light')
+    expect(store.isDarkTheme).toBe(false)
+  })
+
+  it('persists an explicit dark theme preference', () => {
+    const store = useUIStore()
+    store.setThemePreference('dark')
+
+    expect(store.themePreference).toBe('dark')
+    expect(store.resolvedTheme).toBe('dark')
+    expect(store.isDarkTheme).toBe(true)
+    expect(window.localStorage.getItem('bioimageflow.theme')).toBe('dark')
+  })
+
+  it('resolves system preference to dark when the OS is dark', () => {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(prefers-color-scheme: dark)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+    setActivePinia(createPinia())
+
+    const store = useUIStore()
+
+    expect(store.themePreference).toBe('system')
+    expect(store.resolvedTheme).toBe('dark')
+    expect(store.isDarkTheme).toBe(true)
   })
 })

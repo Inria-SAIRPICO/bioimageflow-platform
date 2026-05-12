@@ -81,7 +81,7 @@ const emit = defineEmits<{
   margin: 0;
 }
 .dependency-card {
-  background: var(--p-surface-50);
+  background: var(--bif-surface-muted);
   border: 1px solid var(--p-content-border-color);
   border-left: 4px solid var(--p-orange-500);
   border-radius: 10px;
