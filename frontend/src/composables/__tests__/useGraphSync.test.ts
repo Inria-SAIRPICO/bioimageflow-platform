@@ -93,6 +93,129 @@ describe('useGraphSync', () => {
     )
   })
 
+  it('syncs a named canvas draft to workflow-drafts with revision and client sequence', async () => {
+    mockedPut.mockResolvedValue({
+      data: {
+        draft_id: 'root-draft',
+        revision: 8,
+        validation_result: makeValidation(true),
+      },
+    })
+    const graphSync = useGraphSync({
+      draftId: 'root-draft',
+      initialRevision: 7,
+    })
+
+    graphSync.syncGraph(makeVueFlowGraph('1'))
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(mockedPut).toHaveBeenCalledWith(
+      '/api/v1/workflow-drafts/root-draft',
+      {
+        graph: expectedBackendGraph('1'),
+        base_revision: 7,
+        client_seq: 1,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    )
+    expect(graphSync.draft_id.value).toBe('root-draft')
+    expect(graphSync.revision.value).toBe(8)
+    expect(graphSync.client_seq.value).toBe(1)
+    expect(graphSync.validationResult.value).toEqual(makeValidation(true))
+    expect(graphSync.dirty.value).toBe(false)
+    expect(graphSync.pending_sync.value).toBe(false)
+  })
+
+  it('keeps root and sub-workflow draft state isolated', async () => {
+    mockedPut
+      .mockResolvedValueOnce({
+        data: {
+          draft_id: 'root-draft',
+          revision: 2,
+          validation_result: makeValidation(true),
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          draft_id: 'sub-draft',
+          revision: 11,
+          validation_result: makeValidation(false),
+        },
+      })
+    const rootSync = useGraphSync({ draftId: 'root-draft', initialRevision: 1 })
+    const subSync = useGraphSync({ draftId: 'sub-draft', initialRevision: 10 })
+
+    rootSync.syncGraph(makeVueFlowGraph('root-node'))
+    subSync.syncGraph(makeVueFlowGraph('sub-node'))
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(mockedPut).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/workflow-drafts/root-draft',
+      expect.objectContaining({
+        graph: expectedBackendGraph('root-node'),
+        base_revision: 1,
+        client_seq: 1,
+      }),
+      expect.anything(),
+    )
+    expect(mockedPut).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/workflow-drafts/sub-draft',
+      expect.objectContaining({
+        graph: expectedBackendGraph('sub-node'),
+        base_revision: 10,
+        client_seq: 1,
+      }),
+      expect.anything(),
+    )
+    expect(rootSync.currentGraph.value).toEqual(expectedBackendGraph('root-node'))
+    expect(subSync.currentGraph.value).toEqual(expectedBackendGraph('sub-node'))
+    expect(rootSync.revision.value).toBe(2)
+    expect(subSync.revision.value).toBe(11)
+    expect(rootSync.validationResult.value?.valid).toBe(true)
+    expect(subSync.validationResult.value?.valid).toBe(false)
+  })
+
+  it('uses the latest accepted revision as the next draft base revision', async () => {
+    mockedPut
+      .mockResolvedValueOnce({
+        data: {
+          draft_id: 'root-draft',
+          revision: 4,
+          validation_result: makeValidation(true),
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          draft_id: 'root-draft',
+          revision: 5,
+          validation_result: makeValidation(true),
+        },
+      })
+    const graphSync = useGraphSync({
+      draftId: 'root-draft',
+      initialRevision: 3,
+    })
+
+    graphSync.syncGraph(makeVueFlowGraph('a'))
+    await vi.advanceTimersByTimeAsync(300)
+    graphSync.syncGraph(makeVueFlowGraph('b'))
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(mockedPut).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/workflow-drafts/root-draft',
+      expect.objectContaining({
+        base_revision: 4,
+        client_seq: 2,
+      }),
+      expect.anything(),
+    )
+    expect(graphSync.revision.value).toBe(5)
+    expect(graphSync.client_seq.value).toBe(2)
+  })
+
   it('supersedes in-flight requests', async () => {
     let resolveFirst!: (v: unknown) => void
     let resolveSecond!: (v: unknown) => void

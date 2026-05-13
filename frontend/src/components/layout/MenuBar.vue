@@ -26,7 +26,15 @@ const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const workflowStore = useWorkflowStore()
 const autoSave = useAutoSave()
-const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
+const graphSyncState = useGraphSync()
+const {
+  flushNow,
+  validationResult,
+  isPending,
+  currentGraph,
+} = graphSyncState
+const draft_id = graphSyncState.draft_id ?? ref(null)
+const revision = graphSyncState.revision ?? ref(0)
 
 // useToast throws when no ToastService is provided (e.g. in unit tests
 // that mount MenuBar in isolation). The toasts are a nice-to-have here.
@@ -41,7 +49,7 @@ const runButtonRef = useTemplateRef<InstanceType<typeof RunButton> | null>(
   'runButtonRef',
 )
 
-const graphSync = { flushNow, validationResult }
+const graphSync = { flushNow, validationResult, draft_id, revision }
 const workflowTitle = computed(() => {
   const label = uiStore.activeWorkflowName ?? 'No workflow'
   return uiStore.hasUnsavedChanges ? `${label} *` : label
@@ -176,7 +184,10 @@ async function onWorkflowDialogSubmit(payload: {
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
       if (createIntent.value === 'save-current') {
-        await workflowStore.saveWorkflow(currentGraph.value)
+        await workflowStore.saveWorkflow(currentGraph.value, {
+          draft_id: draft_id.value,
+          revision: revision.value,
+        })
       } else {
         applyGraph({ nodes: [], edges: [] })
       }
@@ -193,7 +204,10 @@ async function onWorkflowDialogSubmit(payload: {
     } else {
       await workflowStore.createWorkflow(payload)
     }
-    await workflowStore.saveWorkflow(currentGraph.value)
+    await workflowStore.saveWorkflow(currentGraph.value, {
+      draft_id: draft_id.value,
+      revision: revision.value,
+    })
     workflowDialogVisible.value = false
     workflowDialogSuggestedName.value = null
   } catch (err: unknown) {
@@ -243,7 +257,10 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
-    const info = await workflowStore.saveWorkflow(currentGraph.value)
+    const info = await workflowStore.saveWorkflow(currentGraph.value, {
+      draft_id: draft_id.value,
+      revision: revision.value,
+    })
     toast?.add({
       severity: 'success',
       summary: 'Workflow saved',
