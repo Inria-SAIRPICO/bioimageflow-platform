@@ -90,6 +90,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tools/{tool_name}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tool Usage */
+        get: operations["get_tool_usage_api_v1_tools__tool_name__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tools/{tool_name}": {
         parameters: {
             query?: never;
@@ -233,6 +250,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/editor/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Editor Status */
+        get: operations["get_editor_status_api_v1_editor_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/editor/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Editor Path */
+        post: operations["open_editor_path_api_v1_editor_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/graph": {
         parameters: {
             query?: never;
@@ -286,6 +337,108 @@ export interface paths {
          *     transiently invalid graph states.
          */
         post: operations["resolve_node_output_schema_api_v1_graph_nodes__node_id__output_schema_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/graph/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Graph Proposal */
+        post: operations["create_graph_proposal_api_v1_graph_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/graph/proposals/{proposal_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Graph Proposal */
+        post: operations["apply_graph_proposal_api_v1_graph_proposals__proposal_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/graph/proposals/{proposal_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Graph Proposal */
+        post: operations["reject_graph_proposal_api_v1_graph_proposals__proposal_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{draft_id}/agent-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Draft Graph Proposal */
+        post: operations["create_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{draft_id}/agent-proposals/{proposal_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Draft Graph Proposal */
+        post: operations["apply_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals__proposal_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{draft_id}/agent-proposals/{proposal_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Draft Graph Proposal */
+        post: operations["reject_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals__proposal_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -500,6 +653,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflow-drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Workflow Draft */
+        post: operations["create_workflow_draft_api_v1_workflow_drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Draft */
+        get: operations["get_workflow_draft_api_v1_workflow_drafts__draft_id__get"];
+        /** Update Workflow Draft */
+        put: operations["update_workflow_draft_api_v1_workflow_drafts__draft_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{draft_id}/nodes/{node_id}/parameters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Workflow Draft Parameters */
+        patch: operations["patch_workflow_draft_parameters_api_v1_workflow_drafts__draft_id__nodes__node_id__parameters_patch"];
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{draft_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Workflow Draft */
+        post: operations["validate_workflow_draft_api_v1_workflow_drafts__draft_id__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/napari/open": {
         parameters: {
             query?: never;
@@ -612,7 +834,8 @@ export interface paths {
         /** Openhands Context */
         get: operations["openhands_context_api_v1_openhands_context_get"];
         put?: never;
-        post?: never;
+        /** Receive Openhands Context */
+        post: operations["receive_openhands_context_api_v1_openhands_context_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -692,6 +915,48 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AddNodeOperation
+         * @description Add a node, optionally using semantic placement.
+         */
+        AddNodeOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "add_node";
+            node: components["schemas"]["NodeState"];
+            /** Placement */
+            placement?: (components["schemas"]["AfterNodePlacement"] | components["schemas"]["BetweenNodesPlacement"] | components["schemas"]["EndOfBranchPlacement"]) | null;
+        };
+        /**
+         * AfterNodePlacement
+         * @description Place a new node after an existing node.
+         */
+        AfterNodePlacement: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "after_node";
+            /** Node Id */
+            node_id: string;
+        };
+        /**
+         * BetweenNodesPlacement
+         * @description Place a new node between two existing nodes.
+         */
+        BetweenNodesPlacement: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "between_nodes";
+            /** Source Node */
+            source_node: string;
+            /** Target Node */
+            target_node: string;
+        };
         /** Body_import_workflow_api_v1_workflows_import_post */
         Body_import_workflow_api_v1_workflows_import_post: {
             /** File */
@@ -734,6 +999,19 @@ export interface components {
             target_input: string;
         };
         /**
+         * ConnectOperation
+         * @description Add an edge between existing nodes.
+         */
+        ConnectOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "connect";
+            /** Edge */
+            edge: components["schemas"]["ColumnRefEdge"] | components["schemas"]["PositionalEdge"];
+        };
+        /**
          * Dataset
          * @description A stored dataset as returned by `GET /datasets`.
          */
@@ -752,18 +1030,138 @@ export interface components {
             content_type?: string | null;
         };
         /**
+         * DisconnectOperation
+         * @description Remove an edge by id.
+         */
+        DisconnectOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "disconnect";
+            /** Edge Id */
+            edge_id: string;
+        };
+        /**
+         * DraftGraphProposalCreateRequest
+         * @description Draft-scoped proposal creation request.
+         */
+        DraftGraphProposalCreateRequest: {
+            /** Base Revision */
+            base_revision: number;
+            /** Operations */
+            operations: (components["schemas"]["AddNodeOperation"] | components["schemas"]["ConnectOperation"] | components["schemas"]["DisconnectOperation"] | components["schemas"]["UpdateParametersOperation"] | components["schemas"]["ReplaceGraphOperation"])[];
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * EditorOpenMethod
+         * @enum {string}
+         */
+        EditorOpenMethod: "external" | "embedded" | "clipboard";
+        /** EditorOpenRequest */
+        EditorOpenRequest: {
+            /** Path */
+            path: string;
+        };
+        /** EditorOpenResponse */
+        EditorOpenResponse: {
+            /** Opened */
+            opened: boolean;
+            method: components["schemas"]["EditorOpenMethod"];
+            /** Url */
+            url?: string | null;
+            /** Path */
+            path: string;
+            /** Message */
+            message?: string | null;
+        };
+        /** EditorStatus */
+        EditorStatus: {
+            /** Available */
+            available: boolean;
+            /** Url */
+            url?: string | null;
+            /** Version */
+            version?: string | null;
+            /**
+             * Control Available
+             * @default false
+             */
+            control_available: boolean;
+        };
+        /**
+         * EndOfBranchPlacement
+         * @description Place a new node at the terminal end of a branch.
+         */
+        EndOfBranchPlacement: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "end_of_branch";
+            /** Node Id */
+            node_id: string;
+        };
+        /**
          * ExecutionRequest
          * @description Request to execute a graph (or a subset of its nodes).
          */
         ExecutionRequest: {
             /** Graph */
-            graph: {
+            graph?: {
                 [key: string]: unknown;
-            };
+            } | null;
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Revision */
+            revision?: number | null;
             /** Nodes */
             nodes?: string[] | null;
             /** Workflow Name */
             workflow_name?: string | null;
+        };
+        /**
+         * GraphProposal
+         * @description Stored graph proposal.
+         */
+        GraphProposal: {
+            /** Id */
+            id: string;
+            /** Draft Id */
+            draft_id: string;
+            /** Base Revision */
+            base_revision: number;
+            /** Operations */
+            operations: (components["schemas"]["AddNodeOperation"] | components["schemas"]["ConnectOperation"] | components["schemas"]["DisconnectOperation"] | components["schemas"]["UpdateParametersOperation"] | components["schemas"]["ReplaceGraphOperation"])[];
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * GraphProposalApplyResponse
+         * @description Response returned after a proposal is applied.
+         */
+        GraphProposalApplyResponse: {
+            /** Draft Id */
+            draft_id: string;
+            /** Revision */
+            revision: number;
+            graph: components["schemas"]["GraphState"];
+            validation: components["schemas"]["ValidationResult"];
+        };
+        /**
+         * GraphProposalCreateRequest
+         * @description Request to create a proposal tied to a draft revision.
+         */
+        GraphProposalCreateRequest: {
+            /** Draft Id */
+            draft_id: string;
+            /** Base Revision */
+            base_revision: number;
+            /** Operations */
+            operations: (components["schemas"]["AddNodeOperation"] | components["schemas"]["ConnectOperation"] | components["schemas"]["DisconnectOperation"] | components["schemas"]["UpdateParametersOperation"] | components["schemas"]["ReplaceGraphOperation"])[];
+            /** Title */
+            title?: string | null;
         };
         /**
          * GraphState
@@ -774,15 +1172,9 @@ export interface components {
             nodes: components["schemas"]["NodeState"][];
             /** Edges */
             edges: (components["schemas"]["ColumnRefEdge"] | components["schemas"]["PositionalEdge"])[];
-            /**
-             * Published Inputs
-             * @default []
-             */
+            /** Published Inputs */
             published_inputs?: components["schemas"]["PublishedInput"][];
-            /**
-             * Published Outputs
-             * @default []
-             */
+            /** Published Outputs */
             published_outputs?: components["schemas"]["PublishedOutput"][];
         };
         /**
@@ -910,42 +1302,6 @@ export interface components {
             /** Pid */
             pid?: number | null;
         };
-        /** OpenHandsContext */
-        OpenHandsContext: {
-            /** Available */
-            available: boolean;
-            /** Reason */
-            reason?: string | null;
-            /** Deployment Mode */
-            deployment_mode: string;
-            /** Unsafe Webapp Features Enabled */
-            unsafe_webapp_features_enabled: boolean;
-            /** Runtime */
-            runtime: string;
-            /** Host */
-            host: string;
-            /** Port */
-            port: number;
-            /** Url */
-            url: string;
-            /** Workspace */
-            workspace: string;
-            /** Process Acknowledged */
-            process_acknowledged: boolean;
-        };
-        /** OpenHandsStatus */
-        OpenHandsStatus: {
-            /** Available */
-            available: boolean;
-            /** Running */
-            running: boolean;
-            /** Pid */
-            pid?: number | null;
-            /** Url */
-            url?: string | null;
-            /** Reason */
-            reason?: string | null;
-        };
         /**
          * NodeDataResponse
          * @description Paginated DataFrame payload for the Data Table panel.
@@ -1004,18 +1360,12 @@ export interface components {
             parameters: {
                 [key: string]: unknown;
             };
-            /**
-             * Resources
-             * @default {}
-             */
-            resources: {
+            /** Resources */
+            resources?: {
                 [key: string]: unknown;
             };
-            /**
-             * Output Templates
-             * @default {}
-             */
-            output_templates: {
+            /** Output Templates */
+            output_templates?: {
                 [key: string]: string;
             };
             /**
@@ -1028,17 +1378,10 @@ export interface components {
              * @default false
              */
             collapsed: boolean;
-            /** Sub Workflow */
             sub_workflow?: components["schemas"]["GraphState"] | null;
-            /**
-             * Published Inputs
-             * @default []
-             */
+            /** Published Inputs */
             published_inputs?: components["schemas"]["PublishedInput"][];
-            /**
-             * Published Outputs
-             * @default []
-             */
+            /** Published Outputs */
             published_outputs?: components["schemas"]["PublishedOutput"][];
             /** Sub Workflow Readonly Reason */
             sub_workflow_readonly_reason?: string | null;
@@ -1063,42 +1406,6 @@ export interface components {
             traceback?: string | null;
         };
         /**
-         * OMEROInstance
-         * @description OMERO server connection configuration.
-         */
-        OMEROInstance: {
-            /** Name */
-            name?: string | null;
-            /** Host */
-            host: string;
-            /**
-             * Port
-             * @default 4064
-             */
-            port: number;
-            /** Username */
-            username: string;
-        };
-        /**
-         * OMEROInstancePatch
-         * @description API-facing OMERO instance patch with transient password input.
-         */
-        OMEROInstancePatch: {
-            /** Name */
-            name?: string | null;
-            /** Host */
-            host: string;
-            /**
-             * Port
-             * @default 4064
-             */
-            port: number;
-            /** Username */
-            username: string;
-            /** Password */
-            password?: string | null;
-        };
-        /**
          * OMEROInstanceResponse
          * @description API-facing OMERO instance response with non-secret password state.
          */
@@ -1116,6 +1423,48 @@ export interface components {
             username: string;
             /** Password Stored */
             password_stored: boolean;
+        };
+        /**
+         * OpenHandsContext
+         * @description Effective OpenHands configuration exposed to frontend callers.
+         */
+        OpenHandsContext: {
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Deployment Mode */
+            deployment_mode: string;
+            /** Unsafe Webapp Features Enabled */
+            unsafe_webapp_features_enabled: boolean;
+            /** Runtime */
+            runtime: string;
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+            /** Url */
+            url: string;
+            /** Workspace */
+            workspace: string;
+            /** Process Acknowledged */
+            process_acknowledged: boolean;
+        };
+        /**
+         * OpenHandsStatus
+         * @description Runtime status for the owned OpenHands process.
+         */
+        OpenHandsStatus: {
+            /** Available */
+            available: boolean;
+            /** Running */
+            running: boolean;
+            /** Pid */
+            pid?: number | null;
+            /** Url */
+            url?: string | null;
+            /** Reason */
+            reason?: string | null;
         };
         /** PackageInfo */
         PackageInfo: {
@@ -1196,7 +1545,7 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /** Default */
-            default?: unknown;
+            default?: unknown | null;
         };
         /**
          * PublishedOutput
@@ -1213,6 +1562,18 @@ export interface components {
             schema?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * ReplaceGraphOperation
+         * @description Replace the graph state before applying subsequent operations.
+         */
+        ReplaceGraphOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "replace_graph";
+            graph: components["schemas"]["GraphState"];
         };
         /**
          * RevealRequest
@@ -1296,19 +1657,41 @@ export interface components {
             max_upload_size: number;
             /** Openhands Enabled */
             openhands_enabled?: boolean | null;
-            /** Openhands Runtime */
-            openhands_runtime?: string;
-            /** Openhands Command */
+            /**
+             * Openhands Runtime
+             * @default process
+             * @constant
+             */
+            openhands_runtime?: "process";
+            /**
+             * Openhands Command
+             * @default RUNTIME={runtime} openhands web --host {host} --port {port}
+             */
             openhands_command?: string;
-            /** Openhands Host */
+            /**
+             * Openhands Host
+             * @default 127.0.0.1
+             */
             openhands_host?: string;
-            /** Openhands Port */
+            /**
+             * Openhands Port
+             * @default 12000
+             */
             openhands_port?: number;
-            /** Openhands Workspace */
+            /**
+             * Openhands Workspace
+             * @default ~/bioimageflow_openhands
+             */
             openhands_workspace?: string;
-            /** Openhands Startup Timeout */
+            /**
+             * Openhands Startup Timeout
+             * @default 60
+             */
             openhands_startup_timeout?: number;
-            /** Openhands Process Acknowledged */
+            /**
+             * Openhands Process Acknowledged
+             * @default false
+             */
             openhands_process_acknowledged?: boolean;
             /** Resolved Tool Store Path */
             resolved_tool_store_path: string;
@@ -1326,6 +1709,43 @@ export interface components {
              * @enum {string}
              */
             tool_type: "ProcessingTool" | "DataFrameTool";
+        };
+        /** ToolCreateResponse */
+        ToolCreateResponse: {
+            /** Name */
+            name: string;
+            /**
+             * Tool Type
+             * @enum {string}
+             */
+            tool_type: "ProcessingTool" | "DataFrameTool";
+            /** Path */
+            path: string;
+            /**
+             * Source Kind
+             * @default custom
+             * @constant
+             */
+            source_kind: "custom";
+            /**
+             * Editable
+             * @default true
+             * @constant
+             */
+            editable: true;
+        };
+        /** ToolDeleteResponse */
+        ToolDeleteResponse: {
+            /**
+             * Deleted
+             * @default true
+             * @constant
+             */
+            deleted: true;
+            /** Warning */
+            warning?: string | null;
+            /** Affected Workflows */
+            affected_workflows: string[];
         };
         /** ToolMetadata */
         ToolMetadata: {
@@ -1393,6 +1813,7 @@ export interface components {
             /**
              * Source Kind
              * @default package
+             * @enum {string}
              */
             source_kind?: "package" | "custom";
             /**
@@ -1401,36 +1822,10 @@ export interface components {
              */
             editable?: boolean;
         };
-        /** ToolCreateResponse */
-        ToolCreateResponse: {
-            /** Name */
-            name: string;
-            /**
-             * Tool Type
-             * @enum {string}
-             */
-            tool_type: "ProcessingTool" | "DataFrameTool";
-            /** Path */
-            path: string;
-            /**
-             * Source Kind
-             * @default custom
-             */
-            source_kind: "custom";
-            /**
-             * Editable
-             * @default true
-             */
-            editable: true;
-        };
-        /** ToolUsageResponse */
-        ToolUsageResponse: {
-            /** Tool Name */
-            tool_name: string;
-            /** Affected Workflows */
-            affected_workflows: string[];
-            /** In Open Workflow */
-            in_open_workflow?: boolean | null;
+        /** ToolRename */
+        ToolRename: {
+            /** New Name */
+            new_name: string;
         };
         /** ToolRenameResponse */
         ToolRenameResponse: {
@@ -1440,18 +1835,6 @@ export interface components {
             new_name: string;
             /** Path */
             path: string;
-        };
-        /** ToolDeleteResponse */
-        ToolDeleteResponse: {
-            /**
-             * Deleted
-             * @default true
-             */
-            deleted: true;
-            /** Warning */
-            warning?: string | null;
-            /** Affected Workflows */
-            affected_workflows: string[];
         };
         /** ToolSourceResponse */
         ToolSourceResponse: {
@@ -1467,10 +1850,31 @@ export interface components {
             /** Editable */
             editable: boolean;
         };
-        /** ToolRename */
-        ToolRename: {
-            /** New Name */
-            new_name: string;
+        /** ToolUsageResponse */
+        ToolUsageResponse: {
+            /** Tool Name */
+            tool_name: string;
+            /** Affected Workflows */
+            affected_workflows: string[];
+            /** In Open Workflow */
+            in_open_workflow?: boolean | null;
+        };
+        /**
+         * UpdateParametersOperation
+         * @description Merge parameter edits into an existing node.
+         */
+        UpdateParametersOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "update_parameters";
+            /** Node Id */
+            node_id: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
         };
         /**
          * UploadError
@@ -1569,6 +1973,81 @@ export interface components {
             storage_path?: string | null;
         };
         /**
+         * WorkflowDraftCreate
+         * @description Request body for POST /workflow-drafts.
+         */
+        WorkflowDraftCreate: {
+            graph?: components["schemas"]["GraphState"];
+            /** Workflow Name */
+            workflow_name?: string | null;
+        };
+        /**
+         * WorkflowDraftParameterPatch
+         * @description Request body for PATCH /workflow-drafts/{draft_id}/nodes/{node_id}/parameters.
+         */
+        WorkflowDraftParameterPatch: {
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Base Revision */
+            base_revision: number;
+            /** Client Seq */
+            client_seq?: number | null;
+        };
+        /**
+         * WorkflowDraftResponse
+         * @description Draft mutation response with validation attached.
+         */
+        WorkflowDraftResponse: {
+            /** Draft Id */
+            draft_id: string;
+            /** Revision */
+            revision: number;
+            graph: components["schemas"]["GraphState"];
+            /** Workflow Name */
+            workflow_name?: string | null;
+            /** Client Seq */
+            client_seq?: number | null;
+            /**
+             * Dirty
+             * @default false
+             */
+            dirty: boolean;
+            validation: components["schemas"]["ValidationResult"];
+        };
+        /**
+         * WorkflowDraftState
+         * @description Stored draft state returned by GET /workflow-drafts/{draft_id}.
+         */
+        WorkflowDraftState: {
+            /** Draft Id */
+            draft_id: string;
+            /** Revision */
+            revision: number;
+            graph: components["schemas"]["GraphState"];
+            /** Workflow Name */
+            workflow_name?: string | null;
+            /** Client Seq */
+            client_seq?: number | null;
+            /**
+             * Dirty
+             * @default false
+             */
+            dirty: boolean;
+        };
+        /**
+         * WorkflowDraftUpdate
+         * @description Request body for PUT /workflow-drafts/{draft_id}.
+         */
+        WorkflowDraftUpdate: {
+            graph: components["schemas"]["GraphState"];
+            /** Base Revision */
+            base_revision: number;
+            /** Client Seq */
+            client_seq?: number | null;
+        };
+        /**
          * WorkflowFile
          * @description Workflow file response returned to the frontend.
          */
@@ -1618,7 +2097,11 @@ export interface components {
          * @description Request body for PUT /workflows/{name}.
          */
         WorkflowSaveBody: {
-            graph: components["schemas"]["GraphState"];
+            graph?: components["schemas"]["GraphState"] | null;
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Revision */
+            revision?: number | null;
         };
         /**
          * WorkflowUpdate
@@ -1646,12 +2129,26 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type AddNodeOperation = components['schemas']['AddNodeOperation'];
+export type AfterNodePlacement = components['schemas']['AfterNodePlacement'];
+export type BetweenNodesPlacement = components['schemas']['BetweenNodesPlacement'];
 export type BodyImportWorkflowApiV1WorkflowsImportPost = components['schemas']['Body_import_workflow_api_v1_workflows_import_post'];
 export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['Body_upload_datasets_api_v1_datasets_upload_post'];
 export type ClearRequest = components['schemas']['ClearRequest'];
 export type ColumnRefEdge = components['schemas']['ColumnRefEdge'];
+export type ConnectOperation = components['schemas']['ConnectOperation'];
 export type Dataset = components['schemas']['Dataset'];
+export type DisconnectOperation = components['schemas']['DisconnectOperation'];
+export type DraftGraphProposalCreateRequest = components['schemas']['DraftGraphProposalCreateRequest'];
+export type EditorOpenMethod = components['schemas']['EditorOpenMethod'];
+export type EditorOpenRequest = components['schemas']['EditorOpenRequest'];
+export type EditorOpenResponse = components['schemas']['EditorOpenResponse'];
+export type EditorStatus = components['schemas']['EditorStatus'];
+export type EndOfBranchPlacement = components['schemas']['EndOfBranchPlacement'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
+export type GraphProposal = components['schemas']['GraphProposal'];
+export type GraphProposalApplyResponse = components['schemas']['GraphProposalApplyResponse'];
+export type GraphProposalCreateRequest = components['schemas']['GraphProposalCreateRequest'];
 export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
@@ -1661,20 +2158,19 @@ export type MissingPackage = components['schemas']['MissingPackage'];
 export type MissingTool = components['schemas']['MissingTool'];
 export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
 export type NapariStatus = components['schemas']['NapariStatus'];
-export type OpenHandsContext = components['schemas']['OpenHandsContext'];
-export type OpenHandsStatus = components['schemas']['OpenHandsStatus'];
 export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
-export type OmeroInstance = components['schemas']['OMEROInstance'];
-export type OmeroInstancePatch = components['schemas']['OMEROInstancePatch'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
+export type OpenHandsContext = components['schemas']['OpenHandsContext'];
+export type OpenHandsStatus = components['schemas']['OpenHandsStatus'];
 export type PackageInfo = components['schemas']['PackageInfo'];
 export type ParameterPatchRequest = components['schemas']['ParameterPatchRequest'];
 export type PositionalEdge = components['schemas']['PositionalEdge'];
 export type PublishedInput = components['schemas']['PublishedInput'];
 export type PublishedOutput = components['schemas']['PublishedOutput'];
+export type ReplaceGraphOperation = components['schemas']['ReplaceGraphOperation'];
 export type RevealRequest = components['schemas']['RevealRequest'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
 export type ToolCreate = components['schemas']['ToolCreate'];
@@ -1685,12 +2181,18 @@ export type ToolRename = components['schemas']['ToolRename'];
 export type ToolRenameResponse = components['schemas']['ToolRenameResponse'];
 export type ToolSourceResponse = components['schemas']['ToolSourceResponse'];
 export type ToolUsageResponse = components['schemas']['ToolUsageResponse'];
+export type UpdateParametersOperation = components['schemas']['UpdateParametersOperation'];
 export type UploadError = components['schemas']['UploadError'];
 export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
+export type WorkflowDraftCreate = components['schemas']['WorkflowDraftCreate'];
+export type WorkflowDraftParameterPatch = components['schemas']['WorkflowDraftParameterPatch'];
+export type WorkflowDraftResponse = components['schemas']['WorkflowDraftResponse'];
+export type WorkflowDraftState = components['schemas']['WorkflowDraftState'];
+export type WorkflowDraftUpdate = components['schemas']['WorkflowDraftUpdate'];
 export type WorkflowFile = components['schemas']['WorkflowFile'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
 export type WorkflowInfo = components['schemas']['WorkflowInfo'];
@@ -1742,7 +2244,9 @@ export interface operations {
     };
     create_tool_api_v1_tools_post: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1759,9 +2263,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolCreateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1819,7 +2321,9 @@ export interface operations {
     };
     get_tool_source_api_v1_tools__tool_name__source_get: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path: {
                 tool_name: string;
@@ -1834,9 +2338,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolSourceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_usage_api_v1_tools__tool_name__usage_get: {
+        parameters: {
+            query?: {
+                workflow_name?: string | null;
+            };
+            header?: never;
+            path: {
+                tool_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolUsageResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1852,7 +2387,9 @@ export interface operations {
     };
     delete_tool_api_v1_tools__tool_name__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path: {
                 tool_name: string;
@@ -1867,9 +2404,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolDeleteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1885,7 +2420,9 @@ export interface operations {
     };
     rename_tool_api_v1_tools__tool_name__patch: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path: {
                 tool_name: string;
@@ -1904,9 +2441,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolRenameResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2156,6 +2691,70 @@ export interface operations {
             };
         };
     };
+    get_editor_status_api_v1_editor_status_get: {
+        parameters: {
+            query?: {
+                launch?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_editor_path_api_v1_editor_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditorOpenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorOpenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     validate_graph_endpoint_api_v1_graph_put: {
         parameters: {
             query?: never;
@@ -2248,6 +2847,200 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeOutputSchemaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_graph_proposal_api_v1_graph_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphProposalCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_graph_proposal_api_v1_graph_proposals__proposal_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphProposalApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_graph_proposal_api_v1_graph_proposals__proposal_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftGraphProposalCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals__proposal_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphProposalApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals__proposal_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphProposal"];
                 };
             };
             /** @description Validation Error */
@@ -2737,6 +3530,172 @@ export interface operations {
             };
         };
     };
+    create_workflow_draft_api_v1_workflow_drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_draft_api_v1_workflow_drafts__draft_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_workflow_draft_api_v1_workflow_drafts__draft_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_workflow_draft_parameters_api_v1_workflow_drafts__draft_id__nodes__node_id__parameters_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftParameterPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_workflow_draft_api_v1_workflow_drafts__draft_id__validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     open_in_napari_api_v1_napari_open_post: {
         parameters: {
             query?: never;
@@ -2901,6 +3860,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpenHandsContext"];
+                };
+            };
+        };
+    };
+    receive_openhands_context_api_v1_openhands_context_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3072,4 +4068,6 @@ export interface operations {
 // --- Manual aliases (re-applied after every `generate-types` run) ---
 export type Settings = SettingsResponse;
 export type OMEROInstance = OmeroInstanceResponse;
-export type OMEROInstancePatch = OmeroInstancePatch;
+export type OMEROInstancePatch = Omit<OmeroInstanceResponse, 'password_stored'> & {
+    password?: string | null;
+};

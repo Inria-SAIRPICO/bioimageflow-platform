@@ -1,6 +1,99 @@
 {
   "components": {
     "schemas": {
+      "AddNodeOperation": {
+        "description": "Add a node, optionally using semantic placement.",
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/NodeState"
+          },
+          "placement": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "after_node": "#/components/schemas/AfterNodePlacement",
+                    "between_nodes": "#/components/schemas/BetweenNodesPlacement",
+                    "end_of_branch": "#/components/schemas/EndOfBranchPlacement"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AfterNodePlacement"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BetweenNodesPlacement"
+                  },
+                  {
+                    "$ref": "#/components/schemas/EndOfBranchPlacement"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placement"
+          },
+          "type": {
+            "const": "add_node",
+            "default": "add_node",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node"
+        ],
+        "title": "AddNodeOperation",
+        "type": "object"
+      },
+      "AfterNodePlacement": {
+        "description": "Place a new node after an existing node.",
+        "properties": {
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "after_node",
+            "default": "after_node",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "title": "AfterNodePlacement",
+        "type": "object"
+      },
+      "BetweenNodesPlacement": {
+        "description": "Place a new node between two existing nodes.",
+        "properties": {
+          "source_node": {
+            "title": "Source Node",
+            "type": "string"
+          },
+          "target_node": {
+            "title": "Target Node",
+            "type": "string"
+          },
+          "type": {
+            "const": "between_nodes",
+            "default": "between_nodes",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_node",
+          "target_node"
+        ],
+        "title": "BetweenNodesPlacement",
+        "type": "object"
+      },
       "Body_import_workflow_api_v1_workflows_import_post": {
         "properties": {
           "file": {
@@ -114,6 +207,40 @@
         "title": "ColumnRefEdge",
         "type": "object"
       },
+      "ConnectOperation": {
+        "description": "Add an edge between existing nodes.",
+        "properties": {
+          "edge": {
+            "discriminator": {
+              "mapping": {
+                "column_ref": "#/components/schemas/ColumnRefEdge",
+                "positional": "#/components/schemas/PositionalEdge"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ColumnRefEdge"
+              },
+              {
+                "$ref": "#/components/schemas/PositionalEdge"
+              }
+            ],
+            "title": "Edge"
+          },
+          "type": {
+            "const": "connect",
+            "default": "connect",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge"
+        ],
+        "title": "ConnectOperation",
+        "type": "object"
+      },
       "Dataset": {
         "description": "A stored dataset as returned by `GET /datasets`.",
         "properties": {
@@ -157,6 +284,85 @@
           "upload_date"
         ],
         "title": "Dataset",
+        "type": "object"
+      },
+      "DisconnectOperation": {
+        "description": "Remove an edge by id.",
+        "properties": {
+          "edge_id": {
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "disconnect",
+            "default": "disconnect",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id"
+        ],
+        "title": "DisconnectOperation",
+        "type": "object"
+      },
+      "DraftGraphProposalCreateRequest": {
+        "description": "Draft-scoped proposal creation request.",
+        "properties": {
+          "base_revision": {
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "operations": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "add_node": "#/components/schemas/AddNodeOperation",
+                  "connect": "#/components/schemas/ConnectOperation",
+                  "disconnect": "#/components/schemas/DisconnectOperation",
+                  "replace_graph": "#/components/schemas/ReplaceGraphOperation",
+                  "update_parameters": "#/components/schemas/UpdateParametersOperation"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/AddNodeOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/ConnectOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/DisconnectOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateParametersOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/ReplaceGraphOperation"
+                }
+              ]
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "base_revision",
+          "operations"
+        ],
+        "title": "DraftGraphProposalCreateRequest",
         "type": "object"
       },
       "EditorOpenMethod": {
@@ -266,13 +472,51 @@
         "title": "EditorStatus",
         "type": "object"
       },
+      "EndOfBranchPlacement": {
+        "description": "Place a new node at the terminal end of a branch.",
+        "properties": {
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "end_of_branch",
+            "default": "end_of_branch",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "title": "EndOfBranchPlacement",
+        "type": "object"
+      },
       "ExecutionRequest": {
         "description": "Request to execute a graph (or a subset of its nodes).",
         "properties": {
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
           "graph": {
-            "additionalProperties": true,
-            "title": "Graph",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph"
           },
           "nodes": {
             "anyOf": [
@@ -288,6 +532,17 @@
             ],
             "title": "Nodes"
           },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
           "workflow_name": {
             "anyOf": [
               {
@@ -300,10 +555,167 @@
             "title": "Workflow Name"
           }
         },
-        "required": [
-          "graph"
-        ],
         "title": "ExecutionRequest",
+        "type": "object"
+      },
+      "GraphProposal": {
+        "description": "Stored graph proposal.",
+        "properties": {
+          "base_revision": {
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "add_node": "#/components/schemas/AddNodeOperation",
+                  "connect": "#/components/schemas/ConnectOperation",
+                  "disconnect": "#/components/schemas/DisconnectOperation",
+                  "replace_graph": "#/components/schemas/ReplaceGraphOperation",
+                  "update_parameters": "#/components/schemas/UpdateParametersOperation"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/AddNodeOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/ConnectOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/DisconnectOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateParametersOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/ReplaceGraphOperation"
+                }
+              ]
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "draft_id",
+          "base_revision",
+          "operations"
+        ],
+        "title": "GraphProposal",
+        "type": "object"
+      },
+      "GraphProposalApplyResponse": {
+        "description": "Response returned after a proposal is applied.",
+        "properties": {
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/ValidationResult"
+          }
+        },
+        "required": [
+          "draft_id",
+          "revision",
+          "graph",
+          "validation"
+        ],
+        "title": "GraphProposalApplyResponse",
+        "type": "object"
+      },
+      "GraphProposalCreateRequest": {
+        "description": "Request to create a proposal tied to a draft revision.",
+        "properties": {
+          "base_revision": {
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "add_node": "#/components/schemas/AddNodeOperation",
+                  "connect": "#/components/schemas/ConnectOperation",
+                  "disconnect": "#/components/schemas/DisconnectOperation",
+                  "replace_graph": "#/components/schemas/ReplaceGraphOperation",
+                  "update_parameters": "#/components/schemas/UpdateParametersOperation"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/AddNodeOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/ConnectOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/DisconnectOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/UpdateParametersOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/ReplaceGraphOperation"
+                }
+              ]
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "draft_id",
+          "base_revision",
+          "operations"
+        ],
+        "title": "GraphProposalCreateRequest",
         "type": "object"
       },
       "GraphState": {
@@ -972,6 +1384,168 @@
         "title": "NodeStatus",
         "type": "object"
       },
+      "OMEROInstanceResponse": {
+        "additionalProperties": false,
+        "description": "API-facing OMERO instance response with non-secret password state.",
+        "properties": {
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "password_stored": {
+            "title": "Password Stored",
+            "type": "boolean"
+          },
+          "port": {
+            "default": 4064,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "username",
+          "password_stored"
+        ],
+        "title": "OMEROInstanceResponse",
+        "type": "object"
+      },
+      "OpenHandsContext": {
+        "additionalProperties": false,
+        "description": "Effective OpenHands configuration exposed to frontend callers.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "deployment_mode": {
+            "title": "Deployment Mode",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "process_acknowledged": {
+            "title": "Process Acknowledged",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "runtime": {
+            "title": "Runtime",
+            "type": "string"
+          },
+          "unsafe_webapp_features_enabled": {
+            "title": "Unsafe Webapp Features Enabled",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "workspace": {
+            "title": "Workspace",
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "deployment_mode",
+          "unsafe_webapp_features_enabled",
+          "runtime",
+          "host",
+          "port",
+          "url",
+          "workspace",
+          "process_acknowledged"
+        ],
+        "title": "OpenHandsContext",
+        "type": "object"
+      },
+      "OpenHandsStatus": {
+        "additionalProperties": false,
+        "description": "Runtime status for the owned OpenHands process.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "available",
+          "running"
+        ],
+        "title": "OpenHandsStatus",
+        "type": "object"
+      },
       "PackageInfo": {
         "properties": {
           "active_version": {
@@ -1168,6 +1742,25 @@
         "title": "PublishedOutput",
         "type": "object"
       },
+      "ReplaceGraphOperation": {
+        "description": "Replace the graph state before applying subsequent operations.",
+        "properties": {
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "type": {
+            "const": "replace_graph",
+            "default": "replace_graph",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph"
+        ],
+        "title": "ReplaceGraphOperation",
+        "type": "object"
+      },
       "RevealRequest": {
         "description": "Request body for the reveal endpoint.",
         "properties": {
@@ -1180,6 +1773,217 @@
           "path"
         ],
         "title": "RevealRequest",
+        "type": "object"
+      },
+      "SettingsResponse": {
+        "additionalProperties": true,
+        "description": "``GET``/``PATCH`` /settings response wrapper.\n\nAdds two **server-resolved** convenience fields so the frontend can show\nwhere tools and outputs *actually* live (env-var overrides applied,\n``~`` expanded). The raw ``Settings`` fields remain so PATCH bodies\nstay symmetrical with what GET returns.",
+        "properties": {
+          "cache_max_age": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Max Age"
+          },
+          "cache_max_executions": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Max Executions"
+          },
+          "datasets_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datasets Root"
+          },
+          "deployment_mode": {
+            "enum": [
+              "desktop",
+              "webapp"
+            ],
+            "title": "Deployment Mode",
+            "type": "string"
+          },
+          "dev_mode": {
+            "default": true,
+            "title": "Dev Mode",
+            "type": "boolean"
+          },
+          "enable_unsafe_webapp_features": {
+            "default": false,
+            "title": "Enable Unsafe Webapp Features",
+            "type": "boolean"
+          },
+          "execution_engine": {
+            "default": "sequential",
+            "enum": [
+              "sequential",
+              "parsl"
+            ],
+            "title": "Execution Engine",
+            "type": "string"
+          },
+          "external_editor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Editor"
+          },
+          "keyboard_shortcuts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Keyboard Shortcuts",
+            "type": "object"
+          },
+          "max_upload_size": {
+            "default": 2147483648,
+            "title": "Max Upload Size",
+            "type": "integer"
+          },
+          "napari_env_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Napari Env Path"
+          },
+          "omero_instances": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OMEROInstanceResponse"
+            },
+            "title": "Omero Instances",
+            "type": "array"
+          },
+          "openhands_command": {
+            "default": "RUNTIME={runtime} openhands web --host {host} --port {port}",
+            "title": "Openhands Command",
+            "type": "string"
+          },
+          "openhands_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openhands Enabled"
+          },
+          "openhands_host": {
+            "default": "127.0.0.1",
+            "title": "Openhands Host",
+            "type": "string"
+          },
+          "openhands_port": {
+            "default": 12000,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Openhands Port",
+            "type": "integer"
+          },
+          "openhands_process_acknowledged": {
+            "default": false,
+            "title": "Openhands Process Acknowledged",
+            "type": "boolean"
+          },
+          "openhands_runtime": {
+            "const": "process",
+            "default": "process",
+            "title": "Openhands Runtime",
+            "type": "string"
+          },
+          "openhands_startup_timeout": {
+            "default": 60.0,
+            "minimum": 0.0,
+            "title": "Openhands Startup Timeout",
+            "type": "number"
+          },
+          "openhands_workspace": {
+            "default": "~/bioimageflow_openhands",
+            "title": "Openhands Workspace",
+            "type": "string"
+          },
+          "output_data_folder": {
+            "title": "Output Data Folder",
+            "type": "string"
+          },
+          "resolved_output_data_folder": {
+            "title": "Resolved Output Data Folder",
+            "type": "string"
+          },
+          "resolved_tool_store_path": {
+            "title": "Resolved Tool Store Path",
+            "type": "string"
+          },
+          "thumbnail_env_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Env Path"
+          },
+          "tool_store_path": {
+            "default": "~/.bioimageflow/tool_packages/",
+            "title": "Tool Store Path",
+            "type": "string"
+          },
+          "update_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "manual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": "auto",
+            "title": "Update Mode"
+          }
+        },
+        "required": [
+          "deployment_mode",
+          "resolved_tool_store_path",
+          "resolved_output_data_folder"
+        ],
+        "title": "SettingsResponse",
         "type": "object"
       },
       "ToolCreate": {
@@ -1489,6 +2293,32 @@
         "title": "ToolUsageResponse",
         "type": "object"
       },
+      "UpdateParametersOperation": {
+        "description": "Merge parameter edits into an existing node.",
+        "properties": {
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "type": {
+            "const": "update_parameters",
+            "default": "update_parameters",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "parameters"
+        ],
+        "title": "UpdateParametersOperation",
+        "type": "object"
+      },
       "UploadError": {
         "description": "A per-file upload failure, inside `UploadResponse.errors`.\n\nDistinct from the top-level `ErrorResponse` (which is used only for\nrequest-level failures like 400 / 413 / 404).",
         "properties": {
@@ -1698,6 +2528,191 @@
         "title": "WorkflowCreate",
         "type": "object"
       },
+      "WorkflowDraftCreate": {
+        "description": "Request body for POST /workflow-drafts.",
+        "properties": {
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "title": "WorkflowDraftCreate",
+        "type": "object"
+      },
+      "WorkflowDraftParameterPatch": {
+        "description": "Request body for PATCH /workflow-drafts/{draft_id}/nodes/{node_id}/parameters.",
+        "properties": {
+          "base_revision": {
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "client_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Seq"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "parameters",
+          "base_revision"
+        ],
+        "title": "WorkflowDraftParameterPatch",
+        "type": "object"
+      },
+      "WorkflowDraftResponse": {
+        "description": "Draft mutation response with validation attached.",
+        "properties": {
+          "client_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Seq"
+          },
+          "dirty": {
+            "default": false,
+            "title": "Dirty",
+            "type": "boolean"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/ValidationResult"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "draft_id",
+          "revision",
+          "graph",
+          "validation"
+        ],
+        "title": "WorkflowDraftResponse",
+        "type": "object"
+      },
+      "WorkflowDraftState": {
+        "description": "Stored draft state returned by GET /workflow-drafts/{draft_id}.",
+        "properties": {
+          "client_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Seq"
+          },
+          "dirty": {
+            "default": false,
+            "title": "Dirty",
+            "type": "boolean"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "draft_id",
+          "revision",
+          "graph"
+        ],
+        "title": "WorkflowDraftState",
+        "type": "object"
+      },
+      "WorkflowDraftUpdate": {
+        "description": "Request body for PUT /workflow-drafts/{draft_id}.",
+        "properties": {
+          "base_revision": {
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "client_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Seq"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          }
+        },
+        "required": [
+          "graph",
+          "base_revision"
+        ],
+        "title": "WorkflowDraftUpdate",
+        "type": "object"
+      },
       "WorkflowFile": {
         "description": "Workflow file response returned to the frontend.",
         "properties": {
@@ -1815,13 +2830,39 @@
       "WorkflowSaveBody": {
         "description": "Request body for PUT /workflows/{name}.",
         "properties": {
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
           "graph": {
-            "$ref": "#/components/schemas/GraphState"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
           }
         },
-        "required": [
-          "graph"
-        ],
         "title": "WorkflowSaveBody",
         "type": "object"
       },
@@ -1993,6 +3034,32 @@
         "summary": "Delete Dataset",
         "tags": [
           "datasets"
+        ]
+      }
+    },
+    "/api/v1/dev/seed": {
+      "post": {
+        "description": "Register demo tools and packages for E2E testing.",
+        "operationId": "seed_tools_api_v1_dev_seed_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Seed Tools Api V1 Dev Seed Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Seed Tools",
+        "tags": [
+          "dev"
         ]
       }
     },
@@ -2421,6 +3488,131 @@
         ]
       }
     },
+    "/api/v1/graph/proposals": {
+      "post": {
+        "operationId": "create_graph_proposal_api_v1_graph_proposals_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphProposalCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Graph Proposal",
+        "tags": [
+          "graph"
+        ]
+      }
+    },
+    "/api/v1/graph/proposals/{proposal_id}/apply": {
+      "post": {
+        "operationId": "apply_graph_proposal_api_v1_graph_proposals__proposal_id__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphProposalApplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Graph Proposal",
+        "tags": [
+          "graph"
+        ]
+      }
+    },
+    "/api/v1/graph/proposals/{proposal_id}/reject": {
+      "post": {
+        "operationId": "reject_graph_proposal_api_v1_graph_proposals__proposal_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Graph Proposal",
+        "tags": [
+          "graph"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -2802,6 +3994,217 @@
         "summary": "Get Node Thumbnail",
         "tags": [
           "nodes"
+        ]
+      }
+    },
+    "/api/v1/openhands/context": {
+      "get": {
+        "operationId": "openhands_context_api_v1_openhands_context_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenHandsContext"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Openhands Context",
+        "tags": [
+          "openhands"
+        ]
+      },
+      "post": {
+        "operationId": "receive_openhands_context_api_v1_openhands_context_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Receive Openhands Context Api V1 Openhands Context Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receive Openhands Context",
+        "tags": [
+          "openhands"
+        ]
+      }
+    },
+    "/api/v1/openhands/launch": {
+      "post": {
+        "operationId": "launch_openhands_api_v1_openhands_launch_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenHandsStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Launch Openhands",
+        "tags": [
+          "openhands"
+        ]
+      }
+    },
+    "/api/v1/openhands/shutdown": {
+      "post": {
+        "operationId": "shutdown_openhands_api_v1_openhands_shutdown_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenHandsStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Shutdown Openhands",
+        "tags": [
+          "openhands"
+        ]
+      }
+    },
+    "/api/v1/openhands/status": {
+      "get": {
+        "operationId": "openhands_status_api_v1_openhands_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "launch",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Launch",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenHandsStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Openhands Status",
+        "tags": [
+          "openhands"
+        ]
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "get_settings_api_v1_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_settings_api_v1_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Settings",
+        "tags": [
+          "settings"
         ]
       }
     },
@@ -3460,6 +4863,396 @@
         "summary": "Get Tool Usage",
         "tags": [
           "tools"
+        ]
+      }
+    },
+    "/api/v1/workflow-drafts": {
+      "post": {
+        "operationId": "create_workflow_draft_api_v1_workflow_drafts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowDraftCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Workflow Draft",
+        "tags": [
+          "workflow-drafts"
+        ]
+      }
+    },
+    "/api/v1/workflow-drafts/{draft_id}": {
+      "get": {
+        "operationId": "get_workflow_draft_api_v1_workflow_drafts__draft_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow Draft",
+        "tags": [
+          "workflow-drafts"
+        ]
+      },
+      "put": {
+        "operationId": "update_workflow_draft_api_v1_workflow_drafts__draft_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowDraftUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Workflow Draft",
+        "tags": [
+          "workflow-drafts"
+        ]
+      }
+    },
+    "/api/v1/workflow-drafts/{draft_id}/agent-proposals": {
+      "post": {
+        "operationId": "create_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftGraphProposalCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Draft Graph Proposal",
+        "tags": [
+          "workflow-drafts"
+        ]
+      }
+    },
+    "/api/v1/workflow-drafts/{draft_id}/agent-proposals/{proposal_id}/apply": {
+      "post": {
+        "operationId": "apply_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals__proposal_id__apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphProposalApplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Draft Graph Proposal",
+        "tags": [
+          "workflow-drafts"
+        ]
+      }
+    },
+    "/api/v1/workflow-drafts/{draft_id}/agent-proposals/{proposal_id}/reject": {
+      "post": {
+        "operationId": "reject_draft_graph_proposal_api_v1_workflow_drafts__draft_id__agent_proposals__proposal_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Draft Graph Proposal",
+        "tags": [
+          "workflow-drafts"
+        ]
+      }
+    },
+    "/api/v1/workflow-drafts/{draft_id}/nodes/{node_id}/parameters": {
+      "patch": {
+        "operationId": "patch_workflow_draft_parameters_api_v1_workflow_drafts__draft_id__nodes__node_id__parameters_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowDraftParameterPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Workflow Draft Parameters",
+        "tags": [
+          "workflow-drafts"
+        ]
+      }
+    },
+    "/api/v1/workflow-drafts/{draft_id}/validate": {
+      "post": {
+        "operationId": "validate_workflow_draft_api_v1_workflow_drafts__draft_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Workflow Draft",
+        "tags": [
+          "workflow-drafts"
         ]
       }
     },

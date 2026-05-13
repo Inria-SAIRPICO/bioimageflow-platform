@@ -193,22 +193,30 @@ function activeGraphSync(): GraphDraftSync {
 }
 
 function _createActiveGraphSyncFacade(): GraphDraftSync {
+  const activeRef = <T>(select: (sync: GraphDraftSync) => Ref<T>) =>
+    computed({
+      get: () => select(activeGraphSync()).value,
+      set: (value: T) => {
+        select(activeGraphSync()).value = value
+      },
+    })
+
   return {
     syncGraph: (graph) => ensureLegacyGraphSync().syncGraph(graph),
     flushNow: () => activeGraphSync().flushNow(),
     patchParameters: (nodeId, toolName, parameters) =>
       activeGraphSync().patchParameters(nodeId, toolName, parameters),
-    validationResult: computed(() => activeGraphSync().validationResult.value),
-    isPending: computed(() => activeGraphSync().isPending.value),
-    syncState: computed(() => activeGraphSync().syncState.value),
-    currentGraph: computed(() => activeGraphSync().currentGraph.value),
-    draft_id: computed(() => activeGraphSync().draft_id.value),
-    revision: computed(() => activeGraphSync().revision.value),
-    client_seq: computed(() => activeGraphSync().client_seq.value),
-    graph: computed(() => activeGraphSync().graph.value),
-    validation_result: computed(() => activeGraphSync().validation_result.value),
-    dirty: computed(() => activeGraphSync().dirty.value),
-    pending_sync: computed(() => activeGraphSync().pending_sync.value),
+    validationResult: activeRef((sync) => sync.validationResult),
+    isPending: activeRef((sync) => sync.isPending),
+    syncState: activeRef((sync) => sync.syncState),
+    currentGraph: activeRef((sync) => sync.currentGraph),
+    draft_id: activeRef((sync) => sync.draft_id),
+    revision: activeRef((sync) => sync.revision),
+    client_seq: activeRef((sync) => sync.client_seq),
+    graph: activeRef((sync) => sync.graph),
+    validation_result: activeRef((sync) => sync.validation_result),
+    dirty: activeRef((sync) => sync.dirty),
+    pending_sync: activeRef((sync) => sync.pending_sync),
   } as GraphDraftSync
 }
 
