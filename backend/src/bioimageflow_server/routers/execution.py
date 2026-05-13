@@ -31,6 +31,11 @@ from bioimageflow_server.services.execution import (
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_context import resolve_workflow_storage_path
+from bioimageflow_server.services.workflow_drafts import (
+    StaleWorkflowDraftError,
+    WorkflowDraftManager,
+    WorkflowDraftNotFoundError,
+)
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/execution", tags=["execution"])
@@ -56,6 +61,10 @@ def get_workflow_store() -> WorkflowStoreService | None:
     return None
 
 
+def get_workflow_draft_manager() -> WorkflowDraftManager | None:
+    return None
+
+
 class ClearRequest(BaseModel):
     graph: GraphState
     nodes: list[str]
@@ -68,16 +77,41 @@ async def run_execution(
     execution_manager: ExecutionManager | None = Depends(get_execution_manager),
     storage_path: Path | None = Depends(get_storage_path),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
+    draft_manager: WorkflowDraftManager | None = Depends(get_workflow_draft_manager),
 ) -> dict | JSONResponse:
     if execution_manager is None:
         raise HTTPException(
             status_code=503,
             detail="Execution manager is not configured",
         )
-    try:
-        graph = GraphState.model_validate(body.graph)
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid graph: {exc}") from exc
+    if body.draft_id is not None:
+        if draft_manager is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Workflow draft manager is not configured",
+            )
+        try:
+            draft = draft_manager.get(body.draft_id, revision=body.revision)
+        except WorkflowDraftNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Workflow draft not found") from exc
+        except StaleWorkflowDraftError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "conflict",
+                    "detail": "Stale draft revision",
+                    "field": "revision",
+                    "current_revision": exc.current_revision,
+                },
+            ) from exc
+        graph = draft.graph
+    else:
+        if body.graph is None:
+            raise HTTPException(status_code=422, detail="Missing graph or draft_id")
+        try:
+            graph = GraphState.model_validate(body.graph)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid graph: {exc}") from exc
     try:
         run_storage_path = resolve_workflow_storage_path(
             body.workflow_name,

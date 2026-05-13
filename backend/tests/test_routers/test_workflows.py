@@ -128,6 +128,37 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert deleted.json() == {"deleted": True}
 
 
+async def test_save_accepts_draft_id_without_graph(client: httpx.AsyncClient) -> None:
+    assert (
+        await client.post(
+            "/api/v1/workflows",
+            json={"name": "wf", "display_name": "Workflow"},
+        )
+    ).status_code == 201
+    graph: dict[str, Any] = {
+        "nodes": [
+            {
+                "id": "draft_node",
+                "name": "Draft Node",
+                "tool_name": "MissingTool",
+                "position": [1, 2],
+                "parameters": {"value": 1},
+            }
+        ],
+        "edges": [],
+    }
+    draft = await client.post("/api/v1/workflow-drafts", json={"graph": graph})
+
+    save = await client.put(
+        "/api/v1/workflows/wf",
+        json={"draft_id": draft.json()["draft_id"], "revision": 1},
+    )
+
+    assert save.status_code == 200, save.text
+    loaded = await client.get("/api/v1/workflows/wf")
+    assert loaded.json()["graph"]["nodes"][0]["id"] == "draft_node"
+
+
 async def test_export_workflow_download_response(tmp_path: Path) -> None:
     archive_adapter = _FakeArchiveAdapter()
     async for client in _client(tmp_path, archive_adapter=archive_adapter):

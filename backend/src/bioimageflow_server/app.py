@@ -50,6 +50,7 @@ from bioimageflow_server.routers.execution import (
     get_session_manager as execution_get_session_manager,
     get_storage_path as execution_get_storage_path,
     get_tool_registry as execution_get_tool_registry,
+    get_workflow_draft_manager as execution_get_workflow_draft_manager,
     get_workflow_store as execution_get_workflow_store,
     router as execution_router,
 )
@@ -81,8 +82,19 @@ from bioimageflow_server.routers.tools import (
 )
 from bioimageflow_server.routers.workflows import (
     get_execution_manager as workflows_get_execution_manager,
+    get_workflow_draft_manager as workflows_get_workflow_draft_manager,
     get_workflow_store as workflows_get_workflow_store,
     router as workflows_router,
+)
+from bioimageflow_server.routers.workflow_drafts import (
+    get_dev_mode as workflow_drafts_get_dev_mode,
+    get_session_manager as workflow_drafts_get_session_manager,
+    get_settings as workflow_drafts_get_settings,
+    get_storage_path as workflow_drafts_get_storage_path,
+    get_tool_registry as workflow_drafts_get_tool_registry,
+    get_workflow_draft_manager,
+    get_workflow_store as workflow_drafts_get_workflow_store,
+    router as workflow_drafts_router,
 )
 from bioimageflow_server.services.execution import (
     ExecutionManager,
@@ -104,6 +116,7 @@ from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
+from bioimageflow_server.services.workflow_drafts import WorkflowDraftManager
 from bioimageflow_server.ws import (
     ConnectionManager,
     attach_ws_log_handler,
@@ -191,6 +204,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         tool_registry=registry,
         storage_base_dir=resolved_storage_path / "workflows",
     )
+    workflow_draft_manager = config.workflow_draft_manager or WorkflowDraftManager()
     for workflow_info in workflow_store.list_workflows():
         custom_tools_root = workflow_store.workflow_tools_dir(workflow_info.name)
         if custom_tools_root.exists():
@@ -405,6 +419,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
+    app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.state.napari_launcher = napari_launcher
@@ -417,16 +432,27 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
+    app.dependency_overrides[workflow_drafts_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
+    app.dependency_overrides[workflow_drafts_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path
+    app.dependency_overrides[workflow_drafts_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[graph_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[workflow_drafts_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[get_workflow_draft_manager] = lambda: workflow_draft_manager
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
     app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
     app.dependency_overrides[execution_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[execution_get_workflow_draft_manager] = (
+        lambda: workflow_draft_manager
+    )
     app.dependency_overrides[workflows_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[workflows_get_workflow_draft_manager] = (
+        lambda: workflow_draft_manager
+    )
     app.dependency_overrides[tools_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
 
@@ -436,7 +462,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return resolved_settings.dev_mode
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
+    app.dependency_overrides[workflow_drafts_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings
+    app.dependency_overrides[workflow_drafts_get_settings] = _live_settings
     app.dependency_overrides[get_editor_service] = lambda: editor_service
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager

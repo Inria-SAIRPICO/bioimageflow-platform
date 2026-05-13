@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.services.tool_environments import ToolEnvironmentService
     from bioimageflow_server.services.tool_registry import ToolRegistryService
     from bioimageflow_server.services.workflow_store import WorkflowStoreService
+    from bioimageflow_server.services.workflow_drafts import WorkflowDraftManager
     from bioimageflow_server.ws.handler import ConnectionManager
 
 
@@ -195,6 +196,7 @@ class AppConfig:
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
     workflow_store: WorkflowStoreService | None = None
+    workflow_draft_manager: WorkflowDraftManager | None = None
     editor_service: Any | None = None
     tool_environment_service: ToolEnvironmentService | None = None
     # Set True in tests that don't want a watchdog Observer running. The
