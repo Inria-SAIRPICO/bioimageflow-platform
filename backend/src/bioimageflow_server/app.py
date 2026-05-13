@@ -45,6 +45,10 @@ from bioimageflow_server.routers.graph import (
     get_workflow_store as graph_get_workflow_store,
     router as graph_router,
 )
+from bioimageflow_server.routers.graph_proposals import (
+    get_graph_proposal_manager,
+    router as graph_proposals_router,
+)
 from bioimageflow_server.routers.execution import (
     get_execution_manager as execution_get_manager,
     get_session_manager as execution_get_session_manager,
@@ -100,6 +104,11 @@ from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
 from bioimageflow_server.services.editor import EditorService
+from bioimageflow_server.services.graph_proposal_manager import (
+    GraphProposalManager,
+    WorkflowDraftProposalStore,
+)
+from bioimageflow_server.services.graph_validator import validate_graph as validate_proposal_graph
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
 from bioimageflow_server.services.session_manager import SessionManager
@@ -265,6 +274,24 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     editor_service = config.editor_service or EditorService(
         settings_provider=_live_settings,
     )
+    proposal_draft_store = config.proposal_draft_store or WorkflowDraftProposalStore(
+        workflow_draft_manager
+    )
+
+    def _validate_proposed_graph(graph: Any):
+        return validate_proposal_graph(
+            graph,
+            registry,
+            SessionManager(),
+            storage_path=resolved_storage_path,
+            dev_mode=_live_dev_mode(),
+            settings=_live_settings(),
+        )
+
+    graph_proposal_manager = GraphProposalManager(
+        draft_store=proposal_draft_store,
+        validator=_validate_proposed_graph,
+    )
 
     ws_log_handler = None
 
@@ -416,6 +443,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(filesystem_router, prefix="/api/v1")
     app.include_router(editor_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
+    app.include_router(graph_proposals_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
@@ -441,6 +469,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflow_drafts_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[get_workflow_draft_manager] = lambda: workflow_draft_manager
+    app.dependency_overrides[get_graph_proposal_manager] = lambda: graph_proposal_manager
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
     app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry

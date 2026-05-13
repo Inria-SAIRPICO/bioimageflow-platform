@@ -199,6 +199,7 @@ class AppConfig:
     workflow_draft_manager: WorkflowDraftManager | None = None
     editor_service: Any | None = None
     tool_environment_service: ToolEnvironmentService | None = None
+    proposal_draft_store: Any | None = None
     # Set True in tests that don't want a watchdog Observer running. The
     # production app builds the service inside ``create_app`` from the
     # resolved registry + connection_manager + tool-store path.
