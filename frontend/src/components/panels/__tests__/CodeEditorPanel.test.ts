@@ -4,12 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import CodeEditorPanel from '../CodeEditorPanel.vue'
 import { useUIStore } from '@/stores/ui'
 import { getEditorStatus } from '@/api/editor'
-import {
-  closeCodeEditorWindow,
-  hasCodeEditorWindowBridge,
-  isDesktop,
-  openCodeEditorWindow,
-} from '@/utils/nativeDialogs'
+import { closeCodeEditorWindow } from '@/utils/nativeDialogs'
 
 vi.mock('@/api/editor', () => ({
   getEditorStatus: vi.fn(),
@@ -17,15 +12,9 @@ vi.mock('@/api/editor', () => ({
 
 vi.mock('@/utils/nativeDialogs', () => ({
   closeCodeEditorWindow: vi.fn(),
-  hasCodeEditorWindowBridge: vi.fn(),
-  isDesktop: vi.fn(),
-  openCodeEditorWindow: vi.fn(),
 }))
 
 const mockedGetEditorStatus = vi.mocked(getEditorStatus)
-const mockedHasCodeEditorWindowBridge = vi.mocked(hasCodeEditorWindowBridge)
-const mockedIsDesktop = vi.mocked(isDesktop)
-const mockedOpenCodeEditorWindow = vi.mocked(openCodeEditorWindow)
 const mockedCloseCodeEditorWindow = vi.mocked(closeCodeEditorWindow)
 
 describe('CodeEditorPanel', () => {
@@ -38,9 +27,6 @@ describe('CodeEditorPanel', () => {
       version: null,
       control_available: false,
     })
-    mockedIsDesktop.mockReturnValue(false)
-    mockedHasCodeEditorWindowBridge.mockReturnValue(false)
-    mockedOpenCodeEditorWindow.mockResolvedValue(true)
     mockedCloseCodeEditorWindow.mockResolvedValue(true)
   })
 
@@ -101,73 +87,6 @@ describe('CodeEditorPanel', () => {
     await wrapper.find('[data-testid="code-editor-iframe"]').trigger('error')
 
     expect(wrapper.find('[data-testid="code-editor-unavailable"]').exists()).toBe(true)
-  })
-
-  it('shows a pop-out control when the desktop bridge is available', () => {
-    mockedHasCodeEditorWindowBridge.mockReturnValue(true)
-    const store = useUIStore()
-    store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')
-
-    const wrapper = mount(CodeEditorPanel)
-
-    expect(wrapper.find('[data-testid="code-editor-popout"]').exists()).toBe(true)
-  })
-
-  it('shows pop-out controls in browser mode', () => {
-    mockedIsDesktop.mockReturnValue(false)
-    mockedHasCodeEditorWindowBridge.mockReturnValue(false)
-    const store = useUIStore()
-    store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')
-
-    const wrapper = mount(CodeEditorPanel)
-
-    expect(wrapper.find('[data-testid="code-editor-popout"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="code-editor-iframe"]').exists()).toBe(true)
-  })
-
-  it('hides pop-out controls in desktop mode when the bridge is missing', () => {
-    mockedIsDesktop.mockReturnValue(true)
-    mockedHasCodeEditorWindowBridge.mockReturnValue(false)
-    const store = useUIStore()
-    store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')
-
-    const wrapper = mount(CodeEditorPanel)
-
-    expect(wrapper.find('[data-testid="code-editor-popout"]').exists()).toBe(false)
-  })
-
-  it('pops out to a detached placeholder', async () => {
-    mockedHasCodeEditorWindowBridge.mockReturnValue(true)
-    const store = useUIStore()
-    store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')
-    const wrapper = mount(CodeEditorPanel)
-
-    await wrapper.find('[data-testid="code-editor-popout"]').trigger('click')
-    await flushPromises()
-
-    expect(mockedOpenCodeEditorWindow).toHaveBeenCalledWith(
-      'http://127.0.0.1:32344',
-      'Code editor - /tmp/tool.py',
-    )
-    expect(wrapper.find('[data-testid="code-editor-detached"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="code-editor-iframe"]').exists()).toBe(false)
-  })
-
-  it('asks the Dockview shell to pop out the panel in browser mode', async () => {
-    mockedIsDesktop.mockReturnValue(false)
-    mockedHasCodeEditorWindowBridge.mockReturnValue(false)
-    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
-    const store = useUIStore()
-    store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')
-    const wrapper = mount(CodeEditorPanel)
-
-    await wrapper.find('[data-testid="code-editor-popout"]').trigger('click')
-
-    expect(mockedOpenCodeEditorWindow).not.toHaveBeenCalled()
-    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'bioimageflow:popout-code-editor',
-    }))
-    dispatchSpy.mockRestore()
   })
 
   it('restores the iframe and closes the detached window', async () => {
