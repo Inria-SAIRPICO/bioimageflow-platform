@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -15,6 +15,33 @@ import type {
 type Edge = ColumnRefEdge | PositionalEdge
 
 export type SyncState = 'idle' | 'pending' | 'error'
+
+export interface UseGraphSyncOptions {
+  draftId?: string | null
+  initialRevision?: number | null
+  initialGraph?: GraphState | null
+}
+
+export interface GraphDraftSync {
+  syncGraph: (graph: { nodes: any[]; edges: any[] }) => void
+  flushNow: () => Promise<void>
+  patchParameters: (
+    nodeId: string,
+    toolName: string,
+    parameters: Record<string, unknown>,
+  ) => Promise<void>
+  validationResult: Ref<ValidationResult | null>
+  isPending: Ref<boolean>
+  syncState: Ref<SyncState>
+  currentGraph: Ref<GraphState>
+  draft_id: Ref<string | null>
+  revision: Ref<number>
+  client_seq: Ref<number>
+  graph: Ref<GraphState>
+  validation_result: Ref<ValidationResult | null>
+  dirty: Ref<boolean>
+  pending_sync: Ref<boolean>
+}
 
 function deepCloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -111,31 +138,109 @@ export function serializeGraph(raw: {
   return graph
 }
 
-// Module-level singleton so multiple callers (CanvasView, MenuBar, run
-// button) observe the same validation result, debounce timer, and latest
-// graph ref. Tests reset via _resetGraphSyncForTest and mock the
-// useErrorReporting module to observe error reporting.
-let _instance: ReturnType<typeof _createGraphSync> | null = null
+const LEGACY_DRAFT_KEY = '__legacy__'
 
-export function useGraphSync() {
-  if (_instance !== null) return _instance
-  _instance = _createGraphSync()
-  return _instance
+// Module-level registry keyed by draft id. Canvas callers pass a draft id and
+// get isolated validation/debounce/revision state; shell-level callers without
+// a draft id read the currently active draft via a small facade so legacy
+// consumers keep working during backend integration.
+let _instances = new Map<string, GraphDraftSync>()
+const _activeDraftKey = ref(LEGACY_DRAFT_KEY)
+let _activeFacade: GraphDraftSync | null = null
+
+export function useGraphSync(options: UseGraphSyncOptions = {}): GraphDraftSync {
+  if (options.draftId !== undefined && options.draftId !== null) {
+    const key = options.draftId
+    const existing = _instances.get(key)
+    if (existing) {
+      _activeDraftKey.value = key
+      return existing
+    }
+    const created = _createGraphSync({
+      draftId: key,
+      initialRevision: options.initialRevision,
+      initialGraph: options.initialGraph,
+    })
+    _instances.set(key, created)
+    _activeDraftKey.value = key
+    return created
+  }
+  if (_activeFacade === null) {
+    _activeFacade = _createActiveGraphSyncFacade()
+  }
+  ensureLegacyGraphSync()
+  return _activeFacade
 }
 
 /** Test-only: reset the singleton so each test starts clean. */
 export function _resetGraphSyncForTest(): void {
-  _instance = null
+  _instances = new Map<string, GraphDraftSync>()
+  _activeDraftKey.value = LEGACY_DRAFT_KEY
+  _activeFacade = null
 }
 
-function _createGraphSync() {
+function ensureLegacyGraphSync(): GraphDraftSync {
+  let instance = _instances.get(LEGACY_DRAFT_KEY)
+  if (!instance) {
+    instance = _createGraphSync({ draftId: null })
+    _instances.set(LEGACY_DRAFT_KEY, instance)
+  }
+  return instance
+}
+
+function activeGraphSync(): GraphDraftSync {
+  return _instances.get(_activeDraftKey.value) ?? ensureLegacyGraphSync()
+}
+
+function _createActiveGraphSyncFacade(): GraphDraftSync {
+  const activeRef = <T>(select: (sync: GraphDraftSync) => Ref<T>) =>
+    computed({
+      get: () => select(activeGraphSync()).value,
+      set: (value: T) => {
+        select(activeGraphSync()).value = value
+      },
+    })
+
+  return {
+    syncGraph: (graph) => ensureLegacyGraphSync().syncGraph(graph),
+    flushNow: () => activeGraphSync().flushNow(),
+    patchParameters: (nodeId, toolName, parameters) =>
+      activeGraphSync().patchParameters(nodeId, toolName, parameters),
+    validationResult: activeRef((sync) => sync.validationResult),
+    isPending: activeRef((sync) => sync.isPending),
+    syncState: activeRef((sync) => sync.syncState),
+    currentGraph: activeRef((sync) => sync.currentGraph),
+    draft_id: activeRef((sync) => sync.draft_id),
+    revision: activeRef((sync) => sync.revision),
+    client_seq: activeRef((sync) => sync.client_seq),
+    graph: activeRef((sync) => sync.graph),
+    validation_result: activeRef((sync) => sync.validation_result),
+    dirty: activeRef((sync) => sync.dirty),
+    pending_sync: activeRef((sync) => sync.pending_sync),
+  } as GraphDraftSync
+}
+
+function _createGraphSync(options: {
+  draftId?: string | null
+  initialRevision?: number | null
+  initialGraph?: GraphState | null
+}): GraphDraftSync {
   const validationResult = ref<ValidationResult | null>(null)
   const isPending = ref(false)
   const syncState = ref<SyncState>('idle')
   // Latest graph seen by syncGraph/flushNow. Read by consumers (e.g. the
   // Run button) that need the current graph without owning a Vue Flow
   // instance.
-  const currentGraph = ref<GraphState>({ nodes: [], edges: [] })
+  const currentGraph = ref<GraphState>(deepCloneJson(
+    options.initialGraph ?? { nodes: [], edges: [] },
+  ))
+  const draft_id = ref<string | null>(options.draftId ?? null)
+  const revision = ref(options.initialRevision ?? 0)
+  const client_seq = ref(0)
+  const graph = currentGraph
+  const validation_result = validationResult
+  const dirty = ref(false)
+  const pending_sync = ref(false)
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let pendingGraph: { nodes: any[]; edges: any[] } | null = null
@@ -157,6 +262,11 @@ function _createGraphSync() {
   function syncGraph(graph: { nodes: any[]; edges: any[] }): void {
     pendingGraph = graph
     currentGraph.value = serializeGraph(graph)
+    dirty.value = true
+    pending_sync.value = true
+    if (draft_id.value) {
+      _activeDraftKey.value = draft_id.value
+    }
     if (timer !== null) {
       clearTimeout(timer)
     }
@@ -186,17 +296,52 @@ function _createGraphSync() {
     syncState.value = 'pending'
 
     const graph = serializeGraph(raw)
+    currentGraph.value = graph
+    const baseRevision = revision.value
+    const nextClientSeq = client_seq.value + 1
+    client_seq.value = nextClientSeq
 
     try {
-      const workflowName = useWorkflowStore().currentName
-      const response = await api.put(
-        '/api/v1/graph',
-        { graph, workflow_name: workflowName ?? null },
-        { signal: controller.signal },
-      )
+      const response = draft_id.value
+        ? await api.put(
+          `/api/v1/workflow-drafts/${encodeURIComponent(draft_id.value)}`,
+          {
+            graph,
+            base_revision: baseRevision,
+            client_seq: nextClientSeq,
+          },
+          { signal: controller.signal },
+        )
+        : await api.put(
+          '/api/v1/graph',
+          {
+            graph,
+            workflow_name: useWorkflowStore().currentName ?? null,
+          },
+          { signal: controller.signal },
+        )
       // Only apply if this is still the latest request
       if (thisId === requestId) {
-        validationResult.value = response.data
+        const data = response.data as {
+          draft_id?: string
+          revision?: number
+          validation?: ValidationResult
+          validation_result?: ValidationResult
+        } | ValidationResult
+        if ('draft_id' in data && data.draft_id !== undefined) {
+          draft_id.value = data.draft_id
+        }
+        if ('revision' in data && typeof data.revision === 'number') {
+          revision.value = data.revision
+        }
+        validationResult.value =
+          'validation' in data && data.validation
+            ? data.validation
+            : 'validation_result' in data && data.validation_result
+              ? data.validation_result
+              : data as ValidationResult
+        dirty.value = false
+        pending_sync.value = false
         syncState.value = 'idle'
       }
     } catch (err: any) {
@@ -206,6 +351,7 @@ function _createGraphSync() {
       }
       if (thisId === requestId) {
         syncState.value = 'error'
+        pending_sync.value = false
         _reportError(err?.response?.status, err?.message ?? 'PUT /graph failed')
       }
     } finally {
@@ -229,12 +375,31 @@ function _createGraphSync() {
   ): Promise<void> {
     syncState.value = 'pending'
     try {
-      const response = await api.patch(
-        `/api/v1/graph/nodes/${nodeId}/parameters`,
-        { parameters },
-        { params: { tool_name: toolName } },
-      )
-      const patch = response.data as ValidationResult | undefined
+      const response = draft_id.value
+        ? await api.patch(
+          `/api/v1/workflow-drafts/${encodeURIComponent(draft_id.value)}/nodes/${nodeId}/parameters`,
+          {
+            parameters,
+            base_revision: revision.value,
+            client_seq: client_seq.value + 1,
+          },
+        )
+        : await api.patch(
+          `/api/v1/graph/nodes/${nodeId}/parameters`,
+          { parameters },
+          { params: { tool_name: toolName } },
+        )
+      const data = response.data as {
+        revision?: number
+        validation?: ValidationResult
+      } | ValidationResult | undefined
+      if (data && 'revision' in data && typeof data.revision === 'number') {
+        revision.value = data.revision
+        client_seq.value += 1
+      }
+      const patch = data && 'validation' in data && data.validation
+        ? data.validation
+        : data as ValidationResult | undefined
       if (patch) {
         // Merge: update only the patched node's entry; replace the errors
         // list with the server response's errors scoped to that node.
@@ -278,5 +443,12 @@ function _createGraphSync() {
     isPending,
     syncState,
     currentGraph,
+    draft_id,
+    revision,
+    client_seq,
+    graph,
+    validation_result,
+    dirty,
+    pending_sync,
   }
 }

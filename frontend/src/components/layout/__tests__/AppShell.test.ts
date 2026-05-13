@@ -7,6 +7,7 @@ import Aura from '@primevue/themes/aura'
 import App from '@/App.vue'
 import MenuBar from '@/components/layout/MenuBar.vue'
 import { useExecutionStore } from '@/stores/execution'
+import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -150,6 +151,10 @@ describe('AppShell', () => {
     document.documentElement.style.colorScheme = ''
     connectMock.mockClear()
     disconnectMock.mockClear()
+    useSettingsStore().settings = {
+      deployment_mode: 'desktop',
+      enable_unsafe_webapp_features: false,
+    } as any
   })
 
   it('renders #bioimageflow-app wrapper', () => {
@@ -186,7 +191,7 @@ describe('AppShell', () => {
   it('registers the default panels on ready', async () => {
     const wrapper = mountApp()
     await flushPromises()
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
 
     const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
     expect(panelIds).toContain('tools')
@@ -195,7 +200,50 @@ describe('AppShell', () => {
     expect(panelIds).toContain('nodePanel')
     expect(panelIds).toContain('dataTable')
     expect(panelIds).toContain('logger')
+    expect(panelIds).toContain('openHandsAgent')
     expect(panelIds).not.toContain('codeEditor')
+  })
+
+  it('docks the OpenHands Agent panel right of the Canvas by default', async () => {
+    mountApp()
+    await flushPromises()
+
+    const agentCall = mockDockviewApi.addPanel.mock.calls.find(
+      (call: any) => call[0].id === 'openHandsAgent',
+    )
+    expect(agentCall?.[0]).toMatchObject({
+      component: 'openHandsAgent',
+      title: 'OpenHands Agent',
+      initialWidth: 420,
+      position: { referencePanel: 'canvas', direction: 'right' },
+    })
+  })
+
+  it('hides the OpenHands Agent panel in webapp mode without unsafe features', async () => {
+    useSettingsStore().settings = {
+      deployment_mode: 'webapp',
+      enable_unsafe_webapp_features: false,
+    } as any
+
+    mountApp()
+    await flushPromises()
+
+    const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
+    expect(panelIds).not.toContain('openHandsAgent')
+    expect(useUIStore().panels.openHandsAgent).toBe(false)
+  })
+
+  it('allows the OpenHands Agent panel in webapp mode when unsafe features are enabled', async () => {
+    useSettingsStore().settings = {
+      deployment_mode: 'webapp',
+      enable_unsafe_webapp_features: true,
+    } as any
+
+    mountApp()
+    await flushPromises()
+
+    const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
+    expect(panelIds).toContain('openHandsAgent')
   })
 
   it('makes the Data Table the active bottom panel by default', async () => {
@@ -275,9 +323,9 @@ describe('AppShell', () => {
     store.togglePanel('tools') // show again
     await flushPromises()
 
-    // addPanel called 6 times initially + 1 re-add = 7
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    const lastCall = mockDockviewApi.addPanel.mock.calls[6][0]
+    // addPanel called 7 times initially + 1 re-add = 8
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    const lastCall = mockDockviewApi.addPanel.mock.calls[7][0]
     expect(lastCall.id).toBe('tools')
     expect(lastCall.initialWidth).toBe(320)
   })
@@ -302,8 +350,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(store.panels.tools).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('tools')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('tools')
   })
 
   it('syncs the Workflows panel with the View menu', async () => {
@@ -347,8 +395,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344')
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[6][0]
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[7][0]
     expect(codeEditorCall.id).toBe('codeEditor')
     expect(codeEditorCall.tabComponent).toBe('codeEditorTab')
     expect(codeEditorCall.initialWidth).toBe(520)
@@ -371,9 +419,9 @@ describe('AppShell', () => {
     const store = useUIStore()
     expect(store.codeEditorPath).toBe('/tmp/tool.py')
     expect(store.codeEditorOpening).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('codeEditor')
-    expect(mockDockviewApi.addPanel.mock.calls[6][0].tabComponent).toBe('codeEditorTab')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('codeEditor')
+    expect(mockDockviewApi.addPanel.mock.calls[7][0].tabComponent).toBe('codeEditorTab')
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
 
     window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished'))

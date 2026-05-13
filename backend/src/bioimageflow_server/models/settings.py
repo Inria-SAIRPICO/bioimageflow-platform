@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+from ipaddress import ip_address
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -91,6 +92,41 @@ class Settings(BaseModel):
     enable_unsafe_webapp_features: bool = False
     datasets_root: str | None = None
     max_upload_size: int = _DEFAULT_MAX_UPLOAD_SIZE
+    openhands_enabled: bool | None = None
+    openhands_runtime: Literal["process"] = "process"
+    openhands_command: str = "RUNTIME={runtime} openhands web --host {host} --port {port}"
+    openhands_host: str = "127.0.0.1"
+    openhands_port: int = Field(default=12000, ge=1, le=65535)
+    openhands_workspace: str = "~/bioimageflow_openhands"
+    openhands_startup_timeout: float = Field(default=60.0, ge=0)
+    openhands_process_acknowledged: bool = False
+
+    @field_validator(
+        "openhands_runtime",
+        "openhands_command",
+        "openhands_host",
+        "openhands_workspace",
+        mode="before",
+    )
+    @classmethod
+    def _trim_openhands_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("openhands_runtime", "openhands_command", "openhands_workspace")
+    @classmethod
+    def _require_openhands_text(cls, value: str) -> str:
+        if not value:
+            raise ValueError("OpenHands text settings must be non-empty")
+        return value
+
+    @field_validator("openhands_host")
+    @classmethod
+    def _validate_openhands_loopback_host(cls, value: str) -> str:
+        if not _is_loopback_host(value):
+            raise ValueError("openhands_host must be loopback-only")
+        return value
 
     @field_validator("cache_max_age")
     @classmethod
@@ -116,3 +152,13 @@ class Settings(BaseModel):
         if self.datasets_root:
             return self.datasets_root
         return posixpath.join(self.output_data_folder, "datasets")
+
+
+def _is_loopback_host(value: str) -> bool:
+    host = value.strip().strip("[]").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False

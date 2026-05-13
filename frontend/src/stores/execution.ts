@@ -58,6 +58,11 @@ interface RunError {
   message?: string
 }
 
+export interface ExecutionDraftIdentity {
+  draft_id?: string | null
+  revision?: number | null
+}
+
 function messageFromError(err: RunError): string {
   return err.response?.data?.detail ?? err.message ?? String(err)
 }
@@ -123,6 +128,7 @@ export const useExecutionStore = defineStore('execution', () => {
     graph: GraphState,
     nodes?: string[],
     workflowName?: string | null,
+    draft?: ExecutionDraftIdentity,
   ) {
     if (state.value === 'running') {
       throw new Error('already running')
@@ -134,11 +140,24 @@ export const useExecutionStore = defineStore('execution', () => {
     progress.value = null
     nodeStatuses.value = {}
     try {
-      await api.post('/api/v1/execution/run', {
+      const body: {
+        graph: GraphState
+        nodes?: string[]
+        workflow_name: string | null
+        draft_id?: string
+        revision?: number
+      } = {
         graph,
         nodes,
         workflow_name: workflowName ?? null,
-      })
+      }
+      if (draft?.draft_id) {
+        body.draft_id = draft.draft_id
+      }
+      if (typeof draft?.revision === 'number') {
+        body.revision = draft.revision
+      }
+      await api.post('/api/v1/execution/run', body)
       state.value = 'running'
     } catch (e: unknown) {
       state.value = 'idle'

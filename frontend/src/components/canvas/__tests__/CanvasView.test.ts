@@ -215,6 +215,7 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { _resetClipboardForTest } from '@/utils/clipboard'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
+import { useUIStore } from '@/stores/ui'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -1387,6 +1388,48 @@ describe('CanvasView', () => {
       expect(sessions.isDirty(session.id)).toBe(false)
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       window.removeEventListener('bioimageflow:apply-sub-workflow-session', applied)
+      w.unmount()
+    })
+
+    it('does not apply a sub-workflow session event while execution is locked', async () => {
+      const ui = useUIStore()
+      const w = mountCanvas()
+      await nextTick()
+      mockNodes = [{
+        id: 'sub_1',
+        type: 'sub_workflow',
+        position: { x: 0, y: 0 },
+        data: {
+          name: 'Sub 1',
+          toolName: '__sub_workflow__',
+          parameters: {},
+          sub_workflow: { nodes: [], edges: [] },
+          published_inputs: [],
+          published_outputs: [],
+        },
+      }]
+      ui.setExecutionLocked(true)
+      graphSyncMocks.syncGraph.mockClear()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
+        detail: {
+          parentNodeId: 'sub_1',
+          graph: {
+            nodes: [{
+              id: 'inner_1',
+              name: 'Inner 1',
+              tool_name: 'gaussian_blur',
+              position: [0, 0],
+              parameters: {},
+            }],
+            edges: [],
+          },
+        },
+      }))
+
+      expect(mockNodes[0].data.sub_workflow.nodes).toEqual([])
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      ui.setExecutionLocked(false)
       w.unmount()
     })
 

@@ -9,6 +9,8 @@ import type { GraphState, ValidationResult } from '@/api/types'
 export interface ExecutionGraphSync {
   flushNow: () => Promise<void>
   validationResult: Ref<ValidationResult | null>
+  draft_id?: Ref<string | null>
+  revision?: Ref<number>
 }
 
 export interface LockForExecutionOptions {
@@ -58,6 +60,15 @@ export function useExecutionLock() {
     }
 
     // 3. Kick off the run.
+    const draftId = graphSync.draft_id?.value ?? null
+    const revision = graphSync.revision?.value ?? null
+    if (draftId) {
+      await exec.run(graph, nodes, workflowName, {
+        draft_id: draftId,
+        revision,
+      })
+      return
+    }
     await exec.run(graph, nodes, workflowName)
   }
 

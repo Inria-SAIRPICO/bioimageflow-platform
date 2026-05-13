@@ -33,6 +33,7 @@ vi.mock('@/composables/useAutoSave', () => ({
 import MenuBar from '../MenuBar.vue'
 import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
+import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowStore } from '@/stores/workflow'
 
 // PrimeVue Menubar uses matchMedia for responsive behavior
@@ -88,11 +89,11 @@ describe('MenuBar', () => {
     expect(labels).toEqual(['Workflow', 'Edit', 'Execution', 'View', 'Help'])
   })
 
-  it('View menu has 6 panel toggle items', () => {
+  it('View menu has 7 panel toggle items', () => {
     const wrapper = mountMenuBar()
     const vm = wrapper.vm as any
     const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
-    expect(viewMenu.items).toHaveLength(6)
+    expect(viewMenu.items).toHaveLength(7)
     const toggleLabels = viewMenu.items.map((item: any) => item.label)
     expect(toggleLabels).toEqual([
       'Tools Panel',
@@ -101,7 +102,38 @@ describe('MenuBar', () => {
       'Data Table',
       'Logger',
       'Code Editor',
+      'OpenHands Agent',
     ])
+  })
+
+  it('disables OpenHands Agent in webapp mode without unsafe features', () => {
+    const settings = useSettingsStore()
+    settings.settings = {
+      deployment_mode: 'webapp',
+      enable_unsafe_webapp_features: false,
+    } as any
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+    const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
+    const toggle = viewMenu.items.find((item: any) => item.label === 'OpenHands Agent')
+
+    expect(toggle.disabled).toBe(true)
+    expect(toggle.icon).toBeUndefined()
+  })
+
+  it('keeps OpenHands Agent toggle enabled for desktop mode', () => {
+    const settings = useSettingsStore()
+    settings.settings = {
+      deployment_mode: 'desktop',
+      enable_unsafe_webapp_features: false,
+    } as any
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+    const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
+    const toggle = viewMenu.items.find((item: any) => item.label === 'OpenHands Agent')
+
+    expect(toggle.disabled).toBe(false)
+    expect(toggle.icon).toBe('pi pi-check')
   })
 
   it('View toggle items reflect uiStore.panels state', () => {

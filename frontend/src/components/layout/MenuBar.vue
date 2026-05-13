@@ -13,6 +13,7 @@ import { useGraphSync } from '@/composables/useGraphSync'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
+import { useSettingsStore } from '@/stores/settings'
 import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
 import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
@@ -25,8 +26,17 @@ import type { GraphState } from '@/api/types'
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const workflowStore = useWorkflowStore()
+const settingsStore = useSettingsStore()
 const autoSave = useAutoSave()
-const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
+const graphSyncState = useGraphSync()
+const {
+  flushNow,
+  validationResult,
+  isPending,
+  currentGraph,
+} = graphSyncState
+const draft_id = graphSyncState.draft_id ?? ref(null)
+const revision = graphSyncState.revision ?? ref(0)
 
 // useToast throws when no ToastService is provided (e.g. in unit tests
 // that mount MenuBar in isolation). The toasts are a nice-to-have here.
@@ -41,7 +51,7 @@ const runButtonRef = useTemplateRef<InstanceType<typeof RunButton> | null>(
   'runButtonRef',
 )
 
-const graphSync = { flushNow, validationResult }
+const graphSync = { flushNow, validationResult, draft_id, revision }
 const workflowTitle = computed(() => {
   const label = uiStore.activeWorkflowName ?? 'No workflow'
   return uiStore.hasUnsavedChanges ? `${label} *` : label
@@ -97,11 +107,24 @@ type WorkflowPanelCommand = {
   name?: string
 }
 
-function panelToggle(label: string, panelKey: keyof typeof uiStore.panels): MenuItem {
+const openHandsAgentEnabled = computed(() => (
+  settingsStore.isDesktop
+  || settingsStore.unsafeWebappFeaturesEnabled
+))
+
+function panelToggle(
+  label: string,
+  panelKey: keyof typeof uiStore.panels,
+  options: { disabled?: boolean } = {},
+): MenuItem {
   return {
     label,
-    icon: uiStore.panels[panelKey] ? 'pi pi-check' : undefined,
-    command: () => uiStore.togglePanel(panelKey),
+    icon: !options.disabled && uiStore.panels[panelKey] ? 'pi pi-check' : undefined,
+    disabled: options.disabled === true,
+    command: () => {
+      if (options.disabled) return
+      uiStore.togglePanel(panelKey)
+    },
   }
 }
 
@@ -176,7 +199,10 @@ async function onWorkflowDialogSubmit(payload: {
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
       if (createIntent.value === 'save-current') {
-        await workflowStore.saveWorkflow(currentGraph.value)
+        await workflowStore.saveWorkflow(currentGraph.value, {
+          draft_id: draft_id.value,
+          revision: revision.value,
+        })
       } else {
         applyGraph({ nodes: [], edges: [] })
       }
@@ -193,7 +219,10 @@ async function onWorkflowDialogSubmit(payload: {
     } else {
       await workflowStore.createWorkflow(payload)
     }
-    await workflowStore.saveWorkflow(currentGraph.value)
+    await workflowStore.saveWorkflow(currentGraph.value, {
+      draft_id: draft_id.value,
+      revision: revision.value,
+    })
     workflowDialogVisible.value = false
     workflowDialogSuggestedName.value = null
   } catch (err: unknown) {
@@ -243,7 +272,10 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
-    const info = await workflowStore.saveWorkflow(currentGraph.value)
+    const info = await workflowStore.saveWorkflow(currentGraph.value, {
+      draft_id: draft_id.value,
+      revision: revision.value,
+    })
     toast?.add({
       severity: 'success',
       summary: 'Workflow saved',
@@ -579,6 +611,9 @@ const menuItems = computed<MenuItem[]>(() => [
       panelToggle('Data Table', 'dataTable'),
       panelToggle('Logger', 'logger'),
       panelToggle('Code Editor', 'codeEditor'),
+      panelToggle('OpenHands Agent', 'openHandsAgent', {
+        disabled: !openHandsAgentEnabled.value,
+      }),
     ],
   },
   {

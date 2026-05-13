@@ -66,6 +66,25 @@ describe('execution store', () => {
     })
   })
 
+  it('posts draft identity when starting execution', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'started' } })
+    const execution = useExecutionStore()
+    const graph = { nodes: [], edges: [] }
+
+    await execution.run(graph, undefined, 'wf_a', {
+      draft_id: 'root-draft',
+      revision: 12,
+    })
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/execution/run', {
+      graph,
+      nodes: undefined,
+      workflow_name: 'wf_a',
+      draft_id: 'root-draft',
+      revision: 12,
+    })
+  })
+
   it('posts workflow_name when clearing cache', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { node_statuses: {} } })
     const execution = useExecutionStore()

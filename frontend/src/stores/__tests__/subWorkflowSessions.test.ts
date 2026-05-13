@@ -106,6 +106,55 @@ describe('useSubWorkflowSessionsStore', () => {
     expect(store.isDirty(session.id)).toBe(true)
   })
 
+  it('assigns each sub-workflow session an isolated draft identity and sync metadata', () => {
+    const store = useSubWorkflowSessionsStore()
+    const rootA = store.openSession({
+      parentWorkflowName: 'parent',
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: graph('internal_1'),
+    })
+    const rootB = store.openSession({
+      parentWorkflowName: 'parent',
+      parentNodeId: 'sub_2',
+      parentNodeName: 'Sub 2',
+      graph: graph('internal_2'),
+    })
+
+    expect(rootA.draft_id).toBe('sub-workflow:parent:sub_1')
+    expect(rootB.draft_id).toBe('sub-workflow:parent:sub_2')
+    expect(rootA.revision).toBe(0)
+    expect(rootA.client_seq).toBe(0)
+    expect(rootA.validation_result).toBeNull()
+    expect(rootA.dirty).toBe(false)
+    expect(rootA.pending_sync).toBe(false)
+  })
+
+  it('tracks sub-workflow draft revision state independently from saved parent snapshots', () => {
+    const store = useSubWorkflowSessionsStore()
+    const session = store.openSession({
+      parentWorkflowName: 'parent',
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: graph('internal_1'),
+    })
+
+    store.updateDraftSyncState(session.id, {
+      revision: 3,
+      client_seq: 2,
+      validation_result: { valid: true, node_statuses: {}, errors: [] },
+      dirty: true,
+      pending_sync: false,
+    })
+
+    const updated = store.sessionById(session.id)
+    expect(updated?.revision).toBe(3)
+    expect(updated?.client_seq).toBe(2)
+    expect(updated?.validation_result?.valid).toBe(true)
+    expect(updated?.dirty).toBe(true)
+    expect(updated?.savedSnapshot.nodes[0].id).toBe('internal_1')
+  })
+
   it('refuses to open readonly class-based sub-workflows', () => {
     const store = useSubWorkflowSessionsStore()
 

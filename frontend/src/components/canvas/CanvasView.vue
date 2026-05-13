@@ -110,7 +110,21 @@ const {
   fitView,
 } = useVueFlow()
 
-const { syncGraph, flushNow, patchParameters, validationResult, syncState } = useGraphSync()
+const graphSync = useGraphSync({
+  draftId: initialDraftId(),
+  initialRevision: initialDraftRevision(),
+})
+const {
+  syncGraph,
+  flushNow,
+  patchParameters,
+  validationResult,
+  syncState,
+} = graphSync
+const revision = graphSync.revision ?? ref(0)
+const client_seq = graphSync.client_seq ?? ref(0)
+const dirty = graphSync.dirty ?? ref(false)
+const pending_sync = graphSync.pending_sync ?? ref(false)
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
@@ -130,6 +144,21 @@ const {
 watch(validationResult, (result) => {
   applyValidationResult(result)
 })
+
+watch(
+  [revision, client_seq, validationResult, dirty, pending_sync],
+  () => {
+    const sessionId = props.subWorkflowSessionId
+    if (!sessionId) return
+    subWorkflowSessionsStore.updateDraftSyncState(sessionId, {
+      revision: revision.value,
+      client_seq: client_seq.value,
+      validation_result: validationResult.value,
+      dirty: dirty.value,
+      pending_sync: pending_sync.value,
+    })
+  },
+)
 
 // Mirror per-edge validation errors onto each edge's `data.errors` so the
 // edge component can render the red stroke + tooltip.
@@ -212,6 +241,20 @@ function workflowIdentity() {
     workflowName: params?.workflowName ?? workflowStore.currentName,
     workflowDisplayName: params?.workflowDisplayName ?? workflowStore.current?.display_name,
   }
+}
+
+function initialDraftId(): string {
+  if (props.subWorkflowSessionId) {
+    const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+    return session?.draft_id ?? `sub-workflow:${props.subWorkflowSessionId}`
+  }
+  const identity = workflowIdentity()
+  return `workflow:${identity.workflowName ?? componentPanelId()}`
+}
+
+function initialDraftRevision(): number {
+  if (!props.subWorkflowSessionId) return 0
+  return subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)?.revision ?? 0
 }
 
 function currentPublicationContext(): PublicationContext | null {
@@ -1754,6 +1797,7 @@ function saveSubWorkflowSession() {
 function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
   parentNodeId?: string
 } & Partial<SubWorkflowApplyPayload>>) {
+  if (isLocked.value) return
   const detail = event.detail
   if (!detail?.parentNodeId || !detail.graph) return
   applySubWorkflowDraft(detail.parentNodeId, detail.graph, {

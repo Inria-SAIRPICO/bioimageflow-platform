@@ -22,6 +22,11 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowImportValidationError,
     WorkflowStoreService,
 )
+from bioimageflow_server.services.workflow_drafts import (
+    StaleWorkflowDraftError,
+    WorkflowDraftManager,
+    WorkflowDraftNotFoundError,
+)
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -31,6 +36,10 @@ def get_workflow_store() -> WorkflowStoreService:  # pragma: no cover
 
 
 def get_execution_manager() -> Any | None:
+    return None
+
+
+def get_workflow_draft_manager() -> WorkflowDraftManager | None:
     return None
 
 
@@ -144,8 +153,32 @@ async def save_workflow(
     body: WorkflowSaveBody,
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
+    draft_manager: WorkflowDraftManager | None = Depends(get_workflow_draft_manager),
 ) -> WorkflowInfo:
     _ensure_unlocked(execution_manager)
+    if body.draft_id is not None:
+        if draft_manager is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Workflow draft manager is not configured",
+            )
+        try:
+            draft = draft_manager.get(body.draft_id, revision=body.revision)
+        except WorkflowDraftNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Workflow draft not found") from exc
+        except StaleWorkflowDraftError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "conflict",
+                    "detail": "Stale draft revision",
+                    "field": "revision",
+                    "current_revision": exc.current_revision,
+                },
+            ) from exc
+        body = WorkflowSaveBody(graph=draft.graph)
+    if body.graph is None:
+        raise HTTPException(status_code=422, detail="Missing graph or draft_id")
     try:
         return store.save_workflow(name, body)
     except FileNotFoundError as exc:
