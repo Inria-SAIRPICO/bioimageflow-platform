@@ -551,6 +551,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/openhands/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Openhands Status */
+        get: operations["openhands_status_api_v1_openhands_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/openhands/launch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Launch Openhands */
+        post: operations["launch_openhands_api_v1_openhands_launch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/openhands/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Shutdown Openhands */
+        post: operations["shutdown_openhands_api_v1_openhands_shutdown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/openhands/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Openhands Context */
+        get: operations["openhands_context_api_v1_openhands_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{node_id}/data": {
         parameters: {
             query?: never;
@@ -841,6 +909,42 @@ export interface components {
             env_path?: string | null;
             /** Pid */
             pid?: number | null;
+        };
+        /** OpenHandsContext */
+        OpenHandsContext: {
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Deployment Mode */
+            deployment_mode: string;
+            /** Unsafe Webapp Features Enabled */
+            unsafe_webapp_features_enabled: boolean;
+            /** Runtime */
+            runtime: string;
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+            /** Url */
+            url: string;
+            /** Workspace */
+            workspace: string;
+            /** Process Acknowledged */
+            process_acknowledged: boolean;
+        };
+        /** OpenHandsStatus */
+        OpenHandsStatus: {
+            /** Available */
+            available: boolean;
+            /** Running */
+            running: boolean;
+            /** Pid */
+            pid?: number | null;
+            /** Url */
+            url?: string | null;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * NodeDataResponse
@@ -1190,6 +1294,22 @@ export interface components {
              * @default 2147483648
              */
             max_upload_size: number;
+            /** Openhands Enabled */
+            openhands_enabled?: boolean | null;
+            /** Openhands Runtime */
+            openhands_runtime?: string;
+            /** Openhands Command */
+            openhands_command?: string;
+            /** Openhands Host */
+            openhands_host?: string;
+            /** Openhands Port */
+            openhands_port?: number;
+            /** Openhands Workspace */
+            openhands_workspace?: string;
+            /** Openhands Startup Timeout */
+            openhands_startup_timeout?: number;
+            /** Openhands Process Acknowledged */
+            openhands_process_acknowledged?: boolean;
             /** Resolved Tool Store Path */
             resolved_tool_store_path: string;
             /** Resolved Output Data Folder */
@@ -1541,6 +1661,8 @@ export type MissingPackage = components['schemas']['MissingPackage'];
 export type MissingTool = components['schemas']['MissingTool'];
 export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
 export type NapariStatus = components['schemas']['NapariStatus'];
+export type OpenHandsContext = components['schemas']['OpenHandsContext'];
+export type OpenHandsStatus = components['schemas']['OpenHandsStatus'];
 export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
@@ -2688,6 +2810,97 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    openhands_status_api_v1_openhands_status_get: {
+        parameters: {
+            query?: {
+                launch?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenHandsStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    launch_openhands_api_v1_openhands_launch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenHandsStatus"];
+                };
+            };
+        };
+    };
+    shutdown_openhands_api_v1_openhands_shutdown_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenHandsStatus"];
+                };
+            };
+        };
+    };
+    openhands_context_api_v1_openhands_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenHandsContext"];
                 };
             };
         };

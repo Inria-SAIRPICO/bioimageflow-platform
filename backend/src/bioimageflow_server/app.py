@@ -63,6 +63,10 @@ from bioimageflow_server.routers.napari import (
     get_napari_launcher,
     router as napari_router,
 )
+from bioimageflow_server.routers.openhands import (
+    get_openhands_service,
+    router as openhands_router,
+)
 from bioimageflow_server.routers.nodes import (
     get_result_store,
     get_thumbnail_manager,
@@ -111,6 +115,7 @@ from bioimageflow_server.services.graph_proposal_manager import (
 from bioimageflow_server.services.graph_validator import validate_graph as validate_proposal_graph
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
+from bioimageflow_server.services.openhands import OpenHandsService
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
@@ -268,8 +273,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     def _live_settings() -> Settings:
         if config.settings_store is not None:
-            return config.settings_store.get()
+            try:
+                return config.settings_store.get()
+            except RuntimeError:
+                return resolved_settings
         return resolved_settings
+
+    openhands_service = config.openhands_service or OpenHandsService(
+        settings_provider=_live_settings,
+    )
 
     editor_service = config.editor_service or EditorService(
         settings_provider=_live_settings,
@@ -336,9 +348,16 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         try:
             yield
         finally:
-            # Napari shutdown FIRST: it may take up to 5s (kill timeout)
-            # and must run before the WS log handler is detached so the
-            # final environment_status: stopped event reaches clients.
+            # Stop owned child processes before detaching the WS log handler.
+            # Napari may take up to 5s (kill timeout) and should still be able
+            # to publish its final environment_status: stopped event.
+            try:
+                await openhands_service.shutdown()
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).exception(
+                    "openhands_service.shutdown() raised during lifespan: %r",
+                    exc,
+                )
             try:
                 await napari_launcher.shutdown()
             except Exception as exc:  # noqa: BLE001
@@ -449,9 +468,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
+    app.include_router(openhands_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.state.napari_launcher = napari_launcher
+    app.state.openhands_service = openhands_service
     app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
+    app.dependency_overrides[get_openhands_service] = lambda: openhands_service
     if config.settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
         app.dependency_overrides[settings_get_store] = lambda: config.settings_store

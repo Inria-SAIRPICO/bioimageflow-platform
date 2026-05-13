@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
     from bioimageflow_server.services.known_packages import KnownPackagesService
     from bioimageflow_server.services.napari_launcher import NapariLauncher
+    from bioimageflow_server.services.openhands import OpenHandsService
     from bioimageflow_server.services.package_catalog import PackageCatalogService
     from bioimageflow_server.services.package_installer import PackageInstallerService
     from bioimageflow_server.services.pypi_versions import PyPIVersionService
@@ -195,6 +196,7 @@ class AppConfig:
     settings_store: SettingsStore | None = None
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
+    openhands_service: OpenHandsService | None = None
     workflow_store: WorkflowStoreService | None = None
     workflow_draft_manager: WorkflowDraftManager | None = None
     editor_service: Any | None = None
