@@ -1,0 +1,3840 @@
+{
+  "components": {
+    "schemas": {
+      "Body_import_workflow_api_v1_workflows_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "name_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Override"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_workflow_api_v1_workflows_import_post",
+        "type": "object"
+      },
+      "Body_upload_datasets_api_v1_datasets_upload_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "Body_upload_datasets_api_v1_datasets_upload_post",
+        "type": "object"
+      },
+      "ClearRequest": {
+        "properties": {
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "graph",
+          "nodes"
+        ],
+        "title": "ClearRequest",
+        "type": "object"
+      },
+      "ColumnRefEdge": {
+        "description": "Edge that maps a named output column to a named input.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "source_node": {
+            "title": "Source Node",
+            "type": "string"
+          },
+          "source_output": {
+            "title": "Source Output",
+            "type": "string"
+          },
+          "target_input": {
+            "title": "Target Input",
+            "type": "string"
+          },
+          "target_node": {
+            "title": "Target Node",
+            "type": "string"
+          },
+          "type": {
+            "const": "column_ref",
+            "default": "column_ref",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_node",
+          "target_node",
+          "source_output",
+          "target_input"
+        ],
+        "title": "ColumnRefEdge",
+        "type": "object"
+      },
+      "Dataset": {
+        "description": "A stored dataset as returned by `GET /datasets`.",
+        "properties": {
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "upload_date": {
+            "title": "Upload Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "original_filename",
+          "path",
+          "size",
+          "upload_date"
+        ],
+        "title": "Dataset",
+        "type": "object"
+      },
+      "EditorOpenMethod": {
+        "enum": [
+          "external",
+          "embedded",
+          "clipboard"
+        ],
+        "title": "EditorOpenMethod",
+        "type": "string"
+      },
+      "EditorOpenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "EditorOpenRequest",
+        "type": "object"
+      },
+      "EditorOpenResponse": {
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "method": {
+            "$ref": "#/components/schemas/EditorOpenMethod"
+          },
+          "opened": {
+            "title": "Opened",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "opened",
+          "method",
+          "path"
+        ],
+        "title": "EditorOpenResponse",
+        "type": "object"
+      },
+      "EditorStatus": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "control_available": {
+            "default": false,
+            "title": "Control Available",
+            "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "EditorStatus",
+        "type": "object"
+      },
+      "ExecutionRequest": {
+        "description": "Request to execute a graph (or a subset of its nodes).",
+        "properties": {
+          "graph": {
+            "additionalProperties": true,
+            "title": "Graph",
+            "type": "object"
+          },
+          "nodes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nodes"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "graph"
+        ],
+        "title": "ExecutionRequest",
+        "type": "object"
+      },
+      "GraphState": {
+        "description": "Complete graph state with nodes and edges.",
+        "properties": {
+          "edges": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "column_ref": "#/components/schemas/ColumnRefEdge",
+                  "positional": "#/components/schemas/PositionalEdge"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ColumnRefEdge"
+                },
+                {
+                  "$ref": "#/components/schemas/PositionalEdge"
+                }
+              ]
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/NodeState"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "published_inputs": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedInput"
+            },
+            "title": "Published Inputs",
+            "type": "array"
+          },
+          "published_outputs": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedOutput"
+            },
+            "title": "Published Outputs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "GraphState",
+        "type": "object"
+      },
+      "GraphValidationError": {
+        "description": "A single validation error detected in the graph.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "edge_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge Id"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node"
+          },
+          "type": {
+            "enum": [
+              "cycle_detected",
+              "type_incompatible",
+              "parameter_invalid",
+              "missing_tool",
+              "missing_connection",
+              "missing_package",
+              "invalid_node_id",
+              "invalid_edge_id",
+              "source_tool_upstream"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "detail"
+        ],
+        "title": "GraphValidationError",
+        "type": "object"
+      },
+      "GraphValidationRequest": {
+        "description": "Request to validate a graph in an optional workflow context.",
+        "properties": {
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "graph"
+        ],
+        "title": "GraphValidationRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InputFieldSchema": {
+        "properties": {
+          "choices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Choices"
+          },
+          "connectable": {
+            "enum": [
+              "never",
+              "not_by_default",
+              "by_default"
+            ],
+            "title": "Connectable",
+            "type": "string"
+          },
+          "default": {
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group"
+          },
+          "image_spec": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Spec"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "nullable": {
+            "default": false,
+            "title": "Nullable",
+            "type": "boolean"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "required",
+          "connectable"
+        ],
+        "title": "InputFieldSchema",
+        "type": "object"
+      },
+      "MissingPackage": {
+        "description": "Package/version-level load issue for a workflow.",
+        "properties": {
+          "affected_nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected Nodes",
+            "type": "array"
+          },
+          "installed_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Installed Versions",
+            "type": "array"
+          },
+          "package_name": {
+            "title": "Package Name",
+            "type": "string"
+          },
+          "required_version": {
+            "title": "Required Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_name",
+          "required_version"
+        ],
+        "title": "MissingPackage",
+        "type": "object"
+      },
+      "MissingTool": {
+        "description": "Node/tool-level load issue for a workflow.",
+        "properties": {
+          "installed_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Installed Versions",
+            "type": "array"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "package_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package Name"
+          },
+          "required_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Version"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "tool_name"
+        ],
+        "title": "MissingTool",
+        "type": "object"
+      },
+      "NapariOpenRequest": {
+        "description": "Body for ``POST /napari/open``.",
+        "properties": {
+          "clear_layers": {
+            "default": false,
+            "title": "Clear Layers",
+            "type": "boolean"
+          },
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "title": "NapariOpenRequest",
+        "type": "object"
+      },
+      "NapariStatus": {
+        "description": "Response for ``GET /napari/status``.",
+        "properties": {
+          "env_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env Path"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pid"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running"
+        ],
+        "title": "NapariStatus",
+        "type": "object"
+      },
+      "NodeDataResponse": {
+        "description": "Paginated DataFrame payload for the Data Table panel.",
+        "properties": {
+          "absolute_rows": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Absolute Rows",
+            "type": "array"
+          },
+          "column_types": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Column Types",
+            "type": "object"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "index": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Index",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "columns",
+          "index",
+          "rows",
+          "absolute_rows",
+          "total_rows",
+          "page",
+          "page_size",
+          "column_types"
+        ],
+        "title": "NodeDataResponse",
+        "type": "object"
+      },
+      "NodeOutputSchemaResponse": {
+        "description": "Response for ``POST /graph/nodes/{node_id}/output_schema``.",
+        "properties": {
+          "columns": {
+            "additionalProperties": true,
+            "title": "Columns",
+            "type": "object"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resolved",
+          "columns"
+        ],
+        "title": "NodeOutputSchemaResponse",
+        "type": "object"
+      },
+      "NodeState": {
+        "description": "A single node in the processing graph.",
+        "properties": {
+          "collapsed": {
+            "default": false,
+            "title": "Collapsed",
+            "type": "boolean"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "output_templates": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Output Templates",
+            "type": "object"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "position": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Position",
+            "type": "array"
+          },
+          "published_inputs": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedInput"
+            },
+            "title": "Published Inputs",
+            "type": "array"
+          },
+          "published_outputs": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedOutput"
+            },
+            "title": "Published Outputs",
+            "type": "array"
+          },
+          "resources": {
+            "additionalProperties": true,
+            "title": "Resources",
+            "type": "object"
+          },
+          "sub_workflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sub_workflow_readonly_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Workflow Readonly Reason"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "tool_name",
+          "position",
+          "parameters"
+        ],
+        "title": "NodeState",
+        "type": "object"
+      },
+      "NodeStatus": {
+        "description": "Status of a single node after validation or execution.",
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unexecuted",
+              "executed",
+              "out_of_date",
+              "disabled",
+              "running",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "traceback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traceback"
+          }
+        },
+        "required": [
+          "node_id",
+          "status",
+          "cached"
+        ],
+        "title": "NodeStatus",
+        "type": "object"
+      },
+      "PackageInfo": {
+        "properties": {
+          "active_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
+          },
+          "available_versions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Available Versions",
+            "type": "array"
+          },
+          "environment_status": {
+            "default": "stopped",
+            "title": "Environment Status",
+            "type": "string"
+          },
+          "installed_versions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Installed Versions",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tools": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "default": {},
+            "title": "Tools",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PackageInfo",
+        "type": "object"
+      },
+      "ParameterPatchRequest": {
+        "description": "Body of PATCH /graph/nodes/{id}/parameters \u2014 constants only.",
+        "properties": {
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "parameters"
+        ],
+        "title": "ParameterPatchRequest",
+        "type": "object"
+      },
+      "PositionalEdge": {
+        "description": "Edge that connects nodes by positional index.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "positional_index": {
+            "title": "Positional Index",
+            "type": "integer"
+          },
+          "source_node": {
+            "title": "Source Node",
+            "type": "string"
+          },
+          "target_node": {
+            "title": "Target Node",
+            "type": "string"
+          },
+          "type": {
+            "const": "positional",
+            "default": "positional",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_node",
+          "target_node",
+          "positional_index"
+        ],
+        "title": "PositionalEdge",
+        "type": "object"
+      },
+      "PublishedInput": {
+        "description": "An internal sub-workflow field exposed as an outer input pin.",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "internal_field": {
+            "title": "Internal Field",
+            "type": "string"
+          },
+          "internal_node_id": {
+            "title": "Internal Node Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "parameter",
+              "input"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema"
+          }
+        },
+        "required": [
+          "name",
+          "internal_node_id",
+          "internal_field",
+          "kind"
+        ],
+        "title": "PublishedInput",
+        "type": "object"
+      },
+      "PublishedOutput": {
+        "description": "An internal sub-workflow output exposed as an outer output pin.",
+        "properties": {
+          "internal_node_id": {
+            "title": "Internal Node Id",
+            "type": "string"
+          },
+          "internal_output": {
+            "title": "Internal Output",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema"
+          }
+        },
+        "required": [
+          "name",
+          "internal_node_id",
+          "internal_output"
+        ],
+        "title": "PublishedOutput",
+        "type": "object"
+      },
+      "RevealRequest": {
+        "description": "Request body for the reveal endpoint.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "RevealRequest",
+        "type": "object"
+      },
+      "ToolCreate": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tool_type": {
+            "enum": [
+              "ProcessingTool",
+              "DataFrameTool"
+            ],
+            "title": "Tool Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "tool_type"
+        ],
+        "title": "ToolCreate",
+        "type": "object"
+      },
+      "ToolCreateResponse": {
+        "properties": {
+          "editable": {
+            "const": true,
+            "default": true,
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "source_kind": {
+            "const": "custom",
+            "default": "custom",
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "tool_type": {
+            "enum": [
+              "ProcessingTool",
+              "DataFrameTool"
+            ],
+            "title": "Tool Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "tool_type",
+          "path"
+        ],
+        "title": "ToolCreateResponse",
+        "type": "object"
+      },
+      "ToolDeleteResponse": {
+        "properties": {
+          "affected_workflows": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected Workflows",
+            "type": "array"
+          },
+          "deleted": {
+            "const": true,
+            "default": true,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "affected_workflows"
+        ],
+        "title": "ToolDeleteResponse",
+        "type": "object"
+      },
+      "ToolMetadata": {
+        "properties": {
+          "accepts_upstream": {
+            "default": true,
+            "title": "Accepts Upstream",
+            "type": "boolean"
+          },
+          "categories": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "dataframe_output": {
+            "default": true,
+            "title": "Dataframe Output",
+            "type": "boolean"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "documentation": {
+            "default": "",
+            "title": "Documentation",
+            "type": "string"
+          },
+          "dynamic_outputs": {
+            "default": false,
+            "title": "Dynamic Outputs",
+            "type": "boolean"
+          },
+          "editable": {
+            "default": false,
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/InputFieldSchema"
+            },
+            "default": {},
+            "title": "Inputs",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "outputs": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Outputs",
+            "type": "object"
+          },
+          "package": {
+            "title": "Package",
+            "type": "string"
+          },
+          "package_version": {
+            "title": "Package Version",
+            "type": "string"
+          },
+          "source_kind": {
+            "default": "package",
+            "enum": [
+              "package",
+              "custom"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "tool_type": {
+            "enum": [
+              "ProcessingTool",
+              "DataFrameTool"
+            ],
+            "title": "Tool Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "package",
+          "package_version",
+          "tool_type"
+        ],
+        "title": "ToolMetadata",
+        "type": "object"
+      },
+      "ToolRename": {
+        "properties": {
+          "new_name": {
+            "title": "New Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "title": "ToolRename",
+        "type": "object"
+      },
+      "ToolRenameResponse": {
+        "properties": {
+          "new_name": {
+            "title": "New Name",
+            "type": "string"
+          },
+          "old_name": {
+            "title": "Old Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_name",
+          "new_name",
+          "path"
+        ],
+        "title": "ToolRenameResponse",
+        "type": "object"
+      },
+      "ToolSourceResponse": {
+        "properties": {
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "package",
+              "custom"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_name",
+          "path",
+          "source_kind",
+          "editable"
+        ],
+        "title": "ToolSourceResponse",
+        "type": "object"
+      },
+      "ToolUsageResponse": {
+        "properties": {
+          "affected_workflows": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected Workflows",
+            "type": "array"
+          },
+          "in_open_workflow": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Open Workflow"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_name",
+          "affected_workflows"
+        ],
+        "title": "ToolUsageResponse",
+        "type": "object"
+      },
+      "UploadError": {
+        "description": "A per-file upload failure, inside `UploadResponse.errors`.\n\nDistinct from the top-level `ErrorResponse` (which is used only for\nrequest-level failures like 400 / 413 / 404).",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "error",
+          "detail"
+        ],
+        "title": "UploadError",
+        "type": "object"
+      },
+      "UploadResponse": {
+        "description": "Response body for `POST /datasets/upload`.",
+        "properties": {
+          "errors": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UploadError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "uploaded": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UploadedFile"
+            },
+            "title": "Uploaded",
+            "type": "array"
+          }
+        },
+        "title": "UploadResponse",
+        "type": "object"
+      },
+      "UploadedFile": {
+        "description": "A successfully-stored file, inside `UploadResponse.uploaded`.",
+        "properties": {
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "upload_date": {
+            "title": "Upload Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "original_filename",
+          "path",
+          "size",
+          "upload_date"
+        ],
+        "title": "UploadedFile",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationResult": {
+        "description": "Result of validating a graph.",
+        "properties": {
+          "errors": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphValidationError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "node_statuses": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NodeStatus"
+            },
+            "default": {},
+            "title": "Node Statuses",
+            "type": "object"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid"
+        ],
+        "title": "ValidationResult",
+        "type": "object"
+      },
+      "WorkflowCreate": {
+        "description": "Request body for POST /workflows.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "storage_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Path"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "WorkflowCreate",
+        "type": "object"
+      },
+      "WorkflowFile": {
+        "description": "Workflow file response returned to the frontend.",
+        "properties": {
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          },
+          "gui": {
+            "additionalProperties": true,
+            "title": "Gui",
+            "type": "object"
+          },
+          "info": {
+            "$ref": "#/components/schemas/WorkflowInfo"
+          },
+          "missing_packages": {
+            "items": {
+              "$ref": "#/components/schemas/MissingPackage"
+            },
+            "title": "Missing Packages",
+            "type": "array"
+          },
+          "missing_tools": {
+            "items": {
+              "$ref": "#/components/schemas/MissingTool"
+            },
+            "title": "Missing Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "info",
+          "graph"
+        ],
+        "title": "WorkflowFile",
+        "type": "object"
+      },
+      "WorkflowImportResponse": {
+        "description": "Workflow import success response.",
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/WorkflowInfo"
+          },
+          "missing_packages": {
+            "items": {
+              "$ref": "#/components/schemas/MissingPackage"
+            },
+            "title": "Missing Packages",
+            "type": "array"
+          },
+          "missing_tools": {
+            "items": {
+              "$ref": "#/components/schemas/MissingTool"
+            },
+            "title": "Missing Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "info"
+        ],
+        "title": "WorkflowImportResponse",
+        "type": "object"
+      },
+      "WorkflowInfo": {
+        "description": "Workflow list item returned by GET /workflows.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "last_modified": {
+            "title": "Last Modified",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "storage_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Path"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "path",
+          "last_modified"
+        ],
+        "title": "WorkflowInfo",
+        "type": "object"
+      },
+      "WorkflowSaveBody": {
+        "description": "Request body for PUT /workflows/{name}.",
+        "properties": {
+          "graph": {
+            "$ref": "#/components/schemas/GraphState"
+          }
+        },
+        "required": [
+          "graph"
+        ],
+        "title": "WorkflowSaveBody",
+        "type": "object"
+      },
+      "WorkflowUpdate": {
+        "description": "Request body for PATCH /workflows/{name}.",
+        "properties": {
+          "action": {
+            "enum": [
+              "update",
+              "duplicate"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "new_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Name"
+          },
+          "storage_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Path"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "WorkflowUpdate",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "BioImageFlow Server",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/datasets": {
+      "get": {
+        "operationId": "list_datasets_api_v1_datasets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Dataset"
+                  },
+                  "title": "Response List Datasets Api V1 Datasets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Datasets",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/upload": {
+      "post": {
+        "operationId": "upload_datasets_api_v1_datasets_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_datasets_api_v1_datasets_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Datasets",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/datasets/{dataset_id}": {
+      "delete": {
+        "operationId": "delete_dataset_api_v1_datasets__dataset_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Dataset",
+        "tags": [
+          "datasets"
+        ]
+      }
+    },
+    "/api/v1/editor/open": {
+      "post": {
+        "operationId": "open_editor_path_api_v1_editor_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditorOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditorOpenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Editor Path",
+        "tags": [
+          "editor"
+        ]
+      }
+    },
+    "/api/v1/editor/status": {
+      "get": {
+        "operationId": "get_editor_status_api_v1_editor_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "launch",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Launch",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditorStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Editor Status",
+        "tags": [
+          "editor"
+        ]
+      }
+    },
+    "/api/v1/execution/clear": {
+      "post": {
+        "operationId": "clear_execution_api_v1_execution_clear_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clear Execution Api V1 Execution Clear Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Execution",
+        "tags": [
+          "execution"
+        ]
+      }
+    },
+    "/api/v1/execution/run": {
+      "post": {
+        "operationId": "run_execution_api_v1_execution_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecutionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Execution",
+        "tags": [
+          "execution"
+        ]
+      }
+    },
+    "/api/v1/execution/status": {
+      "get": {
+        "operationId": "get_status_api_v1_execution_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Status Api V1 Execution Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Status",
+        "tags": [
+          "execution"
+        ]
+      }
+    },
+    "/api/v1/execution/stop": {
+      "post": {
+        "operationId": "stop_execution_api_v1_execution_stop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Execution Api V1 Execution Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stop Execution",
+        "tags": [
+          "execution"
+        ]
+      }
+    },
+    "/api/v1/fs/reveal": {
+      "post": {
+        "description": "Open the given path in the system file browser.",
+        "operationId": "reveal_path_api_v1_fs_reveal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Reveal Path Api V1 Fs Reveal Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reveal Path"
+      }
+    },
+    "/api/v1/graph": {
+      "put": {
+        "operationId": "validate_graph_endpoint_api_v1_graph_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GraphState"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GraphValidationRequest"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Graph Endpoint",
+        "tags": [
+          "graph"
+        ]
+      }
+    },
+    "/api/v1/graph/nodes/{node_id}/output_schema": {
+      "post": {
+        "description": "Return the resolved output column schema for a single node.\n\nThe full ``GraphState`` is required because schema resolution may\ndepend on upstream wiring (e.g. merge tools). Build failures return\n``{resolved: false, columns: {}}`` \u2014 input edits frequently produce\ntransiently invalid graph states.",
+        "operationId": "resolve_node_output_schema_api_v1_graph_nodes__node_id__output_schema_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphState"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeOutputSchemaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Node Output Schema",
+        "tags": [
+          "graph"
+        ]
+      }
+    },
+    "/api/v1/graph/nodes/{node_id}/parameters": {
+      "patch": {
+        "operationId": "patch_node_parameters_api_v1_graph_nodes__node_id__parameters_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tool Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParameterPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Node Parameters",
+        "tags": [
+          "graph"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Api V1 Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/v1/napari/open": {
+      "post": {
+        "operationId": "open_in_napari_api_v1_napari_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NapariOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Open In Napari Api V1 Napari Open Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open In Napari",
+        "tags": [
+          "napari"
+        ]
+      }
+    },
+    "/api/v1/napari/shutdown": {
+      "post": {
+        "operationId": "shutdown_napari_api_v1_napari_shutdown_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Shutdown Napari Api V1 Napari Shutdown Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Shutdown Napari",
+        "tags": [
+          "napari"
+        ]
+      }
+    },
+    "/api/v1/napari/status": {
+      "get": {
+        "operationId": "napari_status_api_v1_napari_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NapariStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Napari Status",
+        "tags": [
+          "napari"
+        ]
+      }
+    },
+    "/api/v1/nodes/{node_id}/data": {
+      "get": {
+        "operationId": "get_node_data_api_v1_nodes__node_id__data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sort By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Sort Order",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tool Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeDataResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Node Data",
+        "tags": [
+          "nodes"
+        ]
+      }
+    },
+    "/api/v1/nodes/{node_id}/data/csv": {
+      "get": {
+        "operationId": "download_node_csv_api_v1_nodes__node_id__data_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Node Csv",
+        "tags": [
+          "nodes"
+        ]
+      }
+    },
+    "/api/v1/nodes/{node_id}/thumbnail": {
+      "get": {
+        "operationId": "get_node_thumbnail_api_v1_nodes__node_id__thumbnail_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "col",
+            "required": true,
+            "schema": {
+              "title": "Col",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "row",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Row",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 128,
+              "maximum": 1024,
+              "minimum": 16,
+              "title": "Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Node Thumbnail",
+        "tags": [
+          "nodes"
+        ]
+      }
+    },
+    "/api/v1/tools": {
+      "get": {
+        "operationId": "list_tools_api_v1_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ToolMetadata"
+                  },
+                  "title": "Response List Tools Api V1 Tools Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tools",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "operationId": "create_tool_api_v1_tools_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Tool",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/environments/{env_name}/start": {
+      "post": {
+        "operationId": "start_environment_api_v1_tools_environments__env_name__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "env_name",
+            "required": true,
+            "schema": {
+              "title": "Env Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Start Environment Api V1 Tools Environments  Env Name  Start Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Environment",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/environments/{env_name}/stop": {
+      "post": {
+        "operationId": "stop_environment_api_v1_tools_environments__env_name__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "env_name",
+            "required": true,
+            "schema": {
+              "title": "Env Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Stop Environment Api V1 Tools Environments  Env Name  Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Environment",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/packages": {
+      "get": {
+        "operationId": "list_packages_api_v1_tools_packages_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PackageInfo"
+                  },
+                  "title": "Response List Packages Api V1 Tools Packages Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Packages",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/packages/refresh": {
+      "post": {
+        "operationId": "refresh_packages_api_v1_tools_packages_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Refresh Packages Api V1 Tools Packages Refresh Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Packages",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/packages/{package_name}": {
+      "delete": {
+        "operationId": "uninstall_package_api_v1_tools_packages__package_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_name",
+            "required": true,
+            "schema": {
+              "title": "Package Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Uninstall Package Api V1 Tools Packages  Package Name  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Uninstall Package",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/packages/{package_name}/install": {
+      "post": {
+        "operationId": "install_package_api_v1_tools_packages__package_name__install_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_name",
+            "required": true,
+            "schema": {
+              "title": "Package Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Install Package Api V1 Tools Packages  Package Name  Install Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install Package",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/packages/{package_name}/use": {
+      "post": {
+        "operationId": "use_package_version_api_v1_tools_packages__package_name__use_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_name",
+            "required": true,
+            "schema": {
+              "title": "Package Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Use Package Version Api V1 Tools Packages  Package Name  Use Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Use Package Version",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/{tool_name}": {
+      "delete": {
+        "operationId": "delete_tool_api_v1_tools__tool_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_name",
+            "required": true,
+            "schema": {
+              "title": "Tool Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Tool",
+        "tags": [
+          "tools"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_tool_api_v1_tools__tool_name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_name",
+            "required": true,
+            "schema": {
+              "title": "Tool Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolRenameResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Tool",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/{tool_name}/source": {
+      "get": {
+        "operationId": "get_tool_source_api_v1_tools__tool_name__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_name",
+            "required": true,
+            "schema": {
+              "title": "Tool Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tool Source",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/tools/{tool_name}/usage": {
+      "get": {
+        "operationId": "get_tool_usage_api_v1_tools__tool_name__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_name",
+            "required": true,
+            "schema": {
+              "title": "Tool Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workflow_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolUsageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tool Usage",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/workflows": {
+      "get": {
+        "operationId": "list_workflows_api_v1_workflows_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowInfo"
+                  },
+                  "title": "Response List Workflows Api V1 Workflows Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Workflows",
+        "tags": [
+          "workflows"
+        ]
+      },
+      "post": {
+        "operationId": "create_workflow_api_v1_workflows_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Workflow",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/import": {
+      "post": {
+        "operationId": "import_workflow_api_v1_workflows_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_workflow_api_v1_workflows_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Workflow",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{name}": {
+      "delete": {
+        "operationId": "delete_workflow_api_v1_workflows__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Delete Workflow Api V1 Workflows  Name  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Workflow",
+        "tags": [
+          "workflows"
+        ]
+      },
+      "get": {
+        "operationId": "get_workflow_api_v1_workflows__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Workflow",
+        "tags": [
+          "workflows"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_workflow_api_v1_workflows__name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Workflow",
+        "tags": [
+          "workflows"
+        ]
+      },
+      "put": {
+        "operationId": "save_workflow_api_v1_workflows__name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowSaveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Workflow",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{name}/export": {
+      "post": {
+        "operationId": "export_workflow_api_v1_workflows__name__export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Workflow",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{name}/rebind-versions": {
+      "post": {
+        "operationId": "rebind_workflow_versions_api_v1_workflows__name__rebind_versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rebind Workflow Versions",
+        "tags": [
+          "workflows"
+        ]
+      }
+    }
+  }
+}
