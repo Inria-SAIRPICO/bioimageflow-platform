@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from bioimageflow_server.models.settings import Settings
-from bioimageflow_server.services.openhands import OpenHandsService
+from bioimageflow_server.services.openhands import OpenHandsLaunchError, OpenHandsService
 
 
 pytestmark = pytest.mark.anyio
@@ -128,6 +128,18 @@ async def test_launch_builds_process_runtime_loopback_command_and_scrubbed_env(
     assert "OPENAI_API_KEY" not in child_env
     assert calls[0]["kwargs"]["cwd"] == str(tmp_path)
     assert calls[0]["kwargs"]["start_new_session"] is True
+
+
+def test_configured_command_must_use_openhands_executable(tmp_path: Path) -> None:
+    settings = Settings(
+        deployment_mode="desktop",
+        openhands_command="python -m openhands web --host 127.0.0.1",
+        openhands_workspace=str(tmp_path),
+    )
+    service = _service(settings)
+
+    with pytest.raises(OpenHandsLaunchError, match="executable must be 'openhands'"):
+        service._command_and_env(settings)
 
 
 async def test_shutdown_terminates_only_owned_process(

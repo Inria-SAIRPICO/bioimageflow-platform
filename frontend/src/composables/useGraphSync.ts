@@ -194,7 +194,7 @@ function activeGraphSync(): GraphDraftSync {
 
 function _createActiveGraphSyncFacade(): GraphDraftSync {
   return {
-    syncGraph: (graph) => activeGraphSync().syncGraph(graph),
+    syncGraph: (graph) => ensureLegacyGraphSync().syncGraph(graph),
     flushNow: () => activeGraphSync().flushNow(),
     patchParameters: (nodeId, toolName, parameters) =>
       activeGraphSync().patchParameters(nodeId, toolName, parameters),
@@ -317,6 +317,7 @@ function _createGraphSync(options: {
         const data = response.data as {
           draft_id?: string
           revision?: number
+          validation?: ValidationResult
           validation_result?: ValidationResult
         } | ValidationResult
         if ('draft_id' in data && data.draft_id !== undefined) {
@@ -326,9 +327,11 @@ function _createGraphSync(options: {
           revision.value = data.revision
         }
         validationResult.value =
-          'validation_result' in data && data.validation_result
-            ? data.validation_result
-            : data as ValidationResult
+          'validation' in data && data.validation
+            ? data.validation
+            : 'validation_result' in data && data.validation_result
+              ? data.validation_result
+              : data as ValidationResult
         dirty.value = false
         pending_sync.value = false
         syncState.value = 'idle'
@@ -364,12 +367,31 @@ function _createGraphSync(options: {
   ): Promise<void> {
     syncState.value = 'pending'
     try {
-      const response = await api.patch(
-        `/api/v1/graph/nodes/${nodeId}/parameters`,
-        { parameters },
-        { params: { tool_name: toolName } },
-      )
-      const patch = response.data as ValidationResult | undefined
+      const response = draft_id.value
+        ? await api.patch(
+          `/api/v1/workflow-drafts/${encodeURIComponent(draft_id.value)}/nodes/${nodeId}/parameters`,
+          {
+            parameters,
+            base_revision: revision.value,
+            client_seq: client_seq.value + 1,
+          },
+        )
+        : await api.patch(
+          `/api/v1/graph/nodes/${nodeId}/parameters`,
+          { parameters },
+          { params: { tool_name: toolName } },
+        )
+      const data = response.data as {
+        revision?: number
+        validation?: ValidationResult
+      } | ValidationResult | undefined
+      if (data && 'revision' in data && typeof data.revision === 'number') {
+        revision.value = data.revision
+        client_seq.value += 1
+      }
+      const patch = data && 'validation' in data && data.validation
+        ? data.validation
+        : data as ValidationResult | undefined
       if (patch) {
         // Merge: update only the patched node's entry; replace the errors
         // list with the server response's errors scoped to that node.

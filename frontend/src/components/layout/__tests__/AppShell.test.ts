@@ -151,6 +151,10 @@ describe('AppShell', () => {
     document.documentElement.style.colorScheme = ''
     connectMock.mockClear()
     disconnectMock.mockClear()
+    useSettingsStore().settings = {
+      deployment_mode: 'desktop',
+      enable_unsafe_webapp_features: false,
+    } as any
   })
 
   it('renders #bioimageflow-app wrapper', () => {

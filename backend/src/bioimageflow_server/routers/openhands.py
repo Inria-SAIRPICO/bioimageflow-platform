@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from bioimageflow_server.models.openhands import OpenHandsContext, OpenHandsStatus
@@ -59,6 +61,19 @@ def openhands_context(
     service: OpenHandsService = Depends(get_openhands_service),
 ) -> OpenHandsContext:
     return service.context()
+
+
+@router.post("/context")
+def receive_openhands_context(
+    payload: dict[str, Any],
+    service: OpenHandsService = Depends(get_openhands_service),
+) -> dict[str, Any]:
+    context = service.context()
+    return {
+        "accepted": context.available,
+        "context": payload,
+        "message": context.reason,
+    }
 
 
 def _unavailable_error(exc: Exception) -> HTTPException:

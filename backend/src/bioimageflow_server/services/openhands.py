@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shlex
+import signal
 import socket
 import subprocess
 import time
@@ -114,7 +115,7 @@ class OpenHandsService:
                 self._pid = None
                 return self.status()
 
-            proc.terminate()
+            self._terminate_process_group(proc, kill=False)
             try:
                 await asyncio.to_thread(proc.wait, _SHUTDOWN_WAIT_SECONDS)
             except subprocess.TimeoutExpired:
@@ -122,7 +123,7 @@ class OpenHandsService:
                     "openhands did not exit within %.1fs; killing",
                     _SHUTDOWN_WAIT_SECONDS,
                 )
-                proc.kill()
+                self._terminate_process_group(proc, kill=True)
             except Exception as exc:  # noqa: BLE001
                 _logger.warning("openhands wait raised: %r", exc)
             finally:
@@ -178,10 +179,10 @@ class OpenHandsService:
         if not tokens:
             raise OpenHandsLaunchError("openhands_command did not contain an executable")
 
-        self._validate_command_hosts(tokens)
+        tokens = self._normalize_command_args(tokens, settings)
         child_env = self._scrubbed_env()
         child_env.update(env_assignments)
-        child_env.setdefault("RUNTIME", settings.openhands_runtime)
+        child_env["RUNTIME"] = settings.openhands_runtime
         return tokens, child_env
 
     def _wait_until_listening(self, host: str, port: int, timeout: float) -> None:
@@ -223,15 +224,55 @@ class OpenHandsService:
         host = f"[{settings.openhands_host}]" if ":" in settings.openhands_host else settings.openhands_host
         return f"http://{host}:{settings.openhands_port}"
 
-    def _validate_command_hosts(self, args: list[str]) -> None:
-        for index, arg in enumerate(args):
+    def _normalize_command_args(self, args: list[str], settings: Settings) -> list[str]:
+        executable = Path(args[0]).name
+        if executable != "openhands":
+            raise OpenHandsLaunchError("openhands_command executable must be 'openhands'")
+
+        normalized: list[str] = []
+        host_seen = False
+        port_seen = False
+        index = 0
+        while index < len(args):
+            arg = args[index]
             host: str | None = None
-            if arg == "--host" and index + 1 < len(args):
+            if arg == "--host":
+                if index + 1 >= len(args):
+                    raise OpenHandsLaunchError("OpenHands command --host is missing a value")
                 host = args[index + 1]
+                host_seen = True
+                if not _is_loopback_host(host):
+                    raise OpenHandsLaunchError("OpenHands command host must be loopback-only")
+                normalized.extend(["--host", settings.openhands_host])
+                index += 2
+                continue
             elif arg.startswith("--host="):
                 host = arg.split("=", 1)[1]
-            if host is not None and not _is_loopback_host(host):
-                raise OpenHandsLaunchError("OpenHands command host must be loopback-only")
+                host_seen = True
+                if not _is_loopback_host(host):
+                    raise OpenHandsLaunchError("OpenHands command host must be loopback-only")
+                normalized.append(f"--host={settings.openhands_host}")
+                index += 1
+                continue
+            if arg == "--port":
+                if index + 1 >= len(args):
+                    raise OpenHandsLaunchError("OpenHands command --port is missing a value")
+                port_seen = True
+                normalized.extend(["--port", str(settings.openhands_port)])
+                index += 2
+                continue
+            if arg.startswith("--port="):
+                port_seen = True
+                normalized.append(f"--port={settings.openhands_port}")
+                index += 1
+                continue
+            normalized.append(arg)
+            index += 1
+        if not host_seen:
+            normalized.extend(["--host", settings.openhands_host])
+        if not port_seen:
+            normalized.extend(["--port", str(settings.openhands_port)])
+        return normalized
 
     def _scrubbed_env(self) -> dict[str, str]:
         env: dict[str, str] = {}
@@ -248,9 +289,20 @@ class OpenHandsService:
         if proc.poll() is not None:
             return
         try:
-            proc.terminate()
+            self._terminate_process_group(proc, kill=False)
             proc.wait(timeout=_SHUTDOWN_WAIT_SECONDS)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            self._terminate_process_group(proc, kill=True)
         except Exception:  # noqa: BLE001
             _logger.warning("failed to terminate failed OpenHands launch", exc_info=True)
+
+    def _terminate_process_group(self, proc: subprocess.Popen[Any], *, kill: bool) -> None:
+        sig = signal.SIGKILL if kill else signal.SIGTERM
+        try:
+            os.killpg(proc.pid, sig)
+            return
+        except (AttributeError, ProcessLookupError, PermissionError, OSError):
+            if kill:
+                proc.kill()
+            else:
+                proc.terminate()

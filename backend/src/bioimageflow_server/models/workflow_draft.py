@@ -29,7 +29,7 @@ class WorkflowDraftParameterPatch(BaseModel):
     """Request body for PATCH /workflow-drafts/{draft_id}/nodes/{node_id}/parameters."""
 
     parameters: dict[str, Any]
-    base_revision: int | None = None
+    base_revision: int
     client_seq: int | None = None
 
 

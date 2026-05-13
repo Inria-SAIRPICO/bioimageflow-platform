@@ -25,6 +25,9 @@ const {
   isSendingContext,
   isReviewingProposal,
   iframeBlocked,
+  canStart,
+  canShutdown,
+  canReviewProposal,
 } = storeToRefs(agentStore)
 
 const workflowLabel = computed(() => (
@@ -48,7 +51,10 @@ function currentContextPayload() {
     selected_node_ids: [...uiStore.selectedNodeIds],
     dirty: uiStore.hasUnsavedChanges,
     draft: {
+      draft_id: graphSync.draft_id.value,
       graph: graphSync.currentGraph.value,
+      workflow_name: workflowStore.current?.name ?? null,
+      workflow_display_name: workflowStore.current?.display_name ?? uiStore.activeWorkflowName,
     },
   }
 }
@@ -79,7 +85,7 @@ onMounted(() => {
       <div class="openhands-agent-panel__actions">
         <button
           type="button"
-          :disabled="isStarting || status === 'running'"
+          :disabled="!canStart"
           data-testid="openhands-agent-start"
           @click="agentStore.start"
         >
@@ -87,7 +93,7 @@ onMounted(() => {
         </button>
         <button
           type="button"
-          :disabled="isStarting"
+          :disabled="!canStart"
           data-testid="openhands-agent-retry"
           @click="agentStore.retry"
         >
@@ -95,7 +101,7 @@ onMounted(() => {
         </button>
         <button
           type="button"
-          :disabled="isShuttingDown || status !== 'running'"
+          :disabled="!canShutdown"
           data-testid="openhands-agent-shutdown"
           @click="agentStore.shutdown"
         >
@@ -187,7 +193,7 @@ onMounted(() => {
         <div class="openhands-agent-panel__proposal-actions">
           <button
             type="button"
-            :disabled="isReviewingProposal"
+            :disabled="!canReviewProposal"
             data-testid="openhands-agent-apply-proposal"
             @click="agentStore.applyProposal(proposal.id)"
           >

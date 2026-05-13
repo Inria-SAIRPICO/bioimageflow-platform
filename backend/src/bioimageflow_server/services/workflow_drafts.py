@@ -76,13 +76,13 @@ class WorkflowDraftManager:
         node_id: str,
         parameters: dict,
         *,
-        base_revision: int | None = None,
+        base_revision: int,
         client_seq: int | None = None,
     ) -> WorkflowDraftState:
         state = self._drafts.get(draft_id)
         if state is None:
             raise WorkflowDraftNotFoundError(draft_id)
-        if base_revision is not None and base_revision != state.revision:
+        if base_revision != state.revision:
             raise StaleWorkflowDraftError(
                 current_revision=state.revision,
                 requested_revision=base_revision,

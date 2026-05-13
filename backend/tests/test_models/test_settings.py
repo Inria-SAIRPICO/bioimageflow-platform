@@ -79,9 +79,9 @@ class TestSettings:
             == "RUNTIME={runtime} openhands web --host {host} --port {port}"
         )
         assert s.openhands_host == "127.0.0.1"
-        assert s.openhands_port == 3000
+        assert s.openhands_port == 12000
         assert s.openhands_workspace == "~/bioimageflow_openhands"
-        assert s.openhands_startup_timeout == 30.0
+        assert s.openhands_startup_timeout == 60.0
         assert s.openhands_process_acknowledged is False
 
     def test_unsafe_webapp_features_flag(self):

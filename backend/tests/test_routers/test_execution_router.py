@@ -269,6 +269,7 @@ async def test_run_accepts_draft_id_without_graph(tmp_path: Path) -> None:
 
     assert resp.status_code == 202, resp.text
     assert em.start.call_args.args[0].nodes[0].id == "n1"
+    assert em.start.call_args.kwargs["use_cached_session"] is False
 
 
 # ---- POST /execution/stop ---------------------------------------------------

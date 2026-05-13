@@ -93,12 +93,12 @@ class Settings(BaseModel):
     datasets_root: str | None = None
     max_upload_size: int = _DEFAULT_MAX_UPLOAD_SIZE
     openhands_enabled: bool | None = None
-    openhands_runtime: str = "process"
+    openhands_runtime: Literal["process"] = "process"
     openhands_command: str = "RUNTIME={runtime} openhands web --host {host} --port {port}"
     openhands_host: str = "127.0.0.1"
-    openhands_port: int = Field(default=3000, ge=1, le=65535)
+    openhands_port: int = Field(default=12000, ge=1, le=65535)
     openhands_workspace: str = "~/bioimageflow_openhands"
-    openhands_startup_timeout: float = Field(default=30.0, ge=0)
+    openhands_startup_timeout: float = Field(default=60.0, ge=0)
     openhands_process_acknowledged: bool = False
 
     @field_validator(

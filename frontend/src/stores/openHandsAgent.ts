@@ -13,13 +13,20 @@ import {
   type OpenHandsProposal,
   type OpenHandsProposalActionResponse,
 } from '@/api/openhands'
+import { useUIStore } from '@/stores/ui'
 
 function messageFromError(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
 function actionDraft(response: OpenHandsProposalActionResponse) {
-  return response.draft ?? response.proposal?.draft ?? null
+  if (response.draft ?? response.proposal?.draft) {
+    return response.draft ?? response.proposal?.draft ?? null
+  }
+  if (response.graph) {
+    return { graph: response.graph }
+  }
+  return null
 }
 
 export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
@@ -40,6 +47,9 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   const isRunning = computed(() => status.value === 'running')
   const canStart = computed(() => available.value && !isStarting.value && status.value !== 'running')
   const canShutdown = computed(() => available.value && !isShuttingDown.value && status.value === 'running')
+  const canReviewProposal = computed(() => (
+    !isReviewingProposal.value && !useUIStore().isExecutionLocked
+  ))
 
   function applyStatus(next: OpenHandsAgentStatus): void {
     available.value = next.available
@@ -66,6 +76,7 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   }
 
   async function start(): Promise<void> {
+    if (!canStart.value) return
     isStarting.value = true
     try {
       applyStatus(await startOpenHandsAgent())
@@ -117,9 +128,20 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   }
 
   async function applyProposal(proposalId: string): Promise<void> {
+    const uiStore = useUIStore()
+    if (uiStore.isExecutionLocked) {
+      message.value = 'Proposal review is disabled while execution is running.'
+      return
+    }
+    const proposal = proposals.value.find((item) => item.id === proposalId)
+    const draftId = proposal?.draft_id ?? context.value?.draft?.draft_id ?? null
+    if (!draftId) {
+      message.value = 'Proposal is missing a draft id.'
+      return
+    }
     isReviewingProposal.value = true
     try {
-      const response = await applyOpenHandsProposal(proposalId)
+      const response = await applyOpenHandsProposal(draftId, proposalId)
       const draft = actionDraft(response)
       if (draft?.graph) {
         window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
@@ -140,9 +162,15 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   }
 
   async function rejectProposal(proposalId: string): Promise<void> {
+    const proposal = proposals.value.find((item) => item.id === proposalId)
+    const draftId = proposal?.draft_id ?? context.value?.draft?.draft_id ?? null
+    if (!draftId) {
+      message.value = 'Proposal is missing a draft id.'
+      return
+    }
     isReviewingProposal.value = true
     try {
-      await rejectOpenHandsProposal(proposalId)
+      await rejectOpenHandsProposal(draftId, proposalId)
       removeProposal(proposalId)
     } catch (err: unknown) {
       message.value = messageFromError(err)
@@ -172,6 +200,7 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
     isRunning,
     canStart,
     canShutdown,
+    canReviewProposal,
     applyStatus,
     refreshStatus,
     start,

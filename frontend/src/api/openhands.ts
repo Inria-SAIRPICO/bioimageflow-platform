@@ -12,6 +12,7 @@ export type OpenHandsAgentStatusValue =
 export type OpenHandsProposalStatus = 'pending' | 'applied' | 'rejected'
 
 export interface OpenHandsWorkflowDraft {
+  draft_id?: string | null
   graph: GraphState
   workflow_name?: string | null
   workflow_display_name?: string | null
@@ -30,6 +31,7 @@ export interface OpenHandsProposal {
   title: string
   summary: string
   status: OpenHandsProposalStatus
+  draft_id?: string | null
   draft?: OpenHandsWorkflowDraft | null
 }
 
@@ -54,21 +56,44 @@ export interface OpenHandsProposalActionResponse {
   rejected?: boolean
   proposal?: OpenHandsProposal | null
   draft?: OpenHandsWorkflowDraft | null
+  draft_id?: string
+  revision?: number
+  graph?: GraphState
+  validation?: unknown
+}
+
+interface BackendOpenHandsStatus {
+  available: boolean
+  running: boolean
+  pid?: number | null
+  url?: string | null
+  reason?: string | null
+}
+
+function mapBackendStatus(data: BackendOpenHandsStatus): OpenHandsAgentStatus {
+  return {
+    available: data.available,
+    status: !data.available ? 'unavailable' : data.running ? 'running' : 'stopped',
+    iframe_url: data.url ?? null,
+    external_url: data.url ?? null,
+    message: data.reason ?? null,
+    proposals: [],
+  }
 }
 
 export async function getOpenHandsStatus(): Promise<OpenHandsAgentStatus> {
-  const { data } = await api.get<OpenHandsAgentStatus>('/api/v1/openhands/status')
-  return data
+  const { data } = await api.get<BackendOpenHandsStatus>('/api/v1/openhands/status')
+  return mapBackendStatus(data)
 }
 
 export async function startOpenHandsAgent(): Promise<OpenHandsAgentStatus> {
-  const { data } = await api.post<OpenHandsAgentStatus>('/api/v1/openhands/start')
-  return data
+  const { data } = await api.post<BackendOpenHandsStatus>('/api/v1/openhands/launch')
+  return mapBackendStatus(data)
 }
 
 export async function shutdownOpenHandsAgent(): Promise<OpenHandsAgentStatus> {
-  const { data } = await api.post<OpenHandsAgentStatus>('/api/v1/openhands/shutdown')
-  return data
+  const { data } = await api.post<BackendOpenHandsStatus>('/api/v1/openhands/shutdown')
+  return mapBackendStatus(data)
 }
 
 export async function sendOpenHandsContext(
@@ -82,19 +107,21 @@ export async function sendOpenHandsContext(
 }
 
 export async function applyOpenHandsProposal(
+  draftId: string,
   proposalId: string,
 ): Promise<OpenHandsProposalActionResponse> {
   const { data } = await api.post<OpenHandsProposalActionResponse>(
-    `/api/v1/openhands/proposals/${encodeURIComponent(proposalId)}/apply`,
+    `/api/v1/workflow-drafts/${encodeURIComponent(draftId)}/agent-proposals/${encodeURIComponent(proposalId)}/apply`,
   )
   return data
 }
 
 export async function rejectOpenHandsProposal(
+  draftId: string,
   proposalId: string,
 ): Promise<OpenHandsProposalActionResponse> {
   const { data } = await api.post<OpenHandsProposalActionResponse>(
-    `/api/v1/openhands/proposals/${encodeURIComponent(proposalId)}/reject`,
+    `/api/v1/workflow-drafts/${encodeURIComponent(draftId)}/agent-proposals/${encodeURIComponent(proposalId)}/reject`,
   )
   return data
 }

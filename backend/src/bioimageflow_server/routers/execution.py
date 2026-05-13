@@ -128,6 +128,7 @@ async def run_execution(
             graph,
             nodes=body.nodes,
             storage_path=run_storage_path,
+            use_cached_session=body.draft_id is None,
         )
     except ExecutionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

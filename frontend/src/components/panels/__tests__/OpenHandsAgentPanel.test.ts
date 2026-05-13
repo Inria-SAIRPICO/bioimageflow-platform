@@ -8,6 +8,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 
 const graphSyncState = vi.hoisted(() => ({
   currentGraph: { value: { nodes: [] as any[], edges: [] as any[] } },
+  draft_id: { value: 'draft-1' as string | null },
 }))
 
 vi.mock('@/composables/useGraphSync', () => ({
@@ -19,6 +20,7 @@ describe('OpenHandsAgentPanel', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     graphSyncState.currentGraph.value = { nodes: [], edges: [] }
+    graphSyncState.draft_id.value = 'draft-1'
   })
 
   it('loads status on mount and renders unavailable state', async () => {
@@ -103,7 +105,12 @@ describe('OpenHandsAgentPanel', () => {
       workflow_display_name: 'Cells',
       selected_node_ids: ['segment'],
       dirty: true,
-      draft: { graph: graphSyncState.currentGraph.value },
+      draft: {
+        draft_id: 'draft-1',
+        graph: graphSyncState.currentGraph.value,
+        workflow_name: 'cells',
+        workflow_display_name: 'Cells',
+      },
     })
     expect(wrapper.find('[data-testid="openhands-agent-context"]').text()).toContain('Cells')
   })
@@ -124,6 +131,7 @@ describe('OpenHandsAgentPanel', () => {
         title: 'Add segmentation',
         summary: 'Adds a segmentation node.',
         status: 'pending',
+        draft_id: 'draft-1',
         draft: { graph: { nodes: [], edges: [] } },
       }],
     })

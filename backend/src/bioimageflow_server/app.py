@@ -46,6 +46,8 @@ from bioimageflow_server.routers.graph import (
     router as graph_router,
 )
 from bioimageflow_server.routers.graph_proposals import (
+    draft_router as graph_proposals_draft_router,
+    get_execution_manager as graph_proposals_get_execution_manager,
     get_graph_proposal_manager,
     router as graph_proposals_router,
 )
@@ -413,6 +415,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     detail=str(detail_dict.get("detail", "")),
                     field=detail_dict.get("field"),
                 )
+                content = body.model_dump()
+                for key, value in detail_dict.items():
+                    if key not in content:
+                        content[key] = value
+                return JSONResponse(status_code=exc.status_code, content=content)
             else:
                 error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
                 body = ErrorResponse(
@@ -463,6 +470,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(editor_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(graph_proposals_router, prefix="/api/v1")
+    app.include_router(graph_proposals_draft_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
@@ -488,6 +496,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[workflow_drafts_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[graph_proposals_get_execution_manager] = (
+        lambda: execution_manager
+    )
     app.dependency_overrides[graph_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflow_drafts_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[get_workflow_draft_manager] = lambda: workflow_draft_manager

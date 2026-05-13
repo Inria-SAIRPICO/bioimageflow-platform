@@ -79,6 +79,9 @@ const settingsStore = useSettingsStore()
 useExecutionLock()
 
 onMounted(() => {
+  if (!settingsStore.isLoaded) {
+    void settingsStore.fetchSettings()
+  }
   websocket.connect()
   window.addEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
   window.addEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
@@ -174,8 +177,7 @@ const canvasContexts = new Map<string, {
 const dockviewTheme = computed(() => uiStore.isDarkTheme ? themeDark : themeLight)
 const openHandsAgentHiddenByGate = ref(false)
 const openHandsAgentEnabled = computed(() => (
-  !settingsStore.isLoaded
-  || settingsStore.isDesktop
+  settingsStore.isDesktop
   || settingsStore.unsafeWebappFeaturesEnabled
 ))
 

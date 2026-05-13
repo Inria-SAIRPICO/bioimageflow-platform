@@ -10,8 +10,11 @@ from uuid import uuid4
 from bioimageflow_server.models.graph import GraphState, NodeState
 from bioimageflow_server.models.graph_proposals import (
     AddNodeOperation,
+    AfterNodePlacement,
+    BetweenNodesPlacement,
     ConnectOperation,
     DisconnectOperation,
+    EndOfBranchPlacement,
     GraphProposal,
     GraphProposalOperation,
     ReplaceGraphOperation,
@@ -221,6 +224,11 @@ class GraphProposalManager:
         except KeyError as exc:
             raise ProposalNotFoundError(f"Proposal {proposal_id!r} not found") from exc
 
+    def reject_proposal(self, proposal_id: str) -> GraphProposal:
+        proposal = self.get_proposal(proposal_id)
+        del self._proposals[proposal_id]
+        return proposal
+
     def apply_proposal(self, proposal_id: str) -> ProposalApplyResult:
         proposal = self.get_proposal(proposal_id)
         snapshot = self._draft_store.get_snapshot(proposal.draft_id)
@@ -275,8 +283,29 @@ def _add_node(graph: GraphState, operation: AddNodeOperation) -> None:
         raise ProposalOperationError(f"Node {operation.node.id!r} already exists")
     node = operation.node.model_copy(deep=True)
     if operation.placement is not None:
+        _ensure_placement_anchors(graph, operation.placement)
         node.position = place_node(graph, operation.placement)
     graph.nodes.append(node)
+
+
+def _ensure_placement_anchors(graph: GraphState, placement: object) -> None:
+    node_ids = {node.id for node in graph.nodes}
+    if isinstance(placement, AfterNodePlacement) and placement.node_id not in node_ids:
+        raise ProposalOperationError(
+            f"Placement anchor node {placement.node_id!r} does not exist"
+        )
+    if isinstance(placement, EndOfBranchPlacement) and placement.node_id not in node_ids:
+        raise ProposalOperationError(
+            f"Placement branch node {placement.node_id!r} does not exist"
+        )
+    if isinstance(placement, BetweenNodesPlacement):
+        missing = [
+            node_id
+            for node_id in (placement.source_node, placement.target_node)
+            if node_id not in node_ids
+        ]
+        if missing:
+            raise ProposalOperationError(f"Placement node {missing[0]!r} does not exist")
 
 
 def _connect(graph: GraphState, operation: ConnectOperation) -> None:

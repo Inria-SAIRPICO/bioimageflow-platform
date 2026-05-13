@@ -25,11 +25,9 @@ describe('openhands api helpers', () => {
     mockedGet.mockResolvedValueOnce({
       data: {
         available: true,
-        status: 'running',
-        iframe_url: 'http://127.0.0.1:3000',
-        external_url: 'http://127.0.0.1:3000',
-        message: null,
-        proposals: [],
+        running: true,
+        url: 'http://127.0.0.1:12000',
+        reason: null,
       },
     })
 
@@ -42,13 +40,13 @@ describe('openhands api helpers', () => {
 
   it('starts and shuts down the agent', async () => {
     mockedPost
-      .mockResolvedValueOnce({ data: { available: true, status: 'starting' } })
-      .mockResolvedValueOnce({ data: { available: true, status: 'stopped' } })
+      .mockResolvedValueOnce({ data: { available: true, running: true } })
+      .mockResolvedValueOnce({ data: { available: true, running: false } })
 
     await startOpenHandsAgent()
     await shutdownOpenHandsAgent()
 
-    expect(mockedPost).toHaveBeenNthCalledWith(1, '/api/v1/openhands/start')
+    expect(mockedPost).toHaveBeenNthCalledWith(1, '/api/v1/openhands/launch')
     expect(mockedPost).toHaveBeenNthCalledWith(2, '/api/v1/openhands/shutdown')
   })
 
@@ -72,16 +70,16 @@ describe('openhands api helpers', () => {
       .mockResolvedValueOnce({ data: { applied: true } })
       .mockResolvedValueOnce({ data: { rejected: true } })
 
-    await applyOpenHandsProposal('proposal-1')
-    await rejectOpenHandsProposal('proposal-1')
+    await applyOpenHandsProposal('draft-1', 'proposal-1')
+    await rejectOpenHandsProposal('draft-1', 'proposal-1')
 
     expect(mockedPost).toHaveBeenNthCalledWith(
       1,
-      '/api/v1/openhands/proposals/proposal-1/apply',
+      '/api/v1/workflow-drafts/draft-1/agent-proposals/proposal-1/apply',
     )
     expect(mockedPost).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/openhands/proposals/proposal-1/reject',
+      '/api/v1/workflow-drafts/draft-1/agent-proposals/proposal-1/reject',
     )
   })
 })

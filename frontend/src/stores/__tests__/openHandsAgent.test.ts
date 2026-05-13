@@ -71,6 +71,14 @@ describe('openHandsAgent store', () => {
       proposals: [],
     })
     const store = useOpenHandsAgentStore()
+    store.applyStatus({
+      available: true,
+      status: 'stopped',
+      iframe_url: null,
+      external_url: null,
+      message: null,
+      proposals: [],
+    })
 
     await store.start()
     expect(store.status).toBe('starting')
@@ -121,6 +129,7 @@ describe('openHandsAgent store', () => {
         title: 'Add segmentation',
         summary: 'Adds a segmentation node.',
         status: 'applied',
+        draft_id: 'draft-1',
         draft: { graph: { nodes: [], edges: [] } },
       },
     })
@@ -131,16 +140,46 @@ describe('openHandsAgent store', () => {
         title: 'Add segmentation',
         summary: 'Adds a segmentation node.',
         status: 'rejected',
+        draft_id: 'draft-1',
       },
     })
     const store = useOpenHandsAgentStore()
+    store.applyStatus({
+      available: true,
+      status: 'running',
+      iframe_url: null,
+      external_url: null,
+      message: null,
+      proposals: [{
+        id: 'proposal-1',
+        title: 'Add segmentation',
+        summary: 'Adds a segmentation node.',
+        status: 'pending',
+        draft_id: 'draft-1',
+      }],
+    })
 
     await store.applyProposal('proposal-1')
+    store.applyStatus({
+      available: true,
+      status: 'running',
+      iframe_url: null,
+      external_url: null,
+      message: null,
+      proposals: [{
+        id: 'proposal-1',
+        title: 'Add segmentation',
+        summary: 'Adds a segmentation node.',
+        status: 'pending',
+        draft_id: 'draft-1',
+      }],
+    })
     await store.rejectProposal('proposal-1')
 
     expect(applyListener).toHaveBeenCalledTimes(1)
     expect(applyListener.mock.calls[0][0].detail.graph).toEqual({ nodes: [], edges: [] })
-    expect(rejectOpenHandsProposal).toHaveBeenCalledWith('proposal-1')
+    expect(applyOpenHandsProposal).toHaveBeenCalledWith('draft-1', 'proposal-1')
+    expect(rejectOpenHandsProposal).toHaveBeenCalledWith('draft-1', 'proposal-1')
     window.removeEventListener('bioimageflow:apply-graph', applyListener)
   })
 

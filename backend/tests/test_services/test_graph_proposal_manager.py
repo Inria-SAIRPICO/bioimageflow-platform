@@ -20,6 +20,7 @@ from bioimageflow_server.models.validation import ValidationResult
 from bioimageflow_server.services.graph_proposal_manager import (
     DraftSnapshot,
     GraphProposalManager,
+    ProposalOperationError,
     ProposalStaleError,
     ProposalValidationError,
 )
@@ -126,6 +127,26 @@ def test_replace_graph_operation_replaces_existing_state() -> None:
     result = manager.apply_proposal(proposal.id)
 
     assert result.graph == replacement
+
+
+def test_missing_semantic_placement_anchor_is_rejected() -> None:
+    store = RecordingDraftStore(GraphState(nodes=[_node("a")], edges=[]))
+    manager = GraphProposalManager(draft_store=store, validator=_valid)
+    proposal = manager.create_proposal(
+        draft_id="draft-1",
+        base_revision=1,
+        operations=[
+            AddNodeOperation(
+                node=_node("new"),
+                placement=AfterNodePlacement(node_id="missing"),
+            )
+        ],
+    )
+
+    with pytest.raises(ProposalOperationError):
+        manager.apply_proposal(proposal.id)
+
+    assert store.saved_graphs == []
 
 
 def test_validate_before_apply_prevents_saving_invalid_graph() -> None:

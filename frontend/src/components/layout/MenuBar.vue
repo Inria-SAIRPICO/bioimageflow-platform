@@ -108,8 +108,7 @@ type WorkflowPanelCommand = {
 }
 
 const openHandsAgentEnabled = computed(() => (
-  !settingsStore.isLoaded
-  || settingsStore.isDesktop
+  settingsStore.isDesktop
   || settingsStore.unsafeWebappFeaturesEnabled
 ))
 

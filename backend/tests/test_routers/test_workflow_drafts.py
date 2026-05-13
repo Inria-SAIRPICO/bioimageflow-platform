@@ -144,6 +144,19 @@ async def test_stale_update_returns_409(client: httpx.AsyncClient) -> None:
     assert stale.status_code == 409
     assert stale.json()["detail"] == "Stale draft base_revision"
     assert stale.json()["field"] == "base_revision"
+    assert stale.json()["current_revision"] == 2
+
+
+async def test_patch_parameters_requires_base_revision(client: httpx.AsyncClient) -> None:
+    create = await client.post("/api/v1/workflow-drafts", json={"graph": _graph()})
+    draft_id = create.json()["draft_id"]
+
+    response = await client.patch(
+        f"/api/v1/workflow-drafts/{draft_id}/nodes/n1/parameters",
+        json={"parameters": {"threshold": 0.7}},
+    )
+
+    assert response.status_code == 422
 
 
 async def test_patch_parameters_updates_graph_and_validation(

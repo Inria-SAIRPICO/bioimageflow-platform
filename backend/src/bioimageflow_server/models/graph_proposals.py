@@ -94,6 +94,14 @@ class GraphProposalCreateRequest(BaseModel):
     title: str | None = None
 
 
+class DraftGraphProposalCreateRequest(BaseModel):
+    """Draft-scoped proposal creation request."""
+
+    base_revision: int
+    operations: list[GraphProposalOperation]
+    title: str | None = None
+
+
 class GraphProposal(BaseModel):
     """Stored graph proposal."""
 
