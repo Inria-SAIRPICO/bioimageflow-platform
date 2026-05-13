@@ -13,6 +13,7 @@ import { useGraphSync } from '@/composables/useGraphSync'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
+import { useSettingsStore } from '@/stores/settings'
 import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
 import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
@@ -25,6 +26,7 @@ import type { GraphState } from '@/api/types'
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const workflowStore = useWorkflowStore()
+const settingsStore = useSettingsStore()
 const autoSave = useAutoSave()
 const graphSyncState = useGraphSync()
 const {
@@ -105,11 +107,25 @@ type WorkflowPanelCommand = {
   name?: string
 }
 
-function panelToggle(label: string, panelKey: keyof typeof uiStore.panels): MenuItem {
+const openHandsAgentEnabled = computed(() => (
+  !settingsStore.isLoaded
+  || settingsStore.isDesktop
+  || settingsStore.unsafeWebappFeaturesEnabled
+))
+
+function panelToggle(
+  label: string,
+  panelKey: keyof typeof uiStore.panels,
+  options: { disabled?: boolean } = {},
+): MenuItem {
   return {
     label,
-    icon: uiStore.panels[panelKey] ? 'pi pi-check' : undefined,
-    command: () => uiStore.togglePanel(panelKey),
+    icon: !options.disabled && uiStore.panels[panelKey] ? 'pi pi-check' : undefined,
+    disabled: options.disabled === true,
+    command: () => {
+      if (options.disabled) return
+      uiStore.togglePanel(panelKey)
+    },
   }
 }
 
@@ -596,6 +612,9 @@ const menuItems = computed<MenuItem[]>(() => [
       panelToggle('Data Table', 'dataTable'),
       panelToggle('Logger', 'logger'),
       panelToggle('Code Editor', 'codeEditor'),
+      panelToggle('OpenHands Agent', 'openHandsAgent', {
+        disabled: !openHandsAgentEnabled.value,
+      }),
     ],
   },
   {
