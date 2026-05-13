@@ -350,29 +350,13 @@ describe('AppShell', () => {
     expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
     const codeEditorCall = mockDockviewApi.addPanel.mock.calls[6][0]
     expect(codeEditorCall.id).toBe('codeEditor')
+    expect(codeEditorCall.tabComponent).toBe('codeEditorTab')
     expect(codeEditorCall.initialWidth).toBe(520)
     expect(codeEditorCall.position).toEqual({
       referencePanel: 'nodePanel',
       direction: 'right',
     })
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
-  })
-
-  it('uses Dockview popout for Code Editor pop-out events in browser mode', async () => {
-    mountApp()
-    await flushPromises()
-
-    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
-      detail: { url: 'http://127.0.0.1:32344', path: '/tmp/tool.py' },
-    }))
-    await flushPromises()
-    window.dispatchEvent(new CustomEvent('bioimageflow:popout-code-editor'))
-    await flushPromises()
-
-    expect(mockDockviewApi.addPopoutGroup).toHaveBeenCalledWith(
-      panels.get('codeEditor'),
-      { popoutUrl: '/popout.html' },
-    )
   })
 
   it('creates and activates the Code Editor panel while embedded editor is opening', async () => {
@@ -389,6 +373,7 @@ describe('AppShell', () => {
     expect(store.codeEditorOpening).toBe(true)
     expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
     expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('codeEditor')
+    expect(mockDockviewApi.addPanel.mock.calls[6][0].tabComponent).toBe('codeEditorTab')
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
 
     window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished'))

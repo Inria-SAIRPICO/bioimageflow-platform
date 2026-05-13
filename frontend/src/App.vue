@@ -8,6 +8,7 @@ import SettingsPanel from './components/panels/SettingsPanel.vue'
 import LoggerPanel from './components/panels/LoggerPanel.vue'
 import DataTablePanel from './components/panels/DataTablePanel.vue'
 import CodeEditorPanel from './components/panels/CodeEditorPanel.vue'
+import CodeEditorTab from './components/layout/CodeEditorTab.vue'
 import SubWorkflowEditorPanel from './components/panels/SubWorkflowEditorPanel.vue'
 
 export default defineComponent({
@@ -19,6 +20,7 @@ export default defineComponent({
     logger: LoggerPanel,
     dataTable: DataTablePanel,
     codeEditor: CodeEditorPanel,
+    codeEditorTab: CodeEditorTab,
     subWorkflowEditor: SubWorkflowEditorPanel,
   },
 })
@@ -98,7 +100,6 @@ onMounted(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
-  window.addEventListener('bioimageflow:popout-code-editor', onPopoutCodeEditor)
   if (shortcutEnabled) {
     window.addEventListener('keydown', onPreferencesShortcut)
   }
@@ -129,7 +130,6 @@ onBeforeUnmount(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
-  window.removeEventListener('bioimageflow:popout-code-editor', onPopoutCodeEditor)
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
   }
@@ -313,13 +313,6 @@ function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
 
 function onCodeEditorLoadingFinished(event: CustomEvent<{ path?: string }>) {
   uiStore.clearCodeEditorOpening(event.detail?.path)
-}
-
-async function onPopoutCodeEditor() {
-  const api = dockviewApi.value
-  const panel = api?.getPanel('codeEditor')
-  if (!api || !panel) return
-  await api.addPopoutGroup(panel, { popoutUrl: '/popout.html' })
 }
 
 function openSubWorkflowPanel(sessionId: string): void {
@@ -541,6 +534,7 @@ function getPanelAddOptions(key: string) {
         return {
           id: 'codeEditor',
           component: 'codeEditor',
+          tabComponent: 'codeEditorTab',
           title: 'Code Editor',
           initialWidth: 520,
           position: { referencePanel: 'nodePanel' as const, direction: 'right' as const },
@@ -550,6 +544,7 @@ function getPanelAddOptions(key: string) {
       return {
         id: 'codeEditor',
         component: 'codeEditor',
+        tabComponent: 'codeEditorTab',
         title: 'Code Editor',
         initialWidth: 520,
         position: canvasPanel

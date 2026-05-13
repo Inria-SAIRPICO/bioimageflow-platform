@@ -3,12 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUIStore } from '@/stores/ui'
 import { getEditorStatus } from '@/api/editor'
-import {
-  closeCodeEditorWindow,
-  hasCodeEditorWindowBridge,
-  isDesktop,
-  openCodeEditorWindow,
-} from '@/utils/nativeDialogs'
+import { closeCodeEditorWindow } from '@/utils/nativeDialogs'
 
 const uiStore = useUIStore()
 const { codeEditorUrl, codeEditorPath, codeEditorOpening, codeEditorDetached } =
@@ -29,21 +24,6 @@ const available = computed(() => (
 const editorTitle = computed(() => (
   codeEditorPath.value ? `Code editor - ${codeEditorPath.value}` : 'Code editor'
 ))
-const canPopOut = computed(() => (
-  available.value && (!isDesktop() || hasCodeEditorWindowBridge())
-))
-
-async function popOutEditor() {
-  if (!codeEditorUrl.value) return
-  if (hasCodeEditorWindowBridge()) {
-    const opened = await openCodeEditorWindow(codeEditorUrl.value, editorTitle.value)
-    if (opened) {
-      uiStore.setCodeEditorDetached(true)
-    }
-    return
-  }
-  window.dispatchEvent(new CustomEvent('bioimageflow:popout-code-editor'))
-}
 
 async function restoreEditor() {
   await closeCodeEditorWindow()
@@ -79,22 +59,6 @@ onBeforeUnmount(() => {
 <template>
   <section class="code-editor-panel" data-testid="code-editor-panel">
     <template v-if="available">
-      <div
-        v-if="canPopOut"
-        class="code-editor-panel__toolbar"
-        data-testid="code-editor-toolbar"
-      >
-        <button
-          class="code-editor-panel__icon-button"
-          type="button"
-          title="Open in separate window"
-          aria-label="Open in separate window"
-          data-testid="code-editor-popout"
-          @click="popOutEditor"
-        >
-          <i class="pi pi-external-link" aria-hidden="true" />
-        </button>
-      </div>
       <iframe
         class="code-editor-panel__frame"
         data-testid="code-editor-iframe"
@@ -144,35 +108,6 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1 1 auto;
   border: 0;
-}
-
-.code-editor-panel__toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  height: 2rem;
-  padding: 0.25rem 0.5rem;
-  border-bottom: 1px solid var(--p-content-border-color);
-  background: var(--bif-surface-muted);
-}
-
-.code-editor-panel__icon-button {
-  width: 1.5rem;
-  height: 1.5rem;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--p-text-muted-color);
-  background: transparent;
-  cursor: pointer;
-}
-
-.code-editor-panel__icon-button:hover {
-  color: var(--p-text-color);
-  border-color: var(--p-content-border-color);
-  background: var(--bif-surface-hover);
 }
 
 .code-editor-panel__unavailable,
