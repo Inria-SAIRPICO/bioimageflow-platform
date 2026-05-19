@@ -11,9 +11,12 @@ This map helps agents connect frontend editing state to backend API behavior. It
 ## Graph State
 
 - `frontend/src/composables/useGraphSync.ts` serializes Vue Flow nodes/edges into backend `GraphState`.
-- `syncGraph` debounces `PUT /api/v1/graph` and sends `{ graph, workflow_name }`.
+- Each canvas owns a draft identity, revision, client sequence, graph snapshot, validation result, dirty flag, and pending-sync flag.
+- `syncGraph` debounces `PUT /api/v1/workflow-drafts/{draft_id}` when a draft id exists and sends `{ graph, base_revision, client_seq }`.
+- Legacy callers without a draft id still fall back to `PUT /api/v1/graph` and send `{ graph, workflow_name }`.
 - `currentGraph` is the latest serialized graph seen by graph sync; run and save flows should use serialized graph state, not raw Vue Flow objects.
-- `patchParameters` calls `PATCH /api/v1/graph/nodes/{node_id}/parameters` for constant parameter changes and relies on a later full graph validation for authoritative status.
+- `patchParameters` calls `PATCH /api/v1/workflow-drafts/{draft_id}/nodes/{node_id}/parameters` when a draft id exists, otherwise it uses the legacy `/api/v1/graph/nodes/{node_id}/parameters` route.
+- Agent proposal apply events dispatch `bioimageflow:apply-graph`, update the Vue Flow graph, and keep root and sub-workflow drafts isolated.
 
 ## Execution State
 
@@ -32,5 +35,6 @@ This map helps agents connect frontend editing state to backend API behavior. It
 ## Agent Guidance
 
 - Use frontend store state to understand the active editing context, but use backend validation/results as the source of truth.
+- Prefer the active draft id and revision for agent graph edits. Do not submit proposals against saved workflow JSON.
 - Do not treat saved workflow JSON as current canvas state while edits are unsaved or validation is pending.
 - After graph or tool changes, refresh relevant stores and validate the graph before running or saving.

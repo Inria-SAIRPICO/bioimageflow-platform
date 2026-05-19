@@ -4,7 +4,18 @@ This document summarizes the current stable REST surface for agents. It is docum
 
 ## Draft workflow state
 
-Agents should use draft APIs for current workflow state when stable draft endpoints exist in the active branch. In this branch, stable REST routes for workflow drafts are not present in the checked OpenAPI snapshot. For current editing state, follow the frontend graph serialization contract and validate with `PUT /api/v1/graph` before saving.
+Agents should use workflow draft APIs for current unsaved workflow state. Drafts are in-memory, revisioned, and addressable. Mutating requests must include the caller's `base_revision`; stale revisions return `409`.
+
+- `POST /api/v1/workflow-drafts`: create an anonymous draft from a `GraphState`.
+- `GET /api/v1/workflow-drafts/{draft_id}`: read the current draft graph and revision.
+- `PUT /api/v1/workflow-drafts/{draft_id}`: replace a draft graph with `{ graph, base_revision, client_seq }`.
+- `PATCH /api/v1/workflow-drafts/{draft_id}/nodes/{node_id}/parameters`: patch constant parameters with `{ parameters, base_revision, client_seq }`.
+- `POST /api/v1/workflow-drafts/{draft_id}/validate`: validate the draft snapshot.
+- `POST /api/v1/workflow-drafts/{draft_id}/agent-proposals`: create a graph proposal against a draft revision.
+- `POST /api/v1/workflow-drafts/{draft_id}/agent-proposals/{proposal_id}/apply`: apply a validated proposal.
+- `POST /api/v1/workflow-drafts/{draft_id}/agent-proposals/{proposal_id}/reject`: reject a proposal.
+
+The frontend root canvas uses stable addressed draft ids such as `workflow:<workflow_name-or-canvas>`. The first `PUT` with `base_revision: 0` creates that addressed draft.
 
 ## Workflow CRUD
 
@@ -49,8 +60,9 @@ Initial inventory, documentation/scaffold only. Do not call these names unless a
 | --- | --- | --- |
 | `bioimageflow.workflow.list` | List saved workflows | `GET /api/v1/workflows` |
 | `bioimageflow.workflow.load` | Load saved workflow | `GET /api/v1/workflows/{name}` |
-| `bioimageflow.workflow.current_draft` | Read current draft graph | Not stable in this branch |
+| `bioimageflow.workflow.current_draft` | Read current draft graph | `GET /api/v1/workflow-drafts/{draft_id}` |
 | `bioimageflow.graph.validate` | Validate graph in workflow context | `PUT /api/v1/graph` |
+| `bioimageflow.graph.propose` | Create a revisioned draft proposal | `POST /api/v1/workflow-drafts/{draft_id}/agent-proposals` |
 | `bioimageflow.tool.create_local` | Create workflow-local tool | `POST /api/v1/tools?workflow_name=<name>` |
 | `bioimageflow.tool.usage` | Check saved workflow references | `GET /api/v1/tools/{tool_name}/usage` |
 | `bioimageflow.execution.status_snapshot` | Read execution state | `GET /api/v1/execution/status` |

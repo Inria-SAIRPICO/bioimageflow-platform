@@ -9,17 +9,18 @@ Use this skill when editing workflow graph structure, node parameters, sub-workf
 
 ## Source Of Truth
 
-- Use draft APIs for current workflow state when they are available and stable.
-- Until stable draft routes exist in a branch, treat the frontend's serialized `GraphState` plus backend validation as the current editing contract.
+- Use draft APIs for current workflow state.
+- Treat the frontend's serialized `GraphState` plus backend draft validation as the current editing contract.
 - Saved workflow JSON is not an editing surface unless the user explicitly requests manual file edits.
 
 ## Workflow
 
-1. Load workflow metadata and graph through `/api/v1/workflows/{name}` or the active frontend store.
+1. Identify the active `draft_id` and revision. If unavailable, load workflow metadata and graph through `/api/v1/workflows/{name}` and create or initialize a draft.
 2. Serialize canvas state with the same shape as `useGraphSync.serializeGraph`.
-3. Validate structural changes with `PUT /api/v1/graph` and include `workflow_name`.
-4. Use `PATCH /api/v1/graph/nodes/{node_id}/parameters` only for constant parameter patches.
-5. Save through `PUT /api/v1/workflows/{name}` after validation succeeds and the user expects persistence.
+3. Validate structural changes with `POST /api/v1/workflow-drafts/{draft_id}/validate`.
+4. Use `PATCH /api/v1/workflow-drafts/{draft_id}/nodes/{node_id}/parameters` for constant parameter patches.
+5. For structural edits, create a proposal with `POST /api/v1/workflow-drafts/{draft_id}/agent-proposals` and let the user apply or reject it.
+6. Save through `PUT /api/v1/workflows/{name}` after validation succeeds and the user expects persistence.
 
 ## Preserve Fields
 
