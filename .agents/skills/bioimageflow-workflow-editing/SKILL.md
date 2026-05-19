@@ -1,3 +1,8 @@
+---
+name: bioimageflow-workflow-editing
+description: Use when creating or modifying BioImageFlow workflow graphs, node parameters, connections, sub-workflows, published interfaces, validation, save, or run state.
+---
+
 # BioImageFlow Workflow Editing
 
 Use this skill when editing workflow graph structure, node parameters, sub-workflows, published interfaces, or workflow metadata.

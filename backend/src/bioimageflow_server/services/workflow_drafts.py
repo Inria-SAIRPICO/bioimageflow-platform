@@ -44,6 +44,32 @@ class WorkflowDraftManager:
         self._drafts[draft_id] = state
         return state.model_copy(deep=True)
 
+    def create_with_id(
+        self,
+        draft_id: str,
+        graph: GraphState | None = None,
+        *,
+        workflow_name: str | None = None,
+        client_seq: int | None = None,
+        dirty: bool = True,
+    ) -> WorkflowDraftState:
+        """Create an addressed draft for clients with stable canvas ids."""
+        if draft_id in self._drafts:
+            raise StaleWorkflowDraftError(
+                current_revision=self._drafts[draft_id].revision,
+                requested_revision=0,
+            )
+        state = WorkflowDraftState(
+            draft_id=draft_id,
+            revision=1,
+            graph=(graph or GraphState(nodes=[], edges=[])).model_copy(deep=True),
+            workflow_name=workflow_name,
+            client_seq=client_seq,
+            dirty=dirty,
+        )
+        self._drafts[draft_id] = state
+        return state.model_copy(deep=True)
+
     def get(self, draft_id: str, *, revision: int | None = None) -> WorkflowDraftState:
         state = self._drafts.get(draft_id)
         if state is None:

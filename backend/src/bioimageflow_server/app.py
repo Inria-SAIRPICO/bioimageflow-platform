@@ -126,6 +126,7 @@ from bioimageflow_server.services.package_installer import (
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
+from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 from bioimageflow_server.services.tool_environments import ToolEnvironmentService
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
@@ -177,9 +178,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     _deployment_mode = (
         config.deployment_mode if config.deployment_mode in ("desktop", "webapp") else "desktop"
     )
-    settings_store = config.settings_store
+    settings_store = config.settings_store or SettingsStore(
+        path=get_home() / "settings.json",
+        deployment_mode=cast(Any, _deployment_mode),
+    )
+    should_load_settings_store = config.settings_store is not None or config.settings is None
+    if config.settings_store is None and config.settings is not None:
+        settings_store._current = config.settings  # pyright: ignore[reportPrivateUsage]
     try:
-        store_settings = settings_store.get() if settings_store is not None else None
+        store_settings = settings_store.get()
     except RuntimeError:
         store_settings = None
     resolved_settings: Settings = (
@@ -200,7 +207,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
-        settings_provider = (lambda: settings_store.get()) if settings_store is not None else None
+        def settings_provider() -> Settings:
+            return settings_store.get()
+
         execution_manager = ExecutionManager(
             event_bus=event_bus,
             tool_registry=registry,
@@ -274,12 +283,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
 
     def _live_settings() -> Settings:
-        if config.settings_store is not None:
-            try:
-                return config.settings_store.get()
-            except RuntimeError:
-                return resolved_settings
-        return resolved_settings
+        try:
+            return settings_store.get()
+        except RuntimeError:
+            return resolved_settings
 
     openhands_service = config.openhands_service or OpenHandsService(
         settings_provider=_live_settings,
@@ -313,8 +320,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def _lifespan(_app: FastAPI):
         # Settings must load before catalog.refresh() so any settings the
         # catalog might consult (tool_store_path, etc.) are in place.
-        if config.settings_store is not None:
-            await config.settings_store.load()
+        if should_load_settings_store:
+            await settings_store.load()
         try:
             await catalog.refresh()
         except PackageNetworkError as exc:
@@ -387,8 +394,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     logging.getLogger("bioimageflow").removeHandler(ws_log_handler)
                     logging.getLogger("wetlands").removeHandler(ws_log_handler)
                 ws_manager._loop = None
-            if config.settings_store is not None:
-                await config.settings_store.flush()
+            await settings_store.flush()
             if _owns_pypi:
                 await pypi.aclose()
 
@@ -482,9 +488,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.openhands_service = openhands_service
     app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
     app.dependency_overrides[get_openhands_service] = lambda: openhands_service
-    if config.settings_store is not None:
-        app.include_router(settings_router, prefix="/api/v1")
-        app.dependency_overrides[settings_get_store] = lambda: config.settings_store
+    app.include_router(settings_router, prefix="/api/v1")
+    app.dependency_overrides[settings_get_store] = lambda: settings_store
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
@@ -519,9 +524,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
 
     def _live_dev_mode() -> bool:
-        if config.settings_store is not None:
-            return config.settings_store.get().dev_mode
-        return resolved_settings.dev_mode
+        try:
+            return settings_store.get().dev_mode
+        except RuntimeError:
+            return resolved_settings.dev_mode
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[workflow_drafts_get_dev_mode] = _live_dev_mode

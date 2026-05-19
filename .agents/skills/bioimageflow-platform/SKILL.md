@@ -1,3 +1,8 @@
+---
+name: bioimageflow-platform
+description: Use when working on BioImageFlow platform architecture, agent-facing workflow editing, REST APIs, frontend/backend state contracts, or repository-wide behavior.
+---
+
 # BioImageFlow Platform
 
 Use this skill when an agent needs the overall platform map before editing BioImageFlow workflows, tools, execution state, or agent-facing docs.

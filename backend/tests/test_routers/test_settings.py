@@ -75,6 +75,25 @@ async def omero_settings_client(
 
 
 class TestGetSettings:
+    async def test_default_app_exposes_settings_endpoint(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr("bioimageflow_server.app.get_home", lambda: tmp_path)
+        app = create_app(AppConfig(disable_hot_reload=True))
+
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get("/api/v1/settings")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["deployment_mode"] == "desktop"
+        assert "resolved_tool_store_path" in body
+
     async def test_get_returns_full_model(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.get("/api/v1/settings")
         assert response.status_code == 200

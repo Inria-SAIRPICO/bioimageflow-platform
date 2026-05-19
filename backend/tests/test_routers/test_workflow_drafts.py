@@ -126,6 +126,45 @@ async def test_create_get_and_update_revisions(client: httpx.AsyncClient) -> Non
     assert body["validation"]["valid"] is True
 
 
+async def test_first_put_creates_addressed_draft_for_canvas(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.put(
+        "/api/v1/workflow-drafts/workflow%3Acanvas",
+        json={
+            "graph": _graph(),
+            "base_revision": 0,
+            "client_seq": 1,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["draft_id"] == "workflow:canvas"
+    assert body["revision"] == 1
+    assert body["client_seq"] == 1
+    assert body["dirty"] is True
+
+    get = await client.get("/api/v1/workflow-drafts/workflow%3Acanvas")
+    assert get.status_code == 200
+    assert get.json()["graph"]["nodes"][0]["id"] == "n1"
+
+
+async def test_first_put_with_nonzero_revision_still_rejects_unknown_draft(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.put(
+        "/api/v1/workflow-drafts/missing-draft",
+        json={
+            "graph": _graph(),
+            "base_revision": 7,
+            "client_seq": 1,
+        },
+    )
+
+    assert response.status_code == 404
+
+
 async def test_stale_update_returns_409(client: httpx.AsyncClient) -> None:
     create = await client.post("/api/v1/workflow-drafts", json={"graph": _graph()})
     draft_id = create.json()["draft_id"]

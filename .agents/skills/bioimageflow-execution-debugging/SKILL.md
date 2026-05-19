@@ -1,3 +1,8 @@
+---
+name: bioimageflow-execution-debugging
+description: Use when diagnosing BioImageFlow execution failures, node statuses, progress updates, output data, cache behavior, execution locks, or run/stop/clear APIs.
+---
+
 # BioImageFlow Execution Debugging
 
 Use this skill when investigating run failures, node statuses, progress updates, cache behavior, or execution locks.

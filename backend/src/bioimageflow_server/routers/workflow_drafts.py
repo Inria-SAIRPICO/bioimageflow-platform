@@ -162,7 +162,15 @@ async def update_workflow_draft(
             client_seq=body.client_seq,
         )
     except WorkflowDraftNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Workflow draft not found") from exc
+        if body.base_revision == 0:
+            state = manager.create_with_id(
+                draft_id,
+                body.graph,
+                client_seq=body.client_seq,
+                dirty=True,
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Workflow draft not found") from exc
     except StaleWorkflowDraftError as exc:
         _raise_stale(exc)
     validation = _validation_for(

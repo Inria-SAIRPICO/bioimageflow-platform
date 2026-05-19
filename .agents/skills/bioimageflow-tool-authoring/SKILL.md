@@ -1,3 +1,8 @@
+---
+name: bioimageflow-tool-authoring
+description: Use when creating, editing, renaming, deleting, validating, or debugging workflow-local BioImageFlow tool source code and metadata.
+---
+
 # BioImageFlow Tool Authoring
 
 Use this skill when creating, renaming, deleting, or debugging BioImageFlow tools for a workflow.
