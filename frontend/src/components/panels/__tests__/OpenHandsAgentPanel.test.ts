@@ -9,6 +9,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 const graphSyncState = vi.hoisted(() => ({
   currentGraph: { value: { nodes: [] as any[], edges: [] as any[] } },
   draft_id: { value: 'draft-1' as string | null },
+  revision: { value: 7 },
 }))
 
 vi.mock('@/composables/useGraphSync', () => ({
@@ -21,17 +22,22 @@ describe('OpenHandsAgentPanel', () => {
     vi.clearAllMocks()
     graphSyncState.currentGraph.value = { nodes: [], edges: [] }
     graphSyncState.draft_id.value = 'draft-1'
+    graphSyncState.revision.value = 7
   })
 
-  it('loads status on mount and renders unavailable state', async () => {
+  it('loads status on mount without auto-starting and renders install state', async () => {
     const store = useOpenHandsAgentStore()
     const refresh = vi.spyOn(store, 'refreshStatus').mockResolvedValue(undefined)
+    const start = vi.spyOn(store, 'start').mockResolvedValue(undefined)
+    const install = vi.spyOn(store, 'install').mockResolvedValue(undefined)
     store.applyStatus({
       available: false,
       status: 'unavailable',
       iframe_url: null,
       external_url: null,
       message: 'OpenHands is not configured',
+      installed: false,
+      configured: false,
       proposals: [],
     })
 
@@ -39,8 +45,46 @@ describe('OpenHandsAgentPanel', () => {
     await flushPromises()
 
     expect(refresh).toHaveBeenCalledOnce()
+    expect(start).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="openhands-agent-unavailable"]').text())
       .toContain('OpenHands is not configured')
+    await wrapper.find('[data-testid="openhands-agent-install"]').trigger('click')
+    expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('renders settings inputs and enables Start only after installed/configured', async () => {
+    const store = useOpenHandsAgentStore()
+    vi.spyOn(store, 'refreshStatus').mockResolvedValue(undefined)
+    const start = vi.spyOn(store, 'start').mockResolvedValue(undefined)
+    store.applyConfig({
+      installed: false,
+      configured: false,
+      provider: '',
+      model: '',
+      api_key_ref: '',
+      command: '',
+    })
+    const wrapper = mount(OpenHandsAgentPanel)
+
+    expect(wrapper.find('[data-testid="openhands-agent-provider"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="openhands-agent-model"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="openhands-agent-api-key-ref"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="openhands-agent-command"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="openhands-agent-start"]').attributes('disabled'))
+      .toBeDefined()
+
+    store.applyConfig({
+      installed: true,
+      configured: true,
+      provider: 'openai',
+      model: 'gpt-5',
+      api_key_ref: 'OPENAI_API_KEY',
+      command: 'openhands',
+    })
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[data-testid="openhands-agent-start"]').trigger('click')
+
+    expect(start).toHaveBeenCalledOnce()
   })
 
   it('shows loading state while status is pending', () => {
@@ -63,6 +107,8 @@ describe('OpenHandsAgentPanel', () => {
       iframe_url: 'http://127.0.0.1:3000',
       external_url: 'http://127.0.0.1:3000',
       message: null,
+      installed: true,
+      configured: true,
       proposals: [],
     })
     const wrapper = mount(OpenHandsAgentPanel)
@@ -107,6 +153,7 @@ describe('OpenHandsAgentPanel', () => {
       dirty: true,
       draft: {
         draft_id: 'draft-1',
+        revision: 7,
         graph: graphSyncState.currentGraph.value,
         workflow_name: 'cells',
         workflow_display_name: 'Cells',
@@ -126,6 +173,8 @@ describe('OpenHandsAgentPanel', () => {
       iframe_url: null,
       external_url: null,
       message: null,
+      installed: true,
+      configured: true,
       proposals: [{
         id: 'proposal-1',
         title: 'Add segmentation',
@@ -145,5 +194,42 @@ describe('OpenHandsAgentPanel', () => {
 
     expect(apply).toHaveBeenCalledWith('proposal-1')
     expect(reject).toHaveBeenCalledWith('proposal-1')
+  })
+
+  it('renders package install approvals and undo action', async () => {
+    const store = useOpenHandsAgentStore()
+    vi.spyOn(store, 'refreshStatus').mockResolvedValue(undefined)
+    const approve = vi.spyOn(store, 'approveApproval').mockResolvedValue(undefined)
+    const reject = vi.spyOn(store, 'rejectApproval').mockResolvedValue(undefined)
+    const undo = vi.spyOn(store, 'undoLastChange').mockResolvedValue(undefined)
+    store.applyStatus({
+      available: true,
+      status: 'running',
+      iframe_url: null,
+      external_url: null,
+      message: null,
+      installed: true,
+      configured: true,
+      proposals: [],
+      approvals: [{
+        id: 'approval-1',
+        type: 'package_install',
+        package_name: 'cellpose',
+        command: 'pip install cellpose',
+        status: 'pending',
+      }],
+    })
+    store.undoAvailable = true
+    const wrapper = mount(OpenHandsAgentPanel)
+
+    expect(wrapper.find('[data-testid="openhands-agent-approval"]').text())
+      .toContain('cellpose')
+    await wrapper.find('[data-testid="openhands-agent-approve-approval"]').trigger('click')
+    await wrapper.find('[data-testid="openhands-agent-reject-approval"]').trigger('click')
+    await wrapper.find('[data-testid="openhands-agent-undo"]').trigger('click')
+
+    expect(approve).toHaveBeenCalledWith('approval-1')
+    expect(reject).toHaveBeenCalledWith('approval-1')
+    expect(undo).toHaveBeenCalledOnce()
   })
 })
