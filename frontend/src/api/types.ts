@@ -876,6 +876,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{node_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Image */
+        get: operations["get_node_image_api_v1_nodes__node_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{node_id}/thumbnail": {
         parameters: {
             query?: never;
@@ -3942,6 +3959,41 @@ export interface operations {
     download_node_csv_api_v1_nodes__node_id__data_csv_get: {
         parameters: {
             query?: {
+                workflow_name?: string | null;
+            };
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_node_image_api_v1_nodes__node_id__image_get: {
+        parameters: {
+            query: {
+                col: string;
+                row?: number;
                 workflow_name?: string | null;
             };
             header?: never;

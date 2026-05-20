@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 # get a placeholder + ``X-Thumbnail-Status: pending`` so the frontend
 # can retry.
 _THUMBNAIL_WAIT_TIMEOUT_SECONDS = 3.0
+_TIFF_SUFFIXES = {".tif", ".tiff"}
 
 
 def get_result_store() -> ResultStoreService:
@@ -54,6 +56,52 @@ def _workflow_storage_path(
         ) from exc
 
 
+def _get_node_dataframe(
+    node_id: str,
+    result_store: ResultStoreService,
+    storage_path: Path | None,
+) -> pd.DataFrame:
+    try:
+        df = result_store.get_latest_dataframe(node_id, storage_path=storage_path)
+    except ResultDataNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if df is None:
+        raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
+    return df
+
+
+def _get_dataframe_cell(df: pd.DataFrame, row: int, col: str) -> object:
+    if col not in df.columns:
+        raise HTTPException(status_code=422, detail=f"Unknown column: '{col}'")
+    if row >= len(df):
+        raise HTTPException(status_code=422, detail=f"Row out of range: {row}")
+    return df.iloc[row][col]
+
+
+def _coerce_image_path(value: object, storage_path: Path | None) -> Path:
+    is_missing = value is None
+    if not is_missing and not isinstance(value, (str, Path)):
+        try:
+            is_missing = bool(pd.isna(value))
+        except (TypeError, ValueError):
+            is_missing = False
+    if is_missing:
+        raise HTTPException(status_code=422, detail="Selected image path is empty")
+    image_path = Path(str(value)).expanduser()
+    if not image_path.is_absolute() and storage_path is not None:
+        image_path = storage_path / image_path
+    if not image_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Image file not found: {image_path}")
+    return image_path
+
+
+def _guess_image_media_type(path: Path) -> str:
+    if path.suffix.lower() in _TIFF_SUFFIXES:
+        return "image/tiff"
+    guessed, _ = mimetypes.guess_type(path.name)
+    return guessed or "application/octet-stream"
+
+
 @router.get("/{node_id}/data", response_model=NodeDataResponse)
 async def get_node_data(
     node_id: str,
@@ -67,12 +115,7 @@ async def get_node_data(
     workflow_name: str | None = None,
 ) -> NodeDataResponse:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
-    try:
-        df = result_store.get_latest_dataframe(node_id, storage_path=storage_path)
-    except ResultDataNotReadyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if df is None:
-        raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
+    df = _get_node_dataframe(node_id, result_store, storage_path)
 
     df = df.copy()
     df.columns = [str(column) for column in df.columns]
@@ -129,6 +172,27 @@ async def download_node_csv(
     )
 
 
+@router.get("/{node_id}/image")
+async def get_node_image(
+    node_id: str,
+    result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+    col: str,
+    row: Annotated[int, Query(ge=0)] = 0,
+    workflow_name: str | None = None,
+) -> FileResponse:
+    storage_path = _workflow_storage_path(workflow_name, workflow_store)
+    df = _get_node_dataframe(node_id, result_store, storage_path)
+    value = _get_dataframe_cell(df, row, col)
+    image_path = _coerce_image_path(value, storage_path)
+    return FileResponse(
+        path=image_path,
+        media_type=_guess_image_media_type(image_path),
+        filename=image_path.name,
+        headers={"Accept-Ranges": "bytes"},
+    )
+
+
 @router.get("/{node_id}/thumbnail")
 async def get_node_thumbnail(
     node_id: str,
@@ -141,18 +205,8 @@ async def get_node_thumbnail(
     workflow_name: str | None = None,
 ) -> Response:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
-    try:
-        df = result_store.get_latest_dataframe(node_id, storage_path=storage_path)
-    except ResultDataNotReadyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if df is None:
-        raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
-    if col not in df.columns:
-        raise HTTPException(status_code=422, detail=f"Unknown column: '{col}'")
-    if row >= len(df):
-        raise HTTPException(status_code=422, detail=f"Row out of range: {row}")
-
-    value = str(df.iloc[row][col])
+    df = _get_node_dataframe(node_id, result_store, storage_path)
+    value = str(_get_dataframe_cell(df, row, col))
     png = await thumbnail_manager.get_or_queue(
         value, size, wait_timeout=_THUMBNAIL_WAIT_TIMEOUT_SECONDS
     )

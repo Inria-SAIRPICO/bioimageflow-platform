@@ -203,6 +203,68 @@ async def test_download_csv_resolves_workflow_storage_path(tmp_path: Path) -> No
     )
 
 
+async def test_node_image_endpoint_serves_selected_image_file(tmp_path: Path) -> None:
+    image = tmp_path / "mask.ome.tif"
+    image.write_bytes(b"II*\x00fake-ome-tiff")
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+
+    async with await _client(store) as client:
+        resp = await client.get("/api/v1/nodes/n1/image", params={"row": 0, "col": "mask"})
+
+    assert resp.status_code == 200
+    assert resp.content == b"II*\x00fake-ome-tiff"
+    assert resp.headers["content-type"].startswith("image/tiff")
+    assert "mask.ome.tif" in resp.headers["content-disposition"]
+    assert resp.headers["accept-ranges"] == "bytes"
+
+
+async def test_node_image_endpoint_resolves_workflow_storage_path(tmp_path: Path) -> None:
+    image = tmp_path / "mask.tif"
+    image.write_bytes(b"tiff")
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path / "workflows" / "wf_a"
+
+    async with await _client_with_workflow_store(store, workflow_store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/image",
+            params={"row": 0, "col": "mask", "workflow_name": "wf_a"},
+        )
+
+    assert resp.status_code == 200
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
+    assert (
+        store.get_latest_dataframe.call_args.kwargs["storage_path"]
+        == tmp_path / "workflows" / "wf_a"
+    )
+
+
+async def test_node_image_endpoint_validation(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.tif"
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [missing]})
+
+    async with await _client(store) as client:
+        missing_file = await client.get(
+            "/api/v1/nodes/n1/image",
+            params={"row": 0, "col": "mask"},
+        )
+        bad_col = await client.get(
+            "/api/v1/nodes/n1/image",
+            params={"row": 0, "col": "nope"},
+        )
+        bad_row = await client.get(
+            "/api/v1/nodes/n1/image",
+            params={"row": 2, "col": "mask"},
+        )
+
+    assert missing_file.status_code == 404
+    assert bad_col.status_code == 422
+    assert bad_row.status_code == 422
+
+
 async def test_thumbnail_endpoint() -> None:
     from unittest.mock import AsyncMock
 
