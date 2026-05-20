@@ -17,6 +17,15 @@ Agents should use workflow draft APIs for current unsaved workflow state. Drafts
 
 The frontend root canvas uses stable addressed draft ids such as `workflow:<workflow_name-or-canvas>`. The first `PUT` with `base_revision: 0` creates that addressed draft.
 
+Agents must carry the active draft id and revision through every bridge tool or REST mutation. Graph changes should be represented as draft proposals so the Agent Panel can preserve preview, reject, apply, and undo behavior.
+
+## Agent Workspace Boundaries
+
+- Agents must never edit platform source when authoring a workflow or tool for a user.
+- Use the workflow-root workspace for generated scripts, workflow-local `tools/`, temporary inputs, and outputs.
+- The platform reference is a copy and a read-only reference. Inspect it for examples and contracts, but do not patch or save workflow work there.
+- Prefer Agent Panel bridge tools for workflow, graph, tool, package, execution, and undo actions. Use these REST routes as the backing contract when bridge tools are absent.
+
 ## Workflow CRUD
 
 - `GET /api/v1/workflows`: list saved workflows.
@@ -52,6 +61,12 @@ The frontend root canvas uses stable addressed draft ids such as `workflow:<work
 - `POST /api/v1/execution/stop`: request stop.
 - `POST /api/v1/execution/clear`: clear selected node caches for a graph and optional `workflow_name`.
 
+Execution is allowed when the user asks to run or verify a workflow and gives execution permission. Run the draft graph, include workflow context, and keep status visible through `GET /api/v1/execution/status` or WebSocket state.
+
+## Packages
+
+Request package install approval before installing missing packages or tools. Tell the user which node requires the package and whether the install will use the platform package action or an environment command.
+
 ## MCP tool inventory
 
 Initial inventory, documentation/scaffold only. Do not call these names unless a real MCP server exposes them.
@@ -69,3 +84,16 @@ Initial inventory, documentation/scaffold only. Do not call these names unless a
 | `bioimageflow.execution.run` | Start run | `POST /api/v1/execution/run` |
 | `bioimageflow.execution.stop` | Stop run | `POST /api/v1/execution/stop` |
 | `bioimageflow.execution.clear_cache` | Clear selected node caches | `POST /api/v1/execution/clear` |
+| `bioimageflow.history.undo` | Undo the last applied agent graph edit | Agent Panel draft history |
+
+## Scenario: Files > Atlas > Connected Components
+
+For a novice `Files > Atlas > Connected Components` request:
+
+1. Work only in the workflow-root workspace and inspect the copied platform reference as a read-only reference.
+2. Read or create the active draft id and revision.
+3. Use bridge tools, or `POST /api/v1/workflow-drafts/{draft_id}/agent-proposals`, to add a Files input or loader, Atlas processing node, and Connected Components node.
+4. Connect outputs to inputs through the proposal flow; preserve existing ids, positions, resources, output templates, and published fields unless the request says otherwise.
+5. Validate the draft with `POST /api/v1/workflow-drafts/{draft_id}/validate`.
+6. Request package install approval for missing Atlas, segmentation, or connected-component dependencies before installation.
+7. Ask for execution permission, then run the draft graph and report status. Leave undo available for applied edits.

@@ -17,6 +17,7 @@ This map helps agents connect frontend editing state to backend API behavior. It
 - `currentGraph` is the latest serialized graph seen by graph sync; run and save flows should use serialized graph state, not raw Vue Flow objects.
 - `patchParameters` calls `PATCH /api/v1/workflow-drafts/{draft_id}/nodes/{node_id}/parameters` when a draft id exists, otherwise it uses the legacy `/api/v1/graph/nodes/{node_id}/parameters` route.
 - Agent proposal apply events dispatch `bioimageflow:apply-graph`, update the Vue Flow graph, and keep root and sub-workflow drafts isolated.
+- Agent Panel changes should retain undo by applying draft proposals instead of direct platform source edits.
 
 ## Execution State
 
@@ -38,3 +39,6 @@ This map helps agents connect frontend editing state to backend API behavior. It
 - Prefer the active draft id and revision for agent graph edits. Do not submit proposals against saved workflow JSON.
 - Do not treat saved workflow JSON as current canvas state while edits are unsaved or validation is pending.
 - After graph or tool changes, refresh relevant stores and validate the graph before running or saving.
+- Agents must never edit platform source while assisting a user workflow. Keep generated files in the workflow-root workspace.
+- The platform reference is a copy and read-only reference for contracts and examples.
+- For novice `Files > Atlas > Connected Components` workflows, use bridge tools or REST draft proposals, request package install approval for missing dependencies, and ask for execution permission before running the draft.
