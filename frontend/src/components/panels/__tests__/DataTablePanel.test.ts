@@ -162,6 +162,7 @@ describe('DataTablePanel', () => {
       'image-thumbnail',
       'path-display',
       'open-napari-0-mask',
+      'open-avivator-0-mask',
       'reveal-0-mask',
       'path-copy',
     ])

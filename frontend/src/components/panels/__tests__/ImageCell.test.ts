@@ -22,9 +22,9 @@ function makeFetchResponse(status: 'ready' | 'pending', bytes: Uint8Array): Resp
   })
 }
 
-function mountCell() {
+function mountCell(props = {}) {
   return mount(ImageCell, {
-    props: { nodeId: 'n1', row: 0, col: 'mask', value: '/tmp/m.tif' },
+    props: { nodeId: 'n1', row: 0, col: 'mask', value: '/tmp/m.tif', ...props },
     global: { plugins: [PrimeVue] },
   })
 }
@@ -216,5 +216,28 @@ describe('ImageCell', () => {
     await flushPromises()
 
     expect(button.attributes('disabled')).toBeUndefined()
+  })
+
+  it('opens Avivator with the node image endpoint as image_url', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+    const openMock = vi.fn()
+    vi.stubGlobal('open', openMock)
+
+    const wrapper = mountCell({ workflowName: 'wf a' })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
+
+    expect(openMock).toHaveBeenCalledTimes(1)
+    const [url, target, features] = openMock.mock.calls[0]
+    expect(target).toBe('_blank')
+    expect(features).toBe('noopener')
+    const avivatorUrl = new URL(String(url))
+    expect(avivatorUrl.origin).toBe('https://avivator.gehlenborglab.org')
+    const imageUrl = new URL(avivatorUrl.searchParams.get('image_url') ?? '')
+    expect(imageUrl.href).toBe(
+      `${window.location.origin}/api/v1/nodes/n1/image?row=0&col=mask&workflow_name=wf+a`,
+    )
   })
 })

@@ -33,6 +33,7 @@ const fetchFailed = ref(false)
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 const THUMBNAIL_REQUEST_SIZE = 256
 const THUMBNAIL_RENDER_SIZE = 96
+const AVIVATOR_URL = 'https://avivator.gehlenborglab.org/'
 
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
 const shouldShowPath = computed(() => props.showPath ?? true)
@@ -50,6 +51,19 @@ const baseUrl = computed(() => {
     params.set('workflow_name', props.workflowName)
   }
   return `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/thumbnail?${params.toString()}`
+})
+const imageUrl = computed(() => {
+  const params = new URLSearchParams({
+    row: String(props.row),
+    col: props.col,
+  })
+  if (props.workflowName && props.workflowName.trim() !== '') {
+    params.set('workflow_name', props.workflowName)
+  }
+  return new URL(
+    `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/image?${params.toString()}`,
+    window.location.origin,
+  ).toString()
 })
 
 let abort: AbortController | null = null
@@ -172,6 +186,12 @@ async function openNapari(event: MouseEvent) {
   }
 }
 
+function openAvivator() {
+  const url = new URL(AVIVATOR_URL)
+  url.searchParams.set('image_url', imageUrl.value)
+  window.open(url.toString(), '_blank', 'noopener')
+}
+
 async function copyPath() {
   try {
     await navigator.clipboard?.writeText(props.value)
@@ -228,6 +248,14 @@ async function reveal() {
         :disabled="napariDisabled"
         :data-testid="`open-napari-${row}-${colSlug}`"
         @click="openNapari"
+      />
+      <Button
+        icon="pi pi-external-link"
+        text
+        size="small"
+        title="Open in Avivator"
+        :data-testid="`open-avivator-${row}-${colSlug}`"
+        @click="openAvivator"
       />
       <Button
         icon="pi pi-folder-open"
