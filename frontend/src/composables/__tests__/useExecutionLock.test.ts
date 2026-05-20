@@ -120,36 +120,6 @@ describe('useExecutionLock', () => {
     expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'], undefined)
   })
 
-  it('lockForExecution passes draft identity to run when available', async () => {
-    const { lockForExecution } = useExecutionLock()
-    const exec = useExecutionStore()
-
-    const flushNow = vi.fn(async () => {})
-    const validationResult = ref<ValidationResult | null>({
-      valid: true,
-      node_statuses: {},
-      errors: [],
-    })
-    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
-
-    const graph = { nodes: [], edges: [] }
-    await lockForExecution({
-      graph,
-      graphSync: {
-        flushNow,
-        validationResult,
-        draft_id: ref('root-draft'),
-        revision: ref(9),
-      },
-      workflowName: 'wf_a',
-    })
-
-    expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a', {
-      draft_id: 'root-draft',
-      revision: 9,
-    })
-  })
-
   it('lockForExecution ignores validation errors outside the selected execution set', async () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()

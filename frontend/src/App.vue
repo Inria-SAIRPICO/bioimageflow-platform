@@ -9,7 +9,6 @@ import LoggerPanel from './components/panels/LoggerPanel.vue'
 import DataTablePanel from './components/panels/DataTablePanel.vue'
 import CodeEditorPanel from './components/panels/CodeEditorPanel.vue'
 import CodeEditorTab from './components/layout/CodeEditorTab.vue'
-import OpenHandsAgentPanel from './components/panels/OpenHandsAgentPanel.vue'
 import SubWorkflowEditorPanel from './components/panels/SubWorkflowEditorPanel.vue'
 
 export default defineComponent({
@@ -22,14 +21,13 @@ export default defineComponent({
     dataTable: DataTablePanel,
     codeEditor: CodeEditorPanel,
     codeEditorTab: CodeEditorTab,
-    openHandsAgent: OpenHandsAgentPanel,
     subWorkflowEditor: SubWorkflowEditorPanel,
   },
 })
 </script>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, shallowRef, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
 import { themeDark, themeLight, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
@@ -46,8 +44,7 @@ import { isDesktop as isPywebview } from './utils/nativeDialogs'
 import { useWebSocket } from './composables/useWebSocket'
 import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
 import { useWorkflowStore } from './stores/workflow'
-import { useSettingsStore } from './stores/settings'
-import type { GraphState, MissingTool, ValidationResult } from './api/types'
+import type { GraphState, MissingTool } from './api/types'
 
 function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
@@ -73,7 +70,6 @@ const datasetBrowserStore = useDatasetBrowserStore()
 const websocket = useWebSocket()
 const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const workflowStore = useWorkflowStore()
-const settingsStore = useSettingsStore()
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
 // executionStore.isRunning anywhere in the tree. The composable has a
@@ -81,9 +77,6 @@ const settingsStore = useSettingsStore()
 useExecutionLock()
 
 onMounted(() => {
-  if (!settingsStore.isLoaded) {
-    void settingsStore.fetchSettings()
-  }
   websocket.connect()
   window.addEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
   window.addEventListener('bif:open-code-editor', onOpenCodeEditor as EventListener)
@@ -175,23 +168,10 @@ const canvasContexts = new Map<string, {
   workflowDisplayName: string
 }>()
 const dockviewTheme = computed(() => uiStore.isDarkTheme ? themeDark : themeLight)
-const openHandsAgentHiddenByGate = ref(false)
-const openHandsAgentEnabled = computed(() => (
-  settingsStore.isDesktop
-  || settingsStore.unsafeWebappFeaturesEnabled
-))
 
 // --- Dockview setup ---
 
-const panelKeys = [
-  'tools',
-  'workflows',
-  'nodePanel',
-  'dataTable',
-  'logger',
-  'codeEditor',
-  'openHandsAgent',
-] as const
+const panelKeys = ['tools', 'workflows', 'nodePanel', 'dataTable', 'logger', 'codeEditor'] as const
 type DockPanelKey = typeof panelKeys[number]
 
 function isDockPanelKey(id: string): id is DockPanelKey {
@@ -312,13 +292,6 @@ function onDockviewReady(event: DockviewReadyEvent) {
     },
   })
   dataTablePanel.api.setActive()
-
-  if (openHandsAgentEnabled.value && uiStore.panels.openHandsAgent) {
-    api.addPanel(getPanelAddOptions('openHandsAgent'))
-  } else if (!openHandsAgentEnabled.value) {
-    uiStore.setPanelVisible('openHandsAgent', false)
-    openHandsAgentHiddenByGate.value = true
-  }
 }
 
 function activateCodeEditorPanel() {
@@ -454,9 +427,6 @@ function openWorkflowCanvasPanel(detail: {
   workflowDisplayName?: string
   missingTools?: MissingTool[]
   dirty?: boolean
-  pushUndo?: boolean
-  draftRevision?: number
-  validation?: ValidationResult | null
 }): void {
   const api = dockviewApi.value
   if (!api || !detail.graph) return
@@ -468,17 +438,6 @@ function openWorkflowCanvasPanel(detail: {
   const panelId = workflowPanelId(workflowName)
   const existing = api.getPanel(panelId)
   if (existing) {
-    window.dispatchEvent(new CustomEvent('bioimageflow:replace-canvas-graph', {
-      detail: {
-        panelId,
-        graph: detail.graph,
-        missingTools: detail.missingTools ?? [],
-        dirty: detail.dirty ?? false,
-        pushUndo: detail.pushUndo ?? false,
-        draftRevision: detail.draftRevision,
-        validation: detail.validation,
-      },
-    }))
     existing.api.setActive()
     return
   }
@@ -495,8 +454,6 @@ function openWorkflowCanvasPanel(detail: {
       graph: detail.graph,
       missingTools: detail.missingTools ?? [],
       dirty: detail.dirty ?? false,
-      draftRevision: detail.draftRevision,
-      validation: detail.validation,
     },
     position: canvasPanel
       ? { referencePanel: 'canvas', direction: 'within' }
@@ -512,9 +469,6 @@ function onApplyGraph(event: CustomEvent<{
   workflowDisplayName?: string
   missingTools?: MissingTool[]
   dirty?: boolean
-  pushUndo?: boolean
-  draftRevision?: number
-  validation?: ValidationResult | null
 }>) {
   const detail = event.detail
   if (!detail?.graph) return
@@ -524,9 +478,6 @@ function onApplyGraph(event: CustomEvent<{
     workflowDisplayName: detail.workflowDisplayName,
     missingTools: detail.missingTools,
     dirty: detail.dirty,
-    pushUndo: detail.pushUndo,
-    draftRevision: detail.draftRevision,
-    validation: detail.validation,
   })
 }
 
@@ -553,27 +504,6 @@ watch(
       }
     }
   },
-)
-
-watch(
-  openHandsAgentEnabled,
-  (enabled) => {
-    const panel = dockviewApi.value?.getPanel('openHandsAgent')
-    if (!enabled) {
-      openHandsAgentHiddenByGate.value = uiStore.panels.openHandsAgent || Boolean(panel)
-      if (uiStore.panels.openHandsAgent) {
-        uiStore.setPanelVisible('openHandsAgent', false)
-      } else if (panel && dockviewApi.value) {
-        dockviewApi.value.removePanel(panel)
-      }
-      return
-    }
-    if (openHandsAgentHiddenByGate.value) {
-      openHandsAgentHiddenByGate.value = false
-      uiStore.setPanelVisible('openHandsAgent', true)
-    }
-  },
-  { immediate: true },
 )
 
 function getPanelAddOptions(key: string) {
@@ -617,28 +547,6 @@ function getPanelAddOptions(key: string) {
         tabComponent: 'codeEditorTab',
         title: 'Code Editor',
         initialWidth: 520,
-        position: canvasPanel
-          ? { referencePanel: 'canvas' as const, direction: 'right' as const }
-          : { direction: 'right' as const },
-      }
-    }
-    case 'openHandsAgent': {
-      const codeEditorPanel = dockviewApi.value?.getPanel('codeEditor')
-      if (codeEditorPanel) {
-        return {
-          id: 'openHandsAgent',
-          component: 'openHandsAgent',
-          title: 'OpenHands Agent',
-          initialWidth: 420,
-          position: { referencePanel: 'codeEditor' as const, direction: 'within' as const },
-        }
-      }
-      const canvasPanel = dockviewApi.value?.getPanel('canvas')
-      return {
-        id: 'openHandsAgent',
-        component: 'openHandsAgent',
-        title: 'OpenHands Agent',
-        initialWidth: 420,
         position: canvasPanel
           ? { referencePanel: 'canvas' as const, direction: 'right' as const }
           : { direction: 'right' as const },

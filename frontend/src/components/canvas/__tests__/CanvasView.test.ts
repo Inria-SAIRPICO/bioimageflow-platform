@@ -114,10 +114,8 @@ vi.mock('@vue-flow/controls', () => ({
 
 const graphSyncMocks = vi.hoisted(() => ({
   syncGraph: vi.fn(),
-  cancelPending: vi.fn(),
   flushNow: vi.fn(),
   patchParameters: vi.fn(),
-  validationResult: undefined as any,
   serializeGraph: vi.fn((state: { nodes: any[]; edges: any[] }) => ({
     nodes: state.nodes.map((n: any) => ({
       id: n.id,
@@ -186,26 +184,14 @@ vi.mock('@/composables/useAutoSave', () => ({
 
 vi.mock('@/composables/useGraphSync', async () => {
   const { ref } = await import('vue')
-  const validationResult = ref(null)
-  graphSyncMocks.validationResult = validationResult
   return {
     serializeGraph: graphSyncMocks.serializeGraph,
-    useGraphSync: () => {
-      return {
-        ...graphSyncMocks,
-        validationResult,
-        isPending: ref(false),
-        syncState: ref('idle'),
-        currentGraph: ref({ nodes: [], edges: [] }),
-        graph: ref({ nodes: [], edges: [] }),
-        dirty: ref(false),
-        pending_sync: ref(false),
-        revision: ref(0),
-        client_seq: ref(0),
-        draft_id: ref(null),
-        validation_result: validationResult,
-      }
-    },
+    useGraphSync: () => ({
+      ...graphSyncMocks,
+      validationResult: ref(null),
+      isPending: ref(false),
+      syncState: ref('idle'),
+    }),
   }
 })
 
@@ -229,7 +215,6 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { _resetClipboardForTest } from '@/utils/clipboard'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
-import { useUIStore } from '@/stores/ui'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -290,11 +275,9 @@ describe('CanvasView', () => {
     dragStartHandler = null
     dragStopHandler = null
     graphSyncMocks.syncGraph.mockClear()
-    graphSyncMocks.cancelPending.mockClear()
     graphSyncMocks.flushNow.mockClear()
     graphSyncMocks.patchParameters.mockClear()
     graphSyncMocks.serializeGraph.mockClear()
-    graphSyncMocks.validationResult.value = null
     autoSaveMocks.scheduleAutoSave.mockClear()
     autoSaveMocks.flushAutoSave.mockClear()
     autoSaveMocks.loadAutoSave.mockReset().mockResolvedValue(null)
@@ -1407,48 +1390,6 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('does not apply a sub-workflow session event while execution is locked', async () => {
-      const ui = useUIStore()
-      const w = mountCanvas()
-      await nextTick()
-      mockNodes = [{
-        id: 'sub_1',
-        type: 'sub_workflow',
-        position: { x: 0, y: 0 },
-        data: {
-          name: 'Sub 1',
-          toolName: '__sub_workflow__',
-          parameters: {},
-          sub_workflow: { nodes: [], edges: [] },
-          published_inputs: [],
-          published_outputs: [],
-        },
-      }]
-      ui.setExecutionLocked(true)
-      graphSyncMocks.syncGraph.mockClear()
-
-      window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
-        detail: {
-          parentNodeId: 'sub_1',
-          graph: {
-            nodes: [{
-              id: 'inner_1',
-              name: 'Inner 1',
-              tool_name: 'gaussian_blur',
-              position: [0, 0],
-              parameters: {},
-            }],
-            edges: [],
-          },
-        },
-      }))
-
-      expect(mockNodes[0].data.sub_workflow.nodes).toEqual([])
-      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
-      ui.setExecutionLocked(false)
-      w.unmount()
-    })
-
     it('loads sub-workflow editor nodes with a shared publishing context', async () => {
       const toolStore = useToolRegistryStore()
       toolStore.tools = [makeTool()] as any
@@ -1840,45 +1781,6 @@ describe('CanvasView', () => {
         edges: [expect.objectContaining({ id: 'e1' })],
       }))
 
-      w.unmount()
-    })
-
-    it('cancels pending graph sync before applying an agent graph replacement', async () => {
-      const w = mountCanvas({
-        params: {
-          panelId: 'workflow:analysis',
-          workflowName: 'analysis',
-          workflowDisplayName: 'Analysis',
-        },
-      })
-      await flushPromises()
-      graphSyncMocks.cancelPending.mockClear()
-      graphSyncMocks.syncGraph.mockClear()
-
-      window.dispatchEvent(new CustomEvent('bioimageflow:replace-canvas-graph', {
-        detail: {
-          panelId: 'workflow:analysis',
-          graph: {
-            nodes: [savedNode('agent-node', 100)],
-            edges: [],
-          },
-          validation: { valid: true, errors: [], node_statuses: {} },
-          dirty: true,
-          draftRevision: 9,
-        },
-      }))
-      await flushPromises()
-
-      expect(graphSyncMocks.cancelPending).toHaveBeenCalledOnce()
-      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
-      expect(mockNodes).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: 'agent-node' }),
-      ]))
-      expect(graphSyncMocks.validationResult.value).toEqual({
-        valid: true,
-        errors: [],
-        node_statuses: {},
-      })
       w.unmount()
     })
 

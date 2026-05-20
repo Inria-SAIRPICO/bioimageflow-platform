@@ -257,21 +257,6 @@ async def test_run_without_workflow_uses_fallback_storage(tmp_path: Path) -> Non
     assert em.start.call_args.kwargs["storage_path"] == tmp_path
 
 
-async def test_run_accepts_draft_id_without_graph(tmp_path: Path) -> None:
-    em = _FakeExecutionManager(running=False)
-    c = await _make_client(tmp_path, execution_manager=em)
-    async with c:
-        draft = await c.post("/api/v1/workflow-drafts", json={"graph": _minimal_graph()})
-        resp = await c.post(
-            "/api/v1/execution/run",
-            json={"draft_id": draft.json()["draft_id"], "revision": 1},
-        )
-
-    assert resp.status_code == 202, resp.text
-    assert em.start.call_args.args[0].nodes[0].id == "n1"
-    assert em.start.call_args.kwargs["use_cached_session"] is False
-
-
 # ---- POST /execution/stop ---------------------------------------------------
 
 

@@ -7,7 +7,6 @@ import Aura from '@primevue/themes/aura'
 import App from '@/App.vue'
 import MenuBar from '@/components/layout/MenuBar.vue'
 import { useExecutionStore } from '@/stores/execution'
-import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -151,10 +150,6 @@ describe('AppShell', () => {
     document.documentElement.style.colorScheme = ''
     connectMock.mockClear()
     disconnectMock.mockClear()
-    useSettingsStore().settings = {
-      deployment_mode: 'desktop',
-      enable_unsafe_webapp_features: false,
-    } as any
   })
 
   it('renders #bioimageflow-app wrapper', () => {
@@ -191,7 +186,7 @@ describe('AppShell', () => {
   it('registers the default panels on ready', async () => {
     const wrapper = mountApp()
     await flushPromises()
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
 
     const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
     expect(panelIds).toContain('tools')
@@ -200,50 +195,7 @@ describe('AppShell', () => {
     expect(panelIds).toContain('nodePanel')
     expect(panelIds).toContain('dataTable')
     expect(panelIds).toContain('logger')
-    expect(panelIds).toContain('openHandsAgent')
     expect(panelIds).not.toContain('codeEditor')
-  })
-
-  it('docks the OpenHands Agent panel right of the Canvas by default', async () => {
-    mountApp()
-    await flushPromises()
-
-    const agentCall = mockDockviewApi.addPanel.mock.calls.find(
-      (call: any) => call[0].id === 'openHandsAgent',
-    )
-    expect(agentCall?.[0]).toMatchObject({
-      component: 'openHandsAgent',
-      title: 'OpenHands Agent',
-      initialWidth: 420,
-      position: { referencePanel: 'canvas', direction: 'right' },
-    })
-  })
-
-  it('hides the OpenHands Agent panel in webapp mode without unsafe features', async () => {
-    useSettingsStore().settings = {
-      deployment_mode: 'webapp',
-      enable_unsafe_webapp_features: false,
-    } as any
-
-    mountApp()
-    await flushPromises()
-
-    const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
-    expect(panelIds).not.toContain('openHandsAgent')
-    expect(useUIStore().panels.openHandsAgent).toBe(false)
-  })
-
-  it('allows the OpenHands Agent panel in webapp mode when unsafe features are enabled', async () => {
-    useSettingsStore().settings = {
-      deployment_mode: 'webapp',
-      enable_unsafe_webapp_features: true,
-    } as any
-
-    mountApp()
-    await flushPromises()
-
-    const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
-    expect(panelIds).toContain('openHandsAgent')
   })
 
   it('makes the Data Table the active bottom panel by default', async () => {
@@ -323,9 +275,9 @@ describe('AppShell', () => {
     store.togglePanel('tools') // show again
     await flushPromises()
 
-    // addPanel called 7 times initially + 1 re-add = 8
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    const lastCall = mockDockviewApi.addPanel.mock.calls[7][0]
+    // addPanel called 6 times initially + 1 re-add = 7
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    const lastCall = mockDockviewApi.addPanel.mock.calls[6][0]
     expect(lastCall.id).toBe('tools')
     expect(lastCall.initialWidth).toBe(320)
   })
@@ -350,8 +302,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(store.panels.tools).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('tools')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('tools')
   })
 
   it('syncs the Workflows panel with the View menu', async () => {
@@ -395,8 +347,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344')
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[7][0]
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[6][0]
     expect(codeEditorCall.id).toBe('codeEditor')
     expect(codeEditorCall.tabComponent).toBe('codeEditorTab')
     expect(codeEditorCall.initialWidth).toBe(520)
@@ -419,9 +371,9 @@ describe('AppShell', () => {
     const store = useUIStore()
     expect(store.codeEditorPath).toBe('/tmp/tool.py')
     expect(store.codeEditorOpening).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('codeEditor')
-    expect(mockDockviewApi.addPanel.mock.calls[7][0].tabComponent).toBe('codeEditorTab')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('codeEditor')
+    expect(mockDockviewApi.addPanel.mock.calls[6][0].tabComponent).toBe('codeEditorTab')
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
 
     window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished'))
@@ -534,8 +486,6 @@ describe('AppShell', () => {
       graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
       missingTools: [],
       dirty: false,
-      pushUndo: true,
-      draftRevision: 8,
     }
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
@@ -543,14 +493,6 @@ describe('AppShell', () => {
     const addCount = mockDockviewApi.addPanel.mock.calls.length
     const removeCount = mockDockviewApi.removePanel.mock.calls.length
     const activeCount = panels.get('workflow:analysis').api.setActive.mock.calls.length
-    const replacements: Array<CustomEvent> = []
-    const replaceListener = (event: Event) => {
-      const replacement = event as CustomEvent<{ panelId?: string }>
-      if (replacement.detail?.panelId === 'workflow:analysis') {
-        replacements.push(replacement)
-      }
-    }
-    window.addEventListener('bioimageflow:replace-canvas-graph', replaceListener)
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
     await flushPromises()
@@ -559,12 +501,6 @@ describe('AppShell', () => {
     expect(mockDockviewApi.removePanel.mock.calls.length).toBe(removeCount)
     expect(panels.get('workflow:analysis').api.setActive.mock.calls.length)
       .toBeGreaterThan(activeCount)
-    expect(replacements.some((replacement) => (
-      replacement.detail.panelId === 'workflow:analysis'
-      && replacement.detail.pushUndo === true
-      && replacement.detail.draftRevision === 8
-    ))).toBe(true)
-    window.removeEventListener('bioimageflow:replace-canvas-graph', replaceListener)
   })
 
   it('keeps a dirty sub-workflow session open when direct tab close is cancelled', async () => {

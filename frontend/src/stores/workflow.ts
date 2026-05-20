@@ -25,11 +25,6 @@ export class WorkflowConflictError extends Error {
   }
 }
 
-export interface WorkflowSaveDraftIdentity {
-  draft_id?: string | null
-  revision?: number | null
-}
-
 function conflictFromError(err: unknown): WorkflowConflictError | null {
   if (!(err instanceof AxiosError) || err.response?.status !== 409) return null
   const data = err.response.data as { detail?: string; suggested_name?: string }
@@ -143,27 +138,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return data.graph
   }
 
-  async function saveWorkflow(
-    graph: GraphState,
-    draft?: WorkflowSaveDraftIdentity,
-  ): Promise<WorkflowInfo> {
+  async function saveWorkflow(graph: GraphState): Promise<WorkflowInfo> {
     if (current.value === null) {
       throw new Error('No active workflow to save')
     }
-    const body: {
-      graph: GraphState
-      draft_id?: string
-      revision?: number
-    } = { graph }
-    if (draft?.draft_id) {
-      body.draft_id = draft.draft_id
-      if (typeof draft.revision === 'number') {
-        body.revision = draft.revision
-      }
-    }
     const { data } = await api.put<WorkflowInfo>(
       `/api/v1/workflows/${current.value.name}`,
-      body,
+      { graph },
     )
     upsertWorkflow(data)
     setCurrent(data)

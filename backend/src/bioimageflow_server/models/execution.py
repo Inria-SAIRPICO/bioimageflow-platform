@@ -10,9 +10,7 @@ from bioimageflow_server.models.validation import NodeStatus
 class ExecutionRequest(BaseModel):
     """Request to execute a graph (or a subset of its nodes)."""
 
-    graph: dict[str, Any] | None = None
-    draft_id: str | None = None
-    revision: int | None = None
+    graph: dict[str, Any]
     nodes: list[str] | None = None
     workflow_name: str | None = None
 

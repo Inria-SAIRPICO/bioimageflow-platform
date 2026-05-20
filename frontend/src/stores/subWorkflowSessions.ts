@@ -1,24 +1,13 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type {
-  GraphState,
-  PublishedInput,
-  PublishedOutput,
-  ValidationResult,
-} from '@/api/types'
+import type { GraphState, PublishedInput, PublishedOutput } from '@/api/types'
 
 export interface SubWorkflowSession {
   id: string
-  draft_id: string
-  revision: number
-  client_seq: number
   parentWorkflowName: string | null
   parentNodeId: string
   parentNodeName: string
   draft: GraphState
-  validation_result: ValidationResult | null
-  dirty: boolean
-  pending_sync: boolean
   savedSnapshot: GraphState
   published_inputs: PublishedInput[]
   published_outputs: PublishedOutput[]
@@ -40,14 +29,6 @@ export interface SavedSubWorkflowSession {
   graph: GraphState
   published_inputs: PublishedInput[]
   published_outputs: PublishedOutput[]
-}
-
-export interface SubWorkflowDraftSyncState {
-  revision?: number
-  client_seq?: number
-  validation_result?: ValidationResult | null
-  dirty?: boolean
-  pending_sync?: boolean
 }
 
 function deepClone<T>(value: T): T {
@@ -77,10 +58,6 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     return `${parentWorkflowName ?? '__unsaved__'}:${parentNodeId}`
   }
 
-  function draftIdForSession(id: string): string {
-    return `sub-workflow:${id}`
-  }
-
   function sessionById(id: string): SubWorkflowSession | undefined {
     return sessions.value.find((session) => session.id === id)
   }
@@ -98,16 +75,10 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     const publishedOutputs = deepClone(options.published_outputs ?? [])
     const session: SubWorkflowSession = {
       id,
-      draft_id: draftIdForSession(id),
-      revision: 0,
-      client_seq: 0,
       parentWorkflowName: options.parentWorkflowName,
       parentNodeId: options.parentNodeId,
       parentNodeName: options.parentNodeName,
       draft,
-      validation_result: null,
-      dirty: false,
-      pending_sync: false,
       savedSnapshot: deepClone(draft),
       published_inputs: publishedInputs,
       published_outputs: publishedOutputs,
@@ -130,7 +101,6 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     session.savedSnapshot = deepClone(session.draft)
     session.savedPublishedInputs = deepClone(session.published_inputs)
     session.savedPublishedOutputs = deepClone(session.published_outputs)
-    session.dirty = false
     return {
       graph: deepClone(session.draft),
       published_inputs: deepClone(session.published_inputs),
@@ -142,19 +112,6 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     const session = sessionById(id)
     if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
     session.draft = deepClone(graph)
-    session.dirty = true
-  }
-
-  function updateDraftSyncState(id: string, state: SubWorkflowDraftSyncState): void {
-    const session = sessionById(id)
-    if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
-    if (state.revision !== undefined) session.revision = state.revision
-    if (state.client_seq !== undefined) session.client_seq = state.client_seq
-    if (state.validation_result !== undefined) {
-      session.validation_result = state.validation_result
-    }
-    if (state.dirty !== undefined) session.dirty = state.dirty
-    if (state.pending_sync !== undefined) session.pending_sync = state.pending_sync
   }
 
   function closeSession(id: string): void {
@@ -168,7 +125,6 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     openSession,
     saveSession,
     updateDraft,
-    updateDraftSyncState,
     closeSession,
     isDirty,
   }

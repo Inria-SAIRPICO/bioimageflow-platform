@@ -81,7 +81,6 @@ describe('UI store', () => {
     expect(store.panels.nodePanel).toBe(true)
     expect(store.panels.dataTable).toBe(true)
     expect(store.panels.logger).toBe(true)
-    expect(store.panels.openHandsAgent).toBe(true)
   })
 
   it('togglePanel flips visibility', () => {

@@ -72,25 +72,6 @@ class TestSettings:
         assert s.keyboard_shortcuts == {}
         assert s.dev_mode is True
         assert s.enable_unsafe_webapp_features is False
-        assert s.openhands_enabled is None
-        assert s.openhands_runtime == "process"
-        assert s.openhands_command == "RUNTIME={runtime} openhands serve --mount-cwd"
-        assert s.openhands_host == "127.0.0.1"
-        assert s.openhands_port == 3000
-        assert s.openhands_workspace == "~/bioimageflow_openhands"
-        assert s.openhands_install_command == "uv tool install openhands --python 3.12"
-        assert s.openhands_startup_timeout == 60.0
-        assert s.openhands_process_acknowledged is False
-
-    def test_old_openhands_web_default_migrates_to_gui_server(self):
-        s = Settings(
-            deployment_mode="desktop",
-            openhands_command="RUNTIME={runtime} openhands web --host {host} --port {port}",
-            openhands_port=12000,
-        )
-
-        assert s.openhands_command == "RUNTIME={runtime} openhands serve --mount-cwd"
-        assert s.openhands_port == 3000
 
     def test_unsafe_webapp_features_flag(self):
         s = Settings(deployment_mode="webapp", enable_unsafe_webapp_features=True)
@@ -271,17 +252,3 @@ class TestSettings:
         # Settings(dev_mode=False).
         s = Settings(deployment_mode="desktop", dev_mode=False)
         assert s.dev_mode is False
-
-    def test_openhands_host_must_be_loopback(self):
-        with pytest.raises(ValidationError):
-            Settings(deployment_mode="desktop", openhands_host="0.0.0.0")
-
-    def test_openhands_localhost_host_is_valid(self):
-        s = Settings(deployment_mode="desktop", openhands_host="localhost")
-        assert s.openhands_host == "localhost"
-
-    def test_openhands_port_bounds(self):
-        with pytest.raises(ValidationError):
-            Settings(deployment_mode="desktop", openhands_port=0)
-        with pytest.raises(ValidationError):
-            Settings(deployment_mode="desktop", openhands_port=65536)

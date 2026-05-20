@@ -209,8 +209,6 @@ class ExecutionManager:
         graph: GraphState,
         nodes: list[str] | None = None,
         storage_path: Path | None = None,
-        *,
-        use_cached_session: bool = True,
     ) -> None:
         """Kick off a background execution.
 
@@ -255,7 +253,7 @@ class ExecutionManager:
         # unrelated downstream validation errors cannot block the subset.
         session = (
             self.session_manager.session
-            if self.session_manager is not None and not nodes and use_cached_session
+            if self.session_manager is not None and not nodes
             else None
         )
         session_storage_path = (

@@ -61,7 +61,6 @@ export const useUIStore = defineStore('ui', () => {
     dataTable: true,
     logger: true,
     codeEditor: false,
-    openHandsAgent: true,
   })
 
   const hasSelection = computed(() => selectedNodeIds.value.length > 0)

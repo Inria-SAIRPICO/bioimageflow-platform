@@ -30,7 +30,6 @@ from watchdog.events import (
 )
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
-from watchdog.observers.polling import PollingObserver
 
 if TYPE_CHECKING:
     from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -40,17 +39,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _STOP_POLL_INTERVAL_SECONDS = 0.01
-_POLLING_OBSERVER_ENV_VALUES = {"1", "true", "yes", "polling"}
-
-
-def _make_observer() -> BaseObserver:
-    """Return a watchdog observer that is safe for the current runner."""
-    requested = os.environ.get("BIOIMAGEFLOW_WATCHDOG_OBSERVER", "").strip().lower()
-    if requested in _POLLING_OBSERVER_ENV_VALUES:
-        return PollingObserver()
-    if os.environ.get("CI") or os.environ.get("CODEX_SANDBOX"):
-        return PollingObserver()
-    return Observer()
 
 
 # Editor temp-file noise that watchdog's PatternMatchingEventHandler
@@ -107,7 +95,7 @@ class ToolHotReloadService:
         self._loop = asyncio.get_running_loop()
         self._stopped = False
 
-        observer = _make_observer()
+        observer = Observer()
         handler = PatternMatchingEventHandler(
             patterns=["*.py"],
             ignore_patterns=IGNORE_PATTERNS,

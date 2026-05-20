@@ -25,11 +25,6 @@ from bioimageflow_server.routers.dev import (
     get_tool_registry as dev_get_tool_registry,
     router as dev_router,
 )
-from bioimageflow_server.routers.agent_bridge import (
-    get_agent_workspace_service,
-    get_openhands_service as agent_bridge_get_openhands_service,
-    router as agent_bridge_router,
-)
 from bioimageflow_server.routers.datasets import (
     get_datasets_root,
     get_max_upload_size,
@@ -50,18 +45,11 @@ from bioimageflow_server.routers.graph import (
     get_workflow_store as graph_get_workflow_store,
     router as graph_router,
 )
-from bioimageflow_server.routers.graph_proposals import (
-    draft_router as graph_proposals_draft_router,
-    get_execution_manager as graph_proposals_get_execution_manager,
-    get_graph_proposal_manager,
-    router as graph_proposals_router,
-)
 from bioimageflow_server.routers.execution import (
     get_execution_manager as execution_get_manager,
     get_session_manager as execution_get_session_manager,
     get_storage_path as execution_get_storage_path,
     get_tool_registry as execution_get_tool_registry,
-    get_workflow_draft_manager as execution_get_workflow_draft_manager,
     get_workflow_store as execution_get_workflow_store,
     router as execution_router,
 )
@@ -69,15 +57,6 @@ from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.napari import (
     get_napari_launcher,
     router as napari_router,
-)
-from bioimageflow_server.routers.openhands import (
-    get_agent_workspace_service as openhands_get_agent_workspace_service,
-    get_execution_manager as openhands_get_execution_manager,
-    get_graph_proposal_manager as openhands_get_graph_proposal_manager,
-    get_openhands_service,
-    get_settings_store as openhands_get_settings_store,
-    get_workflow_draft_manager as openhands_get_workflow_draft_manager,
-    router as openhands_router,
 )
 from bioimageflow_server.routers.nodes import (
     get_result_store,
@@ -102,33 +81,15 @@ from bioimageflow_server.routers.tools import (
 )
 from bioimageflow_server.routers.workflows import (
     get_execution_manager as workflows_get_execution_manager,
-    get_workflow_draft_manager as workflows_get_workflow_draft_manager,
     get_workflow_store as workflows_get_workflow_store,
     router as workflows_router,
-)
-from bioimageflow_server.routers.workflow_drafts import (
-    get_dev_mode as workflow_drafts_get_dev_mode,
-    get_session_manager as workflow_drafts_get_session_manager,
-    get_settings as workflow_drafts_get_settings,
-    get_storage_path as workflow_drafts_get_storage_path,
-    get_tool_registry as workflow_drafts_get_tool_registry,
-    get_workflow_draft_manager,
-    get_workflow_store as workflow_drafts_get_workflow_store,
-    router as workflow_drafts_router,
 )
 from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
-from bioimageflow_server.services.agent_workspace import AgentWorkspaceService
 from bioimageflow_server.services.editor import EditorService
-from bioimageflow_server.services.graph_proposal_manager import (
-    GraphProposalManager,
-    WorkflowDraftProposalStore,
-)
-from bioimageflow_server.services.graph_validator import validate_graph as validate_proposal_graph
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
-from bioimageflow_server.services.openhands import OpenHandsService
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
@@ -137,14 +98,12 @@ from bioimageflow_server.services.package_installer import (
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
-from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 from bioimageflow_server.services.tool_environments import ToolEnvironmentService
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
-from bioimageflow_server.services.workflow_drafts import WorkflowDraftManager
 from bioimageflow_server.ws import (
     ConnectionManager,
     attach_ws_log_handler,
@@ -189,15 +148,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     _deployment_mode = (
         config.deployment_mode if config.deployment_mode in ("desktop", "webapp") else "desktop"
     )
-    settings_store = config.settings_store or SettingsStore(
-        path=get_home() / "settings.json",
-        deployment_mode=cast(Any, _deployment_mode),
-    )
-    should_load_settings_store = config.settings_store is not None or config.settings is None
-    if config.settings_store is None and config.settings is not None:
-        settings_store._current = config.settings  # pyright: ignore[reportPrivateUsage]
+    settings_store = config.settings_store
     try:
-        store_settings = settings_store.get()
+        store_settings = settings_store.get() if settings_store is not None else None
     except RuntimeError:
         store_settings = None
     resolved_settings: Settings = (
@@ -218,9 +171,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.execution_manager is not None:
         execution_manager: Any = config.execution_manager
     else:
-        def settings_provider() -> Settings:
-            return settings_store.get()
-
+        settings_provider = (lambda: settings_store.get()) if settings_store is not None else None
         execution_manager = ExecutionManager(
             event_bus=event_bus,
             tool_registry=registry,
@@ -240,7 +191,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         tool_registry=registry,
         storage_base_dir=resolved_storage_path / "workflows",
     )
-    workflow_draft_manager = config.workflow_draft_manager or WorkflowDraftManager()
     for workflow_info in workflow_store.list_workflows():
         custom_tools_root = workflow_store.workflow_tools_dir(workflow_info.name)
         if custom_tools_root.exists():
@@ -294,41 +244,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
 
     def _live_settings() -> Settings:
-        try:
-            return settings_store.get()
-        except RuntimeError:
-            return resolved_settings
-
-    openhands_service = config.openhands_service or OpenHandsService(
-        settings_provider=_live_settings,
-        default_workspace_provider=lambda: workflow_root,
-    )
-    agent_workspace_service = config.agent_workspace_service or AgentWorkspaceService(
-        workflows_root=workflow_root,
-        platform_repo_root=Path(__file__).resolve().parents[3],
-        package_installer=installer,
-    )
+        if config.settings_store is not None:
+            return config.settings_store.get()
+        return resolved_settings
 
     editor_service = config.editor_service or EditorService(
         settings_provider=_live_settings,
-    )
-    proposal_draft_store = config.proposal_draft_store or WorkflowDraftProposalStore(
-        workflow_draft_manager
-    )
-
-    def _validate_proposed_graph(graph: Any):
-        return validate_proposal_graph(
-            graph,
-            registry,
-            SessionManager(),
-            storage_path=resolved_storage_path,
-            dev_mode=_live_dev_mode(),
-            settings=_live_settings(),
-        )
-
-    graph_proposal_manager = GraphProposalManager(
-        draft_store=proposal_draft_store,
-        validator=_validate_proposed_graph,
     )
 
     ws_log_handler = None
@@ -337,8 +258,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def _lifespan(_app: FastAPI):
         # Settings must load before catalog.refresh() so any settings the
         # catalog might consult (tool_store_path, etc.) are in place.
-        if should_load_settings_store:
-            await settings_store.load()
+        if config.settings_store is not None:
+            await config.settings_store.load()
         try:
             await catalog.refresh()
         except PackageNetworkError as exc:
@@ -374,16 +295,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         try:
             yield
         finally:
-            # Stop owned child processes before detaching the WS log handler.
-            # Napari may take up to 5s (kill timeout) and should still be able
-            # to publish its final environment_status: stopped event.
-            try:
-                await openhands_service.shutdown()
-            except Exception as exc:  # noqa: BLE001
-                logging.getLogger(__name__).exception(
-                    "openhands_service.shutdown() raised during lifespan: %r",
-                    exc,
-                )
+            # Napari shutdown FIRST: it may take up to 5s (kill timeout)
+            # and must run before the WS log handler is detached so the
+            # final environment_status: stopped event reaches clients.
             try:
                 await napari_launcher.shutdown()
             except Exception as exc:  # noqa: BLE001
@@ -411,7 +325,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     logging.getLogger("bioimageflow").removeHandler(ws_log_handler)
                     logging.getLogger("wetlands").removeHandler(ws_log_handler)
                 ws_manager._loop = None
-            await settings_store.flush()
+            if config.settings_store is not None:
+                await config.settings_store.flush()
             if _owns_pypi:
                 await pypi.aclose()
 
@@ -438,11 +353,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                     detail=str(detail_dict.get("detail", "")),
                     field=detail_dict.get("field"),
                 )
-                content = body.model_dump()
-                for key, value in detail_dict.items():
-                    if key not in content:
-                        content[key] = value
-                return JSONResponse(status_code=exc.status_code, content=content)
             else:
                 error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
                 body = ErrorResponse(
@@ -492,79 +402,41 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(filesystem_router, prefix="/api/v1")
     app.include_router(editor_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
-    app.include_router(graph_proposals_router, prefix="/api/v1")
-    app.include_router(graph_proposals_draft_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
-    app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
-    app.include_router(openhands_router, prefix="/api/v1")
-    app.include_router(agent_bridge_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.state.napari_launcher = napari_launcher
-    app.state.openhands_service = openhands_service
-    app.state.agent_workspace_service = agent_workspace_service
     app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
-    app.dependency_overrides[get_openhands_service] = lambda: openhands_service
-    app.dependency_overrides[agent_bridge_get_openhands_service] = lambda: openhands_service
-    app.dependency_overrides[get_agent_workspace_service] = lambda: agent_workspace_service
-    app.dependency_overrides[openhands_get_agent_workspace_service] = (
-        lambda: agent_workspace_service
-    )
-    app.dependency_overrides[openhands_get_settings_store] = lambda: settings_store
-    app.dependency_overrides[openhands_get_graph_proposal_manager] = (
-        lambda: graph_proposal_manager
-    )
-    app.dependency_overrides[openhands_get_workflow_draft_manager] = (
-        lambda: workflow_draft_manager
-    )
-    app.dependency_overrides[openhands_get_execution_manager] = lambda: execution_manager
-    app.include_router(settings_router, prefix="/api/v1")
-    app.dependency_overrides[settings_get_store] = lambda: settings_store
+    if config.settings_store is not None:
+        app.include_router(settings_router, prefix="/api/v1")
+        app.dependency_overrides[settings_get_store] = lambda: config.settings_store
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
-    app.dependency_overrides[workflow_drafts_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
-    app.dependency_overrides[workflow_drafts_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path
-    app.dependency_overrides[workflow_drafts_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
-    app.dependency_overrides[graph_proposals_get_execution_manager] = (
-        lambda: execution_manager
-    )
     app.dependency_overrides[graph_get_workflow_store] = lambda: workflow_store
-    app.dependency_overrides[workflow_drafts_get_workflow_store] = lambda: workflow_store
-    app.dependency_overrides[get_workflow_draft_manager] = lambda: workflow_draft_manager
-    app.dependency_overrides[get_graph_proposal_manager] = lambda: graph_proposal_manager
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
     app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
     app.dependency_overrides[execution_get_workflow_store] = lambda: workflow_store
-    app.dependency_overrides[execution_get_workflow_draft_manager] = (
-        lambda: workflow_draft_manager
-    )
     app.dependency_overrides[workflows_get_workflow_store] = lambda: workflow_store
-    app.dependency_overrides[workflows_get_workflow_draft_manager] = (
-        lambda: workflow_draft_manager
-    )
     app.dependency_overrides[tools_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
 
     def _live_dev_mode() -> bool:
-        try:
-            return settings_store.get().dev_mode
-        except RuntimeError:
-            return resolved_settings.dev_mode
+        if config.settings_store is not None:
+            return config.settings_store.get().dev_mode
+        return resolved_settings.dev_mode
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
-    app.dependency_overrides[workflow_drafts_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings
-    app.dependency_overrides[workflow_drafts_get_settings] = _live_settings
     app.dependency_overrides[get_editor_service] = lambda: editor_service
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager

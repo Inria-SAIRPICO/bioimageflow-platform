@@ -33,14 +33,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
-import type {
-  GraphState,
-  MissingTool,
-  NodeState,
-  PublishedInput,
-  PublishedOutput,
-  ValidationResult,
-} from '@/api/types'
+import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput } from '@/api/types'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
@@ -61,8 +54,6 @@ const props = defineProps<{
     graph?: GraphState
     missingTools?: MissingTool[]
     dirty?: boolean
-    draftRevision?: number
-    validation?: ValidationResult | null
     params?: {
       panelId?: string
       workflowName?: string
@@ -70,8 +61,6 @@ const props = defineProps<{
       graph?: GraphState
       missingTools?: MissingTool[]
       dirty?: boolean
-      draftRevision?: number
-      validation?: ValidationResult | null
     }
   }
 }>()
@@ -121,21 +110,7 @@ const {
   fitView,
 } = useVueFlow()
 
-const graphSync = useGraphSync({
-  draftId: initialDraftId(),
-  initialRevision: initialDraftRevision(),
-})
-const {
-  syncGraph,
-  flushNow,
-  patchParameters,
-  validationResult,
-  syncState,
-} = graphSync
-const revision = graphSync.revision ?? ref(0)
-const client_seq = graphSync.client_seq ?? ref(0)
-const dirty = graphSync.dirty ?? ref(false)
-const pending_sync = graphSync.pending_sync ?? ref(false)
+const { syncGraph, flushNow, patchParameters, validationResult, syncState } = useGraphSync()
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
@@ -155,21 +130,6 @@ const {
 watch(validationResult, (result) => {
   applyValidationResult(result)
 })
-
-watch(
-  [revision, client_seq, validationResult, dirty, pending_sync],
-  () => {
-    const sessionId = props.subWorkflowSessionId
-    if (!sessionId) return
-    subWorkflowSessionsStore.updateDraftSyncState(sessionId, {
-      revision: revision.value,
-      client_seq: client_seq.value,
-      validation_result: validationResult.value,
-      dirty: dirty.value,
-      pending_sync: pending_sync.value,
-    })
-  },
-)
 
 // Mirror per-edge validation errors onto each edge's `data.errors` so the
 // edge component can render the red stroke + tooltip.
@@ -218,7 +178,6 @@ const rootPublishedInputs = ref<PublishedInput[]>([])
 const rootPublishedOutputs = ref<PublishedOutput[]>([])
 const isActiveCanvasTab = ref(true)
 let isApplyingGraphState = false
-let skipNextActivationSync = false
 
 interface SubWorkflowApplyPayload {
   graph: GraphState
@@ -253,24 +212,6 @@ function workflowIdentity() {
     workflowName: params?.workflowName ?? workflowStore.currentName,
     workflowDisplayName: params?.workflowDisplayName ?? workflowStore.current?.display_name,
   }
-}
-
-function initialDraftId(): string {
-  if (props.subWorkflowSessionId) {
-    const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
-    return session?.draft_id ?? `sub-workflow:${props.subWorkflowSessionId}`
-  }
-  const identity = workflowIdentity()
-  return `workflow:${identity.workflowName ?? componentPanelId()}`
-}
-
-function initialDraftRevision(): number {
-  const params = dockviewParams()
-  if (!props.subWorkflowSessionId && typeof params?.draftRevision === 'number') {
-    return params.draftRevision
-  }
-  if (!props.subWorkflowSessionId) return 0
-  return subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)?.revision ?? 0
 }
 
 function currentPublicationContext(): PublicationContext | null {
@@ -311,16 +252,7 @@ async function applyGraphState(
   graph: GraphState,
   missingTools: MissingTool[] = [],
   dirty = false,
-  options: {
-    sync?: boolean
-    pushUndo?: boolean
-    draftRevision?: number
-    validation?: ValidationResult | null
-  } = {},
 ) {
-  if (options.pushUndo) {
-    undoRedo.push(currentVueFlowState())
-  }
   if (!isSubWorkflowEditor) {
     rootPublishedInputs.value = deepClone(graph.published_inputs ?? []) as PublishedInput[]
     rootPublishedOutputs.value = deepClone(graph.published_outputs ?? []) as PublishedOutput[]
@@ -343,19 +275,7 @@ async function applyGraphState(
     // no visible path.
     await nextTick()
     setEdges(vueFlowGraph.edges)
-    if (typeof options.draftRevision === 'number') {
-      revision.value = options.draftRevision
-    }
-    if (options.validation !== undefined) {
-      validationResult.value = options.validation
-    }
-    if (options.sync ?? true) {
-      syncGraph(currentVueFlowState() as any)
-    } else {
-      graphSync.currentGraph.value = graph
-      graphSync.dirty.value = dirty
-      graphSync.pending_sync.value = false
-    }
+    syncGraph(currentVueFlowState() as any)
     if (!isSubWorkflowEditor) {
       const identity = workflowIdentity()
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
@@ -374,33 +294,6 @@ async function applyGraphState(
   } finally {
     isApplyingGraphState = false
   }
-}
-
-async function handleReplaceCanvasGraphEvent(event: Event) {
-  if (isLocked.value) return
-  const detail = (event as CustomEvent<{
-    panelId?: string
-    graph?: GraphState
-    missingTools?: MissingTool[]
-    dirty?: boolean
-    pushUndo?: boolean
-    draftRevision?: number
-    validation?: ValidationResult | null
-  }>).detail
-  if (detail?.panelId !== componentPanelId() || !detail.graph) return
-  skipNextActivationSync = true
-  graphSync.cancelPending()
-  await applyGraphState(
-    detail.graph,
-    detail.missingTools ?? [],
-    detail.dirty ?? true,
-    {
-      sync: false,
-      pushUndo: detail.pushUndo,
-      draftRevision: detail.draftRevision,
-      validation: detail.validation,
-    },
-  )
 }
 
 async function ensureDefaultWorkflow(): Promise<GraphState> {
@@ -460,7 +353,6 @@ function initialGraphFromDockviewParams(): {
   graph: GraphState
   missingTools?: MissingTool[]
   dirty?: boolean
-  validation?: ValidationResult | null
 } | null {
   const params = dockviewParams()
   if (!params?.graph) return null
@@ -468,7 +360,6 @@ function initialGraphFromDockviewParams(): {
     graph: params.graph,
     missingTools: params.missingTools,
     dirty: params.dirty,
-    validation: params.validation,
   }
 }
 
@@ -477,10 +368,6 @@ function handleCanvasTabActivatedEvent(event: Event) {
   isActiveCanvasTab.value = detail?.panelId === componentPanelId()
   if (!isActiveCanvasTab.value) return
   uiStore.setGraphNodes(getNodes.value)
-  if (skipNextActivationSync) {
-    skipNextActivationSync = false
-    return
-  }
   syncGraph(currentVueFlowState() as any)
 }
 
@@ -633,10 +520,6 @@ onMounted(async () => {
     'bioimageflow:canvas-tab-activated',
     handleCanvasTabActivatedEvent as EventListener,
   )
-  window.addEventListener(
-    'bioimageflow:replace-canvas-graph',
-    handleReplaceCanvasGraphEvent as EventListener,
-  )
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
@@ -646,18 +529,10 @@ onMounted(async () => {
   }
   const initialGraph = initialGraphFromDockviewParams()
   if (initialGraph) {
-    const params = dockviewParams()
     await applyGraphState(
       initialGraph.graph,
       initialGraph.missingTools ?? [],
       initialGraph.dirty ?? false,
-    typeof params?.draftRevision === 'number'
-        ? {
-            sync: false,
-            draftRevision: params.draftRevision,
-            validation: initialGraph.validation,
-          }
-        : {},
     )
     return
   }
@@ -682,10 +557,6 @@ onBeforeUnmount(() => {
   window.removeEventListener(
     'bioimageflow:canvas-tab-activated',
     handleCanvasTabActivatedEvent as EventListener,
-  )
-  window.removeEventListener(
-    'bioimageflow:replace-canvas-graph',
-    handleReplaceCanvasGraphEvent as EventListener,
   )
 })
 
@@ -1883,7 +1754,6 @@ function saveSubWorkflowSession() {
 function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
   parentNodeId?: string
 } & Partial<SubWorkflowApplyPayload>>) {
-  if (isLocked.value) return
   const detail = event.detail
   if (!detail?.parentNodeId || !detail.graph) return
   applySubWorkflowDraft(detail.parentNodeId, detail.graph, {

@@ -67,9 +67,7 @@ class WorkflowUpdate(BaseModel):
 class WorkflowSaveBody(BaseModel):
     """Request body for PUT /workflows/{name}."""
 
-    graph: GraphState | None = None
-    draft_id: str | None = None
-    revision: int | None = None
+    graph: GraphState
 
 
 class MissingPackage(BaseModel):
