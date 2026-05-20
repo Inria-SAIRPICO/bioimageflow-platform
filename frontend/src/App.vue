@@ -661,6 +661,11 @@ html, body, #app, #bioimageflow-app {
   color: var(--p-text-color);
 }
 
+.bif-dark-theme .vue-flow__controls-button svg,
+.bif-dark-theme .vue-flow__controls-button path {
+  fill: currentColor;
+}
+
 /* Preserve newlines in toast detail (used by the run-button validation
  * summary so errors appear as a bullet list). */
 :global(.p-toast-detail) {

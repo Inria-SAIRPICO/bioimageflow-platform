@@ -27,7 +27,9 @@
                 "8008",
                 "--reload",
                 "--reload-exclude",
-                ".pixi/*"
+                ".pixi/*",
+                "--reload-exclude",
+                "workflows/.bioimageflow-agent/*"
             ],
             "env": {
                 // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
