@@ -13,21 +13,31 @@ const graphSync = useGraphSync()
 
 const {
   available,
+  installed,
+  configured,
+  configDraft,
   status,
   iframeUrl,
   externalUrl,
   message,
   context,
   proposals,
+  approvals,
+  undoAvailable,
   isLoadingStatus,
   isStarting,
   isShuttingDown,
   isSendingContext,
   isReviewingProposal,
+  isInstalling,
+  isSavingConfig,
+  isReviewingApproval,
+  isUndoing,
   iframeBlocked,
   canStart,
   canShutdown,
   canReviewProposal,
+  canUndo,
 } = storeToRefs(agentStore)
 
 const workflowLabel = computed(() => (
@@ -43,6 +53,7 @@ const showIframe = computed(() => Boolean(iframeUrl.value) && !iframeBlocked.val
 const unavailableMessage = computed(() => (
   message.value ?? 'OpenHands Agent is not available for this session.'
 ))
+const draftRevision = computed(() => graphSync.revision?.value ?? 0)
 
 function currentContextPayload() {
   return {
@@ -52,6 +63,7 @@ function currentContextPayload() {
     dirty: uiStore.hasUnsavedChanges,
     draft: {
       draft_id: graphSync.draft_id.value,
+      revision: draftRevision.value,
       graph: graphSync.currentGraph.value,
       workflow_name: workflowStore.current?.name ?? null,
       workflow_display_name: workflowStore.current?.display_name ?? uiStore.activeWorkflowName,
@@ -61,6 +73,14 @@ function currentContextPayload() {
 
 async function sendContext(): Promise<void> {
   await agentStore.sendCurrentContext(currentContextPayload())
+}
+
+function updateConfigField(
+  key: 'provider' | 'model' | 'api_key_ref' | 'command',
+  event: Event,
+): void {
+  const value = event.target instanceof HTMLInputElement ? event.target.value : ''
+  agentStore.updateConfigDraft(key, value)
 }
 
 function openExternal(): void {
@@ -107,14 +127,86 @@ onMounted(() => {
         >
           Shutdown
         </button>
+        <button
+          type="button"
+          :disabled="!canUndo"
+          data-testid="openhands-agent-undo"
+          @click="agentStore.undoLastChange"
+        >
+          Undo
+        </button>
       </div>
     </header>
+
+    <section class="openhands-agent-panel__settings" aria-label="OpenHands settings">
+      <label>
+        <span>Provider</span>
+        <input
+          :value="configDraft.provider"
+          data-testid="openhands-agent-provider"
+          type="text"
+          autocomplete="off"
+          @input="updateConfigField('provider', $event)"
+        >
+      </label>
+      <label>
+        <span>Model</span>
+        <input
+          :value="configDraft.model"
+          data-testid="openhands-agent-model"
+          type="text"
+          autocomplete="off"
+          @input="updateConfigField('model', $event)"
+        >
+      </label>
+      <label>
+        <span>API key ref</span>
+        <input
+          :value="configDraft.api_key_ref"
+          data-testid="openhands-agent-api-key-ref"
+          type="text"
+          autocomplete="off"
+          @input="updateConfigField('api_key_ref', $event)"
+        >
+      </label>
+      <label>
+        <span>Command</span>
+        <input
+          :value="configDraft.command"
+          data-testid="openhands-agent-command"
+          type="text"
+          autocomplete="off"
+          @input="updateConfigField('command', $event)"
+        >
+      </label>
+      <button
+        type="button"
+        :disabled="isSavingConfig"
+        data-testid="openhands-agent-save-config"
+        @click="agentStore.saveConfig"
+      >
+        Save
+      </button>
+      <button
+        v-if="!installed"
+        type="button"
+        :disabled="isInstalling"
+        data-testid="openhands-agent-install"
+        @click="agentStore.install"
+      >
+        Install
+      </button>
+      <span data-testid="openhands-agent-config-state">
+        {{ installed ? 'Installed' : 'Not installed' }} · {{ configured ? 'Configured' : 'Not configured' }}
+      </span>
+    </section>
 
     <div class="openhands-agent-panel__context" data-testid="openhands-agent-context">
       <span>{{ workflowLabel }}</span>
       <span>{{ nodeCount }} nodes</span>
       <span>{{ selectedCount }} selected</span>
       <span>{{ uiStore.hasUnsavedChanges ? 'Unsaved' : 'Saved' }}</span>
+      <span>Draft {{ graphSync.draft_id.value ?? 'none' }} rev {{ draftRevision }}</span>
       <button
         type="button"
         :disabled="isSendingContext"
@@ -180,6 +272,36 @@ onMounted(() => {
     </template>
 
     <section class="openhands-agent-panel__proposals" aria-label="OpenHands proposals">
+      <article
+        v-for="approval in approvals"
+        :key="approval.id"
+        class="openhands-agent-panel__proposal"
+        data-testid="openhands-agent-approval"
+      >
+        <div>
+          <h3>Package install</h3>
+          <p>{{ approval.package_name }} {{ approval.package_version ?? '' }}</p>
+          <p v-if="approval.command">{{ approval.command }}</p>
+        </div>
+        <div class="openhands-agent-panel__proposal-actions">
+          <button
+            type="button"
+            :disabled="isReviewingApproval"
+            data-testid="openhands-agent-approve-approval"
+            @click="agentStore.approveApproval(approval.id)"
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            :disabled="isReviewingApproval"
+            data-testid="openhands-agent-reject-approval"
+            @click="agentStore.rejectApproval(approval.id)"
+          >
+            Reject
+          </button>
+        </div>
+      </article>
       <article
         v-for="proposal in proposals"
         :key="proposal.id"
@@ -294,6 +416,40 @@ onMounted(() => {
   border-bottom: 1px solid var(--p-content-border-color);
   font-size: 0.8rem;
   color: var(--p-text-muted-color);
+}
+
+.openhands-agent-panel__settings {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr)) auto auto auto;
+  gap: 0.5rem;
+  align-items: end;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--p-content-border-color);
+}
+
+.openhands-agent-panel__settings label {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+  color: var(--p-text-muted-color);
+  font-size: 0.72rem;
+}
+
+.openhands-agent-panel__settings input {
+  min-width: 0;
+  min-height: 1.875rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--p-content-border-color);
+  border-radius: 4px;
+  color: var(--p-text-color);
+  background: var(--bif-surface);
+}
+
+.openhands-agent-panel__settings > span {
+  color: var(--p-text-muted-color);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .openhands-agent-panel__context span:first-child {
