@@ -57,6 +57,48 @@ def test_desktop_default_is_available() -> None:
     assert context.reason is None
 
 
+def test_status_reports_missing_install_and_does_not_autostart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(Settings(deployment_mode="desktop", openhands_process_acknowledged=True))
+    monkeypatch.setattr("bioimageflow_server.services.openhands.shutil.which", lambda _cmd: None)
+
+    status = service.status()
+
+    assert status.running is False
+    assert status.installed is False
+    assert status.configured is True
+    assert status.setup_state == "missing"
+
+
+def test_status_reports_installed_but_needs_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(Settings(deployment_mode="desktop", openhands_process_acknowledged=False))
+    monkeypatch.setattr(
+        "bioimageflow_server.services.openhands.shutil.which",
+        lambda _cmd: "/usr/local/bin/openhands",
+    )
+
+    status = service.status()
+
+    assert status.installed is True
+    assert status.configured is False
+    assert status.setup_state == "needs_config"
+
+
+def test_default_workspace_can_be_workflows_root(tmp_path: Path) -> None:
+    workflows_root = tmp_path / "workflows"
+    service = OpenHandsService(
+        settings_provider=lambda: Settings(deployment_mode="desktop"),
+        default_workspace_provider=lambda: workflows_root,
+    )
+
+    context = service.context()
+
+    assert context.workspace == str(workflows_root.resolve())
+
+
 def test_desktop_explicit_false_is_unavailable() -> None:
     service = _service(Settings(deployment_mode="desktop", openhands_enabled=False))
 

@@ -199,6 +199,7 @@ class GraphProposalManager:
         self._draft_store = draft_store
         self._validator = validator
         self._proposals: dict[str, GraphProposal] = {}
+        self._undo_stack: dict[str, list[DraftSnapshot]] = {}
 
     def create_proposal(
         self,
@@ -248,6 +249,39 @@ class GraphProposalManager:
             proposal.draft_id,
             graph,
             proposal.base_revision,
+        )
+        self._undo_stack.setdefault(proposal.draft_id, []).append(snapshot)
+        return ProposalApplyResult(
+            draft_id=saved.draft_id,
+            revision=saved.revision,
+            graph=saved.graph,
+            validation=validation,
+        )
+
+    def undo_last_apply(
+        self,
+        draft_id: str,
+        *,
+        base_revision: int,
+    ) -> ProposalApplyResult:
+        snapshot = self._draft_store.get_snapshot(draft_id)
+        if snapshot.revision != base_revision:
+            raise ProposalStaleError(
+                draft_id=draft_id,
+                expected_revision=base_revision,
+                current_revision=snapshot.revision,
+            )
+        stack = self._undo_stack.get(draft_id, [])
+        if not stack:
+            raise ProposalOperationError(f"No undo snapshot for draft {draft_id!r}")
+        previous = stack.pop()
+        validation = self._validator(previous.graph)
+        if not validation.valid:
+            raise ProposalValidationError(validation)
+        saved = self._draft_store.save_graph(
+            draft_id,
+            previous.graph,
+            base_revision,
         )
         return ProposalApplyResult(
             draft_id=saved.draft_id,

@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -53,8 +54,14 @@ class OpenHandsUnavailableError(OpenHandsLaunchError):
 class OpenHandsService:
     """Owns at most one OpenHands subprocess started by this server."""
 
-    def __init__(self, *, settings_provider: Callable[[], Settings]) -> None:
+    def __init__(
+        self,
+        *,
+        settings_provider: Callable[[], Settings],
+        default_workspace_provider: Callable[[], Path] | None = None,
+    ) -> None:
         self._settings_provider = settings_provider
+        self._default_workspace_provider = default_workspace_provider
         self._process: subprocess.Popen[Any] | None = None
         self._pid: int | None = None
         self._lock = asyncio.Lock()
@@ -72,12 +79,23 @@ class OpenHandsService:
         if not self._is_alive():
             self._pid = None
         running = self._is_alive()
+        installed = self._is_installed(settings)
+        configured = settings.openhands_process_acknowledged
+        setup_state = self._setup_state(
+            available=available,
+            installed=installed,
+            configured=configured,
+            running=running,
+        )
         return OpenHandsStatus(
             available=available,
             running=running,
             pid=self._pid if running else None,
             url=self._url(settings) if running else None,
             reason=reason,
+            installed=installed,
+            configured=configured,
+            setup_state=setup_state,
         )
 
     def context(self) -> OpenHandsContext:
@@ -218,7 +236,43 @@ class OpenHandsService:
         return False, "unsafe_webapp_features_disabled"
 
     def _workspace_path(self, settings: Settings) -> Path:
+        if (
+            self._default_workspace_provider is not None
+            and settings.openhands_workspace == Settings.model_fields["openhands_workspace"].default
+        ):
+            return self._default_workspace_provider().expanduser().resolve()
         return Path(settings.openhands_workspace).expanduser().resolve()
+
+    def _is_installed(self, settings: Settings) -> bool:
+        try:
+            tokens = shlex.split(settings.openhands_command)
+        except ValueError:
+            return False
+        executable = next(
+            (token for token in tokens if not _ENV_ASSIGNMENT_RE.match(token)),
+            None,
+        )
+        if executable is None:
+            return False
+        return shutil.which(Path(executable).name) is not None
+
+    def _setup_state(
+        self,
+        *,
+        available: bool,
+        installed: bool,
+        configured: bool,
+        running: bool,
+    ) -> str:
+        if running:
+            return "running"
+        if not available:
+            return "unavailable"
+        if not installed:
+            return "missing"
+        if not configured:
+            return "needs_config"
+        return "ready"
 
     def _url(self, settings: Settings) -> str:
         host = f"[{settings.openhands_host}]" if ":" in settings.openhands_host else settings.openhands_host

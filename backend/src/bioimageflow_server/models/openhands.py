@@ -15,6 +15,9 @@ class OpenHandsStatus(BaseModel):
     pid: int | None = None
     url: str | None = None
     reason: str | None = None
+    installed: bool = False
+    configured: bool = False
+    setup_state: str = "missing"
 
 
 class OpenHandsContext(BaseModel):

@@ -197,6 +197,7 @@ class AppConfig:
     connection_manager: ConnectionManager | None = None
     napari_launcher: NapariLauncher | None = None
     openhands_service: OpenHandsService | None = None
+    agent_workspace_service: Any | None = None
     workflow_store: WorkflowStoreService | None = None
     workflow_draft_manager: WorkflowDraftManager | None = None
     editor_service: Any | None = None

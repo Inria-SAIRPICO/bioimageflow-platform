@@ -191,3 +191,21 @@ def test_stale_proposal_rejected_before_validation_or_save() -> None:
 
     assert validation_calls == 0
     assert store.saved_graphs == []
+
+
+def test_apply_proposal_creates_undoable_snapshot() -> None:
+    original = GraphState(nodes=[_node("a")], edges=[])
+    store = RecordingDraftStore(original)
+    manager = GraphProposalManager(draft_store=store, validator=_valid)
+    proposal = manager.create_proposal(
+        draft_id="draft-1",
+        base_revision=1,
+        operations=[AddNodeOperation(node=_node("b"))],
+    )
+
+    applied = manager.apply_proposal(proposal.id)
+    undone = manager.undo_last_apply("draft-1", base_revision=applied.revision)
+
+    assert [node.id for node in applied.graph.nodes] == ["a", "b"]
+    assert undone.revision == 3
+    assert undone.graph == original

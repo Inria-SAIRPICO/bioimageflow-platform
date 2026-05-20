@@ -165,6 +165,22 @@ def test_create_app_constructs_default_openhands_service_from_settings(tmp_path:
     assert service.context().workspace == str(tmp_path)
 
 
+def test_create_app_defaults_openhands_workspace_to_workflow_root(tmp_path: Path) -> None:
+    workflow_root = tmp_path / "workflows"
+    app = create_app(
+        config=AppConfig(
+            settings=Settings(deployment_mode="desktop"),
+            workflow_root=workflow_root,
+            disable_hot_reload=True,
+        )
+    )
+
+    service = app.state.openhands_service
+
+    assert isinstance(service, OpenHandsService)
+    assert service.context().workspace == str(workflow_root.resolve())
+
+
 def test_webapp_without_unsafe_features_is_not_available(tmp_path: Path) -> None:
     app = create_app(
         config=AppConfig(
