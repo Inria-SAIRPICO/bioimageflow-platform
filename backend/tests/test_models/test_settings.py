@@ -81,6 +81,10 @@ class TestSettings:
         assert s.openhands_host == "127.0.0.1"
         assert s.openhands_port == 12000
         assert s.openhands_workspace == "~/bioimageflow_openhands"
+        assert s.openhands_install_command == "uv tool install openhands-ai"
+        assert s.openhands_provider == "openai"
+        assert s.openhands_model == ""
+        assert s.openhands_api_key_ref == "OPENAI_API_KEY"
         assert s.openhands_startup_timeout == 60.0
         assert s.openhands_process_acknowledged is False
 

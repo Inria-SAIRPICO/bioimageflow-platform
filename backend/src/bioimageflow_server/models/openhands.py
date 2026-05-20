@@ -2,7 +2,20 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class OpenHandsApproval(BaseModel):
+    """User-visible approval request created by the agent bridge."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    type: str = "package_install"
+    package_name: str
+    package_version: str | None = None
+    command: str | None = None
+    status: str = "pending"
 
 
 class OpenHandsStatus(BaseModel):
@@ -18,6 +31,7 @@ class OpenHandsStatus(BaseModel):
     installed: bool = False
     configured: bool = False
     setup_state: str = "missing"
+    approvals: list[OpenHandsApproval] = Field(default_factory=list)
 
 
 class OpenHandsContext(BaseModel):
@@ -35,3 +49,37 @@ class OpenHandsContext(BaseModel):
     url: str
     workspace: str
     process_acknowledged: bool
+
+
+class OpenHandsConfig(BaseModel):
+    """Minimal frontend-editable OpenHands configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    installed: bool
+    configured: bool
+    provider: str
+    model: str
+    api_key_ref: str
+    command: str
+    message: str | None = None
+
+
+class OpenHandsConfigUpdate(BaseModel):
+    """Editable OpenHands configuration fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    model: str
+    api_key_ref: str
+    command: str
+
+
+class OpenHandsUndoRequest(BaseModel):
+    """Undo the last applied agent proposal for a draft."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    draft_id: str
+    base_revision: int

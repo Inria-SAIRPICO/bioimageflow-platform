@@ -24,6 +24,7 @@ export interface UseGraphSyncOptions {
 
 export interface GraphDraftSync {
   syncGraph: (graph: { nodes: any[]; edges: any[] }) => void
+  cancelPending: () => void
   flushNow: () => Promise<void>
   patchParameters: (
     nodeId: string,
@@ -204,6 +205,7 @@ function _createActiveGraphSyncFacade(): GraphDraftSync {
   return {
     syncGraph: (graph) => ensureLegacyGraphSync().syncGraph(graph),
     flushNow: () => activeGraphSync().flushNow(),
+    cancelPending: () => activeGraphSync().cancelPending(),
     patchParameters: (nodeId, toolName, parameters) =>
       activeGraphSync().patchParameters(nodeId, toolName, parameters),
     validationResult: activeRef((sync) => sync.validationResult),
@@ -273,6 +275,22 @@ function _createGraphSync(options: {
     timer = setTimeout(() => {
       sendNow()
     }, 300)
+  }
+
+  function cancelPending(): void {
+    requestId += 1
+    pendingGraph = null
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
+    if (inflightController !== null) {
+      inflightController.abort()
+      inflightController = null
+    }
+    isPending.value = false
+    pending_sync.value = false
+    syncState.value = 'idle'
   }
 
   async function sendNow(): Promise<void> {
@@ -437,6 +455,7 @@ function _createGraphSync(options: {
 
   return {
     syncGraph,
+    cancelPending,
     flushNow,
     patchParameters,
     validationResult,

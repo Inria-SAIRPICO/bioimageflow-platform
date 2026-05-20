@@ -47,7 +47,7 @@ import { useWebSocket } from './composables/useWebSocket'
 import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
 import { useWorkflowStore } from './stores/workflow'
 import { useSettingsStore } from './stores/settings'
-import type { GraphState, MissingTool } from './api/types'
+import type { GraphState, MissingTool, ValidationResult } from './api/types'
 
 function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
@@ -454,6 +454,9 @@ function openWorkflowCanvasPanel(detail: {
   workflowDisplayName?: string
   missingTools?: MissingTool[]
   dirty?: boolean
+  pushUndo?: boolean
+  draftRevision?: number
+  validation?: ValidationResult | null
 }): void {
   const api = dockviewApi.value
   if (!api || !detail.graph) return
@@ -465,6 +468,17 @@ function openWorkflowCanvasPanel(detail: {
   const panelId = workflowPanelId(workflowName)
   const existing = api.getPanel(panelId)
   if (existing) {
+    window.dispatchEvent(new CustomEvent('bioimageflow:replace-canvas-graph', {
+      detail: {
+        panelId,
+        graph: detail.graph,
+        missingTools: detail.missingTools ?? [],
+        dirty: detail.dirty ?? false,
+        pushUndo: detail.pushUndo ?? false,
+        draftRevision: detail.draftRevision,
+        validation: detail.validation,
+      },
+    }))
     existing.api.setActive()
     return
   }
@@ -481,6 +495,8 @@ function openWorkflowCanvasPanel(detail: {
       graph: detail.graph,
       missingTools: detail.missingTools ?? [],
       dirty: detail.dirty ?? false,
+      draftRevision: detail.draftRevision,
+      validation: detail.validation,
     },
     position: canvasPanel
       ? { referencePanel: 'canvas', direction: 'within' }
@@ -496,6 +512,9 @@ function onApplyGraph(event: CustomEvent<{
   workflowDisplayName?: string
   missingTools?: MissingTool[]
   dirty?: boolean
+  pushUndo?: boolean
+  draftRevision?: number
+  validation?: ValidationResult | null
 }>) {
   const detail = event.detail
   if (!detail?.graph) return
@@ -505,6 +524,9 @@ function onApplyGraph(event: CustomEvent<{
     workflowDisplayName: detail.workflowDisplayName,
     missingTools: detail.missingTools,
     dirty: detail.dirty,
+    pushUndo: detail.pushUndo,
+    draftRevision: detail.draftRevision,
+    validation: detail.validation,
   })
 }
 

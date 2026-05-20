@@ -534,6 +534,8 @@ describe('AppShell', () => {
       graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
       missingTools: [],
       dirty: false,
+      pushUndo: true,
+      draftRevision: 8,
     }
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
@@ -541,6 +543,14 @@ describe('AppShell', () => {
     const addCount = mockDockviewApi.addPanel.mock.calls.length
     const removeCount = mockDockviewApi.removePanel.mock.calls.length
     const activeCount = panels.get('workflow:analysis').api.setActive.mock.calls.length
+    const replacements: Array<CustomEvent> = []
+    const replaceListener = (event: Event) => {
+      const replacement = event as CustomEvent<{ panelId?: string }>
+      if (replacement.detail?.panelId === 'workflow:analysis') {
+        replacements.push(replacement)
+      }
+    }
+    window.addEventListener('bioimageflow:replace-canvas-graph', replaceListener)
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
     await flushPromises()
@@ -549,6 +559,12 @@ describe('AppShell', () => {
     expect(mockDockviewApi.removePanel.mock.calls.length).toBe(removeCount)
     expect(panels.get('workflow:analysis').api.setActive.mock.calls.length)
       .toBeGreaterThan(activeCount)
+    expect(replacements.some((replacement) => (
+      replacement.detail.panelId === 'workflow:analysis'
+      && replacement.detail.pushUndo === true
+      && replacement.detail.draftRevision === 8
+    ))).toBe(true)
+    window.removeEventListener('bioimageflow:replace-canvas-graph', replaceListener)
   })
 
   it('keeps a dirty sub-workflow session open when direct tab close is cancelled', async () => {

@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from bioimageflow_server.app import create_app
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.agent_workspace import AgentWorkspaceService
 
@@ -80,3 +81,34 @@ async def test_agent_bridge_package_install_requires_approval(tmp_path: Path) ->
     assert approved.status_code == 200
     assert approved.json() == {"status": "installed"}
     installer.install.assert_awaited_once_with("cellpose", version="1.0")
+
+
+async def test_agent_bridge_is_gated_when_openhands_unavailable(tmp_path: Path) -> None:
+    service = AgentWorkspaceService(
+        workflows_root=tmp_path / "workflows",
+        platform_repo_root=tmp_path,
+    )
+    app = create_app(
+        config=AppConfig(
+            settings=Settings(deployment_mode="desktop", openhands_enabled=False),
+            agent_workspace_service=service,
+            workflow_root=tmp_path / "workflows",
+            disable_hot_reload=True,
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        context = await client.get("/api/v1/agent-bridge/context")
+        write = await client.put(
+            "/api/v1/agent-bridge/workflows/wf/tools",
+            json={"path": "tools/a.py", "content": ""},
+        )
+        package = await client.post(
+            "/api/v1/agent-bridge/package-install-requests",
+            json={"package_name": "cellpose"},
+        )
+
+    assert context.status_code == 403
+    assert write.status_code == 403
+    assert package.status_code == 403

@@ -25,6 +25,13 @@ Agents must carry the active draft id and revision through every bridge tool or 
 - Use the workflow-root workspace for generated scripts, workflow-local `tools/`, temporary inputs, and outputs.
 - The platform reference is a copy and a read-only reference. Inspect it for examples and contracts, but do not patch or save workflow work there.
 - Prefer Agent Panel bridge tools for workflow, graph, tool, package, execution, and undo actions. Use these REST routes as the backing contract when bridge tools are absent.
+- `GET /api/v1/agent-bridge/context`: read the workflow-root workspace path, copied platform reference path, and agent context file path.
+- `PUT /api/v1/agent-bridge/workflows/{workflow_name}/tools`: write a workflow-local tool file. `path` must stay under that workflow's `tools/` folder.
+- `POST /api/v1/agent-bridge/package-install-requests`: create a package install approval request; do not install directly.
+- `GET /api/v1/agent-bridge/package-install-requests`: list pending package install requests.
+- `POST /api/v1/openhands/approvals/{approval_id}/approve`: user-facing approval action that installs an approved package request.
+- `POST /api/v1/openhands/approvals/{approval_id}/reject`: user-facing rejection action for a package install request.
+- `POST /api/v1/openhands/undo`: undo the last applied agent proposal for the supplied `draft_id`.
 
 ## Workflow CRUD
 
@@ -66,6 +73,8 @@ Execution is allowed when the user asks to run or verify a workflow and gives ex
 ## Packages
 
 Request package install approval before installing missing packages or tools. Tell the user which node requires the package and whether the install will use the platform package action or an environment command.
+
+Agents must create package install requests through `POST /api/v1/agent-bridge/package-install-requests` and wait for user approval. Do not run shell package managers directly unless the user explicitly approves that specific command.
 
 ## MCP tool inventory
 

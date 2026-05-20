@@ -93,6 +93,20 @@ describe('useGraphSync', () => {
     )
   })
 
+  it('can cancel a queued debounced sync before it writes stale graph state', async () => {
+    mockedPut.mockResolvedValue({ data: makeValidation() })
+    const graphSync = useGraphSync()
+
+    graphSync.syncGraph(makeVueFlowGraph('stale'))
+    graphSync.cancelPending()
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(mockedPut).not.toHaveBeenCalled()
+    expect(graphSync.pending_sync.value).toBe(false)
+    expect(graphSync.dirty.value).toBe(true)
+    expect(graphSync.syncState.value).toBe('idle')
+  })
+
   it('syncs a named canvas draft to workflow-drafts with revision and client sequence', async () => {
     mockedPut.mockResolvedValue({
       data: {

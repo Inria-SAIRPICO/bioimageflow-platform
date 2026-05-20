@@ -30,21 +30,29 @@ function messageFromError(err: unknown): string {
 }
 
 function actionDraft(response: OpenHandsProposalActionResponse) {
-  if (response.draft ?? response.proposal?.draft) {
-    return response.draft ?? response.proposal?.draft ?? null
+  const draft = response.draft ?? response.proposal?.draft ?? (
+    response.graph
+      ? { graph: response.graph, draft_id: response.draft_id, revision: response.revision }
+      : null
+  )
+  if (!draft) return null
+  return {
+    ...draft,
+    validation: draft.validation ?? response.validation ?? null,
   }
-  if (response.graph) {
-    return { graph: response.graph, draft_id: response.draft_id, revision: response.revision }
-  }
-  return null
 }
 
 function undoDraft(response: OpenHandsUndoResponse) {
-  if (response.draft) return response.draft
-  if (response.graph) {
-    return { graph: response.graph, draft_id: response.draft_id, revision: response.revision }
+  const draft = response.draft ?? (
+    response.graph
+      ? { graph: response.graph, draft_id: response.draft_id, revision: response.revision }
+      : null
+  )
+  if (!draft) return null
+  return {
+    ...draft,
+    validation: draft.validation ?? response.validation ?? null,
   }
-  return null
 }
 
 const emptyConfig: OpenHandsAgentConfig = {
@@ -84,6 +92,7 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   const isSavingConfig = ref(false)
   const isReviewingApproval = ref(false)
   const isUndoing = ref(false)
+  const configDirty = ref(false)
   const iframeBlocked = ref(false)
 
   const isRunning = computed(() => status.value === 'running')
@@ -103,7 +112,9 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   const canReviewProposal = computed(() => (
     !isReviewingProposal.value && !useUIStore().isExecutionLocked
   ))
-  const canUndo = computed(() => undoAvailable.value && !isUndoing.value)
+  const canUndo = computed(() => (
+    undoAvailable.value && !isUndoing.value && !useUIStore().isExecutionLocked
+  ))
 
   function applyConfig(next: Partial<OpenHandsAgentConfig> | null | undefined): void {
     if (!next) return
@@ -115,6 +126,7 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
       api_key_ref: next.api_key_ref ?? configDraft.value.api_key_ref,
       command: next.command ?? configDraft.value.command,
     }
+    configDirty.value = false
     if (next.message !== undefined) {
       message.value = next.message
     }
@@ -138,7 +150,9 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
     }
     context.value = next.context ?? context.value
     proposals.value = next.proposals ?? proposals.value
-    approvals.value = next.approvals ?? approvals.value
+    approvals.value = (next.approvals ?? approvals.value).filter(
+      (approval) => approval.status === 'pending',
+    )
     iframeBlocked.value = false
   }
 
@@ -174,6 +188,7 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   ): void {
     configDraft.value = { ...configDraft.value, [key]: value }
     configured.value = false
+    configDirty.value = true
   }
 
   async function install(): Promise<void> {
@@ -187,12 +202,14 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
     }
   }
 
-  async function saveConfig(): Promise<void> {
+  async function saveConfig(): Promise<boolean> {
     isSavingConfig.value = true
     try {
       applyConfig(await saveOpenHandsConfig(configDraft.value))
+      return true
     } catch (err: unknown) {
       message.value = messageFromError(err)
+      return false
     } finally {
       isSavingConfig.value = false
     }
@@ -202,6 +219,10 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
     if (!canStart.value) return
     isStarting.value = true
     try {
+      if ((!configured.value || configDirty.value) && hasCompleteConfig.value) {
+        const saved = await saveConfig()
+        if (!saved) return
+      }
       applyStatus(await startOpenHandsAgent())
     } catch (err: unknown) {
       status.value = 'error'
@@ -274,6 +295,8 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
             workflowDisplayName: draft.workflow_display_name,
             dirty: true,
             pushUndo: true,
+            draftRevision: draft.revision,
+            validation: draft.validation,
           },
         }))
         undoAvailable.value = true
@@ -329,13 +352,22 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
 
   async function undoLastChange(): Promise<void> {
     const draftId = context.value?.draft?.draft_id
+    const baseRevision = context.value?.draft?.revision
     if (!draftId) {
       message.value = 'No agent draft is available to undo.'
       return
     }
+    if (useUIStore().isExecutionLocked) {
+      message.value = 'Undo is disabled while execution is running.'
+      return
+    }
+    if (typeof baseRevision !== 'number') {
+      message.value = 'No agent draft revision is available to undo.'
+      return
+    }
     isUndoing.value = true
     try {
-      const draft = undoDraft(await undoOpenHandsChange(draftId))
+      const draft = undoDraft(await undoOpenHandsChange(draftId, baseRevision))
       if (draft?.graph) {
         window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
           detail: {
@@ -343,6 +375,8 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
             workflowName: draft.workflow_name,
             workflowDisplayName: draft.workflow_display_name,
             dirty: true,
+            draftRevision: draft.revision,
+            validation: draft.validation,
           },
         }))
         undoAvailable.value = false
@@ -410,6 +444,7 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
     isSavingConfig,
     isReviewingApproval,
     isUndoing,
+    configDirty,
     iframeBlocked,
     isRunning,
     hasCompleteConfig,

@@ -114,8 +114,10 @@ vi.mock('@vue-flow/controls', () => ({
 
 const graphSyncMocks = vi.hoisted(() => ({
   syncGraph: vi.fn(),
+  cancelPending: vi.fn(),
   flushNow: vi.fn(),
   patchParameters: vi.fn(),
+  validationResult: undefined as any,
   serializeGraph: vi.fn((state: { nodes: any[]; edges: any[] }) => ({
     nodes: state.nodes.map((n: any) => ({
       id: n.id,
@@ -184,14 +186,26 @@ vi.mock('@/composables/useAutoSave', () => ({
 
 vi.mock('@/composables/useGraphSync', async () => {
   const { ref } = await import('vue')
+  const validationResult = ref(null)
+  graphSyncMocks.validationResult = validationResult
   return {
     serializeGraph: graphSyncMocks.serializeGraph,
-    useGraphSync: () => ({
-      ...graphSyncMocks,
-      validationResult: ref(null),
-      isPending: ref(false),
-      syncState: ref('idle'),
-    }),
+    useGraphSync: () => {
+      return {
+        ...graphSyncMocks,
+        validationResult,
+        isPending: ref(false),
+        syncState: ref('idle'),
+        currentGraph: ref({ nodes: [], edges: [] }),
+        graph: ref({ nodes: [], edges: [] }),
+        dirty: ref(false),
+        pending_sync: ref(false),
+        revision: ref(0),
+        client_seq: ref(0),
+        draft_id: ref(null),
+        validation_result: validationResult,
+      }
+    },
   }
 })
 
@@ -276,9 +290,11 @@ describe('CanvasView', () => {
     dragStartHandler = null
     dragStopHandler = null
     graphSyncMocks.syncGraph.mockClear()
+    graphSyncMocks.cancelPending.mockClear()
     graphSyncMocks.flushNow.mockClear()
     graphSyncMocks.patchParameters.mockClear()
     graphSyncMocks.serializeGraph.mockClear()
+    graphSyncMocks.validationResult.value = null
     autoSaveMocks.scheduleAutoSave.mockClear()
     autoSaveMocks.flushAutoSave.mockClear()
     autoSaveMocks.loadAutoSave.mockReset().mockResolvedValue(null)
@@ -1824,6 +1840,45 @@ describe('CanvasView', () => {
         edges: [expect.objectContaining({ id: 'e1' })],
       }))
 
+      w.unmount()
+    })
+
+    it('cancels pending graph sync before applying an agent graph replacement', async () => {
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+      await flushPromises()
+      graphSyncMocks.cancelPending.mockClear()
+      graphSyncMocks.syncGraph.mockClear()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:replace-canvas-graph', {
+        detail: {
+          panelId: 'workflow:analysis',
+          graph: {
+            nodes: [savedNode('agent-node', 100)],
+            edges: [],
+          },
+          validation: { valid: true, errors: [], node_statuses: {} },
+          dirty: true,
+          draftRevision: 9,
+        },
+      }))
+      await flushPromises()
+
+      expect(graphSyncMocks.cancelPending).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(mockNodes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'agent-node' }),
+      ]))
+      expect(graphSyncMocks.validationResult.value).toEqual({
+        valid: true,
+        errors: [],
+        node_statuses: {},
+      })
       w.unmount()
     })
 

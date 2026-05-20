@@ -85,6 +85,53 @@ def test_bridge_rejects_writes_outside_workflows_tools(tmp_path: Path) -> None:
     with pytest.raises(AgentBridgePermissionError):
         service.write_workflow_tool_file("wf", "workflow.json", "{}")
 
+    with pytest.raises(AgentBridgePermissionError):
+        service.write_workflow_tool_file("..", "tools/escape.py", "")
+
+    with pytest.raises(AgentBridgePermissionError):
+        service.write_workflow_tool_file(".", "tools/escape.py", "")
+
+
+def test_platform_reference_copy_ignores_nested_workflow_agent_dir(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    workflows_root = repo_root / "workflows"
+    recursive_agent = workflows_root / ".bioimageflow-agent" / "platform-reference"
+    recursive_agent.mkdir(parents=True)
+    (recursive_agent / "should_not_copy.txt").write_text("recursive\n", encoding="utf-8")
+    (repo_root / "backend").mkdir()
+    (repo_root / "backend" / "app.py").write_text("source\n", encoding="utf-8")
+    service = AgentWorkspaceService(
+        workflows_root=workflows_root,
+        platform_repo_root=repo_root,
+    )
+
+    context = service.prepare_context()
+
+    reference = Path(context["platform_reference"])
+    assert (reference / "backend" / "app.py").is_file()
+    assert not (reference / "workflows" / ".bioimageflow-agent").exists()
+
+
+def test_platform_reference_copy_ignores_agent_dir_when_workspace_is_repo_root(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "repo"
+    recursive_agent = repo_root / ".bioimageflow-agent" / "platform-reference"
+    recursive_agent.mkdir(parents=True)
+    (recursive_agent / "should_not_copy.txt").write_text("recursive\n", encoding="utf-8")
+    (repo_root / "backend").mkdir()
+    (repo_root / "backend" / "app.py").write_text("source\n", encoding="utf-8")
+    service = AgentWorkspaceService(
+        workflows_root=repo_root,
+        platform_repo_root=repo_root,
+    )
+
+    context = service.prepare_context()
+
+    reference = Path(context["platform_reference"])
+    assert (reference / "backend" / "app.py").is_file()
+    assert not (reference / ".bioimageflow-agent").exists()
+
 
 async def test_package_install_request_requires_explicit_approval(tmp_path: Path) -> None:
     installer = AsyncMock()
@@ -103,3 +150,20 @@ async def test_package_install_request_requires_explicit_approval(tmp_path: Path
     await service.approve_package_install(request.id)
 
     installer.install.assert_awaited_once_with("cellpose", version="1.0")
+    assert service.list_package_install_requests() == []
+
+
+async def test_package_install_failure_restores_pending_request(tmp_path: Path) -> None:
+    installer = AsyncMock()
+    installer.install.side_effect = RuntimeError("network down")
+    service = AgentWorkspaceService(
+        workflows_root=tmp_path / "workflows",
+        platform_repo_root=tmp_path,
+        package_installer=installer,
+    )
+    request = service.request_package_install("cellpose")
+
+    with pytest.raises(RuntimeError, match="network down"):
+        await service.approve_package_install(request.id)
+
+    assert service.list_package_install_requests() == [request]

@@ -150,6 +150,31 @@ class OpenHandsService:
 
             return self.status()
 
+    async def install(self) -> bool:
+        settings = self._settings()
+        if self._is_installed(settings):
+            return True
+        tokens = shlex.split(settings.openhands_install_command)
+        if not tokens:
+            raise OpenHandsLaunchError("openhands_install_command resolved to an empty command")
+        try:
+            await asyncio.to_thread(
+                subprocess.run,
+                tokens,
+                check=True,
+                env=self._scrubbed_env(),
+                timeout=max(settings.openhands_startup_timeout, 1.0) * 5,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise OpenHandsLaunchError(
+                f"OpenHands install command exited with code {exc.returncode}"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise OpenHandsLaunchError("OpenHands install command timed out") from exc
+        except OSError as exc:
+            raise OpenHandsLaunchError(str(exc)) from exc
+        return self._is_installed(settings)
+
     def _launch_sync(self, settings: Settings) -> None:
         workspace = self._workspace_path(settings)
         workspace.mkdir(parents=True, exist_ok=True)

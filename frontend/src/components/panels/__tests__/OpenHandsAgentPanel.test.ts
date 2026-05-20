@@ -10,6 +10,7 @@ const graphSyncState = vi.hoisted(() => ({
   currentGraph: { value: { nodes: [] as any[], edges: [] as any[] } },
   draft_id: { value: 'draft-1' as string | null },
   revision: { value: 7 },
+  flushNow: vi.fn(async () => {}),
 }))
 
 vi.mock('@/composables/useGraphSync', () => ({
@@ -23,6 +24,7 @@ describe('OpenHandsAgentPanel', () => {
     graphSyncState.currentGraph.value = { nodes: [], edges: [] }
     graphSyncState.draft_id.value = 'draft-1'
     graphSyncState.revision.value = 7
+    graphSyncState.flushNow.mockClear()
   })
 
   it('loads status on mount without auto-starting and renders install state', async () => {
@@ -146,6 +148,7 @@ describe('OpenHandsAgentPanel', () => {
     const wrapper = mount(OpenHandsAgentPanel)
     await wrapper.find('[data-testid="openhands-agent-send-context"]').trigger('click')
 
+    expect(graphSyncState.flushNow).toHaveBeenCalledOnce()
     expect(send).toHaveBeenCalledWith({
       workflow_name: 'cells',
       workflow_display_name: 'Cells',

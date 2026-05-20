@@ -1,5 +1,5 @@
 import { api } from '@/api/client'
-import type { GraphState } from '@/api/types'
+import type { GraphState, ValidationResult } from '@/api/types'
 
 export type OpenHandsAgentStatusValue =
   | 'unavailable'
@@ -15,6 +15,7 @@ export interface OpenHandsWorkflowDraft {
   draft_id?: string | null
   revision?: number | null
   graph: GraphState
+  validation?: ValidationResult | null
   workflow_name?: string | null
   workflow_display_name?: string | null
 }
@@ -91,7 +92,7 @@ export interface OpenHandsProposalActionResponse {
   draft_id?: string
   revision?: number
   graph?: GraphState
-  validation?: unknown
+  validation?: ValidationResult | null
 }
 
 export interface OpenHandsApprovalActionResponse {
@@ -106,6 +107,7 @@ export interface OpenHandsUndoResponse {
   revision?: number | null
   graph?: GraphState
   draft?: OpenHandsWorkflowDraft | null
+  validation?: ValidationResult | null
   message?: string | null
 }
 
@@ -115,6 +117,10 @@ interface BackendOpenHandsStatus {
   pid?: number | null
   url?: string | null
   reason?: string | null
+  installed?: boolean
+  configured?: boolean
+  setup_state?: string | null
+  approvals?: OpenHandsApproval[]
 }
 
 function mapBackendStatus(data: BackendOpenHandsStatus): OpenHandsAgentStatus {
@@ -124,10 +130,10 @@ function mapBackendStatus(data: BackendOpenHandsStatus): OpenHandsAgentStatus {
     iframe_url: data.url ?? null,
     external_url: data.url ?? null,
     message: data.reason ?? null,
-    installed: data.available,
-    configured: data.available,
+    installed: data.installed ?? data.available,
+    configured: data.configured ?? data.available,
     proposals: [],
-    approvals: [],
+    approvals: data.approvals ?? [],
   }
 }
 
@@ -223,9 +229,13 @@ export async function rejectOpenHandsApproval(
   return data
 }
 
-export async function undoOpenHandsChange(draftId: string): Promise<OpenHandsUndoResponse> {
+export async function undoOpenHandsChange(
+  draftId: string,
+  baseRevision: number,
+): Promise<OpenHandsUndoResponse> {
   const { data } = await api.post<OpenHandsUndoResponse>('/api/v1/openhands/undo', {
     draft_id: draftId,
+    base_revision: baseRevision,
   })
   return data
 }

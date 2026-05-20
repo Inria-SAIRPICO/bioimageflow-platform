@@ -72,6 +72,7 @@ function currentContextPayload() {
 }
 
 async function sendContext(): Promise<void> {
+  await graphSync.flushNow()
   await agentStore.sendCurrentContext(currentContextPayload())
 }
 

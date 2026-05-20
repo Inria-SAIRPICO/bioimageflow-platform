@@ -33,7 +33,14 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
-import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput } from '@/api/types'
+import type {
+  GraphState,
+  MissingTool,
+  NodeState,
+  PublishedInput,
+  PublishedOutput,
+  ValidationResult,
+} from '@/api/types'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
@@ -54,6 +61,8 @@ const props = defineProps<{
     graph?: GraphState
     missingTools?: MissingTool[]
     dirty?: boolean
+    draftRevision?: number
+    validation?: ValidationResult | null
     params?: {
       panelId?: string
       workflowName?: string
@@ -61,6 +70,8 @@ const props = defineProps<{
       graph?: GraphState
       missingTools?: MissingTool[]
       dirty?: boolean
+      draftRevision?: number
+      validation?: ValidationResult | null
     }
   }
 }>()
@@ -207,6 +218,7 @@ const rootPublishedInputs = ref<PublishedInput[]>([])
 const rootPublishedOutputs = ref<PublishedOutput[]>([])
 const isActiveCanvasTab = ref(true)
 let isApplyingGraphState = false
+let skipNextActivationSync = false
 
 interface SubWorkflowApplyPayload {
   graph: GraphState
@@ -253,6 +265,10 @@ function initialDraftId(): string {
 }
 
 function initialDraftRevision(): number {
+  const params = dockviewParams()
+  if (!props.subWorkflowSessionId && typeof params?.draftRevision === 'number') {
+    return params.draftRevision
+  }
   if (!props.subWorkflowSessionId) return 0
   return subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)?.revision ?? 0
 }
@@ -295,7 +311,16 @@ async function applyGraphState(
   graph: GraphState,
   missingTools: MissingTool[] = [],
   dirty = false,
+  options: {
+    sync?: boolean
+    pushUndo?: boolean
+    draftRevision?: number
+    validation?: ValidationResult | null
+  } = {},
 ) {
+  if (options.pushUndo) {
+    undoRedo.push(currentVueFlowState())
+  }
   if (!isSubWorkflowEditor) {
     rootPublishedInputs.value = deepClone(graph.published_inputs ?? []) as PublishedInput[]
     rootPublishedOutputs.value = deepClone(graph.published_outputs ?? []) as PublishedOutput[]
@@ -318,7 +343,19 @@ async function applyGraphState(
     // no visible path.
     await nextTick()
     setEdges(vueFlowGraph.edges)
-    syncGraph(currentVueFlowState() as any)
+    if (typeof options.draftRevision === 'number') {
+      revision.value = options.draftRevision
+    }
+    if (options.validation !== undefined) {
+      validationResult.value = options.validation
+    }
+    if (options.sync ?? true) {
+      syncGraph(currentVueFlowState() as any)
+    } else {
+      graphSync.currentGraph.value = graph
+      graphSync.dirty.value = dirty
+      graphSync.pending_sync.value = false
+    }
     if (!isSubWorkflowEditor) {
       const identity = workflowIdentity()
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
@@ -337,6 +374,33 @@ async function applyGraphState(
   } finally {
     isApplyingGraphState = false
   }
+}
+
+async function handleReplaceCanvasGraphEvent(event: Event) {
+  if (isLocked.value) return
+  const detail = (event as CustomEvent<{
+    panelId?: string
+    graph?: GraphState
+    missingTools?: MissingTool[]
+    dirty?: boolean
+    pushUndo?: boolean
+    draftRevision?: number
+    validation?: ValidationResult | null
+  }>).detail
+  if (detail?.panelId !== componentPanelId() || !detail.graph) return
+  skipNextActivationSync = true
+  graphSync.cancelPending()
+  await applyGraphState(
+    detail.graph,
+    detail.missingTools ?? [],
+    detail.dirty ?? true,
+    {
+      sync: false,
+      pushUndo: detail.pushUndo,
+      draftRevision: detail.draftRevision,
+      validation: detail.validation,
+    },
+  )
 }
 
 async function ensureDefaultWorkflow(): Promise<GraphState> {
@@ -396,6 +460,7 @@ function initialGraphFromDockviewParams(): {
   graph: GraphState
   missingTools?: MissingTool[]
   dirty?: boolean
+  validation?: ValidationResult | null
 } | null {
   const params = dockviewParams()
   if (!params?.graph) return null
@@ -403,6 +468,7 @@ function initialGraphFromDockviewParams(): {
     graph: params.graph,
     missingTools: params.missingTools,
     dirty: params.dirty,
+    validation: params.validation,
   }
 }
 
@@ -411,6 +477,10 @@ function handleCanvasTabActivatedEvent(event: Event) {
   isActiveCanvasTab.value = detail?.panelId === componentPanelId()
   if (!isActiveCanvasTab.value) return
   uiStore.setGraphNodes(getNodes.value)
+  if (skipNextActivationSync) {
+    skipNextActivationSync = false
+    return
+  }
   syncGraph(currentVueFlowState() as any)
 }
 
@@ -563,6 +633,10 @@ onMounted(async () => {
     'bioimageflow:canvas-tab-activated',
     handleCanvasTabActivatedEvent as EventListener,
   )
+  window.addEventListener(
+    'bioimageflow:replace-canvas-graph',
+    handleReplaceCanvasGraphEvent as EventListener,
+  )
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
@@ -572,10 +646,18 @@ onMounted(async () => {
   }
   const initialGraph = initialGraphFromDockviewParams()
   if (initialGraph) {
+    const params = dockviewParams()
     await applyGraphState(
       initialGraph.graph,
       initialGraph.missingTools ?? [],
       initialGraph.dirty ?? false,
+    typeof params?.draftRevision === 'number'
+        ? {
+            sync: false,
+            draftRevision: params.draftRevision,
+            validation: initialGraph.validation,
+          }
+        : {},
     )
     return
   }
@@ -600,6 +682,10 @@ onBeforeUnmount(() => {
   window.removeEventListener(
     'bioimageflow:canvas-tab-activated',
     handleCanvasTabActivatedEvent as EventListener,
+  )
+  window.removeEventListener(
+    'bioimageflow:replace-canvas-graph',
+    handleReplaceCanvasGraphEvent as EventListener,
   )
 })
 

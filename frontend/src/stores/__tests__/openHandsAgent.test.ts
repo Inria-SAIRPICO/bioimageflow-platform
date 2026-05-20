@@ -16,6 +16,8 @@ import {
 } from '@/api/openhands'
 import { useOpenHandsAgentStore } from '../openHandsAgent'
 
+const validValidation = { valid: true, errors: [], node_statuses: {} }
+
 vi.mock('@/api/openhands', () => ({
   approveOpenHandsApproval: vi.fn(),
   applyOpenHandsProposal: vi.fn(),
@@ -113,6 +115,44 @@ describe('openHandsAgent store', () => {
     expect(store.status).toBe('stopped')
   })
 
+  it('saves complete dirty config before starting', async () => {
+    vi.mocked(saveOpenHandsConfig).mockResolvedValueOnce({
+      installed: true,
+      configured: true,
+      provider: 'openai',
+      model: 'gpt-5',
+      api_key_ref: 'OPENAI_API_KEY',
+      command: 'openhands',
+    })
+    vi.mocked(startOpenHandsAgent).mockResolvedValueOnce({
+      available: true,
+      status: 'running',
+      iframe_url: 'http://127.0.0.1:3000',
+      external_url: 'http://127.0.0.1:3000',
+      message: null,
+      installed: true,
+      configured: true,
+      proposals: [],
+    })
+    const store = useOpenHandsAgentStore()
+    store.applyConfig({
+      installed: true,
+      configured: false,
+      provider: 'openai',
+      model: 'gpt-5',
+      api_key_ref: 'OPENAI_API_KEY',
+      command: 'openhands',
+    })
+    store.updateConfigDraft('model', 'gpt-5.1')
+
+    await store.start()
+
+    expect(saveOpenHandsConfig).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'gpt-5.1',
+    }))
+    expect(startOpenHandsAgent).toHaveBeenCalled()
+  })
+
   it('loads install/config state and only starts when installed and configured', async () => {
     vi.mocked(getOpenHandsConfig).mockResolvedValueOnce({
       installed: false,
@@ -185,17 +225,17 @@ describe('openHandsAgent store', () => {
   it('applies proposal graph responses and rejects proposals', async () => {
     const applyListener = vi.fn()
     window.addEventListener('bioimageflow:apply-graph', applyListener)
-    vi.mocked(applyOpenHandsProposal).mockResolvedValueOnce({
-      applied: true,
-      proposal: {
+	    vi.mocked(applyOpenHandsProposal).mockResolvedValueOnce({
+	      applied: true,
+	      proposal: {
         id: 'proposal-1',
         title: 'Add segmentation',
         summary: 'Adds a segmentation node.',
         status: 'applied',
         draft_id: 'draft-1',
-        draft: { graph: { nodes: [], edges: [] } },
-      },
-    })
+	        draft: { graph: { nodes: [], edges: [] }, validation: validValidation },
+	      },
+	    })
     vi.mocked(rejectOpenHandsProposal).mockResolvedValueOnce({
       rejected: true,
       proposal: {
@@ -239,9 +279,10 @@ describe('openHandsAgent store', () => {
     })
     await store.rejectProposal('proposal-1')
 
-    expect(applyListener).toHaveBeenCalledTimes(1)
-    expect(applyListener.mock.calls[0][0].detail.graph).toEqual({ nodes: [], edges: [] })
-    expect(applyOpenHandsProposal).toHaveBeenCalledWith('draft-1', 'proposal-1')
+	    expect(applyListener).toHaveBeenCalledTimes(1)
+	    expect(applyListener.mock.calls[0][0].detail.graph).toEqual({ nodes: [], edges: [] })
+	    expect(applyListener.mock.calls[0][0].detail.validation).toEqual(validValidation)
+	    expect(applyOpenHandsProposal).toHaveBeenCalledWith('draft-1', 'proposal-1')
     expect(rejectOpenHandsProposal).toHaveBeenCalledWith('draft-1', 'proposal-1')
     window.removeEventListener('bioimageflow:apply-graph', applyListener)
   })
@@ -265,6 +306,11 @@ describe('openHandsAgent store', () => {
         package_name: 'cellpose',
         command: 'pip install cellpose',
         status: 'pending',
+      }, {
+        id: 'approval-old',
+        type: 'package_install',
+        package_name: 'old',
+        status: 'approved',
       }],
     })
 
@@ -295,17 +341,19 @@ describe('openHandsAgent store', () => {
   it('marks automatic agent graph changes as undoable and can undo through backend', async () => {
     const applyListener = vi.fn()
     window.addEventListener('bioimageflow:apply-graph', applyListener)
-    vi.mocked(applyOpenHandsProposal).mockResolvedValueOnce({
-      applied: true,
-      graph: { nodes: [{ id: 'agent-node' } as any], edges: [] },
-      draft_id: 'draft-1',
-      revision: 8,
-    })
-    vi.mocked(undoOpenHandsChange).mockResolvedValueOnce({
-      graph: { nodes: [], edges: [] },
-      draft_id: 'draft-1',
-      revision: 9,
-    })
+	    vi.mocked(applyOpenHandsProposal).mockResolvedValueOnce({
+	      applied: true,
+	      graph: { nodes: [{ id: 'agent-node' } as any], edges: [] },
+	      draft_id: 'draft-1',
+	      revision: 8,
+	      validation: validValidation,
+	    })
+	    vi.mocked(undoOpenHandsChange).mockResolvedValueOnce({
+	      graph: { nodes: [], edges: [] },
+	      draft_id: 'draft-1',
+	      revision: 9,
+	      validation: validValidation,
+	    })
     const store = useOpenHandsAgentStore()
     store.context = {
       workflow_name: 'cells',
@@ -334,14 +382,37 @@ describe('openHandsAgent store', () => {
     await store.applyProposal('proposal-1')
     await store.undoLastChange()
 
-    expect(applyListener).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      detail: expect.objectContaining({ pushUndo: true }),
-    }))
-    expect(undoOpenHandsChange).toHaveBeenCalledWith('draft-1')
-    expect(applyListener).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      detail: expect.objectContaining({ graph: { nodes: [], edges: [] }, dirty: true }),
-    }))
+	    expect(applyListener).toHaveBeenNthCalledWith(1, expect.objectContaining({
+	      detail: expect.objectContaining({ pushUndo: true, validation: validValidation }),
+	    }))
+    expect(undoOpenHandsChange).toHaveBeenCalledWith('draft-1', 8)
+	    expect(applyListener).toHaveBeenNthCalledWith(2, expect.objectContaining({
+	      detail: expect.objectContaining({
+	        graph: { nodes: [], edges: [] },
+	        dirty: true,
+	        validation: validValidation,
+	      }),
+	    }))
     window.removeEventListener('bioimageflow:apply-graph', applyListener)
+  })
+
+  it('does not undo while execution is locked', async () => {
+    const store = useOpenHandsAgentStore()
+    store.context = {
+      workflow_name: 'cells',
+      workflow_display_name: 'Cells',
+      selected_node_ids: [],
+      dirty: true,
+      draft: { draft_id: 'draft-1', revision: 7, graph: { nodes: [], edges: [] } },
+    }
+    store.undoAvailable = true
+    const { useUIStore } = await import('@/stores/ui')
+    useUIStore().setExecutionLocked(true)
+
+    await store.undoLastChange()
+
+    expect(undoOpenHandsChange).not.toHaveBeenCalled()
+    expect(store.message).toBe('Undo is disabled while execution is running.')
   })
 
   it('marks iframe as blocked when embedding fails', () => {

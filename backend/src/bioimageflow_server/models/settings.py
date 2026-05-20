@@ -95,6 +95,10 @@ class Settings(BaseModel):
     openhands_enabled: bool | None = None
     openhands_runtime: Literal["process"] = "process"
     openhands_command: str = "RUNTIME={runtime} openhands web --host {host} --port {port}"
+    openhands_install_command: str = "uv tool install openhands-ai"
+    openhands_provider: str = "openai"
+    openhands_model: str = ""
+    openhands_api_key_ref: str = "OPENAI_API_KEY"
     openhands_host: str = "127.0.0.1"
     openhands_port: int = Field(default=12000, ge=1, le=65535)
     openhands_workspace: str = "~/bioimageflow_openhands"
@@ -104,6 +108,10 @@ class Settings(BaseModel):
     @field_validator(
         "openhands_runtime",
         "openhands_command",
+        "openhands_install_command",
+        "openhands_provider",
+        "openhands_model",
+        "openhands_api_key_ref",
         "openhands_host",
         "openhands_workspace",
         mode="before",
@@ -114,7 +122,14 @@ class Settings(BaseModel):
             return value.strip()
         return value
 
-    @field_validator("openhands_runtime", "openhands_command", "openhands_workspace")
+    @field_validator(
+        "openhands_runtime",
+        "openhands_command",
+        "openhands_install_command",
+        "openhands_provider",
+        "openhands_api_key_ref",
+        "openhands_workspace",
+    )
     @classmethod
     def _require_openhands_text(cls, value: str) -> str:
         if not value:

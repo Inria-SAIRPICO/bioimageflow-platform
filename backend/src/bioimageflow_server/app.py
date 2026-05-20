@@ -27,6 +27,7 @@ from bioimageflow_server.routers.dev import (
 )
 from bioimageflow_server.routers.agent_bridge import (
     get_agent_workspace_service,
+    get_openhands_service as agent_bridge_get_openhands_service,
     router as agent_bridge_router,
 )
 from bioimageflow_server.routers.datasets import (
@@ -70,7 +71,12 @@ from bioimageflow_server.routers.napari import (
     router as napari_router,
 )
 from bioimageflow_server.routers.openhands import (
+    get_agent_workspace_service as openhands_get_agent_workspace_service,
+    get_execution_manager as openhands_get_execution_manager,
+    get_graph_proposal_manager as openhands_get_graph_proposal_manager,
     get_openhands_service,
+    get_settings_store as openhands_get_settings_store,
+    get_workflow_draft_manager as openhands_get_workflow_draft_manager,
     router as openhands_router,
 )
 from bioimageflow_server.routers.nodes import (
@@ -501,7 +507,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.agent_workspace_service = agent_workspace_service
     app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
     app.dependency_overrides[get_openhands_service] = lambda: openhands_service
+    app.dependency_overrides[agent_bridge_get_openhands_service] = lambda: openhands_service
     app.dependency_overrides[get_agent_workspace_service] = lambda: agent_workspace_service
+    app.dependency_overrides[openhands_get_agent_workspace_service] = (
+        lambda: agent_workspace_service
+    )
+    app.dependency_overrides[openhands_get_settings_store] = lambda: settings_store
+    app.dependency_overrides[openhands_get_graph_proposal_manager] = (
+        lambda: graph_proposal_manager
+    )
+    app.dependency_overrides[openhands_get_workflow_draft_manager] = (
+        lambda: workflow_draft_manager
+    )
+    app.dependency_overrides[openhands_get_execution_manager] = lambda: execution_manager
     app.include_router(settings_router, prefix="/api/v1")
     app.dependency_overrides[settings_get_store] = lambda: settings_store
 

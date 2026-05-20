@@ -11,10 +11,21 @@ import pytest
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
+from bioimageflow_server.models.graph import GraphState, NodeState
+from bioimageflow_server.models.graph_proposals import AddNodeOperation, AfterNodePlacement
 from bioimageflow_server.models.openhands import OpenHandsContext, OpenHandsStatus
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.routers.openhands import (
+    get_execution_manager as openhands_get_execution_manager,
+    get_graph_proposal_manager as openhands_get_graph_proposal_manager,
+)
+from bioimageflow_server.services.graph_proposal_manager import (
+    GraphProposalManager,
+    WorkflowDraftProposalStore,
+)
 from bioimageflow_server.services.openhands import OpenHandsLaunchError, OpenHandsService
+from bioimageflow_server.services.workflow_drafts import WorkflowDraftManager
 
 
 pytestmark = pytest.mark.anyio
@@ -66,6 +77,21 @@ def _fake_service(*, available: bool = True) -> MagicMock:
         )
     )
     return service
+
+
+def _graph() -> GraphState:
+    return GraphState(
+        nodes=[
+            NodeState(
+                id="files",
+                name="Files",
+                tool_name="Files",
+                position=(0, 0),
+                parameters={},
+            )
+        ],
+        edges=[],
+    )
 
 
 @pytest.fixture
@@ -140,6 +166,194 @@ async def test_context_returns_effective_configuration(client_with_service) -> N
     assert response.json()["available"] is True
     assert response.json()["runtime"] == "process"
     service.context.assert_called_once()
+
+
+async def test_panel_config_context_approval_and_undo_endpoints(tmp_path: Path) -> None:
+    settings = Settings(deployment_mode="desktop", openhands_workspace=str(tmp_path))
+    service = _fake_service()
+    service.install = AsyncMock(return_value=True)
+    draft_manager = WorkflowDraftManager()
+    draft = draft_manager.create(_graph(), workflow_name="atlas")
+    app = create_app(
+        config=AppConfig(
+            settings=settings,
+            openhands_service=service,  # type: ignore[arg-type]
+            workflow_draft_manager=draft_manager,
+            workflow_root=tmp_path / "workflows",
+            disable_hot_reload=True,
+        )
+    )
+    proposal_manager = GraphProposalManager(
+        draft_store=WorkflowDraftProposalStore(draft_manager)
+    )
+    app.dependency_overrides[openhands_get_graph_proposal_manager] = (
+        lambda: proposal_manager
+    )
+
+    # Use the app-wired proposal endpoint to create an undoable change.
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        config_response = await ac.get("/api/v1/openhands/config")
+        save_response = await ac.post(
+            "/api/v1/openhands/config",
+            json={
+                "provider": "openai",
+                "model": "gpt-5",
+                "api_key_ref": "OPENAI_API_KEY",
+                "command": settings.openhands_command,
+            },
+        )
+        install_response = await ac.post("/api/v1/openhands/install")
+        context_response = await ac.post(
+            "/api/v1/openhands/context",
+            json={"workflow_name": "atlas"},
+        )
+        request_response = await ac.post(
+            "/api/v1/agent-bridge/package-install-requests",
+            json={"package_name": "bioimageflow_common_tools"},
+        )
+        status_response = await ac.get("/api/v1/openhands/status")
+        reject_response = await ac.post(
+            f"/api/v1/openhands/approvals/{request_response.json()['id']}/reject"
+        )
+        proposal = proposal_manager.create_proposal(
+            draft_id=draft.draft_id,
+            base_revision=draft.revision,
+            operations=[
+                AddNodeOperation(
+                    node=NodeState(
+                        id="atlas",
+                        name="Atlas",
+                        tool_name="Atlas",
+                        position=(0, 0),
+                        parameters={},
+                    ),
+                    placement=AfterNodePlacement(node_id="files"),
+                )
+            ],
+        )
+        applied = proposal_manager.apply_proposal(proposal.id)
+        undo_response = await ac.post(
+            "/api/v1/openhands/undo",
+            json={"draft_id": draft.draft_id, "base_revision": applied.revision},
+        )
+
+    assert config_response.status_code == 200
+    assert save_response.json()["configured"] is True
+    assert install_response.status_code == 200
+    assert context_response.json()["workspace"] == str((tmp_path / "workflows").resolve())
+    assert status_response.json()["approvals"][0]["package_name"] == "bioimageflow_common_tools"
+    assert reject_response.json()["rejected"] is True
+    assert [node.id for node in applied.graph.nodes] == [
+        "files",
+        "atlas",
+    ]
+    assert [node["id"] for node in undo_response.json()["graph"]["nodes"]] == ["files"]
+
+
+async def test_openhands_context_does_not_prepare_workspace_when_unavailable(
+    tmp_path: Path,
+) -> None:
+    service = _fake_service(available=False)
+    app = create_app(
+        config=AppConfig(
+            settings=Settings(deployment_mode="desktop", openhands_enabled=False),
+            openhands_service=service,  # type: ignore[arg-type]
+            workflow_root=tmp_path / "workflows",
+            disable_hot_reload=True,
+        )
+    )
+    transport = ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.post("/api/v1/openhands/context", json={"workflow_name": "atlas"})
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] is False
+    assert not (tmp_path / "workflows" / ".bioimageflow-agent").exists()
+
+
+async def test_openhands_approval_and_undo_are_gated_when_unavailable(
+    tmp_path: Path,
+) -> None:
+    service = _fake_service(available=False)
+    draft_manager = WorkflowDraftManager()
+    draft = draft_manager.create(_graph(), workflow_name="atlas")
+    app = create_app(
+        config=AppConfig(
+            settings=Settings(deployment_mode="desktop", openhands_enabled=False),
+            openhands_service=service,  # type: ignore[arg-type]
+            workflow_draft_manager=draft_manager,
+            workflow_root=tmp_path / "workflows",
+            disable_hot_reload=True,
+        )
+    )
+    transport = ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        approval = await ac.post("/api/v1/openhands/approvals/request-1/approve")
+        undo = await ac.post(
+            "/api/v1/openhands/undo",
+            json={"draft_id": draft.draft_id, "base_revision": draft.revision},
+        )
+
+    assert approval.status_code == 403
+    assert undo.status_code == 403
+
+
+async def test_openhands_undo_requires_current_revision_and_execution_unlock(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(deployment_mode="desktop", openhands_workspace=str(tmp_path))
+    draft_manager = WorkflowDraftManager()
+    draft = draft_manager.create(_graph(), workflow_name="atlas")
+    app = create_app(
+        config=AppConfig(
+            settings=settings,
+            workflow_draft_manager=draft_manager,
+            workflow_root=tmp_path / "workflows",
+            disable_hot_reload=True,
+        )
+    )
+    proposal_manager = GraphProposalManager(
+        draft_store=WorkflowDraftProposalStore(draft_manager)
+    )
+    proposal = proposal_manager.create_proposal(
+        draft_id=draft.draft_id,
+        base_revision=draft.revision,
+        operations=[
+            AddNodeOperation(
+                node=NodeState(
+                    id="atlas",
+                    name="Atlas",
+                    tool_name="Atlas",
+                    position=(0, 0),
+                    parameters={},
+                ),
+                placement=AfterNodePlacement(node_id="files"),
+            )
+        ],
+    )
+    applied = proposal_manager.apply_proposal(proposal.id)
+    app.dependency_overrides[openhands_get_graph_proposal_manager] = (
+        lambda: proposal_manager
+    )
+    transport = ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        stale = await ac.post(
+            "/api/v1/openhands/undo",
+            json={"draft_id": draft.draft_id, "base_revision": draft.revision},
+        )
+        locked_manager = type("LockedExecution", (), {"is_running": True})()
+        app.dependency_overrides[openhands_get_execution_manager] = lambda: locked_manager
+        locked = await ac.post(
+            "/api/v1/openhands/undo",
+            json={"draft_id": draft.draft_id, "base_revision": applied.revision},
+        )
+
+    assert stale.status_code == 409
+    assert locked.status_code == 423
 
 
 def test_router_mounted_at_api_v1_openhands_prefix() -> None:

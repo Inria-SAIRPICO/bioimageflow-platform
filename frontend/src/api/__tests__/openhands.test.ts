@@ -34,12 +34,23 @@ describe('openhands api helpers', () => {
         running: true,
         url: 'http://127.0.0.1:12000',
         reason: null,
+        installed: true,
+        configured: true,
+        approvals: [{
+          id: 'approval-1',
+          type: 'package_install',
+          package_name: 'cellpose',
+          status: 'pending',
+        }],
       },
     })
 
     await expect(getOpenHandsStatus()).resolves.toMatchObject({
       available: true,
       status: 'running',
+      installed: true,
+      configured: true,
+      approvals: [expect.objectContaining({ id: 'approval-1' })],
     })
     expect(mockedGet).toHaveBeenCalledWith('/api/v1/openhands/status')
   })
@@ -112,7 +123,7 @@ describe('openhands api helpers', () => {
 
     await approveOpenHandsApproval('approval-1')
     await rejectOpenHandsApproval('approval-2')
-    await undoOpenHandsChange('draft-1')
+    await undoOpenHandsChange('draft-1', 7)
 
     expect(mockedPost).toHaveBeenNthCalledWith(
       1,
@@ -124,6 +135,7 @@ describe('openhands api helpers', () => {
     )
     expect(mockedPost).toHaveBeenNthCalledWith(3, '/api/v1/openhands/undo', {
       draft_id: 'draft-1',
+      base_revision: 7,
     })
   })
 

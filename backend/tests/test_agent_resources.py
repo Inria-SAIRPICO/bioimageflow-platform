@@ -103,6 +103,38 @@ def test_agent_docs_describe_workspace_and_platform_source_boundaries() -> None:
     assert missing == []
 
 
+def test_agent_entry_points_each_describe_workspace_and_platform_source_boundaries() -> None:
+    required = [
+        "agents must never edit platform source",
+        "workflow-root workspace",
+        "platform reference",
+        "read-only reference",
+    ]
+    failures: dict[str, list[str]] = {}
+
+    for path in ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]:
+        text = (ROOT / path).read_text(encoding="utf-8").lower()
+        missing = [phrase for phrase in required if phrase not in text]
+        if missing:
+            failures[path] = missing
+
+    assert failures == {}
+
+
+def test_rest_cookbook_lists_agent_bridge_safety_endpoints() -> None:
+    cookbook = (ROOT / ".agents/resources/rest-cookbook.md").read_text(encoding="utf-8")
+    required = [
+        "GET /api/v1/agent-bridge/context",
+        "PUT /api/v1/agent-bridge/workflows/{workflow_name}/tools",
+        "POST /api/v1/agent-bridge/package-install-requests",
+        "POST /api/v1/openhands/approvals/{approval_id}/approve",
+        "POST /api/v1/openhands/undo",
+    ]
+    missing = [phrase for phrase in required if phrase not in cookbook]
+
+    assert missing == []
+
+
 def test_agent_docs_include_novice_files_atlas_connected_components_scenario() -> None:
     docs = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in DOC_RESOURCE_FILES).lower()
 

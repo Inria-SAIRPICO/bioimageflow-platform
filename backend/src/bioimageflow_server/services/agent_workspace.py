@@ -3,11 +3,29 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
+
+
+_WORKFLOW_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_PLATFORM_REFERENCE_IGNORE = shutil.ignore_patterns(
+    ".git",
+    ".bioimageflow-agent",
+    ".bioimageflow",
+    ".worktrees",
+    ".venv",
+    "bioimageflow",
+    "external",
+    "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+)
 
 
 class AgentBridgePermissionError(PermissionError):
@@ -51,7 +69,7 @@ class AgentWorkspaceService:
     def workflows_root(self) -> Path:
         return self._workflows_root
 
-    def prepare_context(self) -> dict[str, str]:
+    def prepare_context(self, active_context: dict[str, Any] | None = None) -> dict[str, str]:
         agent_root = self._workflows_root / ".bioimageflow-agent"
         reference = agent_root / "platform-reference"
         agent_root.mkdir(parents=True, exist_ok=True)
@@ -61,8 +79,20 @@ class AgentWorkspaceService:
             "platform_reference": str(reference),
             "context_file": str(agent_root / "context.json"),
         }
+        context_file_payload = dict(context)
+        if active_context is not None:
+            context_file_payload.update(
+                {
+                    "active_context": active_context,
+                    "instructions": (
+                        "Edit only workflows and workflow-local tools. Use the platform APIs for "
+                        "drafts, validation, package approval requests, and execution. The copied "
+                        "platform reference is read-only context, not an edit target."
+                    ),
+                }
+            )
         (agent_root / "context.json").write_text(
-            json.dumps(context, indent=2, sort_keys=True) + "\n",
+            json.dumps(context_file_payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         return context
@@ -93,6 +123,13 @@ class AgentWorkspaceService:
         self._requests[request.id] = request
         return request
 
+    def list_package_install_requests(self) -> list[AgentPackageInstallRequest]:
+        return list(self._requests.values())
+
+    def reject_package_install(self, request_id: str) -> None:
+        self._require_request(request_id)
+        del self._requests[request_id]
+
     async def install_requested_package(self, request_id: str) -> None:
         request = self._require_request(request_id)
         if not request.approved:
@@ -100,6 +137,7 @@ class AgentWorkspaceService:
         if self._package_installer is None:
             raise RuntimeError("Package installer not configured")
         await self._package_installer.install(request.package_name, version=request.version)
+        self._requests.pop(request_id, None)
 
     async def approve_package_install(self, request_id: str) -> None:
         request = self._require_request(request_id)
@@ -109,25 +147,26 @@ class AgentWorkspaceService:
             version=request.version,
             approved=True,
         )
-        await self.install_requested_package(request_id)
+        try:
+            await self.install_requested_package(request_id)
+        except Exception:
+            self._requests[request_id] = request
+            raise
 
     def _refresh_platform_reference(self, reference: Path) -> None:
         if reference.exists():
             self._make_writable(reference)
             shutil.rmtree(reference)
-        ignore = shutil.ignore_patterns(
-            ".git",
-            ".venv",
-            "node_modules",
-            "__pycache__",
-            ".pytest_cache",
-            ".ruff_cache",
+        shutil.copytree(
+            self._platform_repo_root,
+            reference,
+            symlinks=False,
+            ignore=self._ignore_reference_entries,
         )
-        shutil.copytree(self._platform_repo_root, reference, symlinks=False, ignore=ignore)
         self._make_readonly(reference)
 
     def _resolve_workflow_tool_path(self, workflow_name: str, relative_path: str) -> Path:
-        if not workflow_name or "/" in workflow_name or "\\" in workflow_name:
+        if not _WORKFLOW_NAME_RE.match(workflow_name):
             raise AgentBridgePermissionError("Invalid workflow name")
         if Path(relative_path).is_absolute():
             raise AgentBridgePermissionError("Agent writes must be relative")
@@ -140,6 +179,17 @@ class AgentWorkspaceService:
                 "Agent writes are limited to workflow-local tools"
             ) from exc
         return target
+
+    def _ignore_reference_entries(self, src: str, names: list[str]) -> set[str]:
+        ignored = set(_PLATFORM_REFERENCE_IGNORE(src, names))
+        src_path = Path(src).resolve()
+        try:
+            relative = self._workflows_root.relative_to(src_path)
+        except ValueError:
+            return ignored
+        if relative.parts:
+            ignored.add(relative.parts[0])
+        return ignored
 
     def _require_request(self, request_id: str) -> AgentPackageInstallRequest:
         try:
