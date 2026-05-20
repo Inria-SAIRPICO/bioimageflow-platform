@@ -11,6 +11,7 @@ from bioimageflow_server.models.graph_proposals import (
     GraphProposal,
     GraphProposalApplyResponse,
     GraphProposalCreateRequest,
+    GraphProposalUndoRequest,
 )
 from bioimageflow_server.services.graph_proposal_manager import (
     GraphProposalManager,
@@ -145,6 +146,37 @@ async def apply_draft_graph_proposal(
         draft_id,
         manager=manager,
         execution_manager=execution_manager,
+    )
+
+
+@draft_router.post("/undo", response_model=GraphProposalApplyResponse)
+async def undo_draft_graph_proposal_apply(
+    draft_id: str,
+    body: GraphProposalUndoRequest,
+    manager: GraphProposalManager = Depends(get_graph_proposal_manager),
+    execution_manager: Any | None = Depends(get_execution_manager),
+) -> GraphProposalApplyResponse:
+    _ensure_unlocked(execution_manager)
+    try:
+        result = manager.undo_last_apply(draft_id, base_revision=body.base_revision)
+    except ProposalStaleError as exc:
+        _raise_stale(exc)
+    except ProposalOperationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ProposalValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "graph_validation_failed",
+                "detail": "Undo graph failed validation",
+                "validation": exc.validation.model_dump(mode="json"),
+            },
+        ) from exc
+    return GraphProposalApplyResponse(
+        draft_id=result.draft_id,
+        revision=result.revision,
+        graph=result.graph,
+        validation=result.validation,
     )
 
 

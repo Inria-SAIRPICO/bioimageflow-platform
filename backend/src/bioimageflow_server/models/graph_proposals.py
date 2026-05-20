@@ -119,3 +119,9 @@ class GraphProposalApplyResponse(BaseModel):
     revision: int
     graph: GraphState
     validation: ValidationResult
+
+
+class GraphProposalUndoRequest(BaseModel):
+    """Request to undo the last automatic graph edit for a draft."""
+
+    base_revision: int

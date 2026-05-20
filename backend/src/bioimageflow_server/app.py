@@ -25,6 +25,10 @@ from bioimageflow_server.routers.dev import (
     get_tool_registry as dev_get_tool_registry,
     router as dev_router,
 )
+from bioimageflow_server.routers.agent_bridge import (
+    get_agent_workspace_service,
+    router as agent_bridge_router,
+)
 from bioimageflow_server.routers.datasets import (
     get_datasets_root,
     get_max_upload_size,
@@ -109,6 +113,7 @@ from bioimageflow_server.routers.workflow_drafts import (
 from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
+from bioimageflow_server.services.agent_workspace import AgentWorkspaceService
 from bioimageflow_server.services.editor import EditorService
 from bioimageflow_server.services.graph_proposal_manager import (
     GraphProposalManager,
@@ -290,6 +295,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     openhands_service = config.openhands_service or OpenHandsService(
         settings_provider=_live_settings,
+        default_workspace_provider=lambda: workflow_root,
+    )
+    agent_workspace_service = config.agent_workspace_service or AgentWorkspaceService(
+        workflows_root=workflow_root,
+        platform_repo_root=Path(__file__).resolve().parents[3],
+        package_installer=installer,
     )
 
     editor_service = config.editor_service or EditorService(
@@ -483,11 +494,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
     app.include_router(openhands_router, prefix="/api/v1")
+    app.include_router(agent_bridge_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
     app.state.napari_launcher = napari_launcher
     app.state.openhands_service = openhands_service
+    app.state.agent_workspace_service = agent_workspace_service
     app.dependency_overrides[get_napari_launcher] = lambda: napari_launcher
     app.dependency_overrides[get_openhands_service] = lambda: openhands_service
+    app.dependency_overrides[get_agent_workspace_service] = lambda: agent_workspace_service
     app.include_router(settings_router, prefix="/api/v1")
     app.dependency_overrides[settings_get_store] = lambda: settings_store
 
