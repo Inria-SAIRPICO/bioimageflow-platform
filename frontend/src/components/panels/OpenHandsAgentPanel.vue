@@ -14,8 +14,6 @@ const graphSync = useGraphSync()
 const {
   available,
   installed,
-  configured,
-  configDraft,
   status,
   iframeUrl,
   externalUrl,
@@ -30,7 +28,6 @@ const {
   isSendingContext,
   isReviewingProposal,
   isInstalling,
-  isSavingConfig,
   isReviewingApproval,
   isUndoing,
   iframeBlocked,
@@ -74,14 +71,6 @@ function currentContextPayload() {
 async function sendContext(): Promise<void> {
   await graphSync.flushNow()
   await agentStore.sendCurrentContext(currentContextPayload())
-}
-
-function updateConfigField(
-  key: 'provider' | 'model' | 'api_key_ref' | 'command',
-  event: Event,
-): void {
-  const value = event.target instanceof HTMLInputElement ? event.target.value : ''
-  agentStore.updateConfigDraft(key, value)
 }
 
 function openExternal(): void {
@@ -140,54 +129,6 @@ onMounted(() => {
     </header>
 
     <section class="openhands-agent-panel__settings" aria-label="OpenHands settings">
-      <label>
-        <span>Provider</span>
-        <input
-          :value="configDraft.provider"
-          data-testid="openhands-agent-provider"
-          type="text"
-          autocomplete="off"
-          @input="updateConfigField('provider', $event)"
-        >
-      </label>
-      <label>
-        <span>Model</span>
-        <input
-          :value="configDraft.model"
-          data-testid="openhands-agent-model"
-          type="text"
-          autocomplete="off"
-          @input="updateConfigField('model', $event)"
-        >
-      </label>
-      <label>
-        <span>API key ref</span>
-        <input
-          :value="configDraft.api_key_ref"
-          data-testid="openhands-agent-api-key-ref"
-          type="text"
-          autocomplete="off"
-          @input="updateConfigField('api_key_ref', $event)"
-        >
-      </label>
-      <label>
-        <span>Command</span>
-        <input
-          :value="configDraft.command"
-          data-testid="openhands-agent-command"
-          type="text"
-          autocomplete="off"
-          @input="updateConfigField('command', $event)"
-        >
-      </label>
-      <button
-        type="button"
-        :disabled="isSavingConfig"
-        data-testid="openhands-agent-save-config"
-        @click="agentStore.saveConfig"
-      >
-        Save
-      </button>
       <button
         v-if="!installed"
         type="button"
@@ -198,7 +139,7 @@ onMounted(() => {
         Install
       </button>
       <span data-testid="openhands-agent-config-state">
-        {{ installed ? 'Installed' : 'Not installed' }} · {{ configured ? 'Configured' : 'Not configured' }}
+        {{ installed ? 'Installed' : 'Not installed' }} · Configure model and API keys inside OpenHands
       </span>
     </section>
 
@@ -422,29 +363,11 @@ onMounted(() => {
 .openhands-agent-panel__settings {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, minmax(8rem, 1fr)) auto auto auto;
+  grid-template-columns: auto 1fr;
   gap: 0.5rem;
-  align-items: end;
+  align-items: center;
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--p-content-border-color);
-}
-
-.openhands-agent-panel__settings label {
-  min-width: 0;
-  display: grid;
-  gap: 0.2rem;
-  color: var(--p-text-muted-color);
-  font-size: 0.72rem;
-}
-
-.openhands-agent-panel__settings input {
-  min-width: 0;
-  min-height: 1.875rem;
-  padding: 0 0.5rem;
-  border: 1px solid var(--p-content-border-color);
-  border-radius: 4px;
-  color: var(--p-text-color);
-  background: var(--bif-surface);
 }
 
 .openhands-agent-panel__settings > span {

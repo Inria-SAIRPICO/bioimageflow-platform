@@ -52,16 +52,13 @@ export interface OpenHandsApproval {
 export interface OpenHandsAgentConfig {
   installed: boolean
   configured: boolean
-  provider: string
-  model: string
-  api_key_ref: string
   command: string
   message?: string | null
 }
 
 export type OpenHandsAgentConfigUpdate = Pick<
   OpenHandsAgentConfig,
-  'provider' | 'model' | 'api_key_ref' | 'command'
+  'command'
 >
 
 export interface OpenHandsAgentStatus {

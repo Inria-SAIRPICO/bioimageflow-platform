@@ -142,11 +142,7 @@ async def test_launch_builds_process_runtime_loopback_command_and_scrubbed_env(
         calls.append({"args": args, "kwargs": kwargs})
         return proc
 
-    settings = Settings(
-        deployment_mode="desktop",
-        openhands_port=4545,
-        openhands_workspace=str(tmp_path),
-    )
+    settings = Settings(deployment_mode="desktop", openhands_workspace=str(tmp_path))
     service = _service(settings)
     monkeypatch.setenv("OPENAI_API_KEY", "secret")
     monkeypatch.setattr("bioimageflow_server.services.openhands.subprocess.Popen", _fake_popen)
@@ -159,17 +155,36 @@ async def test_launch_builds_process_runtime_loopback_command_and_scrubbed_env(
     assert len(calls) == 1
     assert calls[0]["args"] == [
         "openhands",
-        "web",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "4545",
+        "serve",
+        "--mount-cwd",
     ]
     child_env = calls[0]["kwargs"]["env"]
     assert child_env["RUNTIME"] == "process"
     assert "OPENAI_API_KEY" not in child_env
     assert calls[0]["kwargs"]["cwd"] == str(tmp_path)
     assert calls[0]["kwargs"]["start_new_session"] is True
+
+
+def test_web_command_still_forces_loopback_host_and_configured_port(tmp_path: Path) -> None:
+    settings = Settings(
+        deployment_mode="desktop",
+        openhands_command="RUNTIME={runtime} openhands web --host localhost --port 9999",
+        openhands_host="127.0.0.1",
+        openhands_port=4545,
+        openhands_workspace=str(tmp_path),
+    )
+    service = _service(settings)
+
+    args, _env = service._command_and_env(settings)
+
+    assert args == [
+        "openhands",
+        "web",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "4545",
+    ]
 
 
 def test_configured_command_must_use_openhands_executable(tmp_path: Path) -> None:

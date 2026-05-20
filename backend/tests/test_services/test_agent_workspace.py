@@ -133,6 +133,33 @@ def test_platform_reference_copy_ignores_agent_dir_when_workspace_is_repo_root(
     assert not (reference / ".bioimageflow-agent").exists()
 
 
+def test_platform_reference_copy_ignores_heavy_local_runtime_dirs(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "backend").mkdir()
+    (repo_root / "backend" / "app.py").write_text("source\n", encoding="utf-8")
+    for relative in [
+        ".pixi/envs/default/bin/python",
+        "wetlands/pixi/workspaces/bioimageflow-general/.pixi/envs/default/bin/python",
+        "bif_data/raw.bin",
+    ]:
+        path = repo_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("heavy\n", encoding="utf-8")
+    service = AgentWorkspaceService(
+        workflows_root=repo_root / "workflows",
+        platform_repo_root=repo_root,
+    )
+
+    context = service.prepare_context()
+
+    reference = Path(context["platform_reference"])
+    assert (reference / "backend" / "app.py").is_file()
+    assert not (reference / ".pixi").exists()
+    assert not (reference / "wetlands").exists()
+    assert not (reference / "bif_data").exists()
+
+
 async def test_package_install_request_requires_explicit_approval(tmp_path: Path) -> None:
     installer = AsyncMock()
     service = AgentWorkspaceService(

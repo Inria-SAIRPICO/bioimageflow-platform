@@ -58,9 +58,6 @@ function undoDraft(response: OpenHandsUndoResponse) {
 const emptyConfig: OpenHandsAgentConfig = {
   installed: false,
   configured: false,
-  provider: '',
-  model: '',
-  api_key_ref: '',
   command: '',
 }
 
@@ -70,9 +67,6 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   const installed = ref(false)
   const configured = ref(false)
   const configDraft = ref<OpenHandsAgentConfigUpdate>({
-    provider: '',
-    model: '',
-    api_key_ref: '',
     command: '',
   })
   const iframeUrl = ref<string | null>(null)
@@ -96,15 +90,9 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
   const iframeBlocked = ref(false)
 
   const isRunning = computed(() => status.value === 'running')
-  const hasCompleteConfig = computed(() => (
-    Boolean(configDraft.value.provider.trim())
-    && Boolean(configDraft.value.model.trim())
-    && Boolean(configDraft.value.api_key_ref.trim())
-    && Boolean(configDraft.value.command.trim())
-  ))
+  const hasCompleteConfig = computed(() => Boolean(configDraft.value.command.trim()))
   const canStart = computed(() => (
     installed.value
-    && (configured.value || hasCompleteConfig.value)
     && !isStarting.value
     && status.value !== 'running'
   ))
@@ -121,9 +109,6 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
     installed.value = Boolean(next.installed)
     configured.value = Boolean(next.configured)
     configDraft.value = {
-      provider: next.provider ?? configDraft.value.provider,
-      model: next.model ?? configDraft.value.model,
-      api_key_ref: next.api_key_ref ?? configDraft.value.api_key_ref,
       command: next.command ?? configDraft.value.command,
     }
     configDirty.value = false
@@ -142,9 +127,6 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
       applyConfig({
         installed: next.installed ?? next.config?.installed ?? installed.value,
         configured: next.configured ?? next.config?.configured ?? configured.value,
-        provider: next.config?.provider ?? configDraft.value.provider,
-        model: next.config?.model ?? configDraft.value.model,
-        api_key_ref: next.config?.api_key_ref ?? configDraft.value.api_key_ref,
         command: next.config?.command ?? configDraft.value.command,
       })
     }
@@ -219,7 +201,7 @@ export const useOpenHandsAgentStore = defineStore('openHandsAgent', () => {
     if (!canStart.value) return
     isStarting.value = true
     try {
-      if ((!configured.value || configDirty.value) && hasCompleteConfig.value) {
+      if (configDirty.value && hasCompleteConfig.value) {
         const saved = await saveConfig()
         if (!saved) return
       }

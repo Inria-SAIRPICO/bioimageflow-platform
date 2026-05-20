@@ -48,9 +48,6 @@ describe('openHandsAgent store', () => {
     vi.mocked(getOpenHandsConfig).mockResolvedValue({
       installed: false,
       configured: false,
-      provider: '',
-      model: '',
-      api_key_ref: '',
       command: '',
     })
   })
@@ -115,15 +112,7 @@ describe('openHandsAgent store', () => {
     expect(store.status).toBe('stopped')
   })
 
-  it('saves complete dirty config before starting', async () => {
-    vi.mocked(saveOpenHandsConfig).mockResolvedValueOnce({
-      installed: true,
-      configured: true,
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: 'OPENAI_API_KEY',
-      command: 'openhands',
-    })
+  it('starts installed OpenHands without saving duplicate LLM config', async () => {
     vi.mocked(startOpenHandsAgent).mockResolvedValueOnce({
       available: true,
       status: 'running',
@@ -138,45 +127,25 @@ describe('openHandsAgent store', () => {
     store.applyConfig({
       installed: true,
       configured: false,
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: 'OPENAI_API_KEY',
-      command: 'openhands',
+      command: 'openhands serve --mount-cwd',
     })
-    store.updateConfigDraft('model', 'gpt-5.1')
 
     await store.start()
 
-    expect(saveOpenHandsConfig).toHaveBeenCalledWith(expect.objectContaining({
-      model: 'gpt-5.1',
-    }))
+    expect(saveOpenHandsConfig).not.toHaveBeenCalled()
     expect(startOpenHandsAgent).toHaveBeenCalled()
   })
 
-  it('loads install/config state and only starts when installed and configured', async () => {
+  it('loads install/config state and can start after install before OpenHands GUI config', async () => {
     vi.mocked(getOpenHandsConfig).mockResolvedValueOnce({
       installed: false,
       configured: false,
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: '',
-      command: 'openhands',
+      command: 'openhands serve --mount-cwd',
     })
     vi.mocked(installOpenHandsAgent).mockResolvedValueOnce({
       installed: true,
       configured: false,
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: '',
-      command: 'openhands',
-    })
-    vi.mocked(saveOpenHandsConfig).mockResolvedValueOnce({
-      installed: true,
-      configured: true,
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: 'OPENAI_API_KEY',
-      command: 'openhands',
+      command: 'openhands serve --mount-cwd',
     })
     const store = useOpenHandsAgentStore()
 
@@ -185,11 +154,6 @@ describe('openHandsAgent store', () => {
 
     await store.install()
     expect(store.installed).toBe(true)
-    expect(store.canStart).toBe(false)
-
-    store.updateConfigDraft('api_key_ref', 'OPENAI_API_KEY')
-    await store.saveConfig()
-    expect(store.configured).toBe(true)
     expect(store.canStart).toBe(true)
   })
 

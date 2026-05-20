@@ -58,9 +58,6 @@ class OpenHandsConfig(BaseModel):
 
     installed: bool
     configured: bool
-    provider: str
-    model: str
-    api_key_ref: str
     command: str
     message: str | None = None
 
@@ -70,9 +67,6 @@ class OpenHandsConfigUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: str
-    model: str
-    api_key_ref: str
     command: str
 
 

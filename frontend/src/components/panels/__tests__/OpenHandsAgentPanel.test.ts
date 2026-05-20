@@ -54,34 +54,28 @@ describe('OpenHandsAgentPanel', () => {
     expect(install).toHaveBeenCalledOnce()
   })
 
-  it('renders settings inputs and enables Start only after installed/configured', async () => {
+  it('does not duplicate OpenHands LLM settings and enables Start once installed', async () => {
     const store = useOpenHandsAgentStore()
     vi.spyOn(store, 'refreshStatus').mockResolvedValue(undefined)
     const start = vi.spyOn(store, 'start').mockResolvedValue(undefined)
     store.applyConfig({
       installed: false,
       configured: false,
-      provider: '',
-      model: '',
-      api_key_ref: '',
       command: '',
     })
     const wrapper = mount(OpenHandsAgentPanel)
 
-    expect(wrapper.find('[data-testid="openhands-agent-provider"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="openhands-agent-model"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="openhands-agent-api-key-ref"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="openhands-agent-command"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="openhands-agent-provider"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="openhands-agent-model"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="openhands-agent-api-key-ref"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="openhands-agent-save-config"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="openhands-agent-start"]').attributes('disabled'))
       .toBeDefined()
 
     store.applyConfig({
       installed: true,
-      configured: true,
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: 'OPENAI_API_KEY',
-      command: 'openhands',
+      configured: false,
+      command: 'openhands serve --mount-cwd',
     })
     await wrapper.vm.$nextTick()
     await wrapper.find('[data-testid="openhands-agent-start"]').trigger('click')

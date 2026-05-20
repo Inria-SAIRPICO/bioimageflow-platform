@@ -59,10 +59,8 @@ describe('openhands api helpers', () => {
     mockedGet.mockResolvedValueOnce({
       data: {
         installed: false,
-        provider: 'openai',
-        model: 'gpt-5',
-        api_key_ref: 'OPENAI_API_KEY',
-        command: 'openhands',
+        configured: false,
+        command: 'openhands serve --mount-cwd',
       },
     })
     mockedPost
@@ -72,19 +70,13 @@ describe('openhands api helpers', () => {
     await getOpenHandsConfig()
     await installOpenHandsAgent()
     await saveOpenHandsConfig({
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: 'OPENAI_API_KEY',
-      command: 'openhands',
+      command: 'openhands serve --mount-cwd',
     })
 
     expect(mockedGet).toHaveBeenCalledWith('/api/v1/openhands/config')
     expect(mockedPost).toHaveBeenNthCalledWith(1, '/api/v1/openhands/install')
     expect(mockedPost).toHaveBeenNthCalledWith(2, '/api/v1/openhands/config', {
-      provider: 'openai',
-      model: 'gpt-5',
-      api_key_ref: 'OPENAI_API_KEY',
-      command: 'openhands',
+      command: 'openhands serve --mount-cwd',
     })
   })
 

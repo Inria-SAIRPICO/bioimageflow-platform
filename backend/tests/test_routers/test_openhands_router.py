@@ -197,9 +197,6 @@ async def test_panel_config_context_approval_and_undo_endpoints(tmp_path: Path) 
         save_response = await ac.post(
             "/api/v1/openhands/config",
             json={
-                "provider": "openai",
-                "model": "gpt-5",
-                "api_key_ref": "OPENAI_API_KEY",
                 "command": settings.openhands_command,
             },
         )
@@ -239,6 +236,8 @@ async def test_panel_config_context_approval_and_undo_endpoints(tmp_path: Path) 
         )
 
     assert config_response.status_code == 200
+    assert set(config_response.json()) >= {"installed", "configured", "command"}
+    assert "provider" not in config_response.json()
     assert save_response.json()["configured"] is True
     assert install_response.status_code == 200
     assert context_response.json()["workspace"] == str((tmp_path / "workflows").resolve())

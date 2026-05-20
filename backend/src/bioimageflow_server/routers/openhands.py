@@ -136,9 +136,6 @@ async def save_openhands_config(
 ) -> OpenHandsConfig:
     await settings_store.patch(
         {
-            "openhands_provider": body.provider,
-            "openhands_model": body.model,
-            "openhands_api_key_ref": body.api_key_ref,
             "openhands_command": body.command,
             "openhands_process_acknowledged": True,
         }
@@ -295,16 +292,11 @@ def _config_response(
     installed = service.status().installed
     configured = (
         settings.openhands_process_acknowledged
-        and bool(settings.openhands_provider)
-        and bool(settings.openhands_api_key_ref)
         and bool(settings.openhands_command)
     )
     return OpenHandsConfig(
         installed=installed,
         configured=configured,
-        provider=settings.openhands_provider,
-        model=settings.openhands_model,
-        api_key_ref=settings.openhands_api_key_ref,
         command=settings.openhands_command,
     )
 

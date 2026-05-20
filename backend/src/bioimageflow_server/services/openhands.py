@@ -307,6 +307,8 @@ class OpenHandsService:
         executable = Path(args[0]).name
         if executable != "openhands":
             raise OpenHandsLaunchError("openhands_command executable must be 'openhands'")
+        if len(args) > 1 and args[1] == "serve":
+            return args
 
         normalized: list[str] = []
         host_seen = False
