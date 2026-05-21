@@ -63,3 +63,30 @@ Improvements made:
 Why this version is materially better:
 
 The previous plan had the right architecture but still had sequencing contradictions: the frontend could not satisfy the API's revision contract during the first milestone, and writable agents could run before invalidation existed. The revised plan makes the first slice internally implementable, removes decisions that would otherwise cause API churn, and adds real concurrency and lifecycle guarantees.
+
+## Review Iteration 3
+
+Review summary:
+
+- Draft validation could accidentally mutate the active `/graph` `SessionManager` state if it reused the existing validation path directly.
+- Writable CLI commands were still allowed before all legacy save/run/export UI paths were explicitly guarded against stale draft revisions.
+- Edge id generation incorrectly assumed deterministic ids, while the broader platform contract treats edge ids as generated opaque identifiers.
+- Dynamic output refresh was under-specified because `ValidationResult` does not contain resolved output schemas.
+- Rich draft conflict responses needed explicit response models and router behavior so the global error handler does not discard machine-readable fields.
+- `add_node` needed a complete defaulting and validation contract.
+- Workspace-root `agent-state.json` needed staleness detection for backend restart, port changes, and workspace switches.
+
+Improvements made:
+
+- Added a requirement that draft validation use an isolated/sessionless or draft-specific validation context and tests proving it does not mutate the active `/graph` session.
+- Required existing Save, Run, Export, and compatibility save paths to be guarded or disabled against stale remote draft revisions before writable CLI commands ship.
+- Replaced deterministic edge id generation with opaque server-generated ids and duplicate-id rejection.
+- Added `schema_refresh_node_ids` to draft mutation responses for dynamic-output schema refresh.
+- Required explicit response models/`JSONResponse` handling for machine-readable conflict, lock, and validation errors.
+- Expanded `add_node` defaults for parameters, resources, output templates, enabled/collapsed state, name/id generation, duplicate names, and unknown tools.
+- Added backend session id, process id, generated timestamp, health URL, and CLI recovery rules to `agent-state.json`.
+- Expanded tests for session isolation, legacy save overwrite prevention, OpenAPI discriminators, dynamic-output refresh, and stale agent-state handling.
+
+Why this version is materially better:
+
+The previous version was implementable at a feature level but still left several integration contracts vague enough to create subtle regressions in the current app. The revised plan now calls out shared-session isolation, legacy path protection, exact machine-readable errors, and dynamic schema refresh, which are the kinds of details that determine whether agent edits are safe in the real running platform.
