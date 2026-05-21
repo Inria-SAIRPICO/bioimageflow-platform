@@ -248,6 +248,14 @@ class WorkflowStoreService:
                 names.append(workflow_dir.relative_to(self.root_dir).as_posix())
         return sorted(names)
 
+    def _is_inside_workflow_dir(self, path: Path) -> bool:
+        current = path
+        while current != self.root_dir:
+            if (current / "workflow.json").exists():
+                return True
+            current = current.parent
+        return False
+
     def _rewrite_moved_workflow_metadata(self, old_name: str, new_name: str) -> None:
         if old_name == new_name:
             return
@@ -587,6 +595,7 @@ class WorkflowStoreService:
             path.parent.relative_to(self.root_dir).as_posix()
             for path in self.root_dir.glob("**/workflow.json")
             if not path.name.startswith(".")
+            and not self._is_inside_workflow_dir(path.parent.parent)
         }
         names.update(
             path.stem
@@ -625,19 +634,11 @@ class WorkflowStoreService:
             folder.workflows.append(workflow)
             folder.workflows.sort(key=lambda item: item.display_name.lower())
 
-        def inside_workflow_dir(path: Path) -> bool:
-            current = path
-            while current != self.root_dir:
-                if (current / "workflow.json").exists():
-                    return True
-                current = current.parent
-            return False
-
         if self.root_dir.exists():
             for path in self.root_dir.glob("**"):
                 if not path.is_dir() or path == self.root_dir:
                     continue
-                if inside_workflow_dir(path):
+                if self._is_inside_workflow_dir(path):
                     continue
                 rel = path.relative_to(self.root_dir).as_posix()
                 ensure_folder(rel)
@@ -649,6 +650,10 @@ class WorkflowStoreService:
 
     def create_folder(self, path: str) -> WorkflowFolderInfo:
         folder = self._folder_path(path)
+        if self._is_inside_workflow_dir(folder):
+            raise ValueError(
+                "Folders must be created under the workflows root, not inside a workflow"
+            )
         if folder.exists():
             raise FileExistsError(path)
         folder.mkdir(parents=True)
@@ -665,7 +670,12 @@ class WorkflowStoreService:
         else:
             policy_name = policy
         folder = self._folder_path(path)
-        if not folder.exists() or not folder.is_dir() or (folder / "workflow.json").exists():
+        if (
+            not folder.exists()
+            or not folder.is_dir()
+            or (folder / "workflow.json").exists()
+            or self._is_inside_workflow_dir(folder)
+        ):
             raise FileNotFoundError(path)
         children = list(folder.iterdir())
         if children and policy_name == "empty":
@@ -697,10 +707,16 @@ class WorkflowStoreService:
     def rename_folder(self, path: str, new_path: str) -> WorkflowFolderInfo:
         old_folder = self._folder_path(path)
         new_folder = self._folder_path(new_path)
-        if not old_folder.exists() or not old_folder.is_dir():
+        if (
+            not old_folder.exists()
+            or not old_folder.is_dir()
+            or self._is_inside_workflow_dir(old_folder)
+        ):
             raise FileNotFoundError(path)
         if (old_folder / "workflow.json").exists():
             raise FileNotFoundError(path)
+        if self._is_inside_workflow_dir(new_folder):
+            raise ValueError("Folders must stay under the workflows root, not inside a workflow")
         if new_folder.exists():
             raise FileExistsError(new_path)
         try:

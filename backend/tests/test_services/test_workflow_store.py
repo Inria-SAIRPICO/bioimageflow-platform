@@ -164,11 +164,30 @@ def test_workflow_tree_ignores_workflow_internal_tools_folder(
     store: WorkflowStoreService,
 ) -> None:
     store.create_workflow(WorkflowCreate(name="Untitled"))
+    nested_tool_file = store.root_dir / "Untitled" / "tools" / "helper" / "workflow.json"
+    nested_tool_file.parent.mkdir(parents=True)
+    nested_tool_file.write_text(json.dumps({"metadata": {"display_name": "Not a workflow"}}))
 
     tree = store.workflow_tree()
 
     assert [folder.path for folder in tree.folders] == []
     assert [workflow.id for workflow in tree.workflows] == ["Untitled"]
+    assert [workflow.id for workflow in store.list_workflows()] == ["Untitled"]
+
+
+def test_folder_api_rejects_workflow_internal_paths(store: WorkflowStoreService) -> None:
+    store.create_workflow(WorkflowCreate(name="Untitled"))
+    store.create_folder("reports")
+
+    with pytest.raises(ValueError):
+        store.create_folder("Untitled/tools/custom")
+    with pytest.raises(FileNotFoundError):
+        store.delete_folder("Untitled/tools")
+    with pytest.raises(ValueError):
+        store.rename_folder("reports", "Untitled/reports")
+
+    assert (store.root_dir / "reports").is_dir()
+    assert not (store.root_dir / "Untitled" / "tools" / "custom").exists()
 
 
 def test_delete_folder_can_move_children_up(store: WorkflowStoreService) -> None:
@@ -206,7 +225,9 @@ def test_folder_move_updates_child_workflow_ids_and_managed_storage(
     store: WorkflowStoreService,
 ) -> None:
     info = store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
-    nested_tool_file = store.root_dir / "segmentation" / "nuclei" / "tools" / "helper" / "workflow.json"
+    nested_tool_file = (
+        store.root_dir / "segmentation" / "nuclei" / "tools" / "helper" / "workflow.json"
+    )
     nested_tool_file.parent.mkdir(parents=True)
     nested_tool_file.write_text("not a platform workflow")
     storage_path = Path(info.storage_path)
