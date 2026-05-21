@@ -20,7 +20,7 @@ import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue
 import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue'
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
-import type { GraphState } from '@/api/types'
+import type { GraphState, WorkflowInfo } from '@/api/types'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -42,6 +42,11 @@ const runButtonRef = useTemplateRef<InstanceType<typeof RunButton> | null>(
 )
 
 const graphSync = { flushNow, validationResult }
+
+function workflowId(workflow: WorkflowInfo): string {
+  return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
+}
+
 const workflowTitle = computed(() => {
   const label = uiStore.activeWorkflowName ?? 'No workflow'
   return uiStore.hasUnsavedChanges ? `${label} *` : label
@@ -288,7 +293,7 @@ async function openImportedWorkflow(name: string): Promise<void> {
 
 async function finishImport(file: File, nameOverride?: string): Promise<void> {
   const response = await workflowStore.importWorkflow(file, { nameOverride })
-  await openImportedWorkflow(response.info.name)
+  await openImportedWorkflow(workflowId(response.info))
   pendingImportFile.value = null
 }
 
@@ -354,7 +359,7 @@ function saveWorkflowAs(): void {
 }
 
 async function duplicateWorkflowByName(name: string): Promise<void> {
-  const source = workflowStore.workflows.find((workflow) => workflow.name === name)
+  const source = workflowStore.workflows.find((workflow) => workflowId(workflow) === name)
   const displayName = `${source?.display_name ?? name} copy`
   try {
     const info = await workflowStore.patchWorkflow(name, {
@@ -363,7 +368,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
       display_name: displayName,
       description: source?.description ?? null,
     })
-    const graph = await workflowStore.loadWorkflow(info.name)
+    const graph = await workflowStore.loadWorkflow(workflowId(info))
     applyGraph(graph)
   } catch (err: unknown) {
     showError('Duplicate workflow failed', err)
@@ -379,7 +384,7 @@ async function exportWorkflowByName(name: string): Promise<void> {
 }
 
 async function deleteWorkflowByName(name: string): Promise<void> {
-  const workflow = workflowStore.workflows.find((item) => item.name === name)
+  const workflow = workflowStore.workflows.find((item) => workflowId(item) === name)
   const label = workflow?.display_name ?? name
   if (!window.confirm(`Delete workflow '${label}'?`)) return
   const wasCurrent = workflowStore.currentName === name
@@ -387,7 +392,7 @@ async function deleteWorkflowByName(name: string): Promise<void> {
     await workflowStore.deleteWorkflow(name)
     if (wasCurrent) {
       const graph = { nodes: [], edges: [] }
-      const names = new Set(workflowStore.workflows.map((item) => item.name))
+      const names = new Set(workflowStore.workflows.map((item) => workflowId(item)))
       let nextName = 'Untitled'
       let suffix = 2
       while (names.has(nextName)) {
@@ -415,7 +420,7 @@ async function confirmDeleteWorkflow(): Promise<void> {
     await workflowStore.deleteWorkflow(name)
     deleteDialogVisible.value = false
     const graph = { nodes: [], edges: [] }
-    const names = new Set(workflowStore.workflows.map((workflow) => workflow.name))
+    const names = new Set(workflowStore.workflows.map((workflow) => workflowId(workflow)))
     let nextName = 'Untitled'
     let suffix = 2
     while (names.has(nextName)) {

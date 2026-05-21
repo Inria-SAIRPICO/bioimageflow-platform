@@ -398,7 +398,7 @@ Imports a workflow by calling the BioImageFlow library import/load API.
 2. If a workflow with the same `id` already exists, the server returns **409 Conflict** with a suggested alternative id (e.g., `"segmentation/my_workflow_2"`).
 3. The server checks `required_packages` against the tool store. If packages or versions are missing, the response includes a `missing_packages` field (same format as workflow loading — see Section 2.4.2 of the full spec).
 4. On success, the imported workflow is saved as
-   `workspace/workflows/<id>.workflow.json`. Any bundled custom tools are
+   `workspace/workflows/<id>/workflow.json`. Any bundled custom tools are
    restored under `workspace/tools/` with collision-safe names if needed.
 
 **Response (success):**

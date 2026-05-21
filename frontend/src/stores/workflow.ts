@@ -35,6 +35,8 @@ export type WorkflowFolder = {
   parentId: string | null
 }
 
+export type WorkflowFolderDeletePolicy = 'empty' | 'delete_children' | 'move_children_up'
+
 export type WorkflowTreeWorkflowNode = {
   type: 'workflow'
   workflow: WorkflowInfo
@@ -108,6 +110,11 @@ function childFolderPath(parentId: string | null, name: string): string {
 function parentFolderPath(path: string): string | null {
   const index = path.lastIndexOf('/')
   return index === -1 ? null : path.slice(0, index)
+}
+
+function folderLeafName(path: string): string {
+  const index = path.lastIndexOf('/')
+  return index === -1 ? path : path.slice(index + 1)
 }
 
 function workflowUrl(id: string): string {
@@ -203,6 +210,37 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function workflowFolderId(name: string): string | null {
     const folderId = workflowFolderIds.value[name] ?? null
     return folderExists(folderId) ? folderId : null
+  }
+
+  function workflowIdsInFolderPrefix(folderId: string): string[] {
+    return workflows.value
+      .map((workflow) => workflowId(workflow))
+      .filter((id) => id === folderId || id.startsWith(`${folderId}/`))
+  }
+
+  function remapWorkflowIdPrefix(id: string, oldPrefix: string, newPrefix: string | null): string {
+    if (id === oldPrefix) return newPrefix ?? ''
+    if (!id.startsWith(`${oldPrefix}/`)) return id
+    const suffix = id.slice(oldPrefix.length + 1)
+    return newPrefix ? `${newPrefix}/${suffix}` : suffix
+  }
+
+  async function renameAutoSavesForFolderMove(
+    oldPrefix: string,
+    newPrefix: string | null,
+  ): Promise<void> {
+    const moves = workflowIdsInFolderPrefix(oldPrefix)
+      .map((id) => [id, remapWorkflowIdPrefix(id, oldPrefix, newPrefix)] as const)
+      .filter(([oldId, newId]) => oldId !== newId && newId.length > 0)
+    for (const [oldId, newId] of moves) {
+      await autoSave.renameWorkflow(oldId, newId)
+    }
+  }
+
+  async function clearAutoSavesForFolder(folderId: string): Promise<void> {
+    for (const id of workflowIdsInFolderPrefix(folderId)) {
+      await autoSave.clearAutoSave(id)
+    }
   }
 
   function workflowsForFolder(folderId: string | null): WorkflowInfo[] {
@@ -503,44 +541,71 @@ export const useWorkflowStore = defineStore('workflow', () => {
       { new_path: newPath },
     )
     const nextId = data.path
-    workflowFolders.value[index] = {
-      ...workflowFolders.value[index],
-      id: nextId,
-      name: data.display_name,
-      parentId: parentFolderPath(nextId),
+    const previousCurrent = currentName.value
+    const nextCurrent = previousCurrent ? remapWorkflowIdPrefix(previousCurrent, id, nextId) : null
+    await renameAutoSavesForFolderMove(id, nextId)
+    await fetchWorkflowTree()
+    if (nextCurrent) {
+      activateWorkflow(nextCurrent)
     }
-    workflowFolderIds.value = Object.fromEntries(
-      Object.entries(workflowFolderIds.value).map(([workflowName, folderId]) => [
-        workflowName,
-        folderId === id || folderId?.startsWith(`${id}/`)
-          ? `${nextId}${folderId.slice(id.length)}`
-          : folderId,
-      ]),
-    )
   }
 
-  async function deleteWorkflowFolder(id: string): Promise<void> {
+  async function deleteWorkflowFolder(
+    id: string,
+    policy: WorkflowFolderDeletePolicy = 'empty',
+  ): Promise<void> {
     const folder = workflowFolders.value.find((item) => item.id === id)
     if (!folder) return
-    await api.delete(`/api/v1/workflows/folders/${workflowUrl(id)}`)
-    const childIds = new Set<string>([id])
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const item of workflowFolders.value) {
-        if (item.parentId && childIds.has(item.parentId) && !childIds.has(item.id)) {
-          childIds.add(item.id)
-          changed = true
-        }
+    await api.delete(`/api/v1/workflows/folders/${workflowUrl(id)}`, {
+      data: { policy },
+    })
+    if (policy === 'delete_children') {
+      await clearAutoSavesForFolder(id)
+      if (currentName.value && remapWorkflowIdPrefix(currentName.value, id, null) !== currentName.value) {
+        setCurrent(null)
+        await autoSave.setLastOpenedWorkflow(null)
       }
+      await fetchWorkflowTree()
+      return
     }
-    workflowFolders.value = workflowFolders.value.filter((item) => !childIds.has(item.id))
-    workflowFolderIds.value = Object.fromEntries(
-      Object.entries(workflowFolderIds.value).map(([name, folderId]) => [
-        name,
-        folderId && childIds.has(folderId) ? folder.parentId : folderId,
-      ]),
+    const previousCurrent = currentName.value
+    const nextCurrent = previousCurrent
+      ? remapWorkflowIdPrefix(previousCurrent, id, folder.parentId)
+      : null
+    await renameAutoSavesForFolderMove(id, folder.parentId)
+    await fetchWorkflowTree()
+    if (nextCurrent) {
+      activateWorkflow(nextCurrent)
+    }
+  }
+
+  async function moveWorkflowFolder(
+    id: string,
+    targetParentId: string | null,
+  ): Promise<void> {
+    const folder = workflowFolders.value.find((item) => item.id === id)
+    if (!folder) {
+      throw new Error('Folder does not exist')
+    }
+    if (!folderExists(targetParentId)) {
+      throw new Error('Target folder does not exist')
+    }
+    if (targetParentId === id || targetParentId?.startsWith(`${id}/`)) {
+      throw new Error('Cannot move a folder into itself')
+    }
+    const nextPath = childFolderPath(targetParentId, folderLeafName(id))
+    const { data } = await api.patch<WorkflowFolderResponse>(
+      `/api/v1/workflows/folders/${workflowUrl(id)}`,
+      { new_path: nextPath },
     )
+    const nextId = data.path
+    const previousCurrent = currentName.value
+    const nextCurrent = previousCurrent ? remapWorkflowIdPrefix(previousCurrent, id, nextId) : null
+    await renameAutoSavesForFolderMove(id, nextId)
+    await fetchWorkflowTree()
+    if (nextCurrent) {
+      activateWorkflow(nextCurrent)
+    }
   }
 
   async function moveWorkflowToFolder(
@@ -640,6 +705,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     createWorkflowFolder,
     renameWorkflowFolder,
     deleteWorkflowFolder,
+    moveWorkflowFolder,
     moveWorkflowToFolder,
     moveWorkflowBefore,
     markDirty,

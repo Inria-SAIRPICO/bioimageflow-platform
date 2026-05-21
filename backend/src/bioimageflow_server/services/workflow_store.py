@@ -20,6 +20,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowExportDocument,
     WorkflowFile,
+    WorkflowFolderDelete,
     WorkflowFolderInfo,
     WorkflowInfo,
     WorkflowImportResponse,
@@ -229,6 +230,76 @@ class WorkflowStoreService:
             config = {}
         config["storage_path"] = storage_path
         workflow_data["config"] = config
+
+    def _workflow_names_under_folder(self, folder: Path) -> list[str]:
+        if not folder.exists():
+            return []
+        names: list[str] = []
+        for path in folder.glob("**/workflow.json"):
+            workflow_dir = path.parent
+            current = workflow_dir.parent
+            nested_inside_workflow = False
+            while current != folder.parent and current != self.root_dir.parent:
+                if (current / "workflow.json").exists():
+                    nested_inside_workflow = True
+                    break
+                current = current.parent
+            if not nested_inside_workflow:
+                names.append(workflow_dir.relative_to(self.root_dir).as_posix())
+        return sorted(names)
+
+    def _rewrite_moved_workflow_metadata(self, old_name: str, new_name: str) -> None:
+        if old_name == new_name:
+            return
+        path = self._path_for(new_name)
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        metadata = raw.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        if self._is_managed_storage_path(
+            old_name,
+            cast(str | None, metadata.get("storage_path")),
+        ):
+            metadata["storage_path"] = self._move_managed_storage(old_name, new_name)
+        raw["metadata"] = metadata
+        storage_path = metadata.get("storage_path")
+        if isinstance(storage_path, str) and storage_path:
+            self._set_workflow_storage_path(raw, storage_path)
+        self._write_raw(new_name, raw)
+
+    def _ensure_moved_workflow_storage_available(
+        self,
+        moves: list[tuple[str, str]],
+    ) -> None:
+        for old_name, new_name in moves:
+            if old_name == new_name:
+                continue
+            raw = self._read_raw(old_name)
+            metadata = raw.get("metadata", {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+            if not self._is_managed_storage_path(
+                old_name,
+                cast(str | None, metadata.get("storage_path")),
+            ):
+                continue
+            new_storage = self._managed_storage_path(new_name)
+            if new_storage.exists() and new_storage != self._managed_storage_path(old_name):
+                raise FileExistsError(new_name)
+
+    def _rewrite_moved_workflows(self, moves: list[tuple[str, str]]) -> None:
+        for old_name, new_name in moves:
+            self._rewrite_moved_workflow_metadata(old_name, new_name)
+
+    @staticmethod
+    def _renamed_child_path(old_name: str, old_prefix: str, new_prefix: str) -> str:
+        suffix = old_name[len(old_prefix):]
+        return f"{new_prefix}{suffix}" if new_prefix else suffix.lstrip("/")
+
+    @staticmethod
+    def _promoted_child_path(old_name: str, removed_prefix: str, parent_prefix: str) -> str:
+        suffix = old_name[len(removed_prefix):].lstrip("/")
+        return f"{parent_prefix}/{suffix}" if parent_prefix else suffix
 
     def _metadata_from_raw(
         self,
@@ -554,16 +625,21 @@ class WorkflowStoreService:
             folder.workflows.append(workflow)
             folder.workflows.sort(key=lambda item: item.display_name.lower())
 
+        def inside_workflow_dir(path: Path) -> bool:
+            current = path
+            while current != self.root_dir:
+                if (current / "workflow.json").exists():
+                    return True
+                current = current.parent
+            return False
+
         if self.root_dir.exists():
             for path in self.root_dir.glob("**"):
                 if not path.is_dir() or path == self.root_dir:
                     continue
-                rel = path.relative_to(self.root_dir).as_posix()
-                if (path / "workflow.json").exists():
-                    parent_path, _, _leaf = rel.rpartition("/")
-                    if parent_path:
-                        ensure_folder(parent_path)
+                if inside_workflow_dir(path):
                     continue
+                rel = path.relative_to(self.root_dir).as_posix()
                 ensure_folder(rel)
         return root
 
@@ -579,12 +655,43 @@ class WorkflowStoreService:
         safe = validate_workflow_id(path)
         return WorkflowFolderInfo(path=safe, display_name=safe.split("/")[-1])
 
-    def delete_folder(self, path: str) -> None:
+    def delete_folder(
+        self,
+        path: str,
+        policy: WorkflowFolderDelete | str = "empty",
+    ) -> None:
+        if isinstance(policy, WorkflowFolderDelete):
+            policy_name = policy.policy
+        else:
+            policy_name = policy
         folder = self._folder_path(path)
         if not folder.exists() or not folder.is_dir() or (folder / "workflow.json").exists():
             raise FileNotFoundError(path)
-        if any(folder.iterdir()):
+        children = list(folder.iterdir())
+        if children and policy_name == "empty":
             raise FileExistsError(path)
+        if children and policy_name == "delete_children":
+            for workflow_name in self._workflow_names_under_folder(folder):
+                managed_path = self._managed_storage_path(workflow_name)
+                if managed_path.exists() and managed_path.is_relative_to(self.storage_base_dir):
+                    shutil.rmtree(managed_path)
+            shutil.rmtree(folder)
+            return
+        if children and policy_name == "move_children_up":
+            safe_path = validate_workflow_id(path)
+            parent_prefix, _, _ = safe_path.rpartition("/")
+            moves = [
+                (name, self._promoted_child_path(name, safe_path, parent_prefix))
+                for name in self._workflow_names_under_folder(folder)
+            ]
+            self._ensure_moved_workflow_storage_available(moves)
+            for child in children:
+                destination = folder.parent / child.name
+                if destination.exists():
+                    raise FileExistsError(destination.name)
+            for child in children:
+                child.rename(folder.parent / child.name)
+            self._rewrite_moved_workflows(moves)
         folder.rmdir()
 
     def rename_folder(self, path: str, new_path: str) -> WorkflowFolderInfo:
@@ -596,10 +703,23 @@ class WorkflowStoreService:
             raise FileNotFoundError(path)
         if new_folder.exists():
             raise FileExistsError(new_path)
+        try:
+            new_folder.relative_to(old_folder)
+        except ValueError:
+            pass
+        else:
+            raise ValueError("Cannot move a folder into itself")
+        safe_old = validate_workflow_id(path)
+        safe_new = validate_workflow_id(new_path)
+        moves = [
+            (name, self._renamed_child_path(name, safe_old, safe_new))
+            for name in self._workflow_names_under_folder(old_folder)
+        ]
+        self._ensure_moved_workflow_storage_available(moves)
         new_folder.parent.mkdir(parents=True, exist_ok=True)
         old_folder.rename(new_folder)
-        safe = validate_workflow_id(new_path)
-        return WorkflowFolderInfo(path=safe, display_name=safe.split("/")[-1])
+        self._rewrite_moved_workflows(moves)
+        return WorkflowFolderInfo(path=safe_new, display_name=safe_new.split("/")[-1])
 
     def create_workflow(self, data: WorkflowCreate) -> WorkflowInfo:
         path = self._path_for(data.name)

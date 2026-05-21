@@ -324,11 +324,12 @@ workspace/
   outputs/       # workflow execution output and cache roots
 ```
 
-Saved workflows are organized under `workspace/workflows/` as folders and
-`*.workflow.json` files. Workflow identifiers are slash-separated paths relative
-to `workspace/workflows/` without the suffix, for example
-`segmentation/nuclei`. `name` remains in the wire model as a compatibility alias
-for the leaf slug, but new APIs and frontend state use `id`.
+Saved workflows are organized under `workspace/workflows/` as folders. Each
+workflow is a directory that contains `workflow.json` and optional workflow-local
+files such as `tools/`. Workflow identifiers are slash-separated paths relative
+to `workspace/workflows/`, for example `segmentation/nuclei`. `name` remains in
+the wire model as a compatibility alias for the leaf slug, but new APIs and
+frontend state use `id`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -337,7 +338,7 @@ for the leaf slug, but new APIs and frontend state use `id`.
 | `GET` | `/workflows/tree` | Return the folder/workflow tree rooted at `workspace/workflows/`. |
 | `POST` | `/workflows/folders` | Create a folder under `workspace/workflows/` (body: `{path: str}`). |
 | `PATCH` | `/workflows/folders/{path}` | Rename or move a workflow folder (body: `{new_path: str}`). |
-| `DELETE` | `/workflows/folders/{path}` | Delete an empty folder. Non-empty folders return **409 Conflict**. |
+| `DELETE` | `/workflows/folders/{path}` | Delete a folder. Body: `{policy: "empty" \| "delete_children" \| "move_children_up"}`. `empty` rejects non-empty folders with **409 Conflict**. |
 | `GET` | `/workflows` | Compatibility flat list of saved workflows. New callers should use `/workflows/tree`. |
 | `POST` | `/workflows` | Create a new workflow (body: `{id: str, display_name?: str, description?: str}`). Returns **409 Conflict** if a workflow with the same id already exists, with a suggested alternative id. |
 | `GET` | `/workflows/{id}` | Load a workflow (returns full graph JSON including GUI state). |
@@ -1245,20 +1246,23 @@ workflow tree:
 ```text
 workspace/
   workflows/
-    my_workflow.workflow.json
+    my_workflow/
+      workflow.json
     segmentation/
-      nuclei.workflow.json
+      nuclei/
+        workflow.json
+        tools/
   tools/
 ```
 
-Each `*.workflow.json` stores the platform document for the workflow, including
+Each `workflow.json` stores the platform document for the workflow, including
 the library workflow payload, GUI state, and metadata. `workspace/tools/` stores
 workspace-owned custom tools shared by workflows in that workspace. A workflow
-file is not a Python package.
+directory can contain workflow-local files, but these directories are not shown
+as user folders in the Workflows panel.
 
 Existing legacy layouts are supported for migration: `workflows/{name}.json`
-and `workflows/{name}/workflow.json` import as
-`workspace/workflows/{name}.workflow.json`.
+imports as `workspace/workflows/{name}/workflow.json`.
 
 **Panel layout:**
 
@@ -1268,7 +1272,8 @@ and `workflows/{name}/workflow.json` import as
   preserving matching ancestors.
 - **Workflow tree:** Nested folders and workflows under `workspace/workflows/`.
   Workflow rows show display name and last modified time. Folder rows expose
-  create, rename, delete-empty, and drag/drop targets.
+  create, rename, delete, and drag/drop targets. The tree is a classic PrimeVue
+  Tree component with folder expansion, selection, and node templates.
 - **Selected workflow details:** Shows the selected workflow's description,
   workflow id, workspace path, output path, and action state. The description appears
   here, not in every list row.
@@ -1276,8 +1281,10 @@ and `workflows/{name}/workflow.json` import as
 Clicking a row selects it. Double-clicking a workflow, pressing Enter on a
 selected workflow, or using the Open action opens it, subject to the unsaved
 changes prompt. Dragging a workflow row onto a folder moves the workflow within
-the tree. Dragging a workflow row onto the canvas still creates a SubWorkflowNode
-and must remain distinct from drag-to-folder movement.
+the tree. Dragging a folder onto another folder moves the full folder subtree,
+including child folders and workflows. Dragging a workflow row onto the canvas
+still creates a SubWorkflowNode and must remain distinct from drag-to-folder
+movement.
 
 **Actions:**
 - **New workflow:** Opens a creation dialog with fields: display name
@@ -1295,7 +1302,9 @@ and must remain distinct from drag-to-folder movement.
   platform does not reimplement the library archive format.
 - **Delete:** Delete with confirmation. Deletes the workflow file, its
   workspace-scoped output/cache directory, and the auto-saved IndexedDB state for
-  this workflow. Folder deletion is allowed only for empty folders.
+  this workflow. Folder deletion uses the platform dialog system. For non-empty
+  folders, the dialog offers three choices: delete all child workflows/folders,
+  move direct children up to the deleted folder's parent, or cancel.
 
 ### 3.9 Execution Panel (Menu / Toolbar)
 
@@ -1600,7 +1609,7 @@ On load, the server reports missing packages in the load response. The frontend 
 | 10 | `GET` | `/api/v1/workflows/tree` | Workflows panel tree |
 | 11 | `POST` | `/api/v1/workflows/folders` | Create folder in Workflows panel |
 | 12 | `PATCH` | `/api/v1/workflows/folders/{path}` | Rename or move folder |
-| 13 | `DELETE` | `/api/v1/workflows/folders/{path}` | Delete empty folder |
+| 13 | `DELETE` | `/api/v1/workflows/folders/{path}` | Delete empty folder, recursively delete children, or move children up |
 | 14 | `GET` | `/api/v1/workflows` | Compatibility flat workflow list |
 | 15 | `POST` | `/api/v1/workflows` | "New workflow" menu; startup (if no existing workflow) |
 | 16 | `GET` | `/api/v1/workflows/{id}` | Opening a saved workflow |

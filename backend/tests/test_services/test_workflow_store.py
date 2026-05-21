@@ -160,6 +160,108 @@ def test_delete_non_empty_folder_rejected(store: WorkflowStoreService) -> None:
         store.delete_folder("segmentation")
 
 
+def test_workflow_tree_ignores_workflow_internal_tools_folder(
+    store: WorkflowStoreService,
+) -> None:
+    store.create_workflow(WorkflowCreate(name="Untitled"))
+
+    tree = store.workflow_tree()
+
+    assert [folder.path for folder in tree.folders] == []
+    assert [workflow.id for workflow in tree.workflows] == ["Untitled"]
+
+
+def test_delete_folder_can_move_children_up(store: WorkflowStoreService) -> None:
+    store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+    store.create_folder("segmentation/reports")
+
+    store.delete_folder("segmentation", "move_children_up")
+
+    assert (store.root_dir / "nuclei" / "workflow.json").exists()
+    assert (store.root_dir / "reports").is_dir()
+    assert not (store.root_dir / "segmentation").exists()
+
+
+def test_delete_folder_can_delete_children(store: WorkflowStoreService) -> None:
+    store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+    store.create_folder("segmentation/reports")
+
+    store.delete_folder("segmentation", "delete_children")
+
+    assert not (store.root_dir / "segmentation").exists()
+
+
+def test_folder_can_move_into_another_folder(store: WorkflowStoreService) -> None:
+    store.create_folder("segmentation/reports")
+    store.create_folder("archive")
+
+    moved = store.rename_folder("segmentation/reports", "archive/reports")
+
+    assert moved.path == "archive/reports"
+    assert (store.root_dir / "archive" / "reports").is_dir()
+    assert not (store.root_dir / "segmentation" / "reports").exists()
+
+
+def test_folder_move_updates_child_workflow_ids_and_managed_storage(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+    nested_tool_file = store.root_dir / "segmentation" / "nuclei" / "tools" / "helper" / "workflow.json"
+    nested_tool_file.parent.mkdir(parents=True)
+    nested_tool_file.write_text("not a platform workflow")
+    storage_path = Path(info.storage_path)
+    storage_path.mkdir(parents=True)
+    (storage_path / "result.txt").write_text("ok")
+
+    store.rename_folder("segmentation", "analysis")
+
+    moved = store.get_workflow("analysis/nuclei").info
+    assert moved.id == "analysis/nuclei"
+    assert moved.folder == "analysis"
+    assert Path(moved.storage_path) == store.storage_base_dir / "analysis" / "nuclei"
+    assert (Path(moved.storage_path) / "result.txt").read_text() == "ok"
+    assert not storage_path.exists()
+    with pytest.raises(FileNotFoundError):
+        store.get_workflow("segmentation/nuclei")
+
+
+def test_delete_folder_move_children_up_updates_workflow_storage(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+    storage_path = Path(info.storage_path)
+    storage_path.mkdir(parents=True)
+    (storage_path / "result.txt").write_text("ok")
+
+    store.delete_folder("segmentation", "move_children_up")
+
+    moved = store.get_workflow("nuclei").info
+    assert moved.id == "nuclei"
+    assert moved.folder == ""
+    assert Path(moved.storage_path) == store.storage_base_dir / "nuclei"
+    assert (Path(moved.storage_path) / "result.txt").read_text() == "ok"
+    assert not storage_path.exists()
+
+
+def test_delete_folder_delete_children_removes_managed_storage(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+    storage_path = Path(info.storage_path)
+    storage_path.mkdir(parents=True)
+
+    store.delete_folder("segmentation", "delete_children")
+
+    assert not storage_path.exists()
+
+
+def test_folder_cannot_move_into_itself(store: WorkflowStoreService) -> None:
+    store.create_folder("segmentation/reports")
+
+    with pytest.raises(ValueError):
+        store.rename_folder("segmentation", "segmentation/reports/archive")
+
+
 def test_move_workflow_between_folders(store: WorkflowStoreService) -> None:
     store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
 

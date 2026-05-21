@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowFile,
+    WorkflowFolderDelete,
     WorkflowFolderCreate,
     WorkflowFolderInfo,
     WorkflowFolderUpdate,
@@ -77,6 +78,8 @@ async def create_folder(
             status_code=409,
             content={"error": "conflict", "detail": f"Folder '{body.path}' already exists"},
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.patch("/folders/{path:path}", response_model=WorkflowFolderInfo)
@@ -96,24 +99,32 @@ async def rename_folder(
             status_code=409,
             content={"error": "conflict", "detail": f"Folder '{body.new_path}' already exists"},
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/folders/{path:path}")
 async def delete_folder(
     path: str,
+    body: WorkflowFolderDelete = Body(default_factory=WorkflowFolderDelete),
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
 ) -> Any:
     _ensure_unlocked(execution_manager)
     try:
-        store.delete_folder(path)
+        store.delete_folder(path, body)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Folder not found") from exc
     except FileExistsError:
         return JSONResponse(
             status_code=409,
-            content={"error": "folder_not_empty", "detail": "Folder is not empty"},
+            content={
+                "error": "folder_delete_conflict",
+                "detail": "Folder is not empty or contains colliding child names",
+            },
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"deleted": True}
 
 

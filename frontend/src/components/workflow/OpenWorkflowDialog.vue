@@ -19,11 +19,15 @@ const emit = defineEmits<{
 const query = ref('')
 const selectedName = ref<string | null>(null)
 
+function workflowId(workflow: WorkflowInfo): string {
+  return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
+}
+
 const filteredWorkflows = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return props.workflows
   return props.workflows.filter((workflow) => (
-    workflow.name.toLowerCase().includes(q)
+    workflowId(workflow).toLowerCase().includes(q)
     || workflow.display_name.toLowerCase().includes(q)
     || (workflow.description ?? '').toLowerCase().includes(q)
   ))
@@ -34,7 +38,9 @@ watch(
   (visible) => {
     if (!visible) return
     query.value = ''
-    selectedName.value = props.currentName ?? props.workflows[0]?.name ?? null
+    selectedName.value = props.currentName ?? (
+      props.workflows[0] ? workflowId(props.workflows[0]) : null
+    )
   },
 )
 
@@ -72,16 +78,16 @@ function onOpen() {
     <div class="workflow-list" data-testid="workflow-open-list">
       <button
         v-for="workflow in filteredWorkflows"
-        :key="workflow.name"
+        :key="workflowId(workflow)"
         type="button"
         class="workflow-card"
-        :class="{ selected: selectedName === workflow.name }"
-        :data-testid="`workflow-open-option-${workflow.name}`"
-        @click="selectedName = workflow.name"
-        @dblclick="emit('open', workflow.name)"
+        :class="{ selected: selectedName === workflowId(workflow) }"
+        :data-testid="`workflow-open-option-${workflowId(workflow).replace(/[^a-zA-Z0-9_-]/g, '_')}`"
+        @click="selectedName = workflowId(workflow)"
+        @dblclick="emit('open', workflowId(workflow))"
       >
         <span class="workflow-card__name">{{ workflow.display_name }}</span>
-        <span class="workflow-card__path">{{ workflow.name }}</span>
+        <span class="workflow-card__path">{{ workflowId(workflow) }}</span>
         <span v-if="workflow.description" class="workflow-card__description">
           {{ workflow.description }}
         </span>

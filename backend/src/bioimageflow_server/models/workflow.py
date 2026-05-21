@@ -106,6 +106,10 @@ class WorkflowFolderUpdate(BaseModel):
         return validate_workflow_id(value)
 
 
+class WorkflowFolderDelete(BaseModel):
+    policy: Literal["empty", "delete_children", "move_children_up"] = "empty"
+
+
 class WorkflowFolderInfo(BaseModel):
     path: str
     display_name: str

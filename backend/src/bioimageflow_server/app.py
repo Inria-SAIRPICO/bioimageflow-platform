@@ -206,7 +206,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         storage_base_dir=resolved_storage_path / "workflows",
     )
     for workflow_info in workflow_store.list_workflows():
-        custom_tools_root = workflow_store.workflow_tools_dir(workflow_info.name)
+        custom_tools_root = workflow_store.workflow_tools_dir(workflow_info.id)
         if custom_tools_root.exists():
             registry.register_custom_tools_directory(custom_tools_root)
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(

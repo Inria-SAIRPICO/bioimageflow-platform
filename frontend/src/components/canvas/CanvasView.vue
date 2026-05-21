@@ -33,7 +33,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
-import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput } from '@/api/types'
+import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput, WorkflowInfo } from '@/api/types'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
@@ -214,6 +214,10 @@ function workflowIdentity() {
   }
 }
 
+function workflowInfoId(workflow: WorkflowInfo): string {
+  return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
+}
+
 function currentPublicationContext(): PublicationContext | null {
   if (!isSubWorkflowEditor) {
     return {
@@ -298,7 +302,7 @@ async function applyGraphState(
 
 async function ensureDefaultWorkflow(): Promise<GraphState> {
   const base = 'Untitled'
-  const names = new Set(workflowStore.workflows.map((workflow) => workflow.name))
+  const names = new Set(workflowStore.workflows.map((workflow) => workflowInfoId(workflow)))
   let name = base
   let suffix = 2
   while (names.has(name)) {
@@ -310,13 +314,16 @@ async function ensureDefaultWorkflow(): Promise<GraphState> {
 }
 
 async function recoverStartupWorkflow() {
-  await workflowStore.fetchWorkflows()
+  await workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
   let autoSaved = await autoSave.loadMostRecentAutoSave()
   const lastOpened = await autoSave.getLastOpenedWorkflow()
-  const workflowNames = new Set(workflowStore.workflows.map((workflow) => workflow.name))
+  const workflowNames = new Set(workflowStore.flattenedWorkflows.map((workflow) => workflowInfoId(workflow)))
   if (autoSaved !== null && !workflowNames.has(autoSaved.name)) {
     await autoSave.clearAutoSave(autoSaved.name)
     autoSaved = null
+  }
+  if (lastOpened !== null && !workflowNames.has(lastOpened)) {
+    await autoSave.setLastOpenedWorkflow(null)
   }
   const targetName = autoSaved?.name ?? lastOpened
   const exists = targetName
@@ -324,7 +331,17 @@ async function recoverStartupWorkflow() {
     : false
 
   if (targetName && exists) {
-    const serverGraph = await workflowStore.loadWorkflow(targetName)
+    let serverGraph: GraphState
+    try {
+      serverGraph = await workflowStore.loadWorkflow(targetName)
+    } catch {
+      await autoSave.clearAutoSave(targetName)
+      await autoSave.setLastOpenedWorkflow(null)
+      return {
+        graph: await ensureDefaultWorkflow(),
+        dirty: false,
+      }
+    }
     const serverModified = Date.parse(workflowStore.current?.last_modified ?? '')
     const matchingAutoSave = autoSaved?.name === targetName ? autoSaved : null
     const autoSaveIsFresh =

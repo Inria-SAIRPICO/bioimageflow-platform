@@ -345,6 +345,40 @@ describe('workflow store', () => {
           workflows: [],
         },
       })
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({
+        data: {
+          path: '',
+          display_name: 'workspace',
+          folders: [{
+            path: 'Published',
+            display_name: 'Published',
+            folders: [],
+            workflows: [{
+              name: 'alpha',
+              folder: 'Published',
+              display_name: 'Alpha',
+              path: '/tmp/Published/alpha.json',
+              last_modified: '2026-04-30T11:00:00Z',
+            }],
+          }],
+          workflows: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          path: '',
+          display_name: 'workspace',
+          folders: [],
+          workflows: [{
+            name: 'alpha',
+            folder: '',
+            display_name: 'Alpha',
+            path: '/tmp/alpha.json',
+            last_modified: '2026-04-30T11:00:00Z',
+          }],
+        },
+      })
     vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
     const store = useWorkflowStore()
     store.workflows = [{
@@ -359,7 +393,7 @@ describe('workflow store', () => {
     await store.renameWorkflowFolder(folder.id, 'Published')
     expect(store.workflowFolders[0].name).toBe('Published')
 
-    await store.deleteWorkflowFolder('Published')
+    await store.deleteWorkflowFolder('Published', 'move_children_up')
     expect(store.workflowFolders).toEqual([])
     expect(store.workflowFolderIds.alpha).toBeNull()
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual(['alpha'])

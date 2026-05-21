@@ -47,7 +47,10 @@ function mountPanel() {
       plugins: [pinia, PrimeVue],
       stubs: {
         Button: true,
-        InputText: true,
+        Dialog: {
+          props: ['visible'],
+          template: '<div v-if="visible"><slot /><slot name="footer" /></div>',
+        },
       },
     },
   })
@@ -56,7 +59,10 @@ function mountPanel() {
 describe('WorkflowsPanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.clearAllMocks()
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.post).mockReset()
+    vi.mocked(api.patch).mockReset()
+    vi.mocked(api.delete).mockReset()
   })
 
   it('renders compact workflow rows with display name and modified time only', async () => {
@@ -144,9 +150,7 @@ describe('WorkflowsPanel', () => {
 
   it('creates, renames, and deletes workflow folders through panel hooks', async () => {
     const promptSpy = vi.spyOn(window, 'prompt')
-      .mockReturnValueOnce('Analysis')
-      .mockReturnValueOnce('Published')
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
+    const confirmSpy = vi.spyOn(window, 'confirm')
     vi.mocked(api.post).mockResolvedValueOnce({
       data: {
         path: 'Analysis',
@@ -163,10 +167,45 @@ describe('WorkflowsPanel', () => {
         workflows: [],
       },
     })
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({
+        data: {
+          path: '',
+          display_name: 'workspace',
+          folders: [{
+            path: 'Published',
+            display_name: 'Published',
+            folders: [],
+            workflows: [],
+          }],
+          workflows,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          path: '',
+          display_name: 'workspace',
+          folders: [],
+          workflows,
+        },
+      })
     vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        name: 'beta_api',
+        folder: 'Analysis',
+        display_name: 'Beta Workflow',
+        description: null,
+        path: '/library/workflows/Analysis/beta_api/workflow.bioimageflow.json',
+        storage_path: '/library/workflows/Analysis/beta_api',
+        last_modified: '2026-05-01T08:00:00Z',
+      },
+    })
     const wrapper = mountPanel()
 
     await wrapper.find('[data-testid="workflow-new-folder-btn"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Analysis')
+    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
     await flushPromises()
     const store = useWorkflowStore()
     const folder = store.workflowFolders[0]
@@ -176,15 +215,70 @@ describe('WorkflowsPanel', () => {
     )
 
     await wrapper.find(`[data-testid="workflow-folder-rename-${folder.id}"]`).trigger('click')
+    await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Published')
+    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
     await flushPromises()
     expect(store.workflowFolders[0].name).toBe('Published')
 
     await wrapper.find('[data-testid="workflow-folder-delete-Published"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-folder-delete-confirm"]').trigger('click')
     await flushPromises()
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(api.delete).toHaveBeenCalledWith(
+      '/api/v1/workflows/folders/Published',
+      { data: { policy: 'empty' } },
+    )
     expect(store.workflowFolders).toEqual([])
     promptSpy.mockRestore()
     confirmSpy.mockRestore()
+  })
+
+  it('offers delete-all and move-up policies when deleting a folder with children', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        path: 'Analysis',
+        display_name: 'Analysis',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        name: 'beta_api',
+        folder: 'Analysis',
+        display_name: 'Beta Workflow',
+        description: null,
+        path: '/library/workflows/Analysis/beta_api/workflow.bioimageflow.json',
+        storage_path: '/library/workflows/Analysis/beta_api',
+        last_modified: '2026-05-01T08:00:00Z',
+      },
+    })
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        path: '',
+        display_name: 'workspace',
+        folders: [],
+        workflows,
+      },
+    })
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    const folder = await store.createWorkflowFolder('Analysis')
+    await store.moveWorkflowToFolder('beta_api', folder.id)
+    await flushPromises()
+
+    await wrapper.find(`[data-testid="workflow-folder-delete-${folder.id}"]`).trigger('click')
+    expect(wrapper.find('[data-testid="workflow-folder-delete-move-up"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="workflow-folder-delete-move-up"]').trigger('click')
+    await flushPromises()
+
+    expect(api.delete).toHaveBeenCalledWith(
+      '/api/v1/workflows/folders/Analysis',
+      { data: { policy: 'move_children_up' } },
+    )
   })
 
   it('moves a dragged workflow into a folder and keeps flattened selection behavior', async () => {
