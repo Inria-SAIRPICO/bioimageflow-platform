@@ -85,6 +85,10 @@ from bioimageflow_server.routers.workflows import (
     get_workflow_store as workflows_get_workflow_store,
     router as workflows_router,
 )
+from bioimageflow_server.routers.workspace import (
+    get_workspace_service,
+    router as workspace_router,
+)
 from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
@@ -105,6 +109,7 @@ from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
+from bioimageflow_server.services.workspace import WorkspaceService
 from bioimageflow_server.ws import (
     ConnectionManager,
     attach_ws_log_handler,
@@ -165,6 +170,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # progress / node_state / execution_complete events.
     ws_manager = config.connection_manager or ConnectionManager()
     event_bus: Any = ws_manager
+    workspace_service = WorkspaceService(
+        settings=resolved_settings,
+        deployment_mode=cast(Any, _deployment_mode),
+        workspace_path=config.workspace_path,
+        workspaces_root=config.workspaces_root,
+        user_id=config.user_id,
+    )
+    workspace_path = workspace_service.workspace_path()
     configured_storage_path = config.storage_path or Path(resolved_settings.output_data_folder)
     resolved_storage_path = normalize_workflow_storage_path(configured_storage_path)
     assert resolved_storage_path is not None
@@ -186,7 +199,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         storage_path=resolved_storage_path,
         tool_registry=registry,
     )
-    workflow_root = config.workflow_root or Path("./workflows")
+    workflow_root = config.workflow_root or workspace_path / "workflows"
     workflow_store = config.workflow_store or WorkflowStoreService(
         root_dir=workflow_root,
         tool_registry=registry,
@@ -406,6 +419,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    app.include_router(workspace_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
@@ -430,6 +444,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
     app.dependency_overrides[execution_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflows_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[get_workspace_service] = lambda: workspace_service
     app.dependency_overrides[tools_get_workflow_store] = lambda: workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
 

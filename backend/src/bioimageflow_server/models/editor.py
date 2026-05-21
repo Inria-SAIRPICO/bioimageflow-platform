@@ -24,12 +24,35 @@ class EditorOpenRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     path: str
+    focus_path: str | None = None
 
     @field_validator("path")
     @classmethod
     def _path_must_not_be_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("path must not be empty")
+        return value
+
+    @field_validator("focus_path")
+    @classmethod
+    def _focus_path_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("focus_path must not be empty")
+        return value
+
+
+class EditorOpenToolRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool_name: str
+    workflow_name: str | None = None
+    workflow_id: str | None = None
+
+    @field_validator("tool_name")
+    @classmethod
+    def _tool_name_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("tool_name must not be empty")
         return value
 
 

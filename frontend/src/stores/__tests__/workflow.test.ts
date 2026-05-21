@@ -28,8 +28,10 @@ import { useWorkflowStore } from '../workflow'
 describe('workflow store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.mocked(api.get).mockReset()
     vi.mocked(api.patch).mockReset()
     vi.mocked(api.post).mockReset()
+    vi.mocked(api.delete).mockReset()
     Object.defineProperty(window.URL, 'createObjectURL', {
       configurable: true,
       writable: true,
@@ -195,6 +197,53 @@ describe('workflow store', () => {
     expect(store.missingTools[0].tool_name).toBe('Tool')
   })
 
+  it('fetches the backend workflow tree and keeps a compatible flat list', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        path: '',
+        display_name: 'Workflows',
+        folders: [{
+          path: 'Analysis',
+          display_name: 'Analysis',
+          folders: [],
+          workflows: [{
+            name: 'analysis/beta',
+            folder: 'Analysis',
+            display_name: 'Beta',
+            path: '/tmp/Analysis/beta.json',
+            last_modified: '2026-04-30T12:00:00Z',
+          }],
+        }],
+        workflows: [{
+          name: 'alpha',
+          folder: '',
+          display_name: 'Alpha',
+          path: '/tmp/alpha.json',
+          last_modified: '2026-04-30T11:00:00Z',
+        }],
+      },
+    })
+    const store = useWorkflowStore()
+
+    await store.fetchWorkflowTree()
+
+    expect(api.get).toHaveBeenCalledWith('/api/v1/workflows/tree')
+    expect(store.workflowFolders).toEqual([{
+      id: 'Analysis',
+      name: 'Analysis',
+      parentId: null,
+    }])
+    expect(store.workflowFolderIds['analysis/beta']).toBe('Analysis')
+    expect(store.workflows.map((workflow) => workflow.name).sort()).toEqual([
+      'alpha',
+      'analysis/beta',
+    ])
+    expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
+      'analysis/beta',
+      'alpha',
+    ])
+  })
+
   it('turns import conflicts into WorkflowConflictError', async () => {
     vi.mocked(api.post).mockRejectedValueOnce(new AxiosError(
       'conflict',
@@ -219,5 +268,125 @@ describe('workflow store', () => {
       name: 'WorkflowConflictError',
       suggestedName: 'wf_2',
     })
+  })
+
+  it('organizes workflows into folders while exposing a flattened workflow list', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        path: 'Analysis',
+        display_name: 'Analysis',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        name: 'beta',
+        folder: 'Analysis',
+        display_name: 'Beta',
+        path: '/tmp/Analysis/beta.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    })
+    const store = useWorkflowStore()
+    store.workflows = [
+      {
+        name: 'alpha',
+        display_name: 'Alpha',
+        path: '/tmp/alpha.json',
+        last_modified: '2026-04-30T11:00:00Z',
+      },
+      {
+        name: 'beta',
+        display_name: 'Beta',
+        path: '/tmp/beta.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    ]
+
+    const folder = await store.createWorkflowFolder('Analysis')
+    await store.moveWorkflowToFolder('beta', folder.id)
+
+    expect(store.workflowTree[0]).toMatchObject({
+      type: 'folder',
+      id: folder.id,
+      name: 'Analysis',
+    })
+    expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
+      'beta',
+      'alpha',
+    ])
+  })
+
+  it('renames and deletes workflow folders without deleting workflows', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        path: 'Drafts',
+        display_name: 'Drafts',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.patch)
+      .mockResolvedValueOnce({
+        data: {
+          name: 'alpha',
+          folder: 'Drafts',
+          display_name: 'Alpha',
+          path: '/tmp/Drafts/alpha.json',
+          last_modified: '2026-04-30T11:00:00Z',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          path: 'Published',
+          display_name: 'Published',
+          folders: [],
+          workflows: [],
+        },
+      })
+    vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
+    const store = useWorkflowStore()
+    store.workflows = [{
+      name: 'alpha',
+      display_name: 'Alpha',
+      path: '/tmp/alpha.json',
+      last_modified: '2026-04-30T11:00:00Z',
+    }]
+    const folder = await store.createWorkflowFolder('Drafts')
+    await store.moveWorkflowToFolder('alpha', folder.id)
+
+    await store.renameWorkflowFolder(folder.id, 'Published')
+    expect(store.workflowFolders[0].name).toBe('Published')
+
+    await store.deleteWorkflowFolder('Published')
+    expect(store.workflowFolders).toEqual([])
+    expect(store.workflowFolderIds.alpha).toBeNull()
+    expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual(['alpha'])
+  })
+
+  it('moves workflow ids before another workflow id', async () => {
+    const store = useWorkflowStore()
+    store.workflows = [
+      {
+        name: 'alpha',
+        display_name: 'Alpha',
+        path: '/tmp/alpha.json',
+        last_modified: '2026-04-30T11:00:00Z',
+      },
+      {
+        name: 'beta',
+        display_name: 'Beta',
+        path: '/tmp/beta.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    ]
+
+    await store.moveWorkflowBefore('beta', 'alpha')
+
+    expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
+      'beta',
+      'alpha',
+    ])
   })
 })

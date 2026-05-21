@@ -49,6 +49,15 @@ class TestWorkflowCreate:
         wf = WorkflowCreate(name="My_Workflow-1")
         assert wf.name == "My_Workflow-1"
 
+    def test_valid_name_accepts_workspace_relative_folder(self):
+        wf = WorkflowCreate(name="segmentation/nuclei")
+        assert wf.name == "segmentation/nuclei"
+
+    @pytest.mark.parametrize("name", ["../bad", "/bad", "bad//name", "bad/../name"])
+    def test_path_traversal_rejected(self, name: str):
+        with pytest.raises(ValidationError):
+            WorkflowCreate(name=name)
+
 
 class TestWorkflowInfo:
     def test_construction(self):

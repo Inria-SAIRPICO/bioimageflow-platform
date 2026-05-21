@@ -10,7 +10,7 @@ import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { useSettingsStore } from '@/stores/settings'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
-import type { Settings } from '@/api/types'
+import type { WorkspaceSettings } from '@/stores/settings'
 import ExternalEditorSection from '@/components/panels/sections/ExternalEditorSection.vue'
 import NapariSection from '@/components/panels/sections/NapariSection.vue'
 import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
@@ -57,7 +57,7 @@ const visible = computed({
   },
 })
 
-const fallback: Settings & {
+const fallback: WorkspaceSettings & {
   resolved_tool_store_path?: string
   resolved_output_data_folder?: string
 } = {
@@ -76,13 +76,15 @@ const fallback: Settings & {
   enable_unsafe_webapp_features: false,
   datasets_root: null,
   max_upload_size: 2147483648,
+  workspace_path: null,
+  workspaces_root: null,
   resolved_tool_store_path: '',
   resolved_output_data_folder: '',
 }
 const liveSettings = computed(() => settingsStore.settings ?? fallback)
 
-function onUpdate(payload: { field: keyof Settings; value: unknown }) {
-  settingsStore.updateSettings({ [payload.field]: payload.value } as Partial<Settings>)
+function onUpdate(payload: { field: keyof WorkspaceSettings; value: unknown }) {
+  settingsStore.updateSettings({ [payload.field]: payload.value } as Partial<WorkspaceSettings>)
 }
 </script>
 

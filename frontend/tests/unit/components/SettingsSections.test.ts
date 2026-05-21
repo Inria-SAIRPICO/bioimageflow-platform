@@ -49,6 +49,8 @@ const baseSettings = {
   enable_unsafe_webapp_features: false,
   datasets_root: null,
   max_upload_size: 2147483648,
+  workspace_path: '/Users/me/bif-workspace',
+  workspaces_root: null,
   resolved_tool_store_path: '/Users/me/.bioimageflow/tool_packages',
   resolved_output_data_folder: '/Users/me/bioimageflow_data',
 }
@@ -226,5 +228,42 @@ describe('StorageSection', () => {
     // Toast emission is internal to PrimeVue; we just assert no throw and that
     // revealPath was attempted.
     expect(nativeDialogs.revealPath).toHaveBeenCalled()
+  })
+
+  it('lets desktop users pick a workspace path', async () => {
+    vi.spyOn(nativeDialogs, 'isDesktop').mockReturnValue(true)
+    vi.spyOn(nativeDialogs, 'selectFolder').mockResolvedValue('/chosen/workspace')
+    const wrapper = mount(StorageSection, {
+      ...globalOpts,
+      props: { modelValue: baseSettings },
+    })
+
+    await wrapper.find('[data-testid="workspace-path-change-button"]').trigger('click')
+
+    expect(nativeDialogs.selectFolder).toHaveBeenCalledWith('Select workspace folder')
+    expect(wrapper.emitted('update:field')?.[0]).toEqual([
+      { field: 'workspace_path', value: '/chosen/workspace' },
+    ])
+  })
+
+  it('shows webapp workspace path as read-only', () => {
+    vi.spyOn(nativeDialogs, 'isDesktop').mockReturnValue(true)
+    const wrapper = mount(StorageSection, {
+      ...globalOpts,
+      props: {
+        modelValue: {
+          ...baseSettings,
+          deployment_mode: 'webapp',
+          workspace_path: '/srv/workspaces/current',
+        },
+      },
+    })
+
+    expect((wrapper.find('[data-testid="workspace-path-input"]').element as HTMLInputElement).value)
+      .toBe('/srv/workspaces/current')
+    expect(wrapper.find('[data-testid="workspace-path-change-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-path-help"]').text()).toContain(
+      'managed by the web application',
+    )
   })
 })

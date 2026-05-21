@@ -186,10 +186,22 @@ class EmbeddedCodeServerManager:
     def open_path(
         self,
         path: Path,
+        focus_path: Path | None = None,
         *,
         opener: OpenerCall = _default_opener_call,
     ) -> EditorOpenResponse:
         if path.is_dir():
+            if focus_path is not None:
+                query = urlencode({
+                    "folder": str(path),
+                    "file": str(focus_path),
+                })
+                return EditorOpenResponse(
+                    opened=True,
+                    method=EditorOpenMethod.EMBEDDED,
+                    url=f"{self.editor_url}/?{query}",
+                    path=str(focus_path),
+                )
             return EditorOpenResponse(
                 opened=True,
                 method=EditorOpenMethod.EMBEDDED,
@@ -211,7 +223,7 @@ class EmbeddedCodeServerManager:
             opened=True,
             method=EditorOpenMethod.EMBEDDED,
             url=self.editor_url,
-            path=str(path),
+            path=str(focus_path or path),
         )
 
 
@@ -245,23 +257,24 @@ class EditorService:
 
         return self._wait_for_embedded_status()
 
-    def open_path(self, path: str) -> EditorOpenResponse:
+    def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
         normalized = self._normalize_path(path)
+        normalized_focus = self._normalize_path(focus_path) if focus_path is not None else None
         settings = self._settings_provider()
         command = (settings.external_editor or "").strip()
         if command:
-            self._launch_external(command, normalized)
+            self._launch_external(command, normalized, normalized_focus)
             return EditorOpenResponse(
                 opened=True,
                 method=EditorOpenMethod.EXTERNAL,
                 url=None,
-                path=str(normalized),
+                path=str(normalized_focus or normalized),
             )
 
         status = self._embedded.status()
         if status.available and (normalized.is_dir() or status.control_available):
             try:
-                return self._embedded.open_path(normalized)
+                return self._embedded.open_path(normalized, normalized_focus)
             except Exception:
                 pass
 
@@ -269,7 +282,7 @@ class EditorService:
         if callable(launch):
             try:
                 launch()
-                response = self._open_after_embedded_launch(normalized)
+                response = self._open_after_embedded_launch(normalized, normalized_focus)
                 if response is not None:
                     return response
             except Exception:
@@ -279,16 +292,20 @@ class EditorService:
             opened=False,
             method=EditorOpenMethod.CLIPBOARD,
             url=None,
-            path=str(normalized),
+            path=str(normalized_focus or normalized),
             message=CLIPBOARD_MESSAGE,
         )
 
-    def _open_after_embedded_launch(self, path: Path) -> EditorOpenResponse | None:
+    def _open_after_embedded_launch(
+        self,
+        path: Path,
+        focus_path: Path | None,
+    ) -> EditorOpenResponse | None:
         deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
         while True:
             status = self._embedded.status()
             if status.available and (path.is_dir() or status.control_available):
-                return self._embedded.open_path(path)
+                return self._embedded.open_path(path, focus_path)
             if time.monotonic() >= deadline:
                 return None
             time.sleep(max(0.0, self._embedded_poll_interval))
@@ -310,20 +327,26 @@ class EditorService:
             raise EditorPathNotFoundError(str(candidate))
         return candidate
 
-    def _launch_external(self, command: str, path: Path) -> None:
+    def _launch_external(self, command: str, path: Path, focus_path: Path | None = None) -> None:
         args = shlex.split(command)
         if not args:
             return
         rendered: list[str] = []
         replaced = False
+        file_path = focus_path or path
         for arg in args:
             if "{file_path}" in arg:
-                rendered.append(arg.replace("{file_path}", str(path)))
+                rendered.append(arg.replace("{file_path}", str(file_path)))
+                replaced = True
+            elif "{workspace_path}" in arg:
+                rendered.append(arg.replace("{workspace_path}", str(path)))
                 replaced = True
             else:
                 rendered.append(arg)
         if not replaced:
             rendered.append(str(path))
+            if focus_path is not None:
+                rendered.append(str(focus_path))
         try:
             self._process_launcher(rendered)
         except Exception as exc:

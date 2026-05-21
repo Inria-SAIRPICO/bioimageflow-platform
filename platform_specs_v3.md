@@ -33,6 +33,25 @@ BioImageFlow v3 introduces a dual deployment model. The same codebase runs in tw
 - Dataset management endpoints are available (see Section 3).
 - Drag and drop triggers upload via the Dataset Browser (see Section 3.5).
 
+### 1.2.1 Webapp Workspace Root
+
+Webapp deployments use an admin-configured `workspaces_root`. Ordinary users
+cannot choose or patch their workspace path. For each authenticated user the
+server derives exactly one workspace:
+
+```text
+<workspaces_root>/<user_id>/workspace/
+```
+
+The per-user workspace contains `workflows/`, `tools/`, `data/`, `outputs/`,
+and `.bioimageflow/`. Workflow ids are paths relative to
+`workspace/workflows/`, custom tools are scoped to `workspace/tools/`, dataset
+uploads are stored under the user's workspace data area, and runtime outputs are
+stored under `workspace/outputs/<workflow_id>/`. `GET /api/v1/workspace`
+returns these resolved roots plus read-only/admin-managed flags. In webapp mode
+`PATCH /api/v1/workspace` returns 403 for ordinary users; only deployment/admin
+configuration changes `workspaces_root`.
+
 ### 1.3 Mode Detection
 
 The frontend reads `deployment_mode` from `GET /api/v1/settings` at startup and stores it in Pinia. All mode-conditional UI behavior (button visibility, viewer selection, path selection mechanism) branches on this value. The mode cannot be changed at runtime.
@@ -78,6 +97,7 @@ In webapp mode, the following are disabled to prevent remote code execution:
 |---------------------|---------------|--------|
 | `POST /api/v1/tools` | 403 Forbidden | Tool creation would allow arbitrary code on the server |
 | `POST /api/v1/editor/open` | 403 Forbidden | Source editing would allow arbitrary code modification |
+| `POST /api/v1/editor/open-tool` | 403 Forbidden | Source editing would allow arbitrary code modification |
 | Tool hot-reload (Section 2.7 of v2) | Disabled silently | No user-editable tool code in webapp mode |
 
 The frontend hides the "Create Tool" button in the Tools Panel and "Open in editor" buttons on tool rows when `deployment_mode === "webapp"`.
@@ -349,7 +369,7 @@ The frontend uses a **`BroadcastChannel`** named `"bioimageflow-lock"` to coordi
 ```json
 {
   "type": "lock_claim",
-  "workflow_name": "my_workflow",
+  "workflow_id": "segmentation/my_workflow",
   "tab_id": "uuid-of-this-tab",
   "timestamp": 1712160000000
 }
@@ -366,10 +386,10 @@ The frontend uses a **`BroadcastChannel`** named `"bioimageflow-lock"` to coordi
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `lock_claim` | `workflow_name`, `tab_id`, `timestamp` | A tab wants to edit this workflow |
-| `lock_held` | `workflow_name`, `tab_id` | Response: another tab already holds the lock |
-| `lock_heartbeat` | `workflow_name`, `tab_id`, `timestamp` | Periodic keepalive from the lock holder |
-| `lock_release` | `workflow_name`, `tab_id` | The lock holder is closing or switching workflows |
+| `lock_claim` | `workflow_id`, `tab_id`, `timestamp` | A tab wants to edit this workflow |
+| `lock_held` | `workflow_id`, `tab_id` | Response: another tab already holds the lock |
+| `lock_heartbeat` | `workflow_id`, `tab_id`, `timestamp` | Periodic keepalive from the lock holder |
+| `lock_release` | `workflow_id`, `tab_id` | The lock holder is closing or switching workflows |
 
 ### 7.3 Read-Only Mode
 
@@ -386,7 +406,7 @@ When the lock-holding tab is closed (or the user switches to a different workflo
 
 **Fallback for unclean closure:** If the lock-holding tab crashes or is killed (no `beforeunload` event fires), the heartbeat timeout (15 seconds) ensures other tabs can eventually acquire the lock.
 
-**`localStorage` fallback:** If `BroadcastChannel` is not available (older browsers), the frontend falls back to a `localStorage`-based lock. The lock key is `"bioimageflow-lock-{workflow_name}"` with a JSON value containing `{tab_id, timestamp}`. Tabs poll `localStorage` every 2 seconds to detect stale locks (timestamp older than 15 seconds).
+**`localStorage` fallback:** If `BroadcastChannel` is not available (older browsers), the frontend falls back to a `localStorage`-based lock. The lock key is `"bioimageflow-lock-{encoded_workflow_id}"` with a JSON value containing `{tab_id, timestamp}`. Tabs poll `localStorage` every 2 seconds to detect stale locks (timestamp older than 15 seconds).
 
 ---
 
@@ -566,7 +586,7 @@ A new lightweight service (`bioimageflow-launcher`) manages user containers.
 | **Container lifecycle** | Spins up a rootless Podman container on first authenticated request. Reuses it for subsequent requests. Stops it after an idle timeout (configurable, default 30 minutes). |
 | **Reverse proxy** | Routes HTTP and WebSocket traffic to the correct container based on the user's session token. |
 | **Resource limits** | Configures per-container CPU, memory, and GPU limits via Podman flags. |
-| **Data volumes** | Mounts the user's dataset and workflow directories into the container. |
+| **Data volumes** | Mounts the user's derived workspace into the container. |
 
 **Container lifecycle states:**
 
@@ -614,11 +634,16 @@ Tool packages are mounted from a shared read-only tool store to avoid duplicatio
 
 | Host path | Container mount | Mode |
 |-----------|-----------------|------|
-| `{data_root}/users/{user_id}/datasets/` | `/data/datasets/` | Read/Write |
-| `{data_root}/users/{user_id}/workflows/` | `/data/workflows/` | Read/Write |
-| `{data_root}/users/{user_id}/settings.json` | `/home/bioimageflow/.bioimageflow/settings.json` | Read/Write |
+| `{workspaces_root}/{user_id}/workspace/` | `/workspace/` | Read/Write |
+| `{workspaces_root}/{user_id}/workspace/.bioimageflow/settings.json` | `/home/bioimageflow/.bioimageflow/settings.json` | Read/Write |
 | `{data_root}/shared/tool_packages/` | `/home/bioimageflow/.bioimageflow/tool_packages/` | Read-Only |
 | `{data_root}/shared/known_packages.txt` | `/home/bioimageflow/.bioimageflow/known_packages.txt` | Read-Only |
+
+Inside the container, `BIOIMAGEFLOW_WORKSPACE=/workspace` and the backend
+reports `/workspace` as the user's workspace path. Workflow files live under
+`/workspace/workflows/`, workspace-owned custom tools under `/workspace/tools/`,
+uploads under `/workspace/data/datasets/`, and runtime outputs under
+`/workspace/outputs/`.
 
 **Resource limits (Podman flags):**
 
@@ -710,8 +735,11 @@ Dataset management endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE 
 | 6 | `POST /api/v1/napari/open` | Returns 403 Forbidden in webapp mode. |
 | 7 | `GET /api/v1/napari/status` | Returns 403 Forbidden in webapp mode. |
 | 8 | `POST /api/v1/editor/open` | Returns 403 Forbidden in webapp mode. |
-| 9 | `GET /api/v1/settings` | Response includes `deployment_mode` (read-only). |
-| 10 | WebSocket `/ws` | Requires `?token=<token>` query parameter in webapp mode. |
+| 9 | `POST /api/v1/editor/open-tool` | Returns 403 Forbidden in webapp mode. |
+| 10 | `GET /api/v1/workspace` | Returns the derived per-user workspace and admin-managed flags. |
+| 11 | `PATCH /api/v1/workspace` | Returns 403 Forbidden for ordinary webapp users. |
+| 12 | `GET /api/v1/settings` | Response includes `deployment_mode` (read-only) and read-only workspace path information. |
+| 13 | WebSocket `/ws` | Requires `?token=<token>` query parameter in webapp mode. |
 
 ### 11.3 Launcher Service Endpoints (New Service)
 
@@ -735,7 +763,7 @@ class Settings(BaseModel):
     external_editor: str | None = None
     napari_env_path: str | None = None
     omero_instances: list[OMEROInstance] = []
-    output_data_folder: str
+    workspace_path: str                         # Derived from workspaces_root/user_id in webapp mode
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     execution_engine: Literal["sequential", "parsl"] = "sequential"
     cache_max_executions: int | None = None

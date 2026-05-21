@@ -176,6 +176,9 @@ def validate_tool_class_name(value: str) -> str:
 class AppConfig:
     tool_registry: ToolRegistryService | None = None
     workflow_root: Path | None = None
+    workspace_path: Path | None = None
+    workspaces_root: Path | None = None
+    user_id: str | None = None
     deployment_mode: str = "desktop"
     package_installer: PackageInstallerService | None = None
     known_packages: KnownPackagesService | None = None

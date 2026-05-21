@@ -91,6 +91,8 @@ class Settings(BaseModel):
     enable_unsafe_webapp_features: bool = False
     datasets_root: str | None = None
     max_upload_size: int = _DEFAULT_MAX_UPLOAD_SIZE
+    workspace_path: str | None = None
+    workspaces_root: str | None = None
 
     @field_validator("cache_max_age")
     @classmethod

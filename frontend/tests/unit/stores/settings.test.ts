@@ -101,6 +101,49 @@ describe('settings store', () => {
     expect(store.settings?.external_editor).toBe('code {file_path}')
   })
 
+  it('updateSettings supports desktop workspace path patches', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        deployment_mode: 'desktop',
+        output_data_folder: '/out',
+        workspace_path: '/old/workspace',
+      },
+    })
+    mockedApi.patch.mockResolvedValueOnce({
+      data: {
+        deployment_mode: 'desktop',
+        output_data_folder: '/out',
+        workspace_path: '/new/workspace',
+      },
+    })
+
+    const store = useSettingsStore()
+    await store.fetchSettings()
+    await store.updateSettings({ workspace_path: '/new/workspace' })
+
+    expect(mockedApi.patch).toHaveBeenCalledWith('/api/v1/settings', {
+      workspace_path: '/new/workspace',
+    })
+    expect(store.settings?.workspace_path).toBe('/new/workspace')
+  })
+
+  it('reads webapp workspace path without enabling desktop mode', async () => {
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        deployment_mode: 'webapp',
+        output_data_folder: '/out',
+        workspace_path: '/srv/workspaces/current',
+      },
+    })
+
+    const store = useSettingsStore()
+    await store.fetchSettings()
+
+    expect(store.isWebapp).toBe(true)
+    expect(store.isDesktop).toBe(false)
+    expect(store.settings?.workspace_path).toBe('/srv/workspaces/current')
+  })
+
   it('deploymentMode accessible before settings load (no crash)', () => {
     const store = useSettingsStore()
     expect(store.isDesktop).toBe(false)

@@ -56,6 +56,8 @@ const baseSettings = {
   enable_unsafe_webapp_features: false,
   datasets_root: null,
   max_upload_size: 2147483648,
+  workspace_path: null,
+  workspaces_root: null,
   resolved_tool_store_path: '/Users/me/.bioimageflow/tool_packages',
   resolved_output_data_folder: '/Users/me/bioimageflow_data',
 }

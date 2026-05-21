@@ -576,7 +576,7 @@ describe('ToolsPanel', () => {
     expect(vm.activeDoc).toBeNull()
   })
 
-  it('openInEditor calls source and editor APIs in desktop mode', async () => {
+  it('openInEditor calls tool-specific editor API in desktop mode', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
@@ -587,16 +587,8 @@ describe('ToolsPanel', () => {
     const settingsStore = useSettingsStore()
     settingsStore.settings = makeSettings({ deployment_mode: 'desktop' })
 
-    mockedApi.get.mockResolvedValueOnce({
-      data: {
-        tool_name: 'threshold',
-        path: '/path/to/tool.py',
-        source_kind: 'package',
-        editable: false,
-      },
-    })
     mockedApi.post.mockResolvedValueOnce({
-      data: { opened: true, method: 'external', url: null, path: '/path/to', message: null },
+      data: { opened: true, method: 'external', url: null, path: '/path/to/tool.py', message: null },
     })
 
     const vm = wrapper.vm as unknown as {
@@ -604,9 +596,8 @@ describe('ToolsPanel', () => {
     }
     await vm.openInEditor('threshold')
 
-    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/threshold/source')
-    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
-      path: '/path/to',
+    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
+      tool_name: 'threshold',
     })
   })
 
@@ -623,13 +614,10 @@ describe('ToolsPanel', () => {
     })
     window.addEventListener('bif:open-code-editor-loading', onLoading)
 
-    let resolveSource!: (value: unknown) => void
-    mockedApi.get.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveSource = resolve
+    let resolveOpen!: (value: unknown) => void
+    mockedApi.post.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveOpen = resolve
     }))
-    mockedApi.post.mockResolvedValueOnce({
-      data: { opened: true, method: 'embedded', url: 'http://127.0.0.1:32344', path: '/path/to', message: null },
-    })
 
     const vm = wrapper.vm as unknown as {
       openInEditor: (name: string) => Promise<void>
@@ -638,19 +626,19 @@ describe('ToolsPanel', () => {
 
     expect(onLoading).toHaveBeenCalledTimes(1)
     expect(loadingDetails[0]).toEqual({ path: '' })
-    expect(mockedApi.post).not.toHaveBeenCalled()
 
-    resolveSource({
+    resolveOpen({
       data: {
-        tool_name: 'threshold',
         path: '/path/to/tool.py',
-        source_kind: 'package',
-        editable: false,
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344',
+        message: null,
       },
     })
     await openPromise
 
-    expect(loadingDetails).toEqual([{ path: '' }, { path: '/path/to' }])
+    expect(loadingDetails).toEqual([{ path: '' }])
     window.removeEventListener('bif:open-code-editor-loading', onLoading)
   })
 
@@ -678,19 +666,11 @@ describe('ToolsPanel', () => {
       expect(store.tools.length).toBeGreaterThan(0)
     })
 
-    mockedApi.get.mockResolvedValueOnce({
-      data: {
-        tool_name: 'threshold',
-        path: '/path/to/tool.py',
-        source_kind: 'package',
-        editable: false,
-      },
-    })
     mockedApi.post.mockResolvedValueOnce({
       data: {
         opened: false,
         method: 'clipboard',
-        path: '/path/to',
+        path: '/path/to/tool.py',
         url: null,
         message: null,
       },
@@ -701,7 +681,7 @@ describe('ToolsPanel', () => {
     }
     await vm.openInEditor('threshold')
 
-    expect(writeText).toHaveBeenCalledWith('/path/to')
+    expect(writeText).toHaveBeenCalledWith('/path/to/tool.py')
   })
 
   it('custom tool actions are only available for editable custom tools', async () => {
@@ -743,31 +723,21 @@ describe('ToolsPanel', () => {
       expect(store.tools.length).toBeGreaterThan(0)
     })
 
-    mockedApi.get.mockClear()
     mockedApi.post.mockClear()
-    mockedApi.get.mockResolvedValueOnce({
-      data: {
-        tool_name: 'MyCustomTool',
-        path: '/workflow/tools/my_custom_tool.py',
-        source_kind: 'custom',
-        editable: true,
-      },
-    })
     mockedApi.post.mockResolvedValueOnce({
       data: {
         opened: true,
         method: 'external',
         url: null,
-        path: '/workflow/tools',
+        path: '/workflow/tools/my_custom_tool.py',
         message: null,
       },
     })
 
     await wrapper.find('[data-testid="tool-open-script-MyCustomTool"]').trigger('click')
 
-    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/MyCustomTool/source')
-    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
-      path: '/workflow/tools',
+    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
+      tool_name: 'MyCustomTool',
     })
     expect(wrapper.emitted('add-tool')).toBeUndefined()
   })
@@ -856,16 +826,8 @@ describe('ToolsPanel', () => {
       enable_unsafe_webapp_features: true,
     })
 
-    mockedApi.get.mockResolvedValueOnce({
-      data: {
-        tool_name: 'threshold',
-        path: '/path/to/tool.py',
-        source_kind: 'package',
-        editable: false,
-      },
-    })
     mockedApi.post.mockResolvedValueOnce({
-      data: { opened: true, method: 'external', url: null, path: '/path/to', message: null },
+      data: { opened: true, method: 'external', url: null, path: '/path/to/tool.py', message: null },
     })
 
     const vm = wrapper.vm as unknown as {
@@ -873,9 +835,8 @@ describe('ToolsPanel', () => {
     }
     await vm.openInEditor('threshold')
 
-    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/threshold/source')
-    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open', {
-      path: '/path/to',
+    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
+      tool_name: 'threshold',
     })
   })
 

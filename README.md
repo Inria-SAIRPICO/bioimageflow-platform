@@ -10,6 +10,7 @@ bioimageflow-platform/
   frontend/         Vue 3 SPA with node-based workflow editor
   bioimageflow/     Symlink to the BioImageFlow library
   docs/             Specs and implementation plans
+  workspace/        Default local development workspace (ignored/generated)
 ```
 
 The platform follows a **client-server model**:
@@ -19,6 +20,25 @@ The platform follows a **client-server model**:
 - The backend also ships a **pywebview entrypoint** that opens the SPA in a native OS window, exposes native file dialogs to the frontend, and manages the full application lifecycle.
 
 The frontend owns all graph state. The backend is stateless between requests for graph editing -- each request sends the full graph as JSON. The backend holds only transient execution state during workflow runs.
+
+## Workspace Model
+
+Each user has one active BioImageFlow workspace. Desktop users can change their
+workspace path in Settings; webapp deployments derive it from an admin-managed
+workspaces root as `<workspaces_root>/<user_id>/workspace/`.
+
+```text
+workspace/
+  workflows/    Saved workflow tree and folders
+  tools/        Workspace-owned custom tools
+  data/         Local/uploaded datasets
+  outputs/      Runtime outputs and caches per workflow id
+```
+
+Workflow ids are paths relative to `workspace/workflows/`, such as
+`segmentation/nuclei`. The Workflows panel shows this as a folder tree. Tool
+source opening keeps VS Code/code-server rooted at the workspace project and
+focuses the selected tool file.
 
 ## Prerequisites
 
@@ -104,6 +124,9 @@ cd frontend && bun run test:e2e
 
 - `specs.md` -- BioImageFlow library specifications
 - `platform_specs_v1.md` -- MVP platform specifications
+- `platform_specs_v2.md` -- Sub-workflows and embedded code editor
+- `platform_specs_v3.md` -- Webapp and multi-user platform specifications
+- `workspace_root_implementation_plan.md` -- Workspace-root implementation plan
 
 ## Todo
 

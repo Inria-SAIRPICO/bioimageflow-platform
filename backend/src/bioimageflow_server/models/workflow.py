@@ -14,6 +14,29 @@ from bioimageflow_server.models.graph import GraphState
 _WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 
 
+def validate_workflow_id(value: str) -> str:
+    """Validate a workspace-relative workflow or folder path."""
+    normalized = value.strip().replace("\\", "/").strip("/")
+    raw_segments = normalized.split("/")
+    segments = [segment for segment in raw_segments if segment]
+    if (
+        not segments
+        or len(raw_segments) != len(segments)
+        or value.strip().startswith(("/", "\\"))
+        or ".." in segments
+    ):
+        raise ValueError(
+            "Workflow path must be a workspace-relative path of safe names"
+        )
+    for segment in segments:
+        if not _WORKFLOW_NAME_RE.fullmatch(segment):
+            raise ValueError(
+                "Workflow name must start with an alphanumeric character "
+                "and contain only letters, numbers, underscores, or hyphens"
+            )
+    return "/".join(segments)
+
+
 def canonical_workflow_name(value: str) -> str:
     """Return the workflow ID generated from a user-facing display name."""
     ascii_value = (
@@ -35,23 +58,22 @@ class WorkflowCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
-        if not _WORKFLOW_NAME_RE.fullmatch(value):
-            raise ValueError(
-                "Workflow name must start with an alphanumeric character "
-                "and contain only letters, numbers, underscores, or hyphens"
-            )
-        return value
+        return validate_workflow_id(value)
 
 
 class WorkflowInfo(BaseModel):
     """Workflow list item returned by GET /workflows."""
 
+    id: str | None = None
     name: str
+    folder: str = ""
     display_name: str
     path: str
     last_modified: str
     description: str | None = None
     storage_path: str | None = None
+    workspace_path: str | None = None
+    output_path: str | None = None
 
 
 class WorkflowUpdate(BaseModel):
@@ -61,7 +83,34 @@ class WorkflowUpdate(BaseModel):
     display_name: str | None = None
     description: str | None = None
     new_name: str | None = None
+    folder: str | None = None
+    new_id: str | None = None
     storage_path: str | None = None
+
+
+class WorkflowFolderCreate(BaseModel):
+    path: str
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        return validate_workflow_id(value)
+
+
+class WorkflowFolderUpdate(BaseModel):
+    new_path: str
+
+    @field_validator("new_path")
+    @classmethod
+    def validate_new_path(cls, value: str) -> str:
+        return validate_workflow_id(value)
+
+
+class WorkflowFolderInfo(BaseModel):
+    path: str
+    display_name: str
+    folders: list["WorkflowFolderInfo"] = Field(default_factory=list)
+    workflows: list[WorkflowInfo] = Field(default_factory=list)
 
 
 class WorkflowSaveBody(BaseModel):

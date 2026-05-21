@@ -20,11 +20,13 @@ from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowExportDocument,
     WorkflowFile,
+    WorkflowFolderInfo,
     WorkflowInfo,
     WorkflowImportResponse,
     WorkflowSaveBody,
     WorkflowUpdate,
     canonical_workflow_name,
+    validate_workflow_id,
 )
 from bioimageflow_server.services.graph_translator import (
     collect_required_packages,
@@ -119,6 +121,7 @@ class WorkflowStoreService:
         archive_adapter: WorkflowArchiveAdapter | None = None,
     ) -> None:
         self.root_dir = self._normalize_storage_path(root_dir)
+        self.workspace_dir = self.root_dir.parent if self.root_dir.name == "workflows" else self.root_dir
         self.tool_registry = tool_registry
         self.storage_base_dir = self._normalize_storage_path(
             storage_base_dir or self.root_dir / "outputs"
@@ -133,14 +136,21 @@ class WorkflowStoreService:
         return Path.cwd() / candidate
 
     def _validate_name(self, name: str) -> str:
-        return WorkflowCreate(name=name).name
+        return validate_workflow_id(name)
+
+    def _leaf_name(self, name: str) -> str:
+        return self._validate_name(name).split("/")[-1]
+
+    def _folder_name(self, name: str) -> str:
+        parts = self._validate_name(name).split("/")
+        return "/".join(parts[:-1])
 
     def _path_for(self, name: str) -> Path:
         safe_name = self._validate_name(name)
         return self._workflow_dir(safe_name) / "workflow.json"
 
     def _workflow_dir(self, name: str) -> Path:
-        return self.root_dir / self._validate_name(name)
+        return self.root_dir.joinpath(*self._validate_name(name).split("/"))
 
     def _workflow_tools_dir(self, name: str) -> Path:
         return self._workflow_dir(name) / "tools"
@@ -153,6 +163,8 @@ class WorkflowStoreService:
 
     def _legacy_path_for(self, name: str) -> Path:
         safe_name = self._validate_name(name)
+        if "/" in safe_name:
+            return self.root_dir / "__missing_legacy_workflow__.json"
         return self.root_dir / f"{safe_name}.json"
 
     def _ensure_workflow_layout(self, name: str) -> None:
@@ -177,7 +189,7 @@ class WorkflowStoreService:
         raise FileNotFoundError(name)
 
     def _managed_storage_path(self, name: str) -> Path:
-        return self.storage_base_dir / self._validate_name(name)
+        return self.storage_base_dir.joinpath(*self._validate_name(name).split("/"))
 
     def _storage_path_string(self, path: str | Path) -> str:
         return str(self._normalize_storage_path(path))
@@ -232,10 +244,14 @@ class WorkflowStoreService:
             tz=UTC,
         ).isoformat()
         return WorkflowInfo(
-            name=name,
+            id=name,
+            name=self._leaf_name(name),
+            folder=self._folder_name(name),
             display_name=str(metadata.get("display_name") or name),
             description=cast(str | None, metadata.get("description")),
             storage_path=cast(str | None, metadata.get("storage_path")),
+            output_path=cast(str | None, metadata.get("storage_path")),
+            workspace_path=str(self.workspace_dir),
             path=str(path),
             last_modified=last_modified,
         )
@@ -268,7 +284,7 @@ class WorkflowStoreService:
         self._ensure_workflow_layout(name)
         fd, tmp_name = tempfile.mkstemp(
             dir=str(path.parent),
-            prefix=f".{name}.",
+            prefix=f".{self._leaf_name(name)}.",
             suffix=".tmp.json",
         )
         try:
@@ -497,8 +513,8 @@ class WorkflowStoreService:
             return []
         workflows: list[WorkflowInfo] = []
         names = {
-            path.parent.name
-            for path in self.root_dir.glob("*/workflow.json")
+            path.parent.relative_to(self.root_dir).as_posix()
+            for path in self.root_dir.glob("**/workflow.json")
             if not path.name.startswith(".")
         }
         names.update(
@@ -516,6 +532,74 @@ class WorkflowStoreService:
             except (OSError, json.JSONDecodeError, ValidationError, ValueError):
                 continue
         return workflows
+
+    def workflow_tree(self) -> WorkflowFolderInfo:
+        """Return workflows grouped by workspace-relative folders."""
+        root = WorkflowFolderInfo(path="", display_name="workspace")
+        folders: dict[str, WorkflowFolderInfo] = {"": root}
+
+        def ensure_folder(path: str) -> WorkflowFolderInfo:
+            if path in folders:
+                return folders[path]
+            parent_path, _, leaf = path.rpartition("/")
+            parent = ensure_folder(parent_path)
+            folder = WorkflowFolderInfo(path=path, display_name=leaf or path)
+            parent.folders.append(folder)
+            parent.folders.sort(key=lambda item: item.display_name.lower())
+            folders[path] = folder
+            return folder
+
+        for workflow in self.list_workflows():
+            folder = ensure_folder(workflow.folder)
+            folder.workflows.append(workflow)
+            folder.workflows.sort(key=lambda item: item.display_name.lower())
+
+        if self.root_dir.exists():
+            for path in self.root_dir.glob("**"):
+                if not path.is_dir() or path == self.root_dir:
+                    continue
+                rel = path.relative_to(self.root_dir).as_posix()
+                if (path / "workflow.json").exists():
+                    parent_path, _, _leaf = rel.rpartition("/")
+                    if parent_path:
+                        ensure_folder(parent_path)
+                    continue
+                ensure_folder(rel)
+        return root
+
+    def _folder_path(self, path: str) -> Path:
+        safe = validate_workflow_id(path)
+        return self.root_dir.joinpath(*safe.split("/"))
+
+    def create_folder(self, path: str) -> WorkflowFolderInfo:
+        folder = self._folder_path(path)
+        if folder.exists():
+            raise FileExistsError(path)
+        folder.mkdir(parents=True)
+        safe = validate_workflow_id(path)
+        return WorkflowFolderInfo(path=safe, display_name=safe.split("/")[-1])
+
+    def delete_folder(self, path: str) -> None:
+        folder = self._folder_path(path)
+        if not folder.exists() or not folder.is_dir() or (folder / "workflow.json").exists():
+            raise FileNotFoundError(path)
+        if any(folder.iterdir()):
+            raise FileExistsError(path)
+        folder.rmdir()
+
+    def rename_folder(self, path: str, new_path: str) -> WorkflowFolderInfo:
+        old_folder = self._folder_path(path)
+        new_folder = self._folder_path(new_path)
+        if not old_folder.exists() or not old_folder.is_dir():
+            raise FileNotFoundError(path)
+        if (old_folder / "workflow.json").exists():
+            raise FileNotFoundError(path)
+        if new_folder.exists():
+            raise FileExistsError(new_path)
+        new_folder.parent.mkdir(parents=True, exist_ok=True)
+        old_folder.rename(new_folder)
+        safe = validate_workflow_id(new_path)
+        return WorkflowFolderInfo(path=safe, display_name=safe.split("/")[-1])
 
     def create_workflow(self, data: WorkflowCreate) -> WorkflowInfo:
         path = self._path_for(data.name)
@@ -636,12 +720,23 @@ class WorkflowStoreService:
                 shutil.copytree(old_tools, new_tools)
             return self._metadata_from_raw(new_name, self._read_raw(new_name), new_path)
 
+        old_folder = self._folder_name(name)
         new_name = name
-        if patch.new_name is not None:
-            new_name = self._validate_name(patch.new_name)
+        if patch.new_id is not None:
+            new_name = self._validate_name(patch.new_id)
+        elif patch.new_name is not None:
+            new_leaf = self._leaf_name(patch.new_name)
+            target_folder = patch.folder if patch.folder is not None else old_folder
+            new_name = f"{target_folder}/{new_leaf}" if target_folder else new_leaf
+            new_name = self._validate_name(new_name)
+        elif patch.folder is not None:
+            new_leaf = self._leaf_name(name)
+            new_name = f"{patch.folder}/{new_leaf}" if patch.folder else new_leaf
+            new_name = self._validate_name(new_name)
         elif patch.display_name is not None:
             try:
-                new_name = canonical_workflow_name(patch.display_name)
+                new_leaf = canonical_workflow_name(patch.display_name)
+                new_name = f"{old_folder}/{new_leaf}" if old_folder else new_leaf
             except ValidationError:
                 new_name = name
         if new_name != name and self._has_name_collision(new_name):
@@ -663,7 +758,9 @@ class WorkflowStoreService:
         if isinstance(storage_path, str) and storage_path:
             self._set_workflow_storage_path(raw, storage_path)
         if new_name != name:
-            path.parent.rename(self._workflow_dir(new_name))
+            destination = self._workflow_dir(new_name)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            path.parent.rename(destination)
         self._write_raw(new_name, raw)
         return self._metadata_from_raw(
             new_name,

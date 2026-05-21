@@ -23,7 +23,7 @@ Sub-workflows allow grouping a set of nodes into a single reusable unit. The Bio
 4. The user can fine-tune the sub-workflow's interface using the **Publish toggle** (see Section 1.5): any internal input parameter with a connectable pin (`connectable != "never"`) can be promoted to the workflow interface, making it configurable on the outer node when this workflow is used as a sub-workflow.
 5. This operation is **undoable** as a single undo step. Undoing restores all internal nodes, edges, and positions to the canvas and removes the SubWorkflowNode.
 
-#### From Workflow Panel
+#### From Workflows Panel
 
 Saved workflows can be dragged from the Workflows panel onto the canvas by
 using the row's drag handle. Dropping a workflow creates a SubWorkflowNode; the
@@ -45,7 +45,7 @@ contains A).
 
 ### 1.3 Editing
 
-- **Double-click** a SubWorkflowNode to open its internal DAG in a **new tab** (same behavior as opening a workflow from the Workflow Panel).
+- **Double-click** a SubWorkflowNode to open its internal DAG in a **new tab** (same behavior as opening a workflow from the Workflows Panel).
 - The tab title shows the sub-workflow node name (e.g., `segment_and_measure_1`).
 - The user can edit internal nodes, parameters, and connections within this tab.
 - The editor session carries the parent SubWorkflowNode's published interface (`published_inputs` and `published_outputs`) alongside the internal DAG. Internal node panels use this shared session state for Publish toggles, so publishing/unpublishing a field changes the outer node interface, not only the nested graph.
@@ -198,9 +198,44 @@ Opens a file or folder in the code editor.
 ```
 
 **Behavior:**
-1. If the user has configured an **external editor command** in Settings (e.g., `code {file_path}`), the backend launches that command with the path substituted.
+1. If the user has configured an **external editor command** in Settings (e.g., `code {workspace_path} --goto {file_path}`), the backend launches that command with placeholders substituted.
 2. Otherwise, if code-server is available, the backend instructs code-server to open the path.
 3. If neither is available, the endpoint returns `200` with `{"fallback": "clipboard"}`. The frontend copies the path to the clipboard and shows a toast: "Path copied — open in your local editor."
+
+#### `POST /editor/open-tool`
+
+Opens the user's workspace as the editor project and focuses a tool source file.
+
+**Request body:**
+
+```json
+{
+  "tool_name": "CellposeSegmenter",
+  "workflow_id": "segmentation/nuclei"
+}
+```
+
+`workflow_id` is optional and is used when resolving workspace-owned custom
+tools for the active workflow. The response includes the project and focus path:
+
+```json
+{
+  "fallback": null,
+  "project_path": "/Users/alice/BioImageFlow/workspace",
+  "focus_path": "/Users/alice/BioImageFlow/workspace/tools/cellpose_segmenter.py"
+}
+```
+
+**Behavior:**
+1. The editor project path is always the current user's workspace folder.
+2. If the tool is workspace-owned, `focus_path` points under `workspace/tools/`.
+3. If the tool comes from an installed package, `focus_path` may point to the
+   package source file, but the project remains the workspace.
+4. Embedded code-server loads the workspace folder first, then uses the opener
+   integration to reveal/focus `focus_path` without replacing the project.
+5. External editor commands receive both `{workspace_path}` and `{file_path}` so
+   VS Code can open the workspace and focus the script, for example
+   `code {workspace_path} --goto {file_path}`.
 
 ### 2.3 Frontend
 
@@ -209,7 +244,9 @@ Opens a file or folder in the code editor.
 **Panel behavior:**
 - The Code Editor Panel is a tab in the Dockview layout. It can be docked, resized, and collapsed like any other panel.
 - On first use, the panel checks `GET /editor/status?launch=true`. If code-server is available, the iframe loads. If not, the panel shows a message: "code-server is not available. Configure an external editor in Settings."
-- Opening a tool's source folder (from the Tools Panel "Open in editor" button) sends `POST /editor/open` with the folder path and activates the Code Editor Panel.
+- Opening a tool's source script (from the Tools Panel "Open in editor" button)
+  sends `POST /editor/open-tool` and activates the Code Editor Panel. The iframe
+  project stays on the user's workspace folder while the tool file is focused.
 
 **Interactions with tool development:**
 - Editing tool source code in the Code Editor triggers the existing **tool hot-reload** mechanism (v1, Section 2.7 of full spec). Changes are detected by the file watcher, and affected nodes are updated automatically.
@@ -220,7 +257,7 @@ The Settings Panel (Section 3.13 of the full spec) includes a Code Editor sectio
 
 | Field | Widget | Description |
 |-------|--------|-------------|
-| **External editor command** | Text input | Command template for opening files in an external editor. Placeholder: `code {file_path}`. The `{file_path}` token is replaced with the actual path. |
+| **External editor command** | Text input | Command template for opening files in an external editor. Placeholder: `code {workspace_path} --goto {file_path}`. `{workspace_path}` is the current workspace folder and `{file_path}` is the focused file. |
 | **Enable unsafe webapp features** | File-only boolean | Debug switch for local webapp-mode development. Default `false`. Exposed by `GET /settings`, rejected by `PATCH /settings`. |
 
 `enable_unsafe_webapp_features` only affects `deployment_mode === "webapp"`. With the default `false` value, local source-editing actions are disabled: tool creation, rename, and delete are hidden in the frontend and rejected by the backend, and tool source-opening controls are hidden in the frontend. Setting it to `true` re-enables local debugging actions that can modify or open server-side code: creating tools, renaming custom tools, deleting custom tools, and opening tool source paths in the code editor. This setting is unsafe for hosted or multi-user deployments and must be changed only in the settings file or server-side configuration, never from the GUI.
@@ -232,7 +269,7 @@ The Settings Panel (Section 3.13 of the full spec) includes a Code Editor sectio
 
 ### 2.5 Integration with v1 Features
 
-- **Tools Panel:** The "Open in editor" button on each tool row sends `POST /editor/open` and activates the Code Editor Panel.
+- **Tools Panel:** The "Open in editor" button on each tool row sends `POST /editor/open-tool` and activates the Code Editor Panel.
 - **Data Table:** Path cells (non-image) have an "Open" button that sends `POST /editor/open` for CSV, JSON, and tabular data files.
 - **Tool hot-reload:** Edits made in the Code Editor Panel trigger the same hot-reload pipeline as edits made in any external editor (file watcher based).
 
@@ -325,20 +362,23 @@ back, enabling workflow sharing between users and machines.
 
 The platform is a thin GUI adapter here: it delegates export and import to the
 BioImageFlow library API and must not reimplement the archive format. The
-library-defined archive contains the workflow JSON and the workflow-local
-`tools/` directory. The platform may add or restore GUI metadata only through
+library-defined archive contains the workflow JSON and any project-local custom
+tool bundle needed by that workflow. In the platform, those custom tools are
+stored under `workspace/tools/` and exported without embedding the absolute
+workspace path. The platform may add or restore GUI metadata only through
 documented extension points in the library workflow document.
 
 ### 4.1 Backend
 
-#### `POST /workflows/{name}/export`
+#### `POST /workflows/{id}/export`
 
-Exports the named workflow by calling the BioImageFlow library export API.
+Exports the workflow identified by workspace-relative id by calling the
+BioImageFlow library export API.
 
 **Response:** The response is the library archive as a browser download
-(`Content-Disposition: attachment; filename="{name}.bioimageflow.zip"`). The
+(`Content-Disposition: attachment; filename="{slug}.bioimageflow.zip"`). The
 archive structure is defined by the library and includes the workflow JSON plus
-the workflow-local `tools/` directory.
+the project-local custom tool bundle used by the workflow.
 
 **Error responses:**
 
@@ -355,17 +395,17 @@ Imports a workflow by calling the BioImageFlow library import/load API.
 
 **Behavior:**
 1. The server passes the upload to the BioImageFlow library import/load API.
-2. If a workflow with the same `name` already exists, the server returns **409 Conflict** with a suggested alternative name (e.g., `"my_workflow_2"`).
+2. If a workflow with the same `id` already exists, the server returns **409 Conflict** with a suggested alternative id (e.g., `"segmentation/my_workflow_2"`).
 3. The server checks `required_packages` against the tool store. If packages or versions are missing, the response includes a `missing_packages` field (same format as workflow loading — see Section 2.4.2 of the full spec).
-4. On success, the imported workflow is saved in the platform workflow layout
-   (`workflows/{name}/workflow.json` plus `workflows/{name}/tools/`) and can be
-   opened normally.
+4. On success, the imported workflow is saved as
+   `workspace/workflows/<id>.workflow.json`. Any bundled custom tools are
+   restored under `workspace/tools/` with collision-safe names if needed.
 
 **Response (success):**
 
 ```json
 {
-  "name": "my_workflow",
+  "id": "segmentation/my_workflow",
   "display_name": "My Workflow",
   "missing_packages": [
     {"name": "bioimageflow-stardist", "version": "0.9.0", "installed_versions": []}
@@ -380,8 +420,8 @@ If `missing_packages` is non-empty, the frontend shows a dialog: "This workflow 
 ```json
 {
   "error": "conflict",
-  "detail": "Workflow 'my_workflow' already exists",
-  "suggested_name": "my_workflow_2"
+  "detail": "Workflow 'segmentation/my_workflow' already exists",
+  "suggested_id": "segmentation/my_workflow_2"
 }
 ```
 
@@ -390,19 +430,19 @@ If `missing_packages` is non-empty, the frontend shows a dialog: "This workflow 
 | Code | Condition |
 |------|-----------|
 | 400 | Invalid file format, malformed JSON |
-| 409 | Workflow name conflict |
+| 409 | Workflow id conflict |
 | 422 | Valid JSON but invalid workflow structure |
 
-### 4.2 Frontend — Workflow Panel Actions
+### 4.2 Frontend — Workflows Panel Actions
 
-The Workflow Panel (Section 3.8 of the full spec) includes Export and Import actions:
+The Workflows Panel (Section 3.8 of the full spec) includes Export and Import actions:
 
-- **Export:** Available in the Workflow menu and as a button in the Workflow Panel. Calls `POST /workflows/{name}/export` and triggers a browser file download of the `.bioimageflow.zip` archive.
-- **Import:** Available in the Workflow menu and as a button in the Workflow Panel. Opens the browser's native file picker filtered to `.bioimageflow.zip` files. On file selection, uploads via `POST /workflows/import`. On success, the imported workflow appears in the workflow list and can be opened. On name conflict, a dialog offers to rename or cancel.
+- **Export:** Available in the Workflow menu and as a button in the Workflows Panel. Calls `POST /workflows/{id}/export` and triggers a browser file download of the `.bioimageflow.zip` archive.
+- **Import:** Available in the Workflow menu and as a button in the Workflows Panel. Opens the browser's native file picker filtered to `.bioimageflow.zip` files. On file selection, uploads via `POST /workflows/import`. On success, the imported workflow appears in the workflow tree and can be opened. On id conflict, a dialog offers to rename or cancel.
 
 ### 4.3 Integration with v1 Features
 
-- **Workflow loading:** The import endpoint reuses the same missing-package resolution flow as `GET /workflows/{name}` (v1).
+- **Workflow loading:** The import endpoint reuses the same missing-package resolution flow as `GET /workflows/{id}` (v1).
 - **Sub-workflows:** Exported workflows include all sub-workflow internal DAGs through the library export format. Sub-workflows are self-contained within the export.
 - **Tool versions:** The `required_packages` field in the export enables the target machine to install exactly the right package versions.
 
@@ -434,9 +474,9 @@ Creates a new tool from a template.
 
 **Behavior:**
 1. The server validates the name (must be a valid Python class name, must not conflict with existing tools).
-2. A tool file is created at the current workflow's `tools/{name}.py` using the appropriate template (see Section 5.4).
-3. Custom tools in this directory are auto-discovered by the server.
-4. The tool file is opened in the code editor (`POST /editor/open`).
+2. A tool file is created at `workspace/tools/{name}.py` using the appropriate template (see Section 5.4).
+3. Custom tools in this workspace directory are auto-discovered by the server.
+4. The workspace project is opened in the code editor and the tool file is focused (`POST /editor/open-tool`).
 5. The new tool appears in the tool registry and the Tools Panel.
 
 **Response (success):**
@@ -537,11 +577,10 @@ The Tools Panel (Section 3.4 of the full spec) includes a **Create Tool** button
 
 ### 5.3 Custom Tool Discovery
 
-Custom tools are placed in the current workflow's `tools/` directory
-(`workflows/{workflow_name}/tools/`). The server discovers tools for the current
-workflow and refreshes that workflow-local registry when the active workflow
-changes. Custom tools appear in the Tools Panel alongside package-installed
-tools, distinguished by a "Custom" badge.
+Custom tools are placed in `workspace/tools/`. The server discovers tools for
+the current workspace and refreshes the workspace custom-tool registry when the
+workspace changes or files are edited. Custom tools appear in the Tools Panel
+alongside package-installed tools, distinguished by a "Custom" badge.
 
 ### 5.4 Tool Templates
 
@@ -667,10 +706,11 @@ New and modified endpoints introduced in v2:
 | 1 | `POST` | `/api/v1/tools` | Create a new tool from template | "Create Tool" button in Tools Panel |
 | 2 | `DELETE` | `/api/v1/tools/{tool_name}` | Delete a custom tool | Context menu on custom tool in Tools Panel |
 | 3 | `PATCH` | `/api/v1/tools/{tool_name}` | Rename a custom tool | Context menu on custom tool in Tools Panel |
-| 4 | `POST` | `/api/v1/workflows/{name}/export` | Export workflow to library archive | "Export" in Workflow Panel menu |
-| 5 | `POST` | `/api/v1/workflows/import` | Import workflow from library archive | "Import" in Workflow Panel menu |
-| 6 | `POST` | `/api/v1/editor/open` | Open file/folder in code editor | "Open in editor" from Tools Panel or Data Table |
-| 7 | `GET` | `/api/v1/editor/status` | Check code-server availability and URL | Code Editor Panel initialization |
+| 4 | `POST` | `/api/v1/workflows/{id}/export` | Export workflow to library archive | "Export" in Workflows Panel menu |
+| 5 | `POST` | `/api/v1/workflows/import` | Import workflow from library archive | "Import" in Workflows Panel menu |
+| 6 | `POST` | `/api/v1/editor/open` | Open file/folder in code editor | "Open" from Data Table path cells |
+| 7 | `POST` | `/api/v1/editor/open-tool` | Open workspace project and focus a tool file | "Open in editor" from Tools Panel or node source links |
+| 8 | `GET` | `/api/v1/editor/status` | Check code-server availability and URL | Code Editor Panel initialization |
 
 **Modified endpoints (behavioral changes only, same URL/method):**
 

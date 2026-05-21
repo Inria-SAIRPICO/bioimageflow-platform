@@ -24,9 +24,12 @@ src/bioimageflow_server/
     dev.py            Development-only endpoints
     filesystem.py     POST /api/v1/fs/reveal (file-browser reveal)
     graph.py          Graph validation endpoints
+    workflows.py      Workflow CRUD and workspace tree endpoints
   services/
     tool_registry.py  Tool discovery and registry
     package_installer.py  Tool package installation
+    workflow_store.py Workspace workflow persistence
+    workspace.py      Workspace path resolution and workspace roots
   models/             Pydantic models (errors, graph, tools, settings, ...)
   ws/                 WebSocket handlers
 ```
@@ -87,6 +90,27 @@ uv run python -m bioimageflow_server --desktop --dev
 
 With `--dev` the pywebview window points at `http://localhost:5173` (the Vite dev server) while FastAPI still runs on `127.0.0.1:8000` so `/api` calls work through Vite's proxy.
 
+## Workspace Storage
+
+The backend resolves platform-owned workflow files through one active workspace
+per user. In desktop development the default workspace is the repo-local
+`../workspace/` unless overridden in Settings. In webapp mode the launcher or
+deployment config provides a workspaces root, and each authenticated user gets
+`<workspaces_root>/<user_id>/workspace/`.
+
+```text
+workspace/
+  workflows/    *.workflow.json files and folders
+  tools/        workspace-owned custom tool scripts
+  data/         local/uploaded datasets
+  outputs/      workflow runtime storage and caches
+```
+
+Workflow ids are slash-separated paths relative to `workspace/workflows/`.
+Runtime execution paths passed to the BioImageFlow library are resolved under
+`workspace/outputs/<workflow_id>/`. Custom tools are workspace-scoped rather
+than stored in individual workflow folders.
+
 ### How it fits together
 
 `desktop.py` starts uvicorn in a background daemon thread, waits for `server.started`, then opens a pywebview window. When the window closes, a shutdown sequence stops the execution (placeholder), cleans up shared memory (placeholder), saves settings (placeholder), and signals uvicorn to exit.
@@ -115,6 +139,9 @@ All endpoints are prefixed with `/api/v1/`.
 | `GET`    | `/tools/packages`                   | List all packages with versions             |
 | `POST`   | `/tools/packages/{name}/install`    | Install a package version                   |
 | `DELETE` | `/tools/packages/{name}`            | Uninstall a package version                 |
+| `GET`    | `/workspace`                        | Current workspace roots and flags           |
+| `PATCH`  | `/workspace`                        | Desktop workspace path change               |
+| `GET`    | `/workflows/tree`                   | Nested workflow folder tree                 |
 | `POST`   | `/fs/reveal`                        | Open a path in the system file browser      |
 
 ## Linting

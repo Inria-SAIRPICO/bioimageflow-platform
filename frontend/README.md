@@ -26,11 +26,13 @@ src/
     toolRegistry.ts           Tool metadata from backend
     execution.ts              Execution state
     settings.ts               Application settings
+    workflow.ts               Workspace workflow tree and active workflow state
   components/
     layout/
       MenuBar.vue             PrimeVue Menubar with panel toggles
     panels/
       ToolsPanel.vue          Searchable tool tree with drag support
+      WorkflowsPanel.vue      Workspace workflow tree and folder controls
     canvas/
       CanvasView.vue          Vue Flow DAG editor
       ToolNode.vue            Custom node component
@@ -65,6 +67,28 @@ To specify another backend port:
 ```bash
 BIOIMAGEFLOW_BACKEND_PORT=8008 bun run dev
 ```
+
+## Workspace UX
+
+The frontend treats workflows as a tree rooted at the current user's workspace:
+
+```text
+workspace/
+  workflows/    folders and *.workflow.json files
+  tools/        workspace-owned custom tools
+  data/
+  outputs/
+```
+
+Desktop users can change the workspace path in Settings with a folder picker.
+Webapp users see a read-only workspace path; the admin configures the
+workspaces root server-side. The Workflows panel renders folders and workflow
+rows, supports create/rename/delete-empty folder actions, and uses drag/drop for
+moving workflows between folders. Dragging a workflow onto the canvas remains
+the sub-workflow creation gesture.
+
+The Tools panel opens source through the editor API that keeps VS Code or
+code-server rooted at the workspace project and focuses the selected tool file.
 
 ## Testing
 

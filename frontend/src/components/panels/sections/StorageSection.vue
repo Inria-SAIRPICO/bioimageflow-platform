@@ -6,9 +6,14 @@ import { useConfirm } from 'primevue/useconfirm'
 import type { SettingsResponse } from '@/api/types'
 import { isDesktop, revealPath, selectFolder } from '@/utils/nativeDialogs'
 
-const props = defineProps<{ modelValue: SettingsResponse }>()
+type StorageSettings = SettingsResponse & {
+  workspace_path?: string | null
+  workspaces_root?: string | null
+}
+
+const props = defineProps<{ modelValue: StorageSettings }>()
 const emit = defineEmits<{
-  (e: 'update:field', payload: { field: keyof SettingsResponse; value: unknown }): void
+  (e: 'update:field', payload: { field: keyof StorageSettings; value: unknown }): void
 }>()
 
 let toast: ReturnType<typeof useToast> | null = null
@@ -55,10 +60,44 @@ async function changeFolder() {
     apply()
   }
 }
+
+async function changeWorkspacePath() {
+  const picked = await selectFolder('Select workspace folder')
+  if (!picked) return
+  emit('update:field', { field: 'workspace_path', value: picked })
+}
 </script>
 
 <template>
   <div class="settings-section">
+    <div class="field">
+      <label class="field-label" for="workspace-path-input">Workspace path</label>
+      <div class="field-row">
+        <InputText
+          id="workspace-path-input"
+          :model-value="modelValue.workspace_path || modelValue.workspaces_root || ''"
+          readonly
+          data-testid="workspace-path-input"
+          class="grow"
+        />
+        <Button
+          v-if="modelValue.deployment_mode === 'desktop' && isDesktop()"
+          label="Change..."
+          severity="secondary"
+          data-testid="workspace-path-change-button"
+          @click="changeWorkspacePath"
+        />
+      </div>
+      <p class="help-text" data-testid="workspace-path-help">
+        <template v-if="modelValue.deployment_mode === 'desktop'">
+          Desktop workspace location.
+        </template>
+        <template v-else>
+          Workspace location is managed by the web application.
+        </template>
+      </p>
+    </div>
+
     <div class="field">
       <label class="field-label" for="output-data-folder-input">Output data folder</label>
       <div class="field-row">

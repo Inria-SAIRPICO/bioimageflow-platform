@@ -16,6 +16,11 @@ def test_editor_open_request_rejects_empty_path() -> None:
         EditorOpenRequest(path="  ")
 
 
+def test_editor_open_request_rejects_empty_focus_path() -> None:
+    with pytest.raises(ValidationError):
+        EditorOpenRequest(path="/tmp", focus_path="  ")
+
+
 def test_editor_open_method_values() -> None:
     assert EditorOpenMethod.EXTERNAL == "external"
     assert EditorOpenMethod.EMBEDDED == "embedded"

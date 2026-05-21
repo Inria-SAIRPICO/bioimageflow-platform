@@ -9,7 +9,8 @@ from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.editor import EditorOpenMethod, EditorOpenResponse, EditorStatus
-from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.tools import AppConfig, ToolMetadata
+from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 pytestmark = pytest.mark.anyio
 
@@ -27,14 +28,14 @@ class _EditorStub:
             control_available=True,
         )
 
-    def open_path(self, path: str) -> EditorOpenResponse:
+    def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
         self.paths.append(path)
         if self.response is not None:
             return self.response
         return EditorOpenResponse(
             opened=False,
             method=EditorOpenMethod.CLIPBOARD,
-            path=str(Path(path).expanduser()),
+            path=str(Path(focus_path or path).expanduser()),
             message="Path copied - open in your local editor.",
         )
 
@@ -69,6 +70,7 @@ async def test_editor_routes_are_present_in_openapi() -> None:
     paths = response.json()["paths"]
     assert "/api/v1/editor/status" in paths
     assert "/api/v1/editor/open" in paths
+    assert "/api/v1/editor/open-tool" in paths
 
 
 async def test_editor_open_external_response(tmp_path: Path) -> None:
@@ -140,3 +142,55 @@ async def test_editor_open_missing_path_returns_404(tmp_path: Path) -> None:
         )
 
     assert response.status_code == 404
+
+
+async def test_editor_open_accepts_focus_path(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = workspace / "tools" / "tool.py"
+    tool.parent.mkdir()
+    tool.write_text("print('x')")
+    editor = _EditorStub()
+    config = AppConfig(editor_service=editor)
+    async for client in _client(config):
+        response = await client.post(
+            "/api/v1/editor/open",
+            json={"path": str(workspace), "focus_path": str(tool)},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["path"] == str(tool)
+    assert editor.paths == [str(workspace)]
+
+
+async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = workspace / "tools" / "my_tool.py"
+    tool.parent.mkdir()
+    tool.write_text("class MyTool: pass", encoding="utf-8")
+    registry = ToolRegistryService()
+    registry.register_tool(
+        "MyTool",
+        ToolMetadata(
+            name="MyTool",
+            display_name="My Tool",
+            package="__custom__",
+            package_version="local",
+            tool_type="ProcessingTool",
+            source_kind="custom",
+            editable=True,
+        ),
+    )
+    registry.register_custom_tool_file(tool, "MyTool")
+    editor = _EditorStub()
+    config = AppConfig(tool_registry=registry, workflow_root=workspace, editor_service=editor)
+    async for client in _client(config):
+        response = await client.post(
+            "/api/v1/editor/open-tool",
+            json={"tool_name": "MyTool"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["path"] == str(tool)
+    assert editor.paths == [str(workspace)]

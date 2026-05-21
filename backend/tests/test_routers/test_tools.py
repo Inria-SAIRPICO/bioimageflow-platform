@@ -308,6 +308,23 @@ async def test_create_tool_requires_workflow_name(workflow_root: Path):
     assert not (workflow_root / "tools").exists()
 
 
+async def test_create_tool_uses_workspace_tools_root_when_available(workflow_root: Path):
+    (workflow_root / "workflows").mkdir(parents=True)
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        workflow_root=workflow_root,
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools",
+            json={"name": "WorkspaceTool", "tool_type": "ProcessingTool"},
+        )
+
+    assert resp.status_code == 201
+    assert (workflow_root / "tools" / "workspace_tool.py").exists()
+    assert not (workflow_root / "wf" / "tools").exists()
+
+
 async def test_create_tool_webapp_forbidden(workflow_root: Path):
     config = AppConfig(
         tool_registry=ToolRegistryService(),
@@ -794,6 +811,27 @@ async def test_get_source_prefers_workflow_custom_file(workflow_root: Path):
     assert resp.json()["path"] == str(custom_path)
     assert resp.json()["source_kind"] == "custom"
     assert resp.json()["editable"] is True
+
+
+async def test_get_source_prefers_workspace_custom_file_when_available(workflow_root: Path):
+    class MyTool:
+        pass
+
+    (workflow_root / "workflows").mkdir(parents=True)
+    tools_dir = workflow_root / "tools"
+    tools_dir.mkdir(parents=True)
+    custom_path = tools_dir / "my_tool.py"
+    custom_path.write_text("class MyTool: pass")
+
+    reg = ToolRegistryService()
+    reg.register_tool("MyTool", _make_tool("MyTool"), tool_class=MyTool)
+    config = AppConfig(tool_registry=reg, workflow_root=workflow_root)
+    async for client in _client(config):
+        resp = await client.get("/api/v1/tools/MyTool/source")
+
+    assert resp.status_code == 200
+    assert resp.json()["path"] == str(custom_path.resolve())
+    assert resp.json()["source_kind"] == "custom"
 
 
 async def test_get_source_returns_absolute_custom_path_for_relative_workflow_root(

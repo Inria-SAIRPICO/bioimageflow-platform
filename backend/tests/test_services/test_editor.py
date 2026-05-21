@@ -46,7 +46,7 @@ class _Embedded:
     def status(self) -> EditorStatus:
         return self.status_value
 
-    def open_path(self, path: Path) -> EditorOpenResponse:
+    def open_path(self, path: Path, focus_path: Path | None = None) -> EditorOpenResponse:
         self.opened.append(path)
         if self.exc is not None:
             raise self.exc
@@ -80,13 +80,13 @@ class _LaunchableEmbedded(_Embedded):
     def launch(self) -> None:
         self.launches += 1
 
-    def open_path(self, path: Path) -> EditorOpenResponse:
+    def open_path(self, path: Path, focus_path: Path | None = None) -> EditorOpenResponse:
         self.opened.append(path)
         return EditorOpenResponse(
             opened=True,
             method=EditorOpenMethod.EMBEDDED,
             url=self.url,
-            path=str(path),
+            path=str(focus_path or path),
         )
 
 
@@ -159,6 +159,35 @@ def test_external_editor_appends_path_when_placeholder_missing(tmp_path: Path) -
     service.open_path(str(tool))
 
     assert launcher.calls == [["code", "--reuse-window", str(tool)]]
+
+
+def test_external_editor_opens_workspace_and_focused_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = workspace / "tools" / "tool.py"
+    tool.parent.mkdir()
+    tool.write_text("print('x')")
+    launcher = _RecorderLauncher()
+    service = _service(command="code --reuse-window", launcher=launcher)
+
+    response = service.open_path(str(workspace), str(tool))
+
+    assert response.path == str(tool)
+    assert launcher.calls == [["code", "--reuse-window", str(workspace), str(tool)]]
+
+
+def test_external_editor_focus_path_placeholder_prefers_focused_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = workspace / "tools" / "tool.py"
+    tool.parent.mkdir()
+    tool.write_text("print('x')")
+    launcher = _RecorderLauncher()
+    service = _service(command="code --goto {file_path}:1 {workspace_path}", launcher=launcher)
+
+    service.open_path(str(workspace), str(tool))
+
+    assert launcher.calls == [["code", "--goto", f"{tool}:1", str(workspace)]]
 
 
 def test_external_editor_launch_failure_is_reported(tmp_path: Path) -> None:
@@ -509,3 +538,18 @@ def test_embedded_manager_open_path_calls_opener_with_folder_type(tmp_path: Path
     assert opened == []
     assert response.method == EditorOpenMethod.EMBEDDED
     assert response.url == f"http://127.0.0.1:32344/?folder={str(tool_dir).replace('/', '%2F')}"
+
+
+def test_embedded_manager_open_path_can_focus_file_inside_folder(tmp_path: Path) -> None:
+    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver")
+    workspace = tmp_path / "workspace"
+    tool = workspace / "tools" / "tool.py"
+    tool.parent.mkdir(parents=True)
+    tool.write_text("print('x')")
+
+    response = manager.open_path(workspace, focus_path=tool)
+
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert response.path == str(tool)
+    assert f"folder={str(workspace).replace('/', '%2F')}" in response.url
+    assert f"file={str(tool).replace('/', '%2F')}" in response.url

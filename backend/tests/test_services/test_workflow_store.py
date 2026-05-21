@@ -124,6 +124,55 @@ def test_create_list_and_get_empty_workflow(store: WorkflowStoreService) -> None
     assert workflow.gui == {"nodes": {}}
 
 
+def test_create_nested_workflow_and_tree(store: WorkflowStoreService) -> None:
+    info = store.create_workflow(
+        WorkflowCreate(name="segmentation/nuclei", display_name="Nuclei")
+    )
+
+    assert info.id == "segmentation/nuclei"
+    assert info.name == "nuclei"
+    assert info.folder == "segmentation"
+    assert (store.root_dir / "segmentation" / "nuclei" / "workflow.json").exists()
+
+    tree = store.workflow_tree()
+    assert tree.folders[0].path == "segmentation"
+    assert tree.folders[0].workflows[0].id == "segmentation/nuclei"
+
+
+def test_workflow_folders_create_delete_and_rename(store: WorkflowStoreService) -> None:
+    folder = store.create_folder("segmentation/quantification")
+    assert folder.path == "segmentation/quantification"
+    assert (store.root_dir / "segmentation" / "quantification").is_dir()
+
+    renamed = store.rename_folder("segmentation/quantification", "analysis/intensity")
+    assert renamed.path == "analysis/intensity"
+    assert not (store.root_dir / "segmentation" / "quantification").exists()
+    assert (store.root_dir / "analysis" / "intensity").is_dir()
+
+    store.delete_folder("analysis/intensity")
+    assert not (store.root_dir / "analysis" / "intensity").exists()
+
+
+def test_delete_non_empty_folder_rejected(store: WorkflowStoreService) -> None:
+    store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+
+    with pytest.raises(FileExistsError):
+        store.delete_folder("segmentation")
+
+
+def test_move_workflow_between_folders(store: WorkflowStoreService) -> None:
+    store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+
+    moved = store.patch_workflow(
+        "segmentation/nuclei",
+        WorkflowUpdate(action="update", folder="analysis"),
+    )
+
+    assert moved.id == "analysis/nuclei"
+    assert (store.root_dir / "analysis" / "nuclei" / "workflow.json").exists()
+    assert not (store.root_dir / "segmentation" / "nuclei").exists()
+
+
 def test_get_storage_path_reads_metadata_directly(store: WorkflowStoreService) -> None:
     info = store.create_workflow(WorkflowCreate(name="wf"))
 

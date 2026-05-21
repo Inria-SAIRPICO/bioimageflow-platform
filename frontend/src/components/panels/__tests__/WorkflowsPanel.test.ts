@@ -2,12 +2,18 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import { api } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
 import WorkflowsPanel from '../WorkflowsPanel.vue'
 import type { WorkflowInfo } from '@/api/types'
 
 vi.mock('@/api/client', () => ({
-  api: { get: vi.fn() },
+  api: {
+    get: vi.fn(),
+    post: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }))
 
 const workflows: WorkflowInfo[] = [
@@ -134,5 +140,112 @@ describe('WorkflowsPanel', () => {
     expect(setData).toHaveBeenCalledTimes(1)
     expect(setData).toHaveBeenCalledWith('application/bioimageflow-workflow', 'alpha_api')
     expect(setData).not.toHaveBeenCalledWith('text/plain', expect.any(String))
+  })
+
+  it('creates, renames, and deletes workflow folders through panel hooks', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt')
+      .mockReturnValueOnce('Analysis')
+      .mockReturnValueOnce('Published')
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        path: 'Analysis',
+        display_name: 'Analysis',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        path: 'Published',
+        display_name: 'Published',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
+    const wrapper = mountPanel()
+
+    await wrapper.find('[data-testid="workflow-new-folder-btn"]').trigger('click')
+    await flushPromises()
+    const store = useWorkflowStore()
+    const folder = store.workflowFolders[0]
+    expect(folder.name).toBe('Analysis')
+    expect(wrapper.find(`[data-testid="workflow-folder-${folder.id}"]`).text()).toContain(
+      'Analysis',
+    )
+
+    await wrapper.find(`[data-testid="workflow-folder-rename-${folder.id}"]`).trigger('click')
+    await flushPromises()
+    expect(store.workflowFolders[0].name).toBe('Published')
+
+    await wrapper.find('[data-testid="workflow-folder-delete-Published"]').trigger('click')
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(store.workflowFolders).toEqual([])
+    promptSpy.mockRestore()
+    confirmSpy.mockRestore()
+  })
+
+  it('moves a dragged workflow into a folder and keeps flattened selection behavior', async () => {
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        path: 'Analysis',
+        display_name: 'Analysis',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        name: 'beta_api',
+        folder: 'Analysis',
+        display_name: 'Beta Workflow',
+        description: null,
+        path: '/library/workflows/Analysis/beta_api/workflow.bioimageflow.json',
+        storage_path: '/library/workflows/Analysis/beta_api',
+        last_modified: '2026-05-01T08:00:00Z',
+      },
+    })
+    const folder = await store.createWorkflowFolder('Analysis')
+    await flushPromises()
+
+    await wrapper.find(`[data-testid="workflow-folder-${folder.id}"]`).trigger('drop', {
+      dataTransfer: {
+        getData: (type: string) => (
+          type === 'application/bioimageflow-workflow' ? 'beta_api' : ''
+        ),
+      },
+    })
+    await flushPromises()
+
+    expect(store.workflowFolderIds.beta_api).toBe(folder.id)
+    expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
+      'beta_api',
+      'alpha_api',
+    ])
+    await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
+    const emitted = wrapper.emitted('select-workflow') ?? []
+    expect(emitted[emitted.length - 1]).toEqual(['beta_api'])
+  })
+
+  it('reorders workflow ids by dropping onto another workflow row', async () => {
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+
+    await wrapper.find('[data-testid="workflow-row-alpha_api"]').trigger('drop', {
+      dataTransfer: {
+        getData: (type: string) => (
+          type === 'application/bioimageflow-workflow' ? 'beta_api' : ''
+        ),
+      },
+    })
+
+    expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
+      'beta_api',
+      'alpha_api',
+    ])
   })
 })

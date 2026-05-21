@@ -28,6 +28,7 @@ type Toast = {
 
 export interface OpenPathWithEditorOptions {
   showEmbeddedLoading?: boolean
+  focusPath?: string
 }
 
 export async function getEditorStatus(options: { launch?: boolean } = {}): Promise<EditorStatus> {
@@ -37,8 +38,23 @@ export async function getEditorStatus(options: { launch?: boolean } = {}): Promi
   return data
 }
 
-export async function openEditorPath(path: string): Promise<EditorOpenResponse> {
-  const { data } = await api.post<EditorOpenResponse>('/api/v1/editor/open', { path })
+export async function openEditorPath(
+  path: string,
+  options: { focusPath?: string } = {},
+): Promise<EditorOpenResponse> {
+  const body = options.focusPath ? { path, focus_path: options.focusPath } : { path }
+  const { data } = await api.post<EditorOpenResponse>('/api/v1/editor/open', body)
+  return data
+}
+
+export async function openEditorTool(
+  toolName: string,
+  options: { workflowId?: string | null } = {},
+): Promise<EditorOpenResponse> {
+  const body = options.workflowId
+    ? { tool_name: toolName, workflow_id: options.workflowId }
+    : { tool_name: toolName }
+  const { data } = await api.post<EditorOpenResponse>('/api/v1/editor/open-tool', body)
   return data
 }
 
@@ -64,12 +80,33 @@ export async function openPathWithEditor(
     showCodeEditorLoading(path)
   }
   try {
-    const response = await openEditorPath(path)
+    const response = await openEditorPath(path, { focusPath: options?.focusPath })
     await handleEditorOpenResponse(response, toast)
     return response
   } finally {
     if (showEmbeddedLoading) {
       finishCodeEditorLoading(path)
+    }
+  }
+}
+
+export async function openToolWithEditor(
+  toolName: string,
+  workflowName?: string | null,
+  toast?: Toast | null,
+  options?: OpenPathWithEditorOptions,
+): Promise<EditorOpenResponse> {
+  const showEmbeddedLoading = options?.showEmbeddedLoading === true
+  if (showEmbeddedLoading) {
+    showCodeEditorLoading()
+  }
+  try {
+    const response = await openEditorTool(toolName, { workflowId: workflowName })
+    await handleEditorOpenResponse(response, toast)
+    return response
+  } finally {
+    if (showEmbeddedLoading) {
+      finishCodeEditorLoading()
     }
   }
 }

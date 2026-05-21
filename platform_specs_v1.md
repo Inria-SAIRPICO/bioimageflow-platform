@@ -48,7 +48,7 @@ The frontend owns the graph state (nodes, edges, positions, parameters). The bac
 | State | Description |
 |-------|-------------|
 | `tool_registry: dict[str, type[BaseTool]]` | Discovered tools indexed by class name (the unique tool identifier) |
-| `workflow_name: str | None` | Currently open workflow name |
+| `workflow_id: str | None` | Currently open workflow identifier, relative to the user's workspace workflows tree |
 | `execution_task: Task | None` | Handle to the currently running execution (for cancellation) |
 | `napari_launcher: NapariLauncher | None` | Manages the Napari process (lazily created) |
 
@@ -310,18 +310,52 @@ All API endpoints use a consistent error response format:
 
 #### 2.4.2 Workflow Management
 
+Every user has exactly one active BioImageFlow workspace. In desktop mode this
+is a user-editable filesystem path stored in Settings. The default development
+workspace is `<repo>/workspace/`; packaged desktop builds may choose an
+OS-appropriate default such as `~/BioImageFlow/workspace/`. The workspace has
+fixed child roots:
+
+```text
+workspace/
+  workflows/     # saved workflow tree
+  tools/         # workspace-owned custom tools
+  data/          # user-managed local data
+  outputs/       # workflow execution output and cache roots
+```
+
+Saved workflows are organized under `workspace/workflows/` as folders and
+`*.workflow.json` files. Workflow identifiers are slash-separated paths relative
+to `workspace/workflows/` without the suffix, for example
+`segmentation/nuclei`. `name` remains in the wire model as a compatibility alias
+for the leaf slug, but new APIs and frontend state use `id`.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/workflows` | List saved workflows (name, display_name, description, path, last modified) |
-| `POST` | `/workflows` | Create a new workflow (body: `{name: str, display_name?: str, description?: str, storage_path?: str}`). Returns **409 Conflict** if a workflow with the same name already exists, with a suggested alternative name (e.g., `"My_Workflow_2"`). The `name` is the filesystem/API identifier: alphanumeric characters, underscores, and hyphens only. The `display_name` is the free-form human-readable label (allows spaces, special characters). If `display_name` is omitted, it defaults to `name`. The `description` is an optional free-form text describing the workflow's purpose. |
-| `GET` | `/workflows/{name}` | Load a workflow (returns full graph JSON including GUI state) |
-| `PUT` | `/workflows/{name}` | Save workflow (body: full graph JSON). Always succeeds (saves even if graph has validation errors). |
-| `DELETE` | `/workflows/{name}` | Delete a workflow |
-| `PATCH` | `/workflows/{name}` | Update workflow metadata or duplicate (body: `{action: "update" | "duplicate", display_name?: str, description?: str, new_name?: str, storage_path?: str}`) |
+| `GET` | `/workspace` | Return current workspace path, workflows root, tools root, outputs root, deployment mode, and whether the workspace path is admin-managed/read-only. |
+| `PATCH` | `/workspace` | Desktop-only workspace path change. Body: `{workspace_path: str}`. The backend creates missing child roots after validation. |
+| `GET` | `/workflows/tree` | Return the folder/workflow tree rooted at `workspace/workflows/`. |
+| `POST` | `/workflows/folders` | Create a folder under `workspace/workflows/` (body: `{path: str}`). |
+| `PATCH` | `/workflows/folders/{path}` | Rename or move a workflow folder (body: `{new_path: str}`). |
+| `DELETE` | `/workflows/folders/{path}` | Delete an empty folder. Non-empty folders return **409 Conflict**. |
+| `GET` | `/workflows` | Compatibility flat list of saved workflows. New callers should use `/workflows/tree`. |
+| `POST` | `/workflows` | Create a new workflow (body: `{id: str, display_name?: str, description?: str}`). Returns **409 Conflict** if a workflow with the same id already exists, with a suggested alternative id. |
+| `GET` | `/workflows/{id}` | Load a workflow (returns full graph JSON including GUI state). |
+| `PUT` | `/workflows/{id}` | Save workflow (body: full graph JSON). Always succeeds (saves even if graph has validation errors). |
+| `DELETE` | `/workflows/{id}` | Delete a workflow file and its workspace-scoped output/cache directory. |
+| `PATCH` | `/workflows/{id}` | Update workflow metadata, duplicate, rename, or move (body: `{action: "update" \| "duplicate" \| "move", display_name?: str, description?: str, new_id?: str}`). |
 
 **Workflow loading — missing package resolution:** When loading a workflow that requires tool packages or versions not in the tool store (based on the `tool_package` and `tool_package_version` fields in the serialized nodes), the server returns a `missing_packages` field in the response. The frontend shows a dialog: "This workflow requires packages not installed: [list with versions]. Install them?" with an "Install All" button.
 
-**Workflow storage path normalization:** The backend resolves workflow storage roots to absolute server-side paths before handing a graph to the BioImageFlow library. If a named workflow has stored metadata, that metadata path is used; otherwise the app's configured storage root is used. Relative workflow storage paths are interpreted once by the backend and must not reach tool execution as CWD-sensitive paths. This is required because ProcessingTool wrappers may run subprocesses with `cwd=context.work_dir` while passing framework-provided input/output paths directly to the subprocess.
+**Workflow storage path normalization:** The backend resolves each workflow's
+runtime storage root to `workspace/outputs/<workflow_id>/` before handing a
+graph to the BioImageFlow library. Workflow id separators are sanitized where
+needed for filesystem safety. Relative paths must not reach tool execution as
+CWD-sensitive paths. This is required because ProcessingTool wrappers may run
+subprocesses with `cwd=context.work_dir` while passing framework-provided
+input/output paths directly to the subprocess. Legacy per-workflow
+`storage_path` metadata is preserved only for migration/export compatibility and
+is not the primary organization control in the platform UI.
 
 #### 2.4.3 Graph Schema and Validation
 
@@ -649,9 +683,9 @@ This ensures that if the frontend misses the `execution_complete` WebSocket mess
 
 ```python
 class Settings(BaseModel):
-    external_editor: str | None = None              # e.g., "code {file_path}"
+    external_editor: str | None = None              # e.g., "code {workspace_path} --goto {file_path}"
     napari_env_path: str | None = None              # Custom Napari Conda env path
-    output_data_folder: str                         # Workflow output storage path; backend expands and stores it as an absolute runtime path
+    workspace_path: str                             # Desktop user's BioImageFlow workspace path
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     execution_engine: Literal["sequential", "parsl"] = "sequential"
     cache_max_executions: int | None = None         # Max cached executions per node (None = unlimited)
@@ -684,8 +718,19 @@ The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/editor/open` | Open a file/folder in the user's external editor |
+| `POST` | `/editor/open-tool` | Open the user's workspace as the editor project and focus a tool source file |
 
-The user specifies an external editor command (e.g., `code {file_path}` for VS Code) in Settings (Section 3.13.1). The `{file_path}` token is replaced with the actual path. If no external editor is configured, "Open in editor" copies the path to clipboard with a toast: "Path copied — open in your editor."
+The user specifies an external editor command in Settings (Section 3.13.1). The
+command may use `{workspace_path}` for the project folder and `{file_path}` for
+the focused file. For VS Code the recommended command is
+`code {workspace_path} --goto {file_path}`. If no external editor is configured,
+"Open in editor" copies the relevant path to clipboard with a toast.
+
+`/editor/open-tool` is used by tool rows and node source links. The backend
+always opens the current user's workspace folder as the editor project, then
+focuses the selected tool file. This applies to workspace-owned custom tools and
+installed package tools; package source is focused as a file, not opened as the
+editor project.
 
 #### 2.4.10 Dataset Management
 
@@ -703,7 +748,8 @@ Dataset management provides server-side file storage for clients that cannot acc
 {datasets_root}/{timestamp}_{sanitized_filename}.{ext}
 ```
 
-- `{datasets_root}` defaults to `<output_data_folder>/datasets/` and is configurable in Settings (Section 3.12.4).
+- `{datasets_root}` defaults to `workspace/data/datasets/` in desktop mode and
+  is derived from the user's workspace. It is not configured per workflow.
 - `{timestamp}` is the upload time in ISO 8601 compact format (e.g., `20260421T143022`).
 - `{sanitized_filename}` is the original filename after sanitization (see below).
 
@@ -1193,49 +1239,63 @@ primary browsing and management surface.
 
 **Workflow storage layout:**
 
-Each saved workflow is stored as one workflow directory under the configured
-workflow root:
+Each user has one workspace, and saved workflows live under the workspace's
+workflow tree:
 
 ```text
-workflows/
-  my_workflow/
-    workflow.json
-    tools/
+workspace/
+  workflows/
+    my_workflow.workflow.json
+    segmentation/
+      nuclei.workflow.json
+  tools/
 ```
 
-`workflow.json` stores the platform document for the workflow, including the
-library workflow payload, GUI state, and metadata. `tools/` stores workflow-local
-custom tools for that workflow only. The workflow directory itself is not a
-Python package and must not contain a root `__init__.py`; only the `tools/`
-directory follows the import/export structure required by the BioImageFlow
-library.
+Each `*.workflow.json` stores the platform document for the workflow, including
+the library workflow payload, GUI state, and metadata. `workspace/tools/` stores
+workspace-owned custom tools shared by workflows in that workspace. A workflow
+file is not a Python package.
 
-Existing legacy files at `workflows/{name}.json` are supported for migration:
-when opened or saved, the platform moves them to `workflows/{name}/workflow.json`.
+Existing legacy layouts are supported for migration: `workflows/{name}.json`
+and `workflows/{name}/workflow.json` import as
+`workspace/workflows/{name}.workflow.json`.
 
 **Panel layout:**
 
-- **Toolbar:** New, Save, Duplicate, Import, Export, Delete.
-- **Search:** Filters by workflow display name and name.
-- **Workflow list:** Each row shows the workflow display name and last modified
-  time. Rows do not show filesystem/API names or descriptions by default.
+- **Toolbar:** New workflow, New folder, Save, Duplicate, Import, Export,
+  Rename/Move, Delete.
+- **Search:** Filters by workflow display name, id, and folder name while
+  preserving matching ancestors.
+- **Workflow tree:** Nested folders and workflows under `workspace/workflows/`.
+  Workflow rows show display name and last modified time. Folder rows expose
+  create, rename, delete-empty, and drag/drop targets.
 - **Selected workflow details:** Shows the selected workflow's description,
-  filesystem/API name, storage path, and action state. The description appears
+  workflow id, workspace path, output path, and action state. The description appears
   here, not in every list row.
 
-Clicking a workflow row selects it. Double-clicking, pressing Enter on a
+Clicking a row selects it. Double-clicking a workflow, pressing Enter on a
 selected workflow, or using the Open action opens it, subject to the unsaved
-changes prompt.
+changes prompt. Dragging a workflow row onto a folder moves the workflow within
+the tree. Dragging a workflow row onto the canvas still creates a SubWorkflowNode
+and must remain distinct from drag-to-folder movement.
 
 **Actions:**
-- **New workflow:** Opens a creation dialog with fields: display name (free-form), name (auto-generated from display name, editable, restricted to `[a-zA-Z0-9_-]`), description (optional, multiline), and storage path. On name conflict, the server suggests an alternative.
+- **New workflow:** Opens a creation dialog with fields: display name
+  (free-form), folder, id/slug (auto-generated from display name, editable, with
+  slash-separated safe path segments), and description (optional, multiline). On
+  id conflict, the server suggests an alternative.
+- **New folder:** Creates a folder under the selected folder or the tree root.
 - **Open workflow:** Opens the selected saved workflow. Opening a new workflow closes the current one (with save prompt).
-- **Edit workflow:** Each workflow in the list has an **Edit** button that opens an "Edit workflow" dialog to modify the display name, description, and storage path. The `name` (filesystem identifier) cannot be changed after creation.
-- **Save:** Saves current workflow state including GUI state (Ctrl+S). The full graph JSON (with positions, collapsed state, etc.) is sent to `PUT /workflows/{name}`. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
-- **Save as / Duplicate:** Save under a new name
+- **Edit workflow:** Each workflow has an **Edit** action to modify display
+  name, description, folder, or slug. Moving or renaming changes the workflow
+  `id`; the frontend updates any current-workflow references atomically.
+- **Save:** Saves current workflow state including GUI state (Ctrl+S). The full graph JSON (with positions, collapsed state, etc.) is sent to `PUT /workflows/{id}`. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
+- **Save as / Duplicate:** Save under a new id.
 - **Import / Export:** Uses the BioImageFlow library import/export API. The
   platform does not reimplement the library archive format.
-- **Delete:** Delete with confirmation. Deletes the workflow directory, all cached output data in the storage directory, and clears the auto-saved IndexedDB state for this workflow.
+- **Delete:** Delete with confirmation. Deletes the workflow file, its
+  workspace-scoped output/cache directory, and the auto-saved IndexedDB state for
+  this workflow. Folder deletion is allowed only for empty folders.
 
 ### 3.9 Execution Panel (Menu / Toolbar)
 
@@ -1286,7 +1346,10 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.1 External Editor Settings
 
-- **External editor command:** Text field. Placeholder: `code {file_path}`. The `{file_path}` token is replaced with the actual path. If empty, "Open in editor" copies the path to clipboard with a toast.
+- **External editor command:** Text field. Placeholder:
+  `code {workspace_path} --goto {file_path}`. `{workspace_path}` is replaced
+  with the current workspace folder and `{file_path}` with the focused file. If
+  empty, "Open in editor" copies the relevant path to clipboard with a toast.
 
 #### 3.12.2 Napari Settings
 
@@ -1300,7 +1363,12 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.4 Storage
 
-- **Output data folder** path display + "Reveal in file browser" button
+- **Workspace path:** editable folder picker in desktop mode. Changing it
+  switches the one active per-user workspace after confirmation. The backend
+  creates `workflows/`, `tools/`, `data/`, and `outputs/` if missing.
+- **Workflows root:** read-only display of `workspace/workflows/`.
+- **Workspace tools root:** read-only display of `workspace/tools/`.
+- **Outputs root:** read-only display of `workspace/outputs/`.
 - **Tool store path** display (default: `~/.bioimageflow/tool_packages/`)
 - **Wetlands path** display (default: `~/.bioimageflow/wetlands/`, resolved by `bioimageflow.paths.get_wetlands_path()`)
 
@@ -1423,8 +1491,8 @@ App starts
   |      Send PUT /api/v1/graph for validation
   |
   +--> If no auto-save:
-  |      If a "last opened" workflow name is saved in user settings:
-  |        Load it via GET /api/v1/workflows/{name}
+  |      If a "last opened" workflow id is saved in user settings:
+  |        Load it via GET /api/v1/workflows/{id}
   |      Else:
   |        Create new empty workflow (POST /api/v1/workflows with default name)
   |
@@ -1433,7 +1501,7 @@ App starts
 
 **Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the current graph differs from the last saved version. The asterisk disappears on `Ctrl+S` (save). Closing a workflow with unsaved changes shows a confirmation: "Discard unsaved changes?"
 
-Manual save (Ctrl+S) persists to a real file on the server via `PUT /workflows/{name}`.
+Manual save (Ctrl+S) persists to a real file on the server via `PUT /workflows/{id}`.
 
 ### 4.4 Mapping GUI to Library
 
@@ -1527,34 +1595,41 @@ On load, the server reports missing packages in the load response. The frontend 
 | 5 | `DELETE` | `/api/v1/tools/packages/{name}` | Uninstall button in Manage Tools dialog |
 | 6 | `POST` | `/api/v1/tools/environments/{name}/start` | Start env toggle in Tools Panel / Manage Tools dialog; pre-warming |
 | 7 | `POST` | `/api/v1/tools/environments/{name}/stop` | Stop env toggle in Tools Panel / Manage Tools dialog; freeing resources |
-| 8 | `GET` | `/api/v1/workflows` | Startup; "Open workflow" menu |
-| 9 | `POST` | `/api/v1/workflows` | "New workflow" menu; startup (if no existing workflow) |
-| 10 | `GET` | `/api/v1/workflows/{name}` | Opening a saved workflow |
-| 11 | `PUT` | `/api/v1/workflows/{name}` | Ctrl+S save; "Save" menu |
-| 12 | `DELETE` | `/api/v1/workflows/{name}` | "Delete workflow" menu |
-| 13 | `PATCH` | `/api/v1/workflows/{name}` | Rename or duplicate workflow |
-| 14 | `PUT` | `/api/v1/graph` | On structural changes (debounced 300ms) |
-| 15 | `PATCH` | `/api/v1/graph/nodes/{id}/parameters` | On parameter-only changes (lighter validation) |
-| 16 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
-| 17 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
-| 18 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
-| 19 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
-| 20 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
-| 21 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
-| 22 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
-| 23 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |
-| 24 | `GET` | `/api/v1/settings` | Opening Settings panel; startup |
-| 25 | `PATCH` | `/api/v1/settings` | Changing any setting |
-| 26 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
-| 27 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table |
-| 28 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
-| 29 | `POST` | `/api/v1/editor/open` | "Open in editor" from Tools Panel or Data Table |
-| 30 | `GET` | `/api/v1/health` | Health check |
-| 31 | `GET` | `/api/v1/datasets` | Dataset Browser modal — populate list (browser mode) |
-| 32 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal — upload button; drag-and-drop in browser mode |
-| 33 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Dataset Browser modal — delete button |
+| 8 | `GET` | `/api/v1/workspace` | Startup; Settings storage section |
+| 9 | `PATCH` | `/api/v1/workspace` | Desktop workspace path change |
+| 10 | `GET` | `/api/v1/workflows/tree` | Workflows panel tree |
+| 11 | `POST` | `/api/v1/workflows/folders` | Create folder in Workflows panel |
+| 12 | `PATCH` | `/api/v1/workflows/folders/{path}` | Rename or move folder |
+| 13 | `DELETE` | `/api/v1/workflows/folders/{path}` | Delete empty folder |
+| 14 | `GET` | `/api/v1/workflows` | Compatibility flat workflow list |
+| 15 | `POST` | `/api/v1/workflows` | "New workflow" menu; startup (if no existing workflow) |
+| 16 | `GET` | `/api/v1/workflows/{id}` | Opening a saved workflow |
+| 17 | `PUT` | `/api/v1/workflows/{id}` | Ctrl+S save; "Save" menu |
+| 18 | `DELETE` | `/api/v1/workflows/{id}` | "Delete workflow" menu |
+| 19 | `PATCH` | `/api/v1/workflows/{id}` | Update, rename/move, or duplicate workflow |
+| 20 | `PUT` | `/api/v1/graph` | On structural changes (debounced 300ms) |
+| 21 | `PATCH` | `/api/v1/graph/nodes/{id}/parameters` | On parameter-only changes (lighter validation) |
+| 22 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
+| 23 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
+| 24 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
+| 25 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
+| 26 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
+| 27 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
+| 28 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
+| 29 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |
+| 30 | `GET` | `/api/v1/settings` | Opening Settings panel; startup |
+| 31 | `PATCH` | `/api/v1/settings` | Changing non-workspace settings |
+| 32 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
+| 33 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table |
+| 34 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
+| 35 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells |
+| 36 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links |
+| 37 | `GET` | `/api/v1/health` | Health check |
+| 38 | `GET` | `/api/v1/datasets` | Dataset Browser modal — populate list (browser mode) |
+| 39 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal — upload button; drag-and-drop in browser mode |
+| 40 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Dataset Browser modal — delete button |
 
-Total: 33 endpoints.
+Total: 40 endpoints.
 
 ---
 

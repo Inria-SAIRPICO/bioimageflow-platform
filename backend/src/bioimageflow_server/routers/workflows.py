@@ -11,6 +11,9 @@ from pydantic import ValidationError
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowFile,
+    WorkflowFolderCreate,
+    WorkflowFolderInfo,
+    WorkflowFolderUpdate,
     WorkflowInfo,
     WorkflowImportResponse,
     WorkflowSaveBody,
@@ -51,6 +54,69 @@ async def list_workflows(
     return store.list_workflows()
 
 
+@router.get("/tree", response_model=WorkflowFolderInfo)
+async def workflow_tree(
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> WorkflowFolderInfo:
+    return store.workflow_tree()
+
+
+@router.post(
+    "/folders",
+    response_model=WorkflowFolderInfo,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_folder(
+    body: WorkflowFolderCreate,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> WorkflowFolderInfo | JSONResponse:
+    try:
+        return store.create_folder(body.path)
+    except FileExistsError:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "conflict", "detail": f"Folder '{body.path}' already exists"},
+        )
+
+
+@router.patch("/folders/{path:path}", response_model=WorkflowFolderInfo)
+async def rename_folder(
+    path: str,
+    body: WorkflowFolderUpdate,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    execution_manager: Any | None = Depends(get_execution_manager),
+) -> WorkflowFolderInfo | JSONResponse:
+    _ensure_unlocked(execution_manager)
+    try:
+        return store.rename_folder(path, body.new_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Folder not found") from exc
+    except FileExistsError:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "conflict", "detail": f"Folder '{body.new_path}' already exists"},
+        )
+
+
+@router.delete("/folders/{path:path}")
+async def delete_folder(
+    path: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    execution_manager: Any | None = Depends(get_execution_manager),
+) -> Any:
+    _ensure_unlocked(execution_manager)
+    try:
+        store.delete_folder(path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Folder not found") from exc
+    except FileExistsError:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "folder_not_empty", "detail": "Folder is not empty"},
+        )
+    return {"deleted": True}
+
+
 @router.post("", response_model=WorkflowInfo, status_code=status.HTTP_201_CREATED)
 async def create_workflow(
     body: WorkflowCreate,
@@ -69,7 +135,7 @@ async def create_workflow(
         )
 
 
-@router.get("/{name}", response_model=WorkflowFile)
+@router.get("/{name:path}", response_model=WorkflowFile)
 async def get_workflow(
     name: str,
     store: WorkflowStoreService = Depends(get_workflow_store),
@@ -80,7 +146,7 @@ async def get_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
 
 
-@router.post("/{name}/export")
+@router.post("/{name:path}/export")
 async def export_workflow(
     name: str,
     store: WorkflowStoreService = Depends(get_workflow_store),
@@ -138,7 +204,7 @@ async def import_workflow(
         )
 
 
-@router.put("/{name}", response_model=WorkflowInfo)
+@router.put("/{name:path}", response_model=WorkflowInfo)
 async def save_workflow(
     name: str,
     body: WorkflowSaveBody,
@@ -152,7 +218,7 @@ async def save_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
 
 
-@router.delete("/{name}")
+@router.delete("/{name:path}")
 async def delete_workflow(
     name: str,
     store: WorkflowStoreService = Depends(get_workflow_store),
@@ -166,7 +232,7 @@ async def delete_workflow(
     return {"deleted": True}
 
 
-@router.patch("/{name}", response_model=WorkflowInfo)
+@router.patch("/{name:path}", response_model=WorkflowInfo)
 async def patch_workflow(
     name: str,
     body: WorkflowUpdate,
@@ -192,7 +258,7 @@ async def patch_workflow(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/{name}/rebind-versions", response_model=WorkflowFile)
+@router.post("/{name:path}/rebind-versions", response_model=WorkflowFile)
 async def rebind_workflow_versions(
     name: str,
     store: WorkflowStoreService = Depends(get_workflow_store),

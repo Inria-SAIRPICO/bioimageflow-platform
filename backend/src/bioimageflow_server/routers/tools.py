@@ -69,9 +69,93 @@ def _custom_tool_service(
     registry: ToolRegistryService,
     workflow_store: WorkflowStoreService | None,
 ) -> CustomToolService | None:
+    if workflow_root is not None:
+        workspace_root = workflow_root.parent if workflow_root.name == "workflows" else workflow_root
+        if (
+            (workspace_root / "workflows").exists()
+            or (workspace_root / "tools").exists()
+        ):
+            return CustomToolService(workspace_root, registry)
     if workflow_name and workflow_store is not None:
         return CustomToolService(workflow_store.workflow_dir(workflow_name), registry)
     return None
+
+
+def _project_root_for_source(
+    source_path: Path,
+    *,
+    workflow_root: Path | None,
+) -> Path:
+    if workflow_root is None:
+        return source_path.parent
+    root_candidate = workflow_root.parent if workflow_root.name == "workflows" else workflow_root
+    root = root_candidate.resolve()
+    resolved = source_path.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return source_path.parent
+    return root
+
+
+def resolve_tool_source_response(
+    *,
+    tool_name: str,
+    workflow_name: str | None,
+    workflow_root: Path | None,
+    registry: ToolRegistryService,
+    workflow_store: WorkflowStoreService | None,
+) -> ToolSourceResponse:
+    service = _custom_tool_service(
+        workflow_name=workflow_name,
+        workflow_root=workflow_root,
+        registry=registry,
+        workflow_store=workflow_store,
+    )
+    if service is not None:
+        custom_source = service.root / f"{name_to_snake(tool_name)}.py"
+        if custom_source.exists():
+            return ToolSourceResponse(
+                tool_name=tool_name,
+                path=str(custom_source.resolve()),
+                source_kind="custom",
+                editable=True,
+            )
+
+    tool = registry.get_tool(tool_name)
+    path = registry.resolve_tool_source(tool_name)
+    if tool is not None and path is not None:
+        return ToolSourceResponse(
+            tool_name=tool_name,
+            path=str(path),
+            source_kind=tool.source_kind,
+            editable=tool.editable,
+        )
+    if tool is not None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source for package tool '{tool_name}' could not be resolved",
+        )
+    raise HTTPException(status_code=404, detail=f"Source for '{tool_name}' not found")
+
+
+def resolve_tool_project_open_paths(
+    *,
+    tool_name: str,
+    workflow_name: str | None,
+    workflow_root: Path | None,
+    registry: ToolRegistryService,
+    workflow_store: WorkflowStoreService | None,
+) -> tuple[Path, Path]:
+    source = resolve_tool_source_response(
+        tool_name=tool_name,
+        workflow_name=workflow_name,
+        workflow_root=workflow_root,
+        registry=registry,
+        workflow_store=workflow_store,
+    )
+    source_path = Path(source.path)
+    return _project_root_for_source(source_path, workflow_root=workflow_root), source_path
 
 
 # ---------------------------------------------------------------------------
@@ -117,37 +201,13 @@ async def get_tool_source(
     workflow_root: Path | None = Depends(get_workflow_root),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> ToolSourceResponse:
-    service = _custom_tool_service(
+    return resolve_tool_source_response(
+        tool_name=tool_name,
         workflow_name=workflow_name,
         workflow_root=workflow_root,
         registry=registry,
         workflow_store=workflow_store,
     )
-    if service is not None:
-        custom_source = service.root / f"{name_to_snake(tool_name)}.py"
-        if custom_source.exists():
-            return ToolSourceResponse(
-                tool_name=tool_name,
-                path=str(custom_source.resolve()),
-                source_kind="custom",
-                editable=True,
-            )
-
-    tool = registry.get_tool(tool_name)
-    path = registry.resolve_tool_source(tool_name)
-    if tool is not None and path is not None:
-        return ToolSourceResponse(
-            tool_name=tool_name,
-            path=str(path),
-            source_kind=tool.source_kind,
-            editable=tool.editable,
-        )
-    if tool is not None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Source for package tool '{tool_name}' could not be resolved",
-        )
-    raise HTTPException(status_code=404, detail=f"Source for '{tool_name}' not found")
 
 
 # ---------------------------------------------------------------------------

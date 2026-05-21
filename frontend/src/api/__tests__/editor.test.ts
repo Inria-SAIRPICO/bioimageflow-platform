@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
-import { getEditorStatus, openPathWithEditor } from '@/api/editor'
+import { getEditorStatus, openPathWithEditor, openToolWithEditor } from '@/api/editor'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -49,6 +49,32 @@ describe('editor api helpers', () => {
 
     expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open', { path: '/tmp/tool.py' })
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }))
+  })
+
+  it('can request a focused file while opening a project path', async () => {
+    mockedPost.mockResolvedValueOnce({
+      data: { opened: true, method: 'external', url: null, path: '/workspace/tools/tool.py', message: null },
+    })
+
+    await openPathWithEditor('/workspace', null, { focusPath: '/workspace/tools/tool.py' })
+
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open', {
+      path: '/workspace',
+      focus_path: '/workspace/tools/tool.py',
+    })
+  })
+
+  it('opens a tool script through the tool-specific editor endpoint', async () => {
+    mockedPost.mockResolvedValueOnce({
+      data: { opened: true, method: 'external', url: null, path: '/workspace/tools/tool.py', message: null },
+    })
+
+    await openToolWithEditor('MyTool', 'wf')
+
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
+      tool_name: 'MyTool',
+      workflow_id: 'wf',
+    })
   })
 
   it('dispatches an activation event for embedded editor responses', async () => {

@@ -4,8 +4,12 @@ import { AxiosError } from 'axios'
 import { api } from '@/api/client'
 import type { OMEROInstancePatch, Settings } from '@/api/types'
 
+export type WorkspaceSettings = Settings & {
+  workspace_path?: string | null
+  workspaces_root?: string | null
+}
 export type { Settings }
-export type SettingsPatch = Omit<Partial<Settings>, 'omero_instances'> & {
+export type SettingsPatch = Omit<Partial<WorkspaceSettings>, 'omero_instances'> & {
   omero_instances?: OMEROInstancePatch[]
 }
 
@@ -19,7 +23,7 @@ function _extractError(e: unknown): string {
 }
 
 export const useSettingsStore = defineStore('settings', () => {
-  const settings = ref<Settings | null>(null)
+  const settings = ref<WorkspaceSettings | null>(null)
   const error = ref<string | null>(null)
 
   // Internal serialization chain: each updateSettings() call appends to it
@@ -35,7 +39,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function fetchSettings() {
     try {
-      const { data } = await api.get<Settings>('/api/v1/settings')
+      const { data } = await api.get<WorkspaceSettings>('/api/v1/settings')
       settings.value = data
       error.value = null
     } catch (e: unknown) {
@@ -43,8 +47,8 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  function _sanitizeOptimisticPatch(partial: SettingsPatch): Partial<Settings> {
-    const sanitized = { ...partial } as Partial<Settings>
+  function _sanitizeOptimisticPatch(partial: SettingsPatch): Partial<WorkspaceSettings> {
+    const sanitized = { ...partial } as Partial<WorkspaceSettings>
     if (partial.omero_instances) {
       sanitized.omero_instances = partial.omero_instances.map(
         ({ password: _password, ...instance }) => instance,
@@ -66,7 +70,7 @@ export const useSettingsStore = defineStore('settings', () => {
       } as Settings
     }
     try {
-      const { data } = await api.patch<Settings>('/api/v1/settings', partial)
+      const { data } = await api.patch<WorkspaceSettings>('/api/v1/settings', partial)
       settings.value = data
       error.value = null
     } catch (e: unknown) {
