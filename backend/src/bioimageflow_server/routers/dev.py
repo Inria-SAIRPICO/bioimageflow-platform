@@ -5,12 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any
 
+import numpy as np
+import pandas as pd
 from bioimageflow import DataFrameTool
+from bioimageflow.cache import cache_save
 from bioimageflow_core import IOModel
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import ProcessingTool
 from bioimageflow_core.types import ImageSpec
 from fastapi import APIRouter, Depends
+from PIL import Image
 
 from bioimageflow_server.models.tools import (
     InputFieldSchema,
@@ -18,6 +22,7 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
+from bioimageflow_server.services.result_store import ResultStoreService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 router = APIRouter(prefix="/dev", tags=["dev"])
@@ -25,6 +30,10 @@ router = APIRouter(prefix="/dev", tags=["dev"])
 
 def get_tool_registry() -> ToolRegistryService:  # pragma: no cover
     raise RuntimeError("tool_registry dependency not configured")
+
+
+def get_result_store() -> ResultStoreService:  # pragma: no cover
+    raise RuntimeError("result_store dependency not configured")
 
 
 class SeedNumberInputs(IOModel):
@@ -275,3 +284,29 @@ async def seed_tools(
     for pkg in _SEED_PACKAGES:
         registry.register_package(pkg.name, pkg)
     return {"tools": len(_SEED_TOOLS), "packages": len(_SEED_PACKAGES)}
+
+
+@router.post("/seed-image-output")
+async def seed_image_output(
+    result_store: ResultStoreService = Depends(get_result_store),
+) -> dict[str, str]:
+    """Write a tiny image-output cache entry for E2E viewer tests."""
+    node_id = "avivator_image_node"
+    column = "mask"
+    storage_path = result_store.storage_path
+    image_dir = storage_path / "dev-images"
+    image_dir.mkdir(parents=True, exist_ok=True)
+    image_path = image_dir / "mask.png"
+    Image.fromarray(np.arange(64, dtype=np.uint8).reshape(8, 8)).save(image_path)
+
+    cache_save(
+        storage_path / "data" / node_id,
+        "dev-seed",
+        pd.DataFrame({column: [str(image_path)]}),
+    )
+    return {
+        "node_id": node_id,
+        "column": column,
+        "filename": "mask.ome.tif",
+        "source_path": str(image_path),
+    }

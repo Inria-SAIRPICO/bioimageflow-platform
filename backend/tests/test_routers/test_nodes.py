@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
 import httpx
 import pandas as pd
 import pytest
+import tifffile
 from httpx import ASGITransport
+from PIL import Image
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
@@ -235,6 +239,48 @@ async def test_node_image_endpoint_accepts_filename_suffix_and_serves_inline(tmp
     assert resp.content == b"II*\x00fake-ome-tiff"
     assert resp.headers["content-type"].startswith("image/tiff")
     assert resp.headers["content-disposition"].startswith("inline")
+
+
+async def test_node_image_endpoint_can_convert_png_to_ome_tiff_for_avivator(
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "mask.png"
+    Image.fromarray(np.arange(16, dtype=np.uint8).reshape(4, 4)).save(image)
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+
+    async with await _client(store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/image/mask.ome.tif",
+            params={"row": 0, "col": "mask", "format": "ome-tiff"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("image/tiff")
+    assert resp.headers["content-disposition"].startswith("inline")
+    assert "mask.ome.tif" in resp.headers["content-disposition"]
+    assert resp.headers["accept-ranges"] == "bytes"
+    with tifffile.TiffFile(BytesIO(resp.content)) as tif:
+        assert tif.ome_metadata
+        assert tif.asarray().tolist() == np.arange(16, dtype=np.uint8).reshape(4, 4).tolist()
+
+
+async def test_node_image_endpoint_allows_private_network_preflight() -> None:
+    store = MagicMock()
+
+    async with await _client(store) as client:
+        resp = await client.options(
+            "/api/v1/nodes/n1/image/mask.ome.tif",
+            headers={
+                "Origin": "https://avivator.gehlenborglab.org",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "range",
+                "Access-Control-Request-Private-Network": "true",
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-private-network"] == "true"
 
 
 async def test_node_image_endpoint_resolves_workflow_storage_path(tmp_path: Path) -> None:

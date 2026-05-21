@@ -2801,6 +2801,8 @@ export interface operations {
         parameters: {
             query: {
                 col: string;
+                /** @enum {string|null} */
+                format?: "ome-tiff" | null;
                 row?: number;
                 workflow_name?: string | null;
             };
@@ -2836,6 +2838,8 @@ export interface operations {
         parameters: {
             query: {
                 col: string;
+                /** @enum {string|null} */
+                format?: "ome-tiff" | null;
                 row?: number;
                 workflow_name?: string | null;
             };

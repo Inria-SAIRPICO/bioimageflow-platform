@@ -22,6 +22,7 @@ from bioimageflow_server.models.errors import ErrorResponse
 from bioimageflow_server.models.settings import Settings, _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.dev import (
+    get_result_store as dev_get_result_store,
     get_tool_registry as dev_get_tool_registry,
     router as dev_router,
 )
@@ -338,6 +339,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_private_network=True,
     )
 
     @app.exception_handler(HTTPException)
@@ -416,6 +418,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
+    app.dependency_overrides[dev_get_result_store] = lambda: result_store
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
     app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path

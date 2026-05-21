@@ -218,12 +218,12 @@ describe('ImageCell', () => {
     expect(button.attributes('disabled')).toBeUndefined()
   })
 
-  it('requests an Avivator dock panel with a filename-suffixed image_url', async () => {
+  it('requests an Avivator dock panel with an OME-TIFF image_url', async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
 
-    const wrapper = mountCell({ workflowName: 'wf a', value: '/tmp/mask.ome.tif' })
+    const wrapper = mountCell({ workflowName: 'wf a', value: '/tmp/mask.png' })
     await flushPromises()
 
     await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
@@ -236,10 +236,14 @@ describe('ImageCell', () => {
     const { url, imageUrl, title } = event!.detail
     expect(title).toBe('mask.ome.tif')
     const avivatorUrl = new URL(String(url))
-    expect(avivatorUrl.origin).toBe('http://avivator.gehlenborglab.org')
+    expect(avivatorUrl.origin).toBe('https://avivator.gehlenborglab.org')
     expect(avivatorUrl.searchParams.get('image_url')).toBe(imageUrl)
-    expect(new URL(imageUrl).href).toBe(
-      `${window.location.origin}/api/v1/nodes/n1/image/mask.ome.tif?row=0&col=mask&workflow_name=wf+a`,
-    )
+    const parsedImageUrl = new URL(imageUrl)
+    expect(parsedImageUrl.origin).toBe('http://localhost:8000')
+    expect(parsedImageUrl.pathname).toBe('/api/v1/nodes/n1/image/mask.ome.tif')
+    expect(parsedImageUrl.searchParams.get('row')).toBe('0')
+    expect(parsedImageUrl.searchParams.get('col')).toBe('mask')
+    expect(parsedImageUrl.searchParams.get('workflow_name')).toBe('wf a')
+    expect(parsedImageUrl.searchParams.get('format')).toBe('ome-tiff')
   })
 })

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import mimetypes
+import tempfile
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from starlette.responses import FileResponse
@@ -29,6 +32,7 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 # can retry.
 _THUMBNAIL_WAIT_TIMEOUT_SECONDS = 3.0
 _TIFF_SUFFIXES = {".tif", ".tiff"}
+_OME_TIFF_CACHE_DIR = Path(tempfile.gettempdir()) / "bioimageflow-avivator-cache"
 
 
 def get_result_store() -> ResultStoreService:
@@ -100,6 +104,109 @@ def _guess_image_media_type(path: Path) -> str:
         return "image/tiff"
     guessed, _ = mimetypes.guess_type(path.name)
     return guessed or "application/octet-stream"
+
+
+def _is_ome_tiff(path: Path) -> bool:
+    if path.suffix.lower() not in _TIFF_SUFFIXES:
+        return False
+    try:
+        import tifffile
+
+        with tifffile.TiffFile(path) as tif:
+            return bool(tif.ome_metadata)
+    except Exception:
+        return False
+
+
+def _ome_tiff_cache_path(image_path: Path) -> Path:
+    stat = image_path.stat()
+    source_key = f"{image_path.resolve()}:{stat.st_mtime_ns}:{stat.st_size}"
+    digest = hashlib.sha256(source_key.encode("utf-8")).hexdigest()
+    return _OME_TIFF_CACHE_DIR / f"{digest}.ome.tif"
+
+
+def _ome_tiff_filename(filename: str) -> str:
+    if filename.lower().endswith((".ome.tif", ".ome.tiff")):
+        return filename
+    return f"{Path(filename).stem}.ome.tif"
+
+
+def _read_image_array(image_path: Path) -> np.ndarray:
+    if image_path.suffix.lower() in _TIFF_SUFFIXES:
+        try:
+            import tifffile
+
+            return np.asarray(tifffile.imread(image_path))
+        except Exception:
+            pass
+
+    try:
+        from PIL import Image, ImageSequence
+
+        with Image.open(image_path) as image:
+            frames = [np.asarray(frame.copy()) for frame in ImageSequence.Iterator(image)]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not read image for Avivator: {image_path.name}",
+        ) from exc
+    if not frames:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Image has no readable frames: {image_path.name}",
+        )
+    if len(frames) == 1:
+        return np.asarray(frames[0])
+    return np.stack(frames, axis=0)
+
+
+def _ome_axes(data: np.ndarray) -> str:
+    if data.ndim == 2:
+        return "YX"
+    if data.ndim == 3:
+        if data.shape[-1] in {3, 4}:
+            return "YXS"
+        return "ZYX"
+    if data.ndim == 4:
+        if data.shape[-1] in {3, 4}:
+            return "ZYXS"
+        return "TZYX"
+    raise HTTPException(
+        status_code=422,
+        detail=f"Avivator export supports 2D, 3D, or 4D images, got {data.ndim}D",
+    )
+
+
+def _as_ome_tiff(image_path: Path) -> Path:
+    if _is_ome_tiff(image_path):
+        return image_path
+
+    cache_path = _ome_tiff_cache_path(image_path)
+    if cache_path.is_file():
+        return cache_path
+
+    data = _read_image_array(image_path)
+    axes = _ome_axes(data)
+    _OME_TIFF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_path = cache_path.with_name(f"{cache_path.name}.tmp")
+    try:
+        import tifffile
+
+        kwargs: dict[str, object] = {
+            "ome": True,
+            "metadata": {"axes": axes},
+        }
+        if axes.endswith("S"):
+            kwargs["photometric"] = "rgb"
+        tifffile.imwrite(tmp_path, data, **kwargs)
+        tmp_path.replace(cache_path)
+    except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not convert image to OME-TIFF for Avivator: {image_path.name}",
+        ) from exc
+    return cache_path
 
 
 @router.get("/{node_id}/data", response_model=NodeDataResponse)
@@ -179,17 +286,28 @@ def _node_image_response(
     col: str,
     row: int,
     workflow_name: str | None,
+    output_format: Literal["ome-tiff"] | None,
+    response_filename: str | None = None,
 ) -> FileResponse:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
     value = _get_dataframe_cell(df, row, col)
     image_path = _coerce_image_path(value, storage_path)
+    media_type = _guess_image_media_type(image_path)
+    filename = response_filename or image_path.name
+    if output_format == "ome-tiff":
+        image_path = _as_ome_tiff(image_path)
+        media_type = "image/tiff"
+        filename = _ome_tiff_filename(filename)
     return FileResponse(
         path=image_path,
-        media_type=_guess_image_media_type(image_path),
-        filename=image_path.name,
+        media_type=media_type,
+        filename=filename,
         content_disposition_type="inline",
-        headers={"Accept-Ranges": "bytes"},
+        headers={
+            "Accept-Ranges": "bytes",
+            "Access-Control-Expose-Headers": "Accept-Ranges, Content-Length, Content-Range, ETag",
+        },
     )
 
 
@@ -202,6 +320,7 @@ async def get_node_image_with_filename(
     col: str,
     row: Annotated[int, Query(ge=0)] = 0,
     workflow_name: str | None = None,
+    output_format: Annotated[Literal["ome-tiff"] | None, Query(alias="format")] = None,
 ) -> FileResponse:
     return _node_image_response(
         node_id=node_id,
@@ -210,6 +329,8 @@ async def get_node_image_with_filename(
         col=col,
         row=row,
         workflow_name=workflow_name,
+        output_format=output_format,
+        response_filename=filename,
     )
 
 
@@ -221,6 +342,7 @@ async def get_node_image(
     col: str,
     row: Annotated[int, Query(ge=0)] = 0,
     workflow_name: str | None = None,
+    output_format: Annotated[Literal["ome-tiff"] | None, Query(alias="format")] = None,
 ) -> FileResponse:
     return _node_image_response(
         node_id=node_id,
@@ -229,6 +351,7 @@ async def get_node_image(
         col=col,
         row=row,
         workflow_name=workflow_name,
+        output_format=output_format,
     )
 
 

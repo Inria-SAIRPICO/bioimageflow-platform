@@ -45,6 +45,14 @@ const imageFileName = computed(() => {
   const parts = props.value.split(/[\\/]/).filter(Boolean)
   return parts[parts.length - 1] || 'image'
 })
+const avivatorImageFileName = computed(() => {
+  const name = imageFileName.value
+  if (/\.ome\.tiff?$/i.test(name)) {
+    return name
+  }
+  const withoutSuffix = name.replace(/\.[^/.]+$/, '')
+  return `${withoutSuffix || 'image'}.ome.tif`
+})
 const baseUrl = computed(() => {
   const params = new URLSearchParams({
     row: String(props.row),
@@ -56,22 +64,29 @@ const baseUrl = computed(() => {
   }
   return `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/thumbnail?${params.toString()}`
 })
+const avivatorApiOrigin = computed(() => {
+  const backendHttpUrl = import.meta.env.VITE_BIOIMAGEFLOW_BACKEND_HTTP_URL
+  if (import.meta.env.DEV && backendHttpUrl) {
+    return new URL(backendHttpUrl).origin
+  }
+  return window.location.origin
+})
 const imageUrl = computed(() => {
   const params = new URLSearchParams({
     row: String(props.row),
     col: props.col,
+    format: 'ome-tiff',
   })
   if (props.workflowName && props.workflowName.trim() !== '') {
     params.set('workflow_name', props.workflowName)
   }
   return new URL(
-    `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/image/${encodeURIComponent(imageFileName.value)}?${params.toString()}`,
-    window.location.origin,
+    `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/image/${encodeURIComponent(avivatorImageFileName.value)}?${params.toString()}`,
+    avivatorApiOrigin.value,
   ).toString()
 })
 const avivatorUrl = computed(() => {
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
-  const url = new URL(`${protocol}//${AVIVATOR_HOST}/`)
+  const url = new URL(`https://${AVIVATOR_HOST}/`)
   url.searchParams.set('image_url', imageUrl.value)
   return url.toString()
 })
@@ -201,7 +216,7 @@ function openAvivator() {
     detail: {
       url: avivatorUrl.value,
       imageUrl: imageUrl.value,
-      title: imageFileName.value,
+      title: avivatorImageFileName.value,
     },
   }))
 }

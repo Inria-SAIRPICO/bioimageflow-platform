@@ -7,11 +7,14 @@ const backendPort =
   process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ??
   process.env.BIOIMAGEFLOW_BACKEND_PORT ??
   '8000'
-const backendHttpUrl = `http://127.0.0.1:${backendPort}`
+const backendHttpUrl = `http://localhost:${backendPort}`
 const backendWsUrl = `ws://127.0.0.1:${backendPort}`
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    'import.meta.env.VITE_BIOIMAGEFLOW_BACKEND_HTTP_URL': JSON.stringify(backendHttpUrl),
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
