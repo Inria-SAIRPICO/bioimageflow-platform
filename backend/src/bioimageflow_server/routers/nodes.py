@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import tempfile
+import time
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from starlette.responses import FileResponse
 
 from bioimageflow_server.models.nodes import NodeDataResponse
@@ -33,6 +35,8 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 _THUMBNAIL_WAIT_TIMEOUT_SECONDS = 3.0
 _TIFF_SUFFIXES = {".tif", ".tiff"}
 _OME_TIFF_CACHE_DIR = Path(tempfile.gettempdir()) / "bioimageflow-avivator-cache"
+_OME_TIFF_CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+_OFFSET_JSON_SUFFIX = ".offsets.json"
 
 
 def get_result_store() -> ResultStoreService:
@@ -125,10 +129,31 @@ def _ome_tiff_cache_path(image_path: Path) -> Path:
     return _OME_TIFF_CACHE_DIR / f"{digest}.ome.tif"
 
 
+def _prune_ome_tiff_cache(now: float | None = None) -> None:
+    if not _OME_TIFF_CACHE_DIR.is_dir():
+        return
+    cutoff = (time.time() if now is None else now) - _OME_TIFF_CACHE_MAX_AGE_SECONDS
+    for path in _OME_TIFF_CACHE_DIR.iterdir():
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if not path.is_file() or stat.st_mtime >= cutoff:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def _ome_tiff_filename(filename: str) -> str:
     if filename.lower().endswith((".ome.tif", ".ome.tiff")):
         return filename
     return f"{Path(filename).stem}.ome.tif"
+
+
+def _is_offsets_filename(filename: str | None) -> bool:
+    return filename is not None and filename.lower().endswith(_OFFSET_JSON_SUFFIX)
 
 
 def _read_image_array(image_path: Path) -> np.ndarray:
@@ -178,6 +203,7 @@ def _ome_axes(data: np.ndarray) -> str:
 
 
 def _as_ome_tiff(image_path: Path) -> Path:
+    _prune_ome_tiff_cache()
     if _is_ome_tiff(image_path):
         return image_path
 
@@ -207,6 +233,19 @@ def _as_ome_tiff(image_path: Path) -> Path:
             detail=f"Could not convert image to OME-TIFF for Avivator: {image_path.name}",
         ) from exc
     return cache_path
+
+
+def _tiff_offsets(path: Path) -> list[int]:
+    try:
+        import tifffile
+
+        with tifffile.TiffFile(path) as tif:
+            return [int(page.offset) for page in tif.pages]
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not read TIFF offsets for Avivator: {path.name}",
+        ) from exc
 
 
 @router.get("/{node_id}/data", response_model=NodeDataResponse)
@@ -288,7 +327,7 @@ def _node_image_response(
     workflow_name: str | None,
     output_format: Literal["ome-tiff"] | None,
     response_filename: str | None = None,
-) -> FileResponse:
+) -> Response:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
     value = _get_dataframe_cell(df, row, col)
@@ -297,6 +336,14 @@ def _node_image_response(
     filename = response_filename or image_path.name
     if output_format == "ome-tiff":
         image_path = _as_ome_tiff(image_path)
+        if _is_offsets_filename(response_filename):
+            return JSONResponse(
+                content=_tiff_offsets(image_path),
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Access-Control-Expose-Headers": "Content-Length, ETag",
+                },
+            )
         media_type = "image/tiff"
         filename = _ome_tiff_filename(filename)
     return FileResponse(

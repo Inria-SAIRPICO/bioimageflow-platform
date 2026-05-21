@@ -22,7 +22,10 @@ test.describe('Avivator viewer', () => {
               <script>
                 const imageUrl = new URL(window.location.href).searchParams.get('image_url');
                 const parsed = new URL(imageUrl);
+                const offsets = new URL(parsed.toString());
+                offsets.pathname = offsets.pathname.replace(/\.ome\.tiff?$/i, '.offsets.json');
                 document.body.dataset.imageUrl = imageUrl;
+                document.body.dataset.offsetsUrl = offsets.toString();
                 document.body.dataset.status = parsed.searchParams.get('format') === 'ome-tiff' ? 'loaded' : 'failed';
               </script>
             </body>
@@ -70,6 +73,20 @@ test.describe('Avivator viewer', () => {
     expect(Array.from(bytes.slice(0, 4))).toEqual([0x49, 0x49, 0x2a, 0x00])
     expect(new TextDecoder('utf-8', { fatal: false }).decode(bytes)).toContain('OME')
 
+    const offsetsUrl = new URL(imageUrl.toString())
+    offsetsUrl.pathname = offsetsUrl.pathname.replace(/\.ome\.tiff?$/i, '.offsets.json')
+    const offsetsResponse = await page.request.get(offsetsUrl.toString(), {
+      headers: {
+        Origin: AVIVATOR_ORIGIN,
+      },
+    })
+    expect(offsetsResponse.status(), await offsetsResponse.text()).toBeLessThan(400)
+    expect(offsetsResponse.headers()['content-type']).toContain('application/json')
+    const offsets = (await offsetsResponse.json()) as number[]
+    expect(Array.isArray(offsets)).toBeTruthy()
+    expect(offsets.length).toBeGreaterThan(0)
+    expect(offsets.every((offset) => Number.isInteger(offset) && offset > 0)).toBeTruthy()
+
     const avivatorUrl = new URL('https://avivator.gehlenborglab.org/')
     avivatorUrl.searchParams.set('image_url', imageUrl.toString())
 
@@ -87,5 +104,6 @@ test.describe('Avivator viewer', () => {
     const iframeBody = page.frameLocator('[data-testid="avivator-iframe"]').locator('body')
     await expect(iframeBody).toHaveAttribute('data-status', 'loaded')
     await expect(iframeBody).toHaveAttribute('data-image-url', imageUrl.toString())
+    await expect(iframeBody).toHaveAttribute('data-offsets-url', offsetsUrl.toString())
   })
 })

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -16,6 +17,7 @@ from PIL import Image
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.routers import nodes as nodes_router
 
 pytestmark = pytest.mark.anyio
 
@@ -263,6 +265,64 @@ async def test_node_image_endpoint_can_convert_png_to_ome_tiff_for_avivator(
     with tifffile.TiffFile(BytesIO(resp.content)) as tif:
         assert tif.ome_metadata
         assert tif.asarray().tolist() == np.arange(16, dtype=np.uint8).reshape(4, 4).tolist()
+
+
+async def test_node_image_endpoint_returns_offsets_json_for_avivator(
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "mask.ome.tiff"
+    tifffile.imwrite(
+        image,
+        np.arange(16, dtype=np.uint8).reshape(4, 4),
+        ome=True,
+        metadata={"axes": "YX"},
+    )
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+
+    with tifffile.TiffFile(image) as tif:
+        expected_offsets = [page.offset for page in tif.pages]
+
+    async with await _client(store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/image/mask.offsets.json",
+            params={"row": 0, "col": "mask", "format": "ome-tiff"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.json() == expected_offsets
+
+
+async def test_node_image_endpoint_prunes_stale_avivator_cache_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_dir = tmp_path / "avivator-cache"
+    cache_dir.mkdir()
+    stale = cache_dir / "stale.ome.tif"
+    fresh = cache_dir / "fresh.ome.tif"
+    stale.write_bytes(b"old")
+    fresh.write_bytes(b"new")
+    os.utime(stale, (1, 1))
+
+    monkeypatch.setattr(nodes_router, "_OME_TIFF_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(nodes_router, "_OME_TIFF_CACHE_MAX_AGE_SECONDS", 10)
+
+    image = tmp_path / "mask.png"
+    Image.fromarray(np.arange(16, dtype=np.uint8).reshape(4, 4)).save(image)
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+
+    async with await _client(store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/image/mask.ome.tif",
+            params={"row": 0, "col": "mask", "format": "ome-tiff"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert not stale.exists()
+    assert fresh.exists()
 
 
 async def test_node_image_endpoint_allows_private_network_preflight() -> None:
