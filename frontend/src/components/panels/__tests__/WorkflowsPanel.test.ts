@@ -18,7 +18,9 @@ vi.mock('@/api/client', () => ({
 
 const workflows: WorkflowInfo[] = [
   {
+    id: 'alpha_api',
     name: 'alpha_api',
+    folder: '',
     display_name: 'Alpha Workflow',
     description: 'Segment nuclei and measure intensities.',
     path: '/library/workflows/alpha_api/workflow.bioimageflow.json',
@@ -26,7 +28,9 @@ const workflows: WorkflowInfo[] = [
     last_modified: '2026-04-30T12:34:56Z',
   },
   {
+    id: 'beta_api',
     name: 'beta_api',
+    folder: '',
     display_name: 'Beta Workflow',
     description: null,
     path: '/library/workflows/beta_api/workflow.bioimageflow.json',
@@ -35,12 +39,12 @@ const workflows: WorkflowInfo[] = [
   },
 ]
 
-function mountPanel() {
+function mountPanel(items: WorkflowInfo[] = workflows) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = useWorkflowStore()
-  store.workflows = [...workflows]
-  store.current = workflows[0]
+  store.workflows = [...items]
+  store.current = items[0] ?? null
 
   return mount(WorkflowsPanel, {
     global: {
@@ -92,6 +96,45 @@ describe('WorkflowsPanel', () => {
     expect(wrapper.find('[data-testid="workflow-detail-storage-path"]').text()).toContain(
       '/library/workflows/beta_api',
     )
+  })
+
+  it('selects full workflow ids when duplicate leaf names live in different folders', async () => {
+    const duplicateWorkflows: WorkflowInfo[] = [
+      {
+        id: 'A/nuclei',
+        name: 'nuclei',
+        folder: 'A',
+        display_name: 'Nuclei A',
+        description: null,
+        path: '/library/workflows/A/nuclei/workflow.json',
+        last_modified: '2026-04-30T12:34:56Z',
+      },
+      {
+        id: 'B/nuclei',
+        name: 'nuclei',
+        folder: 'B',
+        display_name: 'Nuclei B',
+        description: null,
+        path: '/library/workflows/B/nuclei/workflow.json',
+        last_modified: '2026-05-01T08:00:00Z',
+      },
+    ]
+    const wrapper = mountPanel(duplicateWorkflows)
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'A', name: 'A', parentId: null },
+      { id: 'B', name: 'B', parentId: null },
+    ]
+    store.workflowFolderIds = {
+      'A/nuclei': 'A',
+      'B/nuclei': 'B',
+    }
+    await flushPromises()
+
+    await wrapper.find('[data-testid="workflow-row-B_nuclei"]').trigger('click')
+
+    expect(wrapper.emitted('select-workflow')?.[0]).toEqual(['B/nuclei'])
+    expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('B/nuclei')
   })
 
   it('emits toolbar workflow actions using the selected workflow when required', async () => {
@@ -193,6 +236,7 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'beta_api',
+        id: 'beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -247,6 +291,7 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'beta_api',
+        id: 'beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -295,6 +340,7 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'beta_api',
+        id: 'beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -323,6 +369,57 @@ describe('WorkflowsPanel', () => {
     await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
     const emitted = wrapper.emitted('select-workflow') ?? []
     expect(emitted[emitted.length - 1]).toEqual(['beta_api'])
+  })
+
+  it('moves a dragged folder into another folder', async () => {
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'A', name: 'A', parentId: null },
+      { id: 'B', name: 'B', parentId: null },
+    ]
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        path: 'B/A',
+        display_name: 'A',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        path: '',
+        display_name: 'workspace',
+        folders: [{
+          path: 'B',
+          display_name: 'B',
+          folders: [{
+            path: 'B/A',
+            display_name: 'A',
+            folders: [],
+            workflows: [],
+          }],
+          workflows: [],
+        }],
+        workflows,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="workflow-folder-B"]').trigger('drop', {
+      dataTransfer: {
+        getData: (type: string) => (
+          type === 'application/bioimageflow-folder' ? 'A' : ''
+        ),
+      },
+    })
+    await flushPromises()
+
+    expect(api.patch).toHaveBeenCalledWith(
+      '/api/v1/workflows/folders/A',
+      { new_path: 'B/A' },
+    )
+    expect(store.workflowFolders).toContainEqual({ id: 'B/A', name: 'A', parentId: 'B' })
   })
 
   it('reorders workflow ids by dropping onto another workflow row', async () => {

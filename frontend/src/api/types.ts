@@ -429,6 +429,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow Tree */
+        get: operations["workflow_tree_api_v1_workflows_tree_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Folder */
+        post: operations["create_folder_api_v1_workflows_folders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/folders/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Folder */
+        delete: operations["delete_folder_api_v1_workflows_folders__path__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Folder */
+        patch: operations["rename_folder_api_v1_workflows_folders__path__patch"];
+        trace?: never;
+    };
     "/api/v1/workflows/{name}": {
         parameters: {
             query?: never;
@@ -1482,6 +1534,45 @@ export interface components {
             /** Storage Path */
             storage_path?: string | null;
         };
+        /** WorkflowFolderCreate */
+        WorkflowFolderCreate: {
+            /** Path */
+            path: string;
+        };
+        /** WorkflowFolderDelete */
+        WorkflowFolderDelete: {
+            /**
+             * Policy
+             * @default empty
+             * @enum {string}
+             */
+            policy?: "empty" | "delete_children" | "move_children_up";
+        };
+        /**
+         * WorkflowFolderInfo
+         * @description Workflow folder tree node returned by GET /workflows/tree.
+         */
+        WorkflowFolderInfo: {
+            /**
+             * Path
+             * @default
+             */
+            path: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /** Folders */
+            folders?: components["schemas"]["WorkflowFolderInfo"][];
+            /** Workflows */
+            workflows?: components["schemas"]["WorkflowInfo"][];
+        };
+        /** WorkflowFolderUpdate */
+        WorkflowFolderUpdate: {
+            /** New Path */
+            new_path: string;
+        };
         /**
          * WorkflowFile
          * @description Workflow file response returned to the frontend.
@@ -1514,8 +1605,15 @@ export interface components {
          * @description Workflow list item returned by GET /workflows.
          */
         WorkflowInfo: {
+            /** Id */
+            id?: string | null;
             /** Name */
             name: string;
+            /**
+             * Folder
+             * @default
+             */
+            folder?: string;
             /** Display Name */
             display_name: string;
             /** Path */
@@ -1526,6 +1624,10 @@ export interface components {
             description?: string | null;
             /** Storage Path */
             storage_path?: string | null;
+            /** Workspace Path */
+            workspace_path?: string | null;
+            /** Output Path */
+            output_path?: string | null;
         };
         /**
          * WorkflowSaveBody
@@ -1604,6 +1706,10 @@ export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
 export type WorkflowFile = components['schemas']['WorkflowFile'];
+export type WorkflowFolderCreate = components['schemas']['WorkflowFolderCreate'];
+export type WorkflowFolderDelete = components['schemas']['WorkflowFolderDelete'];
+export type WorkflowFolderInfo = components['schemas']['WorkflowFolderInfo'];
+export type WorkflowFolderUpdate = components['schemas']['WorkflowFolderUpdate'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
 export type WorkflowInfo = components['schemas']['WorkflowInfo'];
 export type WorkflowSaveBody = components['schemas']['WorkflowSaveBody'];
@@ -2383,6 +2489,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowInfo"][];
+                };
+            };
+        };
+    };
+    workflow_tree_api_v1_workflows_tree_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFolderInfo"];
+                };
+            };
+        };
+    };
+    create_folder_api_v1_workflows_folders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowFolderCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFolderInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_folder_api_v1_workflows_folders__path__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowFolderUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFolderInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_folder_api_v1_workflows_folders__path__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WorkflowFolderDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

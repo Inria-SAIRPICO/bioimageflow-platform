@@ -194,3 +194,37 @@ async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path
     assert response.status_code == 200
     assert response.json()["path"] == str(tool)
     assert editor.paths == [str(workspace)]
+
+
+async def test_editor_open_package_tool_still_opens_workspace_root(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    tool = package_root / "package_tool.py"
+    tool.write_text("class PackageTool: pass", encoding="utf-8")
+    registry = ToolRegistryService()
+    registry.register_tool(
+        "PackageTool",
+        ToolMetadata(
+            name="PackageTool",
+            display_name="Package Tool",
+            package="package",
+            package_version="1.0",
+            tool_type="ProcessingTool",
+            source_kind="package",
+            editable=False,
+        ),
+    )
+    registry._sources["PackageTool"] = tool
+    editor = _EditorStub()
+    config = AppConfig(tool_registry=registry, workflow_root=workspace, editor_service=editor)
+    async for client in _client(config):
+        response = await client.post(
+            "/api/v1/editor/open-tool",
+            json={"tool_name": "PackageTool"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["path"] == str(tool)
+    assert editor.paths == [str(workspace)]

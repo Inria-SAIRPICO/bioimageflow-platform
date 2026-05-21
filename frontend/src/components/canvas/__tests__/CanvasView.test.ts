@@ -1905,6 +1905,55 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('clears stale startup workflow state when server load returns 404', async () => {
+      const targetName = 'missing'
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows/tree') {
+          return Promise.resolve({
+            data: {
+              path: '',
+              display_name: 'workspace',
+              folders: [],
+              workflows: [{
+                id: targetName,
+                name: targetName,
+                folder: '',
+                display_name: 'Missing',
+                path: '/tmp/missing/workflow.json',
+                last_modified: '2026-04-30T12:00:00.000Z',
+              }],
+            },
+          })
+        }
+        if (url === `/api/v1/workflows/${targetName}`) {
+          return Promise.reject(new Error('404'))
+        }
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
+        return Promise.resolve({ data: {} })
+      })
+      apiMocks.post.mockResolvedValueOnce({
+        data: {
+          name: 'Untitled',
+          display_name: 'Untitled',
+        },
+      })
+      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(targetName)
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(autoSaveMocks.clearAutoSave).toHaveBeenCalledWith(targetName)
+      expect(autoSaveMocks.setLastOpenedWorkflow).toHaveBeenCalledWith(null)
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        '/api/v1/workflows',
+        { name: 'Untitled', display_name: 'Untitled' },
+      )
+
+      w.unmount()
+    })
+
     it('sets nodes before edges so Vue Flow handles exist when edges attach', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
