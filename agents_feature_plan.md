@@ -25,6 +25,18 @@ This gives agents current unsaved state without making `workflow.json` autosave 
 
 ## Storage Layout
 
+At the workspace root:
+
+```text
+workspace/
+  .bioimageflow/
+    agent-state.json
+    AGENTS.md
+    CLAUDE.md
+```
+
+VS Code opens at the workspace root, so agent discovery starts here. The workspace-root files identify the active workflow, API base URL, current draft revision, and recommended commands.
+
 For each workflow:
 
 ```text
@@ -33,9 +45,6 @@ workspace/workflows/<workflow_id>/
   tools/
   .bioimageflow/
     draft.json
-    agent-state.json
-    AGENTS.md
-    CLAUDE.md
 ```
 
 `workflow.json` remains the manually saved workflow.
@@ -46,7 +55,7 @@ workspace/workflows/<workflow_id>/
 {
   "draft_version": 1,
   "workflow_id": "segmentation/nuclei",
-  "base_saved_revision": "2026-05-21T12:00:00.000000Z",
+  "base_saved_revision": "sha256:86f7...",
   "draft_revision": 42,
   "updated_at": "2026-05-21T12:05:10.000000Z",
   "updated_by": "frontend",
@@ -60,12 +69,15 @@ workspace/workflows/<workflow_id>/
 }
 ```
 
-`agent-state.json` stores operational metadata for agents:
+The draft source of truth is `GraphState` plus validation metadata. It does not store the derived `workflow` and `gui` sections from `workflow.json`; those are regenerated on promotion through the existing workflow save/translation path. Agents should never hand-edit derived workflow sections.
+
+The workspace-root `agent-state.json` stores operational metadata for agents:
 
 - API base URL.
 - Active workflow id.
 - Current draft revision.
 - Workspace paths.
+- Active draft path.
 - Recommended command usage.
 - Lock state while execution is running.
 
@@ -80,6 +92,8 @@ Add draft endpoints under a non-conflicting prefix:
 ```
 
 Do not add `/api/v1/workflows/{id}/draft` in the MVP. The existing workflow router already has catch-all routes such as `/workflows/{name:path}` for nested workflow ids, so a suffix route is easy to shadow accidentally. A separate `/workflow-drafts` router keeps route matching predictable and must be covered by router tests for nested ids such as `folder/example`.
+
+Clients must encode workflow path segments the same way the existing frontend encodes workflow URLs: encode each segment independently and preserve `/` as the nested-workflow separator.
 
 ### `GET /workflow-drafts/{workflow_id:path}`
 
@@ -113,7 +127,9 @@ Behavior:
 
 - Reject with `423 Locked` while workflow execution is running.
 - Reject with `409 Conflict` if `expected_revision` is stale.
-- Validate through the same graph validator used by `PUT /graph`.
+- Structurally invalid request bodies that fail `GraphState` validation return `422` and are not stored.
+- Semantically invalid graphs are stored with `validation.valid: false` and HTTP `200`, matching the existing manual-save behavior that allows invalid workflows to be saved.
+- `validate: false` skips semantic graph validation only; it does not bypass Pydantic request validation or revision checks.
 - Atomically write `.bioimageflow/draft.json`.
 - Broadcast a WebSocket draft event.
 
@@ -240,6 +256,17 @@ Add Pydantic models rather than untyped dictionaries:
 
 `WorkflowDraftOperation` should use `op` as the discriminator so generated OpenAPI docs are usable by agent tooling.
 
+`DraftUpdatedMessage` fields:
+
+- `type: "draft_updated"`
+- `workflow_id`
+- `draft_revision`
+- `updated_by`
+- `updated_at`
+- `dirty_against_saved`
+- `validation_valid: bool | null`
+- `summary: str | null`
+
 ## WebSocket Events
 
 Add:
@@ -250,6 +277,9 @@ Add:
   "workflow_id": "segmentation/nuclei",
   "draft_revision": 43,
   "updated_by": "agent",
+  "updated_at": "2026-05-21T12:05:10.000000Z",
+  "dirty_against_saved": true,
+  "validation_valid": true,
   "summary": "Set CellposeSegmenter.diameter to 35"
 }
 ```
@@ -299,7 +329,10 @@ The CLI should:
 
 Replace or supplement IndexedDB autosave with backend draft writes:
 
-- On meaningful graph changes, call `PUT /workflows/{id}/draft`.
+- On workflow load, call `GET /api/v1/workflow-drafts/{workflow_id}` to initialize the frontend draft revision before the first autosave.
+- Track `currentDraftRevision`, `appliedDraftRevision`, `pendingWriteRevision`, `remoteAvailableRevision`, and `lastWriter` in a draft state store.
+- On meaningful graph changes, call `PUT /api/v1/workflow-drafts/{workflow_id}` with `expected_revision` from the draft state store.
+- On `409`, stop autosaving, record the remote revision, and surface a stale-draft state instead of retrying blindly.
 - Keep the current debounce behavior, initially 500 ms.
 - Keep IndexedDB as a fallback only when the backend is unavailable.
 - Flush the draft before run, save, export, and editor open.
@@ -313,6 +346,11 @@ Add a small draft state store:
 - pending local write
 - conflict state
 - last applied remote revision
+- `handleDraftUpdated(message)`
+- `markLocalWriteStarted(expectedRevision)`
+- `markLocalWriteAccepted(response)`
+- `markRevisionConflict(conflictResponse)`
+- `assertFreshForSaveOrRun()`
 
 When a `draft_updated` event arrives:
 
@@ -343,7 +381,7 @@ Add commands to open VS Code / embedded code-server at the workspace:
 - Open terminal instructions for Codex.
 - Open terminal instructions for Claude Code.
 
-Before opening, flush the draft and regenerate `.bioimageflow/AGENTS.md`, `.bioimageflow/CLAUDE.md`, and `.bioimageflow/agent-state.json`.
+Before opening, flush the draft and regenerate workspace-root `.bioimageflow/AGENTS.md`, `.bioimageflow/CLAUDE.md`, and `.bioimageflow/agent-state.json`.
 
 ## Backend Services
 
@@ -355,12 +393,23 @@ Responsibilities:
 - Create draft from saved workflow when missing.
 - Atomically read/write draft JSON.
 - Maintain monotonic `draft_revision`.
+- Maintain a saved content revision for `workflow.json`, preferably `sha256:<hash>` of the saved file contents. Draft `base_saved_revision` is this hash, not file mtime.
+- Compare `base_saved_revision` with the current saved revision before promotion; if the saved workflow changed since the draft base, return a conflict unless the request explicitly forces promotion.
 - Validate graphs on write.
 - Apply structured mutation operations.
 - Emit WebSocket events.
 - Guard writes while execution is running.
+- Execute read/compare/mutate/write under a per-workflow lock so two concurrent writes cannot both read revision 42 and both write revision 43.
 
 Keep operation application isolated from FastAPI routers so it can be unit-tested without HTTP.
+
+## Workflow Lifecycle Rules
+
+- Create/import: no dirty draft is created by default. `GET /workflow-drafts/{workflow_id}` synthesizes revision `0` from the saved workflow on demand.
+- Rename/move: carry the workflow-local `.bioimageflow/draft.json` with the workflow directory and rewrite `workflow_id` inside the draft to the new id.
+- Duplicate: duplicate from the saved workflow only and start with no dirty draft for the new workflow. This avoids copying stale unsaved state into a new workflow unexpectedly.
+- Delete: remove the workflow directory, including workflow-local `.bioimageflow` draft metadata.
+- Workspace switch: regenerate workspace-root `.bioimageflow/agent-state.json` for the new workspace and active workflow.
 
 ## Graph Mutation Rules
 
@@ -379,13 +428,13 @@ Structured operations should use existing frontend/backend semantics:
 
 Use optimistic concurrency with `draft_revision`.
 
-Every draft write includes `expected_revision`.
+Every draft write includes `expected_revision`. The revision check and write happen inside the per-workflow critical section.
 
 Conflict cases:
 
 - Frontend writes revision 10, agent has already written revision 11: return `409`.
 - Agent writes revision 10, frontend has already written revision 11: return `409`.
-- Saved `workflow.json` changes while draft exists: mark draft as based on an older saved revision and require explicit promote or rebase.
+- Saved `workflow.json` changes while draft exists: compare the draft's `base_saved_revision` content hash to the current saved content hash and require explicit promote or rebase.
 
 First version can resolve conflicts manually through UX prompts. Do not attempt automatic graph merges in the MVP.
 
@@ -407,14 +456,19 @@ Backend unit tests:
 - Atomic draft write shape.
 - Revision increments.
 - Stale `expected_revision` returns conflict.
+- Concurrent `PUT`/`PATCH` requests against the same workflow cannot both succeed with the same starting revision.
+- Promotion rejects stale `base_saved_revision` when saved `workflow.json` changed underneath the draft.
 - Execution lock rejects writes.
 - Each mutation operation transforms graph correctly.
-- Validation errors are returned but invalid drafts can still be stored if the product decision matches current save behavior.
+- Structurally invalid requests return `422` and do not write drafts.
+- Semantically invalid graphs are stored with `validation.valid: false`.
 - Rename, duplicate, move, and delete workflow lifecycle behavior keeps `.bioimageflow` metadata consistent.
 
 Frontend unit tests:
 
+- Workflow load initializes draft revision from `GET /workflow-drafts`.
 - Graph changes call draft save.
+- `409` conflicts stop blind autosave retries and mark the draft stale.
 - IndexedDB fallback still works when draft save fails.
 - WebSocket agent update applies when no local edit is pending.
 - Conflict banner appears when local edit is pending.
@@ -431,7 +485,7 @@ E2E tests:
 
 CLI tests:
 
-- Commands discover API URL from `agent-state.json`.
+- Commands discover API URL from workspace-root `.bioimageflow/agent-state.json`.
 - Commands include expected revisions.
 - Validation errors produce non-zero exits.
 - `set-param` and `connect-column` work against a test server.
@@ -442,13 +496,16 @@ CLI tests:
 
 - Add draft storage service.
 - Add `GET` and `PUT` draft endpoints.
+- Add frontend draft revision store and initialize it from `GET /workflow-drafts` before autosave.
 - Frontend writes draft on changes.
+- Handle `409` stale-write responses without retry loops.
 - Agent context files are generated.
 - Agents can inspect current unsaved state.
 
 ### Milestone 2: Agent Mutations
 
 - Add structured `PATCH` draft endpoint.
+- Add typed `draft_updated` WebSocket event and frontend dispatch into draft state, at least to record that a newer remote revision exists.
 - Add CLI commands for common graph edits.
 - Add validation and revision conflict handling.
 - Add the minimal frontend remote-update guard before enabling writable CLI commands: if an agent revision exists and the frontend has not applied it, save/run are blocked until the user resolves it.
@@ -456,11 +513,9 @@ CLI tests:
 
 ### Milestone 3: Frontend Reconciliation
 
-- Add WebSocket `draft_updated`.
-- Add frontend draft revision store.
 - Auto-apply safe agent edits.
 - Show conflict banner for concurrent edits.
-- Add typed WebSocket models on both backend and frontend.
+- Add Review JSON and Keep Mine flows for conflicts.
 
 ### Milestone 4: Save/Run Integration
 
@@ -478,9 +533,6 @@ CLI tests:
 
 ## Open Decisions
 
-- Whether invalid drafts should be stored. Current manual save allows invalid workflows, so the first version should likely allow invalid drafts while returning validation errors.
-- Whether `draft.json` should store only `GraphState` plus validation, or the same full persisted sections as `workflow.json`.
-- Whether agent context files live at workspace root or per-workflow. A workspace-root file is easier for VS Code startup; per-workflow files are more precise.
 - Whether agent CLI belongs in the backend package or a separate package.
 - Whether frontend should auto-apply all agent edits when idle, or always ask the user first.
 
@@ -491,9 +543,10 @@ Implement Milestone 1 and a minimal subset of Milestone 2:
 1. `WorkflowDraftService`.
 2. `GET` and `PUT /workflow-drafts/{workflow_id:path}`.
 3. Atomic `.bioimageflow/draft.json`.
-4. Frontend draft autosave after meaningful graph changes.
-5. Agent context file generation when opening the editor.
-6. Draft route tests for nested workflow ids.
-7. `bioimageflow-agent status`, `get-graph`, `validate`, and `list-tools`.
+4. Frontend draft revision store initialized from `GET /workflow-drafts`.
+5. Frontend draft autosave after meaningful graph changes.
+6. Agent context file generation when opening the editor.
+7. Draft route tests for nested workflow ids.
+8. `bioimageflow-agent status`, `get-graph`, `validate`, and `list-tools`.
 
 This proves the most important assumption: agents can see the current unsaved frontend state from VS Code without replacing the platform's frontend-owned editing model.

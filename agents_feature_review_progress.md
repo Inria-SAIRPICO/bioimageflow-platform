@@ -37,3 +37,29 @@ Improvements made:
 Why this version is materially better:
 
 The baseline plan could have produced a working draft file while still allowing an open frontend to overwrite agent edits. It also proposed endpoints that may not route correctly with nested workflow ids. The revised plan closes those implementation traps and gives enough schema detail for backend, frontend, and CLI work to proceed consistently.
+
+## Review Iteration 2
+
+Review summary:
+
+- The first revision still required `expected_revision` before the frontend had a draft revision store or initial draft load.
+- Writable agent mutations were still scheduled before the frontend could even learn that a remote draft revision existed.
+- One frontend section still referenced the rejected `/workflows/{id}/draft` route.
+- Several important decisions were left open even though implementation depended on them: draft persistence shape, invalid draft behavior, context file location, and saved revision identity.
+- Optimistic revision checks needed a per-workflow critical section to prevent concurrent writes from both winning.
+- Workflow lifecycle behavior for rename, duplicate, move, and delete needed product-level rules, not only tests.
+
+Improvements made:
+
+- Moved frontend draft revision state and initial `GET /workflow-drafts` into Milestone 1 before draft autosave.
+- Moved typed `draft_updated` invalidation into Milestone 2 before writable CLI commands are enabled.
+- Replaced the stale frontend route reference with `PUT /api/v1/workflow-drafts/{workflow_id}` and added segment-encoding guidance.
+- Settled draft persistence: `draft.json` stores `GraphState` plus validation metadata; `workflow` and `gui` sections are derived on promotion.
+- Settled invalid draft semantics: structurally invalid requests return `422`, while semantically invalid graphs are stored with `validation.valid: false`.
+- Added saved content hash revisions, stale promotion checks, and per-workflow locking for draft writes.
+- Defined workflow lifecycle behavior for create/import, rename/move, duplicate, delete, and workspace switch.
+- Moved agent discovery files to workspace-root `.bioimageflow/`, while keeping workflow-local `draft.json`.
+
+Why this version is materially better:
+
+The previous plan had the right architecture but still had sequencing contradictions: the frontend could not satisfy the API's revision contract during the first milestone, and writable agents could run before invalidation existed. The revised plan makes the first slice internally implementable, removes decisions that would otherwise cause API churn, and adds real concurrency and lifecycle guarantees.
