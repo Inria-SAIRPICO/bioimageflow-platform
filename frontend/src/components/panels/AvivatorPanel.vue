@@ -1,23 +1,30 @@
 <script setup lang="ts">
-type AvivatorPanelParams = {
+import { computed } from 'vue'
+
+export type AvivatorPanelParams = {
   url?: string
   imageUrl?: string
   title?: string
+  params?: AvivatorPanelParams
 }
 
 const props = defineProps<{
   params?: AvivatorPanelParams
 }>()
+
+const panelParams = computed(() => props.params?.url
+  ? props.params
+  : props.params?.params)
 </script>
 
 <template>
   <section class="avivator-panel" data-testid="avivator-panel">
     <iframe
-      v-if="params?.url"
+      v-if="panelParams?.url"
       class="avivator-panel__frame"
       data-testid="avivator-iframe"
-      :src="params.url"
-      :title="params.title ? `Avivator - ${params.title}` : 'Avivator'"
+      :src="panelParams.url"
+      :title="panelParams.title ? `Avivator - ${panelParams.title}` : 'Avivator'"
       allow="fullscreen"
     />
     <div
