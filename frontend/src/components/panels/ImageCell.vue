@@ -33,7 +33,7 @@ const fetchFailed = ref(false)
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 const THUMBNAIL_REQUEST_SIZE = 256
 const THUMBNAIL_RENDER_SIZE = 96
-const AVIVATOR_URL = 'https://avivator.gehlenborglab.org/'
+const AVIVATOR_HOST = 'avivator.gehlenborglab.org'
 
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
 const shouldShowPath = computed(() => props.showPath ?? true)
@@ -41,6 +41,10 @@ const thumbnailStyle = {
   width: `${THUMBNAIL_RENDER_SIZE}px`,
   height: `${THUMBNAIL_RENDER_SIZE}px`,
 }
+const imageFileName = computed(() => {
+  const parts = props.value.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] || 'image'
+})
 const baseUrl = computed(() => {
   const params = new URLSearchParams({
     row: String(props.row),
@@ -61,9 +65,15 @@ const imageUrl = computed(() => {
     params.set('workflow_name', props.workflowName)
   }
   return new URL(
-    `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/image?${params.toString()}`,
+    `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/image/${encodeURIComponent(imageFileName.value)}?${params.toString()}`,
     window.location.origin,
   ).toString()
+})
+const avivatorUrl = computed(() => {
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
+  const url = new URL(`${protocol}//${AVIVATOR_HOST}/`)
+  url.searchParams.set('image_url', imageUrl.value)
+  return url.toString()
 })
 
 let abort: AbortController | null = null
@@ -187,9 +197,13 @@ async function openNapari(event: MouseEvent) {
 }
 
 function openAvivator() {
-  const url = new URL(AVIVATOR_URL)
-  url.searchParams.set('image_url', imageUrl.value)
-  window.open(url.toString(), '_blank', 'noopener')
+  window.dispatchEvent(new CustomEvent('bioimageflow:open-avivator', {
+    detail: {
+      url: avivatorUrl.value,
+      imageUrl: imageUrl.value,
+      title: imageFileName.value,
+    },
+  }))
 }
 
 async function copyPath() {

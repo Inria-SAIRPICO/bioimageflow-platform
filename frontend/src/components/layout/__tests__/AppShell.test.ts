@@ -382,6 +382,41 @@ describe('AppShell', () => {
     expect(store.codeEditorOpening).toBe(false)
   })
 
+  it('opens Avivator in a Dockview panel from image-cell events', async () => {
+    mountApp()
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:open-avivator', {
+      detail: {
+        url: 'http://avivator.gehlenborglab.org/?image_url=http%3A%2F%2Flocalhost%2Fimage.ome.tif',
+        imageUrl: 'http://localhost/image.ome.tif',
+        title: 'image.ome.tif',
+      },
+    }))
+    await flushPromises()
+
+    const avivatorCall = [...mockDockviewApi.addPanel.mock.calls]
+      .reverse()
+      .map((call: any) => call[0])
+      .find((call: any) => call.id === 'avivator')
+    expect(avivatorCall).toBeDefined()
+    expect(avivatorCall).toMatchObject({
+      id: 'avivator',
+      component: 'avivator',
+      tabComponent: 'avivatorTab',
+      title: 'Avivator - image.ome.tif',
+      params: {
+        url: 'http://avivator.gehlenborglab.org/?image_url=http%3A%2F%2Flocalhost%2Fimage.ome.tif',
+        imageUrl: 'http://localhost/image.ome.tif',
+      },
+      position: {
+        referencePanel: 'dataTable',
+        direction: 'within',
+      },
+    })
+    expect(panels.get('avivator').api.setActive).toHaveBeenCalled()
+  })
+
   it('opens a Dockview tab for sub-workflow sessions', async () => {
     mountApp()
     await flushPromises()

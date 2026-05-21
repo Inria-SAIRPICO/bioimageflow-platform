@@ -172,14 +172,13 @@ async def download_node_csv(
     )
 
 
-@router.get("/{node_id}/image")
-async def get_node_image(
+def _node_image_response(
     node_id: str,
-    result_store: Annotated[ResultStoreService, Depends(get_result_store)],
-    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+    result_store: ResultStoreService,
+    workflow_store: WorkflowStoreService | None,
     col: str,
-    row: Annotated[int, Query(ge=0)] = 0,
-    workflow_name: str | None = None,
+    row: int,
+    workflow_name: str | None,
 ) -> FileResponse:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
@@ -189,7 +188,47 @@ async def get_node_image(
         path=image_path,
         media_type=_guess_image_media_type(image_path),
         filename=image_path.name,
+        content_disposition_type="inline",
         headers={"Accept-Ranges": "bytes"},
+    )
+
+
+@router.get("/{node_id}/image/{filename}")
+async def get_node_image_with_filename(
+    node_id: str,
+    filename: str,
+    result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+    col: str,
+    row: Annotated[int, Query(ge=0)] = 0,
+    workflow_name: str | None = None,
+) -> FileResponse:
+    return _node_image_response(
+        node_id=node_id,
+        result_store=result_store,
+        workflow_store=workflow_store,
+        col=col,
+        row=row,
+        workflow_name=workflow_name,
+    )
+
+
+@router.get("/{node_id}/image")
+async def get_node_image(
+    node_id: str,
+    result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+    col: str,
+    row: Annotated[int, Query(ge=0)] = 0,
+    workflow_name: str | None = None,
+) -> FileResponse:
+    return _node_image_response(
+        node_id=node_id,
+        result_store=result_store,
+        workflow_store=workflow_store,
+        col=col,
+        row=row,
+        workflow_name=workflow_name,
     )
 
 

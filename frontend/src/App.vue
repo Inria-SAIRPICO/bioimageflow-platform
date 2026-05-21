@@ -9,6 +9,8 @@ import LoggerPanel from './components/panels/LoggerPanel.vue'
 import DataTablePanel from './components/panels/DataTablePanel.vue'
 import CodeEditorPanel from './components/panels/CodeEditorPanel.vue'
 import CodeEditorTab from './components/layout/CodeEditorTab.vue'
+import AvivatorPanel from './components/panels/AvivatorPanel.vue'
+import AvivatorTab from './components/layout/AvivatorTab.vue'
 import SubWorkflowEditorPanel from './components/panels/SubWorkflowEditorPanel.vue'
 
 export default defineComponent({
@@ -21,6 +23,8 @@ export default defineComponent({
     dataTable: DataTablePanel,
     codeEditor: CodeEditorPanel,
     codeEditorTab: CodeEditorTab,
+    avivator: AvivatorPanel,
+    avivatorTab: AvivatorTab,
     subWorkflowEditor: SubWorkflowEditorPanel,
   },
 })
@@ -84,6 +88,7 @@ onMounted(() => {
     'bif:open-code-editor-loading-finished',
     onCodeEditorLoadingFinished as EventListener,
   )
+  window.addEventListener('bioimageflow:open-avivator', onOpenAvivator as EventListener)
   window.addEventListener(
     'bioimageflow:sub-workflow-session-opened',
     onSubWorkflowSessionOpened as EventListener,
@@ -114,6 +119,7 @@ onBeforeUnmount(() => {
     'bif:open-code-editor-loading-finished',
     onCodeEditorLoadingFinished as EventListener,
   )
+  window.removeEventListener('bioimageflow:open-avivator', onOpenAvivator as EventListener)
   window.removeEventListener(
     'bioimageflow:sub-workflow-session-opened',
     onSubWorkflowSessionOpened as EventListener,
@@ -313,6 +319,42 @@ function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
 
 function onCodeEditorLoadingFinished(event: CustomEvent<{ path?: string }>) {
   uiStore.clearCodeEditorOpening(event.detail?.path)
+}
+
+function onOpenAvivator(event: CustomEvent<{
+  url?: string
+  imageUrl?: string
+  title?: string
+}>) {
+  const api = dockviewApi.value
+  const url = event.detail?.url
+  if (!api || !url) return
+
+  const existing = api.getPanel('avivator')
+  if (existing) {
+    api.removePanel(existing)
+  }
+  const dataTablePanel = api.getPanel('dataTable')
+  const canvasPanel = api.getPanel('canvas')
+  const imageTitle = event.detail?.title?.trim() || 'Image'
+  const panel = api.addPanel({
+    id: 'avivator',
+    component: 'avivator',
+    tabComponent: 'avivatorTab',
+    title: `Avivator - ${imageTitle}`,
+    params: {
+      url,
+      imageUrl: event.detail?.imageUrl,
+      title: imageTitle,
+    },
+    initialHeight: 360,
+    position: dataTablePanel
+      ? { referencePanel: 'dataTable', direction: 'within' }
+      : canvasPanel
+        ? { referencePanel: 'canvas', direction: 'below' }
+        : { direction: 'below' },
+  })
+  panel.api.setActive()
 }
 
 function openSubWorkflowPanel(sessionId: string): void {

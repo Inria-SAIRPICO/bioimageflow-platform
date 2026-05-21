@@ -218,26 +218,28 @@ describe('ImageCell', () => {
     expect(button.attributes('disabled')).toBeUndefined()
   })
 
-  it('opens Avivator with the node image endpoint as image_url', async () => {
+  it('requests an Avivator dock panel with a filename-suffixed image_url', async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
-    const openMock = vi.fn()
-    vi.stubGlobal('open', openMock)
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
 
-    const wrapper = mountCell({ workflowName: 'wf a' })
+    const wrapper = mountCell({ workflowName: 'wf a', value: '/tmp/mask.ome.tif' })
     await flushPromises()
 
     await wrapper.find('[data-testid="open-avivator-0-mask"]').trigger('click')
 
-    expect(openMock).toHaveBeenCalledTimes(1)
-    const [url, target, features] = openMock.mock.calls[0]
-    expect(target).toBe('_blank')
-    expect(features).toBe('noopener')
+    const event = dispatchSpy.mock.calls
+      .map(([arg]) => arg)
+      .find((arg): arg is CustomEvent => arg instanceof CustomEvent
+        && arg.type === 'bioimageflow:open-avivator')
+    expect(event).toBeDefined()
+    const { url, imageUrl, title } = event!.detail
+    expect(title).toBe('mask.ome.tif')
     const avivatorUrl = new URL(String(url))
-    expect(avivatorUrl.origin).toBe('https://avivator.gehlenborglab.org')
-    const imageUrl = new URL(avivatorUrl.searchParams.get('image_url') ?? '')
-    expect(imageUrl.href).toBe(
-      `${window.location.origin}/api/v1/nodes/n1/image?row=0&col=mask&workflow_name=wf+a`,
+    expect(avivatorUrl.origin).toBe('http://avivator.gehlenborglab.org')
+    expect(avivatorUrl.searchParams.get('image_url')).toBe(imageUrl)
+    expect(new URL(imageUrl).href).toBe(
+      `${window.location.origin}/api/v1/nodes/n1/image/mask.ome.tif?row=0&col=mask&workflow_name=wf+a`,
     )
   })
 })

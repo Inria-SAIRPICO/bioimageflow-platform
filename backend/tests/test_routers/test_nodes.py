@@ -219,6 +219,24 @@ async def test_node_image_endpoint_serves_selected_image_file(tmp_path: Path) ->
     assert resp.headers["accept-ranges"] == "bytes"
 
 
+async def test_node_image_endpoint_accepts_filename_suffix_and_serves_inline(tmp_path: Path) -> None:
+    image = tmp_path / "mask.ome.tif"
+    image.write_bytes(b"II*\x00fake-ome-tiff")
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+
+    async with await _client(store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/image/mask.ome.tif",
+            params={"row": 0, "col": "mask"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.content == b"II*\x00fake-ome-tiff"
+    assert resp.headers["content-type"].startswith("image/tiff")
+    assert resp.headers["content-disposition"].startswith("inline")
+
+
 async def test_node_image_endpoint_resolves_workflow_storage_path(tmp_path: Path) -> None:
     image = tmp_path / "mask.tif"
     image.write_bytes(b"tiff")
