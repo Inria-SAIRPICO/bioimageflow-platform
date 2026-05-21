@@ -40,7 +40,7 @@ class TestWorkflowCreate:
         assert wf.description == "A pipeline for cell segmentation"
         assert wf.storage_path == "/data/workflows/seg"
 
-    @pytest.mark.parametrize("name", ["-bad", "My Workflow!", ""])
+    @pytest.mark.parametrize("name", ["-bad", "My Workflow!", "bad/ name", "bad/name ", ""])
     def test_invalid_name_rejected(self, name: str):
         with pytest.raises(ValidationError):
             WorkflowCreate(name=name)
@@ -52,6 +52,10 @@ class TestWorkflowCreate:
     def test_valid_name_accepts_workspace_relative_folder(self):
         wf = WorkflowCreate(name="segmentation/nuclei")
         assert wf.name == "segmentation/nuclei"
+
+    def test_valid_name_accepts_spaces_inside_folder_segments(self):
+        wf = WorkflowCreate(name="My Project/Quality Control/nuclei")
+        assert wf.name == "My Project/Quality Control/nuclei"
 
     @pytest.mark.parametrize("name", ["../bad", "/bad", "bad//name", "bad/../name"])
     def test_path_traversal_rejected(self, name: str):

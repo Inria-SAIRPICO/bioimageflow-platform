@@ -83,9 +83,12 @@ workspace/
 Desktop users can change the workspace path in Settings with a folder picker.
 Webapp users see a read-only workspace path; the admin configures the
 workspaces root server-side. The Workflows panel renders folders and workflow
-rows, supports create/rename/delete-empty folder actions, and uses drag/drop for
-moving workflows between folders. Dragging a workflow onto the canvas remains
-the sub-workflow creation gesture.
+rows, supports folder names with spaces, create/rename/delete folder actions,
+and uses drag/drop for moving workflows and folder subtrees between folders.
+Creating a workflow from a selected folder adds it to that folder. Dragging a
+workflow onto the canvas remains the sub-workflow creation gesture. Legacy
+`*.json` and `*.workflow.json` workflow files are migrated by the backend and
+remain visible in the tree.
 
 The Tools panel opens source through the editor API that keeps VS Code or
 code-server rooted at the workspace project and focuses the selected tool file.

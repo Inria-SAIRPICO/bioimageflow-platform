@@ -24,6 +24,7 @@ vi.mock('@/composables/useAutoSave', () => ({
 
 import { api } from '@/api/client'
 import { useWorkflowStore } from '../workflow'
+import type { WorkflowInfo } from '@/api/types'
 
 describe('workflow store', () => {
   beforeEach(() => {
@@ -31,6 +32,7 @@ describe('workflow store', () => {
     vi.mocked(api.get).mockReset()
     vi.mocked(api.patch).mockReset()
     vi.mocked(api.post).mockReset()
+    vi.mocked(api.put).mockReset()
     vi.mocked(api.delete).mockReset()
     Object.defineProperty(window.URL, 'createObjectURL', {
       configurable: true,
@@ -316,6 +318,112 @@ describe('workflow store', () => {
       'beta',
       'alpha',
     ])
+  })
+
+  it('keeps returned workflow ids when moving a workflow into a folder with spaces', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        path: 'Analysis Results',
+        display_name: 'Analysis Results',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        id: 'Analysis Results/beta',
+        name: 'beta',
+        folder: 'Analysis Results',
+        display_name: 'Beta',
+        path: '/tmp/Analysis Results/beta/workflow.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    })
+    const store = useWorkflowStore()
+    store.workflows = [
+      {
+        id: 'beta',
+        name: 'beta',
+        display_name: 'Beta',
+        path: '/tmp/beta/workflow.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    ]
+
+    const folder = await store.createWorkflowFolder('Analysis Results')
+    await store.moveWorkflowToFolder('beta', folder.id)
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/workflows/folders', {
+      path: 'Analysis Results',
+    })
+    expect(api.patch).toHaveBeenCalledWith(
+      '/api/v1/workflows/beta',
+      { action: 'update', folder: 'Analysis Results' },
+    )
+    expect(store.workflowFolderIds).toEqual({
+      'Analysis Results/beta': 'Analysis Results',
+    })
+    expect(store.flattenedWorkflows.map((workflow) => (
+      (workflow as WorkflowInfo & { id?: string }).id || workflow.name
+    ))).toEqual(['Analysis Results/beta'])
+  })
+
+  it('updates the active workflow identity when moving it into a folder', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        path: 'Analysis Results',
+        display_name: 'Analysis Results',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        id: 'Analysis Results/beta',
+        name: 'beta',
+        folder: 'Analysis Results',
+        display_name: 'Beta',
+        path: '/tmp/Analysis Results/beta/workflow.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    })
+    vi.mocked(api.put).mockResolvedValueOnce({
+      data: {
+        id: 'Analysis Results/beta',
+        name: 'beta',
+        folder: 'Analysis Results',
+        display_name: 'Beta',
+        path: '/tmp/Analysis Results/beta/workflow.json',
+        last_modified: '2026-04-30T12:01:00Z',
+      },
+    })
+    const store = useWorkflowStore()
+    const workflow: WorkflowInfo = {
+      id: 'beta',
+      name: 'beta',
+      display_name: 'Beta',
+      path: '/tmp/beta/workflow.json',
+      last_modified: '2026-04-30T12:00:00Z',
+    }
+    store.workflows = [workflow]
+    store.current = workflow
+
+    const folder = await store.createWorkflowFolder('Analysis Results')
+    await store.moveWorkflowToFolder('beta', folder.id)
+    await store.saveWorkflow({ nodes: [], edges: [] })
+
+    expect(store.currentName).toBe('Analysis Results/beta')
+    expect(autoSaveMocks.renameWorkflow).toHaveBeenCalledWith(
+      'beta',
+      'Analysis Results/beta',
+    )
+    expect(autoSaveMocks.setLastOpenedWorkflow).toHaveBeenCalledWith(
+      'Analysis Results/beta',
+    )
+    expect(api.put).toHaveBeenCalledWith(
+      '/api/v1/workflows/Analysis%20Results/beta',
+      { graph: { nodes: [], edges: [] } },
+    )
   })
 
   it('renames and deletes workflow folders without deleting workflows', async () => {

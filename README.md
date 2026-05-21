@@ -36,12 +36,16 @@ workspace/
 ```
 
 Workflow ids are paths relative to `workspace/workflows/`, such as
-`segmentation/nuclei`. Each workflow is stored as
+`segmentation/nuclei` or `My Project/quality_control`. Folder path segments can
+contain spaces. Each workflow is stored as
 `workspace/workflows/<id>/workflow.json`. The Workflows panel shows a PrimeVue
 folder tree where users can create, rename, delete, and drag folders or
 workflows. Deleting a non-empty folder asks whether to delete children, move
-them up, or cancel. Tool source opening keeps VS Code/code-server rooted at the
-workspace project and focuses the selected tool file.
+them up, or cancel. Creating a workflow while a folder is selected places it in
+that folder. Legacy `*.json` and `*.workflow.json` workflow files are migrated
+into the folder tree when listed or opened. Tool source opening keeps VS Code
+or code-server rooted at the workspace project and focuses the selected tool
+file.
 
 ## Prerequisites
 

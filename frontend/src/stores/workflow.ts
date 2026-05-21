@@ -117,6 +117,10 @@ function folderLeafName(path: string): string {
   return index === -1 ? path : path.slice(index + 1)
 }
 
+function workflowFullId(workflow: WorkflowInfo): string {
+  return workflowId(workflow)
+}
+
 function workflowUrl(id: string): string {
   return id.split('/').map(encodeURIComponent).join('/')
 }
@@ -620,12 +624,22 @@ export const useWorkflowStore = defineStore('workflow', () => {
       throw new Error('Folder does not exist')
     }
     const previousFolderId = workflowFolderId(name)
+    const previousName = name
+    const wasCurrent = currentName.value === previousName
     if (previousFolderId !== folderId) {
       const { data } = await api.patch<WorkflowInfo>(
         `/api/v1/workflows/${workflowUrl(name)}`,
         { action: 'update', folder: folderId ?? '' },
       )
       upsertWorkflow(data, name)
+      name = workflowFullId(data)
+      if (name !== previousName) {
+        await autoSave.renameWorkflow(previousName, name)
+      }
+      if (wasCurrent) {
+        setCurrent(data)
+        await autoSave.setLastOpenedWorkflow(name)
+      }
     }
     workflowFolderIds.value = {
       ...workflowFolderIds.value,
@@ -654,12 +668,22 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     const folderId = workflowFolderId(beforeName)
     const previousFolderId = workflowFolderId(name)
+    const previousName = name
+    const wasCurrent = currentName.value === previousName
     if (previousFolderId !== folderId) {
       const { data } = await api.patch<WorkflowInfo>(
         `/api/v1/workflows/${workflowUrl(name)}`,
         { action: 'update', folder: folderId ?? '' },
       )
       upsertWorkflow(data, name)
+      name = workflowFullId(data)
+      if (name !== previousName) {
+        await autoSave.renameWorkflow(previousName, name)
+      }
+      if (wasCurrent) {
+        setCurrent(data)
+        await autoSave.setLastOpenedWorkflow(name)
+      }
     }
     workflowFolderIds.value = {
       ...workflowFolderIds.value,

@@ -52,6 +52,12 @@ returns these resolved roots plus read-only/admin-managed flags. In webapp mode
 `PATCH /api/v1/workspace` returns 403 for ordinary users; only deployment/admin
 configuration changes `workspaces_root`.
 
+Workflow and folder path segments may contain spaces; they remain ordinary
+workspace-relative path segments and cannot be empty, absolute, or traversal
+segments. The server must discover and migrate legacy `*.json` and
+`*.workflow.json` workflow files under each user's workspace so upgrading the
+workspace tree layout does not hide existing workflows.
+
 ### 1.3 Mode Detection
 
 The frontend reads `deployment_mode` from `GET /api/v1/settings` at startup and stores it in Pinia. All mode-conditional UI behavior (button visibility, viewer selection, path selection mechanism) branches on this value. The mode cannot be changed at runtime.

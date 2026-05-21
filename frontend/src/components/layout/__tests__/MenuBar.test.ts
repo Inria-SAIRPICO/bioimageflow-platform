@@ -197,6 +197,41 @@ describe('MenuBar', () => {
       expect(exportWorkflow).toHaveBeenCalledWith('cell_segmentation')
     })
 
+    it('creates a workflow under the folder selected in the workflows panel', async () => {
+      apiMocks.post.mockResolvedValueOnce({
+        data: {
+          id: 'Analysis Results/nuclei',
+          name: 'nuclei',
+          folder: 'Analysis Results',
+          display_name: 'Nuclei',
+          path: '/tmp/Analysis Results/nuclei/workflow.json',
+          last_modified: '2026-05-21T10:00:00Z',
+        },
+      })
+      const wrapper = mountMenuBar()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'new', folderId: 'Analysis Results' },
+      }))
+      await flushPromises()
+      const input = document.body.querySelector(
+        '[data-testid="workflow-display-name-input"]',
+      ) as HTMLInputElement
+      input.value = 'Nuclei'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      const submit = document.body.querySelector(
+        '[data-testid="workflow-dialog-submit"]',
+      ) as HTMLButtonElement
+      submit.click()
+      await flushPromises()
+
+      expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/workflows', {
+        name: 'Analysis Results/nuclei',
+        display_name: 'Nuclei',
+        description: null,
+      })
+    })
+
     it('shows the import rename dialog when upload returns a conflict', async () => {
       apiMocks.post.mockRejectedValueOnce(new AxiosError(
         'conflict',

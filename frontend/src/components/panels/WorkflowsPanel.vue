@@ -10,7 +10,7 @@ import type { WorkflowFolderDeletePolicy, WorkflowTreeNode } from '@/stores/work
 import type { TreeNode } from 'primevue/treenode'
 
 const emit = defineEmits<{
-  'new-workflow': []
+  'new-workflow': [folderId: string | null]
   'save-workflow': []
   'duplicate-workflow': [name: string]
   'import-workflow': []
@@ -43,6 +43,7 @@ export type WorkflowPrimeTreeNode = {
 const workflowStore = useWorkflowStore()
 const searchQuery = ref('')
 const selectedName = ref<string | null>(workflowStore.currentName)
+const selectedFolderId = ref<string | null>(null)
 const selectedKeys = ref<Record<string, boolean>>({})
 const expandedKeys = ref<Record<string, boolean>>({})
 
@@ -72,9 +73,13 @@ function folderLeafName(path: string): string {
   return index === -1 ? path : path.slice(index + 1)
 }
 
-function dispatchWorkflowCommand(action: WorkflowPanelCommand, name?: string): void {
+function dispatchWorkflowCommand(
+  action: WorkflowPanelCommand,
+  name?: string,
+  folderId?: string | null,
+): void {
   window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
-    detail: { action, name },
+    detail: { action, name, folderId },
   }))
 }
 
@@ -157,7 +162,13 @@ watch(
 watch(
   () => selectedName.value,
   (name) => {
-    selectedKeys.value = name ? { [nodeKey(`workflow:${name}`)]: true } : {}
+    if (name) {
+      selectedKeys.value = { [nodeKey(`workflow:${name}`)]: true }
+    } else if (selectedFolderId.value) {
+      selectedKeys.value = { [nodeKey(`folder:${selectedFolderId.value}`)]: true }
+    } else {
+      selectedKeys.value = {}
+    }
   },
   { immediate: true },
 )
@@ -210,7 +221,23 @@ function formatModifiedTime(value: string): string {
 
 function selectWorkflow(name: string): void {
   selectedName.value = name
+  const workflow = workflowStore.flattenedWorkflows.find((item) => workflowId(item) === name)
+  selectedFolderId.value = (
+    (workflow as (WorkflowInfo & { folder?: string }) | undefined)?.folder
+    || null
+  )
   emit('select-workflow', name)
+}
+
+function selectFolder(id: string): void {
+  selectedName.value = null
+  selectedFolderId.value = id
+  selectedKeys.value = { [nodeKey(`folder:${id}`)]: true }
+}
+
+function createWorkflowInSelectedFolder(): void {
+  emit('new-workflow', selectedFolderId.value)
+  dispatchWorkflowCommand('new', undefined, selectedFolderId.value)
 }
 
 function openWorkflow(name = selectedName.value): void {
@@ -235,8 +262,11 @@ function emitSelected(action: 'duplicate-workflow' | 'export-workflow' | 'delete
 
 function onNodeSelect(node: TreeNode): void {
   const data = node.data as WorkflowNodeData | undefined
-  if (data?.type !== 'workflow') return
-  selectWorkflow(data.id)
+  if (data?.type === 'workflow') {
+    selectWorkflow(data.id)
+  } else if (data?.type === 'folder') {
+    selectFolder(data.id)
+  }
 }
 
 function openCreateFolderDialog(parentId: string | null = null): void {
@@ -300,6 +330,8 @@ function onFolderDragStart(event: DragEvent, id: string): void {
 }
 
 async function dropOnFolder(event: DragEvent, targetFolderId: string): Promise<void> {
+  event.preventDefault()
+  event.stopPropagation()
   const workflowName = workflowNameFromDrop(event)
   const folderName = folderNameFromDrop(event)
   await runPanelAction(async () => {
@@ -309,6 +341,7 @@ async function dropOnFolder(event: DragEvent, targetFolderId: string): Promise<v
 }
 
 async function dropOnRoot(event: DragEvent): Promise<void> {
+  event.preventDefault()
   const workflowName = workflowNameFromDrop(event)
   const folderName = folderNameFromDrop(event)
   await runPanelAction(async () => {
@@ -329,6 +362,7 @@ defineExpose({
   selectedWorkflow,
   formatModifiedTime,
   selectWorkflow,
+  selectFolder,
   openWorkflow,
   onWorkflowDragStart,
   onFolderDragStart,
@@ -353,7 +387,7 @@ defineExpose({
         aria-label="New workflow"
         title="New workflow"
         data-testid="workflow-new-btn"
-        @click="emit('new-workflow'); dispatchWorkflowCommand('new')"
+        @click="createWorkflowInSelectedFolder"
       />
       <Button
         icon="pi pi-save"
@@ -371,7 +405,7 @@ defineExpose({
         aria-label="New folder"
         title="New folder"
         data-testid="workflow-new-folder-btn"
-        @click="openCreateFolderDialog()"
+        @click="openCreateFolderDialog(selectedFolderId)"
       />
       <Button
         icon="pi pi-copy"

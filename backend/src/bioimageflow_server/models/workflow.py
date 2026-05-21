@@ -11,12 +11,16 @@ from pydantic import BaseModel, Field, field_validator
 from bioimageflow_server.models.graph import GraphState
 
 
-_WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+_WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9 _-]*$")
 
 
 def validate_workflow_id(value: str) -> str:
     """Validate a workspace-relative workflow or folder path."""
-    normalized = value.strip().replace("\\", "/").strip("/")
+    if value != value.strip():
+        raise ValueError(
+            "Workflow path must not have leading or trailing whitespace"
+        )
+    normalized = value.replace("\\", "/").strip("/")
     raw_segments = normalized.split("/")
     segments = [segment for segment in raw_segments if segment]
     if (
@@ -29,10 +33,14 @@ def validate_workflow_id(value: str) -> str:
             "Workflow path must be a workspace-relative path of safe names"
         )
     for segment in segments:
+        if segment != segment.strip():
+            raise ValueError(
+                "Workflow path segments must not have leading or trailing whitespace"
+            )
         if not _WORKFLOW_NAME_RE.fullmatch(segment):
             raise ValueError(
                 "Workflow name must start with an alphanumeric character "
-                "and contain only letters, numbers, underscores, or hyphens"
+                "and contain only letters, numbers, spaces, underscores, or hyphens"
             )
     return "/".join(segments)
 

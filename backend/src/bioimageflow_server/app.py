@@ -165,6 +165,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         or Settings(deployment_mode=_deployment_mode)
     )
 
+    def _live_settings() -> Settings:
+        if config.settings_store is not None:
+            return config.settings_store.get()
+        return resolved_settings
+
     # Always provide a ConnectionManager in the default app. Production launch
     # paths use create_app() directly, so leaving this optional silently drops
     # progress / node_state / execution_complete events.
@@ -200,15 +205,57 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         tool_registry=registry,
     )
     workflow_root = config.workflow_root or workspace_path / "workflows"
+    workflow_storage_base = resolved_storage_path / "workflows"
     workflow_store = config.workflow_store or WorkflowStoreService(
         root_dir=workflow_root,
         tool_registry=registry,
-        storage_base_dir=resolved_storage_path / "workflows",
+        storage_base_dir=workflow_storage_base,
     )
-    for workflow_info in workflow_store.list_workflows():
-        custom_tools_root = workflow_store.workflow_tools_dir(workflow_info.id)
-        if custom_tools_root.exists():
-            registry.register_custom_tools_directory(custom_tools_root)
+    workflow_store_cache: dict[tuple[str, str], WorkflowStoreService] = {
+        (str(workflow_root), str(workflow_storage_base)): workflow_store
+    }
+
+    def _register_workflow_custom_tools(store: WorkflowStoreService) -> None:
+        for workflow_info in store.list_workflows():
+            custom_tools_root = store.workflow_tools_dir(workflow_info.id)
+            if custom_tools_root.exists():
+                registry.register_custom_tools_directory(custom_tools_root)
+
+    def _current_workspace_service() -> WorkspaceService:
+        workspace_service.settings = _live_settings()
+        return workspace_service
+
+    def _current_workflow_root() -> Path:
+        current_workspace = _current_workspace_service().workspace_path()
+        return config.workflow_root or current_workspace / "workflows"
+
+    def _current_workflow_storage_base() -> Path:
+        live_storage_path = normalize_workflow_storage_path(
+            config.storage_path or Path(_live_settings().output_data_folder)
+        )
+        assert live_storage_path is not None
+        return live_storage_path / "workflows"
+
+    def _current_workflow_store() -> WorkflowStoreService:
+        if config.workflow_store is not None:
+            return workflow_store
+        current_root = _current_workflow_root()
+        current_storage_base = _current_workflow_storage_base()
+        cache_key = (str(current_root), str(current_storage_base))
+        cached = workflow_store_cache.get(cache_key)
+        if cached is None:
+            cached = WorkflowStoreService(
+                root_dir=current_root,
+                tool_registry=registry,
+                storage_base_dir=current_storage_base,
+            )
+            workflow_store_cache[cache_key] = cached
+            _register_workflow_custom_tools(cached)
+            if hot_reload is not None:
+                hot_reload.add_watch_root(current_root)
+        return cached
+
+    _register_workflow_custom_tools(workflow_store)
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
         cache_dir=resolved_storage_path / ".thumbnails",
         env_path=resolved_settings.thumbnail_env_path,
@@ -256,11 +303,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         napari_env_path=resolved_settings.napari_env_path,
         connection_manager=ws_manager,
     )
-
-    def _live_settings() -> Settings:
-        if config.settings_store is not None:
-            return config.settings_store.get()
-        return resolved_settings
 
     editor_service = config.editor_service or EditorService(
         settings_provider=_live_settings,
@@ -437,15 +479,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
-    app.dependency_overrides[graph_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[graph_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
     app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
-    app.dependency_overrides[execution_get_workflow_store] = lambda: workflow_store
-    app.dependency_overrides[workflows_get_workflow_store] = lambda: workflow_store
-    app.dependency_overrides[get_workspace_service] = lambda: workspace_service
-    app.dependency_overrides[tools_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[execution_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[get_workspace_service] = _current_workspace_service
+    app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
 
     def _live_dev_mode() -> bool:
@@ -458,9 +500,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_editor_service] = lambda: editor_service
     app.dependency_overrides[get_result_store] = lambda: result_store
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
-    app.dependency_overrides[nodes_get_workflow_store] = lambda: workflow_store
+    app.dependency_overrides[nodes_get_workflow_store] = _current_workflow_store
 
-    app.dependency_overrides[get_workflow_root] = lambda: workflow_root
+    app.dependency_overrides[get_workflow_root] = _current_workflow_root
 
     app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
     app.dependency_overrides[get_unsafe_webapp_features_enabled] = (

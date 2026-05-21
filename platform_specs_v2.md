@@ -29,6 +29,14 @@ Saved workflows can be dragged from the Workflows panel onto the canvas by
 using the row's drag handle. Dropping a workflow creates a SubWorkflowNode; the
 dragged workflow becomes the sub-workflow's internal DAG.
 
+The Workflows panel uses the v1 workspace tree semantics: folder and workflow
+ids are slash-separated workspace-relative paths whose individual segments may
+contain spaces, underscores, and hyphens. Creating a workflow while a folder is
+selected places the new workflow in that folder. Dragging workflows or folders
+onto a folder moves the corresponding workflow or full folder subtree. Legacy
+`*.json` and `*.workflow.json` workflow files remain discoverable and are
+migrated into `<workflow>/workflow.json` when listed or opened.
+
 The platform asks the BioImageFlow library to build and validate the
 sub-workflow. Recursive containment is rejected by the library validation layer;
 the platform surfaces that validation error in the GUI. A workflow cannot

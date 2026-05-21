@@ -153,6 +153,29 @@ def test_workflow_folders_create_delete_and_rename(store: WorkflowStoreService) 
     assert not (store.root_dir / "analysis" / "intensity").exists()
 
 
+def test_workflow_folders_accept_spaces_and_move_children(
+    store: WorkflowStoreService,
+) -> None:
+    folder = store.create_folder("My Project/Quality Control")
+    assert folder.path == "My Project/Quality Control"
+    assert (store.root_dir / "My Project" / "Quality Control").is_dir()
+
+    store.create_workflow(
+        WorkflowCreate(name="My Project/Quality Control/nuclei", display_name="Nuclei")
+    )
+    store.create_folder("Archive 2026")
+
+    moved = store.rename_folder(
+        "My Project/Quality Control",
+        "Archive 2026/Quality Control",
+    )
+
+    assert moved.path == "Archive 2026/Quality Control"
+    workflow = store.get_workflow("Archive 2026/Quality Control/nuclei").info
+    assert workflow.id == "Archive 2026/Quality Control/nuclei"
+    assert workflow.folder == "Archive 2026/Quality Control"
+
+
 def test_delete_non_empty_folder_rejected(store: WorkflowStoreService) -> None:
     store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
 
@@ -296,6 +319,20 @@ def test_move_workflow_between_folders(store: WorkflowStoreService) -> None:
     assert not (store.root_dir / "segmentation" / "nuclei").exists()
 
 
+def test_move_workflow_to_folder_with_spaces(store: WorkflowStoreService) -> None:
+    store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
+    store.create_folder("Analysis Results")
+
+    moved = store.patch_workflow(
+        "segmentation/nuclei",
+        WorkflowUpdate(action="update", folder="Analysis Results"),
+    )
+
+    assert moved.id == "Analysis Results/nuclei"
+    assert moved.folder == "Analysis Results"
+    assert (store.root_dir / "Analysis Results" / "nuclei" / "workflow.json").exists()
+
+
 def test_get_storage_path_reads_metadata_directly(store: WorkflowStoreService) -> None:
     info = store.create_workflow(WorkflowCreate(name="wf"))
 
@@ -375,6 +412,130 @@ def test_legacy_file_reports_missing_packages_and_tools(
     assert workflow.missing_packages[0].required_version == "9.9.9"
     assert workflow.missing_tools[0].node_id == "n1"
     assert workflow.missing_tools[0].tool_name == "RemovedTool"
+
+
+def test_legacy_workflow_extension_files_are_listed_and_migrated(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {"nodes": [], "edges": []},
+        "workflow": {"nodes": [], "edges": []},
+        "gui": {"nodes": {}},
+        "metadata": {"display_name": "Legacy Workflow"},
+    }
+    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    listed = store.list_workflows()
+
+    assert [workflow.id for workflow in listed] == ["Analysis Results/nuclei"]
+    assert listed[0].folder == "Analysis Results"
+    assert not legacy_path.exists()
+    assert (store.root_dir / "Analysis Results" / "nuclei" / "workflow.json").exists()
+    assert (store.root_dir / "Analysis Results" / "nuclei" / "tools").is_dir()
+
+
+def test_rename_folder_migrates_legacy_workflow_children_and_storage(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {"nodes": [], "edges": []},
+        "workflow": {"nodes": [], "edges": []},
+        "gui": {"nodes": {}},
+        "metadata": {
+            "display_name": "Legacy Workflow",
+            "storage_path": str(store.storage_base_dir / "Analysis Results" / "nuclei"),
+        },
+    }
+    storage_path = store.storage_base_dir / "Analysis Results" / "nuclei"
+    storage_path.mkdir(parents=True)
+    (storage_path / "result.txt").write_text("ok")
+    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store.rename_folder("Analysis Results", "Archive 2026")
+
+    workflow = store.get_workflow("Archive 2026/nuclei").info
+    assert workflow.id == "Archive 2026/nuclei"
+    assert Path(workflow.storage_path) == store.storage_base_dir / "Archive 2026" / "nuclei"
+    assert (Path(workflow.storage_path) / "result.txt").read_text() == "ok"
+    assert not legacy_path.exists()
+    assert not storage_path.exists()
+
+
+def test_delete_folder_delete_children_removes_legacy_workflow_storage(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {"nodes": [], "edges": []},
+        "workflow": {"nodes": [], "edges": []},
+        "gui": {"nodes": {}},
+        "metadata": {
+            "display_name": "Legacy Workflow",
+            "storage_path": str(store.storage_base_dir / "Analysis Results" / "nuclei"),
+        },
+    }
+    storage_path = store.storage_base_dir / "Analysis Results" / "nuclei"
+    storage_path.mkdir(parents=True)
+    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store.delete_folder("Analysis Results", "delete_children")
+
+    assert not storage_path.exists()
+    assert not (store.root_dir / "Analysis Results").exists()
+
+
+def test_delete_folder_move_children_up_promotes_legacy_workflows(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {"nodes": [], "edges": []},
+        "workflow": {"nodes": [], "edges": []},
+        "gui": {"nodes": {}},
+        "metadata": {
+            "display_name": "Legacy Workflow",
+            "storage_path": str(store.storage_base_dir / "Analysis Results" / "nuclei"),
+        },
+    }
+    storage_path = store.storage_base_dir / "Analysis Results" / "nuclei"
+    storage_path.mkdir(parents=True)
+    (storage_path / "result.txt").write_text("ok")
+    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store.delete_folder("Analysis Results", "move_children_up")
+
+    workflow = store.get_workflow("nuclei").info
+    assert workflow.id == "nuclei"
+    assert Path(workflow.storage_path) == store.storage_base_dir / "nuclei"
+    assert (Path(workflow.storage_path) / "result.txt").read_text() == "ok"
+    assert not legacy_path.exists()
+    assert not storage_path.exists()
+
+
+def test_nested_legacy_json_files_are_listed_and_migrated(
+    store: WorkflowStoreService,
+) -> None:
+    raw = {
+        "graph": {"nodes": [], "edges": []},
+        "workflow": {"nodes": [], "edges": []},
+        "gui": {"nodes": {}},
+        "metadata": {"display_name": "Nested Legacy"},
+    }
+    legacy_path = store.root_dir / "segmentation" / "nuclei.json"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+
+    workflow = store.get_workflow("segmentation/nuclei")
+
+    assert workflow.info.id == "segmentation/nuclei"
+    assert not legacy_path.exists()
+    assert (store.root_dir / "segmentation" / "nuclei" / "workflow.json").exists()
 
 
 def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -148,6 +149,36 @@ class TestPatchSettings:
         body = response.json()
         # ErrorResponse shape from app.py.
         assert "dev_mode cannot be disabled" in body["detail"]
+
+    async def test_patch_workspace_path_retargets_workflow_store(
+        self,
+        settings_client: httpx.AsyncClient,
+        tmp_path: Path,
+    ) -> None:
+        workspace = tmp_path / "new workspace"
+        workflows_root = workspace / "workflows"
+        workflows_root.mkdir(parents=True)
+        (workflows_root / "legacy.json").write_text(
+            json.dumps({
+                "graph": {"nodes": [], "edges": []},
+                "workflow": {"nodes": [], "edges": []},
+                "gui": {"nodes": {}},
+                "metadata": {"display_name": "Legacy"},
+            }),
+            encoding="utf-8",
+        )
+
+        response = await settings_client.patch(
+            "/api/v1/settings",
+            json={"workspace_path": str(workspace)},
+        )
+        assert response.status_code == 200
+
+        workflows = await settings_client.get("/api/v1/workflows")
+
+        assert workflows.status_code == 200
+        assert [workflow["id"] for workflow in workflows.json()] == ["legacy"]
+        assert (workflows_root / "legacy" / "workflow.json").exists()
 
     async def test_patch_dev_mode_true_accepted(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch("/api/v1/settings", json={"dev_mode": True})

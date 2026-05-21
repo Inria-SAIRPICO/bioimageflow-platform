@@ -338,7 +338,7 @@ async def test_patch_invalid_explicit_new_name_returns_400(
 
     response = await client.patch(
         "/api/v1/workflows/wf",
-        json={"action": "update", "new_name": "bad name"},
+        json={"action": "update", "new_name": "bad name!"},
     )
 
     assert response.status_code == 400

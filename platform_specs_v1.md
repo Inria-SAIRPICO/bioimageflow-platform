@@ -329,7 +329,9 @@ workflow is a directory that contains `workflow.json` and optional workflow-loca
 files such as `tools/`. Workflow identifiers are slash-separated paths relative
 to `workspace/workflows/`, for example `segmentation/nuclei`. `name` remains in
 the wire model as a compatibility alias for the leaf slug, but new APIs and
-frontend state use `id`.
+frontend state use `id`. Each folder or workflow path segment may contain
+letters, numbers, spaces, underscores, and hyphens. Empty segments, path
+traversal, and leading/trailing whitespace are rejected.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -1262,7 +1264,10 @@ directory can contain workflow-local files, but these directories are not shown
 as user folders in the Workflows panel.
 
 Existing legacy layouts are supported for migration: `workflows/{name}.json`
-imports as `workspace/workflows/{name}/workflow.json`.
+and `workflows/{name}.workflow.json`, including nested folder paths, import as
+`workspace/workflows/{name}/workflow.json`. Listing or opening workflows
+performs the migration so existing user workflows do not disappear after the
+workspace tree layout change.
 
 **Panel layout:**
 
@@ -1290,7 +1295,8 @@ movement.
 - **New workflow:** Opens a creation dialog with fields: display name
   (free-form), folder, id/slug (auto-generated from display name, editable, with
   slash-separated safe path segments), and description (optional, multiline). On
-  id conflict, the server suggests an alternative.
+  id conflict, the server suggests an alternative. When a folder is selected in
+  the tree, the dialog creates the workflow inside that folder by default.
 - **New folder:** Creates a folder under the selected folder or the tree root.
 - **Open workflow:** Opens the selected saved workflow. Opening a new workflow closes the current one (with save prompt).
 - **Edit workflow:** Each workflow has an **Edit** action to modify display

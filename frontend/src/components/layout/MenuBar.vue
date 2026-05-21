@@ -57,6 +57,7 @@ const workflowDialogInitialName = ref('')
 const workflowDialogInitialDisplayName = ref('')
 const workflowDialogSuggestedName = ref<string | null>(null)
 const createIntent = ref<'new-empty' | 'save-current'>('new-empty')
+const workflowDialogFolderId = ref<string | null>(null)
 const openDialogVisible = ref(false)
 const deleteDialogVisible = ref(false)
 const discardDialogVisible = ref(false)
@@ -100,6 +101,7 @@ const themeMenuItems = computed<MenuItem[]>(() => (
 type WorkflowPanelCommand = {
   action?: 'new' | 'save' | 'duplicate' | 'import' | 'export' | 'delete' | 'open'
   name?: string
+  folderId?: string | null
 }
 
 function panelToggle(label: string, panelKey: keyof typeof uiStore.panels): MenuItem {
@@ -159,9 +161,15 @@ async function confirmDiscard(): Promise<void> {
   }
 }
 
-function createNewWorkflow(): void {
+function workflowNameInDialogFolder(name: string): string {
+  if (!workflowDialogFolderId.value || name.includes('/')) return name
+  return `${workflowDialogFolderId.value}/${name}`
+}
+
+function createNewWorkflow(folderId: string | null = null): void {
   runAfterDiscard(() => {
     createIntent.value = 'new-empty'
+    workflowDialogFolderId.value = folderId
     workflowDialogMode.value = 'new'
     workflowDialogInitialName.value = 'Untitled'
     workflowDialogInitialDisplayName.value = 'Untitled'
@@ -177,9 +185,13 @@ async function onWorkflowDialogSubmit(payload: {
 }): Promise<void> {
   try {
     if (workflowDialogMode.value === 'new') {
-      await workflowStore.createWorkflow(payload)
+      await workflowStore.createWorkflow({
+        ...payload,
+        name: workflowNameInDialogFolder(payload.name),
+      })
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
+      workflowDialogFolderId.value = null
       if (createIntent.value === 'save-current') {
         await workflowStore.saveWorkflow(currentGraph.value)
       } else {
@@ -201,6 +213,7 @@ async function onWorkflowDialogSubmit(payload: {
     await workflowStore.saveWorkflow(currentGraph.value)
     workflowDialogVisible.value = false
     workflowDialogSuggestedName.value = null
+    workflowDialogFolderId.value = null
   } catch (err: unknown) {
     if (err instanceof WorkflowConflictError && err.suggestedName) {
       workflowDialogSuggestedName.value = err.suggestedName
@@ -240,6 +253,7 @@ async function onOpenWorkflow(name: string): Promise<void> {
 async function saveWorkflow(): Promise<void> {
   if (!workflowStore.currentName) {
     createIntent.value = 'save-current'
+    workflowDialogFolderId.value = null
     workflowDialogMode.value = 'new'
     workflowDialogInitialName.value = 'Untitled'
     workflowDialogInitialDisplayName.value = 'Untitled'
@@ -350,6 +364,7 @@ async function rebindImportedDependencies(): Promise<void> {
 }
 
 function saveWorkflowAs(): void {
+  workflowDialogFolderId.value = null
   workflowDialogMode.value = 'save-as'
   const baseName = workflowStore.currentName ?? 'Untitled'
   workflowDialogInitialName.value = `${baseName}_copy`
@@ -491,7 +506,7 @@ function onWorkflowPanelCommand(event: Event): void {
   const action = detail?.action
   if (!action) return
   if (action === 'new') {
-    createNewWorkflow()
+    createNewWorkflow(detail.folderId ?? null)
   } else if (action === 'save') {
     void saveWorkflow()
   } else if (action === 'import') {
@@ -523,7 +538,7 @@ const menuItems = computed<MenuItem[]>(() => [
   {
     label: 'Workflow',
     items: [
-      { label: 'New', icon: 'pi pi-plus', disabled: executionStore.isRunning, command: createNewWorkflow },
+      { label: 'New', icon: 'pi pi-plus', disabled: executionStore.isRunning, command: () => createNewWorkflow() },
       { label: 'Open', icon: 'pi pi-folder-open', disabled: executionStore.isRunning, command: openWorkflow },
       { label: 'Save', icon: 'pi pi-save', disabled: executionStore.isRunning, command: saveWorkflow },
       { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isRunning, command: saveWorkflowAs },

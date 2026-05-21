@@ -161,6 +161,38 @@ describe('WorkflowsPanel', () => {
     dispatchSpy.mockRestore()
   })
 
+  it('dispatches new workflow with the selected folder context', async () => {
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    store.workflowFolders = [{
+      id: 'Analysis Results',
+      name: 'Analysis Results',
+      parentId: null,
+    }]
+    await flushPromises()
+
+    ;(wrapper.vm as any).onNodeSelect({
+      data: {
+        type: 'folder',
+        id: 'Analysis Results',
+        name: 'Analysis Results',
+        hasChildren: false,
+      },
+    } as any)
+    await wrapper.find('[data-testid="workflow-new-btn"]').trigger('click')
+
+    expect(wrapper.emitted('new-workflow')?.[0]).toEqual(['Analysis Results'])
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'bioimageflow:workflow-command',
+      detail: {
+        action: 'new',
+        folderId: 'Analysis Results',
+      },
+    }))
+    dispatchSpy.mockRestore()
+  })
+
   it('opens the selected workflow on double click, Enter, and Open', async () => {
     const wrapper = mountPanel()
 
