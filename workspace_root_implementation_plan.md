@@ -39,10 +39,13 @@ Each user has exactly one workspace directory:
 workspace/
   workflows/
     segmentation/
-      nuclei.workflow.json
+      nuclei/
+        workflow.json
       quantification/
-        intensity.workflow.json
-    demo.workflow.json
+        intensity/
+          workflow.json
+    demo/
+      workflow.json
   tools/
     my_custom_tool.py
     helpers/
@@ -58,7 +61,7 @@ Rules:
 - The user-visible workspace root is named `workspace`.
 - Workflow organization happens below `workspace/workflows/`.
 - Workflow identifiers become workspace-relative workflow paths, for example `segmentation/nuclei`.
-- Workflow JSON filenames use a stable suffix, for example `<slug>.workflow.json`.
+- Each workflow is a directory containing `workflow.json`.
 - Workflow-local custom tools move to workspace-local custom tools under `workspace/tools/`.
 - Runtime outputs default to `workspace/outputs/<workflow_id>/`, with workflow id separators sanitized when needed for filesystem safety.
 - Export archives remain portable and must not embed another machine's absolute workspace path.
@@ -85,7 +88,8 @@ class WorkflowFolderInfo(BaseModel):
     children: list[WorkflowFolderInfo | WorkflowInfo]
 ```
 
-Keep `name` for compatibility during migration, but move all new frontend state and new endpoints to `id`.
+Keep `name` as the workflow leaf name and use `id` for workspace-relative
+workflow paths in new frontend state and endpoints.
 
 Add endpoints:
 
@@ -100,7 +104,8 @@ Add endpoints:
 | `PATCH` | `/api/v1/workflows/{id}` | Update metadata, rename, duplicate, or move workflow. |
 | `POST` | `/api/v1/editor/open-tool` | Open workspace project and focus a tool file. Body: `{tool_name, workflow_id?}`. |
 
-Retain existing root-level workflow endpoints as compatibility wrappers until callers are migrated.
+Keep root-level workflow endpoints only where they operate on the clean
+workspace-relative workflow ids.
 
 ## Spec, README, Docs
 
@@ -124,7 +129,7 @@ rg -n 'Open(ing)? a tool.*folder|tool.*folder as the project|POST /editor/open.*
 rg -n 'output_data_folder|datasets_root.*configurable|workflow directory.*tools/' platform_specs_v1.md platform_specs_v3.md README.md backend/README.md frontend/README.md
 ```
 
-Deprecated storage language to remove or mark as legacy compatibility:
+Deprecated storage language to remove or mark as obsolete:
 
 - `workflow_root/tools`
 - `./workflows` as the user-facing default
@@ -210,7 +215,7 @@ TDD sequence:
    - move workflow between folders;
    - rename folder updates child workflow ids and paths;
    - delete non-empty folder returns conflict;
-   - legacy `root/<name>/workflow.json` migrates to `workspace/workflows/<name>.workflow.json`;
+   - stray JSON files under `workspace/workflows/` are ignored;
    - output paths resolve under `workspace/outputs/<workflow_id>/`.
 3. Implement path validation:
    - slash-separated safe segments only;
@@ -220,7 +225,7 @@ TDD sequence:
    - `workflows_root = workspace / "workflows"`;
    - `tools_root = workspace / "tools"`;
    - `outputs_root = workspace / "outputs"`;
-   - workflow JSON path `<workflows_root>/<folder>/<name>.workflow.json`;
+   - workflow JSON path `<workflows_root>/<folder>/<name>/workflow.json`;
    - atomic writes remain in the target folder.
 5. Update routers and compatibility wrappers.
 6. Update graph, execution, and node-result storage resolution to use workflow id and workspace output path.
@@ -310,7 +315,7 @@ Reviewer focus:
 
 - No path outside workspace is accepted as a project root in webapp mode.
 - Package source focus behavior does not expose arbitrary server paths in hosted deployments.
-- Custom tool migration preserves existing tools.
+- Workspace-owned custom tools remain under `workspace/tools/`.
 
 ## Integration Order
 
@@ -369,12 +374,13 @@ Manual smoke:
 5. Webapp: ordinary user sees read-only workspace path and cannot PATCH it.
 6. Webapp: user A cannot list/open/move/delete user B workflows.
 
-## Migration Rules
+## Clean Layout Rules
 
-- Existing `./workflows/<name>/workflow.json` imports as root-level `<name>.workflow.json` under the new workspace.
-- Existing `./workflows/<name>/tools/*.py` migrates to `workspace/tools/` if no collision exists.
-- On custom tool filename collision, suffix the migrated filename and update registry metadata.
-- Existing per-workflow `metadata.storage_path` is preserved for compatibility but no longer exposed as the primary organization control.
+- Existing stray workflow JSON files are not imported or migrated by the platform.
+- Workflow archives import through the BioImageFlow archive path and are stored as
+  workflow directories.
+- Explicit per-workflow `metadata.storage_path` can be preserved for exports, but
+  the workspace tree is the primary organization control.
 - New workflows default to workspace outputs.
 
 ## Commit And Merge Checklist

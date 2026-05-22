@@ -109,7 +109,7 @@ describe('workflow store', () => {
   })
 
   it('downloads exported workflows using the server filename', async () => {
-    const blob = new Blob(['{}'], { type: 'application/json' })
+    const blob = new Blob(['zip'], { type: 'application/zip' })
     const createObjectURL = vi
       .spyOn(window.URL, 'createObjectURL')
       .mockReturnValue('blob:workflow')
@@ -121,7 +121,7 @@ describe('workflow store', () => {
       .mockImplementation(() => {})
     vi.mocked(api.post).mockResolvedValueOnce({
       data: blob,
-      headers: { 'content-disposition': 'attachment; filename="wf.bioimageflow.json"' },
+      headers: { 'content-disposition': 'attachment; filename="wf.bioimageflow.zip"' },
     })
     const store = useWorkflowStore()
 
@@ -133,7 +133,7 @@ describe('workflow store', () => {
       { responseType: 'blob' },
     )
     expect(createObjectURL).toHaveBeenCalledWith(blob)
-    const anchor = document.querySelector('a[download="wf.bioimageflow.json"]')
+    const anchor = document.querySelector('a[download="wf.bioimageflow.zip"]')
     expect(anchor).toBeNull()
     expect(click).toHaveBeenCalled()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:workflow')
@@ -264,7 +264,9 @@ describe('workflow store', () => {
       },
     ))
     const store = useWorkflowStore()
-    const file = new File(['{}'], 'workflow.bioimageflow.json')
+    const file = new File(['zip'], 'workflow.bioimageflow.zip', {
+      type: 'application/zip',
+    })
 
     await expect(store.importWorkflow(file)).rejects.toMatchObject({
       name: 'WorkflowConflictError',
@@ -505,6 +507,83 @@ describe('workflow store', () => {
     expect(store.workflowFolders).toEqual([])
     expect(store.workflowFolderIds.alpha).toBeNull()
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual(['alpha'])
+  })
+
+  it('moves nested folders with spaces and remaps active workflow identity', async () => {
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        path: 'Archive 2026/Quality Control',
+        display_name: 'Quality Control',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        path: '',
+        display_name: 'workspace',
+        folders: [{
+          path: 'Archive 2026',
+          display_name: 'Archive 2026',
+          folders: [{
+            path: 'Archive 2026/Quality Control',
+            display_name: 'Quality Control',
+            folders: [],
+            workflows: [{
+              id: 'Archive 2026/Quality Control/beta',
+              name: 'beta',
+              folder: 'Archive 2026/Quality Control',
+              display_name: 'Beta',
+              path: '/tmp/Archive 2026/Quality Control/beta/workflow.json',
+              last_modified: '2026-04-30T12:00:00Z',
+            }],
+          }],
+          workflows: [],
+        }],
+        workflows: [],
+      },
+    })
+    const store = useWorkflowStore()
+    const workflow: WorkflowInfo = {
+      id: 'Analysis Results/Quality Control/beta',
+      name: 'beta',
+      folder: 'Analysis Results/Quality Control',
+      display_name: 'Beta',
+      path: '/tmp/Analysis Results/Quality Control/beta/workflow.json',
+      last_modified: '2026-04-30T12:00:00Z',
+    }
+    store.workflowFolders = [
+      { id: 'Analysis Results', name: 'Analysis Results', parentId: null },
+      {
+        id: 'Analysis Results/Quality Control',
+        name: 'Quality Control',
+        parentId: 'Analysis Results',
+      },
+      { id: 'Archive 2026', name: 'Archive 2026', parentId: null },
+    ]
+    store.workflows = [workflow]
+    store.workflowFolderIds = {
+      'Analysis Results/Quality Control/beta': 'Analysis Results/Quality Control',
+    }
+    store.workflowOrder = ['Analysis Results/Quality Control/beta']
+    store.current = workflow
+
+    await store.moveWorkflowFolder('Analysis Results/Quality Control', 'Archive 2026')
+
+    expect(api.patch).toHaveBeenCalledWith(
+      '/api/v1/workflows/folders/Analysis%20Results/Quality%20Control',
+      { new_path: 'Archive 2026/Quality Control' },
+    )
+    expect(autoSaveMocks.renameWorkflow).toHaveBeenCalledWith(
+      'Analysis Results/Quality Control/beta',
+      'Archive 2026/Quality Control/beta',
+    )
+    expect(store.currentName).toBe('Archive 2026/Quality Control/beta')
+    expect(store.workflowFolders).toContainEqual({
+      id: 'Archive 2026/Quality Control',
+      name: 'Quality Control',
+      parentId: 'Archive 2026',
+    })
   })
 
   it('moves workflow ids before another workflow id', async () => {

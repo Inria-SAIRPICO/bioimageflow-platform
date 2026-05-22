@@ -100,7 +100,7 @@ deployment config provides a workspaces root, and each authenticated user gets
 
 ```text
 workspace/
-  workflows/    *.workflow.json files and folders
+  workflows/    folders and workflow directories
   tools/        workspace-owned custom tool scripts
   data/         local/uploaded datasets
   outputs/      workflow runtime storage and caches

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -189,102 +188,46 @@ async def test_import_workflow_zip_upload_success(tmp_path: Path) -> None:
     assert archive_adapter.extract_to == tmp_path / "workflows" / "imported"
 
 
-async def test_import_workflow_upload_success(client: httpx.AsyncClient) -> None:
-    document = {
-        "bioimageflow_export": True,
-        "export_version": "1.0",
-        "exported_at": "2026-04-30T10:30:00Z",
-        "workflow": {
-            "name": "imported",
-            "display_name": "Imported",
-            "description": None,
-            "storage_path": "/other/machine/imported",
-            "graph": {"nodes": [], "edges": []},
-            "library": {"nodes": [], "edges": []},
-            "gui": {"nodes": {}},
-            "metadata": {
-                "display_name": "Imported",
-                "storage_path": "/other/machine/imported",
-            },
-        },
-        "required_packages": [],
-        "local_tools": [],
-    }
-
+async def test_import_workflow_rejects_json_upload(client: httpx.AsyncClient) -> None:
     response = await client.post(
         "/api/v1/workflows/import",
-        files={"file": ("imported.bioimageflow.json", json.dumps(document), "application/json")},
+        files={"file": ("imported.bioimageflow.json", b"{}", "application/json")},
     )
 
-    assert response.status_code == 201
-    body = response.json()
-    assert body["info"]["name"] == "imported"
-    assert body["info"]["display_name"] == "Imported"
-    assert body["missing_packages"] == []
-    assert body["missing_tools"] == []
-
-    listing = await client.get("/api/v1/workflows")
-    assert [item["name"] for item in listing.json()] == ["imported"]
+    assert response.status_code == 415
+    assert response.json()["detail"] == "Workflow imports must be .bioimageflow.zip archives"
 
 
-async def test_import_workflow_conflict_and_name_override(
-    client: httpx.AsyncClient,
+async def test_import_workflow_archive_conflict_and_name_override(
+    tmp_path: Path,
 ) -> None:
-    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
-    document = {
-        "bioimageflow_export": True,
-        "export_version": "1.0",
-        "exported_at": "2026-04-30T10:30:00Z",
-        "workflow": {
-            "name": "wf",
-            "display_name": "Workflow",
-            "description": None,
-            "storage_path": None,
-            "graph": {"nodes": [], "edges": []},
-            "library": {"nodes": [], "edges": []},
-            "gui": {"nodes": {}},
-            "metadata": {},
-        },
-        "required_packages": [],
-        "local_tools": [],
-    }
+    archive_adapter = _FakeArchiveAdapter()
+    async for client in _client(tmp_path, archive_adapter=archive_adapter):
+        assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+        conflict = await client.post(
+            "/api/v1/workflows/import",
+            files={"file": ("wf.bioimageflow.zip", b"fake zip", "application/zip")},
+        )
 
-    conflict = await client.post(
-        "/api/v1/workflows/import",
-        files={"file": ("wf.bioimageflow.json", json.dumps(document), "application/json")},
-    )
+        assert conflict.status_code == 409
+        assert conflict.json()["suggested_name"] == "wf_2"
 
-    assert conflict.status_code == 409
-    assert conflict.json()["suggested_name"] == "wf_2"
-
-    renamed = await client.post(
-        "/api/v1/workflows/import",
-        data={"name_override": "wf_2"},
-        files={"file": ("wf.bioimageflow.json", json.dumps(document), "application/json")},
-    )
+        renamed = await client.post(
+            "/api/v1/workflows/import",
+            data={"name_override": "wf_2"},
+            files={"file": ("wf.bioimageflow.zip", b"fake zip", "application/zip")},
+        )
 
     assert renamed.status_code == 201
     assert renamed.json()["info"]["name"] == "wf_2"
 
 
-async def test_import_workflow_malformed_and_invalid_payloads(
+async def test_import_workflow_invalid_archive_payload(
     client: httpx.AsyncClient,
 ) -> None:
-    malformed = await client.post(
-        "/api/v1/workflows/import",
-        files={"file": ("bad.bioimageflow.json", "{bad", "application/json")},
-    )
-    assert malformed.status_code == 400
-
     invalid = await client.post(
         "/api/v1/workflows/import",
-        files={
-            "file": (
-                "bad.bioimageflow.json",
-                json.dumps({"bioimageflow_export": True, "export_version": "2.0"}),
-                "application/json",
-            )
-        },
+        files={"file": ("bad.bioimageflow.zip", b"not a zip", "application/zip")},
     )
     assert invalid.status_code == 422
 
@@ -373,27 +316,9 @@ async def test_mutations_return_423_while_execution_running(
 async def test_import_returns_423_while_execution_running(
     locked_client: httpx.AsyncClient,
 ) -> None:
-    document = {
-        "bioimageflow_export": True,
-        "export_version": "1.0",
-        "exported_at": "2026-04-30T10:30:00Z",
-        "workflow": {
-            "name": "imported",
-            "display_name": "Imported",
-            "description": None,
-            "storage_path": None,
-            "graph": {"nodes": [], "edges": []},
-            "library": {"nodes": [], "edges": []},
-            "gui": {"nodes": {}},
-            "metadata": {},
-        },
-        "required_packages": [],
-        "local_tools": [],
-    }
-
     response = await locked_client.post(
         "/api/v1/workflows/import",
-        files={"file": ("imported.bioimageflow.json", json.dumps(document), "application/json")},
+        files={"file": ("imported.bioimageflow.zip", b"fake zip", "application/zip")},
     )
 
     assert response.status_code == 423

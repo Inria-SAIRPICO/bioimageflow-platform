@@ -33,9 +33,8 @@ The Workflows panel uses the v1 workspace tree semantics: folder and workflow
 ids are slash-separated workspace-relative paths whose individual segments may
 contain spaces, underscores, and hyphens. Creating a workflow while a folder is
 selected places the new workflow in that folder. Dragging workflows or folders
-onto a folder moves the corresponding workflow or full folder subtree. Legacy
-`*.json` and `*.workflow.json` workflow files remain discoverable and are
-migrated into `<workflow>/workflow.json` when listed or opened.
+onto a folder moves the corresponding workflow or full folder subtree. Only
+directories containing `workflow.json` are listed as workflows.
 
 The platform asks the BioImageFlow library to build and validate the
 sub-workflow. Recursive containment is rejected by the library validation layer;
@@ -398,8 +397,7 @@ the project-local custom tool bundle used by the workflow.
 
 Imports a workflow by calling the BioImageFlow library import/load API.
 
-**Request:** Multipart form upload with the `.bioimageflow.zip` file. Legacy
-`.bioimageflow.json` uploads may be accepted as a migration path only.
+**Request:** Multipart form upload with the `.bioimageflow.zip` file.
 
 **Behavior:**
 1. The server passes the upload to the BioImageFlow library import/load API.

@@ -22,7 +22,7 @@
       tools/
   ```
 
-- Legacy `workflows/{name}.json` files are migrated when read or saved.
+- Only workflow directories containing `workflow.json` are platform workflows.
 - Custom tools are workflow-local under the selected workflow's `tools/`
   directory.
 - Export returns the library archive, expected as `{name}.bioimageflow.zip`.
@@ -39,7 +39,7 @@
 
 1. Backend storage tests first
    - Add failing tests for `workflows/{name}/workflow.json` creation, list, get,
-     save, duplicate, delete, and legacy `workflows/{name}.json` migration.
+     save, duplicate, and delete.
    - Assert no root `__init__.py` is created in workflow directories.
    - Assert `WorkflowInfo.path` points to `workflow.json`.
 
@@ -76,8 +76,7 @@
      creation path.
 
 6. Implement backend
-   - Change `WorkflowStoreService` path helpers to use directory layout and
-     migrate legacy JSON files.
+   - Change `WorkflowStoreService` path helpers to use the directory layout.
    - Add workflow-root resolution for the current workflow and wire tools
      endpoints to that path.
    - Add archive adapter and update `/workflows/{name}/export` and

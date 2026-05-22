@@ -6,8 +6,6 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse, Response
-from pydantic import ValidationError
-
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowFile,
@@ -22,8 +20,6 @@ from bioimageflow_server.models.workflow import (
 )
 from bioimageflow_server.services.workflow_store import (
     WorkflowArchiveError,
-    WorkflowImportParseError,
-    WorkflowImportValidationError,
     WorkflowStoreService,
 )
 
@@ -191,17 +187,17 @@ async def import_workflow(
     _ensure_unlocked(execution_manager)
     raw_upload = await file.read()
     try:
-        if file.filename and file.filename.endswith(".zip"):
-            return store.import_workflow_archive(
-                raw_upload,
-                filename=file.filename,
-                name_override=name_override,
+        if not file.filename or not file.filename.endswith(".zip"):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Workflow imports must be .bioimageflow.zip archives",
             )
-        document = store.parse_import_document(raw_upload)
-        return store.import_workflow(document, name_override=name_override)
-    except WorkflowImportParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except (WorkflowArchiveError, WorkflowImportValidationError, ValidationError) as exc:
+        return store.import_workflow_archive(
+            raw_upload,
+            filename=file.filename,
+            name_override=name_override,
+        )
+    except WorkflowArchiveError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except FileExistsError as exc:
         workflow_name = str(exc.args[0]) if exc.args else name_override or "workflow"

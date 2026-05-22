@@ -252,7 +252,7 @@ describe('MenuBar', () => {
       const wrapper = mountMenuBar()
       const input = wrapper.find('[data-testid="workflow-import-input"]')
       Object.defineProperty(input.element, 'files', {
-        value: [new File(['{}'], 'wf.bioimageflow.json', { type: 'application/json' })],
+        value: [new File(['zip'], 'wf.bioimageflow.zip', { type: 'application/zip' })],
         configurable: true,
       })
 

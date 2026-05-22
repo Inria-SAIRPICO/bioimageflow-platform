@@ -41,14 +41,6 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_archive import BioImageFlowWorkflowArchiveAdapter
 
 
-class WorkflowImportParseError(ValueError):
-    """Raised when an import upload is not parseable JSON."""
-
-
-class WorkflowImportValidationError(ValueError):
-    """Raised when an import upload is JSON but not a supported export document."""
-
-
 class WorkflowArchiveError(ValueError):
     """Raised when a workflow archive cannot be imported or exported."""
 
@@ -162,40 +154,11 @@ class WorkflowStoreService:
     def workflow_tools_dir(self, name: str) -> Path:
         return self._workflow_tools_dir(name)
 
-    def _legacy_path_for(self, name: str) -> Path:
-        return self._legacy_paths_for(name)[0]
-
-    def _legacy_paths_for(self, name: str) -> list[Path]:
-        safe_name = self._validate_name(name)
-        relative = Path(*safe_name.split("/"))
-        return [
-            self.root_dir / relative.with_suffix(".json"),
-            self.root_dir / relative.with_suffix(".workflow.json"),
-        ]
-
-    def _legacy_path_exists(self, name: str) -> bool:
-        return any(path.exists() for path in self._legacy_paths_for(name))
-
     def _ensure_workflow_layout(self, name: str) -> None:
         self._workflow_tools_dir(name).mkdir(parents=True, exist_ok=True)
 
-    def _migrate_legacy_if_needed(self, name: str) -> Path:
-        path = self._path_for(name)
-        if path.exists():
-            self._ensure_workflow_layout(name)
-            return path
-        legacy_path = next(
-            (candidate for candidate in self._legacy_paths_for(name) if candidate.exists()),
-            None,
-        )
-        if legacy_path is None:
-            return path
-        self._ensure_workflow_layout(name)
-        os.replace(legacy_path, path)
-        return path
-
     def _existing_path_for(self, name: str) -> Path:
-        path = self._migrate_legacy_if_needed(name)
+        path = self._path_for(name)
         if path.exists():
             return path
         raise FileNotFoundError(name)
@@ -210,7 +173,6 @@ class WorkflowStoreService:
         return (
             self._path_for(name).exists()
             or self._workflow_dir(name).exists()
-            or self._legacy_path_exists(name)
             or self._managed_storage_path(name).exists()
         )
 
@@ -257,27 +219,7 @@ class WorkflowStoreService:
                 current = current.parent
             if not nested_inside_workflow:
                 names.add(workflow_dir.relative_to(self.root_dir).as_posix())
-        for path in folder.glob("**/*.json"):
-            if (
-                path.name.startswith(".")
-                or path.name == "workflow.json"
-                or path.name.endswith(".workflow.json")
-                or self._is_inside_workflow_dir(path.parent)
-            ):
-                continue
-            names.add(path.relative_to(self.root_dir).with_suffix("").as_posix())
-        for path in folder.glob("**/*.workflow.json"):
-            if path.name.startswith(".") or self._is_inside_workflow_dir(path.parent):
-                continue
-            names.add(path.relative_to(self.root_dir).as_posix()[: -len(".workflow.json")])
-        migrated_names: list[str] = []
-        for name in sorted(names):
-            try:
-                if self._existing_path_for(name).exists():
-                    migrated_names.append(name)
-            except (OSError, json.JSONDecodeError, ValidationError, ValueError):
-                continue
-        return migrated_names
+        return sorted(names)
 
     def _is_inside_workflow_dir(self, path: Path) -> bool:
         current = path
@@ -375,11 +317,7 @@ class WorkflowStoreService:
         return data
 
     def get_storage_path(self, name: str) -> Path:
-        """Return the storage root recorded for a workflow.
-
-        Legacy workflow files may not have metadata yet. In that case, use the
-        managed per-workflow storage location without rewriting the file.
-        """
+        """Return the storage root recorded for a workflow."""
         raw = self._read_raw(name)
         metadata = raw.get("metadata", {})
         if not isinstance(metadata, dict):
@@ -489,27 +427,6 @@ class WorkflowStoreService:
                 return filename, archive_path.read_bytes()
             except Exception as exc:
                 raise WorkflowArchiveError(str(exc)) from exc
-
-    def parse_import_document(self, raw_json: bytes | str) -> WorkflowExportDocument:
-        try:
-            payload = json.loads(raw_json)
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise WorkflowImportParseError("Malformed JSON import file") from exc
-        if not isinstance(payload, dict):
-            raise WorkflowImportValidationError("Workflow import file must contain a JSON object")
-        workflow = payload.get("workflow")
-        if isinstance(workflow, dict) and "graph" not in workflow:
-            library = workflow.get("library")
-            gui = workflow.get("gui")
-            if isinstance(library, dict):
-                workflow["graph"] = lib_dict_to_graph_state(
-                    library,
-                    gui if isinstance(gui, dict) else None,
-                ).model_dump(mode="json")
-        try:
-            return WorkflowExportDocument.model_validate(payload)
-        except ValidationError as exc:
-            raise WorkflowImportValidationError(str(exc)) from exc
 
     def _archive_name_from_filename(self, filename: str | None) -> str:
         if filename:
@@ -628,20 +545,6 @@ class WorkflowStoreService:
             if not path.name.startswith(".")
             and not self._is_inside_workflow_dir(path.parent.parent)
         }
-        names.update(
-            path.relative_to(self.root_dir).with_suffix("").as_posix()
-            for path in self.root_dir.glob("**/*.json")
-            if not path.name.startswith(".")
-            and path.name != "workflow.json"
-            and not path.name.endswith(".workflow.json")
-            and not self._is_inside_workflow_dir(path.parent)
-        )
-        names.update(
-            path.relative_to(self.root_dir).as_posix()[: -len(".workflow.json")]
-            for path in self.root_dir.glob("**/*.workflow.json")
-            if not path.name.startswith(".")
-            and not self._is_inside_workflow_dir(path.parent)
-        )
         for name in sorted(names):
             if name.startswith("."):
                 continue
@@ -780,11 +683,7 @@ class WorkflowStoreService:
 
     def create_workflow(self, data: WorkflowCreate) -> WorkflowInfo:
         path = self._path_for(data.name)
-        if (
-            path.exists()
-            or self._workflow_dir(data.name).exists()
-            or self._legacy_path_exists(data.name)
-        ):
+        if path.exists() or self._workflow_dir(data.name).exists():
             raise FileExistsError(data.name)
         if data.storage_path is None and self._managed_storage_path(data.name).exists():
             raise FileExistsError(data.name)
@@ -845,17 +744,8 @@ class WorkflowStoreService:
 
     def delete_workflow(self, name: str) -> None:
         path = self._path_for(name)
-        legacy_paths = [
-            candidate for candidate in self._legacy_paths_for(name) if candidate.exists()
-        ]
-        if path.exists() or legacy_paths:
-            if legacy_paths and not path.exists():
-                for legacy_path in legacy_paths:
-                    legacy_path.unlink()
-            else:
-                shutil.rmtree(path.parent)
-                for legacy_path in legacy_paths:
-                    legacy_path.unlink()
+        if path.exists():
+            shutil.rmtree(path.parent)
         else:
             raise FileNotFoundError(name)
         managed_path = self._managed_storage_path(name)
@@ -874,7 +764,7 @@ class WorkflowStoreService:
                 raise ValueError("new_name is required for duplicate")
             new_name = self._validate_name(patch.new_name)
             new_path = self._path_for(new_name)
-            if new_path.exists() or self._legacy_path_exists(new_name):
+            if new_path.exists() or self._workflow_dir(new_name).exists():
                 raise FileExistsError(new_name)
             if patch.storage_path is None and self._managed_storage_path(new_name).exists():
                 raise FileExistsError(new_name)

@@ -356,9 +356,9 @@ graph to the BioImageFlow library. Workflow id separators are sanitized where
 needed for filesystem safety. Relative paths must not reach tool execution as
 CWD-sensitive paths. This is required because ProcessingTool wrappers may run
 subprocesses with `cwd=context.work_dir` while passing framework-provided
-input/output paths directly to the subprocess. Legacy per-workflow
-`storage_path` metadata is preserved only for migration/export compatibility and
-is not the primary organization control in the platform UI.
+input/output paths directly to the subprocess. Explicit per-workflow
+`storage_path` metadata is preserved for export compatibility, but it is not the
+primary organization control in the platform UI.
 
 #### 2.4.3 Graph Schema and Validation
 
@@ -1263,11 +1263,9 @@ workspace-owned custom tools shared by workflows in that workspace. A workflow
 directory can contain workflow-local files, but these directories are not shown
 as user folders in the Workflows panel.
 
-Existing legacy layouts are supported for migration: `workflows/{name}.json`
-and `workflows/{name}.workflow.json`, including nested folder paths, import as
-`workspace/workflows/{name}/workflow.json`. Listing or opening workflows
-performs the migration so existing user workflows do not disappear after the
-workspace tree layout change.
+Only directories containing `workflow.json` are platform workflows. Stray JSON
+files under `workspace/workflows/` are ordinary files and are not listed,
+opened, or treated as workflow id collisions.
 
 **Panel layout:**
 
@@ -1276,9 +1274,10 @@ workspace tree layout change.
 - **Search:** Filters by workflow display name, id, and folder name while
   preserving matching ancestors.
 - **Workflow tree:** Nested folders and workflows under `workspace/workflows/`.
-  Workflow rows show display name and last modified time. Folder rows expose
-  create, rename, delete, and drag/drop targets. The tree is a classic PrimeVue
-  Tree component with folder expansion, selection, and node templates.
+  Workflow rows show display name and last modified time. Folder rows are
+  selectable drag/drop targets; selected-folder create, rename, and delete
+  actions live in the toolbar. The tree is a classic PrimeVue Tree component
+  with folder expansion, selection, and node templates.
 - **Selected workflow details:** Shows the selected workflow's description,
   workflow id, workspace path, output path, and action state. The description appears
   here, not in every list row.
