@@ -12,6 +12,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
@@ -25,6 +26,7 @@ import type { GraphState, WorkflowInfo } from '@/api/types'
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const workflowStore = useWorkflowStore()
+const workflowDraftStore = useWorkflowDraftStore()
 const autoSave = useAutoSave()
 const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
 
@@ -132,6 +134,16 @@ function applyGraph(graph: GraphState, dirty = false): void {
       dirty,
     },
   }))
+}
+
+async function loadWorkflowGraph(name: string): Promise<{ graph: GraphState; dirty: boolean }> {
+  const savedGraph = await workflowStore.loadWorkflow(name)
+  try {
+    const draft = await workflowDraftStore.loadDraft(name)
+    return { graph: draft.graph, dirty: draft.dirty_against_saved }
+  } catch {
+    return { graph: savedGraph, dirty: false }
+  }
 }
 
 function showError(summary: string, err: unknown): void {
@@ -242,9 +254,9 @@ async function openWorkflow(): Promise<void> {
 
 async function onOpenWorkflow(name: string): Promise<void> {
   try {
-    const graph = await workflowStore.loadWorkflow(name)
+    const { graph, dirty } = await loadWorkflowGraph(name)
     openDialogVisible.value = false
-    applyGraph(graph)
+    applyGraph(graph, dirty)
   } catch (err: unknown) {
     showError('Open workflow failed', err)
   }
@@ -262,7 +274,10 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
+    await workflowDraftStore.assertFreshForSaveOrRun()
     const info = await workflowStore.saveWorkflow(currentGraph.value)
+    workflowDraftStore.scheduleSave(workflowId(info), currentGraph.value)
+    await workflowDraftStore.flush()
     toast?.add({
       severity: 'success',
       summary: 'Workflow saved',
@@ -278,6 +293,7 @@ async function exportCurrentWorkflow(): Promise<void> {
   const name = workflowStore.currentName
   if (!name) return
   try {
+    await workflowDraftStore.assertFreshForSaveOrRun()
     await workflowStore.exportWorkflow(name)
   } catch (err: unknown) {
     showError('Export workflow failed', err)
@@ -291,8 +307,8 @@ function chooseImportFile(): void {
 }
 
 async function openImportedWorkflow(name: string): Promise<void> {
-  const graph = await workflowStore.loadWorkflow(name)
-  applyGraph(graph)
+  const { graph, dirty } = await loadWorkflowGraph(name)
+  applyGraph(graph, dirty)
   if (hasMissingImportDependencies()) {
     dependencyDialogVisible.value = true
     return
@@ -383,8 +399,8 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
       display_name: displayName,
       description: source?.description ?? null,
     })
-    const graph = await workflowStore.loadWorkflow(workflowId(info))
-    applyGraph(graph)
+    const { graph, dirty } = await loadWorkflowGraph(workflowId(info))
+    applyGraph(graph, dirty)
   } catch (err: unknown) {
     showError('Duplicate workflow failed', err)
   }
@@ -392,6 +408,9 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
 
 async function exportWorkflowByName(name: string): Promise<void> {
   try {
+    if (workflowStore.currentName === name) {
+      await workflowDraftStore.assertFreshForSaveOrRun()
+    }
     await workflowStore.exportWorkflow(name)
   } catch (err: unknown) {
     showError('Export workflow failed', err)

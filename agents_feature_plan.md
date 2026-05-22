@@ -511,7 +511,7 @@ CLI tests:
 
 ## Rollout Milestones
 
-### Milestone 1: Readable Live Draft
+### Milestone 1: Readable Live Draft - Implemented
 
 - Add draft storage service.
 - Add `GET` and `PUT` draft endpoints.
@@ -521,8 +521,22 @@ CLI tests:
 - Agent context files are generated.
 - Agents can inspect current unsaved state.
 
+Implementation notes:
+
+- Implemented `WorkflowDraftService`, `WorkflowDraftResponse`, and `WorkflowDraftPutRequest`.
+- Added `GET` and `PUT /api/v1/workflow-drafts/{workflow_id:path}`.
+- Draft files are written atomically to `workspace/workflows/<workflow_id>/.bioimageflow/draft.json`.
+- Draft validation uses an isolated `SessionManager` so draft writes do not replace the active `/graph` validation session.
+- Workspace-root `.bioimageflow/agent-state.json`, `AGENTS.md`, and `CLAUDE.md` are generated when drafts are read or written.
+- Frontend draft state is tracked in `useWorkflowDraftStore`; canvas edits write drafts while keeping IndexedDB as a fallback.
+- Workflow open/startup prefers a backend draft when it exists and falls back to the saved workflow.
+- Save, run, export, and editor-open paths flush or check draft freshness before continuing.
+- The implemented save path still uses existing `PUT /workflows/{id}` for persistence, then refreshes the draft to match the saved graph. Dedicated draft promotion remains future work.
+- Read-only `bioimageflow-agent` CLI commands were not implemented in this milestone; the current agent-readable surface is the generated context plus draft files/API.
+
 ### Milestone 2: Agent Mutations
 
+- Add read-only `bioimageflow-agent status`, `get-graph`, `validate`, and `list-tools` commands backed by `agent-state.json` and `GET /workflow-drafts`.
 - Add structured `PATCH` draft endpoint.
 - Add typed `draft_updated` WebSocket event and frontend dispatch into draft state, at least to record that a newer remote revision exists.
 - Add isolated draft validation that cannot mutate the active `/graph` session.
@@ -558,9 +572,9 @@ CLI tests:
 - Whether agent CLI belongs in the backend package or a separate package.
 - Whether frontend should auto-apply all agent edits when idle, or always ask the user first.
 
-## Preferred First Slice
+## Implemented First Slice
 
-Implement Milestone 1 and a minimal subset of Milestone 2:
+Implemented:
 
 1. `WorkflowDraftService`.
 2. `GET` and `PUT /workflow-drafts/{workflow_id:path}`.
@@ -569,6 +583,11 @@ Implement Milestone 1 and a minimal subset of Milestone 2:
 5. Frontend draft autosave after meaningful graph changes.
 6. Agent context file generation when opening the editor.
 7. Draft route tests for nested workflow ids.
-8. `bioimageflow-agent status`, `get-graph`, `validate`, and `list-tools`.
 
-This proves the most important assumption: agents can see the current unsaved frontend state from VS Code without replacing the platform's frontend-owned editing model.
+Deferred to Milestone 2:
+
+1. `bioimageflow-agent status`, `get-graph`, `validate`, and `list-tools`.
+2. Typed `draft_updated` WebSocket events.
+3. Structured agent mutation operations.
+
+This implementation proves the most important assumption: agents can see the current unsaved frontend state from VS Code without replacing the platform's frontend-owned editing model.

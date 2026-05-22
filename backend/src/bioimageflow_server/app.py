@@ -85,6 +85,11 @@ from bioimageflow_server.routers.workflows import (
     get_workflow_store as workflows_get_workflow_store,
     router as workflows_router,
 )
+from bioimageflow_server.routers.workflow_drafts import (
+    get_execution_manager as workflow_drafts_get_execution_manager,
+    get_workflow_draft_service,
+    router as workflow_drafts_router,
+)
 from bioimageflow_server.routers.workspace import (
     get_workspace_service,
     router as workspace_router,
@@ -108,6 +113,7 @@ from bioimageflow_server.services.tool_environments import ToolEnvironmentServic
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
 from bioimageflow_server.services.workspace import WorkspaceService
 from bioimageflow_server.ws import (
@@ -256,6 +262,18 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return cached
 
     _register_workflow_custom_tools(workflow_store)
+
+    def _live_dev_mode() -> bool:
+        if config.settings_store is not None:
+            return config.settings_store.get().dev_mode
+        return resolved_settings.dev_mode
+
+    workflow_draft_service = WorkflowDraftService(
+        _current_workflow_store,
+        dev_mode_provider=_live_dev_mode,
+        settings_provider=_live_settings,
+    )
+
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
         cache_dir=resolved_storage_path / ".thumbnails",
         env_path=resolved_settings.thumbnail_env_path,
@@ -462,6 +480,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
     app.include_router(workspace_router, prefix="/api/v1")
+    app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
     app.include_router(nodes_router, prefix="/api/v1")
@@ -489,11 +508,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workspace_service] = _current_workspace_service
     app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
-
-    def _live_dev_mode() -> bool:
-        if config.settings_store is not None:
-            return config.settings_store.get().dev_mode
-        return resolved_settings.dev_mode
+    app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
+    app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings

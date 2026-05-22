@@ -6,6 +6,7 @@ import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExec
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import {
   outOfDateNodeIdsForExecution,
   validationErrorsForExecution,
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 const exec = useExecutionStore()
 const ui = useUIStore()
 const workflowStore = useWorkflowStore()
+const workflowDraftStore = useWorkflowDraftStore()
 const { lockForExecution } = useExecutionLock()
 
 const confirmOpen = ref(false)
@@ -94,6 +96,7 @@ async function runCore(nodes?: string[]) {
     if (!ok) return
   }
   try {
+    await workflowDraftStore.assertFreshForSaveOrRun()
     await lockForExecution({
       graph: props.graph,
       nodes,

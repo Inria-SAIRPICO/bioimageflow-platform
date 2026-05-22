@@ -9,6 +9,14 @@ vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
 }))
 
+const workflowDraftMocks = vi.hoisted(() => ({
+  assertFreshForSaveOrRun: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/stores/workflowDraft', () => ({
+  useWorkflowDraftStore: () => workflowDraftMocks,
+}))
+
 import RunButton from '../RunButton.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
@@ -53,6 +61,7 @@ function mountButton(opts: {
 describe('RunButton', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    workflowDraftMocks.assertFreshForSaveOrRun.mockClear()
   })
 
   it('Run button is enabled when idle and validation is not pending', () => {

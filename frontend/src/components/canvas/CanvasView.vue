@@ -30,6 +30,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
@@ -81,6 +82,7 @@ const edgeTypes = {
 const toolRegistryStore = useToolRegistryStore()
 const uiStore = useUIStore()
 const workflowStore = useWorkflowStore()
+const workflowDraftStore = useWorkflowDraftStore()
 const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const autoSave = useAutoSave()
 const resolvedOutputsStore = useResolvedOutputsStore()
@@ -310,6 +312,9 @@ async function ensureDefaultWorkflow(): Promise<GraphState> {
     suffix += 1
   }
   await workflowStore.createWorkflow({ name, display_name: name })
+  if (workflowStore.currentName) {
+    await workflowDraftStore.loadDraft(workflowStore.currentName).catch(() => undefined)
+  }
   return { nodes: [], edges: [] }
 }
 
@@ -342,11 +347,17 @@ async function recoverStartupWorkflow() {
         dirty: false,
       }
     }
+    const draft = await workflowDraftStore.loadDraft(targetName).catch(() => null)
+    const draftModified = Date.parse(draft?.updated_at ?? '')
     const serverModified = Date.parse(workflowStore.current?.last_modified ?? '')
+    const latestPersistedModified = Math.max(
+      Number.isFinite(serverModified) ? serverModified : 0,
+      Number.isFinite(draftModified) ? draftModified : 0,
+    )
     const matchingAutoSave = autoSaved?.name === targetName ? autoSaved : null
     const autoSaveIsFresh =
       matchingAutoSave !== null &&
-      (!Number.isFinite(serverModified) || matchingAutoSave.timestamp > serverModified)
+      (latestPersistedModified === 0 || matchingAutoSave.timestamp > latestPersistedModified)
     if (
       matchingAutoSave !== null &&
       Number.isFinite(serverModified) &&
@@ -355,8 +366,10 @@ async function recoverStartupWorkflow() {
       await autoSave.clearAutoSave(targetName)
     }
     return {
-      graph: autoSaveIsFresh ? matchingAutoSave.graph : serverGraph,
-      dirty: autoSaveIsFresh,
+      graph: autoSaveIsFresh
+        ? matchingAutoSave.graph
+        : draft?.graph ?? serverGraph,
+      dirty: autoSaveIsFresh || draft?.dirty_against_saved === true,
     }
   }
 
@@ -1904,8 +1917,10 @@ function handleKeydown(event: KeyboardEvent) {
 function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
   const name = workflowStore.currentName
   if (!name) return
+  const graph = serializeGraph(state)
   workflowStore.markDirty()
-  autoSave.scheduleAutoSave(name, serializeGraph(state))
+  autoSave.scheduleAutoSave(name, graph)
+  workflowDraftStore.scheduleSave(name, graph)
 }
 
 function emitGraphChanged() {

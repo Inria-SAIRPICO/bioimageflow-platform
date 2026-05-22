@@ -90,3 +90,31 @@ Improvements made:
 Why this version is materially better:
 
 The previous version was implementable at a feature level but still left several integration contracts vague enough to create subtle regressions in the current app. The revised plan now calls out shared-session isolation, legacy path protection, exact machine-readable errors, and dynamic schema refresh, which are the kinds of details that determine whether agent edits are safe in the real running platform.
+
+## Implementation Pass 1
+
+Implemented the readable live draft milestone.
+
+Delivered:
+
+- Backend draft models, service, and router for `GET` and `PUT /api/v1/workflow-drafts/{workflow_id:path}`.
+- Atomic workflow-local `draft.json` writes.
+- Isolated draft validation using a fresh `SessionManager`, preserving the active `/graph` session.
+- Machine-readable `409 draft_revision_conflict` and `423 workflow_locked` responses.
+- Workspace-root agent context generation with `agent-state.json`, `AGENTS.md`, and `CLAUDE.md`.
+- Frontend draft API and `useWorkflowDraftStore`.
+- Canvas draft autosave alongside existing IndexedDB fallback.
+- Workflow open/startup draft recovery.
+- Save/run/export/editor-open draft flush or freshness checks.
+- Tests covering draft synthesis, writes, stale revisions, nested workflow ids, execution locks, draft store behavior, and touched component regressions.
+
+Intentional deferrals:
+
+- The read-only `bioimageflow-agent` CLI commands are still pending.
+- Draft promotion endpoint is still pending; save currently uses the existing workflow save endpoint and refreshes the draft afterward.
+- Typed `draft_updated` WebSocket events and remote draft reconciliation are still pending.
+- Structured agent mutation operations are still pending.
+
+Why the plan changed:
+
+The implementation made clear that the first stable slice should be the platform-visible live draft and UI safety guards. The CLI should now build on top of this working API rather than being included in the first implementation commit.

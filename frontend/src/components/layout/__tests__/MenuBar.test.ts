@@ -17,6 +17,12 @@ const autoSaveMocks = vi.hoisted(() => ({
   clearAutoSave: vi.fn().mockResolvedValue(undefined),
   setLastOpenedWorkflow: vi.fn().mockResolvedValue(undefined),
 }))
+const workflowDraftMocks = vi.hoisted(() => ({
+  assertFreshForSaveOrRun: vi.fn().mockResolvedValue(undefined),
+  scheduleSave: vi.fn(),
+  flush: vi.fn().mockResolvedValue(undefined),
+  loadDraft: vi.fn(),
+}))
 
 vi.mock('primevue/usetoast', () => ({
   useToast: () => ({ add: toastAdd }),
@@ -28,6 +34,10 @@ vi.mock('@/api/client', () => ({
 
 vi.mock('@/composables/useAutoSave', () => ({
   useAutoSave: () => autoSaveMocks,
+}))
+
+vi.mock('@/stores/workflowDraft', () => ({
+  useWorkflowDraftStore: () => workflowDraftMocks,
 }))
 
 import MenuBar from '../MenuBar.vue'
@@ -73,6 +83,10 @@ describe('MenuBar', () => {
     apiMocks.delete.mockReset()
     autoSaveMocks.clearAutoSave.mockClear()
     autoSaveMocks.setLastOpenedWorkflow.mockClear()
+    workflowDraftMocks.assertFreshForSaveOrRun.mockClear()
+    workflowDraftMocks.scheduleSave.mockClear()
+    workflowDraftMocks.flush.mockClear()
+    workflowDraftMocks.loadDraft.mockReset()
   })
 
   it('renders a menubar element', () => {

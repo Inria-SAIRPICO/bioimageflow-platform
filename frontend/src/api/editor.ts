@@ -1,4 +1,5 @@
 import { api } from '@/api/client'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 
 export type EditorOpenMethod = 'external' | 'embedded' | 'clipboard'
 
@@ -80,6 +81,7 @@ export async function openPathWithEditor(
     showCodeEditorLoading(path)
   }
   try {
+    await flushDraftIfAvailable()
     const response = await openEditorPath(path, { focusPath: options?.focusPath })
     await handleEditorOpenResponse(response, toast)
     return response
@@ -101,6 +103,7 @@ export async function openToolWithEditor(
     showCodeEditorLoading()
   }
   try {
+    await flushDraftIfAvailable()
     const response = await openEditorTool(toolName, { workflowId: workflowName })
     await handleEditorOpenResponse(response, toast)
     return response
@@ -108,6 +111,15 @@ export async function openToolWithEditor(
     if (showEmbeddedLoading) {
       finishCodeEditorLoading()
     }
+  }
+}
+
+async function flushDraftIfAvailable(): Promise<void> {
+  try {
+    await useWorkflowDraftStore().flush()
+  } catch {
+    // Unit tests and non-app callers may not have an active Pinia instance.
+    // Opening the editor should still work; the in-app path flushes drafts.
   }
 }
 
