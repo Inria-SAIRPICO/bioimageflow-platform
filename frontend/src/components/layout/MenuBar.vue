@@ -62,6 +62,14 @@ const createIntent = ref<'new-empty' | 'save-current'>('new-empty')
 const workflowDialogFolderId = ref<string | null>(null)
 const openDialogVisible = ref(false)
 const deleteDialogVisible = ref(false)
+const deleteTargetName = ref<string | null>(null)
+const deleteDialogWorkflow = computed(() => {
+  const name = deleteTargetName.value ?? workflowStore.currentName
+  if (!name) return null
+  return workflowStore.workflows.find((workflow) => workflowId(workflow) === name) ?? (
+    workflowStore.currentName === name ? workflowStore.current : null
+  )
+})
 const discardDialogVisible = ref(false)
 const aboutDialogVisible = ref(false)
 const renameDialogVisible = ref(false)
@@ -417,54 +425,38 @@ async function exportWorkflowByName(name: string): Promise<void> {
   }
 }
 
-async function deleteWorkflowByName(name: string): Promise<void> {
-  const workflow = workflowStore.workflows.find((item) => workflowId(item) === name)
-  const label = workflow?.display_name ?? name
-  if (!window.confirm(`Delete workflow '${label}'?`)) return
+function deleteWorkflowByName(name: string): void {
+  deleteTargetName.value = name
+  deleteDialogVisible.value = true
+}
+
+function deleteWorkflow(): void {
+  const name = workflowStore.currentName
+  if (!name) return
+  deleteTargetName.value = name
+  deleteDialogVisible.value = true
+}
+
+async function confirmDeleteWorkflow(): Promise<void> {
+  const name = deleteTargetName.value ?? workflowStore.currentName
+  if (!name) return
   const wasCurrent = workflowStore.currentName === name
   try {
     await workflowStore.deleteWorkflow(name)
+    deleteDialogVisible.value = false
+    deleteTargetName.value = null
     if (wasCurrent) {
-      const graph = { nodes: [], edges: [] }
-      const names = new Set(workflowStore.workflows.map((item) => workflowId(item)))
-      let nextName = 'Untitled'
-      let suffix = 2
-      while (names.has(nextName)) {
-        nextName = `Untitled_${suffix}`
-        suffix += 1
-      }
-      await workflowStore.createWorkflow({ name: nextName, display_name: nextName })
-      applyGraph(graph)
+      applyGraph({ nodes: [], edges: [] })
     }
   } catch (err: unknown) {
     showError('Delete workflow failed', err)
   }
 }
 
-function deleteWorkflow(): void {
-  const name = workflowStore.currentName
-  if (!name) return
-  deleteDialogVisible.value = true
-}
-
-async function confirmDeleteWorkflow(): Promise<void> {
-  const name = workflowStore.currentName
-  if (!name) return
-  try {
-    await workflowStore.deleteWorkflow(name)
-    deleteDialogVisible.value = false
-    const graph = { nodes: [], edges: [] }
-    const names = new Set(workflowStore.workflows.map((workflow) => workflowId(workflow)))
-    let nextName = 'Untitled'
-    let suffix = 2
-    while (names.has(nextName)) {
-      nextName = `Untitled_${suffix}`
-      suffix += 1
-    }
-    await workflowStore.createWorkflow({ name: nextName, display_name: nextName })
-    applyGraph(graph)
-  } catch (err: unknown) {
-    showError('Delete workflow failed', err)
+function onDeleteWorkflowDialogVisible(value: boolean): void {
+  deleteDialogVisible.value = value
+  if (!value) {
+    deleteTargetName.value = null
   }
 }
 
@@ -745,8 +737,9 @@ defineExpose({
 
   <DeleteWorkflowDialog
     v-model:visible="deleteDialogVisible"
-    :workflow="workflowStore.current"
+    :workflow="deleteDialogWorkflow"
     @confirm="confirmDeleteWorkflow"
+    @update:visible="onDeleteWorkflowDialogVisible"
   />
 
   <MissingPackageDialog

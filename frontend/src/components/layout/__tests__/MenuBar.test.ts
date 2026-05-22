@@ -277,6 +277,68 @@ describe('MenuBar', () => {
       expect(vm.importRenameDialogVisible).toBe(true)
     })
 
+
+    it('uses the platform dialog for workflow delete without creating a replacement workflow', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm')
+      const workflow = useWorkflowStore()
+      const current = {
+        name: 'Untitled',
+        display_name: 'Untitled',
+        path: '/tmp/Untitled/workflow.json',
+        last_modified: '2026-05-22T08:00:00Z',
+      }
+      workflow.workflows = [current]
+      workflow.current = current
+      apiMocks.delete.mockResolvedValueOnce({ data: { deleted: true } })
+      const createWorkflow = vi.spyOn(workflow, 'createWorkflow')
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+      await flushPromises()
+
+      expect(confirmSpy).not.toHaveBeenCalled()
+      expect(vm.deleteDialogVisible).toBe(true)
+      await vm.confirmDeleteWorkflow()
+      await flushPromises()
+
+      expect(apiMocks.delete).toHaveBeenCalledWith('/api/v1/workflows/Untitled')
+      expect(createWorkflow).not.toHaveBeenCalled()
+      expect(workflow.current).toBeNull()
+      confirmSpy.mockRestore()
+    })
+
+    it('uses the platform dialog for delete commands from the workflows panel', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm')
+      const workflow = useWorkflowStore()
+      workflow.workflows = [{
+        id: 'Analysis/beta',
+        name: 'beta',
+        folder: 'Analysis',
+        display_name: 'Beta',
+        path: '/tmp/Analysis/beta/workflow.json',
+        last_modified: '2026-05-22T08:00:00Z',
+      }]
+      apiMocks.delete.mockResolvedValueOnce({ data: { deleted: true } })
+      const wrapper = mountMenuBar()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'delete', name: 'Analysis/beta' },
+      }))
+      await flushPromises()
+      const vm = wrapper.vm as any
+
+      expect(confirmSpy).not.toHaveBeenCalled()
+      expect(vm.deleteDialogVisible).toBe(true)
+      expect(vm.deleteDialogWorkflow.display_name).toBe('Beta')
+      await vm.confirmDeleteWorkflow()
+      await flushPromises()
+
+      expect(apiMocks.delete).toHaveBeenCalledWith('/api/v1/workflows/Analysis/beta')
+      confirmSpy.mockRestore()
+    })
+
     it('shows an edit-name affordance when a workflow is active', async () => {
       const workflow = useWorkflowStore()
       workflow.current = {

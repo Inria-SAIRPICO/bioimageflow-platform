@@ -7,6 +7,7 @@ import Tree from 'primevue/tree'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowInfo } from '@/api/types'
 import type { WorkflowFolderDeletePolicy, WorkflowTreeNode } from '@/stores/workflow'
+import type { TreeNodeDropEvent } from 'primevue/tree'
 import type { TreeNode } from 'primevue/treenode'
 
 const emit = defineEmits<{
@@ -33,7 +34,7 @@ export type WorkflowNodeData =
   | { type: 'folder'; id: string; name: string; hasChildren: boolean }
   | { type: 'workflow'; id: string; workflow: WorkflowInfo }
 
-export type WorkflowPrimeTreeNode = {
+export type WorkflowPrimeTreeNode = TreeNode & {
   key: string
   label: string
   data: WorkflowNodeData
@@ -46,6 +47,7 @@ const selectedName = ref<string | null>(workflowStore.currentName)
 const selectedFolderId = ref<string | null>(null)
 const selectedKeys = ref<Record<string, boolean>>({})
 const expandedKeys = ref<Record<string, boolean>>({})
+const renderedTreeNodes = ref<WorkflowPrimeTreeNode[]>([])
 
 const folderDialogVisible = ref(false)
 const folderDialogMode = ref<'create' | 'rename'>('create')
@@ -116,6 +118,9 @@ function toPrimeTreeNodes(nodes: WorkflowTreeNode[]): WorkflowPrimeTreeNode[] {
         key: nodeKey(`workflow:${id}`),
         label: node.workflow.display_name,
         data: { type: 'workflow', id, workflow: node.workflow },
+        draggable: true,
+        droppable: false,
+        styleClass: 'workflow-tree-node--workflow',
       }
     }
     const children = toPrimeTreeNodes(node.children)
@@ -129,6 +134,9 @@ function toPrimeTreeNodes(nodes: WorkflowTreeNode[]): WorkflowPrimeTreeNode[] {
         hasChildren: children.length > 0,
       },
       children,
+      draggable: true,
+      droppable: true,
+      styleClass: 'workflow-tree-node--folder',
     }
   })
 }
@@ -156,11 +164,15 @@ const treeNodes = computed<WorkflowPrimeTreeNode[]>(() => {
         key: nodeKey(`workflow:${id}`),
         label: workflow.display_name,
         data: { type: 'workflow', id, workflow },
+        draggable: false,
+        droppable: false,
       }
     })
   }
   return toPrimeTreeNodes(workflowStore.workflowTree)
 })
+
+const treeDragEnabled = computed(() => searchQuery.value.trim().length === 0)
 
 const selectedWorkflow = computed(() => {
   if (!selectedName.value) return null
@@ -220,6 +232,14 @@ watch(
       selectedFolderId.value = null
     }
   },
+)
+
+watch(
+  treeNodes,
+  (nodes) => {
+    renderedTreeNodes.value = nodes
+  },
+  { immediate: true, deep: true },
 )
 
 watch(
@@ -405,70 +425,75 @@ async function confirmDeleteFolder(policy: WorkflowFolderDeletePolicy): Promise<
   })
 }
 
-function workflowNameFromDrop(event: DragEvent): string | null {
-  return event.dataTransfer?.getData('application/bioimageflow-workflow') || null
-}
-
-function folderNameFromDrop(event: DragEvent): string | null {
-  return event.dataTransfer?.getData('application/bioimageflow-folder') || null
-}
-
 function onWorkflowDragStart(event: DragEvent, workflow: WorkflowInfo): void {
   event.dataTransfer?.setData('application/bioimageflow-workflow', workflowId(workflow))
 }
 
-function onFolderDragStart(event: DragEvent, id: string): void {
-  event.dataTransfer?.setData('application/bioimageflow-folder', id)
+type NodePlacement = {
+  node: WorkflowPrimeTreeNode
+  parentId: string | null
+  siblings: WorkflowPrimeTreeNode[]
+  index: number
 }
 
-function onDragOver(event: DragEvent): void {
-  event.preventDefault()
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move'
+function findNodePlacement(
+  nodes: WorkflowPrimeTreeNode[],
+  key: string,
+  parentId: string | null = null,
+): NodePlacement | null {
+  const index = nodes.findIndex((node) => node.key === key)
+  if (index !== -1) {
+    return { node: nodes[index], parentId, siblings: nodes, index }
   }
+  for (const node of nodes) {
+    const data = node.data as WorkflowNodeData | undefined
+    const childParentId = data?.type === 'folder' ? data.id : parentId
+    const placement = findNodePlacement(node.children ?? [], key, childParentId)
+    if (placement) return placement
+  }
+  return null
 }
 
-async function dropOnFolder(event: DragEvent, targetFolderId: string): Promise<void> {
-  event.preventDefault()
-  event.stopPropagation()
-  const workflowName = workflowNameFromDrop(event)
-  const folderName = folderNameFromDrop(event)
+function workflowIndexInPlacement(placement: NodePlacement): number {
+  return placement.siblings
+    .slice(0, placement.index)
+    .filter((node) => (node.data as WorkflowNodeData | undefined)?.type === 'workflow')
+    .length
+}
+
+async function onTreeNodeDrop(event: TreeNodeDropEvent): Promise<void> {
+  const dragNode = event.dragNode as WorkflowPrimeTreeNode
+  const dragData = dragNode.data as WorkflowNodeData | undefined
+  if (!dragData) {
+    renderedTreeNodes.value = treeNodes.value
+    return
+  }
+  const placement = findNodePlacement(event.value as WorkflowPrimeTreeNode[], dragNode.key)
+  if (!placement) {
+    renderedTreeNodes.value = treeNodes.value
+    return
+  }
   await runPanelAction(async () => {
-    if (workflowName) await workflowStore.moveWorkflowToFolder(workflowName, targetFolderId)
-    else if (folderName) {
-      const newId = childFolderPath(targetFolderId, folderLeafName(folderName))
+    if (dragData.type === 'folder') {
+      const targetParentId = placement.parentId
+      const newId = targetParentId
+        ? childFolderPath(targetParentId, folderLeafName(dragData.id))
+        : folderLeafName(dragData.id)
       const previousSelectedFolderId = selectedFolderId.value
-      await workflowStore.moveWorkflowFolder(folderName, targetFolderId)
+      await workflowStore.moveWorkflowFolder(dragData.id, targetParentId)
       if (previousSelectedFolderId) {
-        selectedFolderId.value = remapFolderIdPrefix(previousSelectedFolderId, folderName, newId)
+        selectedFolderId.value = remapFolderIdPrefix(previousSelectedFolderId, dragData.id, newId)
         selectedName.value = null
       }
+    } else {
+      await workflowStore.moveWorkflowToFolder(
+        dragData.id,
+        placement.parentId,
+        workflowIndexInPlacement(placement),
+      )
     }
   })
-}
-
-async function dropOnRoot(event: DragEvent): Promise<void> {
-  event.preventDefault()
-  const workflowName = workflowNameFromDrop(event)
-  const folderName = folderNameFromDrop(event)
-  await runPanelAction(async () => {
-    if (workflowName) await workflowStore.moveWorkflowToFolder(workflowName, null)
-    else if (folderName) {
-      const newId = folderLeafName(folderName)
-      const previousSelectedFolderId = selectedFolderId.value
-      await workflowStore.moveWorkflowFolder(folderName, null)
-      if (previousSelectedFolderId) {
-        selectedFolderId.value = remapFolderIdPrefix(previousSelectedFolderId, folderName, newId)
-        selectedName.value = null
-      }
-    }
-  })
-}
-
-async function dropWorkflowBefore(event: DragEvent, beforeName: string): Promise<void> {
-  const name = workflowNameFromDrop(event)
-  if (!name) return
-  await runPanelAction(() => workflowStore.moveWorkflowBefore(name, beforeName))
+  renderedTreeNodes.value = treeNodes.value
 }
 
 defineExpose({
@@ -481,16 +506,13 @@ defineExpose({
   selectFolder,
   openWorkflow,
   onWorkflowDragStart,
-  onFolderDragStart,
   openCreateFolderDialog,
   openRenameFolderDialog,
   openDeleteFolderDialog,
   submitFolderDialog,
   confirmDeleteFolder,
   deleteSelected,
-  dropOnFolder,
-  dropOnRoot,
-  dropWorkflowBefore,
+  onTreeNodeDrop,
 })
 </script>
 
@@ -586,29 +608,26 @@ defineExpose({
     <div
       class="workflows-panel__tree-shell"
       data-testid="workflow-list"
-      @dragenter.prevent
-      @dragover.prevent="onDragOver"
-      @drop="dropOnRoot"
     >
       <Tree
+        v-model:value="renderedTreeNodes"
         v-model:selectionKeys="selectedKeys"
         v-model:expandedKeys="expandedKeys"
-        :value="treeNodes"
+        :draggable-nodes="treeDragEnabled"
+        :droppable-nodes="treeDragEnabled"
+        draggable-scope="workflow-tree"
+        droppable-scope="workflow-tree"
         selection-mode="single"
         class="workflow-tree"
         data-testid="workflow-tree"
+        @node-drop="onTreeNodeDrop"
         @node-select="onNodeSelect"
       >
         <template #default="{ node }">
           <div
             v-if="node.data.type === 'folder'"
             class="workflow-folder-row"
-            draggable="true"
             :data-testid="`workflow-folder-${testId(node.data.id)}`"
-            @dragstart.stop="onFolderDragStart($event, node.data.id)"
-            @dragenter.prevent.stop
-            @dragover.prevent.stop="onDragOver"
-            @drop.prevent.stop="dropOnFolder($event, node.data.id)"
           >
             <span class="workflow-folder-row__name">
               <i class="pi pi-folder" aria-hidden="true" />
@@ -621,9 +640,6 @@ defineExpose({
             :class="{ 'workflow-row--selected': selectedName === node.data.id }"
             :data-testid="`workflow-row-${testId(node.data.id)}`"
             @dblclick="openWorkflow(node.data.id)"
-            @dragenter.prevent.stop
-            @dragover.prevent.stop="onDragOver"
-            @drop.prevent.stop="dropWorkflowBefore($event, node.data.id)"
             @keydown.enter.prevent="openWorkflow(node.data.id)"
           >
             <span
@@ -800,8 +816,41 @@ defineExpose({
 
 .workflow-tree :deep(.p-tree-node-content),
 .workflow-tree :deep(.p-treenode-content) {
+  align-items: center;
+  cursor: grab;
   gap: 0.25rem;
+  min-height: 2.25rem;
   padding: 0.1rem 0.15rem;
+}
+
+.workflow-tree :deep(.p-tree-node-content[data-p-dragging="true"]),
+.workflow-tree :deep(.p-treenode-content[data-p-dragging="true"]) {
+  opacity: 0.55;
+}
+
+.workflow-tree :deep(.p-tree-node-content.p-tree-node-dragover),
+.workflow-tree :deep(.p-treenode-content.p-treenode-dragover) {
+  background: color-mix(in srgb, var(--p-primary-color) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--p-primary-color) 45%, transparent);
+}
+
+.workflow-tree :deep(.p-tree-node-drop-point),
+.workflow-tree :deep(.p-treenode-droppoint) {
+  background: var(--p-primary-color);
+  border-radius: 999px;
+  height: 2px;
+  margin: 2px 0 2px 1.5rem;
+}
+
+.workflow-tree :deep(.p-tree-node-icon),
+.workflow-tree :deep(.p-treenode-icon) {
+  display: none;
+}
+
+.workflow-tree :deep(.p-tree-node-label),
+.workflow-tree :deep(.p-treenode-label) {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .workflow-tree :deep(.p-tree-node-children),
@@ -819,7 +868,6 @@ defineExpose({
 .workflow-row {
   align-items: center;
   color: var(--p-text-color);
-  cursor: pointer;
   display: grid;
   gap: 0.45rem;
   grid-template-columns: 1.5rem minmax(0, 1fr) auto;
@@ -837,7 +885,6 @@ defineExpose({
 .workflow-row__drag {
   align-items: center;
   color: color-mix(in srgb, var(--p-text-color) 72%, transparent);
-  cursor: grab;
   display: inline-flex;
   height: 1.75rem;
   justify-content: center;
@@ -878,7 +925,6 @@ defineExpose({
 
 .workflow-folder-row__name {
   align-items: center;
-  cursor: grab;
   display: inline-flex;
   font-weight: 700;
   gap: 0.45rem;

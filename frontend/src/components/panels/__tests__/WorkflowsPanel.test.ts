@@ -39,6 +39,43 @@ const workflows: WorkflowInfo[] = [
   },
 ]
 
+
+function cloneTree<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function removeNode(nodes: any[], key: string): any | null {
+  const index = nodes.findIndex((node) => node.key === key)
+  if (index !== -1) {
+    return nodes.splice(index, 1)[0]
+  }
+  for (const node of nodes) {
+    const removed = removeNode(node.children ?? [], key)
+    if (removed) return removed
+  }
+  return null
+}
+
+function findNode(nodes: any[], key: string): any | null {
+  for (const node of nodes) {
+    if (node.key === key) return node
+    const child = findNode(node.children ?? [], key)
+    if (child) return child
+  }
+  return null
+}
+
+async function dropTreeNode(wrapper: ReturnType<typeof mount>, dragKey: string, buildValue: (nodes: any[], dragNode: any) => any[]): Promise<void> {
+  const vm = wrapper.vm as any
+  const nodes = cloneTree(vm.treeNodes)
+  const dragNode = removeNode(nodes, dragKey)
+  if (!dragNode) throw new Error(`Missing drag node ${dragKey}`)
+  await vm.onTreeNodeDrop({
+    value: buildValue(nodes, dragNode),
+    dragNode,
+  } as any)
+}
+
 function mountPanel(items: WorkflowInfo[] = workflows) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -421,12 +458,10 @@ describe('WorkflowsPanel', () => {
     const folder = await store.createWorkflowFolder('Analysis')
     await flushPromises()
 
-    await wrapper.find(`[data-testid="workflow-folder-${folder.id}"]`).trigger('drop', {
-      dataTransfer: {
-        getData: (type: string) => (
-          type === 'application/bioimageflow-workflow' ? 'beta_api' : ''
-        ),
-      },
+    await dropTreeNode(wrapper, 'workflow-tree-workflow_beta_api', (nodes, dragNode) => {
+      const targetFolder = findNode(nodes, 'workflow-tree-folder_Analysis')
+      targetFolder.children = [...(targetFolder.children ?? []), dragNode]
+      return nodes
     })
     await flushPromises()
 
@@ -475,12 +510,10 @@ describe('WorkflowsPanel', () => {
     })
     await flushPromises()
 
-    await wrapper.find('[data-testid="workflow-folder-B"]').trigger('drop', {
-      dataTransfer: {
-        getData: (type: string) => (
-          type === 'application/bioimageflow-folder' ? 'A' : ''
-        ),
-      },
+    await dropTreeNode(wrapper, 'workflow-tree-folder_A', (nodes, dragNode) => {
+      const targetFolder = findNode(nodes, 'workflow-tree-folder_B')
+      targetFolder.children = [...(targetFolder.children ?? []), dragNode]
+      return nodes
     })
     await flushPromises()
 
@@ -527,12 +560,10 @@ describe('WorkflowsPanel', () => {
     await flushPromises()
 
     ;(wrapper.vm as any).selectFolder('A')
-    await wrapper.find('[data-testid="workflow-folder-B_Folder"]').trigger('drop', {
-      dataTransfer: {
-        getData: (type: string) => (
-          type === 'application/bioimageflow-folder' ? 'A' : ''
-        ),
-      },
+    await dropTreeNode(wrapper, 'workflow-tree-folder_A', (nodes, dragNode) => {
+      const targetFolder = findNode(nodes, 'workflow-tree-folder_B_Folder')
+      targetFolder.children = [...(targetFolder.children ?? []), dragNode]
+      return nodes
     })
     await flushPromises()
     await wrapper.find('[data-testid="workflow-new-btn"]').trigger('click')
@@ -549,13 +580,10 @@ describe('WorkflowsPanel', () => {
     const wrapper = mountPanel()
     const store = useWorkflowStore()
 
-    await wrapper.find('[data-testid="workflow-row-alpha_api"]').trigger('drop', {
-      dataTransfer: {
-        getData: (type: string) => (
-          type === 'application/bioimageflow-workflow' ? 'beta_api' : ''
-        ),
-      },
-    })
+    await dropTreeNode(wrapper, 'workflow-tree-workflow_beta_api', (nodes, dragNode) => [
+      dragNode,
+      ...nodes,
+    ])
 
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
       'beta_api',
