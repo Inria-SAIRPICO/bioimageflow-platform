@@ -672,7 +672,7 @@ defineExpose({
   <input
     ref="importFileInput"
     type="file"
-    accept=".bioimageflow.zip,.zip,.bioimageflow.json,application/json"
+    accept=".bioimageflow.zip,.zip,application/zip"
     hidden
     data-testid="workflow-import-input"
     @change="onImportFileSelected"

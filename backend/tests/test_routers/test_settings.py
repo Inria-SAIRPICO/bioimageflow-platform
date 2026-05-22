@@ -157,13 +157,14 @@ class TestPatchSettings:
     ) -> None:
         workspace = tmp_path / "new workspace"
         workflows_root = workspace / "workflows"
-        workflows_root.mkdir(parents=True)
-        (workflows_root / "legacy.json").write_text(
+        workflow_file = workflows_root / "retargeted" / "workflow.json"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
             json.dumps({
                 "graph": {"nodes": [], "edges": []},
                 "workflow": {"nodes": [], "edges": []},
                 "gui": {"nodes": {}},
-                "metadata": {"display_name": "Legacy"},
+                "metadata": {"display_name": "Retargeted"},
             }),
             encoding="utf-8",
         )
@@ -177,8 +178,8 @@ class TestPatchSettings:
         workflows = await settings_client.get("/api/v1/workflows")
 
         assert workflows.status_code == 200
-        assert [workflow["id"] for workflow in workflows.json()] == ["legacy"]
-        assert (workflows_root / "legacy" / "workflow.json").exists()
+        assert [workflow["id"] for workflow in workflows.json()] == ["retargeted"]
+        assert workflow_file.exists()
 
     async def test_patch_dev_mode_true_accepted(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch("/api/v1/settings", json={"dev_mode": True})

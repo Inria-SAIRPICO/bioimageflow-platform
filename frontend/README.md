@@ -74,7 +74,7 @@ The frontend treats workflows as a tree rooted at the current user's workspace:
 
 ```text
 workspace/
-  workflows/    folders and *.workflow.json files
+  workflows/    folders and workflow directories
   tools/        workspace-owned custom tools
   data/
   outputs/
@@ -86,9 +86,7 @@ workspaces root server-side. The Workflows panel renders folders and workflow
 rows, supports folder names with spaces, create/rename/delete folder actions,
 and uses drag/drop for moving workflows and folder subtrees between folders.
 Creating a workflow from a selected folder adds it to that folder. Dragging a
-workflow onto the canvas remains the sub-workflow creation gesture. Legacy
-`*.json` and `*.workflow.json` workflow files are migrated by the backend and
-remain visible in the tree.
+workflow onto the canvas remains the sub-workflow creation gesture.
 
 The Tools panel opens source through the editor API that keeps VS Code or
 code-server rooted at the workspace project and focuses the selected tool file.

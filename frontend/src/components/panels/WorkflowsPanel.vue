@@ -73,6 +73,23 @@ function folderLeafName(path: string): string {
   return index === -1 ? path : path.slice(index + 1)
 }
 
+function parentFolderPath(path: string): string | null {
+  const index = path.lastIndexOf('/')
+  return index === -1 ? null : path.slice(0, index)
+}
+
+function childFolderPath(parentId: string | null, name: string): string {
+  const trimmed = name.trim().replace(/^\/+|\/+$/g, '')
+  return parentId ? `${parentId}/${trimmed}` : trimmed
+}
+
+function remapFolderIdPrefix(id: string, oldPrefix: string, newPrefix: string | null): string | null {
+  if (id === oldPrefix) return newPrefix
+  if (!id.startsWith(`${oldPrefix}/`)) return id
+  const suffix = id.slice(oldPrefix.length + 1)
+  return newPrefix ? `${newPrefix}/${suffix}` : suffix
+}
+
 function dispatchWorkflowCommand(
   action: WorkflowPanelCommand,
   name?: string,
@@ -152,6 +169,20 @@ const selectedWorkflow = computed(() => {
   )) ?? null
 })
 
+const selectedFolder = computed(() => {
+  if (selectedName.value || !selectedFolderId.value) return null
+  return workflowStore.workflowFolders.find((folder) => folder.id === selectedFolderId.value) ?? null
+})
+
+function folderHasChildren(id: string): boolean {
+  return (
+    workflowStore.workflowFolders.some((folder) => folder.parentId === id || folder.id.startsWith(`${id}/`))
+    || Object.values(workflowStore.workflowFolderIds).some((folderId) => (
+      folderId === id || Boolean(folderId?.startsWith(`${id}/`))
+    ))
+  )
+}
+
 watch(
   () => workflowStore.currentName,
   (name) => {
@@ -171,6 +202,24 @@ watch(
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => selectedFolderId.value,
+  (folderId) => {
+    if (!selectedName.value) {
+      selectedKeys.value = folderId ? { [nodeKey(`folder:${folderId}`)]: true } : {}
+    }
+  },
+)
+
+watch(
+  () => workflowStore.workflowFolders.map((folder) => folder.id),
+  (folderIds) => {
+    if (selectedFolderId.value && !folderIds.includes(selectedFolderId.value)) {
+      selectedFolderId.value = null
+    }
+  },
 )
 
 watch(
@@ -195,6 +244,12 @@ watch(
   () => workflowStore.workflows,
   (workflows) => {
     if (selectedName.value && workflows.some((workflow) => workflowId(workflow) === selectedName.value)) {
+      return
+    }
+    if (
+      selectedFolderId.value
+      && workflowStore.workflowFolders.some((folder) => folder.id === selectedFolderId.value)
+    ) {
       return
     }
     selectedName.value = workflowStore.currentName ?? (
@@ -260,6 +315,22 @@ function emitSelected(action: 'duplicate-workflow' | 'export-workflow' | 'delete
   }
 }
 
+function deleteSelected(): void {
+  if (selectedWorkflow.value) {
+    emitSelected('delete-workflow')
+    return
+  }
+  if (selectedFolder.value) {
+    openDeleteFolderDialog(
+      selectedFolder.value.id,
+      selectedFolder.value.name,
+      folderHasChildren(selectedFolder.value.id),
+    )
+    return
+  }
+  emitSelected('delete-workflow')
+}
+
 function onNodeSelect(node: TreeNode): void {
   const data = node.data as WorkflowNodeData | undefined
   if (data?.type === 'workflow') {
@@ -290,9 +361,21 @@ async function submitFolderDialog(): Promise<void> {
   if (!name) return
   await runPanelAction(async () => {
     if (folderDialogMode.value === 'create') {
-      await workflowStore.createWorkflowFolder(name, folderDialogParentId.value)
+      const folder = await workflowStore.createWorkflowFolder(name, folderDialogParentId.value)
+      selectedFolderId.value = folder.id
+      selectedName.value = null
     } else if (folderDialogEditId.value) {
+      const newId = childFolderPath(parentFolderPath(folderDialogEditId.value), name)
+      const previousSelectedFolderId = selectedFolderId.value
       await workflowStore.renameWorkflowFolder(folderDialogEditId.value, name)
+      if (previousSelectedFolderId) {
+        selectedFolderId.value = remapFolderIdPrefix(
+          previousSelectedFolderId,
+          folderDialogEditId.value,
+          newId,
+        )
+        selectedName.value = null
+      }
     }
     folderDialogVisible.value = false
   })
@@ -307,7 +390,16 @@ async function confirmDeleteFolder(policy: WorkflowFolderDeletePolicy): Promise<
   const target = deleteFolderTarget.value
   if (!target) return
   await runPanelAction(async () => {
+    const previousSelectedFolderId = selectedFolderId.value
     await workflowStore.deleteWorkflowFolder(target.id, policy)
+    if (previousSelectedFolderId) {
+      selectedFolderId.value = remapFolderIdPrefix(
+        previousSelectedFolderId,
+        target.id,
+        policy === 'move_children_up' ? parentFolderPath(target.id) : null,
+      )
+      selectedName.value = null
+    }
     deleteDialogVisible.value = false
     deleteFolderTarget.value = null
   })
@@ -329,6 +421,13 @@ function onFolderDragStart(event: DragEvent, id: string): void {
   event.dataTransfer?.setData('application/bioimageflow-folder', id)
 }
 
+function onDragOver(event: DragEvent): void {
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
 async function dropOnFolder(event: DragEvent, targetFolderId: string): Promise<void> {
   event.preventDefault()
   event.stopPropagation()
@@ -336,7 +435,15 @@ async function dropOnFolder(event: DragEvent, targetFolderId: string): Promise<v
   const folderName = folderNameFromDrop(event)
   await runPanelAction(async () => {
     if (workflowName) await workflowStore.moveWorkflowToFolder(workflowName, targetFolderId)
-    else if (folderName) await workflowStore.moveWorkflowFolder(folderName, targetFolderId)
+    else if (folderName) {
+      const newId = childFolderPath(targetFolderId, folderLeafName(folderName))
+      const previousSelectedFolderId = selectedFolderId.value
+      await workflowStore.moveWorkflowFolder(folderName, targetFolderId)
+      if (previousSelectedFolderId) {
+        selectedFolderId.value = remapFolderIdPrefix(previousSelectedFolderId, folderName, newId)
+        selectedName.value = null
+      }
+    }
   })
 }
 
@@ -346,7 +453,15 @@ async function dropOnRoot(event: DragEvent): Promise<void> {
   const folderName = folderNameFromDrop(event)
   await runPanelAction(async () => {
     if (workflowName) await workflowStore.moveWorkflowToFolder(workflowName, null)
-    else if (folderName) await workflowStore.moveWorkflowFolder(folderName, null)
+    else if (folderName) {
+      const newId = folderLeafName(folderName)
+      const previousSelectedFolderId = selectedFolderId.value
+      await workflowStore.moveWorkflowFolder(folderName, null)
+      if (previousSelectedFolderId) {
+        selectedFolderId.value = remapFolderIdPrefix(previousSelectedFolderId, folderName, newId)
+        selectedName.value = null
+      }
+    }
   })
 }
 
@@ -360,6 +475,7 @@ defineExpose({
   filteredWorkflows,
   treeNodes,
   selectedWorkflow,
+  selectedFolder,
   formatModifiedTime,
   selectWorkflow,
   selectFolder,
@@ -371,6 +487,7 @@ defineExpose({
   openDeleteFolderDialog,
   submitFolderDialog,
   confirmDeleteFolder,
+  deleteSelected,
   dropOnFolder,
   dropOnRoot,
   dropWorkflowBefore,
@@ -408,6 +525,16 @@ defineExpose({
         @click="openCreateFolderDialog(selectedFolderId)"
       />
       <Button
+        icon="pi pi-pencil"
+        text
+        size="small"
+        aria-label="Rename folder"
+        title="Rename folder"
+        :disabled="!selectedFolder"
+        data-testid="workflow-rename-folder-btn"
+        @click="selectedFolder && openRenameFolderDialog(selectedFolder.id, selectedFolder.name)"
+      />
+      <Button
         icon="pi pi-copy"
         text
         size="small"
@@ -441,11 +568,11 @@ defineExpose({
         text
         size="small"
         severity="danger"
-        aria-label="Delete workflow"
-        title="Delete workflow"
-        :disabled="!selectedWorkflow"
+        aria-label="Delete selected item"
+        title="Delete selected item"
+        :disabled="!selectedWorkflow && !selectedFolder"
         data-testid="workflow-delete-btn"
-        @click="emitSelected('delete-workflow')"
+        @click="deleteSelected"
       />
     </div>
 
@@ -459,7 +586,8 @@ defineExpose({
     <div
       class="workflows-panel__tree-shell"
       data-testid="workflow-list"
-      @dragover.prevent
+      @dragenter.prevent
+      @dragover.prevent="onDragOver"
       @drop="dropOnRoot"
     >
       <Tree
@@ -478,41 +606,14 @@ defineExpose({
             draggable="true"
             :data-testid="`workflow-folder-${testId(node.data.id)}`"
             @dragstart.stop="onFolderDragStart($event, node.data.id)"
-            @dragover.prevent
-            @drop.stop="dropOnFolder($event, node.data.id)"
+            @dragenter.prevent.stop
+            @dragover.prevent.stop="onDragOver"
+            @drop.prevent.stop="dropOnFolder($event, node.data.id)"
           >
             <span class="workflow-folder-row__name">
               <i class="pi pi-folder" aria-hidden="true" />
               {{ node.data.name }}
             </span>
-            <Button
-              icon="pi pi-folder-plus"
-              text
-              size="small"
-              aria-label="New subfolder"
-              title="New subfolder"
-              :data-testid="`workflow-folder-create-${testId(node.data.id)}`"
-              @click.stop="openCreateFolderDialog(node.data.id)"
-            />
-            <Button
-              icon="pi pi-pencil"
-              text
-              size="small"
-              aria-label="Rename folder"
-              title="Rename folder"
-              :data-testid="`workflow-folder-rename-${testId(node.data.id)}`"
-              @click.stop="openRenameFolderDialog(node.data.id, node.data.name)"
-            />
-            <Button
-              icon="pi pi-trash"
-              text
-              size="small"
-              severity="danger"
-              aria-label="Delete folder"
-              title="Delete folder"
-              :data-testid="`workflow-folder-delete-${testId(node.data.id)}`"
-              @click.stop="openDeleteFolderDialog(node.data.id, node.data.name, node.data.hasChildren)"
-            />
           </div>
           <div
             v-else
@@ -520,8 +621,9 @@ defineExpose({
             :class="{ 'workflow-row--selected': selectedName === node.data.id }"
             :data-testid="`workflow-row-${testId(node.data.id)}`"
             @dblclick="openWorkflow(node.data.id)"
-            @dragover.prevent
-            @drop.stop="dropWorkflowBefore($event, node.data.id)"
+            @dragenter.prevent.stop
+            @dragover.prevent.stop="onDragOver"
+            @drop.prevent.stop="dropWorkflowBefore($event, node.data.id)"
             @keydown.enter.prevent="openWorkflow(node.data.id)"
           >
             <span
@@ -696,6 +798,24 @@ defineExpose({
   padding: 0;
 }
 
+.workflow-tree :deep(.p-tree-node-content),
+.workflow-tree :deep(.p-treenode-content) {
+  gap: 0.25rem;
+  padding: 0.1rem 0.15rem;
+}
+
+.workflow-tree :deep(.p-tree-node-children),
+.workflow-tree :deep(.p-treenode-children) {
+  padding-left: 0.85rem;
+}
+
+.workflow-tree :deep(.p-tree-node-toggle-button),
+.workflow-tree :deep(.p-tree-toggler) {
+  flex: 0 0 1.25rem;
+  height: 1.25rem;
+  width: 1.25rem;
+}
+
 .workflow-row {
   align-items: center;
   color: var(--p-text-color);
@@ -749,10 +869,10 @@ defineExpose({
 
 .workflow-folder-row {
   align-items: center;
-  display: grid;
+  display: flex;
   gap: 0.25rem;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
   min-height: 2.25rem;
+  padding: 0.2rem 0.25rem;
   width: 100%;
 }
 

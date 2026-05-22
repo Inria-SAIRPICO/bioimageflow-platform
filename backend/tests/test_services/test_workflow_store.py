@@ -18,7 +18,6 @@ from bioimageflow_server.models.workflow import (
     WorkflowUpdate,
 )
 from bioimageflow_server.services.workflow_store import (
-    WorkflowImportParseError,
     WorkflowStoreService,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -380,7 +379,7 @@ def test_save_preserves_invalid_graph_losslessly(store: WorkflowStoreService) ->
     assert raw["workflow"]["nodes"] == []
 
 
-def test_legacy_file_reports_missing_packages_and_tools(
+def test_stray_json_files_are_ignored_without_side_effects(
     store: WorkflowStoreService,
 ) -> None:
     raw = {
@@ -397,63 +396,62 @@ def test_legacy_file_reports_missing_packages_and_tools(
             "edges": [],
         },
         "gui": {"nodes": {"n1": {"position": [1, 2]}}},
-        "metadata": {"display_name": "Legacy"},
+        "metadata": {"display_name": "Not a platform workflow"},
     }
     store.root_dir.mkdir(parents=True, exist_ok=True)
-    (store.root_dir / "legacy.json").write_text(json.dumps(raw), encoding="utf-8")
+    stray_path = store.root_dir / "stray.json"
+    stray_workflow_path = store.root_dir / "stray.workflow.json"
+    stray_path.write_text(json.dumps(raw), encoding="utf-8")
+    stray_workflow_path.write_text(json.dumps(raw), encoding="utf-8")
 
-    workflow = store.get_workflow("legacy")
+    assert store.list_workflows() == []
+    with pytest.raises(FileNotFoundError):
+        store.get_workflow("stray")
 
-    assert not (store.root_dir / "legacy.json").exists()
-    assert _workflow_json(store, "legacy").exists()
-    assert (store.root_dir / "legacy" / "tools").is_dir()
-    assert workflow.graph.nodes[0].id == "n1"
-    assert workflow.missing_packages[0].package_name == "missing-pkg"
-    assert workflow.missing_packages[0].required_version == "9.9.9"
-    assert workflow.missing_tools[0].node_id == "n1"
-    assert workflow.missing_tools[0].tool_name == "RemovedTool"
+    assert stray_path.exists()
+    assert stray_workflow_path.exists()
+    assert not _workflow_json(store, "stray").exists()
 
 
-def test_legacy_workflow_extension_files_are_listed_and_migrated(
+def test_create_workflow_ignores_stray_json_file_collision(
     store: WorkflowStoreService,
 ) -> None:
-    raw = {
-        "graph": {"nodes": [], "edges": []},
-        "workflow": {"nodes": [], "edges": []},
-        "gui": {"nodes": {}},
-        "metadata": {"display_name": "Legacy Workflow"},
-    }
-    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
-    legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+    store.root_dir.mkdir(parents=True)
+    stray = store.root_dir / "wf.json"
+    stray.write_text("{}", encoding="utf-8")
 
-    listed = store.list_workflows()
+    info = store.create_workflow(WorkflowCreate(name="wf", display_name="Workflow"))
 
-    assert [workflow.id for workflow in listed] == ["Analysis Results/nuclei"]
-    assert listed[0].folder == "Analysis Results"
-    assert not legacy_path.exists()
-    assert (store.root_dir / "Analysis Results" / "nuclei" / "workflow.json").exists()
-    assert (store.root_dir / "Analysis Results" / "nuclei" / "tools").is_dir()
+    assert info.id == "wf"
+    assert stray.exists()
+    assert _workflow_json(store, "wf").exists()
 
 
-def test_rename_folder_migrates_legacy_workflow_children_and_storage(
+def test_delete_workflow_requires_current_layout_and_leaves_stray_json(
     store: WorkflowStoreService,
 ) -> None:
-    raw = {
-        "graph": {"nodes": [], "edges": []},
-        "workflow": {"nodes": [], "edges": []},
-        "gui": {"nodes": {}},
-        "metadata": {
-            "display_name": "Legacy Workflow",
-            "storage_path": str(store.storage_base_dir / "Analysis Results" / "nuclei"),
-        },
-    }
-    storage_path = store.storage_base_dir / "Analysis Results" / "nuclei"
+    store.root_dir.mkdir(parents=True)
+    stray = store.root_dir / "wf.json"
+    stray.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError):
+        store.delete_workflow("wf")
+
+    assert stray.exists()
+    assert not _workflow_json(store, "wf").exists()
+
+
+def test_folder_rename_moves_regular_json_files_without_treating_them_as_workflows(
+    store: WorkflowStoreService,
+) -> None:
+    info = store.create_workflow(WorkflowCreate(name="Analysis Results/nuclei"))
+    storage_path = Path(info.storage_path)
     storage_path.mkdir(parents=True)
     (storage_path / "result.txt").write_text("ok")
-    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
-    legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+    notes = store.root_dir / "Analysis Results" / "notes.json"
+    notes.write_text('{"kind": "notes"}', encoding="utf-8")
+    unrelated_storage = store.storage_base_dir / "Analysis Results" / "notes"
+    unrelated_storage.mkdir(parents=True)
 
     store.rename_folder("Analysis Results", "Archive 2026")
 
@@ -461,81 +459,29 @@ def test_rename_folder_migrates_legacy_workflow_children_and_storage(
     assert workflow.id == "Archive 2026/nuclei"
     assert Path(workflow.storage_path) == store.storage_base_dir / "Archive 2026" / "nuclei"
     assert (Path(workflow.storage_path) / "result.txt").read_text() == "ok"
-    assert not legacy_path.exists()
     assert not storage_path.exists()
+    assert (store.root_dir / "Archive 2026" / "notes.json").read_text(
+        encoding="utf-8"
+    ) == '{"kind": "notes"}'
+    assert unrelated_storage.exists()
 
 
-def test_delete_folder_delete_children_removes_legacy_workflow_storage(
+def test_delete_folder_delete_children_removes_storage_only_for_current_workflows(
     store: WorkflowStoreService,
 ) -> None:
-    raw = {
-        "graph": {"nodes": [], "edges": []},
-        "workflow": {"nodes": [], "edges": []},
-        "gui": {"nodes": {}},
-        "metadata": {
-            "display_name": "Legacy Workflow",
-            "storage_path": str(store.storage_base_dir / "Analysis Results" / "nuclei"),
-        },
-    }
-    storage_path = store.storage_base_dir / "Analysis Results" / "nuclei"
+    info = store.create_workflow(WorkflowCreate(name="Analysis Results/nuclei"))
+    storage_path = Path(info.storage_path)
     storage_path.mkdir(parents=True)
-    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
-    legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
+    unrelated_storage = store.storage_base_dir / "Analysis Results" / "notes"
+    unrelated_storage.mkdir(parents=True)
+    notes = store.root_dir / "Analysis Results" / "notes.json"
+    notes.write_text("{}", encoding="utf-8")
 
     store.delete_folder("Analysis Results", "delete_children")
 
     assert not storage_path.exists()
+    assert unrelated_storage.exists()
     assert not (store.root_dir / "Analysis Results").exists()
-
-
-def test_delete_folder_move_children_up_promotes_legacy_workflows(
-    store: WorkflowStoreService,
-) -> None:
-    raw = {
-        "graph": {"nodes": [], "edges": []},
-        "workflow": {"nodes": [], "edges": []},
-        "gui": {"nodes": {}},
-        "metadata": {
-            "display_name": "Legacy Workflow",
-            "storage_path": str(store.storage_base_dir / "Analysis Results" / "nuclei"),
-        },
-    }
-    storage_path = store.storage_base_dir / "Analysis Results" / "nuclei"
-    storage_path.mkdir(parents=True)
-    (storage_path / "result.txt").write_text("ok")
-    legacy_path = store.root_dir / "Analysis Results" / "nuclei.workflow.json"
-    legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
-
-    store.delete_folder("Analysis Results", "move_children_up")
-
-    workflow = store.get_workflow("nuclei").info
-    assert workflow.id == "nuclei"
-    assert Path(workflow.storage_path) == store.storage_base_dir / "nuclei"
-    assert (Path(workflow.storage_path) / "result.txt").read_text() == "ok"
-    assert not legacy_path.exists()
-    assert not storage_path.exists()
-
-
-def test_nested_legacy_json_files_are_listed_and_migrated(
-    store: WorkflowStoreService,
-) -> None:
-    raw = {
-        "graph": {"nodes": [], "edges": []},
-        "workflow": {"nodes": [], "edges": []},
-        "gui": {"nodes": {}},
-        "metadata": {"display_name": "Nested Legacy"},
-    }
-    legacy_path = store.root_dir / "segmentation" / "nuclei.json"
-    legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text(json.dumps(raw), encoding="utf-8")
-
-    workflow = store.get_workflow("segmentation/nuclei")
-
-    assert workflow.info.id == "segmentation/nuclei"
-    assert not legacy_path.exists()
-    assert (store.root_dir / "segmentation" / "nuclei" / "workflow.json").exists()
 
 
 def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:
@@ -824,11 +770,11 @@ def test_export_workflow_preserves_raw_sections_and_required_packages(
         },
     }
     store.root_dir.mkdir(parents=True, exist_ok=True)
-    (store.root_dir / "wf.json").write_text(json.dumps(raw), encoding="utf-8")
+    _workflow_json(store, "wf").parent.mkdir(parents=True)
+    _workflow_json(store, "wf").write_text(json.dumps(raw), encoding="utf-8")
 
     document = store.export_workflow("wf")
 
-    assert not (store.root_dir / "wf.json").exists()
     assert _workflow_json(store, "wf").exists()
     assert document.bioimageflow_export is True
     assert document.export_version == "1.0"
@@ -974,88 +920,6 @@ def test_export_workflow_archive_delegates_to_adapter(
     assert payload == b"fake zip"
     assert archive_adapter.export_calls[0][0] == _workflow_json(store, "wf")
     assert archive_adapter.export_calls[0][1].name == "wf.bioimageflow.zip"
-
-
-def test_parse_import_document_rejects_malformed_json(
-    store: WorkflowStoreService,
-) -> None:
-    with pytest.raises(WorkflowImportParseError):
-        store.parse_import_document(b"{bad json")
-
-
-def test_parse_import_document_rejects_non_utf_json(
-    store: WorkflowStoreService,
-) -> None:
-    with pytest.raises(WorkflowImportParseError):
-        store.parse_import_document(b"\xff")
-
-
-def test_parse_import_document_reconstructs_missing_graph_from_library(
-    store: WorkflowStoreService,
-) -> None:
-    payload = {
-        "bioimageflow_export": True,
-        "export_version": "1.0",
-        "exported_at": "2026-04-30T10:30:00Z",
-        "workflow": {
-            "name": "legacy",
-            "display_name": "Legacy",
-            "description": None,
-            "storage_path": None,
-            "library": {
-                "nodes": [
-                    {
-                        "name": "n1",
-                        "display_name": "Node",
-                        "tool_class": "ExistingTool",
-                        "constants": {"threshold": 3},
-                    }
-                ],
-                "edges": [],
-            },
-            "gui": {"nodes": {"n1": {"position": [4, 5]}}},
-            "metadata": {},
-        },
-        "required_packages": [],
-        "local_tools": [],
-    }
-
-    document = store.parse_import_document(json.dumps(payload).encode())
-
-    assert document.workflow.graph["nodes"][0]["id"] == "n1"
-    assert document.workflow.graph["nodes"][0]["position"] == [4.0, 5.0]
-    assert document.workflow.graph["nodes"][0]["parameters"] == {"threshold": 3}
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"bioimageflow_export": True, "export_version": "2.0"},
-        {
-            "bioimageflow_export": True,
-            "export_version": "1.0",
-            "exported_at": "2026-04-30T10:30:00Z",
-            "workflow": {
-                "name": "wf",
-                "display_name": "Workflow",
-                "description": None,
-                "storage_path": None,
-                "graph": [],
-                "library": {"nodes": [], "edges": []},
-                "gui": {"nodes": {}},
-                "metadata": {},
-            },
-            "required_packages": [],
-            "local_tools": [],
-        },
-    ],
-)
-def test_parse_import_document_rejects_invalid_payloads(
-    store: WorkflowStoreService,
-    payload: dict,
-) -> None:
-    with pytest.raises(ValueError):
-        store.parse_import_document(json.dumps(payload).encode())
 
 
 def test_import_workflow_saves_with_managed_storage_path(

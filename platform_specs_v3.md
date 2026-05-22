@@ -54,9 +54,8 @@ configuration changes `workspaces_root`.
 
 Workflow and folder path segments may contain spaces; they remain ordinary
 workspace-relative path segments and cannot be empty, absolute, or traversal
-segments. The server must discover and migrate legacy `*.json` and
-`*.workflow.json` workflow files under each user's workspace so upgrading the
-workspace tree layout does not hide existing workflows.
+segments. The server lists only workflow directories containing `workflow.json`;
+other JSON files under the workspace remain ordinary files.
 
 ### 1.3 Mode Detection
 

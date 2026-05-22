@@ -42,10 +42,8 @@ contain spaces. Each workflow is stored as
 folder tree where users can create, rename, delete, and drag folders or
 workflows. Deleting a non-empty folder asks whether to delete children, move
 them up, or cancel. Creating a workflow while a folder is selected places it in
-that folder. Legacy `*.json` and `*.workflow.json` workflow files are migrated
-into the folder tree when listed or opened. Tool source opening keeps VS Code
-or code-server rooted at the workspace project and focuses the selected tool
-file.
+that folder. Tool source opening keeps VS Code or code-server rooted at the
+workspace project and focuses the selected tool file.
 
 ## Prerequisites
 

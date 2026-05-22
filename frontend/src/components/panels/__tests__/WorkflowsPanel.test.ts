@@ -23,7 +23,7 @@ const workflows: WorkflowInfo[] = [
     folder: '',
     display_name: 'Alpha Workflow',
     description: 'Segment nuclei and measure intensities.',
-    path: '/library/workflows/alpha_api/workflow.bioimageflow.json',
+    path: '/library/workflows/alpha_api/workflow.json',
     storage_path: '/library/workflows/alpha_api',
     last_modified: '2026-04-30T12:34:56Z',
   },
@@ -33,7 +33,7 @@ const workflows: WorkflowInfo[] = [
     folder: '',
     display_name: 'Beta Workflow',
     description: null,
-    path: '/library/workflows/beta_api/workflow.bioimageflow.json',
+    path: '/library/workflows/beta_api/workflow.json',
     storage_path: '/library/workflows/beta_api',
     last_modified: '2026-05-01T08:00:00Z',
   },
@@ -91,7 +91,7 @@ describe('WorkflowsPanel', () => {
     )
     expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
     expect(wrapper.find('[data-testid="workflow-detail-path"]').text()).toContain(
-      '/library/workflows/beta_api/workflow.bioimageflow.json',
+      '/library/workflows/beta_api/workflow.json',
     )
     expect(wrapper.find('[data-testid="workflow-detail-storage-path"]').text()).toContain(
       '/library/workflows/beta_api',
@@ -193,6 +193,38 @@ describe('WorkflowsPanel', () => {
     dispatchSpy.mockRestore()
   })
 
+  it('keeps workflow toolbar actions targeted at a workflow inside a folder', async () => {
+    const nestedWorkflow: WorkflowInfo = {
+      id: 'Analysis Results/beta_api',
+      name: 'beta_api',
+      folder: 'Analysis Results',
+      display_name: 'Beta Workflow',
+      description: null,
+      path: '/library/workflows/Analysis Results/beta_api/workflow.json',
+      storage_path: '/library/workflows/Analysis Results/beta_api',
+      last_modified: '2026-05-01T08:00:00Z',
+    }
+    const wrapper = mountPanel([nestedWorkflow])
+    const store = useWorkflowStore()
+    store.workflowFolders = [{
+      id: 'Analysis Results',
+      name: 'Analysis Results',
+      parentId: null,
+    }]
+    store.workflowFolderIds = {
+      'Analysis Results/beta_api': 'Analysis Results',
+    }
+    await flushPromises()
+
+    await wrapper.find('[data-testid="workflow-row-Analysis_Results_beta_api"]').trigger('click')
+    expect(wrapper.find('[data-testid="workflow-rename-folder-btn"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.find('[data-testid="workflow-delete-btn"]').trigger('click')
+
+    expect(wrapper.emitted('delete-workflow')?.[0]).toEqual(['Analysis Results/beta_api'])
+    expect(wrapper.find('[data-testid="workflow-folder-delete-dialog"]').exists()).toBe(false)
+  })
+
   it('opens the selected workflow on double click, Enter, and Open', async () => {
     const wrapper = mountPanel()
 
@@ -223,7 +255,7 @@ describe('WorkflowsPanel', () => {
     expect(setData).not.toHaveBeenCalledWith('text/plain', expect.any(String))
   })
 
-  it('creates, renames, and deletes workflow folders through panel hooks', async () => {
+  it('creates, renames, and deletes the selected folder from the toolbar', async () => {
     const promptSpy = vi.spyOn(window, 'prompt')
     const confirmSpy = vi.spyOn(window, 'confirm')
     vi.mocked(api.post).mockResolvedValueOnce({
@@ -272,7 +304,7 @@ describe('WorkflowsPanel', () => {
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
-        path: '/library/workflows/Analysis/beta_api/workflow.bioimageflow.json',
+        path: '/library/workflows/Analysis/beta_api/workflow.json',
         storage_path: '/library/workflows/Analysis/beta_api',
         last_modified: '2026-05-01T08:00:00Z',
       },
@@ -289,14 +321,16 @@ describe('WorkflowsPanel', () => {
     expect(wrapper.find(`[data-testid="workflow-folder-${folder.id}"]`).text()).toContain(
       'Analysis',
     )
+    expect(wrapper.find(`[data-testid="workflow-folder-rename-${folder.id}"]`).exists()).toBe(false)
+    expect(wrapper.find(`[data-testid="workflow-folder-delete-${folder.id}"]`).exists()).toBe(false)
 
-    await wrapper.find(`[data-testid="workflow-folder-rename-${folder.id}"]`).trigger('click')
+    await wrapper.find('[data-testid="workflow-rename-folder-btn"]').trigger('click')
     await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Published')
     await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
     await flushPromises()
     expect(store.workflowFolders[0].name).toBe('Published')
 
-    await wrapper.find('[data-testid="workflow-folder-delete-Published"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-delete-btn"]').trigger('click')
     await wrapper.find('[data-testid="workflow-folder-delete-confirm"]').trigger('click')
     await flushPromises()
     expect(promptSpy).not.toHaveBeenCalled()
@@ -327,7 +361,7 @@ describe('WorkflowsPanel', () => {
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
-        path: '/library/workflows/Analysis/beta_api/workflow.bioimageflow.json',
+        path: '/library/workflows/Analysis/beta_api/workflow.json',
         storage_path: '/library/workflows/Analysis/beta_api',
         last_modified: '2026-05-01T08:00:00Z',
       },
@@ -346,7 +380,10 @@ describe('WorkflowsPanel', () => {
     await store.moveWorkflowToFolder('beta_api', folder.id)
     await flushPromises()
 
-    await wrapper.find(`[data-testid="workflow-folder-delete-${folder.id}"]`).trigger('click')
+    ;(wrapper.vm as any).selectFolder(folder.id)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="workflow-delete-btn"]').trigger('click')
     expect(wrapper.find('[data-testid="workflow-folder-delete-move-up"]').exists()).toBe(true)
 
     await wrapper.find('[data-testid="workflow-folder-delete-move-up"]').trigger('click')
@@ -376,7 +413,7 @@ describe('WorkflowsPanel', () => {
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
-        path: '/library/workflows/Analysis/beta_api/workflow.bioimageflow.json',
+        path: '/library/workflows/Analysis/beta_api/workflow.json',
         storage_path: '/library/workflows/Analysis/beta_api',
         last_modified: '2026-05-01T08:00:00Z',
       },
@@ -452,6 +489,60 @@ describe('WorkflowsPanel', () => {
       { new_path: 'B/A' },
     )
     expect(store.workflowFolders).toContainEqual({ id: 'B/A', name: 'A', parentId: 'B' })
+  })
+
+  it('keeps folder selection current after moving a selected folder', async () => {
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'A', name: 'A', parentId: null },
+      { id: 'B Folder', name: 'B Folder', parentId: null },
+    ]
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        path: 'B Folder/A',
+        display_name: 'A',
+        folders: [],
+        workflows: [],
+      },
+    })
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        path: '',
+        display_name: 'workspace',
+        folders: [{
+          path: 'B Folder',
+          display_name: 'B Folder',
+          folders: [{
+            path: 'B Folder/A',
+            display_name: 'A',
+            folders: [],
+            workflows: [],
+          }],
+          workflows: [],
+        }],
+        workflows,
+      },
+    })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectFolder('A')
+    await wrapper.find('[data-testid="workflow-folder-B_Folder"]').trigger('drop', {
+      dataTransfer: {
+        getData: (type: string) => (
+          type === 'application/bioimageflow-folder' ? 'A' : ''
+        ),
+      },
+    })
+    await flushPromises()
+    await wrapper.find('[data-testid="workflow-new-btn"]').trigger('click')
+
+    expect(api.patch).toHaveBeenCalledWith(
+      '/api/v1/workflows/folders/A',
+      { new_path: 'B Folder/A' },
+    )
+    const newWorkflowEvents = wrapper.emitted('new-workflow') ?? []
+    expect(newWorkflowEvents[newWorkflowEvents.length - 1]).toEqual(['B Folder/A'])
   })
 
   it('reorders workflow ids by dropping onto another workflow row', async () => {
