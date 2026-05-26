@@ -25,9 +25,11 @@ Sub-workflows allow grouping a set of nodes into a single reusable unit. The Bio
 
 #### From Workflows Panel
 
-Saved workflows can be dragged from the Workflows panel onto the canvas by
-using the row's drag handle. Dropping a workflow creates a SubWorkflowNode; the
-dragged workflow becomes the sub-workflow's internal DAG.
+Saved workflows can be dragged from anywhere on the workflow row in the
+Workflows panel onto the canvas. Dropping a workflow creates a SubWorkflowNode;
+the dragged workflow becomes the sub-workflow's internal DAG. The same row drag
+also participates in the workspace tree drag/drop; there is no separate drag
+handle with different behavior.
 
 The Workflows panel uses the v1 workspace tree semantics: folder and workflow
 ids are slash-separated workspace-relative paths whose individual segments may

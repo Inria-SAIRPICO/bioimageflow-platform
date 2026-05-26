@@ -476,6 +476,34 @@ describe('AppShell', () => {
     expect(useUIStore().activeWorkflowName).toBe('Analysis')
   })
 
+  it('opens a workflow tab above bottom panels when no canvas tab remains', async () => {
+    mountApp()
+    await flushPromises()
+    panels.delete('canvas')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'analysis',
+        workflowDisplayName: 'Analysis',
+        graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+        missingTools: [],
+        dirty: false,
+      },
+    }))
+    await flushPromises()
+
+    const lastCall = mockDockviewApi.addPanel.mock.calls[
+      mockDockviewApi.addPanel.mock.calls.length - 1
+    ]?.[0]
+    expect(lastCall).toMatchObject({
+      id: 'workflow:analysis',
+      position: {
+        referencePanel: 'dataTable',
+        direction: 'above',
+      },
+    })
+  })
+
   it('activating a non-canvas panel keeps the current node selection', async () => {
     mountApp()
     await flushPromises()

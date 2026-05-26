@@ -281,7 +281,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
       folderId: parentId,
       depth,
     }))
-    return [...folders, ...workflowNodes]
+    return [...folders, ...workflowNodes].sort((a, b) => {
+      const aLabel = a.type === 'folder' ? a.name : a.workflow.display_name
+      const bLabel = b.type === 'folder' ? b.name : b.workflow.display_name
+      return aLabel.localeCompare(bLabel)
+    })
   }
 
   function flattenTree(nodes: WorkflowTreeNode[]): WorkflowInfo[] {

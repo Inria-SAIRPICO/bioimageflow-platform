@@ -17,6 +17,7 @@ const emit = defineEmits<{
   'import-workflow': []
   'export-workflow': [name: string]
   'delete-workflow': [name: string]
+  'rename-workflow': [name: string]
   'open-workflow': [name: string]
   'select-workflow': [name: string]
 }>()
@@ -50,7 +51,7 @@ const expandedKeys = ref<Record<string, boolean>>({})
 const renderedTreeNodes = ref<WorkflowPrimeTreeNode[]>([])
 
 const folderDialogVisible = ref(false)
-const folderDialogMode = ref<'create' | 'rename'>('create')
+const folderDialogMode = ref<'create' | 'rename-folder' | 'rename-workflow'>('create')
 const folderDialogParentId = ref<string | null>(null)
 const folderDialogEditId = ref<string | null>(null)
 const folderNameInput = ref('')
@@ -118,6 +119,7 @@ function toPrimeTreeNodes(nodes: WorkflowTreeNode[]): WorkflowPrimeTreeNode[] {
         key: nodeKey(`workflow:${id}`),
         label: node.workflow.display_name,
         data: { type: 'workflow', id, workflow: node.workflow },
+        icon: 'pi pi-file',
         draggable: true,
         droppable: false,
         styleClass: 'workflow-tree-node--workflow',
@@ -134,6 +136,7 @@ function toPrimeTreeNodes(nodes: WorkflowTreeNode[]): WorkflowPrimeTreeNode[] {
         hasChildren: children.length > 0,
       },
       children,
+      icon: 'pi pi-folder',
       draggable: true,
       droppable: true,
       styleClass: 'workflow-tree-node--folder',
@@ -164,6 +167,7 @@ const treeNodes = computed<WorkflowPrimeTreeNode[]>(() => {
         key: nodeKey(`workflow:${id}`),
         label: workflow.display_name,
         data: { type: 'workflow', id, workflow },
+        icon: 'pi pi-file',
         draggable: false,
         droppable: false,
       }
@@ -173,6 +177,17 @@ const treeNodes = computed<WorkflowPrimeTreeNode[]>(() => {
 })
 
 const treeDragEnabled = computed(() => searchQuery.value.trim().length === 0)
+
+const treePassThrough = {
+  nodeContent: ({ context }: { context: { node: WorkflowPrimeTreeNode } }) => {
+    const data = context.node.data as WorkflowNodeData | undefined
+    if (data?.type !== 'workflow') return undefined
+    return {
+      'data-workflow-id': data.id,
+      onDragstart: (event: DragEvent) => onWorkflowDragStart(event, data.workflow),
+    }
+  },
+}
 
 const selectedWorkflow = computed(() => {
   if (!selectedName.value) return null
@@ -369,11 +384,29 @@ function openCreateFolderDialog(parentId: string | null = null): void {
 }
 
 function openRenameFolderDialog(id: string, name: string): void {
-  folderDialogMode.value = 'rename'
+  folderDialogMode.value = 'rename-folder'
   folderDialogParentId.value = null
   folderDialogEditId.value = id
   folderNameInput.value = name
   folderDialogVisible.value = true
+}
+
+function openRenameWorkflowDialog(id: string, name: string): void {
+  folderDialogMode.value = 'rename-workflow'
+  folderDialogParentId.value = null
+  folderDialogEditId.value = id
+  folderNameInput.value = name
+  folderDialogVisible.value = true
+}
+
+function openRenameSelectedItem(): void {
+  if (selectedFolder.value) {
+    openRenameFolderDialog(selectedFolder.value.id, selectedFolder.value.name)
+  } else if (selectedWorkflow.value) {
+    const id = workflowId(selectedWorkflow.value)
+    emit('rename-workflow', id)
+    openRenameWorkflowDialog(id, selectedWorkflow.value.display_name)
+  }
 }
 
 async function submitFolderDialog(): Promise<void> {
@@ -384,7 +417,7 @@ async function submitFolderDialog(): Promise<void> {
       const folder = await workflowStore.createWorkflowFolder(name, folderDialogParentId.value)
       selectedFolderId.value = folder.id
       selectedName.value = null
-    } else if (folderDialogEditId.value) {
+    } else if (folderDialogMode.value === 'rename-folder' && folderDialogEditId.value) {
       const newId = childFolderPath(parentFolderPath(folderDialogEditId.value), name)
       const previousSelectedFolderId = selectedFolderId.value
       await workflowStore.renameWorkflowFolder(folderDialogEditId.value, name)
@@ -396,6 +429,14 @@ async function submitFolderDialog(): Promise<void> {
         )
         selectedName.value = null
       }
+    } else if (folderDialogMode.value === 'rename-workflow' && folderDialogEditId.value) {
+      const previousName = folderDialogEditId.value
+      const renamed = await workflowStore.patchWorkflow(previousName, {
+        action: 'update',
+        display_name: name,
+      })
+      selectedName.value = workflowId(renamed)
+      selectedFolderId.value = null
     }
     folderDialogVisible.value = false
   })
@@ -508,6 +549,8 @@ defineExpose({
   onWorkflowDragStart,
   openCreateFolderDialog,
   openRenameFolderDialog,
+  openRenameWorkflowDialog,
+  openRenameSelectedItem,
   openDeleteFolderDialog,
   submitFolderDialog,
   confirmDeleteFolder,
@@ -550,11 +593,11 @@ defineExpose({
         icon="pi pi-pencil"
         text
         size="small"
-        aria-label="Rename folder"
-        title="Rename folder"
-        :disabled="!selectedFolder"
-        data-testid="workflow-rename-folder-btn"
-        @click="selectedFolder && openRenameFolderDialog(selectedFolder.id, selectedFolder.name)"
+        aria-label="Rename selected item"
+        title="Rename selected item"
+        :disabled="!selectedWorkflow && !selectedFolder"
+        data-testid="workflow-rename-selected-btn"
+        @click="openRenameSelectedItem"
       />
       <Button
         icon="pi pi-copy"
@@ -615,6 +658,7 @@ defineExpose({
         v-model:expandedKeys="expandedKeys"
         :draggable-nodes="treeDragEnabled"
         :droppable-nodes="treeDragEnabled"
+        :pt="treePassThrough"
         draggable-scope="workflow-tree"
         droppable-scope="workflow-tree"
         selection-mode="single"
@@ -629,30 +673,18 @@ defineExpose({
             class="workflow-folder-row"
             :data-testid="`workflow-folder-${testId(node.data.id)}`"
           >
-            <span class="workflow-folder-row__name">
-              <i class="pi pi-folder" aria-hidden="true" />
-              {{ node.data.name }}
-            </span>
+            <span class="workflow-folder-row__name">{{ node.data.name }}</span>
           </div>
           <div
             v-else
             class="workflow-row"
             :class="{ 'workflow-row--selected': selectedName === node.data.id }"
             :data-testid="`workflow-row-${testId(node.data.id)}`"
+            :data-workflow-id="node.data.id"
+            @dragstart="onWorkflowDragStart($event, node.data.workflow)"
             @dblclick="openWorkflow(node.data.id)"
             @keydown.enter.prevent="openWorkflow(node.data.id)"
           >
-            <span
-              class="workflow-row__drag"
-              draggable="true"
-              aria-label="Drag workflow"
-              title="Drag workflow"
-              :data-testid="`workflow-drag-${testId(node.data.id)}`"
-              @click.stop
-              @dragstart.stop="onWorkflowDragStart($event, node.data.workflow)"
-            >
-              <i class="pi pi-bars" aria-hidden="true" />
-            </span>
             <span class="workflow-row__name">{{ node.data.workflow.display_name }}</span>
             <span
               class="workflow-row__time"
@@ -711,12 +743,14 @@ defineExpose({
     <Dialog
       v-model:visible="folderDialogVisible"
       modal
-      :header="folderDialogMode === 'create' ? 'New folder' : 'Rename folder'"
+      :header="folderDialogMode === 'create' ? 'New folder' : folderDialogMode === 'rename-folder' ? 'Rename folder' : 'Rename workflow'"
       :style="{ width: '28rem' }"
       data-testid="workflow-folder-dialog"
     >
       <div class="folder-dialog-body">
-        <label for="workflow-folder-name">Folder name</label>
+        <label for="workflow-folder-name">
+          {{ folderDialogMode === 'rename-workflow' ? 'Workflow name' : 'Folder name' }}
+        </label>
         <InputText
           id="workflow-folder-name"
           v-model="folderNameInput"
@@ -814,11 +848,16 @@ defineExpose({
   padding: 0;
 }
 
+.workflow-tree :deep(.p-tree-node),
+.workflow-tree :deep(.p-treenode) {
+  position: relative;
+}
+
 .workflow-tree :deep(.p-tree-node-content),
 .workflow-tree :deep(.p-treenode-content) {
   align-items: center;
   cursor: grab;
-  gap: 0.25rem;
+  gap: 0.35rem;
   min-height: 2.25rem;
   padding: 0.1rem 0.15rem;
 }
@@ -839,12 +878,24 @@ defineExpose({
   background: var(--p-primary-color);
   border-radius: 999px;
   height: 2px;
-  margin: 2px 0 2px 1.5rem;
+  left: 1.65rem;
+  margin: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0.25rem;
+  top: 0;
+  z-index: 2;
+}
+
+.workflow-tree :deep(.p-tree-node-content + .p-tree-node-drop-point),
+.workflow-tree :deep(.p-treenode-content + .p-treenode-droppoint) {
+  top: 2.25rem;
 }
 
 .workflow-tree :deep(.p-tree-node-icon),
 .workflow-tree :deep(.p-treenode-icon) {
-  display: none;
+  color: var(--p-text-muted-color);
+  flex: 0 0 1rem;
 }
 
 .workflow-tree :deep(.p-tree-node-label),
@@ -870,7 +921,7 @@ defineExpose({
   color: var(--p-text-color);
   display: grid;
   gap: 0.45rem;
-  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 2.25rem;
   padding: 0.2rem 0.25rem;
   text-align: left;
@@ -880,24 +931,6 @@ defineExpose({
 .workflow-row:hover,
 .workflow-row--selected {
   color: var(--p-primary-color);
-}
-
-.workflow-row__drag {
-  align-items: center;
-  color: color-mix(in srgb, var(--p-text-color) 72%, transparent);
-  display: inline-flex;
-  height: 1.75rem;
-  justify-content: center;
-  width: 1.5rem;
-}
-
-.workflow-row__drag:hover {
-  color: var(--p-text-color);
-}
-
-.workflow-row__drag .pi {
-  color: currentColor;
-  font-size: 1rem;
 }
 
 .workflow-row__name {

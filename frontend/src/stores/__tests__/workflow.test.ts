@@ -241,8 +241,8 @@ describe('workflow store', () => {
       'analysis/beta',
     ])
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
-      'analysis/beta',
       'alpha',
+      'analysis/beta',
     ])
   })
 
@@ -311,14 +311,14 @@ describe('workflow store', () => {
     const folder = await store.createWorkflowFolder('Analysis')
     await store.moveWorkflowToFolder('beta', folder.id)
 
-    expect(store.workflowTree[0]).toMatchObject({
+    expect(store.workflowTree[1]).toMatchObject({
       type: 'folder',
       id: folder.id,
       name: 'Analysis',
     })
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
-      'beta',
       'alpha',
+      'beta',
     ])
   })
 
@@ -586,7 +586,32 @@ describe('workflow store', () => {
     })
   })
 
-  it('moves workflow ids before another workflow id', async () => {
+  it('sorts workflows and folders alphabetically within each folder', async () => {
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'Z Folder', name: 'Z Folder', parentId: null },
+    ]
+    store.workflows = [
+      {
+        name: 'alpha',
+        display_name: 'Alpha',
+        path: '/tmp/alpha.json',
+        last_modified: '2026-04-30T11:00:00Z',
+      },
+      {
+        name: 'beta',
+        display_name: 'Beta',
+        path: '/tmp/beta.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    ]
+
+    expect(store.workflowTree.map((node) => (
+      node.type === 'folder' ? node.name : node.workflow.display_name
+    ))).toEqual(['Alpha', 'Beta', 'Z Folder'])
+  })
+
+  it('keeps alphabetical workflow order even when workflow ids are moved before another id', async () => {
     const store = useWorkflowStore()
     store.workflows = [
       {
@@ -606,8 +631,8 @@ describe('workflow store', () => {
     await store.moveWorkflowBefore('beta', 'alpha')
 
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
-      'beta',
       'alpha',
+      'beta',
     ])
   })
 })

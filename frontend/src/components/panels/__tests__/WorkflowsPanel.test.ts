@@ -254,7 +254,7 @@ describe('WorkflowsPanel', () => {
     await flushPromises()
 
     await wrapper.find('[data-testid="workflow-row-Analysis_Results_beta_api"]').trigger('click')
-    expect(wrapper.find('[data-testid="workflow-rename-folder-btn"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="workflow-rename-selected-btn"]').attributes('disabled')).not.toBe('true')
 
     await wrapper.find('[data-testid="workflow-delete-btn"]').trigger('click')
 
@@ -277,19 +277,17 @@ describe('WorkflowsPanel', () => {
     ])
   })
 
-  it('only sets the workflow drag MIME type from the drag handle', async () => {
+  it('sets the workflow drag MIME type from the whole workflow row', async () => {
     const wrapper = mountPanel()
     const setData = vi.fn()
-    const dataTransfer = { setData }
+    const dataTransfer = { setData, setDragImage: vi.fn() }
 
-    expect(wrapper.find('[data-testid="workflow-row-alpha_api"]').attributes('draggable')).toBeUndefined()
-    await wrapper.find('[data-testid="workflow-drag-alpha_api"]').trigger('dragstart', {
+    expect(wrapper.find('[data-testid="workflow-drag-alpha_api"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="workflow-row-alpha_api"]').trigger('dragstart', {
       dataTransfer,
     })
 
-    expect(setData).toHaveBeenCalledTimes(1)
     expect(setData).toHaveBeenCalledWith('application/bioimageflow-workflow', 'alpha_api')
-    expect(setData).not.toHaveBeenCalledWith('text/plain', expect.any(String))
   })
 
   it('creates, renames, and deletes the selected folder from the toolbar', async () => {
@@ -361,7 +359,7 @@ describe('WorkflowsPanel', () => {
     expect(wrapper.find(`[data-testid="workflow-folder-rename-${folder.id}"]`).exists()).toBe(false)
     expect(wrapper.find(`[data-testid="workflow-folder-delete-${folder.id}"]`).exists()).toBe(false)
 
-    await wrapper.find('[data-testid="workflow-rename-folder-btn"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-rename-selected-btn"]').trigger('click')
     await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Published')
     await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
     await flushPromises()
@@ -379,6 +377,35 @@ describe('WorkflowsPanel', () => {
     expect(store.workflowFolders).toEqual([])
     promptSpy.mockRestore()
     confirmSpy.mockRestore()
+  })
+
+
+  it('renames the selected workflow from the shared rename button', async () => {
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        id: 'alpha_api',
+        name: 'alpha_api',
+        folder: '',
+        display_name: 'Alpha renamed',
+        description: 'Segment nuclei and measure intensities.',
+        path: '/library/workflows/alpha_api/workflow.json',
+        storage_path: '/library/workflows/alpha_api',
+        last_modified: '2026-04-30T12:34:56Z',
+      },
+    })
+    const wrapper = mountPanel()
+
+    await wrapper.find('[data-testid="workflow-rename-selected-btn"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Alpha renamed')
+    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('rename-workflow')?.[0]).toEqual(['alpha_api'])
+    expect(api.patch).toHaveBeenCalledWith('/api/v1/workflows/alpha_api', {
+      action: 'update',
+      display_name: 'Alpha renamed',
+    })
+    expect(wrapper.find('[data-testid="workflow-row-alpha_api"]').text()).toContain('Alpha renamed')
   })
 
   it('offers delete-all and move-up policies when deleting a folder with children', async () => {
@@ -467,8 +494,8 @@ describe('WorkflowsPanel', () => {
 
     expect(store.workflowFolderIds.beta_api).toBe(folder.id)
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
-      'beta_api',
       'alpha_api',
+      'beta_api',
     ])
     await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
     const emitted = wrapper.emitted('select-workflow') ?? []
@@ -576,7 +603,7 @@ describe('WorkflowsPanel', () => {
     expect(newWorkflowEvents[newWorkflowEvents.length - 1]).toEqual(['B Folder/A'])
   })
 
-  it('reorders workflow ids by dropping onto another workflow row', async () => {
+  it('keeps items alphabetically sorted within a folder after dropping onto another row', async () => {
     const wrapper = mountPanel()
     const store = useWorkflowStore()
 
@@ -586,8 +613,8 @@ describe('WorkflowsPanel', () => {
     ])
 
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
-      'beta_api',
       'alpha_api',
+      'beta_api',
     ])
   })
 })

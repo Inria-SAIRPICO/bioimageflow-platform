@@ -485,6 +485,7 @@ function openWorkflowCanvasPanel(detail: {
   }
   canvasContexts.set(panelId, { workflowName, workflowDisplayName })
   const canvasPanel = api.getPanel('canvas')
+  const bottomPanel = api.getPanel('dataTable') ?? api.getPanel('logger')
   const panel = api.addPanel({
     id: panelId,
     component: 'canvasView',
@@ -499,7 +500,9 @@ function openWorkflowCanvasPanel(detail: {
     },
     position: canvasPanel
       ? { referencePanel: 'canvas', direction: 'within' }
-      : { direction: 'below' },
+      : bottomPanel
+        ? { referencePanel: bottomPanel.id, direction: 'above' }
+        : { direction: 'below' },
   })
   panel.api.setActive()
   uiStore.setActiveWorkflow(workflowDisplayName)

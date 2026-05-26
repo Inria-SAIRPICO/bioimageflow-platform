@@ -1270,25 +1270,27 @@ opened, or treated as workflow id collisions.
 **Panel layout:**
 
 - **Toolbar:** New workflow, New folder, Save, Duplicate, Import, Export,
-  Rename/Move, Delete.
+  Rename selected item, Delete selected item.
 - **Search:** Filters by workflow display name, id, and folder name while
   preserving matching ancestors.
 - **Workflow tree:** Nested folders and workflows under `workspace/workflows/`.
-  Workflow rows show display name and last modified time. Folder rows are
-  selectable drag/drop targets; selected-folder create, rename, and delete
-  actions live in the toolbar. The tree is a classic PrimeVue Tree component
-  with folder expansion, selection, and node templates.
+  Workflow rows show display name and last modified time. Folder and workflow
+  rows are sorted together alphabetically within each folder, not grouped by
+  type. Folder and workflow rows are selectable drag/drop targets; selected item
+  rename/delete actions live in the toolbar. The tree is a classic PrimeVue Tree
+  component with folder expansion, selection, built-in drag/drop indicators, and
+  node templates. Drop indicators overlay rows and must not shift other rows
+  while dragging.
 - **Selected workflow details:** Shows the selected workflow's description,
   workflow id, workspace path, output path, and action state. The description appears
   here, not in every list row.
 
 Clicking a row selects it. Double-clicking a workflow, pressing Enter on a
 selected workflow, or using the Open action opens it, subject to the unsaved
-changes prompt. Dragging a workflow row onto a folder moves the workflow within
-the tree. Dragging a folder onto another folder moves the full folder subtree,
-including child folders and workflows. Dragging a workflow row onto the canvas
-still creates a SubWorkflowNode and must remain distinct from drag-to-folder
-movement.
+changes prompt. Dragging from anywhere on a workflow row onto a folder moves the
+workflow within the tree, and dragging that same row onto the canvas creates a
+SubWorkflowNode. Dragging a folder onto another folder moves the full folder
+subtree, including child folders and workflows.
 
 **Actions:**
 - **New workflow:** Opens a creation dialog with fields: display name

@@ -40,10 +40,12 @@ Workflow ids are paths relative to `workspace/workflows/`, such as
 contain spaces. Each workflow is stored as
 `workspace/workflows/<id>/workflow.json`. The Workflows panel shows a PrimeVue
 folder tree where users can create, rename, delete, and drag folders or
-workflows. Deleting a non-empty folder asks whether to delete children, move
-them up, or cancel. Creating a workflow while a folder is selected places it in
-that folder. Tool source opening keeps VS Code or code-server rooted at the
-workspace project and focuses the selected tool file.
+workflows. Items are sorted alphabetically inside each folder, and a workflow row
+can be dragged either to another folder or to the canvas. Deleting a non-empty
+folder asks whether to delete children, move them up, or cancel. Creating a
+workflow while a folder is selected places it in that folder. Tool source opening
+keeps VS Code or code-server rooted at the workspace project and focuses the
+selected tool file.
 
 ## Prerequisites
 
