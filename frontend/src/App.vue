@@ -457,10 +457,12 @@ function onCanvasContextUpdated(event: CustomEvent<{
 }>) {
   const detail = event.detail
   if (!detail?.panelId || !detail.workflowName) return
+  const title = detail.workflowDisplayName ?? detail.workflowName
   canvasContexts.set(detail.panelId, {
     workflowName: detail.workflowName,
-    workflowDisplayName: detail.workflowDisplayName ?? detail.workflowName,
+    workflowDisplayName: title,
   })
+  dockviewApi.value?.getPanel(detail.panelId)?.api.setTitle(title)
 }
 
 function openWorkflowCanvasPanel(detail: {

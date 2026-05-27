@@ -29,7 +29,11 @@ Saved workflows can be dragged from anywhere on the workflow row in the
 Workflows panel onto the canvas. Dropping a workflow creates a SubWorkflowNode;
 the dragged workflow becomes the sub-workflow's internal DAG. The same row drag
 also participates in the workspace tree drag/drop; there is no separate drag
-handle with different behavior.
+handle with different behavior. The platform rejects drops that would make a
+workflow contain itself directly or indirectly, including dropping the active
+workflow into its own canvas, dropping a workflow whose nested graph already
+contains the active workflow, or dropping an ancestor workflow inside one of its
+sub-workflow editor tabs.
 
 The Workflows panel uses the v1 workspace tree semantics: folder and workflow
 ids are slash-separated workspace-relative paths whose individual segments may
@@ -134,7 +138,7 @@ The root `GraphState` carries `published_inputs` and `published_outputs` in addi
 }
 ```
 
-Canvas tabs are unified: opening a saved workflow or opening a SubWorkflowNode creates a canvas tab named after that workflow/sub-workflow. The Node Panel, selected nodes, validation, and execution controls are scoped to the active canvas tab, and switching tabs updates the workflow title shown in the top bar. There is no separate sub-workflow-only editor toolbar.
+Canvas tabs are unified: opening a saved workflow or opening a SubWorkflowNode creates a canvas tab named after that workflow/sub-workflow. The initial startup canvas tab is renamed to the loaded workflow display name as soon as its workflow context is known; it must not remain generically named "Canvas" after a workflow has loaded. The Node Panel, selected nodes, validation, and execution controls are scoped to the active canvas tab, and switching tabs updates the workflow title shown in the top bar. There is no separate sub-workflow-only editor toolbar.
 
 **Validation:** The `PUT /graph` endpoint calls the BioImageFlow library's
 recursive sub-workflow validator and surfaces scoped errors. Errors within a

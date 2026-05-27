@@ -11,6 +11,7 @@ function hasSubWorkflowFields(node: Record<string, any>): boolean {
     || (node.sub_workflow !== undefined && node.sub_workflow !== null)
     || (Array.isArray(node.published_inputs) && node.published_inputs.length > 0)
     || (Array.isArray(node.published_outputs) && node.published_outputs.length > 0)
+    || typeof node.source_workflow_name === 'string'
     || (
       node.sub_workflow_readonly_reason !== undefined
       && node.sub_workflow_readonly_reason !== null
@@ -92,6 +93,7 @@ export function graphStateToVueFlow(
       data.published_outputs = (node as any).published_outputs ?? []
       data.sub_workflow_readonly_reason =
         (node as any).sub_workflow_readonly_reason ?? null
+      data.source_workflow_name = (node as any).source_workflow_name ?? null
     }
 
     return {

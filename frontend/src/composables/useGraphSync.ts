@@ -26,6 +26,7 @@ function hasSubWorkflowFields(data: Record<string, any> | undefined): boolean {
     || (data.sub_workflow !== undefined && data.sub_workflow !== null)
     || (Array.isArray(data.published_inputs) && data.published_inputs.length > 0)
     || (Array.isArray(data.published_outputs) && data.published_outputs.length > 0)
+    || typeof data.source_workflow_name === 'string'
     || (
       data.sub_workflow_readonly_reason !== undefined
       && data.sub_workflow_readonly_reason !== null
@@ -54,6 +55,7 @@ function serializeNode(n: any): NodeState {
       'published_inputs',
       'published_outputs',
       'sub_workflow_readonly_reason',
+      'source_workflow_name',
     ]) {
       if (data[key] !== undefined) {
         node[key] = deepCloneJson(data[key])

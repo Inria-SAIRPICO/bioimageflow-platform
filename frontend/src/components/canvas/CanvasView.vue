@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, markRaw, nextTick, onMounted, onBeforeUnmount, provide } from 'vue'
+import { computed, ref, watch, markRaw, nextTick, onMounted, onBeforeUnmount, provide } from 'vue'
 import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -181,6 +181,12 @@ const rootPublishedOutputs = ref<PublishedOutput[]>([])
 const isActiveCanvasTab = ref(true)
 let isApplyingGraphState = false
 
+const shouldFitViewOnInit = computed(() => {
+  const params = dockviewParams()
+  if (Array.isArray(params?.graph?.nodes)) return params.graph.nodes.length > 0
+  return false
+})
+
 interface SubWorkflowApplyPayload {
   graph: GraphState
   published_inputs?: PublishedInput[]
@@ -218,6 +224,53 @@ function workflowIdentity() {
 
 function workflowInfoId(workflow: WorkflowInfo): string {
   return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
+}
+
+type GraphLike = { nodes?: unknown[] }
+
+function nestedGraphFromNode(node: any): GraphLike | null {
+  const graph = node?.sub_workflow ?? node?.data?.sub_workflow
+  return graph && typeof graph === 'object' ? graph as GraphLike : null
+}
+
+function sourceWorkflowNameFromNode(node: any): string | null {
+  const source = node?.source_workflow_name ?? node?.data?.source_workflow_name
+  return typeof source === 'string' && source.length > 0 ? source : null
+}
+
+function graphContainsWorkflow(graph: GraphLike | null | undefined, workflowName: string): boolean {
+  if (!graph || !Array.isArray(graph.nodes)) return false
+  for (const node of graph.nodes) {
+    if (sourceWorkflowNameFromNode(node) === workflowName) return true
+    if (graphContainsWorkflow(nestedGraphFromNode(node), workflowName)) return true
+  }
+  return false
+}
+
+function containingWorkflowNames(): string[] {
+  if (!isSubWorkflowEditor) {
+    const name = workflowIdentity().workflowName
+    return typeof name === 'string' ? [name] : []
+  }
+  if (!props.subWorkflowSessionId) return []
+  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  return [session?.parentWorkflowName, session?.parentSourceWorkflowName]
+    .filter((name): name is string => typeof name === 'string' && name.length > 0)
+}
+
+function wouldCreateWorkflowContainmentCycle(workflowName: string, graph: GraphLike): boolean {
+  return containingWorkflowNames().some((containerName) => (
+    workflowName === containerName || graphContainsWorkflow(graph, containerName)
+  ))
+}
+
+function showWorkflowContainmentError(workflowName: string): void {
+  clipboardToast?.add({
+    severity: 'warn',
+    summary: 'Workflow cannot contain itself',
+    detail: `Dropping '${workflowName}' here would create a direct or indirect workflow cycle.`,
+    life: 5000,
+  })
 }
 
 function currentPublicationContext(): PublicationContext | null {
@@ -1259,6 +1312,10 @@ async function onAddWorkflowNode({
   try {
     const { data } = await api.get(`/api/v1/workflows/${workflowName}`)
     const graph = data.graph as GraphState
+    if (wouldCreateWorkflowContainmentCycle(workflowName, graph)) {
+      showWorkflowContainmentError(workflowName)
+      return
+    }
     const info = data.info as { display_name?: string; name?: string }
     const existingIds = getNodes.value.map((n: any) => n.id)
     const existingNames = getNodes.value.map((n: any) => n.data?.name ?? '')
@@ -1464,6 +1521,7 @@ function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
       published_inputs: n.published_inputs ?? [],
       published_outputs: n.published_outputs ?? [],
       sub_workflow_readonly_reason: n.sub_workflow_readonly_reason ?? null,
+      source_workflow_name: n.source_workflow_name ?? null,
     },
   }
 }
@@ -1613,6 +1671,7 @@ function openSubWorkflow(nodeId: string) {
   if (!node?.data?.sub_workflow) return null
   const session = subWorkflowSessionsStore.openSession({
     parentWorkflowName: workflowStore.currentName,
+    parentSourceWorkflowName: node.data.source_workflow_name ?? null,
     parentNodeId: node.id,
     parentNodeName: node.data.name ?? node.id,
     graph: node.data.sub_workflow,
@@ -1941,6 +2000,7 @@ function emitGraphChanged() {
     published_inputs: n.data?.published_inputs ?? [],
     published_outputs: n.data?.published_outputs ?? [],
     sub_workflow_readonly_reason: n.data?.sub_workflow_readonly_reason ?? null,
+    source_workflow_name: n.data?.source_workflow_name ?? null,
   })) as NodeState[]
   // Mark all nodes provisional during the debounce window so the UI can
   // render a desaturated status indicator until the server response lands.
@@ -1962,6 +2022,7 @@ function emitGraphChanged() {
 defineExpose({
   onAddNode,
   onAddWorkflowNode,
+  wouldCreateWorkflowContainmentCycle,
   deleteSelected,
   copySelected,
   pasteFromClipboard,
@@ -1993,7 +2054,7 @@ defineExpose({
       :edge-types="edgeTypes"
       :is-valid-connection="isValidConnection"
       :edges-updatable="true"
-      fit-view-on-init
+      :fit-view-on-init="shouldFitViewOnInit"
       @node-context-menu="onNodeContextMenu"
       @node-double-click="onNodeDoubleClick"
     >

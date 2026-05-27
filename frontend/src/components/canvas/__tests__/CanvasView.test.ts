@@ -215,6 +215,7 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { _resetClipboardForTest } from '@/utils/clipboard'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
+import { useWorkflowStore } from '@/stores/workflow'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -320,6 +321,35 @@ describe('CanvasView', () => {
       const edgeTypes = vueFlow.props('edgeTypes')
       expect(edgeTypes).toHaveProperty('column_ref')
       expect(edgeTypes).toHaveProperty('positional')
+      w.unmount()
+    })
+
+    it('does not fit an empty canvas when the first node is later added', () => {
+      const w = mountCanvas()
+      const vueFlow = w.findComponent({ name: 'VueFlow' })
+      expect(vueFlow.props('fitViewOnInit')).toBe(false)
+      w.unmount()
+    })
+
+    it('fits initially when opened with an existing workflow graph', () => {
+      const w = mountCanvas({
+        params: {
+          graph: {
+            nodes: [{
+              id: 'node_1',
+              name: 'Node 1',
+              tool_name: 'gaussian_blur',
+              position: [0, 0],
+              parameters: {},
+              resources: {},
+              output_templates: {},
+            }],
+            edges: [],
+          },
+        },
+      })
+      const vueFlow = w.findComponent({ name: 'VueFlow' })
+      expect(vueFlow.props('fitViewOnInit')).toBe(true)
       w.unmount()
     })
 
@@ -986,6 +1016,73 @@ describe('CanvasView', () => {
       // We test by calling onAddNode with a nonexistent tool
       vm.onAddNode({ toolName: 'nonexistent_tool' })
       expect(mockNodes.length).toBe(0)
+      w.unmount()
+    })
+
+    it('rejects dropping the active workflow into itself', async () => {
+      const workflowStore = useWorkflowStore()
+      workflowStore.current = { name: 'analysis', display_name: 'Analysis' } as any
+      mockSavedWorkflow({ nodes: [], edges: [] }, 'analysis')
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      await vm.onAddWorkflowNode({ workflowName: 'analysis' })
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/analysis')
+      expect(mockNodes).toHaveLength(0)
+      expect(w.emitted('graph-changed')).toBeFalsy()
+      w.unmount()
+    })
+
+    it('rejects dropping a workflow that already contains the active workflow', async () => {
+      const workflowStore = useWorkflowStore()
+      workflowStore.current = { name: 'analysis', display_name: 'Analysis' } as any
+      const graph = {
+        nodes: [{
+          id: 'nested_analysis',
+          name: 'Analysis',
+          tool_name: '__sub_workflow__',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          sub_workflow: { nodes: [], edges: [] },
+          source_workflow_name: 'analysis',
+        }],
+        edges: [],
+      }
+      mockSavedWorkflow(graph, 'library')
+      const w = mountCanvas()
+      const vm = w.vm as any
+
+      await vm.onAddWorkflowNode({ workflowName: 'library' })
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/library')
+      expect(mockNodes).toHaveLength(0)
+      expect(w.emitted('graph-changed')).toBeFalsy()
+      w.unmount()
+    })
+
+    it('rejects dropping a workflow into its own sub-workflow editor', async () => {
+      const workflowStore = useWorkflowStore()
+      workflowStore.current = { name: 'analysis', display_name: 'Analysis' } as any
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'analysis',
+        parentSourceWorkflowName: 'library',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Library',
+        graph: { nodes: [], edges: [] },
+      })
+      mockSavedWorkflow({ nodes: [], edges: [] }, 'library')
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      const vm = w.vm as any
+
+      await vm.onAddWorkflowNode({ workflowName: 'library' })
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/library')
+      expect(mockNodes).toHaveLength(0)
+      expect(w.emitted('graph-changed')).toBeFalsy()
       w.unmount()
     })
 

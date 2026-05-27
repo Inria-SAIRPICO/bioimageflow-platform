@@ -97,6 +97,9 @@ function mountApp() {
       params: options.params,
       api: {
         setVisible: vi.fn(),
+        setTitle: vi.fn((title: string) => {
+          panel.title = title
+        }),
         setActive: vi.fn(() => {
           activePanelListeners.forEach((listener) => listener({ panel }))
         }),
@@ -514,6 +517,23 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(ui.selectedNodeIds).toEqual(['node_1'])
+  })
+
+  it('renames the startup canvas tab when its workflow context is loaded', async () => {
+    mountApp()
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
+      detail: {
+        panelId: 'canvas',
+        workflowName: 'analysis',
+        workflowDisplayName: 'Analysis',
+      },
+    }))
+    await flushPromises()
+
+    expect(panels.get('canvas').api.setTitle).toHaveBeenCalledWith('Analysis')
+    expect(panels.get('canvas').title).toBe('Analysis')
   })
 
   it('reactivating the startup canvas restores that canvas workflow context', async () => {

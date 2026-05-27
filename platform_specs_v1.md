@@ -1031,6 +1031,7 @@ For tools with `dynamic_outputs === true`, the body output pin set is computed b
 - **Pan:** Middle-click drag, or scroll wheel + Shift
 - **Zoom:** Scroll wheel, or pinch gesture
 - **Fit view:** Button or shortcut to fit all nodes in view
+- **Initial empty canvas:** Adding the first node to a new empty workflow must not change the current viewport or zoom.
 - **Undo/Redo:** Ctrl+Z / Ctrl+Shift+Z (client-side, instant). See [Section 4.6](#46-undoredo).
 
 ### 3.4 Tools Panel (Left Sidebar)
@@ -1289,8 +1290,9 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a
 selected workflow, or using the Open action opens it, subject to the unsaved
 changes prompt. Dragging from anywhere on a workflow row onto a folder moves the
 workflow within the tree, and dragging that same row onto the canvas creates a
-SubWorkflowNode. Dragging a folder onto another folder moves the full folder
-subtree, including child folders and workflows.
+SubWorkflowNode. Drops that would make a workflow contain itself directly or
+indirectly are rejected. Dragging a folder onto another folder moves the full
+folder subtree, including child folders and workflows.
 
 **Actions:**
 - **New workflow:** Opens a creation dialog with fields: display name

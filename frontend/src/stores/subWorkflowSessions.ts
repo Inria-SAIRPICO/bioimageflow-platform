@@ -5,6 +5,7 @@ import type { GraphState, PublishedInput, PublishedOutput } from '@/api/types'
 export interface SubWorkflowSession {
   id: string
   parentWorkflowName: string | null
+  parentSourceWorkflowName: string | null
   parentNodeId: string
   parentNodeName: string
   draft: GraphState
@@ -17,6 +18,7 @@ export interface SubWorkflowSession {
 
 export interface OpenSubWorkflowSessionOptions {
   parentWorkflowName: string | null
+  parentSourceWorkflowName?: string | null
   parentNodeId: string
   parentNodeName: string
   graph: GraphState
@@ -76,6 +78,7 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     const session: SubWorkflowSession = {
       id,
       parentWorkflowName: options.parentWorkflowName,
+      parentSourceWorkflowName: options.parentSourceWorkflowName ?? null,
       parentNodeId: options.parentNodeId,
       parentNodeName: options.parentNodeName,
       draft,

@@ -41,6 +41,7 @@ export interface ClipboardNode {
   published_inputs?: PublishedInput[]
   published_outputs?: PublishedOutput[]
   sub_workflow_readonly_reason?: string | null
+  source_workflow_name?: string | null
   missing?: boolean
 }
 
