@@ -161,16 +161,11 @@ function setPywebviewDesktop(enabled: boolean) {
   })
 }
 
-function mountPanel(options: { settings?: Settings | null; settingsResponse?: Settings } = {}) {
-  // Mock fetchTools, fetchPackages, and fetchSettings calls in onMounted
+function mountPanel(options: { settings?: Settings | null } = {}) {
+  // Mock fetchTools and fetchPackages calls in onMounted
   mockedApi.get.mockImplementation((url: string) => {
     if (url === '/api/v1/tools') return Promise.resolve({ data: mockTools })
     if (url === '/api/v1/tools/packages') return Promise.resolve({ data: mockPackages })
-    if (url === '/api/v1/settings') {
-      return Promise.resolve({
-        data: options.settingsResponse ?? makeSettings({ deployment_mode: 'desktop' }),
-      })
-    }
     return Promise.resolve({ data: {} })
   })
 
@@ -441,12 +436,11 @@ describe('ToolsPanel', () => {
   })
 
 
-  it('loads settings and shows the custom package source footer in desktop mode', async () => {
+  it('shows the custom package source footer when settings are not loaded yet', async () => {
     const wrapper = mountPanel({ settings: null })
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
       expect(store.tools.length).toBeGreaterThan(0)
-      expect(useSettingsStore().settings).not.toBeNull()
     })
 
     const vm = wrapper.vm as unknown as {
@@ -458,30 +452,7 @@ describe('ToolsPanel', () => {
 
     expect(vm.packageSourceInstallAvailable).toBe(true)
     expect(wrapper.find('[data-testid="package-install-footer"]').exists()).toBe(true)
-  })
-
-
-  it('keeps the custom package source footer hidden when fetched settings are locked-down webapp', async () => {
-    const wrapper = mountPanel({
-      settings: null,
-      settingsResponse: makeSettings({
-        deployment_mode: 'webapp',
-        enable_unsafe_webapp_features: false,
-      }),
-    })
-    await vi.waitFor(() => {
-      expect(useSettingsStore().settings?.deployment_mode).toBe('webapp')
-    })
-
-    const vm = wrapper.vm as unknown as {
-      showManageDialog: boolean
-      packageSourceInstallAvailable: boolean
-    }
-    vm.showManageDialog = true
-    await wrapper.vm.$nextTick()
-
-    expect(vm.packageSourceInstallAvailable).toBe(false)
-    expect(wrapper.find('[data-testid="package-install-footer"]').exists()).toBe(false)
+    expect(mockedApi.get).not.toHaveBeenCalledWith('/api/v1/settings')
   })
 
   it('installs an unknown package from a repository URL and refreshes tools', async () => {

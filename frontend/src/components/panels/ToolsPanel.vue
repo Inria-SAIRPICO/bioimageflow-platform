@@ -148,9 +148,7 @@ const localToolActionsAvailable = computed(() => {
   )
 })
 
-const packageSourceInstallAvailable = computed(() => {
-  return settingsStore.settings !== null && localToolActionsAvailable.value
-})
+const packageSourceInstallAvailable = computed(() => localToolActionsAvailable.value)
 
 function shouldShowEmbeddedEditorLoading(): boolean {
   return !settingsStore.settings?.external_editor?.trim()
@@ -689,9 +687,7 @@ async function toggleToolEnvironment(tool: ToolMetadata) {
 }
 
 onMounted(async () => {
-  const tasks = [toolRegistry.fetchTools(), toolRegistry.fetchPackages()]
-  if (!settingsStore.isLoaded) tasks.push(settingsStore.fetchSettings())
-  await Promise.all(tasks)
+  await Promise.all([toolRegistry.fetchTools(), toolRegistry.fetchPackages()])
   document.addEventListener('click', onDocumentClick)
 })
 
