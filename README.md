@@ -50,7 +50,9 @@ a button that opens the workflow folder in the system file browser. Custom tools
 archive carries the custom tool sources it uses. Tool source opening keeps VS
 Code or code-server rooted at the workspace project and focuses the selected
 tool file. Reusable tools shared across workflows should be distributed as tool
-packages; the Manage Tools dialog is the place to install such packages.
+packages; the Manage Tools dialog installs known packages from table rows and
+unknown GitHub/GitLab or `.zip` package sources from the inline **Install tool
+package** footer below the table.
 
 ## Prerequisites
 

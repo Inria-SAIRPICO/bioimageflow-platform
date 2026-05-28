@@ -11,9 +11,15 @@ required on ``PATH``). The registry is re-scanned on success.
 from __future__ import annotations
 
 import logging
+import re
+import shlex
 import shutil
+import tempfile
 import tomllib
+from dataclasses import dataclass
+from email.parser import Parser
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 from typing import TYPE_CHECKING
 
 import anyio
@@ -38,6 +44,16 @@ class PackageNetworkError(Exception):
     """Raised on network/connectivity errors during install/uninstall."""
 
 
+class PackageInvalidError(Exception):
+    """Raised when an import source is not a supported package source."""
+
+
+@dataclass(frozen=True)
+class PackageInstallResult:
+    package: str
+    version: str
+
+
 class PackageInstallerService:
     """DI contract for package install/uninstall.
 
@@ -49,6 +65,12 @@ class PackageInstallerService:
         raise NotImplementedError
 
     async def uninstall(self, package_name: str, version: str | None = None) -> None:
+        raise NotImplementedError
+
+    async def install_from_url(self, url: str) -> PackageInstallResult:
+        raise NotImplementedError
+
+    async def install_from_archive(self, archive_path: Path) -> PackageInstallResult:
         raise NotImplementedError
 
 
@@ -187,6 +209,67 @@ class PypiPackageInstaller(PackageInstallerService):
         else:
             await anyio_to_thread.run_sync(self._registry.scan_tool_store, self._tool_store)
 
+
+    async def install_from_url(self, url: str) -> PackageInstallResult:
+        source = _normalize_repository_source(url)
+        return await self._install_from_source(source)
+
+    async def install_from_archive(self, archive_path: Path) -> PackageInstallResult:
+        if archive_path.suffix.lower() != ".zip":
+            raise PackageInvalidError("Tool package archive must be a .zip file")
+        return await self._install_from_source(str(archive_path))
+
+    async def _install_from_source(self, source: str) -> PackageInstallResult:
+        async with self._operation_lock:
+            staging_parent = Path(tempfile.mkdtemp(prefix="bif-tool-package-"))
+            staging = staging_parent / "site"
+
+            if self._hot_reload is not None:
+                self._hot_reload.suppress()
+
+            try:
+                try:
+                    await anyio_to_thread.run_sync(_pip_install_source, source, staging)
+                except PackageNotFoundError:
+                    raise
+                except PackageNetworkError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — classify then re-raise
+                    message = str(exc)
+                    logger.warning("Source package install failed for %s: %s", source, message)
+                    cls = _classify_failure(message)
+                    raise cls(f"Failed to install tool package source: {message}") from exc
+
+                result = _discover_source_install(staging)
+                expected_package = staging / result.package
+                if not expected_package.exists():
+                    raise PackageNotFoundError(
+                        f"Installation succeeded but expected module '{result.package}' "
+                        f"was not found in {staging}"
+                    )
+
+                target = self._tool_store / result.package / result.version
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if not target.exists():
+                    await anyio_to_thread.run_sync(shutil.move, str(staging), str(target))
+                # Versioned package directories are immutable. Re-importing an
+                # already installed package/version is a successful no-op, but
+                # still resumes hot reload and refreshes the registry below.
+            except Exception:
+                if self._hot_reload is not None:
+                    self._hot_reload.resume(emit_batch=False)
+                raise
+            finally:
+                await anyio_to_thread.run_sync(shutil.rmtree, staging_parent, True)
+
+            if self._hot_reload is not None:
+                self._hot_reload.resume(emit_batch=True)
+            else:
+                await anyio_to_thread.run_sync(
+                    self._registry.scan_tool_store, self._tool_store
+                )
+            return result
+
     async def uninstall(self, package_name: str, version: str | None = None) -> None:
         async with self._operation_lock:
             pkg_root = self._tool_store / package_name
@@ -219,6 +302,81 @@ class PypiPackageInstaller(PackageInstallerService):
                 await anyio_to_thread.run_sync(
                     self._registry.scan_tool_store, self._tool_store
                 )
+
+
+def _normalize_repository_source(url: str) -> str:
+    source = url.strip()
+    if source.startswith("git+https://"):
+        parsed = urlparse(source.removeprefix("git+"))
+    else:
+        parsed = urlparse(source)
+
+    host = parsed.netloc.lower().removeprefix("www.")
+    if parsed.scheme != "https" or host not in {"github.com", "gitlab.com"}:
+        raise PackageInvalidError(
+            "Tool package URL must be an HTTPS GitHub or GitLab repository URL"
+        )
+
+    if source.startswith("git+"):
+        return source
+
+    path = parsed.path.rstrip("/")
+    if not path.endswith(".git"):
+        path = f"{path}.git"
+    cleaned = urlunparse(parsed._replace(path=path))
+    return f"git+{cleaned}"
+
+
+def _normalize_distribution_name(name: str) -> str:
+    return re.sub(r"[-.]+", "_", name).lower()
+
+
+def _discover_source_install(target: Path) -> PackageInstallResult:
+    dist_infos = sorted(target.glob("*.dist-info"))
+    if not dist_infos:
+        raise PackageNotFoundError("Installed source did not contain package metadata")
+    preferred = [path for path in dist_infos if (path / "direct_url.json").exists()]
+    metadata_roots = preferred or dist_infos
+    for dist_info in metadata_roots:
+        metadata_path = dist_info / "METADATA"
+        if not metadata_path.exists():
+            continue
+        metadata = Parser().parsestr(metadata_path.read_text(encoding="utf-8"))
+        name = metadata.get("Name")
+        version = metadata.get("Version")
+        if name and version:
+            return PackageInstallResult(
+                package=_normalize_distribution_name(name),
+                version=version,
+            )
+    raise PackageNotFoundError("Installed source did not contain package name/version metadata")
+
+
+def _pip_install_source(source: str, target: Path) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+
+    from bioimageflow.env_manager import get_shared_environment_manager
+
+    manager = get_shared_environment_manager()
+    executor = manager.command_executor
+    generator = manager.command_generator
+    conda_bin = manager.settings_manager.conda_bin
+
+    commands = generator.get_activate_conda_commands()
+    commands += [
+        f'{conda_bin} exec --spec "pip" -- '
+        f'pip install --target {shlex.quote(str(target))} {shlex.quote(source)}'
+    ]
+
+    try:
+        executor.execute_commands_and_get_output(
+            commands, exit_if_command_error=True,
+        )
+    except Exception as exc:
+        shutil.rmtree(target, ignore_errors=True)
+        raise RuntimeError(
+            f"Failed to install tool package source into tool store.\n{exc}"
+        ) from exc
 
 
 def _remove_tree(target: Path) -> None:

@@ -72,6 +72,7 @@ from bioimageflow_server.routers.settings import (
 from bioimageflow_server.routers.tools import (
     get_deployment_mode,
     get_package_catalog,
+    get_known_packages,
     get_package_installer,
     get_tool_environment_service,
     get_tool_registry,
@@ -525,6 +526,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         lambda: _live_settings().enable_unsafe_webapp_features
     )
     app.dependency_overrides[get_package_installer] = lambda: installer
+    app.dependency_overrides[get_known_packages] = lambda: known
     app.dependency_overrides[get_package_catalog] = lambda: catalog
     app.dependency_overrides[get_tool_environment_service] = lambda: tool_environment_service
 

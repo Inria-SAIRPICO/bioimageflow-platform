@@ -98,6 +98,24 @@ class PackageInfo(BaseModel):
 # --- Request/Response models ---
 
 
+class PackageImportUrlRequest(BaseModel):
+    url: str
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Package source URL must not be empty")
+        return stripped
+
+
+class PackageImportResponse(BaseModel):
+    status: Literal["installed"] = "installed"
+    package: str
+    version: str
+
+
 class ToolCreate(BaseModel):
     name: str
     tool_type: Literal["ProcessingTool", "DataFrameTool"]

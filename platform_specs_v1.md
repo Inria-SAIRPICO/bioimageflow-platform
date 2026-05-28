@@ -1069,10 +1069,11 @@ The dialog presents a hierarchical **TreeTable** with package rows (parents) and
 | **Categories** | Package-level categories |
 | **Tags** | Package-level tags |
 | **Version dropdown** | Lists all known versions (installed and available). Each version entry has an **Install/Uninstall toggle** — install button for uninstalled versions, uninstall button for installed ones. Shows spinning icon during installation. Installation can be interrupted (stop button). Custom workflow tools do not show package-version controls. |
-| **Install custom package** | Opens a dialog accepting a GitHub repository URL or `.zip` archive. The package is installed into the user's tool package store, appears as a normal versioned package, and can then be used by any workflow. |
 | **"Use in workflow" button** | Sets the selected version as the active version for the current workflow. Only available for installed versions. When clicked, if the workflow already uses a different version of this package, a confirmation dialog is shown: "Changing {package} from {old_version} to {new_version} will mark {N} nodes as out-of-date. Their cached results will need re-execution. Continue?" |
 
 Multiple versions of the same package can be installed simultaneously. Each workflow uses **one version per package**, selected via the "Use in workflow" button.
+
+Below the TreeTable, the dialog includes an inline footer explicitly labelled **Install tool package**. The footer has one line of controls: a GitHub/GitLab repository URL text field, an **or** label, a **Select .zip archive** file picker, and an **Install** button. This footer installs unknown package sources that are not yet listed in the table; it must not be represented as a row-level action, search flow, or secondary modal. URL and archive inputs are mutually exclusive. In locked-down webapp mode this arbitrary package-source footer is hidden and the backend rejects it; approved package rows may still be installed through their version controls.
 
 **Tool rows (children):**
 
@@ -1613,8 +1614,10 @@ On load, the server reports missing packages in the load response. The frontend 
 | 1 | `GET` | `/api/v1/tools` | Startup; after package install/uninstall |
 | 2 | `GET` | `/api/v1/tools/{tool_name}/source` | "Open in editor" button in Tools Panel |
 | 3 | `GET` | `/api/v1/tools/packages` | Startup; Tools Panel tool list and Manage Tools dialog |
-| 4 | `POST` | `/api/v1/tools/packages/{name}/install` | Install button in Manage Tools dialog; version change |
-| 5 | `DELETE` | `/api/v1/tools/packages/{name}` | Uninstall button in Manage Tools dialog |
+| 4 | `POST` | `/api/v1/tools/packages/{name}/install` | Row-level version install button in Manage Tools dialog |
+| 5 | `DELETE` | `/api/v1/tools/packages/{name}` | Row-level uninstall button in Manage Tools dialog |
+| 5a | `POST` | `/api/v1/tools/packages/import-url` | Inline **Install tool package** footer; GitHub/GitLab URL source |
+| 5b | `POST` | `/api/v1/tools/packages/import-archive` | Inline **Install tool package** footer; `.zip` archive source |
 | 6 | `POST` | `/api/v1/tools/environments/{name}/start` | Start env toggle in Tools Panel / Manage Tools dialog; pre-warming |
 | 7 | `POST` | `/api/v1/tools/environments/{name}/stop` | Stop env toggle in Tools Panel / Manage Tools dialog; freeing resources |
 | 8 | `GET` | `/api/v1/workspace` | Startup; Settings storage section |

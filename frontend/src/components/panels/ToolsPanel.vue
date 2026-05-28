@@ -38,6 +38,93 @@ const toast = useToast()
  * on change so the ref stays reactive. */
 const busy = ref(new Set<string>())
 
+const packageInstallUrl = ref('')
+const packageArchiveFile = ref<File | null>(null)
+const packageArchiveInput = ref<HTMLInputElement | null>(null)
+const packageInstallBusy = ref(false)
+
+const packageArchiveLabel = computed(() => packageArchiveFile.value?.name ?? '')
+const canInstallPackageSource = computed(() => {
+  if (packageInstallBusy.value || !packageSourceInstallAvailable.value) return false
+  return packageInstallUrl.value.trim().length > 0 || packageArchiveFile.value !== null
+})
+
+function extractApiError(e: unknown): string {
+  const data = (e as { response?: { data?: { detail?: string; message?: string } } })
+    ?.response?.data
+  if (data?.detail) return data.detail
+  if (data?.message) return data.message
+  return e instanceof Error ? e.message : String(e)
+}
+
+watch(packageInstallUrl, (value) => {
+  if (value.trim().length === 0 || packageArchiveFile.value === null) return
+  clearPackageArchiveSelection()
+})
+
+function clearPackageArchiveSelection() {
+  packageArchiveFile.value = null
+  if (packageArchiveInput.value) packageArchiveInput.value.value = ''
+}
+
+function selectPackageArchive() {
+  packageArchiveInput.value?.click()
+}
+
+function onPackageArchiveSelected(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const file = input?.files?.[0] ?? null
+  if (!file) {
+    clearPackageArchiveSelection()
+    return
+  }
+  packageInstallUrl.value = ''
+  packageArchiveFile.value = file
+}
+
+async function installPackageSource() {
+  if (!canInstallPackageSource.value) return
+  packageInstallBusy.value = true
+  try {
+    const url = packageInstallUrl.value.trim()
+    let responsePackage = ''
+    let responseVersion = ''
+    if (url) {
+      const { data } = await api.post('/api/v1/tools/packages/import-url', { url })
+      responsePackage = data?.package ?? ''
+      responseVersion = data?.version ?? ''
+    } else if (packageArchiveFile.value) {
+      const body = new FormData()
+      body.append('archive', packageArchiveFile.value)
+      const { data } = await api.post('/api/v1/tools/packages/import-archive', body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      responsePackage = data?.package ?? ''
+      responseVersion = data?.version ?? ''
+    }
+    await Promise.all([toolRegistry.fetchPackages(), toolRegistry.fetchTools()])
+    packageInstallUrl.value = ''
+    clearPackageArchiveSelection()
+    toast.add({
+      severity: 'success',
+      summary: 'Tool package installed',
+      detail: [responsePackage, responseVersion].filter(Boolean).join(' '),
+      life: 3000,
+    })
+  } catch (e: unknown) {
+    const message = extractApiError(e)
+    toolRegistry.error = message
+    toast.add({
+      severity: 'error',
+      summary: 'Package install failed',
+      detail: message,
+      life: 5000,
+    })
+  } finally {
+    packageInstallBusy.value = false
+  }
+}
+
 function busyKey(packageName: string, version: string): string {
   return `${packageName}@${version}`
 }
@@ -59,6 +146,10 @@ const localToolActionsAvailable = computed(() => {
     settingsStore.settings?.deployment_mode !== 'webapp'
     || settingsStore.settings?.enable_unsafe_webapp_features === true
   )
+})
+
+const packageSourceInstallAvailable = computed(() => {
+  return settingsStore.settings !== null && localToolActionsAvailable.value
 })
 
 function shouldShowEmbeddedEditorLoading(): boolean {
@@ -635,6 +726,17 @@ defineExpose({
   toggleVersionsExpanded,
   isBusy,
   versionTriggerLabel,
+  packageInstallUrl,
+  packageArchiveFile,
+  packageArchiveInput,
+  packageArchiveLabel,
+  packageInstallBusy,
+  canInstallPackageSource,
+  packageSourceInstallAvailable,
+  clearPackageArchiveSelection,
+  selectPackageArchive,
+  onPackageArchiveSelected,
+  installPackageSource,
   searchQuery,
   activeDoc,
   manageActiveDoc,
@@ -1016,6 +1118,63 @@ defineExpose({
         </Column>
       </TreeTable>
 
+      <div
+        v-if="packageSourceInstallAvailable"
+        class="manage-tools-install-footer"
+        data-testid="package-install-footer"
+        aria-label="Install tool package"
+      >
+        <label
+          for="package-install-url"
+          class="manage-tools-install-label"
+          data-testid="package-install-footer-label"
+        >
+          Install tool package
+        </label>
+        <InputText
+          id="package-install-url"
+          v-model="packageInstallUrl"
+          placeholder="GitHub/GitLab URL"
+          class="manage-tools-install-url"
+          data-testid="package-install-url"
+          :disabled="packageInstallBusy"
+        />
+        <span class="manage-tools-install-or" data-testid="package-install-or">or</span>
+        <input
+          ref="packageArchiveInput"
+          type="file"
+          accept=".zip,application/zip,application/x-zip-compressed"
+          class="sr-only"
+          data-testid="package-install-archive-input"
+          @change="onPackageArchiveSelected"
+        >
+        <Button
+          label="Select .zip archive"
+          icon="pi pi-file-zip"
+          severity="secondary"
+          outlined
+          data-testid="package-install-archive-button"
+          :disabled="packageInstallBusy"
+          @click="selectPackageArchive"
+        />
+        <span
+          v-if="packageArchiveLabel"
+          class="manage-tools-install-archive-name"
+          data-testid="package-install-archive-name"
+        >
+          {{ packageArchiveLabel }}
+        </span>
+        <Button
+          label="Install"
+          icon="pi pi-download"
+          data-testid="package-install-button"
+          :loading="packageInstallBusy"
+          :disabled="!canInstallPackageSource"
+          @click="installPackageSource"
+        />
+      </div>
+
+
       <!-- Documentation panel docked at the bottom of the modal, always visible -->
       <template #footer>
         <div
@@ -1377,6 +1536,53 @@ defineExpose({
 .manage-tool-documentation {
   margin: 0;
   width: 100%;
+}
+
+
+.manage-tools-install-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 8px;
+  border-top: 1px solid var(--p-content-border-color);
+  flex-wrap: wrap;
+}
+
+.manage-tools-install-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.manage-tools-install-url {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.manage-tools-install-or {
+  color: var(--p-text-muted-color);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.manage-tools-install-archive-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--p-text-muted-color);
+  font-size: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Constrain the dialog content so the footer (info panel) stays visible

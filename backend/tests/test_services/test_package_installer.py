@@ -257,6 +257,164 @@ async def test_install_unknown_error_defaults_to_network_error(
 
 
 # ---------------------------------------------------------------------------
+# import URL / archive sources
+# ---------------------------------------------------------------------------
+
+
+def _populate_source_install(
+    target: Path,
+    *,
+    dist_name: str = "demo-tools",
+    version: str = "1.2.3",
+    module_name: str = "demo_tools",
+) -> None:
+    pkg_dir = target / module_name
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+    dist_info = target / f"{module_name}-{version}.dist-info"
+    dist_info.mkdir()
+    (dist_info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {dist_name}\nVersion: {version}\n",
+        encoding="utf-8",
+    )
+
+
+async def test_install_from_url_normalizes_github_url_and_moves_package(
+    installer: PypiPackageInstaller,
+    tool_store: Path,
+    registry: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    def _fake_install(source: str, target: Path) -> None:
+        calls.append(source)
+        _populate_source_install(target)
+
+    monkeypatch.setattr(installer_module, "_pip_install_source", _fake_install)
+
+    result = await installer.install_from_url("https://github.com/example/demo-tools")
+
+    assert result.package == "demo_tools"
+    assert result.version == "1.2.3"
+    assert calls == ["git+https://github.com/example/demo-tools.git"]
+    assert (tool_store / "demo_tools" / "1.2.3" / "demo_tools" / "__init__.py").exists()
+    registry.scan_tool_store.assert_called_once_with(tool_store)
+
+
+async def test_install_from_url_accepts_gitlab_url(
+    installer: PypiPackageInstaller,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    def _fake_install(source: str, target: Path) -> None:
+        calls.append(source)
+        _populate_source_install(target)
+
+    monkeypatch.setattr(installer_module, "_pip_install_source", _fake_install)
+
+    await installer.install_from_url("https://gitlab.com/example/demo-tools.git")
+
+    assert calls == ["git+https://gitlab.com/example/demo-tools.git"]
+
+
+async def test_install_from_url_preserves_repository_url_fragment(
+    installer: PypiPackageInstaller,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[str] = []
+
+    def _fake_install(source: str, target: Path) -> None:
+        calls.append(source)
+        _populate_source_install(target)
+
+    monkeypatch.setattr(installer_module, "_pip_install_source", _fake_install)
+
+    await installer.install_from_url(
+        "https://github.com/example/demo-tools#subdirectory=tools"
+    )
+
+    assert calls == [
+        "git+https://github.com/example/demo-tools.git#subdirectory=tools"
+    ]
+
+
+async def test_install_from_url_rejects_non_github_gitlab_url(
+    installer: PypiPackageInstaller,
+):
+    with pytest.raises(installer_module.PackageInvalidError):
+        await installer.install_from_url("https://example.com/demo-tools")
+
+
+async def test_install_from_archive_installs_zip_source(
+    installer: PypiPackageInstaller,
+    tool_store: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    archive = tool_store / "demo-tools.zip"
+    archive.write_bytes(b"zip")
+    calls: list[str] = []
+
+    def _fake_install(source: str, target: Path) -> None:
+        calls.append(source)
+        _populate_source_install(target, dist_name="archive-tools", version="0.4.0", module_name="archive_tools")
+
+    monkeypatch.setattr(installer_module, "_pip_install_source", _fake_install)
+
+    result = await installer.install_from_archive(archive)
+
+    assert result.package == "archive_tools"
+    assert result.version == "0.4.0"
+    assert calls == [str(archive)]
+    assert (tool_store / "archive_tools" / "0.4.0" / "archive_tools" / "__init__.py").exists()
+
+
+async def test_install_source_without_metadata_raises_not_found(
+    installer: PypiPackageInstaller,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def _fake_install(source: str, target: Path) -> None:
+        (target / "demo_tools").mkdir(parents=True)
+
+    monkeypatch.setattr(installer_module, "_pip_install_source", _fake_install)
+
+    with pytest.raises(PackageNotFoundError):
+        await installer.install_from_url("https://github.com/example/demo-tools")
+
+
+async def test_install_source_without_expected_module_raises_not_found(
+    installer: PypiPackageInstaller,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def _fake_install(source: str, target: Path) -> None:
+        _populate_source_install(target, module_name="other_module")
+
+    monkeypatch.setattr(installer_module, "_pip_install_source", _fake_install)
+
+    with pytest.raises(PackageNotFoundError):
+        await installer.install_from_url("https://github.com/example/demo-tools")
+
+
+async def test_install_source_failure_resumes_hot_reload_false(
+    installer_with_hot_reload: PypiPackageInstaller,
+    hot_reload: _FakeHotReload,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def _fake_install(source: str, target: Path) -> None:
+        raise RuntimeError("network timeout")
+
+    monkeypatch.setattr(installer_module, "_pip_install_source", _fake_install)
+
+    with pytest.raises(PackageNetworkError):
+        await installer_with_hot_reload.install_from_url("https://github.com/example/demo-tools")
+
+    assert ("suppress", None) in hot_reload.calls
+    assert ("resume", False) in hot_reload.calls
+    assert ("resume", True) not in hot_reload.calls
+
+
+# ---------------------------------------------------------------------------
 # uninstall()
 # ---------------------------------------------------------------------------
 

@@ -107,7 +107,7 @@ In webapp mode, the following are disabled to prevent remote code execution:
 
 The frontend hides the "Create Tool" button in the Tools Panel and "Open in editor" buttons on tool rows when `deployment_mode === "webapp"`.
 
-Tool packages can still be installed from the **known packages list** (see Section 2.5) via the Tools Panel. Only packages on this pre-defined list are available for installation — users cannot install arbitrary PyPI packages. ProcessingTools are sandboxed by Wetlands; DataFrameTools from known packages run in the main process.
+Tool packages can still be installed from the **known packages list** (see Section 2.5) via the Tools Panel. Only packages on this pre-defined list are available for installation in locked-down webapp mode — users cannot install arbitrary PyPI packages, GitHub/GitLab package sources, or `.zip` package archives. The Manage Tools inline **Install tool package** footer for unknown package sources is hidden in locked-down webapp mode and its backend endpoints return HTTP 403. ProcessingTools are sandboxed by Wetlands; DataFrameTools from known packages run in the main process.
 
 ### 2.5 Available Package Versions and Known Packages Registry
 

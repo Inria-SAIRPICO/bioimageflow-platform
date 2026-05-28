@@ -30,6 +30,8 @@ from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
+    PackageInstallResult,
+    PackageInvalidError,
     PackageNetworkError,
     PackageNotFoundError,
 )
@@ -640,6 +642,162 @@ async def test_install_package_network_error():
     )
     async for client in _client(config):
         resp = await client.post("/api/v1/tools/packages/cellpose/install")
+    assert resp.status_code == 502
+
+
+class _KnownPackages:
+    def __init__(self, names: list[str]) -> None:
+        self._names = names
+
+    def list_known_packages(self) -> list[str]:
+        return list(self._names)
+
+
+async def test_install_package_webapp_rejects_unknown_package():
+    installer = AsyncMock(spec=PackageInstallerService)
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        known_packages=_KnownPackages(["approved_tools"]),
+        deployment_mode="webapp",
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/packages/random_pypi/install")
+    assert resp.status_code == 403
+    installer.install.assert_not_called()
+
+
+async def test_install_package_webapp_allows_known_package():
+    installer = AsyncMock(spec=PackageInstallerService)
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        known_packages=_KnownPackages(["approved_tools"]),
+        deployment_mode="webapp",
+    )
+    async for client in _client(config):
+        resp = await client.post("/api/v1/tools/packages/approved_tools/install")
+    assert resp.status_code == 200
+    installer.install.assert_awaited_once_with("approved_tools", version=None)
+
+
+async def test_import_package_from_url_success_refreshes_catalog():
+    installer = AsyncMock(spec=PackageInstallerService)
+    installer.install_from_url.return_value = PackageInstallResult(
+        package="demo_tools",
+        version="1.2.3",
+    )
+    catalog = _FakeCatalog([])
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        package_catalog=catalog,
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools/packages/import-url",
+            json={"url": "https://github.com/example/demo-tools"},
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "status": "installed",
+        "package": "demo_tools",
+        "version": "1.2.3",
+    }
+    installer.install_from_url.assert_awaited_once_with(
+        "https://github.com/example/demo-tools"
+    )
+    assert catalog.refresh_calls == 1
+
+
+async def test_import_package_from_archive_success_refreshes_catalog():
+    installer = AsyncMock(spec=PackageInstallerService)
+    installer.install_from_archive.return_value = PackageInstallResult(
+        package="archive_tools",
+        version="0.4.0",
+    )
+    catalog = _FakeCatalog([])
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        package_catalog=catalog,
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools/packages/import-archive",
+            files={"archive": ("archive-tools.zip", b"zip-bytes", "application/zip")},
+        )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "status": "installed",
+        "package": "archive_tools",
+        "version": "0.4.0",
+    }
+    installer.install_from_archive.assert_awaited_once()
+    archive_path = installer.install_from_archive.await_args.args[0]
+    assert archive_path.name == "archive-tools.zip"
+    assert not archive_path.exists()
+    assert catalog.refresh_calls == 1
+
+
+async def test_import_package_from_archive_rejects_non_zip():
+    installer = AsyncMock(spec=PackageInstallerService)
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools/packages/import-archive",
+            files={"archive": ("not-a-zip.txt", b"text", "text/plain")},
+        )
+    assert resp.status_code == 400
+    installer.install_from_archive.assert_not_called()
+
+
+async def test_import_package_url_invalid_returns_400():
+    installer = AsyncMock(spec=PackageInstallerService)
+    installer.install_from_url.side_effect = PackageInvalidError("unsupported URL")
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools/packages/import-url",
+            json={"url": "ftp://example.com/tools"},
+        )
+    assert resp.status_code == 400
+
+
+async def test_import_package_from_url_webapp_forbidden():
+    installer = AsyncMock(spec=PackageInstallerService)
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        deployment_mode="webapp",
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools/packages/import-url",
+            json={"url": "https://github.com/example/demo-tools"},
+        )
+    assert resp.status_code == 403
+    installer.install_from_url.assert_not_called()
+
+
+async def test_import_package_url_network_error_returns_502():
+    installer = AsyncMock(spec=PackageInstallerService)
+    installer.install_from_url.side_effect = PackageNetworkError("timeout")
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+    )
+    async for client in _client(config):
+        resp = await client.post(
+            "/api/v1/tools/packages/import-url",
+            json={"url": "https://github.com/example/demo-tools"},
+        )
     assert resp.status_code == 502
 
 

@@ -183,7 +183,7 @@ function mountPanel(options: { settings?: Settings | null } = {}) {
         Column: true,
         InputText: true,
         Button: true,
-        Dialog: true,
+        Dialog: { template: '<div><slot /><slot name="footer" /></div>' },
         Tag: true,
         CreateToolDialog: true,
         ConfirmDialog: true,
@@ -396,6 +396,162 @@ describe('ToolsPanel', () => {
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/tools/packages/bioimageflow-core/install', {
       version: '0.2.0',
     })
+  })
+
+
+  it('renders an explicit inline install package footer in Manage Tools', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as { showManageDialog: boolean }
+    vm.showManageDialog = true
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="package-install-footer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="package-install-footer-label"]').text()).toBe('Install tool package')
+    expect(wrapper.find('[data-testid="package-install-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="package-install-or"]').text()).toBe('or')
+    expect(wrapper.find('[data-testid="package-install-archive-button"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="package-install-button"]').exists()).toBe(true)
+  })
+
+
+  it('hides the custom package source footer in locked-down webapp mode', async () => {
+    const wrapper = mountPanel({
+      settings: makeSettings({ deployment_mode: 'webapp', enable_unsafe_webapp_features: false }),
+    })
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as { showManageDialog: boolean }
+    vm.showManageDialog = true
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="package-install-footer"]').exists()).toBe(false)
+  })
+
+
+  it('keeps the custom package source footer hidden until settings are loaded', async () => {
+    const wrapper = mountPanel({ settings: null })
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as {
+      showManageDialog: boolean
+      packageSourceInstallAvailable: boolean
+    }
+    vm.showManageDialog = true
+    await wrapper.vm.$nextTick()
+
+    expect(vm.packageSourceInstallAvailable).toBe(false)
+    expect(wrapper.find('[data-testid="package-install-footer"]').exists()).toBe(false)
+  })
+
+  it('installs an unknown package from a repository URL and refreshes tools', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.post.mockResolvedValueOnce({
+      data: { status: 'installed', package: 'demo_tools', version: '1.2.3' },
+    })
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url === '/api/v1/tools') return Promise.resolve({ data: mockTools })
+      if (url === '/api/v1/tools/packages') return Promise.resolve({ data: mockPackages })
+      return Promise.resolve({ data: {} })
+    })
+
+    const vm = wrapper.vm as unknown as {
+      packageInstallUrl: string
+      packageArchiveFile: File | null
+      canInstallPackageSource: boolean
+      installPackageSource: () => Promise<void>
+    }
+    vm.packageInstallUrl = 'https://github.com/example/demo-tools'
+    await wrapper.vm.$nextTick()
+
+    expect(vm.canInstallPackageSource).toBe(true)
+    await vm.installPackageSource()
+
+    expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/tools/packages/import-url', {
+      url: 'https://github.com/example/demo-tools',
+    })
+    expect(vm.packageInstallUrl).toBe('')
+    expect(vm.packageArchiveFile).toBeNull()
+  })
+
+  it('installs an unknown package from a zip archive upload', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.post.mockResolvedValueOnce({
+      data: { status: 'installed', package: 'archive_tools', version: '0.4.0' },
+    })
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url === '/api/v1/tools') return Promise.resolve({ data: mockTools })
+      if (url === '/api/v1/tools/packages') return Promise.resolve({ data: mockPackages })
+      return Promise.resolve({ data: {} })
+    })
+
+    const file = new File(['zip'], 'archive-tools.zip', { type: 'application/zip' })
+    const vm = wrapper.vm as unknown as {
+      packageInstallUrl: string
+      packageArchiveFile: File | null
+      packageArchiveLabel: string
+      onPackageArchiveSelected: (event: Event) => void
+      installPackageSource: () => Promise<void>
+    }
+
+    vm.packageInstallUrl = 'https://github.com/example/demo-tools'
+    const input = document.createElement('input')
+    Object.defineProperty(input, 'files', { value: [file] })
+    vm.onPackageArchiveSelected({ target: input } as unknown as Event)
+    await wrapper.vm.$nextTick()
+
+    expect(vm.packageInstallUrl).toBe('')
+    expect(vm.packageArchiveLabel).toBe('archive-tools.zip')
+    await vm.installPackageSource()
+
+    const [url, body, config] = mockedApi.post.mock.calls.find((call) => call[0] === '/api/v1/tools/packages/import-archive')!
+    expect(url).toBe('/api/v1/tools/packages/import-archive')
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('archive')).toBe(file)
+    expect(config).toEqual({ headers: { 'Content-Type': 'multipart/form-data' } })
+  })
+
+
+  it('surfaces backend validation details when package source install fails', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    mockedApi.post.mockRejectedValueOnce({
+      response: { data: { detail: 'Installed source did not contain package metadata' } },
+    })
+
+    const vm = wrapper.vm as unknown as {
+      packageInstallUrl: string
+      installPackageSource: () => Promise<void>
+    }
+    vm.packageInstallUrl = 'https://github.com/example/broken-tools'
+    await wrapper.vm.$nextTick()
+    await vm.installPackageSource()
+
+    expect(useToolRegistryStore().error).toBe('Installed source did not contain package metadata')
   })
 
   // --- Version dropdown collapse/expand ---

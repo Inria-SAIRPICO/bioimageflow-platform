@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from bioimageflow_server.models.tools import (
+    PackageImportResponse,
+    PackageImportUrlRequest,
     PackageInfo,
     ToolCreate,
     ToolCreateResponse,
@@ -19,6 +22,7 @@ from bioimageflow_server.models.tools import (
     ToolUsageResponse,
 )
 from bioimageflow_server.services.custom_tools import CustomToolService, name_to_snake
+from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
@@ -51,6 +55,10 @@ def get_package_installer() -> Any:  # pragma: no cover
 
 
 def get_package_catalog() -> Any:  # pragma: no cover
+    return None
+
+
+def get_known_packages() -> KnownPackagesService | None:  # pragma: no cover
     return None
 
 
@@ -326,6 +334,61 @@ async def delete_tool(
 # ---------------------------------------------------------------------------
 
 
+async def _refresh_package_catalog(catalog: Any) -> None:
+    if catalog is None:
+        return
+    try:
+        await catalog.refresh()
+    except PackageNetworkError:
+        pass
+
+
+def _package_import_response(result: Any) -> PackageImportResponse:
+    return PackageImportResponse(
+        status="installed",
+        package=result.package,
+        version=result.version,
+    )
+
+
+def _ensure_package_source_import_allowed(
+    mode: str,
+    unsafe_webapp_features_enabled: bool,
+) -> None:
+    if mode == "webapp" and not unsafe_webapp_features_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Custom package source install disabled in webapp mode",
+        )
+
+
+def _ensure_row_package_install_allowed(
+    package_name: str,
+    mode: str,
+    unsafe_webapp_features_enabled: bool,
+    known_packages: KnownPackagesService | None,
+) -> None:
+    if mode != "webapp" or unsafe_webapp_features_enabled:
+        return
+    known = set(known_packages.list_known_packages() if known_packages is not None else [])
+    if package_name not in known:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Package '{package_name}' is not in the approved package list",
+        )
+
+
+def _raise_package_install_error(exc: Exception, package_name: str | None = None) -> None:
+    if isinstance(exc, PackageInvalidError):
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if isinstance(exc, PackageNotFoundError):
+        detail = str(exc) if package_name is None else f"Package '{package_name}' not found"
+        raise HTTPException(status_code=404, detail=detail) from exc
+    if isinstance(exc, PackageNetworkError):
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    raise exc
+
+
 @router.post("/packages/{package_name}/use")
 async def use_package_version(
     package_name: str,
@@ -352,28 +415,80 @@ async def use_package_version(
     return {"package": package_name, "version": version, "status": "active"}
 
 
+@router.post("/packages/import-url", response_model=PackageImportResponse)
+async def import_package_from_url(
+    body: PackageImportUrlRequest,
+    installer: Any = Depends(get_package_installer),
+    catalog: Any = Depends(get_package_catalog),
+    mode: str = Depends(get_deployment_mode),
+    unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
+) -> PackageImportResponse:
+    _ensure_package_source_import_allowed(mode, unsafe_webapp_features_enabled)
+    if installer is None:
+        raise HTTPException(status_code=500, detail="Package installer not configured")
+    try:
+        result = await installer.install_from_url(body.url)
+    except Exception as exc:  # noqa: BLE001 — converted to API error when known
+        _raise_package_install_error(exc)
+    await _refresh_package_catalog(catalog)
+    return _package_import_response(result)
+
+
+@router.post("/packages/import-archive", response_model=PackageImportResponse)
+async def import_package_from_archive(
+    archive: UploadFile = File(...),
+    installer: Any = Depends(get_package_installer),
+    catalog: Any = Depends(get_package_catalog),
+    mode: str = Depends(get_deployment_mode),
+    unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
+) -> PackageImportResponse:
+    _ensure_package_source_import_allowed(mode, unsafe_webapp_features_enabled)
+    if installer is None:
+        raise HTTPException(status_code=500, detail="Package installer not configured")
+    filename = Path(archive.filename or "").name
+    if not filename or Path(filename).suffix.lower() != ".zip":
+        raise HTTPException(status_code=400, detail="Tool package archive must be a .zip file")
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="bif-tool-package-upload-") as tmpdir:
+            archive_path = Path(tmpdir) / filename
+            with archive_path.open("wb") as handle:
+                while chunk := await archive.read(1024 * 1024):
+                    handle.write(chunk)
+            result = await installer.install_from_archive(archive_path)
+    except Exception as exc:  # noqa: BLE001 — converted to API error when known
+        _raise_package_install_error(exc)
+    finally:
+        await archive.close()
+
+    await _refresh_package_catalog(catalog)
+    return _package_import_response(result)
+
+
 @router.post("/packages/{package_name}/install")
 async def install_package(
     package_name: str,
     body: dict[str, str] | None = None,
     installer: Any = Depends(get_package_installer),
     catalog: Any = Depends(get_package_catalog),
+    mode: str = Depends(get_deployment_mode),
+    unsafe_webapp_features_enabled: bool = Depends(get_unsafe_webapp_features_enabled),
+    known_packages: KnownPackagesService | None = Depends(get_known_packages),
 ) -> dict[str, str]:
+    _ensure_row_package_install_allowed(
+        package_name,
+        mode,
+        unsafe_webapp_features_enabled,
+        known_packages,
+    )
     if installer is None:
         raise HTTPException(status_code=500, detail="Package installer not configured")
     version = body.get("version") if body else None
     try:
         await installer.install(package_name, version=version)
-    except PackageNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
-    except PackageNetworkError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    if catalog is not None:
-        try:
-            await catalog.refresh()
-        except PackageNetworkError:
-            # Install succeeded; refresh is best-effort.
-            pass
+    except Exception as exc:  # noqa: BLE001 — converted to API error when known
+        _raise_package_install_error(exc, package_name=package_name)
+    await _refresh_package_catalog(catalog)
     return {"status": "installed"}
 
 
@@ -388,15 +503,9 @@ async def uninstall_package(
         raise HTTPException(status_code=500, detail="Package installer not configured")
     try:
         await installer.uninstall(package_name, version=version)
-    except PackageNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Package '{package_name}' not found")
-    except PackageNetworkError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    if catalog is not None:
-        try:
-            await catalog.refresh()
-        except PackageNetworkError:
-            pass
+    except Exception as exc:  # noqa: BLE001 — converted to API error when known
+        _raise_package_install_error(exc, package_name=package_name)
+    await _refresh_package_catalog(catalog)
     return {"status": "uninstalled"}
 
 
@@ -432,6 +541,7 @@ async def stop_environment(
 # ---------------------------------------------------------------------------
 
 from bioimageflow_server.services.package_installer import (  # noqa: E402
+    PackageInvalidError,
     PackageNetworkError,
     PackageNotFoundError,
 )
