@@ -751,22 +751,13 @@ defineExpose({
         <h3>{{ selectedWorkflow.display_name }}</h3>
         <div class="workflow-detail__actions">
           <Button
-            icon="pi pi-folder-open"
+            label="Open workflow"
             text
             size="small"
             aria-label="Open workflow"
             title="Open workflow"
             data-testid="workflow-open-btn"
             @click="openWorkflow()"
-          />
-          <Button
-            icon="pi pi-external-link"
-            text
-            size="small"
-            aria-label="Open workflow folder"
-            title="Open workflow folder"
-            data-testid="workflow-reveal-folder-btn"
-            @click="revealSelectedWorkflowFolder"
           />
         </div>
       </div>
@@ -793,7 +784,18 @@ defineExpose({
           <dd data-testid="workflow-detail-api-name">{{ workflowId(selectedWorkflow) }}</dd>
         </div>
         <div>
-          <dt>Storage path</dt>
+          <dt class="workflow-detail__term-with-action">
+            <span>Storage path</span>
+            <Button
+              icon="pi pi-external-link"
+              text
+              size="small"
+              aria-label="Open workflow folder"
+              title="Open workflow folder"
+              data-testid="workflow-reveal-folder-btn"
+              @click="revealSelectedWorkflowFolder"
+            />
+          </dt>
           <dd data-testid="workflow-detail-storage-path">
             {{ selectedWorkflow.storage_path || 'Default workflow storage' }}
           </dd>

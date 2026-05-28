@@ -136,6 +136,11 @@ describe('WorkflowsPanel', () => {
     expect(wrapper.find('[data-testid="workflow-detail-storage-path"]').text()).toContain(
       '/library/workflows/beta_api',
     )
+    const openButton = wrapper.find('[data-testid="workflow-open-btn"]')
+    expect(openButton.attributes('label')).toBe('Open workflow')
+    expect(openButton.attributes('icon')).toBeUndefined()
+    const revealButton = wrapper.find('[data-testid="workflow-reveal-folder-btn"]')
+    expect(revealButton.element.closest('dt')?.textContent).toContain('Storage path')
   })
 
 
