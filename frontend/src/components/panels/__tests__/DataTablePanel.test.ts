@@ -265,6 +265,46 @@ describe('DataTablePanel', () => {
     expect(wrapper.text()).toContain('/data/results/mask.tif')
   })
 
+
+  it('does not request backend result data for synthetic sub-workflow nodes', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const uiStore = useUIStore()
+    uiStore.setSelectedNodes(['sub_workflow_1'])
+
+    const { currentGraph } = useGraphSync()
+    currentGraph.value = {
+      nodes: [
+        {
+          id: 'sub_workflow_1',
+          name: 'Fish analysis',
+          tool_name: '__sub_workflow__',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        },
+      ],
+      edges: [],
+    }
+
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          Button: true,
+          NodeDataTable: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(mockedGet).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('No output data available')
+  })
+
   it('keeps a selected executed node in a preparing state after 409 and refreshes on executed status', async () => {
     vi.useFakeTimers()
     const pinia = createPinia()

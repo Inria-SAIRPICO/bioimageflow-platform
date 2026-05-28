@@ -33,13 +33,29 @@ const pythonKeywords = new Set([
   'try', 'while', 'with', 'yield',
 ])
 
-const trimmedName = computed(() => toolName.value.trim())
+const rawName = computed(() => toolName.value.trim())
+
+function toToolClassName(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('..')) return ''
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+  }
+  return trimmed
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')
+}
+
+const toolClassName = computed(() => toToolClassName(rawName.value))
 
 const isValidToolName = computed(() => {
-  const name = trimmedName.value
-  if (!name || name !== toolName.value) return false
-  if (name.includes('/') || name.includes('\\') || name.includes('..')) return false
-  if (/\s/.test(name)) return false
+  const name = toolClassName.value
+  if (!name) return false
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return false
   if (pythonKeywords.has(name)) return false
   if (!/^[A-Z]/.test(name)) return false
@@ -51,7 +67,7 @@ const createDisabled = computed(() => !isValidToolName.value)
 async function onCreate() {
   if (createDisabled.value) return
   const response = await toolRegistry.createTool({
-    name: trimmedName.value,
+    name: toolClassName.value,
     tool_type: toolType.value as 'ProcessingTool' | 'DataFrameTool',
   })
   emit('created', response)
@@ -65,7 +81,7 @@ function onCancel() {
   toolType.value = 'ProcessingTool'
 }
 
-defineExpose({ toolName, toolType, createDisabled, isValidToolName, onCreate, onCancel })
+defineExpose({ toolName, toolType, toolClassName, createDisabled, isValidToolName, onCreate, onCancel })
 </script>
 
 <template>
@@ -85,6 +101,9 @@ defineExpose({ toolName, toolType, createDisabled, isValidToolName, onCreate, on
           placeholder="Enter tool name"
           class="w-full"
         />
+        <small v-if="toolClassName" class="generated-name" data-testid="tool-class-name">
+          Class: {{ toolClassName }}
+        </small>
       </div>
       <div class="field">
         <label for="tool-type">Type</label>
@@ -110,3 +129,12 @@ defineExpose({ toolName, toolType, createDisabled, isValidToolName, onCreate, on
     </template>
   </Dialog>
 </template>
+
+<style scoped>
+.generated-name {
+  color: var(--p-text-muted-color);
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  margin-top: 0.25rem;
+}
+</style>

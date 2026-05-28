@@ -579,10 +579,10 @@ The Tools Panel (Section 3.4 of the full spec) includes a **Create Tool** button
 
 **Create Tool button behavior:**
 1. Opens a modal dialog with:
-   - **Name field:** Text input for the tool class name. Validated in real-time (must be CamelCase, valid Python identifier, no conflicts).
+   - **Name field:** Text input for a user-facing tool name. The frontend derives and displays the Python class name, for example `my custom tool` -> `MyCustomTool`, then validates the derived class name in real time (valid Python identifier, starts uppercase, no conflicts).
    - **Tool type dropdown:** `ProcessingTool` (default) or `DataFrameTool`.
    - **Cancel / Create buttons.**
-2. On "Create": sends `POST /tools` with the name and tool type.
+2. On "Create": sends `POST /tools` with the derived class name and tool type.
 3. On success: the new tool appears in the Tools Panel, and its source file is opened in the Code Editor Panel.
 
 **Delete and rename:** Available via right-click context menu on custom tool rows in the Tools Panel. Package-installed tools cannot be deleted or renamed (context menu items are hidden).

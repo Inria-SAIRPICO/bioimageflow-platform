@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
+import Textarea from 'primevue/textarea'
 
 const props = defineProps<{
   visible: boolean
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 
 const name = ref('')
 const displayName = ref('')
+const description = ref('')
 
 const title = computed(() => (
   props.mode === 'new' ? 'Create workflow' : 'Save workflow as'
@@ -58,12 +60,14 @@ watch(
     props.initialName,
     props.initialDisplayName,
     props.suggestedName,
+    props.initialDescription,
   ],
   ([visible]) => {
     if (!visible) return
     const nextName = props.suggestedName || props.initialName || ''
     name.value = nextName || deriveWorkflowId(props.initialDisplayName || '')
     displayName.value = props.initialDisplayName || nextName || ''
+    description.value = props.initialDescription ?? ''
   },
   { immediate: true },
 )
@@ -79,7 +83,7 @@ function onSubmit() {
   emit('submit', {
     name: trimmedName,
     display_name: trimmedDisplayName || trimmedName,
-    description: props.initialDescription?.trim() || null,
+    description: description.value.trim() || null,
   })
 }
 </script>
@@ -121,6 +125,16 @@ function onSubmit() {
         <small v-else class="generated-name" data-testid="workflow-generated-name">
           ID: {{ generatedName }}
         </small>
+      </label>
+      <label class="field">
+        <span>Description</span>
+        <Textarea
+          v-model="description"
+          auto-resize
+          rows="3"
+          data-testid="workflow-description-input"
+          placeholder="What does this workflow do?"
+        />
       </label>
     </div>
 

@@ -648,7 +648,10 @@ Inside the container, `BIOIMAGEFLOW_WORKSPACE=/workspace` and the backend
 reports `/workspace` as the user's workspace path. Workflow files live under
 `/workspace/workflows/`, workspace-owned custom tools under `/workspace/tools/`,
 uploads under `/workspace/data/datasets/`, and runtime outputs under
-`/workspace/outputs/`.
+`/workspace/outputs/`. Workflow creation accepts an optional description. The
+workflow detail UI shows and edits that description, opens the workflow folder
+through the system file browser when available, and avoids showing both a
+workflow-file row and storage-path row for the same concept.
 
 **Resource limits (Podman flags):**
 

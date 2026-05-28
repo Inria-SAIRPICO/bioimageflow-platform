@@ -3,8 +3,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
+import Textarea from 'primevue/textarea'
 import Tree from 'primevue/tree'
 import { useWorkflowStore } from '@/stores/workflow'
+import { api } from '@/api/client'
 import type { WorkflowInfo } from '@/api/types'
 import type { WorkflowFolderDeletePolicy, WorkflowTreeNode } from '@/stores/workflow'
 import type { TreeNodeDropEvent } from 'primevue/tree'
@@ -58,6 +60,8 @@ const folderNameInput = ref('')
 
 const deleteDialogVisible = ref(false)
 const deleteFolderTarget = ref<{ id: string; name: string; hasChildren: boolean } | null>(null)
+const descriptionDialogVisible = ref(false)
+const descriptionInput = ref('')
 
 function workflowId(workflow: WorkflowInfo): string {
   return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
@@ -466,6 +470,40 @@ async function confirmDeleteFolder(policy: WorkflowFolderDeletePolicy): Promise<
   })
 }
 
+function openDescriptionDialog(): void {
+  if (!selectedWorkflow.value) return
+  descriptionInput.value = selectedWorkflow.value.description ?? ''
+  descriptionDialogVisible.value = true
+}
+
+async function submitDescriptionDialog(): Promise<void> {
+  const workflow = selectedWorkflow.value
+  if (!workflow) return
+  const id = workflowId(workflow)
+  await runPanelAction(async () => {
+    const updated = await workflowStore.patchWorkflow(id, {
+      action: 'update',
+      description: descriptionInput.value.trim() || null,
+    })
+    selectedName.value = workflowId(updated)
+    selectedFolderId.value = null
+    descriptionDialogVisible.value = false
+  })
+}
+
+function parentPath(path: string): string {
+  const index = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return index === -1 ? path : path.slice(0, index)
+}
+
+async function revealSelectedWorkflowFolder(): Promise<void> {
+  const path = selectedWorkflow.value?.path
+  if (!path) return
+  await runPanelAction(async () => {
+    await api.post('/api/v1/fs/reveal', { path: parentPath(path) })
+  })
+}
+
 function onWorkflowDragStart(event: DragEvent, workflow: WorkflowInfo): void {
   event.dataTransfer?.setData('application/bioimageflow-workflow', workflowId(workflow))
 }
@@ -554,6 +592,9 @@ defineExpose({
   openDeleteFolderDialog,
   submitFolderDialog,
   confirmDeleteFolder,
+  openDescriptionDialog,
+  submitDescriptionDialog,
+  revealSelectedWorkflowFolder,
   deleteSelected,
   onTreeNodeDrop,
 })
@@ -708,17 +749,41 @@ defineExpose({
     >
       <div class="workflow-detail__header">
         <h3>{{ selectedWorkflow.display_name }}</h3>
-        <Button
-          label="Open"
-          icon="pi pi-folder-open"
-          size="small"
-          data-testid="workflow-open-btn"
-          @click="openWorkflow()"
-        />
+        <div class="workflow-detail__actions">
+          <Button
+            icon="pi pi-folder-open"
+            text
+            size="small"
+            aria-label="Open workflow"
+            title="Open workflow"
+            data-testid="workflow-open-btn"
+            @click="openWorkflow()"
+          />
+          <Button
+            icon="pi pi-external-link"
+            text
+            size="small"
+            aria-label="Open workflow folder"
+            title="Open workflow folder"
+            data-testid="workflow-reveal-folder-btn"
+            @click="revealSelectedWorkflowFolder"
+          />
+        </div>
       </div>
       <dl>
         <div>
-          <dt>Description</dt>
+          <dt class="workflow-detail__term-with-action">
+            <span>Description</span>
+            <Button
+              icon="pi pi-pencil"
+              text
+              size="small"
+              aria-label="Edit workflow description"
+              title="Edit workflow description"
+              data-testid="workflow-edit-description-btn"
+              @click="openDescriptionDialog"
+            />
+          </dt>
           <dd data-testid="workflow-detail-description">
             {{ selectedWorkflow.description || 'No description.' }}
           </dd>
@@ -726,10 +791,6 @@ defineExpose({
         <div>
           <dt>API name</dt>
           <dd data-testid="workflow-detail-api-name">{{ workflowId(selectedWorkflow) }}</dd>
-        </div>
-        <div>
-          <dt>Workflow file</dt>
-          <dd data-testid="workflow-detail-path">{{ selectedWorkflow.path }}</dd>
         </div>
         <div>
           <dt>Storage path</dt>
@@ -771,6 +832,39 @@ defineExpose({
           label="Save"
           data-testid="workflow-folder-dialog-submit"
           @click="submitFolderDialog"
+        />
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="descriptionDialogVisible"
+      modal
+      header="Edit workflow description"
+      :style="{ width: '32rem' }"
+      data-testid="workflow-description-dialog"
+    >
+      <div class="folder-dialog-body">
+        <label for="workflow-description">Description</label>
+        <Textarea
+          id="workflow-description"
+          v-model="descriptionInput"
+          auto-resize
+          rows="5"
+          data-testid="workflow-description-edit-input"
+        />
+      </div>
+      <template #footer>
+        <Button
+          label="Cancel"
+          severity="secondary"
+          text
+          data-testid="workflow-description-dialog-cancel"
+          @click="descriptionDialogVisible = false"
+        />
+        <Button
+          label="Save"
+          data-testid="workflow-description-dialog-submit"
+          @click="submitDescriptionDialog"
         />
       </template>
     </Dialog>
@@ -830,10 +924,13 @@ defineExpose({
 .workflows-panel__toolbar {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 
 .workflows-panel__search {
+  max-width: 100%;
+  min-width: 0;
   width: 100%;
 }
 
@@ -977,8 +1074,6 @@ defineExpose({
   border-top: 1px solid var(--p-content-border-color);
   display: grid;
   gap: 0.6rem;
-  max-height: 45%;
-  min-height: 10rem;
   overflow: auto;
   padding-top: 0.75rem;
 }
@@ -988,6 +1083,13 @@ defineExpose({
   display: flex;
   gap: 0.75rem;
   justify-content: space-between;
+}
+
+.workflow-detail__actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.15rem;
 }
 
 .workflow-detail h3 {
@@ -1010,6 +1112,12 @@ defineExpose({
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.workflow-detail__term-with-action {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
 }
 
 .workflow-detail dd {

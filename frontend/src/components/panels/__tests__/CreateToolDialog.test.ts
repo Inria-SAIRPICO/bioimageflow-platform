@@ -72,18 +72,23 @@ describe('CreateToolDialog', () => {
     expect(vm.createDisabled).toBe(true)
   })
 
-  it('create is enabled when name is provided', async () => {
+  it('create is enabled when a class name can be derived from the provided name', async () => {
     const wrapper = mountDialog()
-    const vm = wrapper.vm as unknown as { toolName: string; createDisabled: boolean }
-    vm.toolName = 'MyTool'
+    const vm = wrapper.vm as unknown as {
+      toolName: string
+      toolClassName: string
+      createDisabled: boolean
+    }
+    vm.toolName = 'my custom tool'
     await wrapper.vm.$nextTick()
+    expect(vm.toolClassName).toBe('MyCustomTool')
     expect(vm.createDisabled).toBe(false)
   })
 
-  it('create is disabled for invalid class names', async () => {
+  it('create is disabled for names that cannot safely map to a tool class', async () => {
     const wrapper = mountDialog()
     const vm = wrapper.vm as unknown as { toolName: string; createDisabled: boolean }
-    vm.toolName = 'my_tool'
+    vm.toolName = '!!!'
     await wrapper.vm.$nextTick()
     expect(vm.createDisabled).toBe(true)
 
@@ -109,7 +114,7 @@ describe('CreateToolDialog', () => {
       toolType: string
       onCreate: () => Promise<void>
     }
-    vm.toolName = 'MyNewTool'
+    vm.toolName = 'my new tool'
     vm.toolType = 'DataFrameTool'
     await wrapper.vm.$nextTick()
 

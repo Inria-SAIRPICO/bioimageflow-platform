@@ -92,6 +92,11 @@ function mountPanel(items: WorkflowInfo[] = workflows) {
           props: ['visible'],
           template: '<div v-if="visible"><slot /><slot name="footer" /></div>',
         },
+        Textarea: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template: `<textarea v-bind="$attrs" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />`,
+        },
       },
     },
   })
@@ -118,7 +123,7 @@ describe('WorkflowsPanel', () => {
     expect(row.text()).not.toContain('Segment nuclei')
   })
 
-  it('shows selected workflow details with description, API name, file path, and storage path', async () => {
+  it('shows selected workflow details with description, API name, and storage path', async () => {
     const wrapper = mountPanel()
     await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
 
@@ -127,12 +132,48 @@ describe('WorkflowsPanel', () => {
       'No description.',
     )
     expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
-    expect(wrapper.find('[data-testid="workflow-detail-path"]').text()).toContain(
-      '/library/workflows/beta_api/workflow.json',
-    )
+    expect(wrapper.find('[data-testid="workflow-detail-path"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workflow-detail-storage-path"]').text()).toContain(
       '/library/workflows/beta_api',
     )
+  })
+
+
+  it('edits the selected workflow description from the detail section', async () => {
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        ...workflows[1],
+        description: 'Updated description',
+      },
+    })
+    const wrapper = mountPanel()
+    await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
+
+    await wrapper.find('[data-testid="workflow-edit-description-btn"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-description-edit-input"]').setValue('Updated description')
+    await wrapper.find('[data-testid="workflow-description-dialog-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(api.patch).toHaveBeenCalledWith('/api/v1/workflows/beta_api', {
+      action: 'update',
+      description: 'Updated description',
+    })
+    expect(wrapper.find('[data-testid="workflow-detail-description"]').text()).toContain(
+      'Updated description',
+    )
+  })
+
+  it('opens the selected workflow folder in the system file browser', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'ok' } })
+    const wrapper = mountPanel()
+    await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
+
+    await wrapper.find('[data-testid="workflow-reveal-folder-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/fs/reveal', {
+      path: '/library/workflows/beta_api',
+    })
   })
 
   it('selects full workflow ids when duplicate leaf names live in different folders', async () => {

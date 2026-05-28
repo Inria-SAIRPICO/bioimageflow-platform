@@ -57,6 +57,7 @@ const workflowDialogVisible = ref(false)
 const workflowDialogMode = ref<'new' | 'save-as'>('new')
 const workflowDialogInitialName = ref('')
 const workflowDialogInitialDisplayName = ref('')
+const workflowDialogInitialDescription = ref<string | null>(null)
 const workflowDialogSuggestedName = ref<string | null>(null)
 const createIntent = ref<'new-empty' | 'save-current'>('new-empty')
 const workflowDialogFolderId = ref<string | null>(null)
@@ -193,6 +194,7 @@ function createNewWorkflow(folderId: string | null = null): void {
     workflowDialogMode.value = 'new'
     workflowDialogInitialName.value = 'Untitled'
     workflowDialogInitialDisplayName.value = 'Untitled'
+    workflowDialogInitialDescription.value = null
     workflowDialogSuggestedName.value = null
     workflowDialogVisible.value = true
   })
@@ -277,6 +279,7 @@ async function saveWorkflow(): Promise<void> {
     workflowDialogMode.value = 'new'
     workflowDialogInitialName.value = 'Untitled'
     workflowDialogInitialDisplayName.value = 'Untitled'
+    workflowDialogInitialDescription.value = null
     workflowDialogSuggestedName.value = null
     workflowDialogVisible.value = true
     return
@@ -393,6 +396,7 @@ function saveWorkflowAs(): void {
   const baseName = workflowStore.currentName ?? 'Untitled'
   workflowDialogInitialName.value = `${baseName}_copy`
   workflowDialogInitialDisplayName.value = `${uiStore.activeWorkflowName ?? baseName} copy`
+  workflowDialogInitialDescription.value = workflowStore.current?.description ?? null
   workflowDialogSuggestedName.value = null
   workflowDialogVisible.value = true
 }
@@ -724,6 +728,7 @@ defineExpose({
     :mode="workflowDialogMode"
     :initial-name="workflowDialogInitialName"
     :initial-display-name="workflowDialogInitialDisplayName"
+    :initial-description="workflowDialogInitialDescription"
     :suggested-name="workflowDialogSuggestedName"
     @submit="onWorkflowDialogSubmit"
   />

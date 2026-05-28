@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import PrimeVue from 'primevue/config'
 import WorkflowDialog from '../WorkflowDialog.vue'
 
 function mountDialog(props = {}) {
@@ -11,6 +12,7 @@ function mountDialog(props = {}) {
       ...props,
     },
     global: {
+      plugins: [PrimeVue],
       stubs: {
         Dialog: {
           props: ['visible'],
@@ -24,6 +26,11 @@ function mountDialog(props = {}) {
           props: ['modelValue'],
           emits: ['update:modelValue'],
           template: '<input v-bind="$attrs" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        },
+        Textarea: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template: `<textarea v-bind="$attrs" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />`,
         },
       },
     },
@@ -45,13 +52,28 @@ describe('WorkflowDialog', () => {
     expect(input.exists()).toBe(true)
 
     await input.setValue('Cell segmentation v2')
+    await wrapper.find('[data-testid="workflow-description-input"]').setValue('Segment cells.')
     await wrapper.find('[data-testid="workflow-dialog-submit"]').trigger('click')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({
       name: 'cell_segmentation_v2',
       display_name: 'Cell segmentation v2',
-      description: null,
+      description: 'Segment cells.',
+    })
+  })
+
+  it('keeps the workflow description editable for new workflows', async () => {
+    const wrapper = mountDialog({ initialDescription: 'Initial notes' })
+
+    const description = wrapper.find<HTMLTextAreaElement>('[data-testid="workflow-description-input"]')
+    expect(description.element.value).toBe('Initial notes')
+
+    await description.setValue('Updated notes')
+    await wrapper.find('[data-testid="workflow-dialog-submit"]').trigger('click')
+
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
+      description: 'Updated notes',
     })
   })
 

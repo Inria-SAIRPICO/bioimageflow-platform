@@ -44,7 +44,10 @@ workflows. Items are sorted alphabetically inside each folder, and a workflow ro
 can be dragged either to another folder or to the canvas, except when that would
 make a workflow contain itself directly or indirectly. Deleting a non-empty
 folder asks whether to delete children, move them up, or cancel. Creating a
-workflow while a folder is selected places it in that folder. Tool source opening
+workflow while a folder is selected places it in that folder and the creation
+dialog includes an optional description field. The workflow detail panel shows
+the description with an edit action, the workflow id, output storage path, and
+a button that opens the workflow folder in the system file browser. Tool source opening
 keeps VS Code or code-server rooted at the workspace project and focuses the
 selected tool file.
 

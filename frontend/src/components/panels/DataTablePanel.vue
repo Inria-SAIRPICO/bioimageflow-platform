@@ -60,6 +60,10 @@ function toolName(nodeId: string): string | null {
   return nodeById.value[nodeId]?.tool_name ?? null
 }
 
+function isSyntheticSubWorkflowNode(nodeId: string): boolean {
+  return toolName(nodeId) === '__sub_workflow__'
+}
+
 function columnAliases(nodeId: string): Record<string, string> {
   const aliases: Record<string, string> = {}
   const publishedOutputs = nodeById.value[nodeId]?.published_outputs ?? []
@@ -72,6 +76,7 @@ function columnAliases(nodeId: string): Record<string, string> {
 }
 
 function fetchIfMissing(nodeId: string) {
+  if (isSyntheticSubWorkflowNode(nodeId)) return
   if (!dataTableStore.getNodeData(nodeId) && !dataTableStore.isLoading(nodeId)) {
     void dataTableStore.fetchNodeData(nodeId, {
       toolName: toolName(nodeId),
@@ -93,6 +98,7 @@ watch(
         watch(
           () => executionStore.nodeStatuses[nodeId]?.status,
           (next, prev) => {
+            if (isSyntheticSubWorkflowNode(nodeId)) return
             if (prev !== 'executed' && next === 'executed') {
               void dataTableStore.fetchNodeData(nodeId, {
                 toolName: toolName(nodeId),

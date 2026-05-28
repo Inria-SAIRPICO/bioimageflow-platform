@@ -1283,8 +1283,11 @@ opened, or treated as workflow id collisions.
   node templates. Drop indicators overlay rows and must not shift other rows
   while dragging.
 - **Selected workflow details:** Shows the selected workflow's description,
-  workflow id, workspace path, output path, and action state. The description appears
-  here, not in every list row.
+  workflow id, and output storage path. The description appears here, not in
+  every list row, and has an edit button that opens a platform dialog. The
+  detail section also has an action that opens the workflow folder in the
+  system file browser. It does not show a separate workflow-file row because
+  that duplicates the storage/path information.
 
 Clicking a row selects it. Double-clicking a workflow, pressing Enter on a
 selected workflow, or using the Open action opens it, subject to the unsaved
