@@ -69,13 +69,7 @@ def _custom_tool_service(
     registry: ToolRegistryService,
     workflow_store: WorkflowStoreService | None,
 ) -> CustomToolService | None:
-    if workflow_root is not None:
-        workspace_root = workflow_root.parent if workflow_root.name == "workflows" else workflow_root
-        if (
-            (workspace_root / "workflows").exists()
-            or (workspace_root / "tools").exists()
-        ):
-            return CustomToolService(workspace_root, registry)
+    _ = workflow_root
     if workflow_name and workflow_store is not None:
         return CustomToolService(workflow_store.workflow_dir(workflow_name), registry)
     return None

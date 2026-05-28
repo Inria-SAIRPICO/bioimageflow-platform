@@ -43,9 +43,9 @@ server derives exactly one workspace:
 <workspaces_root>/<user_id>/workspace/
 ```
 
-The per-user workspace contains `workflows/`, `tools/`, `data/`, `outputs/`,
-and `.bioimageflow/`. Workflow ids are paths relative to
-`workspace/workflows/`, custom tools are scoped to `workspace/tools/`, dataset
+The per-user workspace contains `workflows/`, `data/`, `outputs/`, and
+`.bioimageflow/`. Workflow ids are paths relative to `workspace/workflows/`,
+GUI-created custom tools are scoped to each workflow's `tools/` folder, dataset
 uploads are stored under the user's workspace data area, and runtime outputs are
 stored under `workspace/outputs/<workflow_id>/`. `GET /api/v1/workspace`
 returns these resolved roots plus read-only/admin-managed flags. In webapp mode
@@ -646,8 +646,8 @@ Tool packages are mounted from a shared read-only tool store to avoid duplicatio
 
 Inside the container, `BIOIMAGEFLOW_WORKSPACE=/workspace` and the backend
 reports `/workspace` as the user's workspace path. Workflow files live under
-`/workspace/workflows/`, workspace-owned custom tools under `/workspace/tools/`,
-uploads under `/workspace/data/datasets/`, and runtime outputs under
+`/workspace/workflows/`, workflow-local custom tools under
+`/workspace/workflows/<id>/tools/`, uploads under `/workspace/data/datasets/`, and runtime outputs under
 `/workspace/outputs/`. Workflow creation accepts an optional description. The
 workflow detail UI shows and edits that description, opens the workflow folder
 through the system file browser when available, and avoids showing both a

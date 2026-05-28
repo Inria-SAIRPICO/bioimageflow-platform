@@ -110,9 +110,14 @@ export interface TreeNode {
     categories: string
     tags: string
     versions: string
+    isCustomPackage?: boolean
     tool?: ToolMetadata
   }
   children?: TreeNode[]
+}
+
+function packageDisplayName(name: string): string {
+  return name === '__custom__' ? 'Custom workflow tools' : name
 }
 
 const treeNodes = computed<TreeNode[]>(() => {
@@ -147,10 +152,11 @@ const treeNodes = computed<TreeNode[]>(() => {
       key: pkg,
       data: {
         name: pkg,
-        display_name: pkg,
+        display_name: packageDisplayName(pkg),
         categories: '',
         tags: '',
         versions,
+        isCustomPackage: pkg === '__custom__',
       },
       children: tools.map((tool) => ({
         key: tool.name,
@@ -834,7 +840,10 @@ defineExpose({
                  overlays the table, so expanding it doesn't reflow rows.
                  Install/uninstall clicks do NOT collapse the list — users can
                  change several versions in one go. -->
-            <template v-if="!node.data.tool">
+            <template v-if="!node.data.tool && node.data.isCustomPackage">
+              <span data-testid="custom-workflow-tools-version">local</span>
+            </template>
+            <template v-else-if="!node.data.tool">
               <div class="version-dropdown">
                 <button
                   type="button"

@@ -29,8 +29,7 @@ workspaces root as `<workspaces_root>/<user_id>/workspace/`.
 
 ```text
 workspace/
-  workflows/    Saved workflow tree and folders
-  tools/        Workspace-owned custom tools
+  workflows/    Saved workflow tree, folders, and workflow-local tools
   data/         Local/uploaded datasets
   outputs/      Runtime outputs and caches per workflow id
 ```
@@ -47,9 +46,11 @@ folder asks whether to delete children, move them up, or cancel. Creating a
 workflow while a folder is selected places it in that folder and the creation
 dialog includes an optional description field. The workflow detail panel shows
 the description with an edit action, the workflow id, output storage path, and
-a button that opens the workflow folder in the system file browser. Tool source opening
-keeps VS Code or code-server rooted at the workspace project and focuses the
-selected tool file.
+a button that opens the workflow folder in the system file browser. Custom tools are created in the current workflow's `tools/` folder so a workflow
+archive carries the custom tool sources it uses. Tool source opening keeps VS
+Code or code-server rooted at the workspace project and focuses the selected
+tool file. Reusable tools shared across workflows should be distributed as tool
+packages; the Manage Tools dialog is the place to install such packages.
 
 ## Prerequisites
 

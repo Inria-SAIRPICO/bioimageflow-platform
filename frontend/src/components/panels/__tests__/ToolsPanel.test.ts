@@ -260,6 +260,21 @@ describe('ToolsPanel', () => {
     expect(vm.filteredTools).toHaveLength(4)
   })
 
+
+  it('labels the synthetic custom package as workflow tools in Manage Tools', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const vm = wrapper.vm as unknown as { treeNodes: Array<{ key: string; data: { display_name: string; isCustomPackage?: boolean } }> }
+    const customNode = vm.treeNodes.find((node) => node.key === '__custom__')
+
+    expect(customNode?.data.display_name).toBe('Custom workflow tools')
+    expect(customNode?.data.isCustomPackage).toBe(true)
+  })
+
   it('does not render category tool counts in the tool list', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
@@ -626,6 +641,7 @@ describe('ToolsPanel', () => {
 
     expect(onLoading).toHaveBeenCalledTimes(1)
     expect(loadingDetails[0]).toEqual({ path: '' })
+    await vi.waitFor(() => expect(resolveOpen).toBeTypeOf('function'))
 
     resolveOpen({
       data: {
@@ -735,6 +751,7 @@ describe('ToolsPanel', () => {
     })
 
     await wrapper.find('[data-testid="tool-open-script-MyCustomTool"]').trigger('click')
+    await flushPromises()
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
       tool_name: 'MyCustomTool',

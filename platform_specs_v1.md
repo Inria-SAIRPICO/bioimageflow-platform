@@ -318,8 +318,7 @@ fixed child roots:
 
 ```text
 workspace/
-  workflows/     # saved workflow tree
-  tools/         # workspace-owned custom tools
+  workflows/     # saved workflow tree; each workflow may contain tools/
   data/          # user-managed local data
   outputs/       # workflow execution output and cache roots
 ```
@@ -731,7 +730,7 @@ the focused file. For VS Code the recommended command is
 
 `/editor/open-tool` is used by tool rows and node source links. The backend
 always opens the current user's workspace folder as the editor project, then
-focuses the selected tool file. This applies to workspace-owned custom tools and
+focuses the selected tool file. This applies to workflow-local custom tools and
 installed package tools; package source is focused as a file, not opened as the
 editor project.
 
@@ -1069,7 +1068,8 @@ The dialog presents a hierarchical **TreeTable** with package rows (parents) and
 | **Package name** | The package identifier |
 | **Categories** | Package-level categories |
 | **Tags** | Package-level tags |
-| **Version dropdown** | Lists all known versions (installed and available). Each version entry has an **Install/Uninstall toggle** — install button for uninstalled versions, uninstall button for installed ones. Shows spinning icon during installation. Installation can be interrupted (stop button). |
+| **Version dropdown** | Lists all known versions (installed and available). Each version entry has an **Install/Uninstall toggle** — install button for uninstalled versions, uninstall button for installed ones. Shows spinning icon during installation. Installation can be interrupted (stop button). Custom workflow tools do not show package-version controls. |
+| **Install custom package** | Opens a dialog accepting a GitHub repository URL or `.zip` archive. The package is installed into the user's tool package store, appears as a normal versioned package, and can then be used by any workflow. |
 | **"Use in workflow" button** | Sets the selected version as the active version for the current workflow. Only available for installed versions. When clicked, if the workflow already uses a different version of this package, a confirmation dialog is shown: "Changing {package} from {old_version} to {new_version} will mark {N} nodes as out-of-date. Their cached results will need re-execution. Continue?" |
 
 Multiple versions of the same package can be installed simultaneously. Each workflow uses **one version per package**, selected via the "Use in workflow" button.
@@ -1259,10 +1259,12 @@ workspace/
 ```
 
 Each `workflow.json` stores the platform document for the workflow, including
-the library workflow payload, GUI state, and metadata. `workspace/tools/` stores
-workspace-owned custom tools shared by workflows in that workspace. A workflow
-directory can contain workflow-local files, but these directories are not shown
-as user folders in the Workflows panel.
+the library workflow payload, GUI state, and metadata. Custom tools created from
+the platform GUI are workflow-local and live under
+`workspace/workflows/<workflow_id>/tools/`, so exported workflow archives carry
+the custom tool sources they use. A workflow directory can contain workflow-local
+files, but these directories are not shown as user folders in the Workflows
+panel.
 
 Only directories containing `workflow.json` are platform workflows. Stray JSON
 files under `workspace/workflows/` are ordinary files and are not listed,
@@ -1386,9 +1388,8 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 - **Workspace path:** editable folder picker in desktop mode. Changing it
   switches the one active per-user workspace after confirmation. The backend
-  creates `workflows/`, `tools/`, `data/`, and `outputs/` if missing.
+  creates `workflows/`, `data/`, and `outputs/` if missing.
 - **Workflows root:** read-only display of `workspace/workflows/`.
-- **Workspace tools root:** read-only display of `workspace/tools/`.
 - **Outputs root:** read-only display of `workspace/outputs/`.
 - **Tool store path** display (default: `~/.bioimageflow/tool_packages/`)
 - **Wetlands path** display (default: `~/.bioimageflow/wetlands/`, resolved by `bioimageflow.paths.get_wetlands_path()`)

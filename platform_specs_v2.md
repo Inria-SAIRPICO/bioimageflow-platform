@@ -228,20 +228,20 @@ Opens the user's workspace as the editor project and focuses a tool source file.
 }
 ```
 
-`workflow_id` is optional and is used when resolving workspace-owned custom
-tools for the active workflow. The response includes the project and focus path:
+`workflow_id` is optional for package tools and required when resolving custom
+workflow tools. The response includes the project and focus path:
 
 ```json
 {
   "fallback": null,
   "project_path": "/Users/alice/BioImageFlow/workspace",
-  "focus_path": "/Users/alice/BioImageFlow/workspace/tools/cellpose_segmenter.py"
+  "focus_path": "/Users/alice/BioImageFlow/workspace/workflows/segmentation/tools/cellpose_segmenter.py"
 }
 ```
 
 **Behavior:**
 1. The editor project path is always the current user's workspace folder.
-2. If the tool is workspace-owned, `focus_path` points under `workspace/tools/`.
+2. If the tool is a custom workflow tool, `focus_path` points under `workspace/workflows/<id>/tools/`.
 3. If the tool comes from an installed package, `focus_path` may point to the
    package source file, but the project remains the workspace.
 4. Embedded code-server loads the workspace folder first, then uses the opener
@@ -376,9 +376,9 @@ back, enabling workflow sharing between users and machines.
 The platform is a thin GUI adapter here: it delegates export and import to the
 BioImageFlow library API and must not reimplement the archive format. The
 library-defined archive contains the workflow JSON and any project-local custom
-tool bundle needed by that workflow. In the platform, those custom tools are
-stored under `workspace/tools/` and exported without embedding the absolute
-workspace path. The platform may add or restore GUI metadata only through
+tool bundle needed by that workflow. In the platform, GUI-created custom tools
+are stored under `workspace/workflows/<id>/tools/` and exported without
+embedding the absolute workspace path. The platform may add or restore GUI metadata only through
 documented extension points in the library workflow document.
 
 ### 4.1 Backend
@@ -411,7 +411,8 @@ Imports a workflow by calling the BioImageFlow library import/load API.
 3. The server checks `required_packages` against the tool store. If packages or versions are missing, the response includes a `missing_packages` field (same format as workflow loading — see Section 2.4.2 of the full spec).
 4. On success, the imported workflow is saved as
    `workspace/workflows/<id>/workflow.json`. Any bundled custom tools are
-   restored under `workspace/tools/` with collision-safe names if needed.
+   restored under that workflow directory's `tools/` folder with collision-safe
+   names if needed.
 
 **Response (success):**
 
@@ -486,8 +487,8 @@ Creates a new tool from a template.
 
 **Behavior:**
 1. The server validates the name (must be a valid Python class name, must not conflict with existing tools).
-2. A tool file is created at `workspace/tools/{name}.py` using the appropriate template (see Section 5.4).
-3. Custom tools in this workspace directory are auto-discovered by the server.
+2. A tool file is created at `workspace/workflows/<current_workflow>/tools/{name}.py` using the appropriate template (see Section 5.4).
+3. Custom tools in this workflow directory are auto-discovered by the server.
 4. The workspace project is opened in the code editor and the tool file is focused (`POST /editor/open-tool`).
 5. The new tool appears in the tool registry and the Tools Panel.
 
@@ -585,14 +586,18 @@ The Tools Panel (Section 3.4 of the full spec) includes a **Create Tool** button
 2. On "Create": sends `POST /tools` with the derived class name and tool type.
 3. On success: the new tool appears in the Tools Panel, and its source file is opened in the Code Editor Panel.
 
-**Delete and rename:** Available via right-click context menu on custom tool rows in the Tools Panel. Package-installed tools cannot be deleted or renamed (context menu items are hidden).
+**Delete and rename:** Available via right-click context menu on custom workflow tool rows in the Tools Panel. Package-installed tools cannot be deleted or renamed (context menu items are hidden).
+
+**Manage Tools custom package install:** The Manage Tools dialog includes an **Install custom package** action for reusable tools that should be shared across workflows. The dialog accepts either a GitHub repository URL or a local `.zip` archive. The backend validates that the source is a BioImageFlow tool package, copies or installs it into the user's tool package store, indexes its available versions, and shows it as a normal package row with install/uninstall and "Set current" controls. Repository installs should support branch/tag/commit selection when the URL identifies one; zip installs are immutable local package imports. Failed validation reports missing package metadata, invalid tool classes, or dependency-resolution errors without modifying the active package store.
 
 ### 5.3 Custom Tool Discovery
 
-Custom tools are placed in `workspace/tools/`. The server discovers tools for
-the current workspace and refreshes the workspace custom-tool registry when the
-workspace changes or files are edited. Custom tools appear in the Tools Panel
-alongside package-installed tools, distinguished by a "Custom" badge.
+GUI-created custom tools are placed in `workspace/workflows/<id>/tools/`. The
+server discovers custom tools for saved workflows and refreshes the custom-tool
+registry when workflow-local files are edited. Custom tools appear in the Tools
+Panel alongside package-installed tools, distinguished by a "Custom" badge. In
+the Manage Tools dialog, the synthetic package row is labelled **Custom workflow
+tools** and does not show package-version install controls.
 
 ### 5.4 Tool Templates
 
