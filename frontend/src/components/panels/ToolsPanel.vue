@@ -689,7 +689,9 @@ async function toggleToolEnvironment(tool: ToolMetadata) {
 }
 
 onMounted(async () => {
-  await Promise.all([toolRegistry.fetchTools(), toolRegistry.fetchPackages()])
+  const tasks = [toolRegistry.fetchTools(), toolRegistry.fetchPackages()]
+  if (!settingsStore.isLoaded) tasks.push(settingsStore.fetchSettings())
+  await Promise.all(tasks)
   document.addEventListener('click', onDocumentClick)
 })
 
