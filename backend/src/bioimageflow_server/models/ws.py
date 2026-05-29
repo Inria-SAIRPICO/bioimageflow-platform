@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from bioimageflow_server.models.validation import NodeStatus
+from bioimageflow_server.models.workflow_draft import DraftWriter
 
 
 # --- Shared base ---
@@ -98,6 +99,15 @@ class EnvironmentStatusMessage(_MessageBase):
     status: Literal["stopped", "creating", "running"]
 
 
+class WorkflowDraftChangedMessage(_MessageBase):
+    type: Literal["workflow_draft_changed"] = "workflow_draft_changed"
+    workflow_id: str
+    draft_revision: int
+    updated_by: DraftWriter
+    updated_at: str
+    dirty_against_saved: bool
+
+
 class AckMessage(_MessageBase):
     type: Literal["ack"] = "ack"
     ref: str
@@ -134,6 +144,7 @@ ServerMessage = Annotated[
         SystemErrorMessage,
         PackageInstallMessage,
         EnvironmentStatusMessage,
+        WorkflowDraftChangedMessage,
         AckMessage,
         ErrorMessage,
     ],
@@ -162,4 +173,5 @@ __all__ = [
     "StatusSnapshotMessage",
     "ToolReloadMessage",
     "ToolRemovedMessage",
+    "WorkflowDraftChangedMessage",
 ]

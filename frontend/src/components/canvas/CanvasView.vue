@@ -179,7 +179,31 @@ const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
 const rootPublishedInputs = ref<PublishedInput[]>([])
 const rootPublishedOutputs = ref<PublishedOutput[]>([])
 const isActiveCanvasTab = ref(true)
+const hasLoadedGraphState = ref(false)
+const remoteDraftAction = ref<'apply' | 'keep' | 'copy' | null>(null)
+const remoteDraftActionError = ref<string | null>(null)
+const remoteDraftResolutionMessage = ref<string | null>(null)
 let isApplyingGraphState = false
+let isAutoApplyingRemoteDraft = false
+let clipboardToast: ReturnType<typeof useToast> | null = null
+
+const hasLocalRemoteDraftConflict = computed(() => (
+  uiStore.hasUnsavedChanges || workflowDraftStore.hasPendingSave
+))
+
+const shouldShowRemoteDraftConflict = computed(() => {
+  if (isSubWorkflowEditor) return false
+  if (!isActiveCanvasTab.value) return false
+  if (!hasLoadedGraphState.value) return false
+  if (workflowDraftStore.remoteAvailableRevision === null) return false
+  if (!hasLocalRemoteDraftConflict.value) return false
+  const workflowName = workflowIdentity().workflowName
+  return typeof workflowName === 'string'
+    && workflowName.length > 0
+    && workflowDraftStore.workflowId === workflowName
+})
+
+const isResolvingRemoteDraftConflict = computed(() => remoteDraftAction.value !== null)
 
 const shouldFitViewOnInit = computed(() => {
   const params = dockviewParams()
@@ -224,6 +248,10 @@ function workflowIdentity() {
 
 function workflowInfoId(workflow: WorkflowInfo): string {
   return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
+}
+
+function workflowUrl(id: string): string {
+  return id.split('/').map(encodeURIComponent).join('/')
 }
 
 type GraphLike = { nodes?: unknown[] }
@@ -450,8 +478,141 @@ function handleCanvasTabActivatedEvent(event: Event) {
   const detail = (event as CustomEvent<{ panelId?: string }>).detail
   isActiveCanvasTab.value = detail?.panelId === componentPanelId()
   if (!isActiveCanvasTab.value) return
+  trackDraftWorkflowForActiveRootCanvas()
   uiStore.setGraphNodes(getNodes.value)
   syncGraph(currentVueFlowState() as any)
+  void maybeApplyRemoteDraftToActiveCanvas()
+}
+
+function trackDraftWorkflowForActiveRootCanvas(): void {
+  if (isSubWorkflowEditor) return
+  const workflowName = workflowIdentity().workflowName
+  if (typeof workflowName !== 'string' || workflowName.length === 0) return
+  workflowDraftStore.trackWorkflow(workflowName)
+}
+
+function currentWorkflowName(): string | null {
+  const workflowName = workflowIdentity().workflowName
+  return typeof workflowName === 'string' && workflowName.length > 0
+    ? workflowName
+    : null
+}
+
+function currentSerializedGraph(): GraphState {
+  return serializeGraph(currentVueFlowState() as any) as GraphState
+}
+
+function remoteDraftErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function showRemoteDraftActionError(summary: string, err: unknown): void {
+  const detail = remoteDraftErrorMessage(err)
+  remoteDraftActionError.value = detail
+  clipboardToast?.add({
+    severity: 'error',
+    summary,
+    detail,
+    life: 5000,
+  })
+}
+
+function markWorkflowDirtyFromDraft(dirty: boolean): void {
+  if (dirty) {
+    workflowStore.markDirty()
+  } else {
+    workflowStore.markClean()
+  }
+}
+
+async function applyAgentDraftChanges(): Promise<void> {
+  const workflowName = currentWorkflowName()
+  if (!workflowName || isResolvingRemoteDraftConflict.value) return
+  remoteDraftAction.value = 'apply'
+  remoteDraftActionError.value = null
+  remoteDraftResolutionMessage.value = null
+  workflowDraftStore.cancelPendingSave()
+  try {
+    const draft = await workflowDraftStore.loadDraft(workflowName)
+    await applyGraphState(
+      draft.graph,
+      workflowStore.missingTools,
+      draft.dirty_against_saved,
+    )
+  } catch (err) {
+    showRemoteDraftActionError('Could not apply agent changes', err)
+  } finally {
+    remoteDraftAction.value = null
+  }
+}
+
+async function keepCurrentCanvasDraft(): Promise<void> {
+  const workflowName = currentWorkflowName()
+  if (!workflowName || isResolvingRemoteDraftConflict.value) return
+  remoteDraftAction.value = 'keep'
+  remoteDraftActionError.value = null
+  remoteDraftResolutionMessage.value = null
+  try {
+    const response = await workflowDraftStore.overwriteDraftWithGraph(
+      workflowName,
+      currentSerializedGraph(),
+    )
+    markWorkflowDirtyFromDraft(response.dirty_against_saved)
+  } catch (err) {
+    showRemoteDraftActionError('Could not keep your canvas', err)
+  } finally {
+    remoteDraftAction.value = null
+  }
+}
+
+function nextAgentCopyWorkflowName(baseName: string): string {
+  const existing = new Set(workflowStore.workflows.map((workflow) => workflowInfoId(workflow)))
+  if (workflowStore.currentName) existing.add(workflowStore.currentName)
+  let suffix = 2
+  let name = `${baseName}_agent_${suffix}`
+  while (existing.has(name)) {
+    suffix += 1
+    name = `${baseName}_agent_${suffix}`
+  }
+  return name
+}
+
+function rememberCreatedWorkflow(info: WorkflowInfo): void {
+  const id = workflowInfoId(info)
+  if (workflowStore.workflows.some((workflow) => workflowInfoId(workflow) === id)) return
+  workflowStore.workflows = [...workflowStore.workflows, info]
+}
+
+async function saveAgentDraftAsCopy(): Promise<void> {
+  const workflowName = currentWorkflowName()
+  if (!workflowName || isResolvingRemoteDraftConflict.value) return
+  remoteDraftAction.value = 'copy'
+  remoteDraftActionError.value = null
+  remoteDraftResolutionMessage.value = null
+  try {
+    const remoteDraft = await workflowDraftStore.fetchLatestDraft(workflowName)
+    const copyName = nextAgentCopyWorkflowName(workflowName)
+    const { data } = await api.post<WorkflowInfo>('/api/v1/workflows', {
+      name: copyName,
+      display_name: copyName,
+    })
+    rememberCreatedWorkflow(data)
+    await api.put<WorkflowInfo>(
+      `/api/v1/workflows/${workflowUrl(workflowInfoId(data))}`,
+      { graph: remoteDraft.graph },
+    )
+    remoteDraftResolutionMessage.value = `Agent version saved as ${workflowInfoId(data)}.`
+    clipboardToast?.add({
+      severity: 'success',
+      summary: 'Agent version saved',
+      detail: workflowInfoId(data),
+      life: 5000,
+    })
+  } catch (err) {
+    showRemoteDraftActionError('Could not save agent version', err)
+  } finally {
+    remoteDraftAction.value = null
+  }
 }
 
 function handleToolRenamedEvent(event: Event) {
@@ -472,6 +633,56 @@ function handleToolRenamedEvent(event: Event) {
   }
   if (changed) emitGraphChanged()
 }
+
+async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
+  const remoteRevision = workflowDraftStore.remoteAvailableRevision
+  if (remoteRevision === null) return
+  if (!hasLoadedGraphState.value) return
+  if (isSubWorkflowEditor) return
+  if (!isActiveCanvasTab.value) return
+  if (hasLocalRemoteDraftConflict.value) return
+  if (isAutoApplyingRemoteDraft) return
+
+  const workflowName = workflowIdentity().workflowName
+  if (typeof workflowName !== 'string' || workflowName.length === 0) return
+  if (workflowDraftStore.workflowId !== workflowName) return
+
+  isAutoApplyingRemoteDraft = true
+  try {
+    const draft = await workflowDraftStore.loadDraft(workflowName)
+    await applyGraphState(
+      draft.graph,
+      workflowStore.missingTools,
+      draft.dirty_against_saved,
+    )
+  } catch (err) {
+    console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
+  } finally {
+    isAutoApplyingRemoteDraft = false
+  }
+}
+
+watch(
+  () => [
+    workflowDraftStore.remoteAvailableRevision,
+    hasLoadedGraphState.value,
+    isActiveCanvasTab.value,
+    hasLocalRemoteDraftConflict.value,
+  ] as const,
+  () => {
+    void maybeApplyRemoteDraftToActiveCanvas()
+  },
+)
+
+watch(
+  () => workflowDraftStore.remoteAvailableRevision,
+  (revision) => {
+    if (revision !== null) {
+      remoteDraftActionError.value = null
+      remoteDraftResolutionMessage.value = null
+    }
+  },
+)
 
 function handleToolDeletedEvent(event: Event) {
   const detail = (event as CustomEvent<{ tool_name: string }>).detail
@@ -561,7 +772,7 @@ try {
 } catch {
   /* no ToastService — useHotReload still runs without the toast surface */
 }
-let clipboardToast: ReturnType<typeof useToast> | null = hotReloadToast
+clipboardToast = hotReloadToast
 if (clipboardToast === null) {
   try {
     clipboardToast = useToast()
@@ -587,6 +798,7 @@ async function loadSubWorkflowSessionDraft() {
   if (!sessionId) return
   const session = subWorkflowSessionsStore.sessionById(sessionId)
   await applyGraphState(session?.draft ?? { nodes: [], edges: [] })
+  hasLoadedGraphState.value = true
 }
 
 onMounted(async () => {
@@ -617,6 +829,7 @@ onMounted(async () => {
       initialGraph.missingTools ?? [],
       initialGraph.dirty ?? false,
     )
+    hasLoadedGraphState.value = true
     return
   }
   const recovered = await recoverStartupWorkflow()
@@ -625,6 +838,7 @@ onMounted(async () => {
     workflowStore.missingTools,
     recovered.dirty,
   )
+  hasLoadedGraphState.value = true
 })
 
 onBeforeUnmount(() => {
@@ -2049,6 +2263,61 @@ defineExpose({
     tabindex="0"
   >
     <CanvasErrorBanner :validation-result="validationResult" />
+    <div
+      v-if="shouldShowRemoteDraftConflict"
+      class="workflow-draft-conflict"
+      role="alert"
+    >
+      <div class="workflow-draft-conflict__copy">
+        <strong>This workflow changed outside the canvas.</strong>
+        <span>Choose which version to keep before continuing.</span>
+        <span
+          v-if="remoteDraftResolutionMessage"
+          class="workflow-draft-conflict__success"
+        >
+          {{ remoteDraftResolutionMessage }}
+        </span>
+        <span
+          v-if="remoteDraftActionError"
+          class="workflow-draft-conflict__error"
+        >
+          {{ remoteDraftActionError }}
+        </span>
+      </div>
+      <div class="workflow-draft-conflict__actions">
+        <button
+          type="button"
+          class="workflow-draft-conflict__button"
+          :disabled="isResolvingRemoteDraftConflict"
+          @click="applyAgentDraftChanges"
+        >
+          Apply agent changes
+        </button>
+        <button
+          type="button"
+          class="workflow-draft-conflict__button"
+          :disabled="isResolvingRemoteDraftConflict"
+          @click="keepCurrentCanvasDraft"
+        >
+          Keep my canvas
+        </button>
+        <button
+          type="button"
+          class="workflow-draft-conflict__button"
+          :disabled="isResolvingRemoteDraftConflict"
+          @click="saveAgentDraftAsCopy"
+        >
+          Save agent version as copy
+        </button>
+      </div>
+    </div>
+    <div
+      v-else-if="remoteDraftResolutionMessage"
+      class="workflow-draft-resolution"
+      role="status"
+    >
+      {{ remoteDraftResolutionMessage }}
+    </div>
     <VueFlow
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
@@ -2082,5 +2351,84 @@ defineExpose({
   width: 100%;
   height: 100%;
   outline: none;
+  position: relative;
+}
+
+.workflow-draft-conflict,
+.workflow-draft-resolution {
+  position: absolute;
+  z-index: 20;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #78350f;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 12%);
+}
+
+.workflow-draft-resolution {
+  border-color: #15803d;
+  background: #f0fdf4;
+  color: #14532d;
+}
+
+.workflow-draft-conflict__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.workflow-draft-conflict__error {
+  color: #b91c1c;
+}
+
+.workflow-draft-conflict__success {
+  color: #15803d;
+}
+
+.workflow-draft-conflict__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workflow-draft-conflict__button {
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #78350f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  padding: 6px 10px;
+}
+
+.workflow-draft-conflict__button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+@media (max-width: 720px) {
+  .workflow-draft-conflict,
+  .workflow-draft-resolution {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workflow-draft-conflict__actions {
+    justify-content: flex-start;
+  }
 }
 </style>

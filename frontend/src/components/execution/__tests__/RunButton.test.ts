@@ -10,7 +10,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 const workflowDraftMocks = vi.hoisted(() => ({
-  assertFreshForSaveOrRun: vi.fn().mockResolvedValue(undefined),
+  ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
 }))
 
 vi.mock('@/stores/workflowDraft', () => ({
@@ -21,13 +21,13 @@ import RunButton from '../RunButton.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { ValidationResult } from '@/api/types'
+import type { GraphState, ValidationResult } from '@/api/types'
 
 function mountButton(opts: {
   validationResult?: ValidationResult | null
   syncPending?: boolean
 } = {}) {
-  const graph = { nodes: [], edges: [] }
+  const graph: GraphState = { nodes: [], edges: [] }
   const flushNow = vi.fn(async () => {})
   const validationResult = ref<ValidationResult | null>(
     opts.validationResult ?? {
@@ -36,7 +36,8 @@ function mountButton(opts: {
       errors: [],
     },
   )
-  const graphSync = { flushNow, validationResult }
+  const currentGraph = ref(graph)
+  const graphSync = { flushNow, validationResult, currentGraph }
   const wrapper = mount(RunButton, {
     global: {
       plugins: [[PrimeVue, { theme: { preset: Aura } }]],
@@ -55,13 +56,14 @@ function mountButton(opts: {
       syncPending: opts.syncPending ?? false,
     },
   })
-  return { wrapper, graphSync, flushNow, validationResult }
+  return { wrapper, graphSync, flushNow, validationResult, currentGraph }
 }
 
 describe('RunButton', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    workflowDraftMocks.assertFreshForSaveOrRun.mockClear()
+    workflowDraftMocks.ensureFreshForCriticalOperation.mockClear()
+    workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
   })
 
   it('Run button is enabled when idle and validation is not pending', () => {
@@ -128,6 +130,65 @@ describe('RunButton', () => {
     await nextTick()
 
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a')
+  })
+
+  it('blocks run when the active workflow has unresolved remote draft changes', async () => {
+    workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
+    const { wrapper } = mountButton()
+    const exec = useExecutionStore()
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(runSpy).not.toHaveBeenCalled()
+    expect(wrapper.emitted('toast')![0][0]).toMatchObject({
+      severity: 'warn',
+      summary: 'Resolve workflow changes first',
+    })
+  })
+
+  it('uses the latest graph-sync graph after the freshness check', async () => {
+    const staleGraph: GraphState = {
+      nodes: [{
+        id: 'stale',
+        name: 'Stale',
+        tool_name: 'old_tool',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    const freshGraph: GraphState = {
+      nodes: [{
+        id: 'fresh',
+        name: 'Fresh',
+        tool_name: 'new_tool',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    const { wrapper, currentGraph } = mountButton()
+    await wrapper.setProps({ graph: staleGraph })
+    currentGraph.value = freshGraph
+    const exec = useExecutionStore()
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(runSpy).toHaveBeenCalledWith(freshGraph, undefined, null)
   })
 
   it('Stop button is only visible while running', async () => {

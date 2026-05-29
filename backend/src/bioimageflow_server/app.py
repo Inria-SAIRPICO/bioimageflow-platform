@@ -87,6 +87,7 @@ from bioimageflow_server.routers.workflows import (
     router as workflows_router,
 )
 from bioimageflow_server.routers.workflow_drafts import (
+    get_connection_manager as workflow_drafts_get_connection_manager,
     get_execution_manager as workflow_drafts_get_execution_manager,
     get_workflow_draft_service,
     router as workflow_drafts_router,
@@ -98,6 +99,7 @@ from bioimageflow_server.routers.workspace import (
 from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
+from bioimageflow_server.services.agent_workspace_context import ensure_agent_workspace_context
 from bioimageflow_server.services.editor import EditorService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
@@ -336,6 +338,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if config.settings_store is not None:
             await config.settings_store.load()
         try:
+            await asyncio.to_thread(ensure_agent_workspace_context, workspace_path)
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "Agent workspace context setup failed: %r",
+                exc,
+                exc_info=exc,
+            )
+
+        try:
             await catalog.refresh()
         except PackageNetworkError as exc:
             logging.getLogger(__name__).warning(
@@ -511,6 +522,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[workflow_drafts_get_connection_manager] = lambda: ws_manager
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings

@@ -21,6 +21,7 @@ from bioimageflow_server.models.ws import (
     StatusSnapshotMessage,
     ToolReloadMessage,
     ToolRemovedMessage,
+    WorkflowDraftChangedMessage,
 )
 
 
@@ -206,6 +207,34 @@ class TestEnvironmentStatusMessage:
             EnvironmentStatusMessage(env_name="napari", status="bogus")
 
 
+class TestWorkflowDraftChangedMessage:
+    def test_construction(self) -> None:
+        msg = WorkflowDraftChangedMessage(
+            workflow_id="folder/wf",
+            draft_revision=7,
+            updated_by="agent",
+            updated_at="2026-05-29T12:00:00Z",
+            dirty_against_saved=True,
+        )
+        assert msg.type == "workflow_draft_changed"
+        assert msg.workflow_id == "folder/wf"
+        assert msg.draft_revision == 7
+        assert msg.updated_by == "agent"
+        assert msg.updated_at == "2026-05-29T12:00:00Z"
+        assert msg.dirty_against_saved is True
+
+    def test_rejects_extra_fields(self) -> None:
+        with pytest.raises(ValidationError):
+            WorkflowDraftChangedMessage(
+                workflow_id="wf",
+                draft_revision=1,
+                updated_by="frontend",
+                updated_at="2026-05-29T12:00:00Z",
+                dirty_against_saved=True,
+                graph={},
+            )
+
+
 class TestAckMessage:
     def test_construction(self) -> None:
         msg = AckMessage(ref="abc-123")
@@ -344,6 +373,19 @@ class TestServerMessageUnion:
         )
         assert isinstance(parsed, EnvironmentStatusMessage)
 
+    def test_dispatch_workflow_draft_changed(self) -> None:
+        parsed = self._adapter.validate_python(
+            {
+                "type": "workflow_draft_changed",
+                "workflow_id": "wf",
+                "draft_revision": 1,
+                "updated_by": "frontend",
+                "updated_at": "2026-05-29T12:00:00Z",
+                "dirty_against_saved": True,
+            }
+        )
+        assert isinstance(parsed, WorkflowDraftChangedMessage)
+
     def test_dispatch_ack(self) -> None:
         parsed = self._adapter.validate_python({"type": "ack", "ref": "r1"})
         assert isinstance(parsed, AckMessage)
@@ -394,6 +436,13 @@ class TestJsonRoundTrip:
             SystemErrorMessage(code="c", detail="d", timestamp=1.0),
             PackageInstallMessage(package_name="p", status="complete"),
             EnvironmentStatusMessage(env_name="e", status="running"),
+            WorkflowDraftChangedMessage(
+                workflow_id="wf",
+                draft_revision=1,
+                updated_by="agent",
+                updated_at="2026-05-29T12:00:00Z",
+                dirty_against_saved=True,
+            ),
             AckMessage(ref="r"),
             ErrorMessage(code="c", detail="d"),
             SubscribeLogsMessage(message_id="m", node_id="n", level="INFO"),

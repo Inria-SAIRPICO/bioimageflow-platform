@@ -3,6 +3,10 @@ import { useExecutionStore } from '@/stores/execution'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useLoggerStore, type LogEntry } from '@/stores/logger'
 import { useErrorStore } from '@/stores/errors'
+import {
+  useWorkflowDraftStore,
+  type WorkflowDraftChangedMessage,
+} from '@/stores/workflowDraft'
 
 export type ConnectionState =
   | 'connecting'
@@ -165,6 +169,11 @@ function dispatch(raw: unknown) {
         useToolRegistryStore() as unknown as Record<string, unknown>,
         'applyEnvironmentStatus',
         msg,
+      )
+      break
+    case 'workflow_draft_changed':
+      useWorkflowDraftStore().noteRemoteChange(
+        msg as unknown as WorkflowDraftChangedMessage,
       )
       break
     case 'system_error':

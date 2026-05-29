@@ -9,6 +9,7 @@ import type { GraphState, ValidationResult } from '@/api/types'
 export interface ExecutionGraphSync {
   flushNow: () => Promise<void>
   validationResult: Ref<ValidationResult | null>
+  currentGraph?: Ref<GraphState>
 }
 
 export interface LockForExecutionOptions {
@@ -36,10 +37,11 @@ export function useExecutionLock() {
   async function lockForExecution(
     options: LockForExecutionOptions,
   ): Promise<void> {
-    const { graph, nodes, graphSync, workflowName } = options
+    const { nodes, graphSync, workflowName } = options
     // 1. Flush any pending debounced PUT /graph so the server has the
     //    latest state and its validation result is fresh.
     await graphSync.flushNow()
+    const graph = graphSync.currentGraph?.value ?? options.graph
 
     // 2. If validation failed, abort the run. The caller (F5 Run button)
     //    is responsible for surfacing this to the user via a toast.

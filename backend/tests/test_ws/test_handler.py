@@ -444,6 +444,36 @@ async def test_broadcast_environment_status() -> None:
     }
 
 
+async def test_broadcast_workflow_draft_changed() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws1, ws2 = MockWebSocket(), MockWebSocket()
+    await mgr.connect(ws1)
+    await mgr.connect(ws2)
+
+    await mgr.broadcast_workflow_draft_changed(
+        workflow_id="folder/wf",
+        draft_revision=3,
+        updated_by="agent",
+        updated_at="2026-05-29T12:00:00Z",
+        dirty_against_saved=True,
+    )
+    await _drain(mgr)
+
+    for ws in (ws1, ws2):
+        assert ws.sent == [
+            {
+                "type": "workflow_draft_changed",
+                "workflow_id": "folder/wf",
+                "draft_revision": 3,
+                "updated_by": "agent",
+                "updated_at": "2026-05-29T12:00:00Z",
+                "dirty_against_saved": True,
+            }
+        ]
+
+
 async def test_send_ack() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -636,6 +666,36 @@ async def test_publish_package_install_schedules_broadcast() -> None:
             fut = MagicMock()
             mock_schedule.return_value = fut
             mgr.publish_package_install("pkg", "installing", None)
+            mock_schedule.assert_called_once()
+            scheduled_coro, scheduled_loop = mock_schedule.call_args.args
+            assert scheduled_loop is loop
+            scheduled_coro.close()
+
+
+async def test_publish_workflow_draft_changed_schedules_broadcast() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    loop = asyncio.get_running_loop()
+    mgr = ConnectionManager(loop=loop)
+
+    with patch.object(mgr, "broadcast_workflow_draft_changed") as mock_broadcast:
+        async def _fake(*args, **kwargs):
+            return None
+
+        mock_broadcast.side_effect = _fake
+
+        with patch(
+            "bioimageflow_server.ws.handler.asyncio.run_coroutine_threadsafe"
+        ) as mock_schedule:
+            fut = MagicMock()
+            mock_schedule.return_value = fut
+            mgr.publish_workflow_draft_changed(
+                workflow_id="wf",
+                draft_revision=1,
+                updated_by="frontend",
+                updated_at="2026-05-29T12:00:00Z",
+                dirty_against_saved=True,
+            )
             mock_schedule.assert_called_once()
             scheduled_coro, scheduled_loop = mock_schedule.call_args.args
             assert scheduled_loop is loop

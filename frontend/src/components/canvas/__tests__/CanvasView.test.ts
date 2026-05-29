@@ -216,6 +216,8 @@ import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { _resetClipboardForTest } from '@/utils/clipboard'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useWorkflowDraftStore, type WorkflowDraftChangedMessage } from '@/stores/workflowDraft'
+import { useUIStore } from '@/stores/ui'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -263,6 +265,40 @@ function mockSavedWorkflow(
     graph,
     timestamp: 1,
   })
+}
+
+function draftResponse(
+  revision: number,
+  graph: { nodes: any[]; edges: any[] },
+  dirtyAgainstSaved = true,
+  workflowId = 'wf',
+) {
+  return {
+    draft_version: 1,
+    workflow_id: workflowId,
+    base_saved_revision: 'sha256:abc',
+    draft_revision: revision,
+    updated_at: `2026-05-21T12:0${revision}:00Z`,
+    updated_by: 'agent',
+    dirty_against_saved: dirtyAgainstSaved,
+    graph,
+    validation: { valid: true, node_statuses: {}, errors: [] },
+  }
+}
+
+function draftChanged(
+  revision: number,
+  overrides: Partial<WorkflowDraftChangedMessage> = {},
+): WorkflowDraftChangedMessage {
+  return {
+    type: 'workflow_draft_changed',
+    workflow_id: 'wf',
+    draft_revision: revision,
+    updated_by: 'agent',
+    updated_at: `2026-05-21T12:1${revision}:00Z`,
+    dirty_against_saved: true,
+    ...overrides,
+  }
 }
 
 describe('CanvasView', () => {
@@ -1780,6 +1816,387 @@ describe('CanvasView', () => {
       const events = w.emitted('graph-changed')
       expect(events).toBeTruthy()
       expect(events!.length).toBe(1)
+      w.unmount()
+    })
+  })
+
+  describe('remote workflow drafts', () => {
+    function graphNode(id: string, x = 0) {
+      return {
+        id,
+        name: id,
+        tool_name: 'gaussian_blur',
+        position: [x, 0] as [number, number],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }
+    }
+
+    function buttonWithText(w: ReturnType<typeof mountCanvas>, text: string) {
+      return w.findAll('button').find((button) => button.text() === text)
+    }
+
+    async function mountActiveCanvasWithDraft(options: {
+      initialGraph: { nodes: any[]; edges: any[] }
+      initialDirty?: boolean
+      remoteGraph?: { nodes: any[]; edges: any[] }
+      remoteDirty?: boolean
+    }) {
+      useToolRegistryStore().tools = [makeTool()] as any
+      const workflowStore = useWorkflowStore()
+      workflowStore.current = { name: 'wf', display_name: 'WF' } as any
+      const draftStore = useWorkflowDraftStore()
+      apiMocks.get.mockResolvedValueOnce({
+        data: draftResponse(1, options.initialGraph, options.initialDirty ?? false),
+      })
+      await draftStore.loadDraft('wf')
+      if (options.remoteGraph) {
+        apiMocks.get.mockResolvedValueOnce({
+          data: draftResponse(2, options.remoteGraph, options.remoteDirty ?? false),
+        })
+      }
+
+      const w = mountCanvas({
+        params: {
+          panelId: 'canvas:wf',
+          workflowName: 'wf',
+          workflowDisplayName: 'WF',
+          graph: options.initialGraph,
+          dirty: options.initialDirty ?? false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      graphSyncMocks.syncGraph.mockClear()
+      autoSaveMocks.scheduleAutoSave.mockClear()
+      return { w, draftStore }
+    }
+
+    it('auto-applies a newer remote draft for the active clean canvas', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: false,
+        remoteGraph,
+        remoteDirty: false,
+      })
+      const scheduleSaveSpy = vi.spyOn(draftStore, 'scheduleSave')
+
+      draftStore.noteRemoteChange(draftChanged(2, { dirty_against_saved: false }))
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['remote'])
+      expect(draftStore.currentDraftRevision).toBe(2)
+      expect(draftStore.appliedDraftRevision).toBe(2)
+      expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(useUIStore().hasUnsavedChanges).toBe(false)
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(1)
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: [expect.objectContaining({ id: 'remote' })],
+      }))
+      expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
+      expect(scheduleSaveSpy).not.toHaveBeenCalled()
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('shows conflict actions instead of auto-applying when the canvas has local edits', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+      apiMocks.get.mockClear()
+      apiMocks.get.mockResolvedValue({ data: draftResponse(2, remoteGraph) })
+
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+
+      const conflict = w.find('.workflow-draft-conflict')
+      expect(conflict.exists()).toBe(true)
+      expect(conflict.text()).toContain('This workflow changed outside the canvas.')
+      expect(conflict.text()).not.toContain('backend')
+      expect(conflict.text()).not.toContain('live draft')
+      expect(buttonWithText(w, 'Apply agent changes')?.exists()).toBe(true)
+      expect(buttonWithText(w, 'Keep my canvas')?.exists()).toBe(true)
+      expect(buttonWithText(w, 'Save agent version as copy')?.exists()).toBe(true)
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(apiMocks.get).not.toHaveBeenCalled()
+      w.unmount()
+    })
+
+    it('does not auto-apply while a local draft save is pending', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({ initialGraph })
+      apiMocks.get.mockClear()
+      apiMocks.get.mockResolvedValue({ data: draftResponse(2, remoteGraph) })
+
+      draftStore.scheduleSave('wf', { nodes: [graphNode('local')], edges: [] })
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(apiMocks.get).not.toHaveBeenCalled()
+      expect(draftStore.remoteAvailableRevision).toBe(2)
+      expect(draftStore.hasPendingSave).toBe(true)
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(true)
+      draftStore.reset(null)
+      w.unmount()
+    })
+
+    it('applies agent changes from the conflict action without scheduling autosave', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+      const scheduleSaveSpy = vi.spyOn(draftStore, 'scheduleSave')
+      apiMocks.get.mockClear()
+      apiMocks.get.mockResolvedValueOnce({ data: draftResponse(2, remoteGraph, false) })
+
+      draftStore.noteRemoteChange(draftChanged(2, { dirty_against_saved: false }))
+      await flushPromises()
+      await nextTick()
+      await buttonWithText(w, 'Apply agent changes')!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf')
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['remote'])
+      expect(draftStore.currentDraftRevision).toBe(2)
+      expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(useUIStore().hasUnsavedChanges).toBe(false)
+      expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
+      expect(scheduleSaveSpy).not.toHaveBeenCalled()
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('keeps my canvas by overwriting the latest remote draft revision', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+      apiMocks.get.mockClear()
+      apiMocks.get.mockResolvedValueOnce({ data: draftResponse(2, remoteGraph, true) })
+      apiMocks.put.mockResolvedValueOnce({ data: draftResponse(3, initialGraph, true) })
+
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+      await buttonWithText(w, 'Keep my canvas')!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf')
+      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf', {
+        graph: expect.objectContaining({
+          nodes: [expect.objectContaining({
+            id: 'old',
+            output_templates: { result: '' },
+          })],
+          edges: [],
+        }),
+        expected_revision: 2,
+        updated_by: 'frontend',
+      })
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(draftStore.currentDraftRevision).toBe(3)
+      expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('saves the agent version as a saved workflow copy while leaving the original conflict unresolved', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      useWorkflowStore().workflows = [
+        { name: 'wf', display_name: 'WF' },
+        { name: 'wf_agent_2', display_name: 'WF agent 2' },
+      ] as any
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+      apiMocks.get.mockClear()
+      apiMocks.get
+        .mockResolvedValueOnce({ data: draftResponse(2, remoteGraph, true) })
+      apiMocks.post.mockResolvedValueOnce({
+        data: { name: 'wf_agent_3', display_name: 'wf_agent_3' },
+      })
+      apiMocks.put.mockResolvedValueOnce({
+        data: { name: 'wf_agent_3', display_name: 'wf_agent_3' },
+      })
+
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+      await buttonWithText(w, 'Save agent version as copy')!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      expect(apiMocks.post).toHaveBeenCalledWith('/api/v1/workflows', {
+        name: 'wf_agent_3',
+        display_name: 'wf_agent_3',
+      })
+      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/wf_agent_3', {
+        graph: remoteGraph,
+      })
+      expect(apiMocks.put).not.toHaveBeenCalledWith(
+        '/api/v1/workflow-drafts/wf_agent_3',
+        expect.anything(),
+      )
+      expect(apiMocks.put).not.toHaveBeenCalledWith(
+        '/api/v1/workflow-drafts/wf',
+        expect.anything(),
+      )
+      expect(useWorkflowStore().currentName).toBe('wf')
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(draftStore.workflowId).toBe('wf')
+      expect(draftStore.remoteAvailableRevision).toBe(2)
+      expect(w.text()).toContain('Agent version saved as wf_agent_3.')
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(true)
+      w.unmount()
+    })
+
+    it('leaves the conflict visible when applying agent changes fails', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+      apiMocks.get.mockClear()
+      apiMocks.get.mockRejectedValueOnce(new Error('network down'))
+
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+      await buttonWithText(w, 'Apply agent changes')!.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(draftStore.remoteAvailableRevision).toBe(2)
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(true)
+      expect(w.find('.workflow-draft-conflict').text()).toContain('network down')
+      w.unmount()
+    })
+
+    it('does not auto-apply remote drafts while the root canvas panel is inactive', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        remoteGraph,
+      })
+      apiMocks.get.mockClear()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+        detail: { panelId: 'canvas:other' },
+      }))
+      await nextTick()
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(apiMocks.get).not.toHaveBeenCalled()
+      expect(draftStore.remoteAvailableRevision).toBe(2)
+      w.unmount()
+    })
+
+    it('syncs the draft store to an activated root canvas workflow before later remote events', async () => {
+      useToolRegistryStore().tools = [makeTool()] as any
+      const draftStore = useWorkflowDraftStore()
+      apiMocks.get.mockResolvedValueOnce({
+        data: draftResponse(1, { nodes: [graphNode('tracked')], edges: [] }, false, 'tracked'),
+      })
+      await draftStore.loadDraft('tracked')
+      expect(draftStore.workflowId).toBe('tracked')
+
+      const w = mountCanvas({
+        params: {
+          panelId: 'canvas:wf',
+          workflowName: 'wf',
+          workflowDisplayName: 'WF',
+          graph: { nodes: [graphNode('old')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+        detail: { panelId: 'canvas:other' },
+      }))
+      await nextTick()
+      graphSyncMocks.syncGraph.mockClear()
+      apiMocks.get.mockClear()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+        detail: { panelId: 'canvas:wf' },
+      }))
+      await nextTick()
+      expect(draftStore.workflowId).toBe('wf')
+
+      apiMocks.get.mockResolvedValueOnce({
+        data: draftResponse(2, { nodes: [graphNode('remote', 120)], edges: [] }, true, 'wf'),
+      })
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['remote'])
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf')
+      w.unmount()
+    })
+
+    it('does not auto-apply root workflow draft events in a sub-workflow editor', async () => {
+      useToolRegistryStore().tools = [makeTool()] as any
+      const workflowStore = useWorkflowStore()
+      workflowStore.current = { name: 'wf', display_name: 'WF' } as any
+      const draftStore = useWorkflowDraftStore()
+      const rootGraph = { nodes: [graphNode('root')], edges: [] }
+      apiMocks.get.mockResolvedValueOnce({ data: draftResponse(1, rootGraph) })
+      await draftStore.loadDraft('wf')
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'wf',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: { nodes: [graphNode('inner')], edges: [] },
+      })
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      apiMocks.get.mockClear()
+
+      draftStore.noteRemoteChange(draftChanged(2))
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['inner'])
+      expect(apiMocks.get).not.toHaveBeenCalled()
+      expect(draftStore.remoteAvailableRevision).toBe(2)
       w.unmount()
     })
   })

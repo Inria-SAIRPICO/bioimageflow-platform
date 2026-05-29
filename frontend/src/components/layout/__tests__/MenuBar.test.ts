@@ -18,7 +18,7 @@ const autoSaveMocks = vi.hoisted(() => ({
   setLastOpenedWorkflow: vi.fn().mockResolvedValue(undefined),
 }))
 const workflowDraftMocks = vi.hoisted(() => ({
-  assertFreshForSaveOrRun: vi.fn().mockResolvedValue(undefined),
+  ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
   scheduleSave: vi.fn(),
   flush: vi.fn().mockResolvedValue(undefined),
   loadDraft: vi.fn(),
@@ -60,6 +60,22 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+Object.defineProperty(window, 'ResizeObserver', {
+  writable: true,
+  value: ResizeObserverMock,
+})
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  writable: true,
+  value: ResizeObserverMock,
+})
+
 let pinia: ReturnType<typeof createPinia>
 
 function mountMenuBar() {
@@ -83,10 +99,28 @@ describe('MenuBar', () => {
     apiMocks.delete.mockReset()
     autoSaveMocks.clearAutoSave.mockClear()
     autoSaveMocks.setLastOpenedWorkflow.mockClear()
-    workflowDraftMocks.assertFreshForSaveOrRun.mockClear()
+    workflowDraftMocks.ensureFreshForCriticalOperation.mockClear()
+    workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
     workflowDraftMocks.scheduleSave.mockClear()
     workflowDraftMocks.flush.mockClear()
     workflowDraftMocks.loadDraft.mockReset()
+    if (typeof window.URL.createObjectURL !== 'function') {
+      Object.defineProperty(window.URL, 'createObjectURL', {
+        value: vi.fn(() => 'blob:workflow'),
+        configurable: true,
+      })
+    } else {
+      vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:workflow')
+    }
+    if (typeof window.URL.revokeObjectURL !== 'function') {
+      Object.defineProperty(window.URL, 'revokeObjectURL', {
+        value: vi.fn(),
+        configurable: true,
+      })
+    } else {
+      vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
+    }
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   })
 
   it('renders a menubar element', () => {
@@ -202,13 +236,117 @@ describe('MenuBar', () => {
       const exportWorkflow = vi
         .spyOn(workflow, 'exportWorkflow')
         .mockResolvedValue(undefined)
+      vi.spyOn(workflow, 'saveWorkflow').mockResolvedValue(workflow.current)
 
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
       await workflowMenu.items.find((item: any) => item.label === 'Export').command()
+      await flushPromises()
+      expect(vm.exportSaveDialogVisible).toBe(true)
+      await vm.confirmExportCurrentWorkflow()
+      await flushPromises()
 
       expect(exportWorkflow).toHaveBeenCalledWith('cell_segmentation')
+    })
+
+    it('confirms that export saves the current workflow before downloading', async () => {
+      const workflow = useWorkflowStore()
+      workflow.current = {
+        name: 'cell_segmentation',
+        display_name: 'Cell segmentation',
+        path: '/tmp/cell_segmentation.json',
+        last_modified: '2026-04-29T00:00:00Z',
+      }
+      apiMocks.put.mockResolvedValueOnce({
+        data: {
+          name: 'cell_segmentation',
+          display_name: 'Cell segmentation',
+          path: '/tmp/cell_segmentation.json',
+          last_modified: '2026-04-29T00:00:01Z',
+        },
+      })
+      apiMocks.post.mockResolvedValueOnce({
+        data: new Blob(['zip']),
+        headers: {},
+      })
+
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      await workflowMenu.items.find((item: any) => item.label === 'Export').command()
+      await flushPromises()
+
+      expect(vm.exportSaveDialogVisible).toBe(true)
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(apiMocks.post).not.toHaveBeenCalledWith(
+        '/api/v1/workflows/cell_segmentation/export',
+        undefined,
+        expect.anything(),
+      )
+
+      await vm.confirmExportCurrentWorkflow()
+      await flushPromises()
+
+      expect(apiMocks.put).toHaveBeenCalledWith(
+        '/api/v1/workflows/cell_segmentation',
+        { graph: { nodes: [], edges: [] } },
+      )
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        '/api/v1/workflows/cell_segmentation/export',
+        undefined,
+        { responseType: 'blob' },
+      )
+    })
+
+    it('blocks save when unresolved remote draft changes need resolution', async () => {
+      workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
+      const workflow = useWorkflowStore()
+      workflow.current = {
+        name: 'new_workflow',
+        display_name: 'New workflow',
+        path: '/tmp/new_workflow.json',
+        last_modified: '2026-04-29T00:00:00Z',
+      }
+
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      await workflowMenu.items.find((item: any) => item.label === 'Save').command()
+      await flushPromises()
+
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'warn',
+        summary: 'Resolve workflow changes first',
+      }))
+    })
+
+    it('blocks confirmed export when unresolved remote draft changes need resolution', async () => {
+      workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
+      const workflow = useWorkflowStore()
+      workflow.current = {
+        name: 'cell_segmentation',
+        display_name: 'Cell segmentation',
+        path: '/tmp/cell_segmentation.json',
+        last_modified: '2026-04-29T00:00:00Z',
+      }
+
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      await workflowMenu.items.find((item: any) => item.label === 'Export').command()
+      await flushPromises()
+      expect(vm.exportSaveDialogVisible).toBe(true)
+      await vm.confirmExportCurrentWorkflow()
+      await flushPromises()
+
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(apiMocks.post).not.toHaveBeenCalled()
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'warn',
+        summary: 'Resolve workflow changes first',
+      }))
     })
 
     it('creates a workflow under the folder selected in the workflows panel', async () => {

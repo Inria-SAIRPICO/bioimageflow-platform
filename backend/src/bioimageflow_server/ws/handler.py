@@ -297,6 +297,24 @@ class ConnectionManager:
         }
         self._enqueue_all(payload)
 
+    async def broadcast_workflow_draft_changed(
+        self,
+        workflow_id: str,
+        draft_revision: int,
+        updated_by: str,
+        updated_at: str,
+        dirty_against_saved: bool,
+    ) -> None:
+        payload = {
+            "type": "workflow_draft_changed",
+            "workflow_id": workflow_id,
+            "draft_revision": draft_revision,
+            "updated_by": updated_by,
+            "updated_at": updated_at,
+            "dirty_against_saved": dirty_against_saved,
+        }
+        self._enqueue_all(payload)
+
     async def send_ack(self, websocket: Any, ref: str) -> None:
         state = self._states.get(websocket)
         if state is None:
@@ -384,6 +402,25 @@ class ConnectionManager:
         self._schedule(
             self.broadcast_environment_status(env_name, status),
             "environment_status",
+        )
+
+    def publish_workflow_draft_changed(
+        self,
+        workflow_id: str,
+        draft_revision: int,
+        updated_by: str,
+        updated_at: str,
+        dirty_against_saved: bool,
+    ) -> None:
+        self._schedule(
+            self.broadcast_workflow_draft_changed(
+                workflow_id=workflow_id,
+                draft_revision=draft_revision,
+                updated_by=updated_by,
+                updated_at=updated_at,
+                dirty_against_saved=dirty_against_saved,
+            ),
+            "workflow_draft_changed",
         )
 
     # ---- internals ------------------------------------------------------

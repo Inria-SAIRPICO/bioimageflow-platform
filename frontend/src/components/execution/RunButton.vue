@@ -83,22 +83,38 @@ function onConfirmDialogVisibilityChange(visible: boolean) {
   }
 }
 
-function findOutOfDateNodes(nodes?: string[]): string[] {
+function currentExecutionGraph(): GraphState {
+  return props.graphSync.currentGraph?.value ?? props.graph
+}
+
+function findOutOfDateNodes(graph: GraphState, nodes?: string[]): string[] {
   const result: ValidationResult | null = props.graphSync.validationResult.value
   if (!result || !result.node_statuses) return []
-  return outOfDateNodeIdsForExecution(result.node_statuses, props.graph, nodes)
+  return outOfDateNodeIdsForExecution(result.node_statuses, graph, nodes)
 }
 
 async function runCore(nodes?: string[]) {
-  const outOfDate = findOutOfDateNodes(nodes)
-  if (outOfDate.length > 0) {
-    const ok = await confirmOutOfDate(outOfDate)
-    if (!ok) return
-  }
+  let graph = currentExecutionGraph()
   try {
-    await workflowDraftStore.assertFreshForSaveOrRun()
+    const fresh = await workflowDraftStore.ensureFreshForCriticalOperation(
+      workflowStore.currentName,
+    )
+    if (!fresh) {
+      emit('toast', {
+        severity: 'warn',
+        summary: 'Resolve workflow changes first',
+        detail: 'This workflow changed outside the canvas. Choose which version to keep before running.',
+      })
+      return
+    }
+    graph = currentExecutionGraph()
+    const outOfDate = findOutOfDateNodes(graph, nodes)
+    if (outOfDate.length > 0) {
+      const ok = await confirmOutOfDate(outOfDate)
+      if (!ok) return
+    }
     await lockForExecution({
-      graph: props.graph,
+      graph,
       nodes,
       graphSync: props.graphSync,
       workflowName: workflowStore.currentName,
@@ -123,7 +139,7 @@ async function runCore(nodes?: string[]) {
           ? exec.validationErrors
           : validationErrorsForExecution(
               props.graphSync.validationResult.value?.errors ?? [],
-              props.graph,
+              graph,
               nodes,
             )
       const firstBadNode = errs.find((e) => e.node)?.node

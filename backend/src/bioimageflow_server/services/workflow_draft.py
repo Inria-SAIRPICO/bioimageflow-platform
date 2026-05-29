@@ -19,6 +19,10 @@ from bioimageflow_server.models.workflow_draft import (
     DraftWriter,
     WorkflowDraftResponse,
 )
+from bioimageflow_server.services.agent_workspace_context import (
+    PLATFORM_SOURCE_DIR,
+    agent_workspace_instructions,
+)
 from bioimageflow_server.services.graph_validator import validate_graph
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -184,19 +188,17 @@ class WorkflowDraftService:
             "workflows_root": str(store.root_dir),
             "active_draft_path": str(self._draft_path(store, workflow_id)),
             "recommended_commands": [
-                "bioimageflow-agent status",
-                "bioimageflow-agent get-graph",
-                "bioimageflow-agent validate",
-                "bioimageflow-agent list-tools",
+                f"GET {api_url}/health",
+                f"GET {api_url}/workflow-drafts/{workflow_id}",
+                f"GET {api_url}/tools",
+                f"PUT {api_url}/workflow-drafts/{workflow_id}",
+                f"POST {api_url}/execution/run",
+                f"POST {api_url}/execution/stop",
             ],
         }
         _json_dump_atomic(workspace_meta / "agent-state.json", context)
-        (workspace_meta / "AGENTS.md").write_text(
-            self._agent_instructions("Codex"),
-            encoding="utf-8",
-        )
-        (workspace_meta / "CLAUDE.md").write_text(
-            self._agent_instructions("Claude Code"),
+        (store.workspace_dir / "AGENTS.md").write_text(
+            agent_workspace_instructions(source_path=workspace_meta / PLATFORM_SOURCE_DIR),
             encoding="utf-8",
         )
 
@@ -284,15 +286,3 @@ class WorkflowDraftService:
         except FileNotFoundError:
             return True
         return saved.model_dump(mode="json") != graph.model_dump(mode="json")
-
-    @staticmethod
-    def _agent_instructions(agent_name: str) -> str:
-        return (
-            f"# BioImageFlow Agent Instructions for {agent_name}\n\n"
-            "This workspace is managed by BioImageFlow. Read "
-            "`.bioimageflow/agent-state.json` to find the active workflow, "
-            "API base URL, and live draft path.\n\n"
-            "Use BioImageFlow API or `bioimageflow-agent` commands for workflow "
-            "changes. Do not hand-edit `workflow.json` derived sections. The "
-            "live unsaved graph is stored in the workflow-local draft file.\n"
-        )

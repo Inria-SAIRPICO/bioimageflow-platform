@@ -43,7 +43,7 @@ const runButtonRef = useTemplateRef<InstanceType<typeof RunButton> | null>(
   'runButtonRef',
 )
 
-const graphSync = { flushNow, validationResult }
+const graphSync = { flushNow, validationResult, currentGraph }
 
 function workflowId(workflow: WorkflowInfo): string {
   return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
@@ -72,6 +72,7 @@ const deleteDialogWorkflow = computed(() => {
   )
 })
 const discardDialogVisible = ref(false)
+const exportSaveDialogVisible = ref(false)
 const aboutDialogVisible = ref(false)
 const renameDialogVisible = ref(false)
 const importRenameDialogVisible = ref(false)
@@ -158,6 +159,15 @@ async function loadWorkflowGraph(name: string): Promise<{ graph: GraphState; dir
 function showError(summary: string, err: unknown): void {
   const detail = err instanceof Error ? err.message : String(err)
   toast?.add({ severity: 'error', summary, detail })
+}
+
+function showDraftConflictWarning(action: 'saving' | 'running' | 'exporting' = 'saving'): void {
+  toast?.add({
+    severity: 'warn',
+    summary: 'Resolve workflow changes first',
+    detail: `This workflow changed outside the canvas. Choose which version to keep before ${action}.`,
+    life: 5000,
+  })
 }
 
 function hasMissingImportDependencies(): boolean {
@@ -272,6 +282,31 @@ async function onOpenWorkflow(name: string): Promise<void> {
   }
 }
 
+async function saveCurrentWorkflowGraph(options: {
+  showSuccessToast?: boolean
+  conflictAction?: 'saving' | 'exporting'
+} = {}): Promise<WorkflowInfo | null> {
+  const fresh = await workflowDraftStore.ensureFreshForCriticalOperation(
+    workflowStore.currentName,
+  )
+  if (!fresh) {
+    showDraftConflictWarning(options.conflictAction ?? 'saving')
+    return null
+  }
+  const info = await workflowStore.saveWorkflow(currentGraph.value)
+  workflowDraftStore.scheduleSave(workflowId(info), currentGraph.value)
+  await workflowDraftStore.flush()
+  if (options.showSuccessToast !== false) {
+    toast?.add({
+      severity: 'success',
+      summary: 'Workflow saved',
+      detail: info.display_name,
+      life: 2500,
+    })
+  }
+  return info
+}
+
 async function saveWorkflow(): Promise<void> {
   if (!workflowStore.currentName) {
     createIntent.value = 'save-current'
@@ -285,27 +320,27 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
-    await workflowDraftStore.assertFreshForSaveOrRun()
-    const info = await workflowStore.saveWorkflow(currentGraph.value)
-    workflowDraftStore.scheduleSave(workflowId(info), currentGraph.value)
-    await workflowDraftStore.flush()
-    toast?.add({
-      severity: 'success',
-      summary: 'Workflow saved',
-      detail: info.display_name,
-      life: 2500,
-    })
+    await saveCurrentWorkflowGraph({ showSuccessToast: true })
   } catch (err: unknown) {
     showError('Save workflow failed', err)
   }
 }
 
-async function exportCurrentWorkflow(): Promise<void> {
+function exportCurrentWorkflow(): void {
   const name = workflowStore.currentName
   if (!name) return
+  exportSaveDialogVisible.value = true
+}
+
+async function confirmExportCurrentWorkflow(): Promise<void> {
+  exportSaveDialogVisible.value = false
   try {
-    await workflowDraftStore.assertFreshForSaveOrRun()
-    await workflowStore.exportWorkflow(name)
+    const info = await saveCurrentWorkflowGraph({
+      showSuccessToast: false,
+      conflictAction: 'exporting',
+    })
+    if (!info) return
+    await workflowStore.exportWorkflow(workflowId(info))
   } catch (err: unknown) {
     showError('Export workflow failed', err)
   }
@@ -421,7 +456,8 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
 async function exportWorkflowByName(name: string): Promise<void> {
   try {
     if (workflowStore.currentName === name) {
-      await workflowDraftStore.assertFreshForSaveOrRun()
+      exportCurrentWorkflow()
+      return
     }
     await workflowStore.exportWorkflow(name)
   } catch (err: unknown) {
@@ -655,6 +691,8 @@ defineExpose({
   menuItems,
   historyPanelOpen,
   aboutDialogVisible,
+  exportSaveDialogVisible,
+  confirmExportCurrentWorkflow,
   renameDialogVisible,
   importRenameDialogVisible,
   dependencyDialogVisible,
@@ -772,6 +810,27 @@ defineExpose({
         severity="danger"
         data-testid="discard-workflow-confirm"
         @click="confirmDiscard"
+      />
+    </template>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="exportSaveDialogVisible"
+    modal
+    header="Save before export?"
+    :style="{ width: '420px' }"
+    data-testid="export-save-confirm"
+  >
+    <p>
+      The current workflow will be saved before the export file is created.
+    </p>
+    <template #footer>
+      <Button label="Cancel" text @click="exportSaveDialogVisible = false" />
+      <Button
+        label="Save and export"
+        icon="pi pi-download"
+        data-testid="export-save-confirm-submit"
+        @click="confirmExportCurrentWorkflow"
       />
     </template>
   </Dialog>

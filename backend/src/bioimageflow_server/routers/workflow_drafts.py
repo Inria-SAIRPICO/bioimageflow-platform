@@ -29,6 +29,10 @@ def get_execution_manager() -> Any | None:
     return None
 
 
+def get_connection_manager() -> Any | None:
+    return None
+
+
 def _api_base_url(request: Request) -> str:
     return f"{str(request.base_url).rstrip('/')}/api/v1"
 
@@ -72,12 +76,13 @@ async def put_workflow_draft(
     request: Request,
     service: WorkflowDraftService = Depends(get_workflow_draft_service),
     execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowDraftResponse | JSONResponse:
     locked = _ensure_unlocked(execution_manager)
     if locked is not None:
         return locked
     try:
-        return service.put_draft(
+        draft = service.put_draft(
             workflow_id,
             graph=body.graph,
             expected_revision=body.expected_revision,
@@ -85,6 +90,15 @@ async def put_workflow_draft(
             should_validate=body.validate_,
             api_base_url=_api_base_url(request),
         )
+        if connection_manager is not None:
+            connection_manager.publish_workflow_draft_changed(
+                workflow_id=draft.workflow_id,
+                draft_revision=draft.draft_revision,
+                updated_by=draft.updated_by,
+                updated_at=draft.updated_at,
+                dirty_against_saved=draft.dirty_against_saved,
+            )
+        return draft
     except WorkflowDraftRevisionConflict as exc:
         body = WorkflowDraftConflictResponse(
             detail=str(exc),

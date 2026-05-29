@@ -10,7 +10,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { api } from '@/api/client'
-import { useWorkflowDraftStore } from '../workflowDraft'
+import { useWorkflowDraftStore, type WorkflowDraftChangedMessage } from '../workflowDraft'
 import type { GraphState } from '@/api/types'
 
 const emptyGraph: GraphState = {
@@ -18,10 +18,10 @@ const emptyGraph: GraphState = {
   edges: [],
 }
 
-function draft(revision: number, graph: GraphState = emptyGraph) {
+function draft(revision: number, graph: GraphState = emptyGraph, workflowId = 'wf') {
   return {
     draft_version: 1,
-    workflow_id: 'wf',
+    workflow_id: workflowId,
     base_saved_revision: 'sha256:abc',
     draft_revision: revision,
     updated_at: '2026-05-21T12:00:00Z',
@@ -29,6 +29,21 @@ function draft(revision: number, graph: GraphState = emptyGraph) {
     dirty_against_saved: revision > 0,
     graph,
     validation: { valid: true, node_statuses: {}, errors: [] },
+  }
+}
+
+function changed(
+  revision: number,
+  overrides: Partial<WorkflowDraftChangedMessage> = {},
+): WorkflowDraftChangedMessage {
+  return {
+    type: 'workflow_draft_changed',
+    workflow_id: 'wf',
+    draft_revision: revision,
+    updated_by: 'agent',
+    updated_at: '2026-05-21T12:05:00Z',
+    dirty_against_saved: true,
+    ...overrides,
   }
 }
 
@@ -60,6 +75,7 @@ describe('workflow draft store', () => {
     const store = useWorkflowDraftStore()
     await store.loadDraft('wf')
     store.scheduleSave('wf', emptyGraph)
+    expect(store.hasPendingSave).toBe(true)
     await store.flush()
 
     expect(api.put).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf', {
@@ -68,6 +84,25 @@ describe('workflow draft store', () => {
       updated_by: 'frontend',
     })
     expect(store.currentDraftRevision).toBe(2)
+    expect(store.hasPendingSave).toBe(false)
+  })
+
+  it('reports an in-flight save as pending until the request settles', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1) })
+    let resolvePut: (value: { data: ReturnType<typeof draft> }) => void = () => {}
+    vi.mocked(api.put).mockReturnValueOnce(new Promise((resolve) => {
+      resolvePut = resolve
+    }))
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.scheduleSave('wf', emptyGraph)
+    const flushPromise = store.flush()
+
+    expect(store.hasPendingSave).toBe(true)
+    resolvePut({ data: draft(2) })
+    await flushPromise
+    expect(store.hasPendingSave).toBe(false)
   })
 
   it('marks stale state on revision conflict without retrying blindly', async () => {
@@ -96,5 +131,194 @@ describe('workflow draft store', () => {
     expect(store.remoteAvailableRevision).toBe(4)
     expect(store.isStale).toBe(true)
     expect(api.put).toHaveBeenCalledTimes(1)
+  })
+
+  it('freshness guard returns false immediately when a remote revision is already unresolved', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(3) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.noteRemoteChange(changed(4))
+    const fresh = await store.ensureFreshForCriticalOperation('wf')
+
+    expect(fresh).toBe(false)
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(store.remoteAvailableRevision).toBe(4)
+  })
+
+  it('freshness guard records a newly discovered remote revision without throwing', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: draft(3) })
+      .mockResolvedValueOnce({ data: draft(4) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    const fresh = await store.ensureFreshForCriticalOperation('wf')
+
+    expect(fresh).toBe(false)
+    expect(store.remoteAvailableRevision).toBe(4)
+  })
+
+  it('freshness guard flushes pending local draft saves before reporting fresh', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: draft(1) })
+      .mockResolvedValueOnce({ data: draft(2) })
+    vi.mocked(api.put).mockResolvedValueOnce({ data: draft(2) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.scheduleSave('wf', emptyGraph)
+    const fresh = await store.ensureFreshForCriticalOperation('wf')
+
+    expect(fresh).toBe(true)
+    expect(api.put).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf', {
+      graph: emptyGraph,
+      expected_revision: 1,
+      updated_by: 'frontend',
+    })
+    expect(store.currentDraftRevision).toBe(2)
+  })
+
+  it('notes newer remote draft changes with metadata without applying them', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(3) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.noteRemoteChange(changed(4, {
+      updated_by: 'system',
+      updated_at: '2026-05-21T12:06:00Z',
+      dirty_against_saved: false,
+    }))
+
+    expect(store.remoteAvailableRevision).toBe(4)
+    expect(store.remoteUpdatedBy).toBe('system')
+    expect(store.remoteUpdatedAt).toBe('2026-05-21T12:06:00Z')
+    expect(store.remoteDirtyAgainstSaved).toBe(false)
+    expect(store.appliedDraftRevision).toBe(3)
+    expect(store.currentDraftRevision).toBe(3)
+    expect(store.isStale).toBe(true)
+  })
+
+  it('ignores remote draft changes for other workflows or known revisions', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(3) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.noteRemoteChange(changed(5, { workflow_id: 'other' }))
+    store.noteRemoteChange(changed(3))
+
+    expect(store.remoteAvailableRevision).toBeNull()
+    expect(store.remoteUpdatedBy).toBeNull()
+    expect(store.isStale).toBe(false)
+  })
+
+  it('tracks a newly activated workflow so its later remote events are recorded', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(3) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.trackWorkflow('other')
+    store.noteRemoteChange(changed(1, { workflow_id: 'other' }))
+
+    expect(store.workflowId).toBe('other')
+    expect(store.currentDraftRevision).toBeNull()
+    expect(store.appliedDraftRevision).toBeNull()
+    expect(store.remoteAvailableRevision).toBe(1)
+  })
+
+  it('ignores remote draft changes that are not newer than the recorded remote revision', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(3) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.noteRemoteChange(changed(6, {
+      updated_by: 'agent',
+      updated_at: '2026-05-21T12:06:00Z',
+    }))
+    store.noteRemoteChange(changed(5, {
+      updated_by: 'system',
+      updated_at: '2026-05-21T12:07:00Z',
+      dirty_against_saved: false,
+    }))
+    store.noteRemoteChange(changed(6, {
+      updated_by: 'frontend',
+      updated_at: '2026-05-21T12:08:00Z',
+      dirty_against_saved: false,
+    }))
+
+    expect(store.remoteAvailableRevision).toBe(6)
+    expect(store.remoteUpdatedBy).toBe('agent')
+    expect(store.remoteUpdatedAt).toBe('2026-05-21T12:06:00Z')
+    expect(store.remoteDirtyAgainstSaved).toBe(true)
+  })
+
+  it('overwrites a newer remote draft with the current graph revision', async () => {
+    const localGraph: GraphState = {
+      nodes: [{
+        id: 'local',
+        name: 'Local',
+        tool_name: 'gaussian_blur',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: draft(3) })
+      .mockResolvedValueOnce({ data: draft(4) })
+    vi.mocked(api.put).mockResolvedValueOnce({ data: draft(5, localGraph) })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.noteRemoteChange(changed(4))
+    const response = await store.overwriteDraftWithGraph('wf', localGraph)
+
+    expect(api.put).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf', {
+      graph: localGraph,
+      expected_revision: 4,
+      updated_by: 'frontend',
+    })
+    expect(response.draft_revision).toBe(5)
+    expect(store.currentDraftRevision).toBe(5)
+    expect(store.appliedDraftRevision).toBe(5)
+    expect(store.remoteAvailableRevision).toBeNull()
+  })
+
+  it('can write a graph to another workflow without changing the tracked draft', async () => {
+    const copyGraph: GraphState = {
+      nodes: [{
+        id: 'agent',
+        name: 'Agent',
+        tool_name: 'gaussian_blur',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: draft(3) })
+      .mockResolvedValueOnce({ data: draft(1, emptyGraph, 'copy') })
+    vi.mocked(api.put).mockResolvedValueOnce({ data: draft(2, copyGraph, 'copy') })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    await store.overwriteDraftWithGraph('copy', copyGraph, { updateTrackedDraft: false })
+
+    expect(api.put).toHaveBeenCalledWith('/api/v1/workflow-drafts/copy', {
+      graph: copyGraph,
+      expected_revision: 1,
+      updated_by: 'frontend',
+    })
+    expect(store.workflowId).toBe('wf')
+    expect(store.currentDraftRevision).toBe(3)
+    expect(store.appliedDraftRevision).toBe(3)
   })
 })
