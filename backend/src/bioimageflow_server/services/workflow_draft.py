@@ -187,6 +187,17 @@ class WorkflowDraftService:
             "workspace_path": str(store.workspace_dir),
             "workflows_root": str(store.root_dir),
             "active_draft_path": str(self._draft_path(store, workflow_id)),
+            "recommended_shell_setup": [
+                "STATE=.bioimageflow/agent-state.json",
+                'API=$(jq -r .api_base_url "$STATE")',
+                'WF=$(jq -r .active_workflow_id "$STATE")',
+                'curl -sS "$API/health"',
+            ],
+            "localhost_reachability_note": (
+                "The API URL is dynamic. Do not guess or hardcode ports. "
+                "If localhost or 127.0.0.1 is blocked by the agent sandbox, "
+                "request permission to run the same curl command outside the sandbox."
+            ),
             "recommended_commands": [
                 f"GET {api_url}/health",
                 f"GET {api_url}/workflow-drafts/{workflow_id}",

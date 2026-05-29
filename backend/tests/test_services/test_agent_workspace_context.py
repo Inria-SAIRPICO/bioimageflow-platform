@@ -41,6 +41,9 @@ def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_no
     assert ".bioimageflow/platform-source/" in instructions
     assert "read-only" in instructions
     assert "API-first through `api_base_url`" in normalized_instructions
+    assert "Do not guess or hardcode ports such as 8008" in instructions
+    assert "Sandboxed agents may be blocked from reaching localhost" in instructions
+    assert "request permission to run the same curl command outside the sandbox" in instructions
     assert "bioimageflow-agent" not in instructions
     assert "full-graph replacement, not patch" in instructions
     assert "Enable or disable node" in instructions

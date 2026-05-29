@@ -17,7 +17,15 @@ immediately before execution so they submit the intended graph.
 STATE=.bioimageflow/agent-state.json
 API=$(jq -r .api_base_url "$STATE")
 WF=$(jq -r .active_workflow_id "$STATE")
+curl -sS "$API/health"
+```
 
+Use exactly the `API` value from `agent-state.json`; it contains the current
+backend port. If the health check is blocked by an agent sandbox, request
+permission to run the same `curl` command outside the sandbox instead of
+guessing another port.
+
+```sh
 curl -s "$API/workflow-drafts/$WF" > /tmp/bif-run-draft.json
 
 jq -n   --argjson graph "$(jq .graph /tmp/bif-run-draft.json)"   --arg workflow "$WF"   '{graph: $graph, workflow_name: $workflow}'   | curl -s -X POST "$API/execution/run"       -H 'Content-Type: application/json'       --data-binary @-

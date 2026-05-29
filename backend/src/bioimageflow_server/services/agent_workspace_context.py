@@ -171,7 +171,7 @@ the graph, and execute it when asked. Workflow editing is API-first through
 ## First-Run Checklist
 
 1. Set `API` from `api_base_url` and `WF` from `active_workflow_id`.
-2. Health check: `GET $API/health`.
+2. Health check: `curl -sS "$API/health"`.
 3. Read the live draft: `GET $API/workflow-drafts/$WF`.
 4. Save the returned `draft_revision` and full `graph`.
 5. Inspect tools before creating or connecting nodes: `GET $API/tools`.
@@ -188,6 +188,26 @@ the graph, and execute it when asked. Workflow editing is API-first through
    `{{"graph": graph, "workflow_name": WF}}`.
 11. Check or stop execution: `GET $API/execution/status`,
     `POST $API/execution/stop`.
+
+## API URL And Sandbox
+
+The backend port is dynamic. Always read `api_base_url` from
+`.bioimageflow/agent-state.json`. Do not guess or hardcode ports such as 8008,
+and do not switch to another port unless the state file changes.
+
+Recommended setup:
+
+```sh
+STATE=.bioimageflow/agent-state.json
+API=$(jq -r .api_base_url "$STATE")
+WF=$(jq -r .active_workflow_id "$STATE")
+curl -sS "$API/health"
+```
+
+Sandboxed agents may be blocked from reaching localhost or 127.0.0.1 even when
+BioImageFlow is running. If the health check fails with a permission, sandbox,
+or connection error, request permission to run the same curl command outside the sandbox.
+Do not edit `workflow.json` or the read-only platform source as a fallback.
 
 ## Draft Write Rule
 

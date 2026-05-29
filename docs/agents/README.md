@@ -18,6 +18,12 @@ Files:
 Workflow editing is API-first through `api_base_url` in
 `.bioimageflow/agent-state.json`.
 
+The API port is dynamic. Agents must read `api_base_url` from
+`.bioimageflow/agent-state.json`; they must not guess or hardcode a port such
+as `8008`. If `curl -sS "$API/health"` fails because the agent is sandboxed
+from localhost or 127.0.0.1, retry the same command with the agent's normal
+permission/escalation flow.
+
 After an agent writes a draft, the frontend is notified. A clean canvas should
 update automatically; a canvas with local edits will ask the user to resolve the
 conflict.

@@ -1,7 +1,20 @@
 # Agent API Reference
 
 Use `api_base_url` from `.bioimageflow/agent-state.json`; it already includes
-`/api/v1`.
+`/api/v1`. The port is dynamic. Do not guess or hardcode ports such as `8008`.
+
+Recommended setup:
+
+```sh
+STATE=.bioimageflow/agent-state.json
+API=$(jq -r .api_base_url "$STATE")
+WF=$(jq -r .active_workflow_id "$STATE")
+curl -sS "$API/health"
+```
+
+If localhost or 127.0.0.1 is blocked by the agent sandbox, request permission
+to run the same `curl` command outside the sandbox. Do not use a different port
+unless `agent-state.json` changed.
 
 ## State
 

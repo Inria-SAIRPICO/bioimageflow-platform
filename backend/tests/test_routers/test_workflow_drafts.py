@@ -117,6 +117,14 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert context["active_workflow_id"] == "wf"
     assert context["api_base_url"] == "http://test/api/v1"
     assert context["health_url"] == "http://test/api/v1/health"
+    assert context["recommended_shell_setup"] == [
+        "STATE=.bioimageflow/agent-state.json",
+        "API=$(jq -r .api_base_url \"$STATE\")",
+        "WF=$(jq -r .active_workflow_id \"$STATE\")",
+        "curl -sS \"$API/health\"",
+    ]
+    assert "sandbox" in context["localhost_reachability_note"]
+    assert "Do not guess" in context["localhost_reachability_note"]
     assert context["recommended_commands"] == [
         "GET http://test/api/v1/health",
         "GET http://test/api/v1/workflow-drafts/wf",
@@ -142,6 +150,8 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert "Enable or disable node" in instructions
     assert "Execute selected nodes" in instructions
     assert "full-graph replacement, not patch" in instructions
+    assert "Do not guess or hardcode ports such as 8008" in instructions
+    assert "request permission to run the same curl command outside the sandbox" in instructions
     assert "POST $API/execution/stop" in instructions
     assert ".bioimageflow/platform-source/" in instructions
     assert "bioimageflow-agent" not in instructions

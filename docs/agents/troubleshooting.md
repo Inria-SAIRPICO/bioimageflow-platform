@@ -3,8 +3,15 @@
 ## API Offline
 
 Read `.bioimageflow/agent-state.json`, set `API` from `api_base_url`, then call
-`GET $API/health`. If it fails, the backend is not reachable from this
-workspace. Do not edit `workflow.json` as a fallback.
+`curl -sS "$API/health"`. The URL already includes the dynamic backend port and
+`/api/v1`; do not guess or hardcode ports such as `8008`.
+
+If the health check fails with a permission, sandbox, or connection error, the
+agent may be unable to reach localhost or 127.0.0.1 from inside its sandbox.
+Request permission to run the same `curl` command outside the sandbox. If that
+works, continue using the same `API` value.
+
+Do not edit `workflow.json` or `.bioimageflow/platform-source/` as a fallback.
 
 ## Stale State
 

@@ -10,7 +10,14 @@ Set helpers from `.bioimageflow/agent-state.json`:
 STATE=.bioimageflow/agent-state.json
 API=$(jq -r .api_base_url "$STATE")
 WF=$(jq -r .active_workflow_id "$STATE")
+curl -sS "$API/health"
 ```
+
+`api_base_url` is written by the running backend and includes the actual port
+and `/api/v1`. Do not guess or hardcode `localhost:8008`. If the health check
+cannot reach localhost or 127.0.0.1 because the agent is sandboxed, request
+permission to run the same `curl` command outside the sandbox, then continue
+with the same `API` value.
 
 Always re-read before a write. Temp files under `/tmp` are snapshots and become
 stale after any frontend edit, agent write, or conflict retry.
