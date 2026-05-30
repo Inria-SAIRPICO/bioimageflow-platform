@@ -434,3 +434,70 @@ implementation prompt without expanding scope.
   delegation, validation/run/stop REST delegation, and compact results.
 - Implement the MCP module without local graph mutation semantics.
 - Run a dedicated Phase 3 review agent before commit.
+
+## 2026-05-30: Phase 3 MCP Server
+
+### Planned
+
+- Add an MCP module with tools for active workflow discovery, tool listing,
+  graph edits, validation, run, and stop.
+- Keep MCP graph editing as a thin REST layer over the backend operation API.
+- Allow a capable agent to create a node with one MCP tool call.
+
+### Implemented
+
+- Added `bioimageflow_server.agent_mcp`.
+- Added the `mcp` package dependency and `bioimageflow-mcp` package script.
+- Implemented `BioImageFlowMCPGateway` for agent-state discovery and REST
+  calls.
+- Registered MCP tools:
+  `get_active_workflow`, `list_tools`, `create_node`, `delete_node`,
+  `rename_node`, `update_node_parameters`, `connect_nodes`, `delete_edge`,
+  `validate_workflow`, `run_workflow`, and `stop_execution`.
+- Graph-editing MCP methods call
+  `/workflow-draft-operations/{workflow_id}` only. Validation, run, and stop
+  call existing REST endpoints.
+
+### Learned
+
+- The `create_node` MCP tool can satisfy the one-call requirement by fetching
+  the current draft revision internally when the caller omits
+  `expected_revision`.
+- The MCP layer can return compact structured results without duplicating graph
+  mutation semantics.
+
+### Plan Changes
+
+- Marked the MCP one-call node creation exit criterion complete.
+
+### Validation
+
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_services/test_agent_mcp.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py`
+  passed: 43 tests after review fixes.
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/agent_mcp.py
+  tests/test_services/test_agent_mcp.py`
+  passed.
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run python -c "from
+  bioimageflow_server.agent_mcp import create_mcp_server; server =
+  create_mcp_server(); print(type(server).__name__)"`
+  printed `FastMCP`.
+
+### Next Implementation Iteration
+
+- Run a dedicated Phase 3 review agent. Completed.
+- Fix review findings, then commit Phase 3. Fixed compact error propagation
+  for failed draft/validation/run paths and added MCP tool docstrings.
+- Before Phase 4 coding, update the plan/log with docs and workspace-context
+  integration details.
+
+### Review Notes
+
+- Review found no layering or scope issue.
+- Review identified MCP error handling gaps where failed draft or validation
+  REST calls could be masked or crash; tests now cover these paths.
+- Review noted empty MCP tool descriptions; registered tools now have docstrings.

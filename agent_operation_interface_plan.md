@@ -284,7 +284,9 @@ Review:
 
 Exit criteria:
 
-- A capable agent can add a node through one MCP tool call.
+- A capable agent can add a node through one MCP tool call. Completed on
+  2026-05-30: MCP `create_node` fetches the active draft revision when omitted
+  and posts one backend operation batch.
 - Plan updated before docs integration.
 
 ### Phase 4: Documentation And Workspace Integration
