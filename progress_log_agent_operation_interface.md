@@ -300,3 +300,40 @@ implementation prompt without expanding scope.
   `WorkflowDraftOperationsRequest`; the pure transform service intentionally
   assumes the request/model layer has enforced non-empty and maximum-10 batch
   constraints.
+
+## 2026-05-30: Phase 2 Planning Update
+
+### Planned
+
+- Expose the Phase 1 transform service through a sibling backend operation API.
+- Preserve the current full-DAG draft API behavior and tests.
+- Keep failed operation batches atomic across draft file, revision, dirty state,
+  agent state, and WebSocket publication.
+
+### Learned
+
+- Existing draft writes already centralize revision checks, validation, dirty
+  tracking, agent-state refresh, and draft-file persistence in
+  `WorkflowDraftService.put_draft`.
+- Existing draft reads refresh `.bioimageflow/agent-state.json`, so the
+  operation route needs a read path that does not refresh agent state before a
+  semantic operation batch has passed validation.
+- Phase 1 request models enforce non-empty and max-10 batches; the router must
+  use those models directly.
+
+### Plan Changes
+
+- Phase 2 will add or expose a no-agent-context draft read path for operation
+  validation.
+- Phase 2 will extract/reuse router helpers for execution lock, conflict
+  response, API base URL, and draft-change publication.
+- Phase 2 will keep operation validation errors machine-readable as
+  `operation_validation_error` with `operation_index`, `code`, and `detail`.
+
+### Next Implementation Iteration
+
+- Add router tests first for success, conflict, lock, missing workflow,
+  operation validation failure, failed-batch atomicity, dirty state,
+  draft-change publication, and unchanged full-DAG draft API behavior.
+- Implement the sibling operation router and app wiring.
+- Run a dedicated Phase 2 review agent before commit.

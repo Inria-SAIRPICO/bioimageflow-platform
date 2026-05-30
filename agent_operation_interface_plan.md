@@ -217,8 +217,9 @@ TDD:
 Implementation:
 
 - Add a sibling router such as `/workflow-draft-operations/{workflow_id:path}`.
-- Apply operations against the latest draft, then write through the existing
-  draft service.
+- Read the latest draft without refreshing agent state, apply operations, then
+  write through the existing draft service only after operation validation
+  succeeds.
 - Return `WorkflowDraftResponse`.
 - Reuse or extract the existing draft-router helpers for execution locks,
   conflict responses, API base URL handling, and draft-change publication
@@ -226,6 +227,9 @@ Implementation:
 - Avoid calling any draft read path that rewrites agent state before operation
   validation has succeeded. Failed operation batches must not refresh
   `.bioimageflow/agent-state.json`.
+- Validate all operation HTTP bodies through `WorkflowDraftOperationsRequest`
+  so the non-empty and max-10 batch constraints are enforced before the pure
+  transform service runs.
 
 Review:
 
