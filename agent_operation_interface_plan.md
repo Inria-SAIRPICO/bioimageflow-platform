@@ -251,6 +251,9 @@ Exit criteria:
 Goal: expose backend-owned graph edits through MCP while routing read,
 validation, and execution helpers to existing REST endpoints.
 
+Phase 3 package decision: use the official MCP Python SDK (`mcp`) and its
+`FastMCP` server API. Do not implement MCP protocol handling locally.
+
 TDD:
 
 - Tests for tool schema generation or registration.
@@ -268,6 +271,9 @@ Implementation:
 - MCP should be a thin transport layer over REST. Graph-editing tools call the
   operation API; read-only, validation, run, and stop tools call the existing
   REST endpoints and must not add separate graph mutation semantics.
+- Graph-editing MCP tools should fetch the active draft revision automatically
+  when `expected_revision` is omitted, so an agent can create a node in one MCP
+  tool call while still letting advanced callers pass an explicit revision.
 - Include generated MCP config or clear startup docs if automatic registration
   is not reliable yet.
 

@@ -405,3 +405,32 @@ implementation prompt without expanding scope.
   that a semantic failure preserves an existing draft file byte-for-byte.
 - Before Phase 3 coding, update the plan/log with MCP package/dependency and
   thin-transport implementation decisions.
+
+## 2026-05-30: Phase 3 Planning Update
+
+### Planned
+
+- Choose the MCP Python package and thin-transport strategy before coding.
+- Keep backend operation REST as the only owner of graph mutation semantics.
+- Make node creation possible with one MCP tool call.
+
+### Learned
+
+- The official Model Context Protocol Python SDK provides a `FastMCP` server API
+  and is the appropriate dependency for this backend.
+- A one-call `create_node` MCP workflow requires the tool to fetch the active
+  draft revision automatically when the caller omits `expected_revision`.
+
+### Plan Changes
+
+- Phase 3 will use the official `mcp` Python package.
+- Graph-editing MCP tools will call
+  `/workflow-draft-operations/{workflow_id}` only.
+- Read, validation, run, and stop MCP tools will call existing REST endpoints.
+
+### Next Implementation Iteration
+
+- Add MCP tests first for state discovery, tool registration, operation API
+  delegation, validation/run/stop REST delegation, and compact results.
+- Implement the MCP module without local graph mutation semantics.
+- Run a dedicated Phase 3 review agent before commit.
