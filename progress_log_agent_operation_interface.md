@@ -501,3 +501,33 @@ implementation prompt without expanding scope.
 - Review identified MCP error handling gaps where failed draft or validation
   REST calls could be masked or crash; tests now cover these paths.
 - Review noted empty MCP tool descriptions; registered tools now have docstrings.
+
+## 2026-05-30: Phase 4 Planning Update
+
+### Planned
+
+- Update generated workspace `AGENTS.md` and `docs/agents/`.
+- Make MCP the first documented path, operation REST second, and raw full-DAG
+  editing a diagnostic fallback.
+- Keep platform-source read-only warnings.
+
+### Learned
+
+- The concrete MCP startup command is `bioimageflow-mcp`.
+- The operation REST route is now stable:
+  `POST /workflow-draft-operations/{workflow_id}`.
+- Raw full-DAG draft replacement remains necessary as an escape hatch, but it
+  should no longer be the main agent editing recipe.
+
+### Plan Changes
+
+- Phase 4 will update generated workspace instructions and docs to prefer MCP.
+- Generated agent state can include MCP and operation endpoint hints without
+  adding new mutable workflow data.
+
+### Next Implementation Iteration
+
+- Add/update tests for generated `AGENTS.md` and agent-state recommended
+  commands.
+- Update docs and workspace context text.
+- Run a dedicated Phase 4 docs review agent before commit.

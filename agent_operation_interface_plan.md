@@ -293,6 +293,10 @@ Exit criteria:
 
 Goal: make the fastest path obvious to future agents.
 
+Phase 4 docs order: generated workspace `AGENTS.md` and `docs/agents/` should
+present MCP first, operation REST second, and raw full-DAG draft editing only as
+the diagnostic fallback.
+
 TDD:
 
 - Tests for generated `AGENTS.md` content.
