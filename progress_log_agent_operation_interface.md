@@ -230,3 +230,73 @@ implementation prompt without expanding scope.
 - Implement Phase 1 backend operation models and pure transforms with tests in a
   dedicated worktree.
 - Review Phase 1 with a dedicated review agent before integration.
+
+## 2026-05-30: Phase 1 Backend Operation Models And Pure Transforms
+
+### Planned
+
+- Add backend operation request/model types and a pure graph transform service.
+- Cover the initial operation set with TDD:
+  create/delete/rename/params/enabled/move/connect/delete-edge.
+- Keep implementation independent of FastAPI and MCP.
+- Preserve unrelated graph and node fields.
+
+### Implemented
+
+- Added `bioimageflow_server.models.workflow_draft_operations`.
+- Added `bioimageflow_server.services.workflow_draft_operations`.
+- Added focused model and service tests for:
+  create node, delete node with edge cleanup, rename, shallow parameter patch,
+  enabled state, move, column-ref connect replacement, positional connect
+  replacement, delete edge, duplicate node IDs, missing nodes/edges,
+  self-connections, duplicate edge IDs, operation-indexed semantic errors,
+  atomic failure behavior, and preservation of unrelated fields.
+
+### Learned
+
+- The plan needed an explicit edge ID policy for connect operations because
+  `GraphState` requires edge IDs.
+- Connect operations can stay agent-friendly by accepting optional `edge_id` and
+  generating deterministic backend defaults when it is omitted.
+- Registry-aware connection validity, such as whether a positional target can
+  accept upstream DataFrame inputs, should remain graph-validator/API behavior
+  rather than part of the pure transform service.
+
+### Plan Changes
+
+- Documented optional connect-operation `edge_id` with deterministic backend
+  generation.
+- Marked Phase 1 model/transform exit criteria as complete.
+
+### Validation
+
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py`
+  passed: 19 tests.
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_models/test_graph.py`
+  passed: 34 tests.
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/models/workflow_draft_operations.py
+  src/bioimageflow_server/services/workflow_draft_operations.py
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py`
+  passed.
+
+### Next Implementation Iteration
+
+- Run a dedicated Phase 1 review agent. Completed: no blocking findings.
+- Fix review findings, then commit Phase 1.
+- Before Phase 2 coding, update this plan/log with the reviewed API-router
+  implementation plan.
+
+### Review Notes
+
+- Review found no blocking Phase 1 issues.
+- Phase 2 must ensure HTTP entry points validate through
+  `WorkflowDraftOperationsRequest`; the pure transform service intentionally
+  assumes the request/model layer has enforced non-empty and maximum-10 batch
+  constraints.

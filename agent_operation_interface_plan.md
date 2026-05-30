@@ -110,7 +110,12 @@ published. Operation validation errors should include the failing operation
 index and a stable error code. Phase 0 confirmed the cap stays 10.
 
 Initial create-node requests require an explicit `node_id`. Backend id
-generation remains deferred.
+generation remains deferred. Connect operations accept optional `edge_id`;
+when omitted, the backend operation transform generates deterministic edge ids
+matching frontend conventions:
+`e-{source_node}-{source_output}-{target_node}-{target_input}` for column-ref
+edges and `e-{source_node}-__dataframe_out-{target_node}-__positional_{index}`
+for positional edges.
 
 Initial operation set:
 
@@ -192,8 +197,10 @@ Review:
 
 Exit criteria:
 
-- Focused backend tests pass.
-- Plan updated with any operation shape changes learned from tests.
+- Focused backend tests pass. Completed on 2026-05-30 for the pure transform
+  and model layer.
+- Plan updated with any operation shape changes learned from tests. Phase 1
+  made connect-operation `edge_id` optional with deterministic backend defaults.
 
 ### Phase 2: Backend Operation API
 
