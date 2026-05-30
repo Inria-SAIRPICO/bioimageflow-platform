@@ -92,3 +92,12 @@ class WorkflowDraftOperationsRequest(BaseModel):
     updated_by: DraftWriter = "agent"
     validate_: bool = Field(default=True, alias="validate")
     operations: list[WorkflowDraftOperation] = Field(min_length=1, max_length=10)
+
+
+class WorkflowDraftOperationValidationResponse(BaseModel):
+    """Machine-readable semantic operation validation failure."""
+
+    error: Literal["operation_validation_error"] = "operation_validation_error"
+    operation_index: int
+    code: str
+    detail: str

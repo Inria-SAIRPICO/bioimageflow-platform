@@ -48,6 +48,32 @@ def _ensure_unlocked(execution_manager: Any | None) -> JSONResponse | None:
     return None
 
 
+def _conflict_response(exc: WorkflowDraftRevisionConflict) -> JSONResponse:
+    body = WorkflowDraftConflictResponse(
+        detail=str(exc),
+        expected_revision=exc.expected_revision,
+        current_revision=exc.current.draft_revision,
+        current_updated_by=exc.current.updated_by,
+        current_updated_at=exc.current.updated_at,
+    )
+    return JSONResponse(status_code=409, content=body.model_dump())
+
+
+def _publish_workflow_draft_changed(
+    connection_manager: Any | None,
+    draft: WorkflowDraftResponse,
+) -> None:
+    if connection_manager is None:
+        return
+    connection_manager.publish_workflow_draft_changed(
+        workflow_id=draft.workflow_id,
+        draft_revision=draft.draft_revision,
+        updated_by=draft.updated_by,
+        updated_at=draft.updated_at,
+        dirty_against_saved=draft.dirty_against_saved,
+    )
+
+
 @router.get("/{workflow_id:path}", response_model=WorkflowDraftResponse)
 async def get_workflow_draft(
     workflow_id: str,
@@ -90,24 +116,10 @@ async def put_workflow_draft(
             should_validate=body.validate_,
             api_base_url=_api_base_url(request),
         )
-        if connection_manager is not None:
-            connection_manager.publish_workflow_draft_changed(
-                workflow_id=draft.workflow_id,
-                draft_revision=draft.draft_revision,
-                updated_by=draft.updated_by,
-                updated_at=draft.updated_at,
-                dirty_against_saved=draft.dirty_against_saved,
-            )
+        _publish_workflow_draft_changed(connection_manager, draft)
         return draft
     except WorkflowDraftRevisionConflict as exc:
-        body = WorkflowDraftConflictResponse(
-            detail=str(exc),
-            expected_revision=exc.expected_revision,
-            current_revision=exc.current.draft_revision,
-            current_updated_by=exc.current.updated_by,
-            current_updated_at=exc.current.updated_at,
-        )
-        return JSONResponse(status_code=409, content=body.model_dump())
+        return _conflict_response(exc)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
     except ValueError as exc:

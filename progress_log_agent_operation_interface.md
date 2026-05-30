@@ -337,3 +337,71 @@ implementation prompt without expanding scope.
   draft-change publication, and unchanged full-DAG draft API behavior.
 - Implement the sibling operation router and app wiring.
 - Run a dedicated Phase 2 review agent before commit.
+
+## 2026-05-30: Phase 2 Backend Operation API
+
+### Planned
+
+- Add a sibling `POST /api/v1/workflow-draft-operations/{workflow_id:path}`
+  route.
+- Apply semantic operations against the latest draft, then write through the
+  existing draft service.
+- Preserve existing full-DAG draft API behavior.
+- Keep failed semantic batches from writing drafts, refreshing agent state, or
+  publishing frontend events.
+
+### Implemented
+
+- Added `WorkflowDraftService.get_draft_snapshot()` for draft reads that do not
+  refresh `.bioimageflow/agent-state.json`.
+- Extracted reusable draft-router helpers for conflict responses and
+  draft-change publication.
+- Added `bioimageflow_server.routers.workflow_draft_operations`.
+- Wired the operation router into `create_app` with the same draft service,
+  execution manager, and connection manager dependencies as the full-DAG draft
+  router.
+- Added router tests for successful batches, nested workflow IDs, stale
+  revision conflicts, execution lock, missing workflow, semantic validation
+  errors, failed-batch atomicity, request-model batch validation, and unchanged
+  full-DAG draft API behavior.
+
+### Learned
+
+- The no-agent-context draft snapshot method keeps failed semantic batches
+  atomic without weakening the existing full-DAG `GET /workflow-drafts` behavior.
+- Reusing the existing draft service for writes preserved validation, dirty
+  tracking, revision increments, agent-state refresh, and draft-file
+  persistence without a second write path.
+- The operation route must be included before the path-capturing draft router,
+  even though the routes are siblings, to keep future route additions safer.
+
+### Plan Changes
+
+- Marked Phase 2 exit criteria as complete.
+- Confirmed the operation route returns `WorkflowDraftResponse` and semantic
+  errors use `operation_validation_error` with operation index and code.
+
+### Validation
+
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_drafts.py
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py`
+  passed: 35 tests after the review follow-up.
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/app.py
+  src/bioimageflow_server/routers/workflow_drafts.py
+  src/bioimageflow_server/routers/workflow_draft_operations.py
+  src/bioimageflow_server/services/workflow_draft.py
+  src/bioimageflow_server/models/workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py`
+  passed.
+
+### Next Implementation Iteration
+
+- Run a dedicated Phase 2 review agent. Completed: no blocking findings.
+- Fix review findings, then commit Phase 2. Added the suggested regression test
+  that a semantic failure preserves an existing draft file byte-for-byte.
+- Before Phase 3 coding, update the plan/log with MCP package/dependency and
+  thin-transport implementation decisions.

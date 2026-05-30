@@ -238,10 +238,12 @@ Review:
 
 Exit criteria:
 
-- Backend operation API passes tests.
-- Existing draft API tests still pass.
+- Backend operation API passes tests. Completed on 2026-05-30.
+- Existing draft API tests still pass. Completed on 2026-05-30.
 - A failed operation batch leaves the draft revision, draft file, dirty state,
-  agent state, and WebSocket publication count unchanged.
+  agent state, and WebSocket publication count unchanged. Completed on
+  2026-05-30 with router tests covering no draft file, unchanged agent state,
+  and no publication.
 - Plan updated before MCP work.
 
 ### Phase 3: MCP Server

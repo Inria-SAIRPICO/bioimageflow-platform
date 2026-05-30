@@ -92,6 +92,12 @@ from bioimageflow_server.routers.workflow_drafts import (
     get_workflow_draft_service,
     router as workflow_drafts_router,
 )
+from bioimageflow_server.routers.workflow_draft_operations import (
+    get_connection_manager as workflow_draft_operations_get_connection_manager,
+    get_execution_manager as workflow_draft_operations_get_execution_manager,
+    get_workflow_draft_service as get_workflow_draft_operations_service,
+    router as workflow_draft_operations_router,
+)
 from bioimageflow_server.routers.workspace import (
     get_workspace_service,
     router as workspace_router,
@@ -492,6 +498,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
     app.include_router(workspace_router, prefix="/api/v1")
+    app.include_router(workflow_draft_operations_router, prefix="/api/v1")
     app.include_router(workflow_drafts_router, prefix="/api/v1")
     app.include_router(workflows_router, prefix="/api/v1")
     app.include_router(napari_router, prefix="/api/v1")
@@ -523,6 +530,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_connection_manager] = lambda: ws_manager
+    app.dependency_overrides[
+        get_workflow_draft_operations_service
+    ] = lambda: workflow_draft_service
+    app.dependency_overrides[
+        workflow_draft_operations_get_execution_manager
+    ] = lambda: execution_manager
+    app.dependency_overrides[
+        workflow_draft_operations_get_connection_manager
+    ] = lambda: ws_manager
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings

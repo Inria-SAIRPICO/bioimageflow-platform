@@ -109,6 +109,12 @@ class WorkflowDraftService:
         )
         return draft
 
+    def get_draft_snapshot(self, workflow_id: str) -> WorkflowDraftResponse:
+        """Return the latest draft without updating agent workspace context."""
+
+        store = self._store()
+        return self._read_or_synthesize(store, workflow_id)
+
     def put_draft(
         self,
         workflow_id: str,
