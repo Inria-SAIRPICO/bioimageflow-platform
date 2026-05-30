@@ -127,12 +127,19 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert "Do not guess" in context["localhost_reachability_note"]
     assert context["recommended_commands"] == [
         "GET http://test/api/v1/health",
+        "MCP bioimageflow-mcp",
+        "POST http://test/api/v1/workflow-draft-operations/wf",
         "GET http://test/api/v1/workflow-drafts/wf",
         "GET http://test/api/v1/tools",
         "PUT http://test/api/v1/workflow-drafts/wf",
         "POST http://test/api/v1/execution/run",
         "POST http://test/api/v1/execution/stop",
     ]
+    assert context["mcp_server_command"] == "bioimageflow-mcp"
+    assert (
+        context["operation_api_url"]
+        == "http://test/api/v1/workflow-draft-operations/wf"
+    )
 
     hidden_agent_doc = tmp_path / "workspace" / ".bioimageflow" / "AGENTS.md"
     assert not hidden_agent_doc.exists()
@@ -142,9 +149,15 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     normalized_instructions = " ".join(instructions.split())
     assert "local app for designing and running bioimage analysis workflows" in normalized_instructions
     assert (
-        "Your job is to edit the live workflow draft through the local HTTP API"
+        "Prefer MCP tools for workflow edits when available"
         in normalized_instructions
     )
+    assert "MCP first" in instructions
+    assert "Operation REST second" in instructions
+    assert "Raw full-DAG HTTP fallback" in instructions
+    assert "Raw Full-DAG Fallback Graph Edits" in instructions
+    assert '"expected_revision": "<latest draft_revision>"' in instructions
+    assert "POST $API/workflow-draft-operations/$WF" in instructions
     assert "First-Run Checklist" in instructions
     assert "Create node" in instructions
     assert "Enable or disable node" in instructions
@@ -154,7 +167,7 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert "request permission to run the same curl command outside the sandbox" in instructions
     assert "POST $API/execution/stop" in instructions
     assert ".bioimageflow/platform-source/" in instructions
-    assert "bioimageflow-agent" not in instructions
+    assert "bioimageflow-mcp" in instructions
     assert "/Users/" not in instructions
 
 

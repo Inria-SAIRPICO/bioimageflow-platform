@@ -1,8 +1,8 @@
 # Workflow Editing Cookbook
 
-Read root `AGENTS.md` first. This file gives concrete recipes for changing the
-live workflow graph through the API. A graph contains tool nodes and edges
-between nodes.
+Read root `AGENTS.md` first. Prefer MCP tools for workflow edits. Use operation
+REST when MCP is unavailable. Use raw full-DAG draft replacement only as a
+diagnostic fallback.
 
 Set helpers from `.bioimageflow/agent-state.json`:
 
@@ -19,8 +19,57 @@ cannot reach localhost or 127.0.0.1 because the agent is sandboxed, request
 permission to run the same `curl` command outside the sandbox, then continue
 with the same `API` value.
 
-Always re-read before a write. Temp files under `/tmp` are snapshots and become
-stale after any frontend edit, agent write, or conflict retry.
+## MCP First
+
+Start the MCP server when your environment supports MCP tools:
+
+```sh
+bioimageflow-mcp
+```
+
+Use `get_active_workflow` and `list_tools` before graph edits. For common graph
+edits, use MCP tools such as `create_node`, `rename_node`,
+`update_node_parameters`, `connect_nodes`, `delete_edge`, and `delete_node`.
+`create_node` fetches the current draft revision internally when you omit
+`expected_revision`, so adding a node can be one MCP tool call.
+
+## Operation REST Second
+
+If MCP is unavailable, apply semantic edits through the backend-owned operation
+API:
+
+```sh
+curl -s "$API/workflow-drafts/$WF" > /tmp/bif-draft.json
+REV=$(jq -r .draft_revision /tmp/bif-draft.json)
+
+jq -n \
+  --argjson rev "$REV" \
+  '{
+    expected_revision: $rev,
+    updated_by: "agent",
+    validate: true,
+    operations: [{
+      type: "create_node",
+      node_id: "blur_1",
+      tool_name: "GaussianBlur",
+      name: "Blur",
+      position: [100, 120],
+      parameters: {}
+    }]
+  }' \
+  | curl -s -X POST "$API/workflow-draft-operations/$WF" \
+      -H 'Content-Type: application/json' \
+      --data-binary @-
+```
+
+The backend operation API owns graph mutation semantics. Do not reimplement
+create/delete/connect rules in client code.
+
+## Raw Full-DAG Fallback
+
+Always re-read before a raw full-DAG write. Temp files under `/tmp` are
+snapshots and become stale after any frontend edit, agent write, or conflict
+retry.
 
 ```sh
 curl -s "$API/workflow-drafts/$WF" > /tmp/bif-draft.json
@@ -73,7 +122,7 @@ Minimal node:
 Keep `id` stable after creation. If you change an id, you must update every edge
 that references it.
 
-## Create Node
+## Create Node Fallback
 
 Append a node to `graph.nodes`. Use a unique `id`, a human-readable `name`, and
 a valid `tool_name` from `GET /tools`.
@@ -84,7 +133,7 @@ After a successful write, the frontend is notified. If the canvas is clean it
 should update automatically; if the user has local edits, BioImageFlow asks the
 user how to resolve the conflict.
 
-## Edit Node
+## Edit Node Fallback
 
 Change only the intended fields:
 
@@ -95,7 +144,7 @@ Change only the intended fields:
 - `output_templates` for output naming.
 - `position` and `collapsed` for canvas UI state.
 
-## Enable Or Disable Node
+## Enable Or Disable Node Fallback
 
 Set `enabled` to `true` to include a node in future runs, or `false` to skip it.
 Then save the whole draft with the latest `draft_revision`.
@@ -103,7 +152,7 @@ Then save the whole draft with the latest `draft_revision`.
 This does not stop an execution that is already running. Use
 `POST /execution/stop` for the current run.
 
-## Connect Nodes
+## Connect Nodes Fallback
 
 Column-reference edge, for a named output connected to a named input:
 
@@ -134,7 +183,7 @@ Keep edge ids unique. For a column input, remove any old edge with the same
 `target_node` and `target_input` before adding a replacement. For positional
 inputs, avoid duplicate `target_node` plus `positional_index` edges.
 
-## Delete
+## Delete Fallback
 
 Delete an edge by removing it from `graph.edges`.
 
@@ -166,10 +215,10 @@ Validation does not persist anything:
 jq -n   --argjson graph "$(cat /tmp/bif-graph.json)"   --arg workflow "$WF"   '{graph: $graph, workflow_name: $workflow}'   | curl -s -X PUT "$API/graph"       -H 'Content-Type: application/json'       --data-binary @-
 ```
 
-## Write Draft
+## Write Draft Fallback
 
 `PUT /workflow-drafts/{workflow_id}` replaces the full graph. Do not send only
-changed nodes or edges.
+changed nodes or edges. Prefer MCP or operation REST for normal edits.
 
 ```sh
 jq -n   --argjson graph "$(cat /tmp/bif-graph.json)"   --argjson rev "$REV"   '{graph: $graph, expected_revision: $rev, updated_by: "agent", validate: true}'   | curl -s -X PUT "$API/workflow-drafts/$WF"       -H 'Content-Type: application/json'       --data-binary @-

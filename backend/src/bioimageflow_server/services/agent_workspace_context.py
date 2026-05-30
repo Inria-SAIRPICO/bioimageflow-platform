@@ -150,16 +150,20 @@ BioImageFlow is a local app for designing and running bioimage analysis
 workflows. A workflow is a graph: nodes run tools, and edges connect outputs
 from one node to inputs on another.
 
-Your job is to edit the live workflow draft through the local HTTP API, validate
-the graph, and execute it when asked. Workflow editing is API-first through
-`api_base_url` from `.bioimageflow/agent-state.json`.
+Your job is to edit the live workflow draft, validate the graph, and execute it
+when asked. Prefer MCP tools for workflow edits when available. Operation REST
+is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
 
 ## What To Read
 
 - `.bioimageflow/agent-state.json`: runtime pointers only. Read
   `api_base_url` and `active_workflow_id` from here; do not treat this file as
   workflow data.
-- Live draft from `GET /workflow-drafts/$WF`: editable source of truth.
+- MCP first: use `bioimageflow-mcp` when your environment supports MCP tools.
+- Operation REST second: `POST /workflow-draft-operations/$WF` applies small
+  semantic edit batches while the backend owns graph mutation rules.
+- Raw full-DAG HTTP fallback: `GET/PUT /workflow-drafts/$WF` remains the
+  canonical source-of-truth contract and diagnostic escape hatch.
 - `workflow.json`: saved/exported artifact. Do not edit it to change the open
   workflow.
 - `.bioimageflow/platform-source/`: {source_status}.
@@ -172,21 +176,26 @@ the graph, and execute it when asked. Workflow editing is API-first through
 
 1. Set `API` from `api_base_url` and `WF` from `active_workflow_id`.
 2. Health check: `curl -sS "$API/health"`.
-3. Read the live draft: `GET $API/workflow-drafts/$WF`.
-4. Save the returned `draft_revision` and full `graph`.
-5. Inspect tools before creating or connecting nodes: `GET $API/tools`.
-6. Edit the graph object: mutate `nodes`, `edges`, `published_inputs`, and
-   `published_outputs` deliberately.
-7. Validate without saving: `PUT $API/graph` with
+3. MCP first: if MCP is available, start `bioimageflow-mcp` and use its tools.
+4. Use `get_active_workflow` and `list_tools` MCP tools before edits.
+5. Create or edit with MCP graph tools such as `create_node`, `rename_node`,
+   `update_node_parameters`, `connect_nodes`, `delete_edge`, and `delete_node`.
+6. Operation REST second: when MCP is unavailable, use
+   `POST $API/workflow-draft-operations/$WF` with semantic operations.
+7. Raw full-DAG HTTP fallback: read the live draft with
+   `GET $API/workflow-drafts/$WF`.
+8. Save the returned `draft_revision` and full `graph`.
+9. Validate without saving: `PUT $API/graph` with
    `{{"graph": graph, "workflow_name": WF}}`.
-8. Write the draft with `PUT $API/workflow-drafts/$WF`:
+10. Write the raw draft only as fallback with `PUT $API/workflow-drafts/$WF`:
    `{{"graph": graph, "expected_revision": draft_revision, "updated_by": "agent", "validate": true}}`
-9. Expect the open canvas to update automatically when the user has no local
+11. Expect the open canvas to update automatically when the user has no local
    conflict. If the user has local edits, BioImageFlow will ask them which
    version to keep.
-10. Execute the latest draft graph: `POST $API/execution/run` with
+12. Execute the latest draft graph: use MCP `run_workflow` or
+   `POST $API/execution/run` with
    `{{"graph": graph, "workflow_name": WF}}`.
-11. Check or stop execution: `GET $API/execution/status`,
+13. Check or stop execution: `GET $API/execution/status`,
     `POST $API/execution/stop`.
 
 ## API URL And Sandbox
@@ -211,9 +220,35 @@ Do not edit `workflow.json` or the read-only platform source as a fallback.
 
 ## Draft Write Rule
 
+MCP first, Operation REST second, Raw full-DAG HTTP fallback.
+
+MCP graph-editing tools call the backend operation API. They do not mutate graph
+JSON locally. A capable agent can add a node with one MCP `create_node` call.
+
+For REST semantic edits, use `POST /workflow-draft-operations/{{workflow_id}}`:
+
+```json
+{{
+  "expected_revision": "<latest draft_revision>",
+  "updated_by": "agent",
+  "validate": true,
+  "operations": [
+    {{
+      "type": "create_node",
+      "node_id": "blur_1",
+      "tool_name": "GaussianBlur",
+      "name": "Blur",
+      "position": [240, 160],
+      "parameters": {{}}
+    }}
+  ]
+}}
+```
+
 `PUT /workflow-drafts/{{workflow_id}}` is full-graph replacement, not patch.
 Always send the complete graph and preserve unchanged `nodes`, `edges`,
-`published_inputs`, and `published_outputs`.
+`published_inputs`, and `published_outputs`. Use it when MCP and operation REST
+are unavailable or when diagnosing the complete draft state.
 
 On `409 draft_revision_conflict`: re-read the draft, reapply your intended
 change to the new graph, then retry with the new `draft_revision`.
@@ -233,7 +268,11 @@ Save, run, and export are blocked while that conflict is unresolved. Export
 prompts the user that the workflow will be saved first, then exports the saved
 workflow.
 
-## Graph Edits
+## Raw Full-DAG Fallback Graph Edits
+
+Use this section only when MCP and operation REST are unavailable or when
+diagnosing the complete draft contract. For normal edits, use MCP graph tools or
+`POST /workflow-draft-operations/{{workflow_id}}`.
 
 - Create node: add an entry to `graph.nodes` with `id`, `name`, `tool_name`,
   `position`, and `parameters`. Use `GET /tools` for valid tool names and

@@ -15,8 +15,13 @@ Files:
 - `troubleshooting.md`: quick fixes for offline API, stale state, 409, 423,
   validation errors, missing tools, and stale temp files.
 
-Workflow editing is API-first through `api_base_url` in
-`.bioimageflow/agent-state.json`.
+Workflow editing order:
+
+1. MCP first: use `bioimageflow-mcp` when MCP tools are available.
+2. Operation REST second: use `POST /workflow-draft-operations/{workflow_id}`
+   for semantic graph edits.
+3. Raw full-DAG HTTP fallback: use `GET/PUT /workflow-drafts/{workflow_id}` only
+   as the canonical diagnostic escape hatch.
 
 The API port is dynamic. Agents must read `api_base_url` from
 `.bioimageflow/agent-state.json`; they must not guess or hardcode a port such

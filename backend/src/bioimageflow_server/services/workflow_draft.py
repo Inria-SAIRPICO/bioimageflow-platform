@@ -204,8 +204,14 @@ class WorkflowDraftService:
                 "If localhost or 127.0.0.1 is blocked by the agent sandbox, "
                 "request permission to run the same curl command outside the sandbox."
             ),
+            "mcp_server_command": "bioimageflow-mcp",
+            "operation_api_url": (
+                f"{api_url}/workflow-draft-operations/{workflow_id}"
+            ),
             "recommended_commands": [
                 f"GET {api_url}/health",
+                "MCP bioimageflow-mcp",
+                f"POST {api_url}/workflow-draft-operations/{workflow_id}",
                 f"GET {api_url}/workflow-drafts/{workflow_id}",
                 f"GET {api_url}/tools",
                 f"PUT {api_url}/workflow-drafts/{workflow_id}",

@@ -531,3 +531,59 @@ implementation prompt without expanding scope.
   commands.
 - Update docs and workspace context text.
 - Run a dedicated Phase 4 docs review agent before commit.
+
+## 2026-05-30: Phase 4 Documentation And Workspace Integration
+
+### Planned
+
+- Update generated workspace instructions and docs to make MCP first, operation
+  REST second, and raw full-DAG HTTP a diagnostic fallback.
+- Add tests for generated state/config fields and generated `AGENTS.md`
+  content.
+- Preserve platform-source read-only warnings.
+
+### Implemented
+
+- Added `mcp_server_command` and `operation_api_url` runtime hints to generated
+  `.bioimageflow/agent-state.json`.
+- Updated generated workspace `AGENTS.md` instructions.
+- Updated `docs/agents/README.md`, `api-reference.md`,
+  `workflow-editing.md`, `execution.md`, and `troubleshooting.md`.
+- Updated router tests to assert MCP-first ordering, operation REST endpoint
+  hints, and fallback labeling.
+
+### Learned
+
+- Generated docs needed an explicit fallback label on raw graph editing because
+  otherwise future agents could still skim directly to manual graph mutation.
+- Examples should say `<latest draft_revision>` instead of literal `0` outside
+  of executable shell snippets.
+
+### Plan Changes
+
+- Marked Phase 4 exit criteria complete.
+
+### Validation
+
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_routers/test_workflow_drafts.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py`
+  passed: 31 tests.
+- `env UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/services/workflow_draft.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_routers/test_workflow_drafts.py`
+  passed.
+
+### Review Notes
+
+- Phase 4 review found no blocking issues.
+- Review suggested labeling the generated raw graph section as fallback-only and
+  avoiding literal `expected_revision: 0` examples; both were fixed before
+  commit.
+
+### Next Implementation Iteration
+
+- No planned implementation phases remain in the agent operation interface
+  plan.

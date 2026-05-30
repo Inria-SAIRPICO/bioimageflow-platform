@@ -16,6 +16,53 @@ If localhost or 127.0.0.1 is blocked by the agent sandbox, request permission
 to run the same `curl` command outside the sandbox. Do not use a different port
 unless `agent-state.json` changed.
 
+## Preferred Editing Paths
+
+Use MCP first when available:
+
+```sh
+bioimageflow-mcp
+```
+
+The MCP graph-editing tools call the backend operation API. They do not mutate
+workflow graph JSON locally.
+
+Use operation REST second:
+
+`POST /workflow-draft-operations/{workflow_id}`
+
+```json
+{
+  "expected_revision": "<latest draft_revision>",
+  "updated_by": "agent",
+  "validate": true,
+  "operations": [
+    {
+      "type": "create_node",
+      "node_id": "blur_1",
+      "tool_name": "GaussianBlur",
+      "name": "Blur",
+      "position": [240, 160],
+      "parameters": {}
+    }
+  ]
+}
+```
+
+Success returns `WorkflowDraftResponse`. Semantic operation failures return:
+
+```json
+{
+  "error": "operation_validation_error",
+  "operation_index": 0,
+  "code": "missing_node",
+  "detail": "Node not found: missing"
+}
+```
+
+Use raw full-DAG HTTP fallback only when MCP and operation REST are unavailable
+or when you need to inspect/diagnose the complete draft contract.
+
 ## State
 
 `GET /health`
@@ -27,7 +74,7 @@ Returns backend health. Use this before editing.
 Returns available tool metadata. Use tool names from this response when setting
 `node.tool_name`.
 
-## Drafts
+## Full-DAG Draft Fallback
 
 `GET /workflow-drafts/{workflow_id}`
 
@@ -54,7 +101,8 @@ Returns:
 
 `PUT /workflow-drafts/{workflow_id}`
 
-Full-graph replacement, not patch. Preserve unchanged `nodes`, `edges`,
+Full-graph replacement, not patch. This remains the canonical source-of-truth
+contract and escape hatch. Preserve unchanged `nodes`, `edges`,
 `published_inputs`, and `published_outputs`.
 
 ```json
@@ -65,7 +113,7 @@ Full-graph replacement, not patch. Preserve unchanged `nodes`, `edges`,
     "published_inputs": [],
     "published_outputs": []
   },
-  "expected_revision": 0,
+  "expected_revision": "<latest draft_revision>",
   "updated_by": "agent",
   "validate": true
 }

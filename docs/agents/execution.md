@@ -1,8 +1,11 @@
 # Execution For Agents
 
-Execution uses the graph in the request body. It does not implicitly run the
-current backend draft, the saved `workflow.json`, or a workflow id alone. To run
-the latest draft, first read the draft and send that graph.
+Prefer MCP `run_workflow` and `stop_execution` when MCP tools are available.
+The MCP tools call the existing execution REST endpoints.
+
+Execution REST uses the graph in the request body. It does not implicitly run
+the current backend draft, the saved `workflow.json`, or a workflow id alone. To
+run the latest draft through REST, first read the draft and send that graph.
 
 Disabled nodes (`enabled: false`) are skipped when the submitted graph is built
 for execution.
@@ -12,6 +15,14 @@ unresolved. Agents that run through the HTTP API should still re-read the draft
 immediately before execution so they submit the intended graph.
 
 ## Run Latest Draft
+
+MCP:
+
+```text
+run_workflow
+```
+
+REST fallback:
 
 ```sh
 STATE=.bioimageflow/agent-state.json

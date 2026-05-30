@@ -317,7 +317,9 @@ Review:
 Exit criteria:
 
 - Future agents can identify the preferred tool path in under a minute.
-- Raw full-DAG editing is clearly marked as fallback.
+  Completed on 2026-05-30 with generated workspace instructions and docs using
+  MCP first, operation REST second, raw full-DAG fallback.
+- Raw full-DAG editing is clearly marked as fallback. Completed on 2026-05-30.
 
 ### Deferred Phase: CLI Fallback
 

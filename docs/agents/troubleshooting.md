@@ -16,8 +16,9 @@ Do not edit `workflow.json` or `.bioimageflow/platform-source/` as a fallback.
 ## Stale State
 
 `agent-state.json` contains runtime pointers, not workflow data.
-`current_draft_revision` is informational. Always re-read
-`GET /workflow-drafts/{workflow_id}` before writing.
+`current_draft_revision` is informational. MCP tools and operation REST should
+use the latest draft revision before writing. For raw full-DAG fallback, always
+re-read `GET /workflow-drafts/{workflow_id}` before writing.
 
 ## Frontend Did Not Update
 
@@ -34,6 +35,12 @@ save the agent version as a copy.
 
 Your `expected_revision` is stale. Re-read the draft, reapply only your intended
 change to the new graph, then retry with the new `draft_revision`.
+
+## Operation Validation Error
+
+`POST /workflow-draft-operations/{workflow_id}` returns
+`operation_validation_error` with `operation_index`, `code`, and `detail`.
+Fix the failing semantic operation instead of editing `workflow.json`.
 
 ## 423 Workflow Locked
 
