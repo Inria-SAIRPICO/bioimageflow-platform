@@ -9,6 +9,8 @@ from bioimageflow_server.models.graph import (
     GraphState,
     NodeState,
     PositionalEdge,
+    PublishedInput,
+    PublishedOutput,
 )
 from bioimageflow_server.models.workflow_draft_operations import (
     ConnectColumnRefOperation,
@@ -16,9 +18,13 @@ from bioimageflow_server.models.workflow_draft_operations import (
     CreateNodeOperation,
     DeleteEdgeOperation,
     DeleteNodeOperation,
+    DeletePublishedInputOperation,
+    DeletePublishedOutputOperation,
     MoveNodeOperation,
     RenameNodeOperation,
     SetNodeEnabledOperation,
+    SetPublishedInputOperation,
+    SetPublishedOutputOperation,
     UpdateNodeParametersOperation,
     WorkflowDraftOperation,
 )
@@ -103,6 +109,14 @@ def _apply_one(
                 update={"position": operation.position}
             ),
         )
+    if isinstance(operation, SetPublishedInputOperation):
+        return _set_published_input(graph, operation)
+    if isinstance(operation, DeletePublishedInputOperation):
+        return _delete_published_input(graph, operation)
+    if isinstance(operation, SetPublishedOutputOperation):
+        return _set_published_output(graph, operation)
+    if isinstance(operation, DeletePublishedOutputOperation):
+        return _delete_published_output(graph, operation)
     if isinstance(operation, ConnectColumnRefOperation):
         return _connect_column_ref(graph, operation)
     if isinstance(operation, ConnectPositionalOperation):
@@ -137,6 +151,118 @@ def _delete_node(graph: GraphState, operation: DeleteNodeOperation) -> GraphStat
             ],
         }
     )
+
+
+def _set_published_input(
+    graph: GraphState,
+    operation: SetPublishedInputOperation,
+) -> GraphState:
+    _require_node(graph, operation.internal_node_id)
+    target = (operation.internal_node_id, operation.internal_field)
+    existing_index = next(
+        (
+            index
+            for index, item in enumerate(graph.published_inputs)
+            if (item.internal_node_id, item.internal_field) == target
+        ),
+        None,
+    )
+    _ensure_published_name_available(graph, operation.name, allowed_input_target=target)
+    if existing_index is None and "schema_" not in operation.model_fields_set:
+        _raise(
+            "missing_published_schema",
+            f"Published input schema is required for new input: {operation.name}",
+        )
+    existing = (
+        graph.published_inputs[existing_index]
+        if existing_index is not None
+        else None
+    )
+    item = PublishedInput(
+        name=operation.name,
+        internal_node_id=operation.internal_node_id,
+        internal_field=operation.internal_field,
+        kind=operation.kind,
+        schema=(
+            operation.schema_
+            if "schema_" in operation.model_fields_set
+            else existing.schema_ if existing is not None else None
+        ),
+        default=(
+            operation.default
+            if "default" in operation.model_fields_set
+            else existing.default if existing is not None else None
+        ),
+    )
+    inputs = list(graph.published_inputs)
+    if existing_index is None:
+        inputs.append(item)
+    else:
+        inputs[existing_index] = item
+    return graph.model_copy(update={"published_inputs": inputs})
+
+
+def _delete_published_input(
+    graph: GraphState,
+    operation: DeletePublishedInputOperation,
+) -> GraphState:
+    inputs = [item for item in graph.published_inputs if item.name != operation.name]
+    if len(inputs) == len(graph.published_inputs):
+        _raise("missing_published_input", f"Published input not found: {operation.name}")
+    return graph.model_copy(update={"published_inputs": inputs})
+
+
+def _set_published_output(
+    graph: GraphState,
+    operation: SetPublishedOutputOperation,
+) -> GraphState:
+    _require_node(graph, operation.internal_node_id)
+    target = (operation.internal_node_id, operation.internal_output)
+    existing_index = next(
+        (
+            index
+            for index, item in enumerate(graph.published_outputs)
+            if (item.internal_node_id, item.internal_output) == target
+        ),
+        None,
+    )
+    _ensure_published_name_available(graph, operation.name, allowed_output_target=target)
+    if existing_index is None and "schema_" not in operation.model_fields_set:
+        _raise(
+            "missing_published_schema",
+            f"Published output schema is required for new output: {operation.name}",
+        )
+    existing = (
+        graph.published_outputs[existing_index]
+        if existing_index is not None
+        else None
+    )
+    item = PublishedOutput(
+        name=operation.name,
+        internal_node_id=operation.internal_node_id,
+        internal_output=operation.internal_output,
+        schema=(
+            operation.schema_
+            if "schema_" in operation.model_fields_set
+            else existing.schema_ if existing is not None else None
+        ),
+    )
+    outputs = list(graph.published_outputs)
+    if existing_index is None:
+        outputs.append(item)
+    else:
+        outputs[existing_index] = item
+    return graph.model_copy(update={"published_outputs": outputs})
+
+
+def _delete_published_output(
+    graph: GraphState,
+    operation: DeletePublishedOutputOperation,
+) -> GraphState:
+    outputs = [item for item in graph.published_outputs if item.name != operation.name]
+    if len(outputs) == len(graph.published_outputs):
+        _raise("missing_published_output", f"Published output not found: {operation.name}")
+    return graph.model_copy(update={"published_outputs": outputs})
 
 
 def _connect_column_ref(
@@ -236,6 +362,23 @@ def _require_node(graph: GraphState, node_id: str) -> NodeState:
 
 def _node_exists(graph: GraphState, node_id: str) -> bool:
     return any(node.id == node_id for node in graph.nodes)
+
+
+def _ensure_published_name_available(
+    graph: GraphState,
+    name: str,
+    *,
+    allowed_input_target: tuple[str, str] | None = None,
+    allowed_output_target: tuple[str, str] | None = None,
+) -> None:
+    for item in graph.published_inputs:
+        target = (item.internal_node_id, item.internal_field)
+        if item.name == name and target != allowed_input_target:
+            _raise("duplicate_published_name", f"Published name already exists: {name}")
+    for item in graph.published_outputs:
+        target = (item.internal_node_id, item.internal_output)
+        if item.name == name and target != allowed_output_target:
+            _raise("duplicate_published_name", f"Published name already exists: {name}")
 
 
 def _validate_connection_nodes(graph: GraphState, source_node: str, target_node: str) -> None:

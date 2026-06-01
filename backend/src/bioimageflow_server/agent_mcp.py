@@ -165,6 +165,80 @@ class BioImageFlowMCPGateway:
             expected_revision=expected_revision,
         )
 
+    async def set_published_input(
+        self,
+        *,
+        name: str,
+        internal_node_id: str,
+        internal_field: str,
+        kind: str,
+        schema: dict[str, Any] | None = None,
+        default: Any | None = None,
+        set_schema: bool = False,
+        set_default: bool = False,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        operation: dict[str, Any] = {
+            "type": "set_published_input",
+            "name": name,
+            "internal_node_id": internal_node_id,
+            "internal_field": internal_field,
+            "kind": kind,
+        }
+        if schema is not None or set_schema:
+            operation["schema"] = schema
+        if default is not None or set_default:
+            operation["default"] = default
+        return await self._apply_operations(
+            [operation],
+            expected_revision=expected_revision,
+        )
+
+    async def delete_published_input(
+        self,
+        *,
+        name: str,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        return await self._apply_operations(
+            [{"type": "delete_published_input", "name": name}],
+            expected_revision=expected_revision,
+        )
+
+    async def set_published_output(
+        self,
+        *,
+        name: str,
+        internal_node_id: str,
+        internal_output: str,
+        schema: dict[str, Any] | None = None,
+        set_schema: bool = False,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        operation: dict[str, Any] = {
+            "type": "set_published_output",
+            "name": name,
+            "internal_node_id": internal_node_id,
+            "internal_output": internal_output,
+        }
+        if schema is not None or set_schema:
+            operation["schema"] = schema
+        return await self._apply_operations(
+            [operation],
+            expected_revision=expected_revision,
+        )
+
+    async def delete_published_output(
+        self,
+        *,
+        name: str,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        return await self._apply_operations(
+            [{"type": "delete_published_output", "name": name}],
+            expected_revision=expected_revision,
+        )
+
     async def connect_nodes(
         self,
         *,
@@ -434,6 +508,72 @@ def create_mcp_server(
         return await gateway.move_node(
             node_id=node_id,
             position=position,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool()
+    async def set_published_input(
+        name: str,
+        internal_node_id: str,
+        internal_field: str,
+        kind: str,
+        schema: dict[str, Any] | None = None,
+        default: Any | None = None,
+        set_schema: bool = False,
+        set_default: bool = False,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a published workflow input through the operation API."""
+        return await gateway.set_published_input(
+            name=name,
+            internal_node_id=internal_node_id,
+            internal_field=internal_field,
+            kind=kind,
+            schema=schema,
+            default=default,
+            set_schema=set_schema,
+            set_default=set_default,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool()
+    async def delete_published_input(
+        name: str,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Delete a published workflow input through the operation API."""
+        return await gateway.delete_published_input(
+            name=name,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool()
+    async def set_published_output(
+        name: str,
+        internal_node_id: str,
+        internal_output: str,
+        schema: dict[str, Any] | None = None,
+        set_schema: bool = False,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a published workflow output through the operation API."""
+        return await gateway.set_published_output(
+            name=name,
+            internal_node_id=internal_node_id,
+            internal_output=internal_output,
+            schema=schema,
+            set_schema=set_schema,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool()
+    async def delete_published_output(
+        name: str,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Delete a published workflow output through the operation API."""
+        return await gateway.delete_published_output(
+            name=name,
             expected_revision=expected_revision,
         )
 

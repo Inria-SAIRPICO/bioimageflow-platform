@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from bioimageflow_server.models.workflow_draft import DraftWriter
 
@@ -47,6 +47,52 @@ class MoveNodeOperation(BaseModel):
     position: tuple[float, float]
 
 
+class _PublishedNameMixin(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _strip_non_empty_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("published name must not be empty")
+        return stripped
+
+
+class _PublishedTargetMixin(BaseModel):
+    internal_node_id: str
+
+    @field_validator("internal_node_id", "internal_field", "internal_output", check_fields=False)
+    @classmethod
+    def _strip_non_empty_target(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("published target fields must not be empty")
+        return stripped
+
+
+class SetPublishedInputOperation(_PublishedNameMixin, _PublishedTargetMixin):
+    type: Literal["set_published_input"] = "set_published_input"
+    internal_field: str
+    kind: Literal["parameter", "input"]
+    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
+    default: Any | None = None
+
+
+class DeletePublishedInputOperation(_PublishedNameMixin):
+    type: Literal["delete_published_input"] = "delete_published_input"
+
+
+class SetPublishedOutputOperation(_PublishedNameMixin, _PublishedTargetMixin):
+    type: Literal["set_published_output"] = "set_published_output"
+    internal_output: str
+    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
+
+
+class DeletePublishedOutputOperation(_PublishedNameMixin):
+    type: Literal["delete_published_output"] = "delete_published_output"
+
+
 class ConnectColumnRefOperation(BaseModel):
     type: Literal["connect_column_ref"] = "connect_column_ref"
     source_node: str
@@ -76,6 +122,10 @@ WorkflowDraftOperation = Annotated[
     | UpdateNodeParametersOperation
     | SetNodeEnabledOperation
     | MoveNodeOperation
+    | SetPublishedInputOperation
+    | DeletePublishedInputOperation
+    | SetPublishedOutputOperation
+    | DeletePublishedOutputOperation
     | ConnectColumnRefOperation
     | ConnectPositionalOperation
     | DeleteEdgeOperation,

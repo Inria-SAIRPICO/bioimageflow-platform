@@ -751,6 +751,19 @@ Phase 14 implementation update, 2026-06-01:
 - Docs should explain MCP first, operation REST second for published interface
   edits after backend/MCP tests pass.
 
+Phase 14 completion update, 2026-06-01:
+
+- Completed backend operation models, pure transforms, REST application, MCP
+  wrappers, and agent docs for the four published interface operations.
+- Published target strings are trimmed and blank `internal_node_id`,
+  `internal_field`, or `internal_output` values are rejected at the model
+  boundary. Full tool-metadata validation of those target names remains
+  deferred because the pure transform does not receive registry context.
+- MCP preserves omitted nullable fields on upsert. Agents can intentionally
+  clear a published interface `schema` or input `default` by passing
+  `set_schema: true` or `set_default: true` with a `null` value.
+- Dedicated review found no remaining blockers after fixes.
+
 TDD:
 
 - Pure transform tests first for create/update/delete behavior, duplicate

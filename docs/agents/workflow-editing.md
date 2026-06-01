@@ -47,6 +47,17 @@ edits, use MCP tools such as `create_node`, `rename_node`,
 `create_node` fetches the current draft revision internally when you omit
 `expected_revision`, so adding a node can be one MCP tool call.
 
+Published workflow inputs and outputs are also semantic graph edits. Use
+`set_published_input`, `delete_published_input`, `set_published_output`, and
+`delete_published_output` instead of editing `published_inputs` or
+`published_outputs` JSON locally. `set_published_input` upserts by
+`internal_node_id` plus `internal_field`; `set_published_output` upserts by
+`internal_node_id` plus `internal_output`. Delete operations remove by the
+published interface `name`. To clear a nullable published input/output
+`schema` or input `default` through MCP, send `set_schema: true` or
+`set_default: true` with the value set to `null`; omitting those fields
+preserves the existing value during an upsert.
+
 ## Operation REST Second
 
 If MCP is unavailable, apply semantic edits through the backend-owned operation
@@ -78,6 +89,29 @@ jq -n \
 
 The backend operation API owns graph mutation semantics. Do not reimplement
 create/delete/connect rules in client code.
+
+Published interface REST example:
+
+```sh
+jq -n \
+  --argjson rev "$REV" \
+  '{
+    expected_revision: $rev,
+    updated_by: "agent",
+    validate: true,
+    operations: [{
+      type: "set_published_input",
+      name: "image",
+      internal_node_id: "load_1",
+      internal_field: "path",
+      kind: "input",
+      schema: {"type": "ImageFile"}
+    }]
+  }' \
+  | curl -s -X POST "$API/workflow-draft-operations/$WF" \
+      -H 'Content-Type: application/json' \
+      --data-binary @-
+```
 
 ## Raw Full-DAG Fallback
 

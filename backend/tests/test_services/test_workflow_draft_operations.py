@@ -18,9 +18,13 @@ from bioimageflow_server.models.workflow_draft_operations import (
     CreateNodeOperation,
     DeleteEdgeOperation,
     DeleteNodeOperation,
+    DeletePublishedInputOperation,
+    DeletePublishedOutputOperation,
     MoveNodeOperation,
     RenameNodeOperation,
     SetNodeEnabledOperation,
+    SetPublishedInputOperation,
+    SetPublishedOutputOperation,
     UpdateNodeParametersOperation,
 )
 from bioimageflow_server.services.workflow_draft_operations import (
@@ -212,6 +216,100 @@ def test_delete_edge_removes_edge_by_id() -> None:
     result = _apply(DeleteEdgeOperation(edge_id="a-to-b-image"))
 
     assert [edge.id for edge in result.edges] == ["a-to-c-pos-0"]
+
+
+def test_set_published_input_adds_and_updates_by_internal_target() -> None:
+    result = _apply(
+        SetPublishedInputOperation(
+            name="raw_image",
+            internal_node_id="b",
+            internal_field="image",
+            kind="input",
+            schema={"type": "ImageFile"},
+            default="demo.tif",
+        ),
+        SetPublishedInputOperation(
+            name="renamed_image",
+            internal_node_id="b",
+            internal_field="image",
+            kind="input",
+        ),
+    )
+
+    assert [item.name for item in result.published_inputs] == [
+        "root_input",
+        "renamed_image",
+    ]
+    item = result.published_inputs[1]
+    assert item.internal_node_id == "b"
+    assert item.internal_field == "image"
+    assert item.schema_ == {"type": "ImageFile"}
+    assert item.default == "demo.tif"
+    assert result.nodes == _graph().nodes
+    assert result.edges == _graph().edges
+
+
+def test_set_published_output_adds_and_delete_operations_remove_by_name() -> None:
+    result = _apply(
+        SetPublishedOutputOperation(
+            name="labels",
+            internal_node_id="a",
+            internal_output="mask",
+            schema={"type": "ImageFile"},
+        ),
+        DeletePublishedInputOperation(name="root_input"),
+        DeletePublishedOutputOperation(name="root_output"),
+    )
+
+    assert result.published_inputs == []
+    assert [item.name for item in result.published_outputs] == ["labels"]
+    assert result.published_outputs[0].schema_ == {"type": "ImageFile"}
+
+
+def test_published_interface_operations_reject_duplicate_names_and_missing_targets() -> None:
+    with pytest.raises(WorkflowDraftOperationError) as duplicate:
+        _apply(
+            SetPublishedInputOperation(
+                name="root_output",
+                internal_node_id="b",
+                internal_field="image",
+                kind="input",
+                schema={"type": "ImageFile"},
+            )
+        )
+    assert duplicate.value.code == "duplicate_published_name"
+
+    with pytest.raises(WorkflowDraftOperationError) as missing_node:
+        _apply(
+            SetPublishedOutputOperation(
+                name="missing",
+                internal_node_id="missing",
+                internal_output="out",
+                schema={"type": "ImageFile"},
+            )
+        )
+    assert missing_node.value.code == "missing_node"
+
+
+def test_published_interface_operations_are_atomic() -> None:
+    graph = _graph()
+
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _apply(
+            SetPublishedInputOperation(
+                name="new_input",
+                internal_node_id="b",
+                internal_field="image",
+                kind="input",
+                schema={"type": "ImageFile"},
+            ),
+            DeletePublishedOutputOperation(name="missing_output"),
+            graph=graph,
+        )
+
+    assert exc_info.value.operation_index == 1
+    assert exc_info.value.code == "missing_published_output"
+    assert graph == _graph()
 
 
 @pytest.mark.parametrize(

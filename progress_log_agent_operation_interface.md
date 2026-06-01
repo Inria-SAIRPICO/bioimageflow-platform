@@ -1404,3 +1404,80 @@ implementation prompt without expanding scope.
 - Write model and transform tests first, then REST and MCP tests.
 - Implement the bounded operations and docs, run focused validation, review,
   and integrate before Phase 15.
+
+## 2026-06-01: Phase 14 Published Workflow Interface Operations
+
+### Planned
+
+- Add backend-owned semantic operations for published workflow inputs and
+  outputs.
+- Keep the operation set bounded to four operations:
+  `set_published_input`, `delete_published_input`, `set_published_output`, and
+  `delete_published_output`.
+- Expose MCP only as a thin wrapper over the operation API, then document MCP
+  first and operation REST second.
+
+### Implemented
+
+- Added published interface operation models with trimmed, non-empty published
+  names and non-empty internal target strings.
+- Added pure transform support for set/delete published input/output operations.
+  `set_*` upserts by stable internal target key and `delete_*` removes by
+  published name.
+- Added REST tests covering successful interface edits, atomic failure, no draft
+  file write, unchanged agent state, and no WebSocket publication on failed
+  batches.
+- Added MCP gateway methods and registered MCP tools for the four operations.
+- Updated generated workspace instructions and `docs/agents/workflow-editing.md`
+  with published interface guidance.
+
+### Learned
+
+- The pure transform layer can validate node existence, blank target strings,
+  duplicate published names, delete selectors, and required schema for new pins.
+  It cannot yet validate target names against tool metadata because it has no
+  registry context.
+- REST can distinguish omitted nullable fields from explicit `null` through
+  Pydantic `model_fields_set`. MCP needed explicit `set_schema` / `set_default`
+  flags so agents can clear nullable fields while omission continues to mean
+  preserve the existing value.
+
+### Plan Changes
+
+- Marked Phase 14 complete in `agent_operation_interface_plan.md`.
+- Deferred tool-metadata-aware validation of `internal_field` and
+  `internal_output` names until a later phase provides registry context.
+- Phase 15 remains next: `move_nodes` as a bulk layout-only operation.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py
+  tests/test_services/test_agent_workspace_context.py` passed: 91 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/models/workflow_draft_operations.py
+  src/bioimageflow_server/services/workflow_draft_operations.py
+  src/bioimageflow_server/agent_mcp.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py
+  tests/test_services/test_agent_workspace_context.py` passed.
+
+### Review Notes
+
+- Dedicated Phase 14 review found no atomicity or backend-ownership blockers.
+- Review flagged blank internal target strings and MCP explicit-null support.
+  Both were fixed with regression tests, and the follow-up review found no
+  remaining blockers in those patched areas.
+
+### Next Implementation Iteration
+
+- Before coding Phase 15, update the plan/log with Phase 14 learnings and use a
+  dedicated Phase 15 worktree.
+- Implement `move_nodes` with tests first, then review and integrate before
+  Phase 16.

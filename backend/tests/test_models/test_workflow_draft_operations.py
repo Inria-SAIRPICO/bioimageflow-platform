@@ -87,3 +87,98 @@ def test_validate_alias_round_trips() -> None:
 
     assert request.validate_ is False
     assert request.model_dump(by_alias=True)["validate"] is False
+
+
+def test_published_interface_operations_parse_schema_aliases() -> None:
+    request = WorkflowDraftOperationsRequest.model_validate(
+        {
+            "expected_revision": 1,
+            "operations": [
+                {
+                    "type": "set_published_input",
+                    "name": "image",
+                    "internal_node_id": "n1",
+                    "internal_field": "input_image",
+                    "kind": "input",
+                    "schema": {"type": "ImageFile"},
+                    "default": None,
+                },
+                {"type": "delete_published_input", "name": "image"},
+                {
+                    "type": "set_published_output",
+                    "name": "mask",
+                    "internal_node_id": "n1",
+                    "internal_output": "output_image",
+                    "schema": {"type": "ImageFile"},
+                },
+                {"type": "delete_published_output", "name": "mask"},
+            ],
+        }
+    )
+
+    assert [operation.type for operation in request.operations] == [
+        "set_published_input",
+        "delete_published_input",
+        "set_published_output",
+        "delete_published_output",
+    ]
+    assert request.model_dump(by_alias=True)["operations"][0]["schema"] == {
+        "type": "ImageFile"
+    }
+
+
+def test_published_interface_operations_reject_empty_names() -> None:
+    with pytest.raises(ValidationError):
+        WorkflowDraftOperationsRequest.model_validate(
+            {
+                "expected_revision": 1,
+                "operations": [
+                    {
+                        "type": "set_published_output",
+                        "name": "   ",
+                        "internal_node_id": "n1",
+                        "internal_output": "output_image",
+                        "schema": {"type": "ImageFile"},
+                    }
+                ],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {
+            "type": "set_published_input",
+            "name": "image",
+            "internal_node_id": "n1",
+            "internal_field": "   ",
+            "kind": "input",
+            "schema": {"type": "ImageFile"},
+        },
+        {
+            "type": "set_published_output",
+            "name": "mask",
+            "internal_node_id": "n1",
+            "internal_output": "",
+            "schema": {"type": "ImageFile"},
+        },
+        {
+            "type": "set_published_output",
+            "name": "mask",
+            "internal_node_id": " ",
+            "internal_output": "output_image",
+            "schema": {"type": "ImageFile"},
+        },
+    ],
+)
+def test_published_interface_operations_reject_blank_internal_targets(
+    operation: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        WorkflowDraftOperationsRequest.model_validate(
+            {
+                "expected_revision": 1,
+                "operations": [operation],
+            }
+        )

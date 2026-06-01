@@ -181,6 +181,9 @@ is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
 5. Create or edit with MCP graph tools such as `create_node`, `rename_node`,
    `update_node_parameters`, `set_node_enabled`, `move_node`, `connect_nodes`,
    `delete_edge`, and `delete_node`.
+   Edit published workflow inputs and outputs with `set_published_input`,
+   `delete_published_input`, `set_published_output`, and
+   `delete_published_output`.
 6. Operation REST second: when MCP is unavailable, use
    `POST $API/workflow-draft-operations/$WF` with semantic operations.
 7. Raw full-DAG HTTP fallback: read the live draft with
@@ -277,6 +280,12 @@ MCP first, Operation REST second, Raw full-DAG HTTP fallback.
 
 MCP graph-editing tools call the backend operation API. They do not mutate graph
 JSON locally. A capable agent can add a node with one MCP `create_node` call.
+Published interface tools (`set_published_input`, `delete_published_input`,
+`set_published_output`, `delete_published_output`) also call the backend
+operation API; do not edit `published_inputs` or `published_outputs` locally
+when MCP or operation REST is available. For nullable published interface fields,
+MCP preserves omitted values; send `set_schema: true` or `set_default: true`
+with `null` only when you intend to clear a stored value.
 
 For REST semantic edits, use `POST /workflow-draft-operations/{{workflow_id}}`:
 

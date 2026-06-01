@@ -95,6 +95,10 @@ def test_create_mcp_server_registers_expected_tools(tmp_path: Path) -> None:
         "update_node_parameters",
         "set_node_enabled",
         "move_node",
+        "set_published_input",
+        "delete_published_input",
+        "set_published_output",
+        "delete_published_output",
         "connect_nodes",
         "delete_edge",
         "validate_workflow",
@@ -441,6 +445,137 @@ async def test_move_node_calls_backend_operation_api(tmp_path: Path) -> None:
     ]
 
 
+async def test_published_interface_tools_call_backend_operation_api(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 8, "graph": {"nodes": [], "edges": []}},
+            )
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 9,
+                "validation": {"valid": True, "errors": []},
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    await gateway.set_published_input(
+        name="image",
+        internal_node_id="n1",
+        internal_field="input_image",
+        kind="input",
+        schema={"type": "ImageFile"},
+    )
+    await gateway.delete_published_input(name="image")
+    await gateway.set_published_output(
+        name="mask",
+        internal_node_id="n1",
+        internal_output="output_image",
+        schema={"type": "ImageFile"},
+    )
+    await gateway.delete_published_output(name="mask")
+
+    assert [request["operations"][0] for request in requests] == [
+        {
+            "type": "set_published_input",
+            "name": "image",
+            "internal_node_id": "n1",
+            "internal_field": "input_image",
+            "kind": "input",
+            "schema": {"type": "ImageFile"},
+        },
+        {"type": "delete_published_input", "name": "image"},
+        {
+            "type": "set_published_output",
+            "name": "mask",
+            "internal_node_id": "n1",
+            "internal_output": "output_image",
+            "schema": {"type": "ImageFile"},
+        },
+        {"type": "delete_published_output", "name": "mask"},
+    ]
+
+
+async def test_published_interface_mcp_tools_can_clear_nullable_fields(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 8, "graph": {"nodes": [], "edges": []}},
+            )
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 9,
+                "validation": {"valid": True, "errors": []},
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    await gateway.set_published_input(
+        name="image",
+        internal_node_id="n1",
+        internal_field="input_image",
+        kind="input",
+        schema=None,
+        default=None,
+        set_schema=True,
+        set_default=True,
+    )
+    await gateway.set_published_output(
+        name="mask",
+        internal_node_id="n1",
+        internal_output="output_image",
+        schema=None,
+        set_schema=True,
+    )
+
+    assert [request["operations"][0] for request in requests] == [
+        {
+            "type": "set_published_input",
+            "name": "image",
+            "internal_node_id": "n1",
+            "internal_field": "input_image",
+            "kind": "input",
+            "schema": None,
+            "default": None,
+        },
+        {
+            "type": "set_published_output",
+            "name": "mask",
+            "internal_node_id": "n1",
+            "internal_output": "output_image",
+            "schema": None,
+        },
+    ]
+
+
 async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
     tmp_path: Path,
 ) -> None:
@@ -474,6 +609,12 @@ async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
 
     await server.tools["set_node_enabled"](node_id="n1", enabled=True)
     await server.tools["move_node"](node_id="n1", position=[10, 20])
+    await server.tools["set_published_output"](
+        name="mask",
+        internal_node_id="n1",
+        internal_output="mask",
+        schema={"type": "ImageFile"},
+    )
 
     assert requests == [
         {
@@ -490,6 +631,20 @@ async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
             "validate": True,
             "operations": [
                 {"type": "move_node", "node_id": "n1", "position": [10, 20]}
+            ],
+        },
+        {
+            "expected_revision": 11,
+            "updated_by": "agent",
+            "validate": True,
+            "operations": [
+                {
+                    "type": "set_published_output",
+                    "name": "mask",
+                    "internal_node_id": "n1",
+                    "internal_output": "mask",
+                    "schema": {"type": "ImageFile"},
+                }
             ],
         },
     ]
