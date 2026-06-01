@@ -654,12 +654,25 @@ Current evidence:
 - Frontend WebSocket handling updates the tool registry for `tool_reload` and
   `tool_removed`.
 
+Calibration update, 2026-06-01:
+
+- `CustomToolService` already creates workflow-local `tools/*.py`, registers
+  them as editable custom tools, resolves source paths, renames classes/files,
+  deletes custom files, and rejects package/global tools.
+- Existing router tests cover create, source lookup, rename, delete, usage,
+  webapp restrictions, invalid names, and package-tool protections.
+- Existing hot-reload tests cover changed/added/removed tools, reload failures,
+  full package removal, suppression during install, and full metadata payloads.
+- The first Phase 13 slice should therefore be documentation and generated
+  workspace-instruction validation, not new tool-authoring semantics.
+
 TDD/docs validation:
 
 - Add static doc tests proving generated workspace `AGENTS.md` and
   `docs/agents/` explain workflow-local tool authoring.
 - Add or extend backend tests proving the documented create/source/edit/delete
-  API examples remain accurate for workflow-local tools.
+  API examples remain accurate for workflow-local tools only if existing router
+  coverage is insufficient.
 - Add or extend hot-reload tests only if existing coverage does not prove create,
   edit, delete, failure, and frontend-visible payload behavior.
 - Add a browser-realistic test only if the current frontend path lacks coverage
@@ -707,6 +720,22 @@ Scope:
   `GraphState.published_outputs`.
 - Do not invent a broad metadata patch DSL.
 
+Calibration update, 2026-06-01:
+
+- The frontend currently mutates `published_inputs` and `published_outputs`
+  directly in graph state from the Node Panel.
+- Backend models already expose `PublishedInput`, `PublishedOutput`, and the
+  root `GraphState.published_inputs` / `GraphState.published_outputs` fields.
+- Phase 14 should add exactly four operation types:
+  `set_published_input`, `delete_published_input`, `set_published_output`, and
+  `delete_published_output`.
+- `set_*` operations should upsert by stable internal target key:
+  `(internal_node_id, internal_field)` for inputs and
+  `(internal_node_id, internal_output)` for outputs. `delete_*` operations should
+  delete by published external `name`.
+- Names must be trimmed, non-empty, and unique across both published inputs and
+  outputs except when updating the same stable target.
+
 TDD:
 
 - Pure transform tests first for create/update/delete behavior, duplicate
@@ -725,6 +754,9 @@ Implementation:
   tool metadata where the backend already has enough information.
 - Preserve frontend conflict behavior; agents write drafts and the frontend
   resolves clean-vs-local-conflict as today.
+- Preserve existing `schema` and `default` values when an operation updates an
+  existing stable target and omits those fields. Explicit `null` remains an
+  explicit value.
 
 Review:
 
@@ -743,9 +775,28 @@ Goal: let agents reposition many nodes without replacing the full workflow JSON.
 Scope:
 
 - Add a semantic operation such as `move_nodes` that accepts a map of
-  `{node_id: [x, y]}`.
+  `{node_id: [x, y]}` or an equivalent list of move items.
 - Limit this to layout state. It must not update parameters, edges, tool names,
   published inputs/outputs, or nested sub-workflows.
+
+Calibration update, 2026-06-01:
+
+- Existing `move_node` is end-to-end and should remain for compatibility.
+- Phase 15 should add `move_nodes` with absolute canvas coordinates, not deltas.
+- Preferred request shape is:
+
+  ```json
+  {
+    "type": "move_nodes",
+    "moves": [
+      { "node_id": "a", "position": [120, 240] },
+      { "node_id": "b", "position": [300, 240] }
+    ]
+  }
+  ```
+
+- The transform must preflight duplicate node ids and missing nodes, then update
+  positions atomically while preserving node order and every non-position field.
 
 TDD:
 
@@ -783,10 +834,25 @@ Scope:
 
 - Add an explicit operation target/scope, for example root graph by default and a
   named sub-workflow scope only when requested.
-- Start with the smallest useful subset: create/delete/rename/update
-  parameters/move/connect/delete-edge within one addressed sub-workflow.
+- Start with the smallest useful subset: layout-safe scoped operations first,
+  especially `move_node` and `move_nodes`. Expand to create/delete/connect only
+  after interface reconciliation rules are explicit.
 - Do not allow cross-scope edge creation, automatic merge, recursive mutation of
   arbitrary nested graphs, or CRDT behavior.
+
+Calibration update, 2026-06-01:
+
+- `NodeState.sub_workflow` already stores a nested `GraphState`, and nested
+  graphs may reuse node ids. Flat `node_id` is therefore unsafe without an
+  explicit scope.
+- Phase 16 should add a backward-compatible optional operation `scope`, default
+  root, with `sub_workflow_path` as a list of node ids from root to the target
+  editable nested graph.
+- Every path segment must exist, must have a non-null `sub_workflow`, and must
+  not set `sub_workflow_readonly_reason`.
+- First implementation slice should support scoped `move_node` and `move_nodes`
+  only. This fixes the root-only limitation for safe layout edits without
+  bypassing frontend-owned sub-workflow interface reconciliation.
 
 TDD:
 

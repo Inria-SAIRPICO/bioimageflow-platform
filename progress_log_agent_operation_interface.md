@@ -1224,3 +1224,82 @@ implementation prompt without expanding scope.
   tests, frontend WebSocket handling, generated workspace docs, and docs/agents.
 - Update the plan/log again with exact Phase 13 test scope before coding.
 - Use TDD, a dedicated worktree, and a dedicated review agent for Phase 13.
+
+## 2026-06-01: Phase 13 Calibration
+
+### Planned
+
+- Calibrate workflow-local tool authoring before implementation.
+- Identify whether Phase 13 is docs-only or needs validation/fixes around
+  hot-reload and frontend updates.
+
+### Learned
+
+- Existing REST and service surfaces already support workflow-local custom tool
+  creation, source lookup, rename, delete, usage lookup, and package-tool
+  protections.
+- Existing hot-reload tests cover generic package reload behavior, but not the
+  real `ToolRegistryService + CustomToolService + ToolHotReloadService`
+  workflow-local custom-tool path.
+- `reload_custom_tool` appears to unregister a custom tool before re-registering
+  it, so a syntax/import failure during reload may drop the last working
+  metadata from the registry.
+- Frontend WebSocket dispatch for `tool_reload`, `tool_removed`, and
+  `system_error` exists, but focused unit coverage is thin compared with
+  `workflow_draft_changed`.
+- Agent docs do not yet explain the workflow-local tool authoring path.
+
+### Plan Changes
+
+- Phase 13 first slice includes:
+  - docs and generated workspace instruction updates for workflow-local tool
+    authoring;
+  - backend real custom hot-reload tests for edit/delete/failure preservation;
+  - a minimal backend fix if the failure preservation test confirms the bug;
+  - focused frontend/store/WebSocket tests for tool reload/removal dispatch if
+    practical in the same bounded slice.
+- Broader UI/e2e coverage for canvas rename/delete handling remains optional
+  unless the focused tests expose a regression.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 13 worktree.
+- Write failing backend custom hot-reload tests first, then doc/static tests.
+- Implement the minimal fix and doc updates.
+- Run focused backend/frontend checks and use a dedicated review agent before
+  integrating.
+
+## 2026-06-01: Phase 14-16 Calibration
+
+### Planned
+
+- Calibrate the future semantic operation phases before coding Phase 13, so the
+  follow-on plan remains concrete.
+
+### Learned
+
+- Phase 14 should add four published interface operations:
+  `set_published_input`, `delete_published_input`, `set_published_output`, and
+  `delete_published_output`.
+- Published interface `set_*` operations should upsert by stable internal target
+  key, while `delete_*` operations should delete by external published name.
+- Phase 15 should add `move_nodes` as absolute-position bulk layout. Existing
+  `move_node` stays as a compatibility tool.
+- Phase 16 should add explicit operation scope with `sub_workflow_path`; nested
+  graphs can reuse ids, so flat node ids are unsafe.
+- Phase 16 first slice should support scoped `move_node`/`move_nodes` only,
+  avoiding create/delete/connect semantics until nested interface reconciliation
+  is defined.
+
+### Plan Changes
+
+- Added concrete Phase 14 operation names, keys, and validation rules.
+- Added concrete Phase 15 request shape and atomic preflight behavior.
+- Narrowed Phase 16 first slice to scoped layout operations with an explicit
+  `sub_workflow_path` scope model.
+
+### Next Implementation Iteration
+
+- Continue with Phase 13 implementation first.
+- Before Phase 14 coding, update the plan/log again from Phase 13 learnings and
+  create a dedicated Phase 14 worktree.
