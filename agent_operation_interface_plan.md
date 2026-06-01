@@ -921,6 +921,20 @@ Phase 16 planning update, 2026-06-01:
 - Expose optional MCP `scope` for `move_node` and `move_nodes` only after
   backend scoped semantics pass tests.
 
+Phase 16 completion update, 2026-06-01:
+
+- Completed optional `scope.sub_workflow_path` support for `move_node` and
+  `move_nodes`.
+- Non-layout operations now reject unexpected `scope` and other extra fields
+  instead of silently dropping them.
+- Scoped layout walks node ids from the root graph, rejects missing scope nodes,
+  nodes without sub-workflows, and read-only sub-workflows, then rebuilds the
+  outer graph preserving unrelated fields.
+- MCP `move_node` and `move_nodes` accept optional `scope` and still delegate to
+  the backend operation API.
+- Dedicated review found no remaining blockers after the non-layout scope
+  rejection fix.
+
 TDD:
 
 - Model tests for explicit scope validation and backward-compatible root-scope

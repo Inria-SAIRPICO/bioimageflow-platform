@@ -501,6 +501,57 @@ async def test_move_nodes_calls_backend_operation_api(tmp_path: Path) -> None:
     ]
 
 
+async def test_layout_tools_pass_scope_to_backend_operation_api(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 8, "graph": {"nodes": [], "edges": []}},
+            )
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 9,
+                "validation": {"valid": True, "errors": []},
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    await gateway.move_node(
+        node_id="inner",
+        position=[100, 120],
+        scope={"sub_workflow_path": ["outer"]},
+    )
+    await gateway.move_nodes(
+        moves=[{"node_id": "inner", "position": [300, 120]}],
+        scope={"sub_workflow_path": ["outer"]},
+    )
+
+    assert [request["operations"][0] for request in requests] == [
+        {
+            "type": "move_node",
+            "node_id": "inner",
+            "position": [100, 120],
+            "scope": {"sub_workflow_path": ["outer"]},
+        },
+        {
+            "type": "move_nodes",
+            "moves": [{"node_id": "inner", "position": [300, 120]}],
+            "scope": {"sub_workflow_path": ["outer"]},
+        },
+    ]
+
+
 async def test_published_interface_tools_call_backend_operation_api(
     tmp_path: Path,
 ) -> None:

@@ -106,6 +106,56 @@ def _graph() -> GraphState:
     )
 
 
+def _nested_graph() -> GraphState:
+    return GraphState(
+        nodes=[
+            _node(
+                "outer",
+                sub_workflow=GraphState(
+                    nodes=[
+                        _node("a", position=(1, 1), parameters={"nested": True}),
+                        _node(
+                            "nested",
+                            position=(2, 2),
+                            sub_workflow=GraphState(
+                                nodes=[_node("deep", position=(3, 3))],
+                                edges=[],
+                            ),
+                            sub_workflow_readonly_reason=None,
+                        ),
+                        _node(
+                            "read_only",
+                            position=(4, 4),
+                            sub_workflow=GraphState(nodes=[_node("leaf")], edges=[]),
+                            sub_workflow_readonly_reason="locked",
+                        ),
+                    ],
+                    edges=[],
+                    published_inputs=[
+                        PublishedInput(
+                            name="nested_input",
+                            internal_node_id="a",
+                            internal_field="image",
+                            kind="input",
+                        )
+                    ],
+                ),
+                sub_workflow_readonly_reason=None,
+            ),
+            _node("a", position=(9, 9)),
+            _node("plain", position=(0, 0), sub_workflow_readonly_reason=None),
+        ],
+        edges=[],
+        published_outputs=[
+            PublishedOutput(
+                name="root_output",
+                internal_node_id="outer",
+                internal_output="mask",
+            )
+        ],
+    )
+
+
 def _apply(*operations: object, graph: GraphState | None = None) -> GraphState:
     return apply_workflow_draft_operations(graph or _graph(), list(operations))
 
@@ -219,6 +269,68 @@ def test_move_nodes_preflights_failures_atomically(
 
     assert exc_info.value.code == code
     assert graph == _graph()
+
+
+def test_scoped_move_node_updates_nested_graph_only() -> None:
+    graph = _nested_graph()
+
+    result = _apply(
+        MoveNodeOperation(
+            node_id="a",
+            position=(100, 120),
+            scope={"sub_workflow_path": ["outer"]},
+        ),
+        graph=graph,
+    )
+
+    outer = result.nodes[0]
+    assert result.nodes[1].id == "a"
+    assert result.nodes[1].position == (9, 9)
+    assert outer.position == graph.nodes[0].position
+    assert outer.sub_workflow is not None
+    assert outer.sub_workflow.nodes[0].position == (100, 120)
+    assert outer.sub_workflow.nodes[0].parameters == {"nested": True}
+    assert outer.sub_workflow.published_inputs == graph.nodes[0].sub_workflow.published_inputs
+    assert result.published_outputs == graph.published_outputs
+    assert graph == _nested_graph()
+
+
+def test_scoped_move_nodes_supports_deep_sub_workflow_path() -> None:
+    result = _apply(
+        MoveNodesOperation(
+            moves=[{"node_id": "deep", "position": (500, 600)}],
+            scope={"sub_workflow_path": ["outer", "nested"]},
+        ),
+        graph=_nested_graph(),
+    )
+
+    outer = result.nodes[0]
+    assert outer.sub_workflow is not None
+    nested = outer.sub_workflow.nodes[1]
+    assert nested.sub_workflow is not None
+    assert nested.sub_workflow.nodes[0].position == (500, 600)
+
+
+@pytest.mark.parametrize(
+    ("scope", "code"),
+    [
+        ({"sub_workflow_path": ["missing"]}, "missing_scope_node"),
+        ({"sub_workflow_path": ["plain"]}, "missing_sub_workflow"),
+        ({"sub_workflow_path": ["outer", "read_only"]}, "readonly_sub_workflow"),
+        ({"sub_workflow_path": ["outer", "missing"]}, "missing_scope_node"),
+    ],
+)
+def test_scoped_layout_rejects_invalid_scope_paths(
+    scope: dict[str, list[str]],
+    code: str,
+) -> None:
+    graph = _nested_graph()
+
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _apply(MoveNodeOperation(node_id="a", position=(10, 20), scope=scope), graph=graph)
+
+    assert exc_info.value.code == code
+    assert graph == _nested_graph()
 
 
 def test_connect_column_ref_replaces_target_input_edge_and_generates_edge_id() -> None:

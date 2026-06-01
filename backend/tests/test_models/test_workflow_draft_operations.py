@@ -151,6 +151,86 @@ def test_move_nodes_operation_parses_multiple_moves() -> None:
     ]
 
 
+def test_layout_operations_parse_optional_sub_workflow_scope() -> None:
+    request = WorkflowDraftOperationsRequest.model_validate(
+        {
+            "expected_revision": 1,
+            "operations": [
+                {
+                    "type": "move_node",
+                    "node_id": "inner",
+                    "position": [10, 20],
+                    "scope": {"sub_workflow_path": ["outer"]},
+                },
+                {
+                    "type": "move_nodes",
+                    "moves": [{"node_id": "inner", "position": [30, 40]}],
+                    "scope": {"sub_workflow_path": ["outer", "nested"]},
+                },
+            ],
+        }
+    )
+
+    assert request.operations[0].scope.sub_workflow_path == ["outer"]
+    assert request.operations[1].scope.sub_workflow_path == ["outer", "nested"]
+
+
+def test_layout_operation_scope_defaults_to_root() -> None:
+    request = WorkflowDraftOperationsRequest.model_validate(
+        {
+            "expected_revision": 1,
+            "operations": [
+                {"type": "move_node", "node_id": "a", "position": [10, 20]},
+                {
+                    "type": "move_nodes",
+                    "moves": [{"node_id": "b", "position": [30, 40]}],
+                },
+            ],
+        }
+    )
+
+    assert request.operations[0].scope.sub_workflow_path == []
+    assert request.operations[1].scope.sub_workflow_path == []
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"type": "delete_node", "node_id": "inner"},
+        {
+            "type": "create_node",
+            "node_id": "inner",
+            "tool_name": "Tool",
+            "name": "Inner",
+            "position": [0, 0],
+            "parameters": {},
+        },
+        {
+            "type": "connect_column_ref",
+            "source_node": "a",
+            "target_node": "b",
+            "source_output": "out",
+            "target_input": "image",
+        },
+    ],
+)
+def test_scope_is_rejected_on_non_layout_operations(
+    operation: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        WorkflowDraftOperationsRequest.model_validate(
+            {
+                "expected_revision": 1,
+                "operations": [
+                    {
+                        **operation,
+                        "scope": {"sub_workflow_path": ["outer"]},
+                    }
+                ],
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "moves",
     [

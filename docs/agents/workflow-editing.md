@@ -50,6 +50,10 @@ edits, use MCP tools such as `create_node`, `rename_node`,
 Use `move_nodes` for bulk layout when arranging multiple existing nodes. It
 updates only canvas positions and preserves parameters, edges, published
 interfaces, and other node fields.
+For nested sub-workflow layout, pass `scope: {"sub_workflow_path": ["outer"]}`
+to `move_node` or `move_nodes`. The path is a list of node ids from the root
+graph to the target nested graph. Scoped operations are layout-only; do not use
+them for create/delete/connect inside sub-workflows.
 
 Published workflow inputs and outputs are also semantic graph edits. Use
 `set_published_input`, `delete_published_input`, `set_published_output`, and
@@ -109,6 +113,27 @@ jq -n \
         {node_id: "load_1", position: [80, 120]},
         {node_id: "blur_1", position: [300, 120]}
       ]
+    }]
+  }' \
+  | curl -s -X POST "$API/workflow-draft-operations/$WF" \
+      -H 'Content-Type: application/json' \
+      --data-binary @-
+```
+
+Nested sub-workflow layout REST example:
+
+```sh
+jq -n \
+  --argjson rev "$REV" \
+  '{
+    expected_revision: $rev,
+    updated_by: "agent",
+    validate: true,
+    operations: [{
+      type: "move_node",
+      node_id: "inner_step",
+      position: [180, 120],
+      scope: {sub_workflow_path: ["outer_workflow_node"]}
     }]
   }' \
   | curl -s -X POST "$API/workflow-draft-operations/$WF" \

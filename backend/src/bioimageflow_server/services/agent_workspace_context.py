@@ -182,6 +182,8 @@ is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
    `update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`,
    `connect_nodes`, `delete_edge`, and `delete_node`.
    Use `move_nodes` for bulk layout; it only changes node positions.
+   For nested sub-workflow layout, pass `scope.sub_workflow_path` to
+   `move_node` or `move_nodes`. Scoped edits are layout-only.
    Edit published workflow inputs and outputs with `set_published_input`,
    `delete_published_input`, `set_published_output`, and
    `delete_published_output`.
@@ -283,6 +285,9 @@ MCP graph-editing tools call the backend operation API. They do not mutate graph
 JSON locally. A capable agent can add a node with one MCP `create_node` call.
 Use MCP `move_nodes` or REST `move_nodes` when arranging several nodes; do not
 send the whole graph just to update canvas layout.
+For nested sub-workflows, `scope.sub_workflow_path` addresses the target nested
+graph by node ids from the root. Scoped operation support is limited to
+`move_node` and `move_nodes`.
 Published interface tools (`set_published_input`, `delete_published_input`,
 `set_published_output`, `delete_published_output`) also call the backend
 operation API; do not edit `published_inputs` or `published_outputs` locally

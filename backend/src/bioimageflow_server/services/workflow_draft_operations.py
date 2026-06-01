@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
@@ -103,15 +103,9 @@ def _apply_one(
             ),
         )
     if isinstance(operation, MoveNodeOperation):
-        return _replace_node(
-            graph,
-            operation.node_id,
-            _require_node(graph, operation.node_id).model_copy(
-                update={"position": operation.position}
-            ),
-        )
+        return _apply_layout_operation(graph, operation)
     if isinstance(operation, MoveNodesOperation):
-        return _move_nodes(graph, operation)
+        return _apply_layout_operation(graph, operation)
     if isinstance(operation, SetPublishedInputOperation):
         return _set_published_input(graph, operation)
     if isinstance(operation, DeletePublishedInputOperation):
@@ -156,6 +150,29 @@ def _delete_node(graph: GraphState, operation: DeleteNodeOperation) -> GraphStat
     )
 
 
+def _apply_layout_operation(
+    graph: GraphState,
+    operation: MoveNodeOperation | MoveNodesOperation,
+) -> GraphState:
+    def update(target_graph: GraphState) -> GraphState:
+        if isinstance(operation, MoveNodeOperation):
+            return _move_node(target_graph, operation)
+        return _move_nodes(target_graph, operation)
+
+    path = operation.scope.sub_workflow_path
+    if not path:
+        return update(graph)
+    return _replace_scoped_sub_workflow(graph, path, update)
+
+
+def _move_node(graph: GraphState, operation: MoveNodeOperation) -> GraphState:
+    return _replace_node(
+        graph,
+        operation.node_id,
+        _require_node(graph, operation.node_id).model_copy(update={"position": operation.position}),
+    )
+
+
 def _move_nodes(graph: GraphState, operation: MoveNodesOperation) -> GraphState:
     positions: dict[str, tuple[float, float]] = {}
     for move in operation.moves:
@@ -174,6 +191,27 @@ def _move_nodes(graph: GraphState, operation: MoveNodesOperation) -> GraphState:
             ]
         }
     )
+
+
+def _replace_scoped_sub_workflow(
+    graph: GraphState,
+    path: Sequence[str],
+    update: Callable[[GraphState], GraphState],
+) -> GraphState:
+    if not path:
+        return update(graph)
+    node_id = path[0]
+    node = _require_scope_node(graph, node_id)
+    if node.sub_workflow_readonly_reason:
+        _raise(
+            "readonly_sub_workflow",
+            f"Sub-workflow is read-only at scope node: {node_id}",
+        )
+    if node.sub_workflow is None:
+        _raise("missing_sub_workflow", f"Node has no sub-workflow: {node_id}")
+    child_graph = _replace_scoped_sub_workflow(node.sub_workflow, path[1:], update)
+    replacement = node.model_copy(update={"sub_workflow": child_graph})
+    return _replace_node(graph, node_id, replacement)
 
 
 def _set_published_input(
@@ -381,6 +419,13 @@ def _require_node(graph: GraphState, node_id: str) -> NodeState:
         if node.id == node_id:
             return node
     _raise("missing_node", f"Node not found: {node_id}")
+
+
+def _require_scope_node(graph: GraphState, node_id: str) -> NodeState:
+    for node in graph.nodes:
+        if node.id == node_id:
+            return node
+    _raise("missing_scope_node", f"Scope node not found: {node_id}")
 
 
 def _node_exists(graph: GraphState, node_id: str) -> bool:

@@ -152,16 +152,18 @@ class BioImageFlowMCPGateway:
         *,
         node_id: str,
         position: list[float],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
+        operation: dict[str, Any] = {
+            "type": "move_node",
+            "node_id": node_id,
+            "position": position,
+        }
+        if scope is not None:
+            operation["scope"] = scope
         return await self._apply_operations(
-            [
-                {
-                    "type": "move_node",
-                    "node_id": node_id,
-                    "position": position,
-                }
-            ],
+            [operation],
             expected_revision=expected_revision,
         )
 
@@ -169,10 +171,14 @@ class BioImageFlowMCPGateway:
         self,
         *,
         moves: list[dict[str, Any]],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
+        operation: dict[str, Any] = {"type": "move_nodes", "moves": moves}
+        if scope is not None:
+            operation["scope"] = scope
         return await self._apply_operations(
-            [{"type": "move_nodes", "moves": moves}],
+            [operation],
             expected_revision=expected_revision,
         )
 
@@ -513,23 +519,27 @@ def create_mcp_server(
     async def move_node(
         node_id: str,
         position: list[float],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Move one workflow node on the canvas through the operation API."""
         return await gateway.move_node(
             node_id=node_id,
             position=position,
+            scope=scope,
             expected_revision=expected_revision,
         )
 
     @server.tool()
     async def move_nodes(
         moves: list[dict[str, Any]],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Move multiple workflow nodes on the canvas through the operation API."""
         return await gateway.move_nodes(
             moves=moves,
+            scope=scope,
             expected_revision=expected_revision,
         )
 

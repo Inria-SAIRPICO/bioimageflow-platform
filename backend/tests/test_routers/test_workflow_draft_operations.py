@@ -247,6 +247,80 @@ async def test_operation_api_applies_move_nodes_once(tmp_path: Path) -> None:
     assert len(published) == 1
 
 
+async def test_operation_api_applies_scoped_layout_once(tmp_path: Path) -> None:
+    manager = ConnectionManager()
+    published: list[dict[str, Any]] = []
+    manager.publish_workflow_draft_changed = (  # type: ignore[method-assign]
+        lambda **payload: published.append(payload)
+    )
+
+    async for client in _client(tmp_path, connection_manager=manager):
+        await _create_workflow(client, "wf")
+        put_response = await client.put(
+            "/api/v1/workflow-drafts/wf",
+            json={
+                "expected_revision": 0,
+                "graph": {
+                    "nodes": [
+                        {
+                            "id": "outer",
+                            "name": "Outer",
+                            "tool_name": "__sub_workflow__",
+                            "position": [0, 0],
+                            "parameters": {},
+                            "sub_workflow": {
+                                "nodes": [
+                                    {
+                                        "id": "inner",
+                                        "name": "Inner",
+                                        "tool_name": "MissingTool",
+                                        "position": [1, 1],
+                                        "parameters": {},
+                                    }
+                                ],
+                                "edges": [],
+                            },
+                        },
+                        {
+                            "id": "inner",
+                            "name": "Root Inner",
+                            "tool_name": "MissingTool",
+                            "position": [9, 9],
+                            "parameters": {},
+                        },
+                    ],
+                    "edges": [],
+                },
+            },
+        )
+        assert put_response.status_code == 200
+
+        response = await client.post(
+            "/api/v1/workflow-draft-operations/wf",
+            json={
+                "expected_revision": 1,
+                "operations": [
+                    {
+                        "type": "move_node",
+                        "node_id": "inner",
+                        "position": [100, 120],
+                        "scope": {"sub_workflow_path": ["outer"]},
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["graph"]["nodes"][0]["sub_workflow"]["nodes"][0]["position"] == [
+        100,
+        120,
+    ]
+    assert body["graph"]["nodes"][1]["position"] == [9, 9]
+    assert json.loads(_draft_path(tmp_path).read_text())["draft_revision"] == 2
+    assert len(published) == 2
+
+
 async def test_operation_api_preserves_nested_workflow_ids(tmp_path: Path) -> None:
     async for client in _client(tmp_path):
         await _create_workflow(client, "folder/wf")
@@ -488,6 +562,61 @@ async def test_move_nodes_validation_failure_is_atomic(tmp_path: Path) -> None:
     assert response.json()["code"] == "missing_node"
     assert not _draft_path(tmp_path).exists()
     assert _agent_state_path(tmp_path).read_text() == initial_state
+    assert published == []
+
+
+async def test_scoped_layout_validation_failure_is_atomic(tmp_path: Path) -> None:
+    manager = ConnectionManager()
+    published: list[dict[str, Any]] = []
+    manager.publish_workflow_draft_changed = (  # type: ignore[method-assign]
+        lambda **payload: published.append(payload)
+    )
+
+    async for client in _client(tmp_path, connection_manager=manager):
+        await _create_workflow(client, "wf")
+        put_response = await client.put(
+            "/api/v1/workflow-drafts/wf",
+            json={
+                "expected_revision": 0,
+                "graph": {
+                    "nodes": [
+                        {
+                            "id": "plain",
+                            "name": "Plain",
+                            "tool_name": "MissingTool",
+                            "position": [0, 0],
+                            "parameters": {},
+                        }
+                    ],
+                    "edges": [],
+                },
+            },
+        )
+        assert put_response.status_code == 200
+        before = _draft_path(tmp_path).read_text()
+        agent_state_before = _agent_state_path(tmp_path).read_text()
+        published.clear()
+
+        response = await client.post(
+            "/api/v1/workflow-draft-operations/wf",
+            json={
+                "expected_revision": 1,
+                "operations": [
+                    {
+                        "type": "move_node",
+                        "node_id": "inner",
+                        "position": [100, 120],
+                        "scope": {"sub_workflow_path": ["plain"]},
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["operation_index"] == 0
+    assert response.json()["code"] == "missing_sub_workflow"
+    assert _draft_path(tmp_path).read_text() == before
+    assert _agent_state_path(tmp_path).read_text() == agent_state_before
     assert published == []
 
 

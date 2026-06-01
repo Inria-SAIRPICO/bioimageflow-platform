@@ -1611,3 +1611,68 @@ implementation prompt without expanding scope.
 - Write model, pure transform, router, and MCP tests first.
 - Implement scoped layout, run focused validation, review, fix blockers, update
   plan/log, and commit.
+
+## 2026-06-01: Phase 16 Scoped Nested Sub-Workflow Layout
+
+### Planned
+
+- Add explicit nested sub-workflow scope for layout-safe operations only.
+- Keep root behavior backward compatible and reject broader scoped graph
+  mutation.
+
+### Implemented
+
+- Added `WorkflowDraftOperationScope` with `sub_workflow_path`, defaulting to
+  the root graph.
+- Added scope support to `move_node` and `move_nodes` only.
+- Added recursive scoped graph replacement that walks node ids from root,
+  rejects missing scope nodes, nodes without sub-workflows, and read-only
+  sub-workflows, and preserves unrelated outer graph fields.
+- Added model, transform, router, MCP, and generated workspace/docs coverage for
+  scoped layout.
+- Added extra-field rejection for operation models so unsupported `scope` on
+  non-layout operations is rejected instead of silently ignored.
+
+### Learned
+
+- Pydantic's default extra-field behavior can silently drop unsupported fields.
+  That was unsafe for `scope`; operation models now forbid extras.
+- Scoped layout works cleanly without expanding create/delete/connect semantics
+  or introducing cross-scope edges.
+
+### Plan Changes
+
+- Marked Phase 16 complete in `agent_operation_interface_plan.md`.
+- Broad nested sub-workflow mutation remains deferred beyond Phase 16; only
+  layout scope is implemented.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py
+  tests/test_services/test_agent_workspace_context.py` passed: 117 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/models/workflow_draft_operations.py
+  src/bioimageflow_server/services/workflow_draft_operations.py
+  src/bioimageflow_server/agent_mcp.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py
+  tests/test_services/test_agent_workspace_context.py` passed.
+
+### Review Notes
+
+- Dedicated Phase 16 review initially found a high-severity issue: unsupported
+  `scope` on non-layout operations was accepted and dropped.
+- Added regression tests and extra-field rejection for operation models. The
+  follow-up review found no remaining blockers.
+
+### Next Implementation Iteration
+
+- Phase 13 through Phase 16 are complete. Future phases should be planned from
+  real agent usage evidence rather than expanding the operation DSL by default.

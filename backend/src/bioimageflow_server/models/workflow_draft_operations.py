@@ -9,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from bioimageflow_server.models.workflow_draft import DraftWriter
 
 
-class CreateNodeOperation(BaseModel):
+class _OperationBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class CreateNodeOperation(_OperationBase):
     type: Literal["create_node"] = "create_node"
     node_id: str
     tool_name: str
@@ -18,46 +22,54 @@ class CreateNodeOperation(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
-class DeleteNodeOperation(BaseModel):
+class DeleteNodeOperation(_OperationBase):
     type: Literal["delete_node"] = "delete_node"
     node_id: str
 
 
-class RenameNodeOperation(BaseModel):
+class RenameNodeOperation(_OperationBase):
     type: Literal["rename_node"] = "rename_node"
     node_id: str
     name: str
 
 
-class UpdateNodeParametersOperation(BaseModel):
+class UpdateNodeParametersOperation(_OperationBase):
     type: Literal["update_node_parameters"] = "update_node_parameters"
     node_id: str
     parameters: dict[str, Any]
 
 
-class SetNodeEnabledOperation(BaseModel):
+class SetNodeEnabledOperation(_OperationBase):
     type: Literal["set_node_enabled"] = "set_node_enabled"
     node_id: str
     enabled: bool
 
 
-class MoveNodeOperation(BaseModel):
+class WorkflowDraftOperationScope(_OperationBase):
+    sub_workflow_path: list[str] = Field(default_factory=list)
+
+
+class _LayoutScopeMixin(_OperationBase):
+    scope: WorkflowDraftOperationScope = Field(default_factory=WorkflowDraftOperationScope)
+
+
+class MoveNodeOperation(_LayoutScopeMixin):
     type: Literal["move_node"] = "move_node"
     node_id: str
     position: tuple[float, float]
 
 
-class MoveNodeItem(BaseModel):
+class MoveNodeItem(_OperationBase):
     node_id: str
     position: tuple[float, float]
 
 
-class MoveNodesOperation(BaseModel):
+class MoveNodesOperation(_LayoutScopeMixin):
     type: Literal["move_nodes"] = "move_nodes"
     moves: list[MoveNodeItem] = Field(min_length=1)
 
 
-class _PublishedNameMixin(BaseModel):
+class _PublishedNameMixin(_OperationBase):
     name: str
 
     @field_validator("name")
@@ -69,7 +81,7 @@ class _PublishedNameMixin(BaseModel):
         return stripped
 
 
-class _PublishedTargetMixin(BaseModel):
+class _PublishedTargetMixin(_OperationBase):
     internal_node_id: str
 
     @field_validator("internal_node_id", "internal_field", "internal_output", check_fields=False)
@@ -103,7 +115,7 @@ class DeletePublishedOutputOperation(_PublishedNameMixin):
     type: Literal["delete_published_output"] = "delete_published_output"
 
 
-class ConnectColumnRefOperation(BaseModel):
+class ConnectColumnRefOperation(_OperationBase):
     type: Literal["connect_column_ref"] = "connect_column_ref"
     source_node: str
     target_node: str
@@ -112,7 +124,7 @@ class ConnectColumnRefOperation(BaseModel):
     edge_id: str | None = None
 
 
-class ConnectPositionalOperation(BaseModel):
+class ConnectPositionalOperation(_OperationBase):
     type: Literal["connect_positional"] = "connect_positional"
     source_node: str
     target_node: str
@@ -120,7 +132,7 @@ class ConnectPositionalOperation(BaseModel):
     edge_id: str | None = None
 
 
-class DeleteEdgeOperation(BaseModel):
+class DeleteEdgeOperation(_OperationBase):
     type: Literal["delete_edge"] = "delete_edge"
     edge_id: str
 
