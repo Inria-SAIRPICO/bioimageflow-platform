@@ -5,15 +5,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
+from bioimageflow_server.app import create_app
 from bioimageflow_server.agent_mcp import (
     BioImageFlowMCPGateway,
     create_mcp_server,
     read_agent_state,
 )
+from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 pytestmark = pytest.mark.anyio
 
@@ -31,6 +36,14 @@ class _FakeFastMCP:
         return decorator
 
 
+class _FakeExecutionManager:
+    is_running = False
+
+    def __init__(self) -> None:
+        self.start = AsyncMock()
+        self.stop = AsyncMock()
+
+
 def _write_state(tmp_path: Path, *, workflow_id: str = "folder/wf") -> Path:
     state = tmp_path / ".bioimageflow" / "agent-state.json"
     state.parent.mkdir()
@@ -45,6 +58,10 @@ def _write_state(tmp_path: Path, *, workflow_id: str = "folder/wf") -> Path:
         encoding="utf-8",
     )
     return state
+
+
+def _workspace_state_path(tmp_path: Path) -> Path:
+    return tmp_path / "workspace" / ".bioimageflow" / "agent-state.json"
 
 
 def test_read_agent_state_discovers_active_workflow(tmp_path: Path) -> None:
@@ -232,6 +249,71 @@ async def test_validation_run_and_stop_call_existing_rest_endpoints(
     ]
 
 
+async def test_mcp_registered_tools_smoke_against_asgi_app(tmp_path: Path) -> None:
+    registry = ToolRegistryService()
+    workflow_store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=registry,
+        storage_base_dir=tmp_path / "workspace" / "outputs",
+    )
+    execution_manager = _FakeExecutionManager()
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=workflow_store,
+            execution_manager=execution_manager,
+            storage_path=tmp_path / "bif-data",
+            disable_hot_reload=True,
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        create = await client.post(
+            "/api/v1/workflows",
+            json={"name": "wf", "display_name": "wf"},
+        )
+        assert create.status_code == 201
+        draft = await client.get("/api/v1/workflow-drafts/wf")
+        assert draft.status_code == 200
+
+        server = create_mcp_server(
+            gateway=BioImageFlowMCPGateway(
+                state_path=_workspace_state_path(tmp_path),
+                transport=transport,
+            ),
+            mcp_factory=_FakeFastMCP,
+        )
+
+        active = await server.tools["get_active_workflow"]()
+        created = await server.tools["create_node"](
+            node_id="n1",
+            tool_name="MissingTool",
+            name="Node",
+            position=[0, 0],
+        )
+        validation = await server.tools["validate_workflow"]()
+        run = await server.tools["run_workflow"](nodes=["n1"])
+        stop = await server.tools["stop_execution"]()
+
+    assert active == {
+        "ok": True,
+        "api_base_url": "http://test/api/v1",
+        "active_workflow_id": "wf",
+        "current_draft_revision": 0,
+    }
+    assert created["ok"] is True
+    assert created["draft_revision"] == 1
+    assert created["validation_valid"] is False
+    assert created["validation_errors"]
+    assert validation["ok"] is True
+    assert validation["valid"] is False
+    assert validation["errors"][0]["type"] == "missing_tool"
+    assert run == {"ok": True, "status": "started"}
+    assert stop == {"ok": True, "status": "stopping"}
+    execution_manager.start.assert_awaited_once()
+    execution_manager.stop.assert_awaited_once()
+
+
 async def test_create_node_returns_compact_error_when_draft_fetch_fails(
     tmp_path: Path,
 ) -> None:
@@ -281,6 +363,167 @@ async def test_validate_workflow_preserves_backend_validation_error(
     }
 
 
+async def test_validate_workflow_returns_backend_validation_errors(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/workflow-drafts/wf"):
+            return httpx.Response(
+                200,
+                json={
+                    "draft_revision": 1,
+                    "graph": {
+                        "nodes": [
+                            {
+                                "id": "n1",
+                                "name": "Node",
+                                "tool_name": "MissingTool",
+                                "position": [0, 0],
+                                "parameters": {},
+                            }
+                        ],
+                        "edges": [],
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "valid": False,
+                "errors": [
+                    {
+                        "type": "missing_tool",
+                        "detail": "Tool not found: MissingTool",
+                        "node": "n1",
+                        "edge_id": None,
+                        "field": None,
+                    }
+                ],
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.validate_workflow() == {
+        "ok": True,
+        "valid": False,
+        "error_count": 1,
+        "errors": [
+            {
+                "type": "missing_tool",
+                "detail": "Tool not found: MissingTool",
+                "node": "n1",
+                "edge_id": None,
+                "field": None,
+            }
+        ],
+    }
+
+
+async def test_create_node_promotes_operation_validation_error_fields(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 2, "graph": {"nodes": [], "edges": []}},
+            )
+        return httpx.Response(
+            422,
+            json={
+                "error": "operation_validation_error",
+                "operation_index": 0,
+                "code": "duplicate_node_id",
+                "detail": "Node id already exists: n1",
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.create_node(
+        node_id="n1",
+        tool_name="Tool",
+        name="Node",
+        position=[0, 0],
+    ) == {
+        "ok": False,
+        "status_code": 422,
+        "error": "operation_validation_error",
+        "operation_index": 0,
+        "code": "duplicate_node_id",
+        "detail": "Node id already exists: n1",
+    }
+
+
+async def test_create_node_result_surfaces_validation_errors(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 2, "graph": {"nodes": [], "edges": []}},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 3,
+                "validation": {
+                    "valid": False,
+                    "errors": [
+                        {
+                            "type": "missing_tool",
+                            "detail": "Tool not found: MissingTool",
+                            "node": "n1",
+                            "edge_id": None,
+                            "field": None,
+                        }
+                    ],
+                },
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await gateway.create_node(
+        node_id="n1",
+        tool_name="MissingTool",
+        name="Node",
+        position=[0, 0],
+    )
+
+    assert result == {
+        "ok": True,
+        "workflow_id": "wf",
+        "draft_revision": 3,
+        "validation_valid": False,
+        "validation_errors": [
+            {
+                "type": "missing_tool",
+                "detail": "Tool not found: MissingTool",
+                "node": "n1",
+                "edge_id": None,
+                "field": None,
+            }
+        ],
+    }
+
+
 async def test_run_workflow_returns_compact_error_when_draft_fetch_fails(
     tmp_path: Path,
 ) -> None:
@@ -296,6 +539,82 @@ async def test_run_workflow_returns_compact_error_when_draft_fetch_fails(
         "ok": False,
         "status_code": 404,
         "error": {"detail": "Workflow not found"},
+    }
+
+
+async def test_missing_agent_state_returns_structured_error(tmp_path: Path) -> None:
+    gateway = BioImageFlowMCPGateway(state_path=tmp_path / "missing-state.json")
+
+    assert await gateway.get_active_workflow() == {
+        "ok": False,
+        "error": "agent_state_missing",
+        "detail": f"Agent state file not found: {tmp_path / 'missing-state.json'}",
+    }
+
+
+async def test_malformed_agent_state_returns_structured_error(tmp_path: Path) -> None:
+    state_path = tmp_path / ".bioimageflow" / "agent-state.json"
+    state_path.parent.mkdir()
+    state_path.write_text("{not json", encoding="utf-8")
+    gateway = BioImageFlowMCPGateway(state_path=state_path)
+
+    result = await gateway.get_active_workflow()
+
+    assert result["ok"] is False
+    assert result["error"] == "agent_state_invalid"
+    assert "Invalid JSON" in result["detail"]
+
+
+async def test_backend_unavailable_returns_structured_error(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.list_tools() == {
+        "ok": False,
+        "error": "backend_unavailable",
+        "detail": "connection refused",
+    }
+
+
+async def test_backend_timeout_returns_structured_error(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.list_tools() == {
+        "ok": False,
+        "error": "backend_timeout",
+        "detail": "timed out",
+    }
+
+
+async def test_malformed_backend_response_returns_structured_error(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, text="not json")),
+    )
+
+    assert await gateway.list_tools() == {
+        "ok": False,
+        "error": "malformed_backend_response",
+        "detail": "Backend returned non-JSON response",
+        "body": "not json",
     }
 
 

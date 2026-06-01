@@ -393,6 +393,10 @@ Exit criteria:
 
 - One command/test proves the MCP path is live.
 - Smoke output is actionable when setup is broken.
+- Completed on 2026-06-01 with an ASGI-backed registered-MCP-tool smoke test
+  plus structured MCP error hardening for missing/invalid agent state,
+  unavailable backend, timeouts, malformed backend responses, operation
+  validation errors, and backend validation errors.
 
 ### Phase 7: Rich MCP Tool Discovery
 

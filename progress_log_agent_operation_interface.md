@@ -718,3 +718,67 @@ implementation prompt without expanding scope.
 - Implement the smallest `agent_mcp.py` changes needed to pass those tests.
 - Run focused MCP/router tests and ruff, then use a dedicated review agent before
   integration.
+
+## 2026-06-01: Phase 6 MCP Smoke And Hardening
+
+### Planned
+
+- Add live-ish MCP smoke coverage that exercises registered MCP tools against a
+  real ASGI app and generated `agent-state.json`.
+- Preserve backend-owned graph mutation semantics.
+- Preserve useful validation and operation error detail in MCP responses.
+- Harden common MCP runtime failures into compact structured results.
+
+### Implemented
+
+- Added an ASGI-backed smoke test that creates a workflow through the app, reads
+  generated agent state, creates a node through the registered MCP `create_node`
+  tool, validates through MCP, and calls MCP run/stop tools with a fake execution
+  manager.
+- Preserved backend validation errors in `validate_workflow` MCP results.
+- Preserved operation-response validation errors in successful graph-edit MCP
+  results when the draft is invalid.
+- Promoted backend `operation_validation_error` fields to top-level MCP result
+  fields: `operation_index`, `code`, and `detail`.
+- Added structured MCP errors for missing agent state, malformed agent state,
+  backend connection failures, backend timeouts, malformed backend JSON, and run
+  REST failures.
+
+### Learned
+
+- A gateway-only ASGI smoke is not enough: it can miss `create_mcp_server`
+  registration regressions. The reviewed smoke now calls the registered tool
+  functions from a fake `FastMCP` server while still using the real ASGI app and
+  backend REST routes.
+- Pydantic wraps malformed JSON agent-state failures as `ValidationError`, so the
+  hardening path should treat `ValidationError` as invalid agent state.
+- `run_workflow` needed the same `_is_error` guard as validation and stop so
+  backend REST errors are not wrapped as successful MCP results.
+
+### Plan Changes
+
+- Marked Phase 6 complete in `agent_operation_interface_plan.md`.
+- Phase 7 should now focus on richer MCP discovery, especially preserving
+  existing `ToolMetadata` fields and mechanical creation hints.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_services/test_agent_mcp.py tests/test_routers/test_workflow_draft_operations.py`
+  passed: 42 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/agent_mcp.py tests/test_services/test_agent_mcp.py`
+  passed.
+
+### Review Notes
+
+- Initial review found one blocking issue: the smoke test used the gateway
+  directly and did not prove MCP tool registration. The test was changed to use
+  `create_mcp_server(..., mcp_factory=_FakeFastMCP)` and invoke registered tools.
+- Review also requested malformed agent-state coverage; added.
+- Follow-up review found no remaining blockers.
+
+### Next Implementation Iteration
+
+- Before Phase 7 coding, update this plan/log with the exact MCP discovery
+  response shape and tests based on existing `ToolMetadata`.

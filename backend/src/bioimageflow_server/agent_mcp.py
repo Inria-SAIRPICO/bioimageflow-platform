@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 class AgentState(BaseModel):
@@ -43,7 +44,9 @@ class BioImageFlowMCPGateway:
     transport: httpx.AsyncBaseTransport | None = None
 
     async def get_active_workflow(self) -> dict[str, Any]:
-        state = read_agent_state(self.state_path)
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
         return {
             "ok": True,
             "api_base_url": state.api_base_url,
@@ -182,7 +185,9 @@ class BioImageFlowMCPGateway:
         )
 
     async def validate_workflow(self) -> dict[str, Any]:
-        state = read_agent_state(self.state_path)
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
         draft = await self._draft(state)
         if _is_error(draft):
             return draft
@@ -194,14 +199,19 @@ class BioImageFlowMCPGateway:
         if _is_error(result):
             return result
         errors = result.get("errors") or []
-        return {
+        payload = {
             "ok": True,
             "valid": bool(result.get("valid")),
             "error_count": len(errors),
         }
+        if errors:
+            payload["errors"] = errors
+        return payload
 
     async def run_workflow(self, *, nodes: list[str] | None = None) -> dict[str, Any]:
-        state = read_agent_state(self.state_path)
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
         draft = await self._draft(state)
         if _is_error(draft):
             return draft
@@ -212,6 +222,8 @@ class BioImageFlowMCPGateway:
         if nodes is not None:
             payload["nodes"] = nodes
         result = await self._request("POST", "/execution/run", json=payload)
+        if _is_error(result):
+            return result
         return {"ok": True, **result}
 
     async def stop_execution(self) -> dict[str, Any]:
@@ -226,7 +238,9 @@ class BioImageFlowMCPGateway:
         *,
         expected_revision: int | None,
     ) -> dict[str, Any]:
-        state = read_agent_state(self.state_path)
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
         if expected_revision is None:
             draft = await self._draft(state)
             if _is_error(draft):
@@ -257,17 +271,36 @@ class BioImageFlowMCPGateway:
         *,
         json: dict[str, Any] | None = None,
     ) -> Any:
-        state = read_agent_state(self.state_path)
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
         url = f"{state.api_base_url.rstrip('/')}{path}"
-        async with httpx.AsyncClient(transport=self.transport) as client:
-            response = await client.request(method, url, json=json)
-        if response.is_error:
+        try:
+            async with httpx.AsyncClient(transport=self.transport, timeout=10.0) as client:
+                response = await client.request(method, url, json=json)
+        except httpx.TimeoutException as exc:
             return {
                 "ok": False,
-                "status_code": response.status_code,
-                "error": _json_or_text(response),
+                "error": "backend_timeout",
+                "detail": str(exc),
             }
-        return response.json()
+        except httpx.TransportError as exc:
+            return {
+                "ok": False,
+                "error": "backend_unavailable",
+                "detail": str(exc),
+            }
+        if response.is_error:
+            return _http_error_result(response)
+        try:
+            return response.json()
+        except JSONDecodeError:
+            return {
+                "ok": False,
+                "error": "malformed_backend_response",
+                "detail": "Backend returned non-JSON response",
+                "body": response.text,
+            }
 
 
 def create_mcp_server(
@@ -408,11 +441,53 @@ def main() -> None:
 def _operation_result(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("ok") is False:
         return result
-    return {
+    validation = result.get("validation") or {}
+    validation_errors = validation.get("errors") or []
+    payload = {
         "ok": True,
         "workflow_id": result.get("workflow_id"),
         "draft_revision": result.get("draft_revision"),
-        "validation_valid": (result.get("validation") or {}).get("valid"),
+        "validation_valid": validation.get("valid"),
+    }
+    if validation_errors:
+        payload["validation_errors"] = validation_errors
+    return payload
+
+
+def _read_state_or_error(path: Path | None) -> AgentState | dict[str, Any]:
+    state_path = path or default_state_path()
+    try:
+        return read_agent_state(state_path)
+    except FileNotFoundError:
+        return {
+            "ok": False,
+            "error": "agent_state_missing",
+            "detail": f"Agent state file not found: {state_path}",
+        }
+    except (OSError, JSONDecodeError, ValidationError) as exc:
+        return {
+            "ok": False,
+            "error": "agent_state_invalid",
+            "detail": str(exc),
+        }
+
+
+def _http_error_result(response: httpx.Response) -> dict[str, Any]:
+    payload = _json_or_text(response)
+    if isinstance(payload, dict) and payload.get("error") == "operation_validation_error":
+        result: dict[str, Any] = {
+            "ok": False,
+            "status_code": response.status_code,
+            "error": payload["error"],
+        }
+        for key in ("operation_index", "code", "detail"):
+            if key in payload:
+                result[key] = payload[key]
+        return result
+    return {
+        "ok": False,
+        "status_code": response.status_code,
+        "error": payload,
     }
 
 
