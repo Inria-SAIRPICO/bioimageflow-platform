@@ -438,6 +438,9 @@ Exit criteria:
 
 - An agent can inspect a tool and prepare a valid node creation request from MCP
   metadata.
+- Completed on 2026-06-01: MCP `list_tools` now preserves registry metadata and
+  returns mechanical creation hints for defaults, required unconnected inputs,
+  connectable inputs, and output template defaults.
 
 ### Phase 8: MCP Validation Feedback
 

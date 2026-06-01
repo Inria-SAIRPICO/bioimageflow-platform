@@ -170,6 +170,151 @@ async def test_create_node_calls_backend_operation_api_with_auto_revision(
     )
 
 
+async def test_list_tools_returns_registry_metadata_and_creation_hints(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    tool = {
+        "name": "SegmentCells",
+        "display_name": "Segment Cells",
+        "package": "bioimageflow-common-tools",
+        "package_version": "1.0.0",
+        "tool_type": "ProcessingTool",
+        "accepts_upstream": True,
+        "dynamic_outputs": False,
+        "dataframe_output": True,
+        "documentation": "Segment cells from an image.",
+        "tags": ["segmentation"],
+        "categories": ["image processing"],
+        "inputs": {
+            "image": {
+                "type": "path",
+                "required": True,
+                "nullable": False,
+                "connectable": "by_default",
+                "default": None,
+                "display_name": "Image",
+            },
+            "sigma": {
+                "type": "number",
+                "required": False,
+                "nullable": False,
+                "connectable": "never",
+                "default": 2.0,
+                "min": 0.0,
+                "max": 10.0,
+                "step": 0.5,
+            },
+            "threshold": {
+                "type": "number",
+                "required": True,
+                "nullable": False,
+                "connectable": "never",
+                "default": None,
+            },
+            "method": {
+                "type": "string",
+                "required": False,
+                "nullable": False,
+                "connectable": "not_by_default",
+                "default": "otsu",
+                "choices": ["otsu", "manual"],
+            },
+        },
+        "outputs": {
+            "mask": {"type": "path", "default": "mask.tif"},
+            "table": {"type": "path", "default": "measurements.csv"},
+        },
+        "environment": {"status": "ready"},
+        "source_kind": "package",
+        "editable": False,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/v1/tools"
+        return httpx.Response(200, json=[tool])
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await gateway.list_tools()
+
+    assert result["ok"] is True
+    assert result["count"] == 1
+    assert result["tools"] == [
+        {
+            "name": "SegmentCells",
+            "display_name": "Segment Cells",
+            "documentation": "Segment cells from an image.",
+            "package": "bioimageflow-common-tools",
+            "package_version": "1.0.0",
+            "tool_type": "ProcessingTool",
+            "accepts_upstream": True,
+            "dynamic_outputs": False,
+            "dataframe_output": True,
+            "tags": ["segmentation"],
+            "categories": ["image processing"],
+            "inputs": tool["inputs"],
+            "outputs": tool["outputs"],
+            "environment": {"status": "ready"},
+            "source_kind": "package",
+            "editable": False,
+            "creation": {
+                "default_parameters": {"sigma": 2.0, "method": "otsu"},
+                "required_unconnected_inputs": ["threshold"],
+                "connectable_inputs": ["image", "method"],
+                "default_output_templates": {
+                    "mask": "mask.tif",
+                    "table": "measurements.csv",
+                },
+            },
+        }
+    ]
+    assert "description" not in result["tools"][0]
+
+
+async def test_list_tools_handles_passthrough_outputs_without_template_defaults(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json=[
+                    {
+                        "name": "MergeTables",
+                        "display_name": "Merge Tables",
+                        "package": "pkg",
+                        "package_version": "1",
+                        "tool_type": "DataFrameTool",
+                        "accepts_upstream": True,
+                        "dynamic_outputs": True,
+                        "dataframe_output": True,
+                        "documentation": "",
+                        "tags": [],
+                        "categories": [],
+                        "inputs": {},
+                        "outputs": {"_passthrough": True},
+                        "source_kind": "package",
+                        "editable": False,
+                    }
+                ],
+            )
+        ),
+    )
+
+    result = await gateway.list_tools()
+
+    assert result["tools"][0]["outputs"] == {"_passthrough": True}
+    assert result["tools"][0]["creation"]["default_output_templates"] == {}
+
+
 async def test_graph_editing_tools_do_not_mutate_graph_locally(tmp_path: Path) -> None:
     state_path = _write_state(tmp_path)
     called_paths: list[str] = []

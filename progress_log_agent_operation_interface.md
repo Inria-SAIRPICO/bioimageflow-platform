@@ -824,3 +824,64 @@ implementation prompt without expanding scope.
     `creation.default_output_templates`.
 - Implement the smallest MCP `list_tools` shaping changes, validate, review, and
   integrate.
+
+## 2026-06-01: Phase 7 Rich MCP Tool Discovery
+
+### Planned
+
+- Preserve useful `ToolMetadata` through MCP `list_tools`.
+- Add mechanical creation hints that help an agent build a valid
+  `create_node` request without inventing graph semantics.
+
+### Implemented
+
+- Replaced the minimal MCP tool projection with metadata preserving:
+  `name`, `display_name`, `documentation`, `package`, `package_version`,
+  `tool_type`, `accepts_upstream`, `dynamic_outputs`, `dataframe_output`,
+  `tags`, `categories`, `inputs`, `outputs`, `environment`, `source_kind`, and
+  `editable`.
+- Added `creation` hints:
+  `default_parameters`, `required_unconnected_inputs`, `connectable_inputs`, and
+  `default_output_templates`.
+- Added tests for preserving documentation instead of the non-existent
+  `description` field, preserving passthrough outputs, deriving path output
+  templates, preserving environment metadata, and including defaulted
+  `not_by_default` inputs in defaults.
+
+### Learned
+
+- Frontend node creation copies defaults from all inputs with non-`None`
+  defaults, not only inputs with `connectable: "never"`.
+- `not_by_default` inputs are still connectable and should remain in
+  `connectable_inputs`; agents can decide whether to wire them from the field's
+  own `connectable` value.
+- `environment` is part of `ToolMetadata` and should be preserved by the MCP
+  projection.
+
+### Plan Changes
+
+- Marked Phase 7 complete in `agent_operation_interface_plan.md`.
+- Response bloat remains a residual risk for large registries; defer a
+  `get_tool`/search helper until real payload size evidence requires it.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_services/test_agent_mcp.py tests/test_routers/test_workflow_draft_operations.py`
+  passed: 46 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/agent_mcp.py tests/test_services/test_agent_mcp.py`
+  passed.
+
+### Review Notes
+
+- Initial review found two blocking metadata-fidelity issues: defaulted
+  `not_by_default` inputs were omitted from defaults, and `environment` was
+  dropped.
+- Both were fixed with tests. Follow-up review found no remaining blockers.
+
+### Next Implementation Iteration
+
+- Before Phase 8/9 coding, update the plan/log with whether validation-feedback
+  work is already satisfied by Phase 6 and whether the next best phase is MCP
+  client configuration.

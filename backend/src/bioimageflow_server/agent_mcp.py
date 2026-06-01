@@ -61,14 +61,7 @@ class BioImageFlowMCPGateway:
         return {
             "ok": True,
             "count": len(tools),
-            "tools": [
-                {
-                    "name": tool.get("name"),
-                    "display_name": tool.get("display_name"),
-                    "description": tool.get("description"),
-                }
-                for tool in tools
-            ],
+            "tools": [_tool_discovery_result(tool) for tool in tools],
         }
 
     async def create_node(
@@ -489,6 +482,74 @@ def _http_error_result(response: httpx.Response) -> dict[str, Any]:
         "status_code": response.status_code,
         "error": payload,
     }
+
+
+def _tool_discovery_result(tool: dict[str, Any]) -> dict[str, Any]:
+    inputs = tool.get("inputs") or {}
+    outputs = tool.get("outputs") or {}
+    result = {
+        "name": tool.get("name"),
+        "display_name": tool.get("display_name"),
+        "documentation": tool.get("documentation", ""),
+        "package": tool.get("package"),
+        "package_version": tool.get("package_version"),
+        "tool_type": tool.get("tool_type"),
+        "accepts_upstream": tool.get("accepts_upstream"),
+        "dynamic_outputs": tool.get("dynamic_outputs"),
+        "dataframe_output": tool.get("dataframe_output"),
+        "tags": tool.get("tags") or [],
+        "categories": tool.get("categories") or [],
+        "inputs": inputs,
+        "outputs": outputs,
+        "environment": tool.get("environment"),
+        "source_kind": tool.get("source_kind"),
+        "editable": tool.get("editable"),
+    }
+    result["creation"] = {
+        "default_parameters": _default_parameters(inputs),
+        "required_unconnected_inputs": _required_unconnected_inputs(inputs),
+        "connectable_inputs": _connectable_inputs(inputs),
+        "default_output_templates": _default_output_templates(outputs),
+    }
+    return result
+
+
+def _default_parameters(inputs: dict[str, Any]) -> dict[str, Any]:
+    return {
+        name: schema.get("default")
+        for name, schema in inputs.items()
+        if isinstance(schema, dict) and schema.get("default") is not None
+    }
+
+
+def _required_unconnected_inputs(inputs: dict[str, Any]) -> list[str]:
+    return [
+        name
+        for name, schema in inputs.items()
+        if isinstance(schema, dict)
+        and schema.get("required") is True
+        and schema.get("connectable") != "by_default"
+        and schema.get("default") is None
+    ]
+
+
+def _connectable_inputs(inputs: dict[str, Any]) -> list[str]:
+    return [
+        name
+        for name, schema in inputs.items()
+        if isinstance(schema, dict) and schema.get("connectable") != "never"
+    ]
+
+
+def _default_output_templates(outputs: dict[str, Any]) -> dict[str, str]:
+    templates: dict[str, str] = {}
+    for name, schema in outputs.items():
+        if not isinstance(schema, dict):
+            continue
+        default = schema.get("default")
+        if isinstance(default, str) and default:
+            templates[name] = default
+    return templates
 
 
 def _is_error(result: Any) -> bool:
