@@ -578,6 +578,10 @@ Exit criteria:
 
 - Common setup/runtime failures produce structured MCP responses instead of
   tracebacks or ambiguous `ok: false` payloads.
+- Completed as part of Phase 6 on 2026-06-01 for the evidenced MCP failure
+  modes: missing/invalid state, backend unavailable, backend timeout, malformed
+  backend response, draft-fetch failures, run failures, and backend operation or
+  validation errors.
 
 ### Phase 12: Conflict And End-To-End UX Validation
 

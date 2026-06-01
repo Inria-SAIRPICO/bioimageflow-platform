@@ -1062,3 +1062,32 @@ implementation prompt without expanding scope.
 - Phase 11 hardening is mostly satisfied by Phase 6. Before more code, update the
   plan/log to decide whether any hardening gaps remain or whether to move to
   Phase 12 end-to-end UX validation.
+
+## 2026-06-01: Phase 11 Scope Resolution
+
+### Planned
+
+- Decide whether more real-usage hardening is needed after the Phase 6 MCP
+  smoke/error work.
+
+### Learned
+
+- Phase 6 already covers the evidenced MCP hardening gaps from calibration:
+  missing and malformed agent state, unavailable backend, timeout, malformed
+  backend response, draft-fetch failure, run failure, operation validation error,
+  and backend validation errors.
+- Additional health/status tooling could be useful later, but current docs and
+  generated state already include `health_url`, `api_base_url`, and
+  `mcp_client_config`.
+
+### Plan Changes
+
+- Marked Phase 11 complete via Phase 6 implementation in
+  `agent_operation_interface_plan.md`.
+- The next implementation phase is Phase 12 conflict/end-to-end UX validation.
+
+### Next Implementation Iteration
+
+- Calibrate existing frontend e2e harness, then add the smallest reliable e2e
+  validation for backend operation edits reaching the canvas through the existing
+  draft/WebSocket path.
