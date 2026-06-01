@@ -1188,3 +1188,39 @@ implementation prompt without expanding scope.
 - Integrate the reviewed Phase 12 work into main.
 - Run final focused status/validation checks and close the capability completion
   track unless new failures appear.
+
+## 2026-06-01: Post-Phase-12 Scope Expansion Planning
+
+### Planned
+
+- Add a concrete future phase for agent tool authoring docs and validation.
+- Add explicit future phases for three remaining graph-capability gaps:
+  published workflow interface operations, bulk layout, and scoped nested
+  sub-workflow mutation.
+
+### Learned
+
+- Workflow-local tool authoring is already partly supported by existing APIs and
+  file watching: agents can create custom tools, resolve editable source paths,
+  edit Python files, rename/delete custom tools, and rely on tool hot reload
+  events.
+- The main gap for tool authoring is documentation plus validation that the
+  documented path remains accurate and agent-visible.
+- Published input/output edits, bulk layout, and nested sub-workflow mutation
+  should be separate semantic-operation phases. Combining them into a generic
+  patch language would undermine the backend-owned operation model.
+
+### Plan Changes
+
+- Added Phase 13: Agent Tool Authoring Docs And Validation.
+- Added Phase 14: Published Workflow Interface Operations.
+- Added Phase 15: Bulk Layout Operation.
+- Added Phase 16: Scoped Nested Sub-Workflow Mutation.
+- Kept CLI fallback deferred.
+
+### Next Implementation Iteration
+
+- Start Phase 13 with calibration: inspect current custom-tool APIs, hot-reload
+  tests, frontend WebSocket handling, generated workspace docs, and docs/agents.
+- Update the plan/log again with exact Phase 13 test scope before coding.
+- Use TDD, a dedicated worktree, and a dedicated review agent for Phase 13.

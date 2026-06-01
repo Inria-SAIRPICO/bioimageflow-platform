@@ -637,6 +637,186 @@ Exit criteria:
   clean canvas without a reload or conflict banner. No frontend editing-model
   changes were required.
 
+### Phase 13: Agent Tool Authoring Docs And Validation
+
+Goal: make workflow-local tool creation, editing, deletion, and hot-reload
+behavior explicit for agents.
+
+Current evidence:
+
+- Workflow-local tool APIs already exist: `POST /tools`,
+  `GET /tools/{tool_name}/source`, `PATCH /tools/{tool_name}`, and
+  `DELETE /tools/{tool_name}` with `workflow_name`.
+- Agents can already edit Python files directly when they have filesystem
+  access to workflow-local tools.
+- Backend hot reload watches Python tool source files and broadcasts
+  `tool_reload`, `tool_removed`, or `tool_reload_failed`.
+- Frontend WebSocket handling updates the tool registry for `tool_reload` and
+  `tool_removed`.
+
+TDD/docs validation:
+
+- Add static doc tests proving generated workspace `AGENTS.md` and
+  `docs/agents/` explain workflow-local tool authoring.
+- Add or extend backend tests proving the documented create/source/edit/delete
+  API examples remain accurate for workflow-local tools.
+- Add or extend hot-reload tests only if existing coverage does not prove create,
+  edit, delete, failure, and frontend-visible payload behavior.
+- Add a browser-realistic test only if the current frontend path lacks coverage
+  for a workflow-local tool edit reaching the Tools Panel via WebSocket.
+
+Implementation:
+
+- Document the preferred workflow:
+  1. discover active workflow and API from `.bioimageflow/agent-state.json`;
+  2. create a workflow-local tool with `POST /tools?workflow_name=$WF` when
+     scaffolding is needed;
+  3. get source paths with `GET /tools/{tool_name}/source?workflow_name=$WF`;
+  4. edit Python source files directly when appropriate;
+  5. verify hot reload with `GET /tools`, MCP `list_tools`, or observed
+     `tool_reload` / `tool_removed` behavior;
+  6. update graph nodes if tool names, parameters, inputs, or outputs changed.
+- Make clear that package/global tools may be read-only or non-deletable, while
+  workflow-local custom tools are the intended editable surface.
+- Do not create a separate tool-authoring MCP layer unless evidence shows agents
+  cannot reliably use the existing REST and filesystem path.
+
+Review:
+
+- Dedicated docs/tooling review agent checks that instructions are accurate,
+  safe for workflow-local tools, and do not imply editing read-only
+  `.bioimageflow/platform-source/` files.
+
+Exit criteria:
+
+- Agent docs clearly explain how to create, edit, delete, rename, and verify
+  workflow-local tools.
+- Tests protect the documented tool-authoring path and hot-reload expectations.
+
+### Phase 14: Published Workflow Interface Operations
+
+Goal: let agents edit a workflow's published inputs and outputs through
+backend-owned semantic operations.
+
+Scope:
+
+- Add bounded operations for root workflow interface metadata, such as
+  `set_published_input`, `delete_published_input`, `set_published_output`, and
+  `delete_published_output`.
+- Keep operations rooted in existing `GraphState.published_inputs` and
+  `GraphState.published_outputs`.
+- Do not invent a broad metadata patch DSL.
+
+TDD:
+
+- Pure transform tests first for create/update/delete behavior, duplicate
+  handling, invalid node/field references, atomic failure, batch ordering, and
+  unrelated graph-field preservation.
+- REST tests second for revision conflicts, failed-batch no-write/no-event
+  behavior, and response validation.
+- MCP thin-wrapper tests third if MCP exposure is added in the same phase.
+- Docs tests for examples in the agent workflow-editing cookbook.
+
+Implementation:
+
+- Reuse the existing operation request/response, batch cap, revision, validation,
+  and WebSocket publication model.
+- Validate referenced nodes, inputs, and outputs against the current graph and
+  tool metadata where the backend already has enough information.
+- Preserve frontend conflict behavior; agents write drafts and the frontend
+  resolves clean-vs-local-conflict as today.
+
+Review:
+
+- Dedicated operation-semantics review agent checks that interface edits are
+  backend-owned, bounded, and do not regress raw full-DAG compatibility.
+
+Exit criteria:
+
+- Agents can publish and unpublish workflow inputs/outputs without replacing the
+  entire draft graph.
+
+### Phase 15: Bulk Layout Operation
+
+Goal: let agents reposition many nodes without replacing the full workflow JSON.
+
+Scope:
+
+- Add a semantic operation such as `move_nodes` that accepts a map of
+  `{node_id: [x, y]}`.
+- Limit this to layout state. It must not update parameters, edges, tool names,
+  published inputs/outputs, or nested sub-workflows.
+
+TDD:
+
+- Pure transform tests for multiple moves, missing node failure, invalid
+  coordinates, duplicate/empty payloads, atomic failure, and unrelated-field
+  preservation.
+- REST tests for revision behavior and no-write/no-event failure behavior.
+- MCP thin-wrapper tests if exposed through MCP.
+- Frontend/e2e only if existing draft-sync coverage is insufficient for layout
+  updates.
+
+Implementation:
+
+- Keep current single-node `move_node`; add bulk layout as a convenience for
+  agents that arrange generated workflows.
+- Preserve the full-DAG draft fallback for diagnostic use, but do not require
+  agents to send whole graph JSON just to lay out nodes.
+
+Review:
+
+- Dedicated review agent checks that the operation is layout-only and does not
+  become a general graph patch.
+
+Exit criteria:
+
+- Agents can apply a multi-node layout in one operation batch while preserving
+  all non-layout graph data.
+
+### Phase 16: Scoped Nested Sub-Workflow Mutation
+
+Goal: support agent edits inside nested sub-workflows only after an explicit
+scope model exists.
+
+Scope:
+
+- Add an explicit operation target/scope, for example root graph by default and a
+  named sub-workflow scope only when requested.
+- Start with the smallest useful subset: create/delete/rename/update
+  parameters/move/connect/delete-edge within one addressed sub-workflow.
+- Do not allow cross-scope edge creation, automatic merge, recursive mutation of
+  arbitrary nested graphs, or CRDT behavior.
+
+TDD:
+
+- Model tests for explicit scope validation and backward-compatible root-scope
+  defaults.
+- Pure transform tests for scoped edits that preserve outer graph fields and
+  reject missing or read-only sub-workflows.
+- REST tests for atomic failure, revision behavior, and no-write/no-event
+  failures.
+- Frontend conflict/sync tests if scoped edits surface differently in open
+  sub-workflow tabs.
+
+Implementation:
+
+- Update the operation model only after calibrating the current sub-workflow
+  data shape and frontend session model.
+- Keep root-graph operation behavior unchanged for existing MCP/REST clients.
+- Add MCP exposure only after backend scoped semantics are stable.
+
+Review:
+
+- Dedicated architecture review agent checks that the scope model remains
+  narrow and does not become a broad operation DSL or frontend editing-model
+  rewrite.
+
+Exit criteria:
+
+- Agents can mutate an explicitly addressed nested sub-workflow with the same
+  backend-owned semantic guarantees as root workflow edits.
+
 ### Deferred Phase: CLI Fallback
 
 Reconsider only after MCP and operation REST are implemented and tested in real
