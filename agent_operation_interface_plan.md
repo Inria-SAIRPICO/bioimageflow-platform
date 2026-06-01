@@ -632,6 +632,10 @@ Exit criteria:
 
 - The repo has end-to-end evidence that a capable agent can edit a workflow and
   the user sees or resolves the result without reloading.
+- Completed first Phase 12 slice on 2026-06-01: Playwright now proves a backend
+  operation API `create_node` edit is delivered through WebSocket to the active
+  clean canvas without a reload or conflict banner. No frontend editing-model
+  changes were required.
 
 ### Deferred Phase: CLI Fallback
 

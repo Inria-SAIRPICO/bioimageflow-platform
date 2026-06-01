@@ -1126,3 +1126,65 @@ implementation prompt without expanding scope.
 - Write the failing Playwright test first.
 - Patch only regressions found by that test, then run the single chromium e2e
   spec and targeted frontend checks as available.
+
+## 2026-06-01: Phase 12 End-To-End UX Validation
+
+### Planned
+
+- Add a browser-realistic e2e test for an agent/backend draft operation reaching
+  the active canvas through the existing WebSocket draft-sync path.
+- Keep production code unchanged unless the test exposed a regression.
+
+### Implemented
+
+- Added `frontend/tests/e2e/agent-draft-sync.spec.ts`.
+- The test seeds deterministic dev tools, creates an empty workflow, opens it in
+  the browser, calls
+  `/api/v1/workflow-draft-operations/{workflow_id}` with `create_node`, and
+  asserts the node appears on the active canvas without a
+  `.workflow-draft-conflict` banner.
+- After review, tightened the test to instrument browser WebSocket messages,
+  wait for the post-reload WebSocket connection, assert receipt of the
+  `workflow_draft_changed` message for the agent edit, and assert no main-frame
+  navigation occurs after the operation.
+
+### Learned
+
+- The existing backend operation API, draft publication, WebSocket dispatch, and
+  clean-canvas auto-apply path work together end to end.
+- No frontend editing-model changes were needed.
+- The worktree needed its own frontend dependency install; `TMPDIR=/private/tmp`
+  was required for Bun in the sandbox, and the Playwright run used alternate
+  ports because the default frontend port was already occupied.
+
+### Plan Changes
+
+- Marked the first Phase 12 e2e slice complete in
+  `agent_operation_interface_plan.md`.
+- Broader conflict-action e2e remains deferred because focused component tests
+  already cover those behaviors and this e2e slice closed the missing
+  integration evidence.
+
+### Validation
+
+- `env TMPDIR=/private/tmp UV_CACHE_DIR=/private/tmp/uv-cache
+  BIOIMAGEFLOW_E2E_FRONTEND_PORT=5174 BIOIMAGEFLOW_E2E_BACKEND_PORT=8001
+  bun run test:e2e -- --project=chromium agent-draft-sync.spec.ts` passed: 1
+  test.
+- `env TMPDIR=/private/tmp bunx eslint
+  tests/e2e/agent-draft-sync.spec.ts` passed.
+
+### Review Notes
+
+- Initial review found a validation-evidence blocker: the first test version
+  could have passed after a reload and did not directly observe the WebSocket
+  draft event.
+- Fixed by adding WebSocket message instrumentation and a no-navigation
+  assertion after the operation.
+- Follow-up review found no remaining blockers.
+
+### Next Implementation Iteration
+
+- Integrate the reviewed Phase 12 work into main.
+- Run final focused status/validation checks and close the capability completion
+  track unless new failures appear.
