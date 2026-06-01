@@ -905,6 +905,22 @@ Calibration update, 2026-06-01:
   only. This fixes the root-only limitation for safe layout edits without
   bypassing frontend-owned sub-workflow interface reconciliation.
 
+Phase 16 planning update, 2026-06-01:
+
+- Phase 15 left `move_node` and `move_nodes` root-scoped, so Phase 16 should
+  add scope support only to those layout operations.
+- Add a backward-compatible optional `scope` object with
+  `sub_workflow_path: list[str] = []`. Omitted scope and an empty path both mean
+  the root graph.
+- Resolve `sub_workflow_path` by walking node ids from root. Each segment must
+  exist, have non-null `sub_workflow`, and have no
+  `sub_workflow_readonly_reason`.
+- Apply the layout operation to the target nested `GraphState`, then rebuild
+  the outer graph preserving every unrelated field. Do not add scoped
+  create/delete/connect or cross-scope edges.
+- Expose optional MCP `scope` for `move_node` and `move_nodes` only after
+  backend scoped semantics pass tests.
+
 TDD:
 
 - Model tests for explicit scope validation and backward-compatible root-scope

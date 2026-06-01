@@ -1579,3 +1579,35 @@ implementation prompt without expanding scope.
 - Create a dedicated Phase 16 worktree.
 - Write tests first for root default scope and explicit `sub_workflow_path`
   scoped `move_node` / `move_nodes`, then implement and review.
+
+## 2026-06-01: Phase 16 Planning Update
+
+### Planned
+
+- Add explicit scoped nested sub-workflow mutation only for safe layout
+  operations.
+- Keep all root-scope behavior backward compatible.
+
+### Learned
+
+- `NodeState.sub_workflow` already stores nested `GraphState` data, and
+  `sub_workflow_readonly_reason` marks nested graphs that should not be edited.
+- Nested graphs may reuse node ids, so scoped operations need an explicit path
+  instead of flat node-id lookup.
+- Phase 15 left `move_node` and `move_nodes` isolated and layout-only, making
+  them the right first scoped operations.
+
+### Plan Changes
+
+- Phase 16 will add an optional operation `scope` object with
+  `sub_workflow_path`, defaulting to root.
+- Only `move_node` and `move_nodes` receive scoped behavior in this phase.
+- The transform will reject missing path segments, nodes without sub-workflows,
+  and read-only sub-workflows before changing the target nested graph.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 16 worktree.
+- Write model, pure transform, router, and MCP tests first.
+- Implement scoped layout, run focused validation, review, fix blockers, update
+  plan/log, and commit.
