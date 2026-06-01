@@ -12,6 +12,11 @@ from bioimageflow_server.models.graph import (
     PublishedInput,
     PublishedOutput,
 )
+from bioimageflow_server.models.tools import (
+    InputFieldSchema,
+    OutputFieldSchema,
+    ToolMetadata,
+)
 from bioimageflow_server.models.workflow_draft_operations import (
     ConnectColumnRefOperation,
     ConnectPositionalOperation,
@@ -30,6 +35,7 @@ from bioimageflow_server.models.workflow_draft_operations import (
 )
 from bioimageflow_server.services.workflow_draft_operations import (
     WorkflowDraftOperationError,
+    apply_and_validate_workflow_draft_operations,
     apply_workflow_draft_operations,
 )
 
@@ -158,6 +164,50 @@ def _nested_graph() -> GraphState:
 
 def _apply(*operations: object, graph: GraphState | None = None) -> GraphState:
     return apply_workflow_draft_operations(graph or _graph(), list(operations))
+
+
+def _tool(
+    name: str = "Tool",
+    *,
+    inputs: dict[str, InputFieldSchema] | None = None,
+    outputs: dict[str, object] | None = None,
+    dynamic_outputs: bool = False,
+) -> ToolMetadata:
+    return ToolMetadata(
+        name=name,
+        display_name=name,
+        package="test-package",
+        package_version="1.0.0",
+        tool_type="ProcessingTool",
+        dynamic_outputs=dynamic_outputs,
+        inputs=inputs
+        or {
+            "image": InputFieldSchema(
+                type="ImageFile",
+                required=True,
+                connectable="by_default",
+            ),
+            "hidden": InputFieldSchema(
+                type="str",
+                required=False,
+                connectable="never",
+            ),
+        },
+        outputs=outputs or {"mask": OutputFieldSchema(type="ImageFile")},
+    )
+
+
+def _validated_apply(
+    *operations: object,
+    graph: GraphState | None = None,
+    tools: dict[str, ToolMetadata] | None = None,
+) -> GraphState:
+    tool_map = tools if tools is not None else {"Tool": _tool()}
+    return apply_and_validate_workflow_draft_operations(
+        graph or _graph(),
+        list(operations),
+        get_tool_metadata=tool_map.get,
+    )
 
 
 def test_create_node_adds_node_and_preserves_unrelated_graph_fields() -> None:
@@ -431,6 +481,227 @@ def test_set_published_output_adds_and_delete_operations_remove_by_name() -> Non
     assert result.published_inputs == []
     assert [item.name for item in result.published_outputs] == ["labels"]
     assert result.published_outputs[0].schema_ == {"type": "ImageFile"}
+
+
+def test_metadata_validation_accepts_valid_create_then_publish_batch() -> None:
+    result = _validated_apply(
+        CreateNodeOperation(
+            node_id="created",
+            tool_name="Tool",
+            name="Created",
+            position=(10, 20),
+            parameters={},
+        ),
+        SetPublishedInputOperation(
+            name="raw_image",
+            internal_node_id="created",
+            internal_field="image",
+            kind="input",
+            schema={"type": "ImageFile"},
+        ),
+        SetPublishedOutputOperation(
+            name="mask",
+            internal_node_id="created",
+            internal_output="mask",
+            schema={"type": "ImageFile"},
+        ),
+    )
+
+    assert result.published_inputs[-1].name == "raw_image"
+    assert result.published_outputs[-1].name == "mask"
+
+
+def test_metadata_validation_rejects_unknown_input_target_with_operation_index() -> None:
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _validated_apply(
+            CreateNodeOperation(
+                node_id="created",
+                tool_name="Tool",
+                name="Created",
+                position=(10, 20),
+                parameters={},
+            ),
+            SetPublishedInputOperation(
+                name="typo",
+                internal_node_id="created",
+                internal_field="iamge",
+                kind="input",
+                schema={"type": "ImageFile"},
+            ),
+        )
+
+    assert exc_info.value.operation_index == 1
+    assert exc_info.value.code == "missing_published_input_target"
+
+
+def test_metadata_validation_rejects_unknown_static_output_target() -> None:
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _validated_apply(
+            SetPublishedOutputOperation(
+                name="labels",
+                internal_node_id="a",
+                internal_output="labels",
+                schema={"type": "ImageFile"},
+            )
+        )
+
+    assert exc_info.value.operation_index == 0
+    assert exc_info.value.code == "missing_published_output_target"
+
+
+def test_metadata_validation_accepts_dynamic_and_passthrough_outputs() -> None:
+    dynamic_result = _validated_apply(
+        SetPublishedOutputOperation(
+            name="dynamic_label",
+            internal_node_id="a",
+            internal_output="label_7",
+            schema={"type": "ImageFile"},
+        ),
+        tools={"Tool": _tool(dynamic_outputs=True, outputs={})},
+    )
+    passthrough_result = _validated_apply(
+        SetPublishedOutputOperation(
+            name="passthrough_label",
+            internal_node_id="a",
+            internal_output="label_8",
+            schema={"type": "ImageFile"},
+        ),
+        tools={"Tool": _tool(outputs={"_passthrough": True})},
+    )
+
+    assert dynamic_result.published_outputs[-1].internal_output == "label_7"
+    assert passthrough_result.published_outputs[-1].internal_output == "label_8"
+
+
+def test_metadata_validation_does_not_treat_passthrough_marker_as_output() -> None:
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _validated_apply(
+            SetPublishedOutputOperation(
+                name="marker",
+                internal_node_id="a",
+                internal_output="_passthrough",
+                schema={"type": "ImageFile"},
+            ),
+            tools={"Tool": _tool(outputs={"_passthrough": True})},
+        )
+
+    assert exc_info.value.code == "missing_published_output_target"
+
+
+def test_metadata_validation_rejects_missing_tool_metadata_for_published_target() -> None:
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _validated_apply(
+            SetPublishedInputOperation(
+                name="image",
+                internal_node_id="a",
+                internal_field="image",
+                kind="input",
+                schema={"type": "ImageFile"},
+            ),
+            tools={},
+        )
+
+    assert exc_info.value.code == "missing_tool"
+
+
+def test_metadata_validation_rejects_non_connectable_published_input() -> None:
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _validated_apply(
+            SetPublishedInputOperation(
+                name="hidden",
+                internal_node_id="a",
+                internal_field="hidden",
+                kind="input",
+                schema={"type": "str"},
+            )
+        )
+
+    assert exc_info.value.code == "published_input_not_connectable"
+
+
+def test_metadata_validation_accepts_sub_workflow_node_published_pins() -> None:
+    graph = GraphState(
+        nodes=[
+            _node(
+                "outer",
+                tool_name="__sub_workflow__",
+                sub_workflow=GraphState(nodes=[_node("inner")], edges=[]),
+                published_inputs=[
+                    PublishedInput(
+                        name="sub_image",
+                        internal_node_id="inner",
+                        internal_field="image",
+                        kind="input",
+                    )
+                ],
+                published_outputs=[
+                    PublishedOutput(
+                        name="sub_mask",
+                        internal_node_id="inner",
+                        internal_output="mask",
+                    )
+                ],
+                sub_workflow_readonly_reason=None,
+            )
+        ],
+        edges=[],
+    )
+
+    result = _validated_apply(
+        SetPublishedInputOperation(
+            name="root_image",
+            internal_node_id="outer",
+            internal_field="sub_image",
+            kind="input",
+            schema={"type": "ImageFile"},
+        ),
+        SetPublishedOutputOperation(
+            name="root_mask",
+            internal_node_id="outer",
+            internal_output="sub_mask",
+            schema={"type": "ImageFile"},
+        ),
+        graph=graph,
+        tools={},
+    )
+
+    assert result.published_inputs[0].internal_field == "sub_image"
+    assert result.published_outputs[0].internal_output == "sub_mask"
+
+
+def test_metadata_validation_rejects_missing_sub_workflow_published_pin() -> None:
+    graph = GraphState(
+        nodes=[
+            _node(
+                "outer",
+                tool_name="__sub_workflow__",
+                sub_workflow=GraphState(nodes=[_node("inner")], edges=[]),
+                published_outputs=[
+                    PublishedOutput(
+                        name="sub_mask",
+                        internal_node_id="inner",
+                        internal_output="mask",
+                    )
+                ],
+                sub_workflow_readonly_reason=None,
+            )
+        ],
+        edges=[],
+    )
+
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _validated_apply(
+            SetPublishedOutputOperation(
+                name="root_labels",
+                internal_node_id="outer",
+                internal_output="sub_labels",
+                schema={"type": "ImageFile"},
+            ),
+            graph=graph,
+            tools={},
+        )
+
+    assert exc_info.value.code == "missing_published_output_target"
 
 
 def test_published_interface_operations_reject_duplicate_names_and_missing_targets() -> None:

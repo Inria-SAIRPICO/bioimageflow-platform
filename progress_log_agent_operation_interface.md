@@ -1711,3 +1711,92 @@ implementation prompt without expanding scope.
   batch atomicity, missing metadata, and dynamic outputs.
 - Implement metadata preflight, run focused validation, review, fix blockers,
   update plan/log, and commit.
+
+## 2026-06-01: Phase 17 Second-Thought Review
+
+### Planned
+
+- Ask a review agent to challenge the metadata validation boundary before
+  coding.
+
+### Learned
+
+- A standalone partial preflight walker would risk drifting from the pure
+  transform's sequential semantics and error ordering.
+- The safer design is an impure backend helper that applies the existing pure
+  transform operation-by-operation, validates metadata after published
+  interface operations, and returns the transformed graph for the router.
+- Editable sub-workflow nodes expose pins from node-local `published_inputs` and
+  `published_outputs`, not `ToolMetadata`.
+- Missing tool metadata must be a published-interface operation error, not a
+  silent skip, if this phase is meant to catch target typos.
+- For `kind: "input"`, backend validation should match the UI and reject
+  metadata inputs with `connectable: "never"`.
+
+### Plan Changes
+
+- Updated Phase 17 with the stepwise apply-and-validate helper design.
+- Added explicit router registry dependency and sub-workflow interface handling
+  to the implementation scope.
+
+### Next Implementation Iteration
+
+- Write tests for stepwise apply-and-validate behavior first, including error
+  ordering, sub-workflow pins, dynamic outputs, missing metadata, and
+  connectability.
+
+## 2026-06-01: Phase 17 Tool-Metadata-Aware Validation
+
+### Planned
+
+- Add backend validation for published interface target names using tool
+  metadata, without moving semantics into MCP.
+
+### Implemented
+
+- Added `apply_and_validate_workflow_draft_operations`, which applies operations
+  sequentially with the existing pure transform and validates metadata-dependent
+  published interface targets after set operations.
+- Wired the operation router to inject `ToolRegistryService` and call the new
+  helper before draft writes.
+- Added validation for static tool input/output names, missing tool metadata,
+  non-connectable published inputs, dynamic outputs, passthrough outputs, and
+  editable sub-workflow published pins.
+- Updated agent docs and generated workspace instructions with the exact static
+  vs dynamic/passthrough target-name policy.
+
+### Learned
+
+- Stepwise apply-and-validate avoids duplicating transform ordering and keeps
+  existing graph-local errors authoritative.
+- Dynamic and passthrough output metadata must be documented carefully: exact
+  metadata names are required for static outputs, while resolved/inherited names
+  are allowed for dynamic/passthrough outputs.
+
+### Plan Changes
+
+- Marked Phase 17 complete in `agent_operation_interface_plan.md`.
+- No MCP changes were needed because MCP already delegates to operation REST.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py
+  tests/test_services/test_agent_workspace_context.py` passed: 127 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/app.py
+  src/bioimageflow_server/routers/workflow_draft_operations.py
+  src/bioimageflow_server/services/workflow_draft_operations.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_workspace_context.py` passed.
+
+### Review Notes
+
+- Dedicated Phase 17 review found no blockers.
+- Review noted docs overstatement around dynamic/passthrough output names; docs
+  were corrected and a negative sub-workflow pin test was added.

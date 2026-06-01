@@ -12,6 +12,7 @@ from bioimageflow_server.models.graph import (
     PublishedInput,
     PublishedOutput,
 )
+from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.models.workflow_draft_operations import (
     ConnectColumnRefOperation,
     ConnectPositionalOperation,
@@ -61,6 +62,44 @@ def apply_workflow_draft_operations(
     for index, operation in enumerate(operations):
         try:
             next_graph = _apply_one(next_graph, operation)
+        except WorkflowDraftOperationError as exc:
+            raise WorkflowDraftOperationError(
+                operation_index=index,
+                code=exc.code,
+                detail=exc.detail,
+            ) from exc
+    return next_graph
+
+
+def apply_and_validate_workflow_draft_operations(
+    graph: GraphState,
+    operations: Sequence[WorkflowDraftOperation],
+    *,
+    get_tool_metadata: Callable[[str], ToolMetadata | None],
+) -> GraphState:
+    """Apply operations and validate metadata-dependent published interfaces.
+
+    This intentionally reuses the pure single-operation transform for ordering
+    and graph semantics, then performs registry-backed checks only after the
+    graph-local operation has succeeded.
+    """
+
+    next_graph = graph.model_copy(deep=True)
+    for index, operation in enumerate(operations):
+        try:
+            next_graph = _apply_one(next_graph, operation)
+            if isinstance(operation, SetPublishedInputOperation):
+                _validate_published_input_target(
+                    next_graph,
+                    operation,
+                    get_tool_metadata=get_tool_metadata,
+                )
+            elif isinstance(operation, SetPublishedOutputOperation):
+                _validate_published_output_target(
+                    next_graph,
+                    operation,
+                    get_tool_metadata=get_tool_metadata,
+                )
         except WorkflowDraftOperationError as exc:
             raise WorkflowDraftOperationError(
                 operation_index=index,
@@ -324,6 +363,92 @@ def _delete_published_output(
     if len(outputs) == len(graph.published_outputs):
         _raise("missing_published_output", f"Published output not found: {operation.name}")
     return graph.model_copy(update={"published_outputs": outputs})
+
+
+def _validate_published_input_target(
+    graph: GraphState,
+    operation: SetPublishedInputOperation,
+    *,
+    get_tool_metadata: Callable[[str], ToolMetadata | None],
+) -> None:
+    node = _require_node(graph, operation.internal_node_id)
+    if _is_sub_workflow_node(node):
+        if not any(item.name == operation.internal_field for item in node.published_inputs):
+            _raise(
+                "missing_published_input_target",
+                (
+                    f"Published input target not found on sub-workflow node "
+                    f"{node.id}: {operation.internal_field}"
+                ),
+            )
+        return
+
+    metadata = _require_tool_metadata(node, get_tool_metadata)
+    field = metadata.inputs.get(operation.internal_field)
+    if field is None:
+        _raise(
+            "missing_published_input_target",
+            (
+                f"Published input target not found on tool {metadata.name}: "
+                f"{operation.internal_field}"
+            ),
+        )
+    if operation.kind == "input" and field.connectable == "never":
+        _raise(
+            "published_input_not_connectable",
+            (
+                f"Published input target is not connectable on tool {metadata.name}: "
+                f"{operation.internal_field}"
+            ),
+        )
+
+
+def _validate_published_output_target(
+    graph: GraphState,
+    operation: SetPublishedOutputOperation,
+    *,
+    get_tool_metadata: Callable[[str], ToolMetadata | None],
+) -> None:
+    node = _require_node(graph, operation.internal_node_id)
+    if _is_sub_workflow_node(node):
+        if not any(item.name == operation.internal_output for item in node.published_outputs):
+            _raise(
+                "missing_published_output_target",
+                (
+                    f"Published output target not found on sub-workflow node "
+                    f"{node.id}: {operation.internal_output}"
+                ),
+            )
+        return
+
+    metadata = _require_tool_metadata(node, get_tool_metadata)
+    if operation.internal_output in metadata.outputs and operation.internal_output != "_passthrough":
+        return
+    if operation.internal_output != "_passthrough" and (
+        metadata.dynamic_outputs or metadata.outputs.get("_passthrough") is True
+    ):
+        return
+    _raise(
+        "missing_published_output_target",
+        (
+            f"Published output target not found on tool {metadata.name}: "
+            f"{operation.internal_output}"
+        ),
+    )
+
+
+def _is_sub_workflow_node(node: NodeState) -> bool:
+    return node.tool_name == "__sub_workflow__"
+
+
+def _require_tool_metadata(
+    node: NodeState,
+    get_tool_metadata: Callable[[str], ToolMetadata | None],
+) -> ToolMetadata:
+    metadata = get_tool_metadata(node.tool_name)
+    if metadata is None:
+        _raise("missing_tool", f"Tool metadata not found: {node.tool_name}")
+    return metadata
 
 
 def _connect_column_ref(

@@ -294,6 +294,10 @@ operation API; do not edit `published_inputs` or `published_outputs` locally
 when MCP or operation REST is available. For nullable published interface fields,
 MCP preserves omitted values; send `set_schema: true` or `set_default: true`
 with `null` only when you intend to clear a stored value.
+Published interface targets are validated against backend tool metadata, so use
+exact input names and static output names from MCP `list_tools` or `GET /tools`.
+Dynamic or passthrough outputs may use resolved or inherited output names, but
+not the internal `_passthrough` marker.
 
 For REST semantic edits, use `POST /workflow-draft-operations/{{workflow_id}}`:
 

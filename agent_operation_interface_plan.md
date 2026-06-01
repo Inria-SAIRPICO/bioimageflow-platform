@@ -999,6 +999,22 @@ Planning update, 2026-06-01:
   outputs for tools marked `dynamic_outputs` or metadata carrying passthrough
   outputs. Still validate known static outputs when possible.
 
+Second-thought review update, 2026-06-01:
+
+- Do not add a partial preflight walker that tries to mirror operation ordering.
+  Instead add an impure backend helper that applies the existing pure transform
+  one operation at a time on a copy, validates metadata immediately after
+  published interface operations, and returns the transformed graph for the
+  router to write.
+- The operation router needs an explicit `ToolRegistryService` dependency and
+  app wiring override.
+- Editable sub-workflow nodes must validate against their node-local
+  `published_inputs` / `published_outputs`, not global tool metadata.
+- Missing tool metadata for a published interface target should be an
+  operation-level `missing_tool` error because target names cannot be checked.
+- Backend should enforce the frontend's published-input connectability rule:
+  `kind: "input"` cannot target metadata inputs with `connectable: "never"`.
+
 TDD:
 
 - Service/preflight tests for valid input/output targets, missing input target,
@@ -1017,6 +1033,24 @@ Exit criteria:
 
 - Agents get machine-readable errors for typoed published input/output target
   names before any draft write.
+
+Completion update, 2026-06-01:
+
+- Implemented `apply_and_validate_workflow_draft_operations`, which applies the
+  existing pure transform one operation at a time, validates metadata-dependent
+  published interface targets after set operations, and returns the transformed
+  graph for the router to write.
+- Operation REST now injects `ToolRegistryService`; MCP remains unchanged and
+  delegates through the operation API.
+- Static input/output names are validated against tool metadata. Dynamic outputs
+  and passthrough outputs may publish resolved/inherited output names, but not
+  the internal `_passthrough` marker.
+- Editable sub-workflow nodes validate against node-local published pins.
+- Missing tool metadata, unknown target names, and non-connectable
+  `kind: "input"` fields return operation-indexed validation errors before any
+  draft write or frontend event.
+- Dedicated review found no blockers; docs were corrected for dynamic and
+  passthrough output wording.
 
 ## Parallelization
 

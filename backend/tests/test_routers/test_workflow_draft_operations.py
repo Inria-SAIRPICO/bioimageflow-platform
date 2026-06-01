@@ -11,7 +11,12 @@ import httpx
 import pytest
 
 from bioimageflow_server.app import create_app
-from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.tools import (
+    AppConfig,
+    InputFieldSchema,
+    OutputFieldSchema,
+    ToolMetadata,
+)
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from bioimageflow_server.ws.handler import ConnectionManager
@@ -36,6 +41,24 @@ async def _client(
     connection_manager: ConnectionManager | None = None,
 ) -> AsyncIterator[httpx.AsyncClient]:
     registry = ToolRegistryService()
+    registry.register_tool(
+        "InterfaceTool",
+        ToolMetadata(
+            name="InterfaceTool",
+            display_name="Interface Tool",
+            package="test-package",
+            package_version="1.0.0",
+            tool_type="ProcessingTool",
+            inputs={
+                "image": InputFieldSchema(
+                    type="ImageFile",
+                    required=True,
+                    connectable="by_default",
+                )
+            },
+            outputs={"mask": OutputFieldSchema(type="ImageFile")},
+        ),
+    )
     store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
@@ -146,7 +169,7 @@ async def test_operation_api_applies_published_interface_edits_once(
                     {
                         "type": "create_node",
                         "node_id": "input_1",
-                        "tool_name": "MissingTool",
+                        "tool_name": "InterfaceTool",
                         "name": "Input",
                         "position": [0, 0],
                         "parameters": {},
@@ -515,6 +538,54 @@ async def test_published_interface_validation_failure_is_atomic(
     assert response.status_code == 422
     assert response.json()["operation_index"] == 1
     assert response.json()["code"] == "missing_node"
+    assert not _draft_path(tmp_path).exists()
+    assert _agent_state_path(tmp_path).read_text() == initial_state
+    assert published == []
+
+
+async def test_published_interface_metadata_failure_is_atomic(
+    tmp_path: Path,
+) -> None:
+    manager = ConnectionManager()
+    published: list[dict[str, Any]] = []
+    manager.publish_workflow_draft_changed = (  # type: ignore[method-assign]
+        lambda **payload: published.append(payload)
+    )
+
+    async for client in _client(tmp_path, connection_manager=manager):
+        await _create_workflow(client, "wf")
+        initial = await client.get("/api/v1/workflow-drafts/wf")
+        assert initial.status_code == 200
+        initial_state = _agent_state_path(tmp_path).read_text()
+
+        response = await client.post(
+            "/api/v1/workflow-draft-operations/wf",
+            json={
+                "expected_revision": 0,
+                "operations": [
+                    {
+                        "type": "create_node",
+                        "node_id": "input_1",
+                        "tool_name": "InterfaceTool",
+                        "name": "Input",
+                        "position": [0, 0],
+                        "parameters": {},
+                    },
+                    {
+                        "type": "set_published_input",
+                        "name": "typo",
+                        "internal_node_id": "input_1",
+                        "internal_field": "iamge",
+                        "kind": "input",
+                        "schema": {"type": "ImageFile"},
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["operation_index"] == 1
+    assert response.json()["code"] == "missing_published_input_target"
     assert not _draft_path(tmp_path).exists()
     assert _agent_state_path(tmp_path).read_text() == initial_state
     assert published == []

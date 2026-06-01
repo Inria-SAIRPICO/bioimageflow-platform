@@ -66,6 +66,13 @@ published interface `name`. To clear a nullable published input/output
 `set_default: true` with the value set to `null`; omitting those fields
 preserves the existing value during an upsert.
 
+Published interface targets are checked against backend tool metadata. Use exact
+input names and static output names from `list_tools` / `GET /tools`; dynamic or
+passthrough outputs may use resolved or inherited output names, but not the
+internal `_passthrough` marker. Typoed static target names, missing tool
+metadata, and non-connectable `kind: "input"` fields are rejected before any
+draft write.
+
 ## Operation REST Second
 
 If MCP is unavailable, apply semantic edits through the backend-owned operation

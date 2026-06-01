@@ -26,9 +26,10 @@ from bioimageflow_server.services.workflow_draft import (
     WorkflowDraftRevisionConflict,
     WorkflowDraftService,
 )
+from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_draft_operations import (
     WorkflowDraftOperationError,
-    apply_workflow_draft_operations,
+    apply_and_validate_workflow_draft_operations,
 )
 
 router = APIRouter(
@@ -39,6 +40,10 @@ router = APIRouter(
 
 def get_workflow_draft_service() -> WorkflowDraftService:  # pragma: no cover
     raise RuntimeError("workflow_draft_service dependency not configured")
+
+
+def get_tool_registry() -> ToolRegistryService:  # pragma: no cover
+    raise RuntimeError("tool_registry dependency not configured")
 
 
 def get_execution_manager() -> Any | None:
@@ -63,6 +68,7 @@ async def apply_workflow_draft_operations_endpoint(
     body: WorkflowDraftOperationsRequest,
     request: Request,
     service: WorkflowDraftService = Depends(get_workflow_draft_service),
+    registry: ToolRegistryService = Depends(get_tool_registry),
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowDraftResponse | JSONResponse:
@@ -71,7 +77,11 @@ async def apply_workflow_draft_operations_endpoint(
         return locked
     try:
         current = service.get_draft_snapshot(workflow_id)
-        graph = apply_workflow_draft_operations(current.graph, body.operations)
+        graph = apply_and_validate_workflow_draft_operations(
+            current.graph,
+            body.operations,
+            get_tool_metadata=registry.get_tool,
+        )
         draft = service.put_draft(
             workflow_id,
             graph=graph,
