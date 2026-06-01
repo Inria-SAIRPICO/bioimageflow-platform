@@ -585,5 +585,136 @@ implementation prompt without expanding scope.
 
 ### Next Implementation Iteration
 
-- No planned implementation phases remain in the agent operation interface
-  plan.
+- Continue with the agent capability completion track only if a later request
+  asks for fully featured agent capabilities beyond the completed operation
+  interface.
+
+## 2026-06-01: Agent Capability Completion Planning
+
+### Planned
+
+- Extend the completed agent operation interface into the remaining
+  fully-featured agent capability items:
+  live MCP smoke testing, richer MCP discovery, better MCP validation feedback,
+  MCP client configuration, broader operation coverage, real usage hardening,
+  and conflict/end-to-end UX validation.
+- Keep the full-DAG draft API canonical and backend semantic operations as the
+  owner of graph mutation semantics.
+- Preserve the existing frontend editing model and do not add a CLI unless a
+  future plan update provides concrete evidence.
+
+### Implemented
+
+- Added an `Agent Capability Completion Track` to
+  `agent_operation_interface_plan.md` with Phases 5-12.
+- Closed stale prior subagent sessions so this run can use fresh GPT-5.5 high
+  calibration/review agents.
+- Started Phase 5 calibration with independent explorers for:
+  MCP smoke/validation/hardening, MCP tool discovery, and MCP config plus
+  frontend/e2e conflict validation.
+
+### Learned
+
+- The previous operation-interface phases are complete and should not be
+  rewritten.
+- The current repo already has separate agent feature plan documents for the
+  backend-draft/frontend-conflict work; this track should build on those tests
+  instead of replacing the frontend model.
+- Existing dirty files unrelated to this track are present:
+  `agents_feature_plan.md`, `agents_feature_review_progress.md`,
+  `platform_specs_v1.md`, `backend_draft_source_of_truth_plan.md`, and
+  `environments.log`. They must not be reverted or folded into this work unless
+  explicitly requested.
+
+### Plan Changes
+
+- Added Phase 5 calibration before coding so the 1-7 track starts from current
+  code.
+- Split implementation into bounded phases:
+  MCP smoke, discovery, validation feedback, client configuration, broader
+  operations, hardening, and end-to-end conflict validation.
+- Kept broader operations evidence-gated to avoid adding a broad operation DSL or
+  nested sub-workflow mutation by default.
+
+### Next Implementation Iteration
+
+- Finish Phase 5 calibration from the fresh explorer reports.
+- Update the plan/log again with concrete Phase 6 test scope.
+- Create a dedicated worktree for Phase 6 and write failing MCP smoke tests
+  before implementation.
+
+## 2026-06-01: Phase 5 Capability Calibration
+
+### Planned
+
+- Calibrate the remaining agent-capability work before coding.
+- Use independent GPT-5.5 high explorers for MCP smoke/validation/hardening,
+  tool discovery, and MCP client configuration plus frontend/e2e UX validation.
+- Keep the next implementation phase small enough for TDD and review.
+
+### Implemented
+
+- Inspected `bioimageflow_server.agent_mcp`, its focused tests, tool registry
+  models/router, generated agent workspace instructions, docs, and frontend
+  remote-draft/conflict tests.
+- Received read-only explorer reports for:
+  - MCP live smoke, validation feedback, and hardening;
+  - richer MCP tool discovery;
+  - MCP client configuration and frontend conflict/e2e validation.
+
+### Learned
+
+- Current MCP tests use `httpx.MockTransport` and fake `FastMCP`; they do not
+  prove the shipped gateway path against a real ASGI app or generated
+  `agent-state.json`.
+- MCP graph-edit tools already delegate to the backend operation API, while
+  validation/run/stop call existing REST endpoints. That layering must not
+  change.
+- `validate_workflow` currently returns only `valid` and `error_count`; operation
+  success compresses validation to `validation_valid`. Agents need backend
+  validation errors preserved in compact MCP results.
+- Operation 422 payloads already contain useful backend fields, but MCP should
+  promote `operation_index`, `code`, and `detail` into a self-correctable result.
+- MCP request handling lacks explicit structured handling for missing/malformed
+  agent state, connection errors, timeouts, malformed backend JSON, and
+  unexpected successful non-JSON responses.
+- `GET /tools` already exposes rich `ToolMetadata`: package/version,
+  `tool_type`, `accepts_upstream`, `dynamic_outputs`, `dataframe_output`,
+  `documentation`, tags/categories, inputs, outputs, environment, source kind,
+  and editability. Current MCP `list_tools` drops most of it and reads a
+  non-existent `description` field.
+- Generated docs say to use `bioimageflow-mcp`, but do not yet give enough MCP
+  client configuration detail: run from workspace root or set
+  `BIOIMAGEFLOW_AGENT_STATE`, command, cwd, and env.
+- Frontend remote draft behavior has good unit/component coverage, including
+  auto-apply, conflict banner, apply, keep, copy, and guardrails. The missing
+  evidence is a real backend/WebSocket/browser e2e path.
+- `backend/tests/test_services/test_agent_workspace_context.py` is stale against
+  MCP-first docs and currently has a failing assertion according to the docs
+  explorer.
+
+### Plan Changes
+
+- Phase 6 will include the first small implementation slice:
+  live-ish MCP smoke plus MCP feedback/hardening that is required for the smoke
+  to be actionable.
+- Phase 7 richer discovery will preserve existing registry metadata and add only
+  mechanical creation hints derived from `ToolMetadata`.
+- Phase 9 client configuration will be client-agnostic first: command, cwd, and
+  `BIOIMAGEFLOW_AGENT_STATE`, with client-specific snippets only if they remain
+  low-churn.
+- Phase 12 e2e UX validation will target existing conflict behavior instead of
+  changing the frontend editing model.
+
+### Next Implementation Iteration
+
+- In a dedicated Phase 6 worktree, write failing MCP tests for:
+  - ASGI-backed gateway smoke across active workflow, create-node, validate, run,
+    and stop;
+  - validation errors preserved in MCP results;
+  - operation validation fields promoted for agent self-correction;
+  - missing state, backend connection/timeout, and malformed JSON responses as
+    structured errors.
+- Implement the smallest `agent_mcp.py` changes needed to pass those tests.
+- Run focused MCP/router tests and ruff, then use a dedicated review agent before
+  integration.

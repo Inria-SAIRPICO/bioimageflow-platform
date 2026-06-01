@@ -321,6 +321,262 @@ Exit criteria:
   MCP first, operation REST second, raw full-DAG fallback.
 - Raw full-DAG editing is clearly marked as fallback. Completed on 2026-05-30.
 
+## Agent Capability Completion Track
+
+The first operation-interface track is complete: full-DAG drafts remain
+canonical, backend-owned semantic operations exist, MCP is a thin transport
+layer, and docs/workspace context prefer MCP first.
+
+The next track develops the remaining agent-capability items without changing
+those ownership boundaries:
+
+1. live MCP smoke testing;
+2. richer MCP tool discovery;
+3. better validation feedback through MCP;
+4. MCP client configuration;
+5. broader operation coverage;
+6. real usage hardening;
+7. conflict/end-to-end UX validation.
+
+The same execution loop applies. Before each implementation phase, update this
+plan and `progress_log_agent_operation_interface.md` with calibration findings.
+Each code phase uses TDD, a dedicated worktree, and a dedicated review agent.
+Subagents must use GPT-5.5 high or higher. Parallel agents are allowed only for
+independent write scopes.
+
+### Phase 5: Capability Calibration
+
+Goal: ground the 1-7 track in current code, not assumptions.
+
+Work:
+
+- Inspect current MCP gateway/tool registration and tests.
+- Inspect tool registry metadata and API responses available for richer
+  discovery.
+- Inspect docs/workspace context for MCP client setup gaps.
+- Inspect frontend draft/conflict tests and existing end-to-end coverage.
+- Confirm which broader operations have real evidence before adding any.
+
+Exit criteria:
+
+- Current gaps and first failing tests are recorded in the progress log.
+- Phase 6 implementation scope is narrowed to a small, test-first slice.
+- No feature code starts before the plan/log reflect what was learned.
+
+### Phase 6: Live MCP Smoke Harness
+
+Goal: prove the shipped MCP command can perform the core agent workflow against
+the backend path.
+
+TDD:
+
+- Add a focused live-smoke test or harness around `bioimageflow-mcp`/gateway
+  startup and active workflow discovery.
+- Cover one-call `create_node`, validation, run, and stop delegation.
+- Cover missing backend, stale/missing agent-state, and wrong workflow id
+  failures with compact structured results.
+
+Implementation:
+
+- Prefer a deterministic in-process or local-ASGI harness before relying on a
+  manual external MCP client.
+- Keep graph-editing smoke calls routed through
+  `/api/v1/workflow-draft-operations/{workflow_id:path}`.
+- Keep validation/run/stop calls routed to existing REST endpoints.
+
+Review:
+
+- Dedicated MCP smoke review agent checks that the smoke path exercises the real
+  transport assumptions without adding graph semantics to MCP.
+
+Exit criteria:
+
+- One command/test proves the MCP path is live.
+- Smoke output is actionable when setup is broken.
+
+### Phase 7: Rich MCP Tool Discovery
+
+Goal: let an agent discover enough tool metadata to create useful nodes without
+reading raw workflow JSON.
+
+TDD:
+
+- Add tests for compact tool listing with tool name, display name/description,
+  package/version where available, required inputs/parameters, defaults, and
+  output/connectability hints.
+- Add tests for a per-tool lookup or search helper if current `list_tools`
+  output would be too large.
+- Assert discovery remains read-only and does not encode graph mutation rules.
+
+Implementation:
+
+- Reuse existing tool registry/router metadata.
+- Add MCP response shaping only where it makes registry data easier for agents
+  to consume.
+- Avoid a broad schema/coercion layer unless concrete registry data already
+  supports it.
+
+Review:
+
+- Dedicated discovery review agent checks metadata fidelity, response size, and
+  whether a capable agent can choose parameters for `create_node`.
+
+Exit criteria:
+
+- An agent can inspect a tool and prepare a valid node creation request from MCP
+  metadata.
+
+### Phase 8: MCP Validation Feedback
+
+Goal: make failed MCP edits self-correctable.
+
+TDD:
+
+- Add tests for operation failures preserving `operation_index`, stable `code`,
+  and `detail`.
+- Add tests for backend validation failures preserving node/edge/field locations
+  where the backend already provides them.
+- Add tests for invalid parameters, invalid edges, missing nodes, duplicate ids,
+  and batch atomic failure.
+
+Implementation:
+
+- Map backend operation and validation errors into compact MCP responses.
+- Add repair hints only when they are directly derived from backend error codes
+  or registry metadata.
+- Do not add a separate MCP validation engine.
+
+Review:
+
+- Dedicated validation review agent checks that feedback is machine-readable and
+  backend-owned semantics remain backend-owned.
+
+Exit criteria:
+
+- After a failed MCP edit, an agent can identify the failing operation and the
+  next corrective action.
+
+### Phase 9: MCP Client Configuration
+
+Goal: make MCP setup concrete for common clients.
+
+TDD:
+
+- Update generated workspace-doc tests to assert MCP client configuration
+  snippets or equivalent setup instructions.
+- Assert generated state still exposes `mcp_server_command` and operation REST
+  fallback hints.
+- Assert docs order remains MCP first, operation REST second, raw full-DAG HTTP
+  diagnostic fallback.
+
+Implementation:
+
+- Add concrete setup sections for Codex, Claude Desktop, and a generic MCP JSON
+  client if the current command shape supports them.
+- Include smoke-test instructions from Phase 6.
+- Do not add a new CLI.
+
+Review:
+
+- Dedicated docs/config review agent reads the docs as a fresh agent/user and
+  checks whether setup can be completed from the generated context.
+
+Exit criteria:
+
+- A new MCP client can be configured from repo/generated docs without guessing
+  command, cwd, or environment.
+
+### Phase 10: Broader Operation Coverage
+
+Goal: add only evidenced semantic operations that improve agent capability.
+
+Candidate operations stay deferred until Phase 5/real usage identifies them as
+necessary. Likely candidates include parameter deletion, workflow
+published-input/output edits, optional backend node-id generation, and limited
+bulk layout updates.
+
+TDD for each accepted operation:
+
+- Pure transform tests first.
+- REST operation tests second.
+- MCP thin-wrapper tests third.
+- Atomic failure and unrelated-field preservation tests for every operation.
+
+Implementation:
+
+- Keep operations root-graph scoped unless a later plan update introduces an
+  explicit scoped model with evidence.
+- Keep batch size, atomicity, revision, lock, validation, and publication
+  behavior unchanged.
+- Do not introduce a broad operation DSL.
+
+Review:
+
+- Dedicated operation-semantics review agent checks every accepted operation for
+  source-of-truth preservation and scope creep.
+
+Exit criteria:
+
+- New operations are useful, bounded, tested at transform/REST/MCP layers, and
+  documented.
+
+### Phase 11: Real Usage Hardening
+
+Goal: make common runtime failures actionable for agents.
+
+TDD:
+
+- Cover backend unavailable, request timeout, malformed backend response, stale
+  agent-state, workspace mismatch, active-workflow mismatch, and backend restart
+  or port change.
+
+Implementation:
+
+- Add timeout handling and compact structured errors around MCP REST calls.
+- Add a health/status MCP helper only if Phase 5/6 evidence shows it reduces
+  setup ambiguity.
+- Keep error text concise and actionable.
+
+Review:
+
+- Dedicated hardening review agent checks failure coverage and avoids masking
+  backend errors that agents need to see.
+
+Exit criteria:
+
+- Common setup/runtime failures produce structured MCP responses instead of
+  tracebacks or ambiguous `ok: false` payloads.
+
+### Phase 12: Conflict And End-To-End UX Validation
+
+Goal: prove agent edits, frontend draft sync, and conflict handling work
+together.
+
+TDD/e2e:
+
+- Add or extend frontend/unit/e2e coverage showing agent operation/MCP edits
+  appear on the canvas when no local conflict exists.
+- Cover unresolved remote conflicts blocking save, run, selected-node run, and
+  export.
+- Cover apply remote, keep local, and save agent version as copy if existing
+  tests do not already exercise those paths end to end.
+- Verify failed operation batches do not publish frontend events.
+
+Implementation:
+
+- Patch only regressions found by tests.
+- Preserve the existing frontend editing model and conflict actions.
+
+Review:
+
+- Dedicated frontend/e2e review agent checks regression risk and whether the UX
+  evidence proves the agent-capability story.
+
+Exit criteria:
+
+- The repo has end-to-end evidence that a capable agent can edit a workflow and
+  the user sees or resolves the result without reloading.
+
 ### Deferred Phase: CLI Fallback
 
 Reconsider only after MCP and operation REST are implemented and tested in real
