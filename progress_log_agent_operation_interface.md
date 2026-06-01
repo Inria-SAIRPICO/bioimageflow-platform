@@ -1511,3 +1511,71 @@ implementation prompt without expanding scope.
 - Write model/service/router/MCP tests first for `move_nodes`, verify they fail,
   implement, run focused validation, review, fix blockers, update plan/log, and
   commit.
+
+## 2026-06-01: Phase 15 Bulk Layout Operation
+
+### Planned
+
+- Add a layout-only `move_nodes` operation for repositioning several root-graph
+  nodes without replacing full workflow JSON.
+- Keep `move_node` unchanged and expose MCP as a thin wrapper only after backend
+  tests pass.
+
+### Implemented
+
+- Added `MoveNodeItem` and `MoveNodesOperation`.
+- Added pure transform support that preflights duplicate move targets and
+  missing nodes, then updates only node positions while preserving node order
+  and all non-position graph data.
+- Added model, transform, router, and MCP tests for success and atomic failure.
+- Added MCP `move_nodes` gateway/tool registration that calls the backend
+  operation API.
+- Updated generated workspace instructions and `docs/agents/workflow-editing.md`
+  to prefer `move_nodes` for bulk layout.
+
+### Learned
+
+- The existing operation API atomicity model covers `move_nodes` cleanly; failed
+  layout batches are rejected before draft write or WebSocket publication.
+- A single `move_nodes` operation can include many move items. This deliberately
+  exceeds the existing operation-count batch cap because it is one bounded
+  layout operation rather than a general graph patch.
+
+### Plan Changes
+
+- Marked Phase 15 complete in `agent_operation_interface_plan.md`.
+- Phase 16 remains next: add explicit scope for nested sub-workflow layout only.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py
+  tests/test_services/test_agent_workspace_context.py` passed: 102 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/models/workflow_draft_operations.py
+  src/bioimageflow_server/services/workflow_draft_operations.py
+  src/bioimageflow_server/agent_mcp.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_models/test_workflow_draft_operations.py
+  tests/test_services/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_draft_operations.py
+  tests/test_services/test_agent_mcp.py
+  tests/test_services/test_agent_workspace_context.py` passed.
+
+### Review Notes
+
+- Dedicated Phase 15 review found no blockers.
+- Residual review notes: no move-item max cap yet, duplicate move target
+  atomicity is covered at pure transform level but not separately through HTTP,
+  and MCP uses a generic `list[dict[str, Any]]` schema while backend validation
+  owns correctness.
+
+### Next Implementation Iteration
+
+- Before coding Phase 16, update the plan/log with scoped layout details.
+- Create a dedicated Phase 16 worktree.
+- Write tests first for root default scope and explicit `sub_workflow_path`
+  scoped `move_node` / `move_nodes`, then implement and review.

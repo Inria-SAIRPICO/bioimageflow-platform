@@ -21,6 +21,7 @@ from bioimageflow_server.models.workflow_draft_operations import (
     DeletePublishedInputOperation,
     DeletePublishedOutputOperation,
     MoveNodeOperation,
+    MoveNodesOperation,
     RenameNodeOperation,
     SetNodeEnabledOperation,
     SetPublishedInputOperation,
@@ -164,6 +165,60 @@ def test_node_field_operations_preserve_unrelated_node_fields() -> None:
     assert node.published_inputs
     assert node.published_outputs
     assert node.sub_workflow_readonly_reason == "read-only"
+
+
+def test_move_nodes_updates_multiple_positions_and_preserves_other_fields() -> None:
+    graph = _graph()
+
+    result = _apply(
+        MoveNodesOperation(
+            moves=[
+                {"node_id": "a", "position": (100, 120)},
+                {"node_id": "c", "position": (300, 120)},
+            ],
+        ),
+        graph=graph,
+    )
+
+    assert [(node.id, node.position) for node in result.nodes] == [
+        ("a", (100, 120)),
+        ("b", (0, 0)),
+        ("c", (300, 120)),
+    ]
+    assert result.nodes[0].parameters == graph.nodes[0].parameters
+    assert result.nodes[0].resources == graph.nodes[0].resources
+    assert result.nodes[0].output_templates == graph.nodes[0].output_templates
+    assert result.nodes[0].collapsed == graph.nodes[0].collapsed
+    assert result.edges == graph.edges
+    assert result.published_inputs == graph.published_inputs
+    assert result.published_outputs == graph.published_outputs
+    assert graph == _graph()
+
+
+@pytest.mark.parametrize(
+    ("moves", "code"),
+    [
+        (
+            [
+                {"node_id": "a", "position": (10, 20)},
+                {"node_id": "a", "position": (30, 40)},
+            ],
+            "duplicate_move_node_id",
+        ),
+        ([{"node_id": "missing", "position": (10, 20)}], "missing_node"),
+    ],
+)
+def test_move_nodes_preflights_failures_atomically(
+    moves: list[dict[str, object]],
+    code: str,
+) -> None:
+    graph = _graph()
+
+    with pytest.raises(WorkflowDraftOperationError) as exc_info:
+        _apply(MoveNodesOperation(moves=moves), graph=graph)
+
+    assert exc_info.value.code == code
+    assert graph == _graph()
 
 
 def test_connect_column_ref_replaces_target_input_edge_and_generates_edge_id() -> None:

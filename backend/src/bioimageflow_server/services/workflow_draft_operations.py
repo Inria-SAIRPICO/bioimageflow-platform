@@ -21,6 +21,7 @@ from bioimageflow_server.models.workflow_draft_operations import (
     DeletePublishedInputOperation,
     DeletePublishedOutputOperation,
     MoveNodeOperation,
+    MoveNodesOperation,
     RenameNodeOperation,
     SetNodeEnabledOperation,
     SetPublishedInputOperation,
@@ -109,6 +110,8 @@ def _apply_one(
                 update={"position": operation.position}
             ),
         )
+    if isinstance(operation, MoveNodesOperation):
+        return _move_nodes(graph, operation)
     if isinstance(operation, SetPublishedInputOperation):
         return _set_published_input(graph, operation)
     if isinstance(operation, DeletePublishedInputOperation):
@@ -149,6 +152,26 @@ def _delete_node(graph: GraphState, operation: DeleteNodeOperation) -> GraphStat
                 for edge in graph.edges
                 if edge.source_node != operation.node_id and edge.target_node != operation.node_id
             ],
+        }
+    )
+
+
+def _move_nodes(graph: GraphState, operation: MoveNodesOperation) -> GraphState:
+    positions: dict[str, tuple[float, float]] = {}
+    for move in operation.moves:
+        if move.node_id in positions:
+            _raise("duplicate_move_node_id", f"Duplicate move target: {move.node_id}")
+        positions[move.node_id] = move.position
+    for node_id in positions:
+        _require_node(graph, node_id)
+    return graph.model_copy(
+        update={
+            "nodes": [
+                node.model_copy(update={"position": positions[node.id]})
+                if node.id in positions
+                else node
+                for node in graph.nodes
+            ]
         }
     )
 

@@ -838,6 +838,17 @@ Phase 15 planning update, 2026-06-01:
 - Expose MCP `move_nodes` as a thin operation API wrapper after backend model,
   transform, and REST tests pass.
 
+Phase 15 completion update, 2026-06-01:
+
+- Completed `move_nodes` model, pure transform, REST coverage, MCP wrapper, and
+  agent docs.
+- `move_nodes` remains root-scoped in Phase 15. Phase 16 will add explicit
+  scoped layout behavior.
+- `moves` is intentionally not capped by the operation batch cap because it is
+  one layout operation. Revisit a move-item cap only if real agent usage or
+  payload size shows a problem.
+- Dedicated review found no blockers.
+
 TDD:
 
 - Pure transform tests for multiple moves, missing node failure, invalid

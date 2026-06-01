@@ -179,8 +179,9 @@ is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
 3. MCP first: if MCP is available, start `bioimageflow-mcp` and use its tools.
 4. Use `get_active_workflow` and `list_tools` MCP tools before edits.
 5. Create or edit with MCP graph tools such as `create_node`, `rename_node`,
-   `update_node_parameters`, `set_node_enabled`, `move_node`, `connect_nodes`,
-   `delete_edge`, and `delete_node`.
+   `update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`,
+   `connect_nodes`, `delete_edge`, and `delete_node`.
+   Use `move_nodes` for bulk layout; it only changes node positions.
    Edit published workflow inputs and outputs with `set_published_input`,
    `delete_published_input`, `set_published_output`, and
    `delete_published_output`.
@@ -280,6 +281,8 @@ MCP first, Operation REST second, Raw full-DAG HTTP fallback.
 
 MCP graph-editing tools call the backend operation API. They do not mutate graph
 JSON locally. A capable agent can add a node with one MCP `create_node` call.
+Use MCP `move_nodes` or REST `move_nodes` when arranging several nodes; do not
+send the whole graph just to update canvas layout.
 Published interface tools (`set_published_input`, `delete_published_input`,
 `set_published_output`, `delete_published_output`) also call the backend
 operation API; do not edit `published_inputs` or `published_outputs` locally

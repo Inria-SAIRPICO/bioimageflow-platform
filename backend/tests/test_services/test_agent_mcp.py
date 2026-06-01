@@ -95,6 +95,7 @@ def test_create_mcp_server_registers_expected_tools(tmp_path: Path) -> None:
         "update_node_parameters",
         "set_node_enabled",
         "move_node",
+        "move_nodes",
         "set_published_input",
         "delete_published_input",
         "set_published_output",
@@ -445,6 +446,61 @@ async def test_move_node_calls_backend_operation_api(tmp_path: Path) -> None:
     ]
 
 
+async def test_move_nodes_calls_backend_operation_api(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 8, "graph": {"nodes": [], "edges": []}},
+            )
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 9,
+                "validation": {"valid": True, "errors": []},
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.move_nodes(
+        moves=[
+            {"node_id": "a", "position": [100, 120]},
+            {"node_id": "b", "position": [300, 120]},
+        ]
+    ) == {
+        "ok": True,
+        "workflow_id": "wf",
+        "draft_revision": 9,
+        "validation_valid": True,
+    }
+    assert requests == [
+        {
+            "expected_revision": 8,
+            "updated_by": "agent",
+            "validate": True,
+            "operations": [
+                {
+                    "type": "move_nodes",
+                    "moves": [
+                        {"node_id": "a", "position": [100, 120]},
+                        {"node_id": "b", "position": [300, 120]},
+                    ],
+                }
+            ],
+        }
+    ]
+
+
 async def test_published_interface_tools_call_backend_operation_api(
     tmp_path: Path,
 ) -> None:
@@ -609,6 +665,12 @@ async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
 
     await server.tools["set_node_enabled"](node_id="n1", enabled=True)
     await server.tools["move_node"](node_id="n1", position=[10, 20])
+    await server.tools["move_nodes"](
+        moves=[
+            {"node_id": "n1", "position": [40, 50]},
+            {"node_id": "n2", "position": [80, 50]},
+        ]
+    )
     await server.tools["set_published_output"](
         name="mask",
         internal_node_id="n1",
@@ -631,6 +693,20 @@ async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
             "validate": True,
             "operations": [
                 {"type": "move_node", "node_id": "n1", "position": [10, 20]}
+            ],
+        },
+        {
+            "expected_revision": 11,
+            "updated_by": "agent",
+            "validate": True,
+            "operations": [
+                {
+                    "type": "move_nodes",
+                    "moves": [
+                        {"node_id": "n1", "position": [40, 50]},
+                        {"node_id": "n2", "position": [80, 50]},
+                    ],
+                }
             ],
         },
         {

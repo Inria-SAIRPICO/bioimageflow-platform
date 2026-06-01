@@ -47,6 +47,16 @@ class MoveNodeOperation(BaseModel):
     position: tuple[float, float]
 
 
+class MoveNodeItem(BaseModel):
+    node_id: str
+    position: tuple[float, float]
+
+
+class MoveNodesOperation(BaseModel):
+    type: Literal["move_nodes"] = "move_nodes"
+    moves: list[MoveNodeItem] = Field(min_length=1)
+
+
 class _PublishedNameMixin(BaseModel):
     name: str
 
@@ -122,6 +132,7 @@ WorkflowDraftOperation = Annotated[
     | UpdateNodeParametersOperation
     | SetNodeEnabledOperation
     | MoveNodeOperation
+    | MoveNodesOperation
     | SetPublishedInputOperation
     | DeletePublishedInputOperation
     | SetPublishedOutputOperation

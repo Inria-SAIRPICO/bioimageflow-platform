@@ -127,6 +127,50 @@ def test_published_interface_operations_parse_schema_aliases() -> None:
     }
 
 
+def test_move_nodes_operation_parses_multiple_moves() -> None:
+    request = WorkflowDraftOperationsRequest.model_validate(
+        {
+            "expected_revision": 1,
+            "operations": [
+                {
+                    "type": "move_nodes",
+                    "moves": [
+                        {"node_id": "a", "position": [10, 20]},
+                        {"node_id": "b", "position": [30.5, 40]},
+                    ],
+                }
+            ],
+        }
+    )
+
+    operation = request.operations[0]
+    assert operation.type == "move_nodes"
+    assert [(move.node_id, move.position) for move in operation.moves] == [
+        ("a", (10, 20)),
+        ("b", (30.5, 40)),
+    ]
+
+
+@pytest.mark.parametrize(
+    "moves",
+    [
+        [],
+        [{"node_id": "a", "position": [10]}],
+        [{"node_id": "a", "position": [10, 20, 30]}],
+    ],
+)
+def test_move_nodes_operation_rejects_invalid_move_payloads(
+    moves: list[dict[str, object]],
+) -> None:
+    with pytest.raises(ValidationError):
+        WorkflowDraftOperationsRequest.model_validate(
+            {
+                "expected_revision": 1,
+                "operations": [{"type": "move_nodes", "moves": moves}],
+            }
+        )
+
+
 def test_published_interface_operations_reject_empty_names() -> None:
     with pytest.raises(ValidationError):
         WorkflowDraftOperationsRequest.model_validate(

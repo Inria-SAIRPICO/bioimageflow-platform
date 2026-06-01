@@ -165,6 +165,17 @@ class BioImageFlowMCPGateway:
             expected_revision=expected_revision,
         )
 
+    async def move_nodes(
+        self,
+        *,
+        moves: list[dict[str, Any]],
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        return await self._apply_operations(
+            [{"type": "move_nodes", "moves": moves}],
+            expected_revision=expected_revision,
+        )
+
     async def set_published_input(
         self,
         *,
@@ -508,6 +519,17 @@ def create_mcp_server(
         return await gateway.move_node(
             node_id=node_id,
             position=position,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool()
+    async def move_nodes(
+        moves: list[dict[str, Any]],
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Move multiple workflow nodes on the canvas through the operation API."""
+        return await gateway.move_nodes(
+            moves=moves,
             expected_revision=expected_revision,
         )
 

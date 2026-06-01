@@ -42,10 +42,14 @@ to the absolute `.bioimageflow/agent-state.json` path.
 
 Use `get_active_workflow` and `list_tools` before graph edits. For common graph
 edits, use MCP tools such as `create_node`, `rename_node`,
-`update_node_parameters`, `set_node_enabled`, `move_node`, `connect_nodes`,
+`update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`,
+`connect_nodes`,
 `delete_edge`, and `delete_node`.
 `create_node` fetches the current draft revision internally when you omit
 `expected_revision`, so adding a node can be one MCP tool call.
+Use `move_nodes` for bulk layout when arranging multiple existing nodes. It
+updates only canvas positions and preserves parameters, edges, published
+interfaces, and other node fields.
 
 Published workflow inputs and outputs are also semantic graph edits. Use
 `set_published_input`, `delete_published_input`, `set_published_output`, and
@@ -89,6 +93,28 @@ jq -n \
 
 The backend operation API owns graph mutation semantics. Do not reimplement
 create/delete/connect rules in client code.
+
+Bulk layout REST example:
+
+```sh
+jq -n \
+  --argjson rev "$REV" \
+  '{
+    expected_revision: $rev,
+    updated_by: "agent",
+    validate: true,
+    operations: [{
+      type: "move_nodes",
+      moves: [
+        {node_id: "load_1", position: [80, 120]},
+        {node_id: "blur_1", position: [300, 120]}
+      ]
+    }]
+  }' \
+  | curl -s -X POST "$API/workflow-draft-operations/$WF" \
+      -H 'Content-Type: application/json' \
+      --data-binary @-
+```
 
 Published interface REST example:
 

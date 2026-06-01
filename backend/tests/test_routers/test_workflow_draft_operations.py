@@ -195,6 +195,58 @@ async def test_operation_api_applies_published_interface_edits_once(
     assert len(published) == 1
 
 
+async def test_operation_api_applies_move_nodes_once(tmp_path: Path) -> None:
+    manager = ConnectionManager()
+    published: list[dict[str, Any]] = []
+    manager.publish_workflow_draft_changed = (  # type: ignore[method-assign]
+        lambda **payload: published.append(payload)
+    )
+
+    async for client in _client(tmp_path, connection_manager=manager):
+        await _create_workflow(client, "wf")
+
+        response = await client.post(
+            "/api/v1/workflow-draft-operations/wf",
+            json={
+                "expected_revision": 0,
+                "operations": [
+                    {
+                        "type": "create_node",
+                        "node_id": "a",
+                        "tool_name": "MissingTool",
+                        "name": "A",
+                        "position": [0, 0],
+                        "parameters": {},
+                    },
+                    {
+                        "type": "create_node",
+                        "node_id": "b",
+                        "tool_name": "MissingTool",
+                        "name": "B",
+                        "position": [0, 0],
+                        "parameters": {},
+                    },
+                    {
+                        "type": "move_nodes",
+                        "moves": [
+                            {"node_id": "a", "position": [100, 120]},
+                            {"node_id": "b", "position": [300, 120]},
+                        ],
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [(node["id"], node["position"]) for node in body["graph"]["nodes"]] == [
+        ("a", [100, 120]),
+        ("b", [300, 120]),
+    ]
+    assert json.loads(_draft_path(tmp_path).read_text())["draft_revision"] == 1
+    assert len(published) == 1
+
+
 async def test_operation_api_preserves_nested_workflow_ids(tmp_path: Path) -> None:
     async for client in _client(tmp_path):
         await _create_workflow(client, "folder/wf")
@@ -381,6 +433,51 @@ async def test_published_interface_validation_failure_is_atomic(
                         "internal_field": "image",
                         "kind": "input",
                         "schema": {"type": "ImageFile"},
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["operation_index"] == 1
+    assert response.json()["code"] == "missing_node"
+    assert not _draft_path(tmp_path).exists()
+    assert _agent_state_path(tmp_path).read_text() == initial_state
+    assert published == []
+
+
+async def test_move_nodes_validation_failure_is_atomic(tmp_path: Path) -> None:
+    manager = ConnectionManager()
+    published: list[dict[str, Any]] = []
+    manager.publish_workflow_draft_changed = (  # type: ignore[method-assign]
+        lambda **payload: published.append(payload)
+    )
+
+    async for client in _client(tmp_path, connection_manager=manager):
+        await _create_workflow(client, "wf")
+        initial = await client.get("/api/v1/workflow-drafts/wf")
+        assert initial.status_code == 200
+        initial_state = _agent_state_path(tmp_path).read_text()
+
+        response = await client.post(
+            "/api/v1/workflow-draft-operations/wf",
+            json={
+                "expected_revision": 0,
+                "operations": [
+                    {
+                        "type": "create_node",
+                        "node_id": "a",
+                        "tool_name": "MissingTool",
+                        "name": "A",
+                        "position": [0, 0],
+                        "parameters": {},
+                    },
+                    {
+                        "type": "move_nodes",
+                        "moves": [
+                            {"node_id": "a", "position": [100, 120]},
+                            {"node_id": "missing", "position": [300, 120]},
+                        ],
                     },
                 ],
             },
