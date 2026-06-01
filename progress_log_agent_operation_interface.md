@@ -1003,3 +1003,62 @@ implementation prompt without expanding scope.
   delegating to `/workflow-draft-operations/{workflow_id}` with the expected
   operation payloads.
 - Implement only the MCP wrappers and keep backend operation semantics unchanged.
+
+## 2026-06-01: Phase 10 Broader MCP Operation Coverage
+
+### Planned
+
+- Broaden MCP graph-edit coverage only for operations already owned by the
+  backend operation API.
+- Avoid new backend mutation semantics.
+
+### Implemented
+
+- Added MCP gateway methods and registered MCP tools:
+  `set_node_enabled` and `move_node`.
+- Both tools call `_apply_operations` and delegate to
+  `/workflow-draft-operations/{workflow_id}` with the existing backend operation
+  payloads.
+- Updated generated workspace guidance and workflow-editing docs to list the new
+  MCP tools.
+- Added tests for direct gateway delegation, registered tool forwarding, tool
+  registration, and generated instruction coverage.
+
+### Learned
+
+- Registered-tool coverage matters for MCP phases; gateway-only tests do not
+  catch parameter forwarding regressions in `create_mcp_server`.
+- This slice closed a real coverage gap without adding parameter deletion,
+  backend node-id generation, published input/output operations, bulk layout, or
+  nested sub-workflow mutation.
+
+### Plan Changes
+
+- Marked the Phase 10 first slice complete in
+  `agent_operation_interface_plan.md`.
+- Left new backend operation semantics deferred until real usage provides
+  evidence.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_services/test_agent_mcp.py tests/test_routers/test_workflow_draft_operations.py
+  tests/test_routers/test_workflow_drafts.py`
+  passed: 59 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/agent_mcp.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_services/test_agent_mcp.py tests/test_routers/test_workflow_drafts.py`
+  passed.
+
+### Review Notes
+
+- Initial review found the need for registered-tool tests and updated docs. Both
+  were fixed.
+- Follow-up review found no remaining blockers.
+
+### Next Implementation Iteration
+
+- Phase 11 hardening is mostly satisfied by Phase 6. Before more code, update the
+  plan/log to decide whether any hardening gaps remain or whether to move to
+  Phase 12 end-to-end UX validation.

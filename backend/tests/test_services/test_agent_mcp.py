@@ -93,6 +93,8 @@ def test_create_mcp_server_registers_expected_tools(tmp_path: Path) -> None:
         "delete_node",
         "rename_node",
         "update_node_parameters",
+        "set_node_enabled",
+        "move_node",
         "connect_nodes",
         "delete_edge",
         "validate_workflow",
@@ -346,6 +348,150 @@ async def test_graph_editing_tools_do_not_mutate_graph_locally(tmp_path: Path) -
     assert called_paths == [
         "/api/v1/workflow-drafts/folder/wf",
         "/api/v1/workflow-draft-operations/folder/wf",
+    ]
+
+
+async def test_set_node_enabled_calls_backend_operation_api(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 4, "graph": {"nodes": [], "edges": []}},
+            )
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 5,
+                "validation": {"valid": True, "errors": []},
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.set_node_enabled(node_id="n1", enabled=False) == {
+        "ok": True,
+        "workflow_id": "wf",
+        "draft_revision": 5,
+        "validation_valid": True,
+    }
+    assert requests == [
+        {
+            "expected_revision": 4,
+            "updated_by": "agent",
+            "validate": True,
+            "operations": [
+                {"type": "set_node_enabled", "node_id": "n1", "enabled": False}
+            ],
+        }
+    ]
+
+
+async def test_move_node_calls_backend_operation_api(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 8, "graph": {"nodes": [], "edges": []}},
+            )
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 9,
+                "validation": {"valid": True, "errors": []},
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.move_node(node_id="n1", position=[120, 240]) == {
+        "ok": True,
+        "workflow_id": "wf",
+        "draft_revision": 9,
+        "validation_valid": True,
+    }
+    assert requests == [
+        {
+            "expected_revision": 8,
+            "updated_by": "agent",
+            "validate": True,
+            "operations": [
+                {"type": "move_node", "node_id": "n1", "position": [120, 240]}
+            ],
+        }
+    ]
+
+
+async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 11, "graph": {"nodes": [], "edges": []}},
+            )
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "wf",
+                "draft_revision": 12,
+                "validation": {"valid": True, "errors": []},
+            },
+        )
+
+    server = create_mcp_server(
+        gateway=BioImageFlowMCPGateway(
+            state_path=state_path,
+            transport=httpx.MockTransport(handler),
+        ),
+        mcp_factory=_FakeFastMCP,
+    )
+
+    await server.tools["set_node_enabled"](node_id="n1", enabled=True)
+    await server.tools["move_node"](node_id="n1", position=[10, 20])
+
+    assert requests == [
+        {
+            "expected_revision": 11,
+            "updated_by": "agent",
+            "validate": True,
+            "operations": [
+                {"type": "set_node_enabled", "node_id": "n1", "enabled": True}
+            ],
+        },
+        {
+            "expected_revision": 11,
+            "updated_by": "agent",
+            "validate": True,
+            "operations": [
+                {"type": "move_node", "node_id": "n1", "position": [10, 20]}
+            ],
+        },
     ]
 
 

@@ -168,6 +168,8 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert "Raw Full-DAG Fallback Graph Edits" in instructions
     assert '"expected_revision": "<latest draft_revision>"' in instructions
     assert "POST $API/workflow-draft-operations/$WF" in instructions
+    assert "set_node_enabled" in instructions
+    assert "move_node" in instructions
     assert "First-Run Checklist" in instructions
     assert "Create node" in instructions
     assert "Enable or disable node" in instructions

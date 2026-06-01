@@ -179,7 +179,8 @@ is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
 3. MCP first: if MCP is available, start `bioimageflow-mcp` and use its tools.
 4. Use `get_active_workflow` and `list_tools` MCP tools before edits.
 5. Create or edit with MCP graph tools such as `create_node`, `rename_node`,
-   `update_node_parameters`, `connect_nodes`, `delete_edge`, and `delete_node`.
+   `update_node_parameters`, `set_node_enabled`, `move_node`, `connect_nodes`,
+   `delete_edge`, and `delete_node`.
 6. Operation REST second: when MCP is unavailable, use
    `POST $API/workflow-draft-operations/$WF` with semantic operations.
 7. Raw full-DAG HTTP fallback: read the live draft with

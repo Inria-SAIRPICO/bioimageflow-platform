@@ -548,6 +548,9 @@ Exit criteria:
 
 - New operations are useful, bounded, tested at transform/REST/MCP layers, and
   documented.
+- Completed first slice on 2026-06-01 without adding new backend operations:
+  MCP now exposes thin `set_node_enabled` and `move_node` tools over existing
+  backend operation semantics. New backend operation semantics remain deferred.
 
 ### Phase 11: Real Usage Hardening
 

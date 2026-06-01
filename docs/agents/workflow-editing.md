@@ -42,7 +42,8 @@ to the absolute `.bioimageflow/agent-state.json` path.
 
 Use `get_active_workflow` and `list_tools` before graph edits. For common graph
 edits, use MCP tools such as `create_node`, `rename_node`,
-`update_node_parameters`, `connect_nodes`, `delete_edge`, and `delete_node`.
+`update_node_parameters`, `set_node_enabled`, `move_node`, `connect_nodes`,
+`delete_edge`, and `delete_node`.
 `create_node` fetches the current draft revision internally when you omit
 `expected_revision`, so adding a node can be one MCP tool call.
 
