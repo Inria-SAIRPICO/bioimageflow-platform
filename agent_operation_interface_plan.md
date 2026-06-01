@@ -973,6 +973,51 @@ Build it later if local/simple models still need a shell-oriented interface or
 if MCP setup proves unreliable. If added, the CLI must be a thin wrapper over
 the operation API, not a graph mutation implementation.
 
+### Phase 17: Tool-Metadata-Aware Published Interface Validation
+
+Goal: catch published input/output target typos before a draft write while
+keeping graph mutation semantics backend-owned and MCP thin.
+
+Planning update, 2026-06-01:
+
+- Phase 14 intentionally validated only graph-local facts because the pure
+  operation transform had no tool registry context.
+- The right implementation boundary is a backend preflight validator, not MCP
+  logic and not a broad operation DSL. The validator receives the current graph,
+  the operation list, and a tool metadata lookup such as
+  `ToolRegistryService.get_tool`.
+- The preflight should run before `apply_workflow_draft_operations` and before
+  `put_draft`, so failures preserve the existing no-write/no-event guarantees.
+- The preflight must account for earlier operations in the same batch enough to
+  validate a published pin on a just-created node.
+- Validate `set_published_input.internal_field` against the target node tool's
+  `ToolMetadata.inputs` and `set_published_output.internal_output` against
+  `ToolMetadata.outputs`.
+- Defer schema coercion and automatic schema derivation unless the registry
+  metadata shape makes a minimal exact check obvious.
+- Dynamic outputs need a conservative rule: do not reject unknown published
+  outputs for tools marked `dynamic_outputs` or metadata carrying passthrough
+  outputs. Still validate known static outputs when possible.
+
+TDD:
+
+- Service/preflight tests for valid input/output targets, missing input target,
+  missing output target, missing tool metadata, create-node-then-publish in one
+  batch, and dynamic output behavior.
+- Router tests for operation-indexed validation errors and failed-batch
+  no-write/no-event behavior.
+- Regression tests that MCP remains a thin operation API wrapper.
+
+Review:
+
+- Dedicated review agent checks the boundary between pure transforms and
+  metadata preflight, error codes, dynamic-output policy, and atomicity.
+
+Exit criteria:
+
+- Agents get machine-readable errors for typoed published input/output target
+  names before any draft write.
+
 ## Parallelization
 
 Use parallel agents only for disjoint write scopes:

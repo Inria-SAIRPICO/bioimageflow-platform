@@ -1676,3 +1676,38 @@ implementation prompt without expanding scope.
 
 - Phase 13 through Phase 16 are complete. Future phases should be planned from
   real agent usage evidence rather than expanding the operation DSL by default.
+
+## 2026-06-01: Phase 17 Planning Update
+
+### Planned
+
+- Implement tool-metadata-aware validation for published workflow interface
+  operations.
+- Keep MCP as a thin wrapper and keep the pure graph transform independent from
+  FastAPI/MCP.
+
+### Learned
+
+- The current Phase 14 implementation validates node existence, names,
+  duplicate published names, and blank target strings, but does not validate
+  `internal_field` / `internal_output` against the node's tool metadata.
+- `ToolMetadata.inputs` and `ToolMetadata.outputs` are already available through
+  `ToolRegistryService.get_tool`.
+- The operation router can inject the registry and run metadata preflight before
+  pure transform and draft write.
+
+### Plan Changes
+
+- Added Phase 17 to `agent_operation_interface_plan.md`.
+- Phase 17 will add a backend metadata preflight over operation batches rather
+  than moving validation into MCP or expanding the operation DSL.
+- The preflight must account for prior operations in the same batch, especially
+  create-node-then-publish.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 17 worktree.
+- Write service/router tests first for valid and invalid published targets,
+  batch atomicity, missing metadata, and dynamic outputs.
+- Implement metadata preflight, run focused validation, review, fix blockers,
+  update plan/log, and commit.
