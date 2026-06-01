@@ -199,6 +199,38 @@ is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
 13. Check or stop execution: `GET $API/execution/status`,
     `POST $API/execution/stop`.
 
+## Workflow-local tool authoring
+
+Workflow-local tools live in the active workflow's `tools/` directory and are
+the editable tool surface for agents. Package/global tools may be read-only or
+non-deletable.
+
+Create a scaffold when needed:
+
+```sh
+# POST $API/tools?workflow_name=$WF
+curl -sS -X POST "$API/tools?workflow_name=$WF" \
+  -H 'Content-Type: application/json' \
+  -d '{{"name":"MyTool","tool_type":"ProcessingTool"}}'
+```
+
+Resolve the Python source for an existing workflow-local tool before editing:
+
+```sh
+TOOL=MyTool
+# GET $API/tools/$TOOL/source?workflow_name=$WF
+curl -sS "$API/tools/$TOOL/source?workflow_name=$WF"
+```
+
+After editing a workflow-local Python file, the backend hot-reload watcher should
+publish `tool_reload`. If a tool file is deleted, it should publish
+`tool_removed`. If a source edit is invalid, expect a `tool_reload_failed`
+system error and fix the Python source. Verify the platform view with
+`GET $API/tools` or MCP `list_tools`.
+
+Do not edit `.bioimageflow/platform-source/` to create or change workflow tools;
+that directory is a read-only platform reference.
+
 ## MCP client setup
 
 Run from the workspace root so `bioimageflow-mcp` can read

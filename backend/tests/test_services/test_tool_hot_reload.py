@@ -20,6 +20,8 @@ from bioimageflow_server.models.tools import (
     OutputFieldSchema,
     ToolMetadata,
 )
+from bioimageflow_server.services.custom_tools import CustomToolService
+from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 pytestmark = pytest.mark.anyio
 
@@ -414,6 +416,94 @@ async def test_full_package_removal_emits_tool_removed_per_class(tmp_path):
     assert removed == ["A", "B"]
     cm.broadcast_system_error.assert_not_awaited()
     assert (pkg, ver) in reg.forget_calls or (pkg, None) in reg.forget_calls
+
+
+async def test_custom_tool_edit_emits_tool_reload_with_updated_metadata(tmp_path: Path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = ToolRegistryService()
+    custom = CustomToolService(tmp_path, registry)
+    path = custom.create("ReloadMe", "ProcessingTool")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'display_name = "Reload Me"',
+            'display_name = "Reloaded Tool"',
+        ),
+        encoding="utf-8",
+    )
+
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    svc = ToolHotReloadService(registry=registry, connection_manager=cm, debounce_ms=15)
+
+    await svc._handle_event(path)
+
+    assert await _wait_for(lambda: cm.broadcast_tool_reload.await_count == 1)
+    cm.broadcast_tool_removed.assert_not_awaited()
+    cm.broadcast_system_error.assert_not_awaited()
+    args = cm.broadcast_tool_reload.await_args.args
+    assert args[0] == "ReloadMe"
+    assert args[1]["display_name"] == "Reloaded Tool"
+    assert registry.get_tool("ReloadMe") is not None
+
+
+async def test_custom_tool_delete_emits_tool_removed(tmp_path: Path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = ToolRegistryService()
+    custom = CustomToolService(tmp_path, registry)
+    path = custom.create("DeleteMe", "ProcessingTool")
+    path.unlink()
+
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    svc = ToolHotReloadService(registry=registry, connection_manager=cm, debounce_ms=15)
+
+    await svc._handle_event(path)
+
+    assert await _wait_for(lambda: cm.broadcast_tool_removed.await_count == 1)
+    cm.broadcast_tool_removed.assert_awaited_once_with("DeleteMe")
+    cm.broadcast_tool_reload.assert_not_awaited()
+    cm.broadcast_system_error.assert_not_awaited()
+    assert registry.get_tool("DeleteMe") is None
+
+
+async def test_custom_tool_reload_failure_preserves_previous_metadata(tmp_path: Path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    registry = ToolRegistryService()
+    custom = CustomToolService(tmp_path, registry)
+    path = custom.create("KeepMe", "ProcessingTool")
+    original = registry.get_tool("KeepMe")
+    assert original is not None
+    original_class = registry.get_tool_class("KeepMe")
+    original_package = registry.get_package("__custom__")
+    assert original_class is not None
+    assert original_package is not None
+    original_package = original_package.model_copy(deep=True)
+    path.write_text("definitely not python:\n", encoding="utf-8")
+
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    svc = ToolHotReloadService(registry=registry, connection_manager=cm, debounce_ms=15)
+
+    await svc._handle_event(path)
+
+    assert await _wait_for(lambda: cm.broadcast_system_error.await_count == 1)
+    args = cm.broadcast_system_error.await_args.args
+    assert args[0] == "tool_reload_failed"
+    cm.broadcast_tool_reload.assert_not_awaited()
+    cm.broadcast_tool_removed.assert_not_awaited()
+    assert registry.get_tool("KeepMe") == original
+    assert registry.get_tool_class("KeepMe") is original_class
+    assert registry.get_package("__custom__") == original_package
+    assert registry.resolve_tool_source("KeepMe") == path
 
 
 async def test_suppress_blocks_broadcasts_resume_emits_batch(tmp_path):

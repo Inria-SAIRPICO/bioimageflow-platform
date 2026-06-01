@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useWebSocket, __resetForTests } from '@/composables/useWebSocket'
+import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 
 class FakeWebSocket {
@@ -62,5 +63,42 @@ describe('useWebSocket workflow draft dispatch', () => {
     expect(draft.remoteUpdatedBy).toBe('agent')
     expect(draft.remoteUpdatedAt).toBe('2026-05-21T12:08:00Z')
     expect(draft.remoteDirtyAgainstSaved).toBe(true)
+  })
+
+  it('dispatches tool_reload and tool_removed messages to the tool registry store', () => {
+    const registry = useToolRegistryStore()
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'tool_reload',
+        tool_name: 'CustomTool',
+        tool_metadata: {
+          name: 'CustomTool',
+          display_name: 'Custom Tool',
+          package: '__custom__',
+          package_version: 'local',
+          tool_type: 'ProcessingTool',
+          inputs: {},
+          outputs: {},
+          tags: [],
+          categories: [],
+          source_kind: 'custom',
+          editable: true,
+        },
+      }),
+    } as MessageEvent)
+
+    expect(registry.getToolByName('CustomTool')?.editable).toBe(true)
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'tool_removed',
+        tool_name: 'CustomTool',
+      }),
+    } as MessageEvent)
+
+    expect(registry.getToolByName('CustomTool')).toBeUndefined()
   })
 })

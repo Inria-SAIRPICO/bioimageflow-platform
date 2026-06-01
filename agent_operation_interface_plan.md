@@ -705,6 +705,10 @@ Exit criteria:
 - Agent docs clearly explain how to create, edit, delete, rename, and verify
   workflow-local tools.
 - Tests protect the documented tool-authoring path and hot-reload expectations.
+- Completed first Phase 13 slice on 2026-06-01: generated workspace
+  instructions and agent docs now document workflow-local tool authoring; real
+  custom hot-reload tests cover edit/delete/failure preservation; frontend unit
+  tests cover WebSocket/store reload/removal dispatch.
 
 ### Phase 14: Published Workflow Interface Operations
 

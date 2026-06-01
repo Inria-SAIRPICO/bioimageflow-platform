@@ -47,6 +47,10 @@ def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_no
     assert "full-graph replacement, not patch" in instructions
     assert "Enable or disable node" in instructions
     assert "Execute selected nodes" in instructions
+    assert "Workflow-local tool authoring" in instructions
+    assert "GET $API/tools/$TOOL/source?workflow_name=$WF" in instructions
+    assert "POST $API/tools?workflow_name=$WF" in instructions
+    assert "tool_reload" in instructions
     assert "/Users/" not in instructions
     assert not (workspace / ".bioimageflow" / "AGENTS.md").exists()
     source_clone = workspace / ".bioimageflow" / "platform-source"
@@ -107,3 +111,16 @@ def test_agent_docs_include_mcp_client_setup() -> None:
         assert "bioimageflow-mcp" in content
         assert "BIOIMAGEFLOW_AGENT_STATE" in content
         assert "workspace root" in content
+
+
+def test_agent_docs_include_workflow_local_tool_authoring() -> None:
+    docs_root = Path(__file__).parents[3] / "docs" / "agents"
+    workflow_editing = (docs_root / "workflow-editing.md").read_text(encoding="utf-8")
+    readme = (docs_root / "README.md").read_text(encoding="utf-8")
+
+    for content in (workflow_editing, readme):
+        assert "workflow-local tool" in content
+        assert "POST /tools?workflow_name=$WF" in content
+        assert "GET /tools/{tool_name}/source?workflow_name=$WF" in content
+        assert "tool_reload" in content
+        assert ".bioimageflow/platform-source/" in content

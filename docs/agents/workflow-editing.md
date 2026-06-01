@@ -103,6 +103,39 @@ jq '.[].name' /tmp/bif-tools.json
 Use exact `tool_name`, input names, output names, and parameter names from tool
 metadata. Do not guess names from labels, filenames, or UI text.
 
+## Workflow-local tool authoring
+
+Workflow-local tools are editable Python files attached to the active workflow.
+Package/global tools may be read-only or non-deletable. Use workflow-local tools
+when an agent needs to create a new tool or edit/delete a custom tool for this
+workflow.
+
+Create a scaffold:
+
+```sh
+curl -sS -X POST "$API/tools?workflow_name=$WF" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"MyTool","tool_type":"ProcessingTool"}'
+```
+
+Resolve the source path:
+
+```sh
+TOOL=MyTool
+curl -sS "$API/tools/$TOOL/source?workflow_name=$WF"
+```
+
+API shape: `POST /tools?workflow_name=$WF` creates a workflow-local tool, and
+`GET /tools/{tool_name}/source?workflow_name=$WF` returns its editable source
+path. Edit that Python file directly. The backend watches workflow-local tool
+sources and should publish `tool_reload` after a valid edit or `tool_removed`
+after deletion. If the source has syntax/import errors, expect
+`tool_reload_failed`; fix the Python file and verify again with `GET /tools` or
+MCP `list_tools`.
+
+Do not edit `.bioimageflow/platform-source/` for tool authoring. It is a
+read-only reference copy of platform source and docs, not the active workflow.
+
 ## Graph Shape
 
 The complete graph object has these top-level fields. Preserve all of them on a

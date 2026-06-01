@@ -416,8 +416,24 @@ class ToolRegistryService:
         if not source.exists():
             self.unregister_custom_tool(class_name)
             raise FileNotFoundError(source)
+        prior_metadata = self._tools.get(class_name)
+        prior_source = self._sources.get(class_name)
+        prior_class = self._lib_registry.get_class(class_name)
+        prior_package = self._packages.get("__custom__")
+        prior_package = prior_package.model_copy(deep=True) if prior_package is not None else None
         self.unregister_custom_tool(class_name)
-        metadata = self.register_custom_tool_file(source, class_name)
+        try:
+            metadata = self.register_custom_tool_file(source, class_name)
+        except Exception:
+            if prior_metadata is not None:
+                self._tools[class_name] = prior_metadata
+            if prior_source is not None:
+                self._sources[class_name] = prior_source
+            if prior_package is not None:
+                self._packages["__custom__"] = prior_package
+            if prior_class is not None and prior_metadata is not None:
+                self._register_lib_class(class_name, prior_metadata, prior_class)
+            raise
         return {class_name: metadata}
 
     def resolve_tool_source(self, class_name: str) -> Path | None:

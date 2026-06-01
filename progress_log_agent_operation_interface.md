@@ -1303,3 +1303,72 @@ implementation prompt without expanding scope.
 - Continue with Phase 13 implementation first.
 - Before Phase 14 coding, update the plan/log again from Phase 13 learnings and
   create a dedicated Phase 14 worktree.
+
+## 2026-06-01: Phase 13 Agent Tool Authoring Docs And Validation
+
+### Planned
+
+- Document the workflow-local tool authoring path for agents.
+- Validate real custom-tool hot reload and frontend tool reload/removal handling.
+- Fix only bugs exposed by the new tests.
+
+### Implemented
+
+- Added generated workspace instructions for workflow-local tool authoring:
+  create scaffold, resolve source path, edit Python files, verify `tool_reload`,
+  handle `tool_removed` and `tool_reload_failed`, and avoid
+  `.bioimageflow/platform-source/`.
+- Updated `docs/agents/README.md` and `docs/agents/workflow-editing.md` with
+  workflow-local tool authoring guidance.
+- Added real `ToolRegistryService + CustomToolService + ToolHotReloadService`
+  tests for custom tool edit, delete, and reload failure.
+- Fixed `reload_custom_tool` so a failed custom tool reload preserves the
+  previous working metadata, source path, package entry, and class binding.
+- Added frontend unit coverage for WebSocket `tool_reload` / `tool_removed`
+  dispatch and tool registry package-membership updates.
+
+### Learned
+
+- The existing custom tool authoring API surface was sufficient; the largest
+  actual bug was reload failure rollback for invalid custom Python edits.
+- `TMPDIR=/private/tmp/` is required for Bun install/test commands in this
+  worktree.
+- Broader UI/e2e coverage for canvas node rename/delete handling can remain a
+  later hardening item; the focused Phase 13 path now protects platform-visible
+  tool registry updates.
+
+### Plan Changes
+
+- Marked the first Phase 13 slice complete in
+  `agent_operation_interface_plan.md`.
+- Phase 14 remains next: published workflow interface semantic operations.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_services/test_tool_hot_reload.py
+  tests/test_services/test_agent_workspace_context.py` passed: 27 tests.
+- `TMPDIR=/private/tmp/ TEMP=/private/tmp/ TMP=/private/tmp/ bun run test:unit
+  -- src/composables/__tests__/useWebSocket.test.ts
+  src/stores/__tests__/toolRegistry.test.ts` passed: 8 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/services/tool_registry.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_services/test_tool_hot_reload.py
+  tests/test_services/test_agent_workspace_context.py` passed.
+- `TMPDIR=/private/tmp/ TEMP=/private/tmp/ TMP=/private/tmp/ bunx eslint
+  src/composables/__tests__/useWebSocket.test.ts
+  src/stores/__tests__/toolRegistry.test.ts` passed.
+
+### Review Notes
+
+- Dedicated Phase 13 review found no blockers.
+- Review suggested a non-blocking test gap: assert failed custom-tool reload
+  also preserves the prior class binding and `__custom__` package state. Added
+  those assertions and reran focused validation.
+
+### Next Implementation Iteration
+
+- Run a dedicated Phase 13 review agent.
+- Fix blockers if any, rerun focused checks, integrate, then update plan/log
+  before Phase 14 coding.

@@ -94,4 +94,70 @@ describe('toolRegistry custom tool actions', () => {
 
     expect(store.customToolBusy).toBe(false)
   })
+
+  it('applyToolReload upserts tools and package membership', () => {
+    const store = useToolRegistryStore()
+    store.packages = [{
+      name: '__custom__',
+      installed_versions: ['local'],
+      available_versions: ['local'],
+      active_version: 'local',
+      tools: { local: [] },
+      environment_status: 'stopped',
+    }]
+
+    store.applyToolReload({
+      type: 'tool_reload',
+      tool_name: 'CustomTool',
+      tool_metadata: {
+        name: 'CustomTool',
+        display_name: 'Custom Tool',
+        package: '__custom__',
+        package_version: 'local',
+        tool_type: 'ProcessingTool',
+        inputs: {},
+        outputs: {},
+        tags: [],
+        categories: [],
+        source_kind: 'custom',
+        editable: true,
+      },
+    })
+
+    expect(store.getToolByName('CustomTool')?.editable).toBe(true)
+    expect(store.packages[0]!.tools.local).toContain('CustomTool')
+  })
+
+  it('applyToolRemoved removes tools and package membership', () => {
+    const store = useToolRegistryStore()
+    store.tools = [{
+      name: 'CustomTool',
+      display_name: 'Custom Tool',
+      package: '__custom__',
+      package_version: 'local',
+      tool_type: 'ProcessingTool',
+      inputs: {},
+      outputs: {},
+      tags: [],
+      categories: [],
+      source_kind: 'custom',
+      editable: true,
+    }]
+    store.packages = [{
+      name: '__custom__',
+      installed_versions: ['local'],
+      available_versions: ['local'],
+      active_version: 'local',
+      tools: { local: ['CustomTool'] },
+      environment_status: 'stopped',
+    }]
+
+    store.applyToolRemoved({
+      type: 'tool_removed',
+      tool_name: 'CustomTool',
+    })
+
+    expect(store.getToolByName('CustomTool')).toBeUndefined()
+    expect(store.packages[0]!.tools.local).not.toContain('CustomTool')
+  })
 })

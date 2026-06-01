@@ -9,7 +9,8 @@ Files:
 - `api-reference.md`: endpoints, request payloads, response fields, and common
   error codes.
 - `workflow-editing.md`: graph mutation cookbook for creating, editing,
-  connecting, enabling, disabling, executing, and deleting nodes.
+  connecting, enabling, disabling, executing, deleting nodes, and authoring
+  workflow-local tools.
 - `execution.md`: run semantics, selected-node execution, locks, status, stop
   behavior, and draft-vs-run graph rules.
 - `troubleshooting.md`: quick fixes for offline API, stale state, 409, 423,
@@ -54,3 +55,19 @@ conflict.
 If `.bioimageflow/platform-source/` is present in a workspace, treat it as a
 read-only reference copy. Do not edit files there to change the running app or a
 workflow.
+
+## Workflow-local tool authoring
+
+Agents may create and edit workflow-local tools for the active workflow. Use the
+active workflow id from `.bioimageflow/agent-state.json` as `$WF`.
+
+- Create a scaffold with `POST /tools?workflow_name=$WF`.
+- Resolve editable source with
+  `GET /tools/{tool_name}/source?workflow_name=$WF`.
+- Edit the returned Python file path directly when changing tool behavior.
+- Verify the backend saw the edit with `GET /tools` or MCP `list_tools`; a valid
+  edit should produce `tool_reload`, and deletion should produce `tool_removed`.
+- Fix Python syntax/import errors if the platform reports `tool_reload_failed`.
+
+Do not edit `.bioimageflow/platform-source/` for workflow-local tool changes;
+that copy is read-only reference material.
