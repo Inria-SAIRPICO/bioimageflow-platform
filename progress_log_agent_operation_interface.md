@@ -1091,3 +1091,38 @@ implementation prompt without expanding scope.
 - Calibrate existing frontend e2e harness, then add the smallest reliable e2e
   validation for backend operation edits reaching the canvas through the existing
   draft/WebSocket path.
+
+## 2026-06-01: Phase 12 Planning Update
+
+### Planned
+
+- Add end-to-end evidence for the missing integration path between the backend
+  operation API, draft WebSocket publication, and the active browser canvas.
+- Keep Phase 12 focused unless the e2e test exposes a real frontend sync
+  regression.
+
+### Learned
+
+- Existing frontend unit/component tests already cover WebSocket draft dispatch,
+  clean-canvas auto-apply, local-conflict banners, apply/keep/copy conflict
+  actions, and stale-draft guards for save/run/export style critical actions.
+- Existing Playwright tests cover workflow opening and graph persistence, but
+  not an agent/backend draft operation reaching a live canvas through WebSocket.
+- The Playwright backend exposes `/api/v1/dev/seed`, so the new e2e test can
+  create a deterministic tool node without relying on external packages.
+
+### Plan Changes
+
+- Phase 12 first slice is one browser-realistic test: open a seeded workflow,
+  call `/api/v1/workflow-draft-operations/{workflow_id}` with `create_node`,
+  and assert the node appears on the active canvas without a conflict banner or
+  reload.
+- Broader conflict-action e2e coverage remains deferred unless this slice shows
+  a real gap, because those actions already have focused component coverage.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 12 worktree.
+- Write the failing Playwright test first.
+- Patch only regressions found by that test, then run the single chromium e2e
+  spec and targeted frontend checks as available.

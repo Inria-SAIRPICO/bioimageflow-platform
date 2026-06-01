@@ -588,6 +588,20 @@ Exit criteria:
 Goal: prove agent edits, frontend draft sync, and conflict handling work
 together.
 
+Calibration update, 2026-06-01:
+
+- Existing unit/component coverage already exercises draft WebSocket dispatch,
+  clean-canvas auto-apply, local-conflict banner actions, pending-save
+  conflicts, and critical-operation guards.
+- The missing evidence is a browser-realistic full-stack path: a backend
+  operation API edit should publish a draft-change event, the active browser
+  canvas should receive it through the existing WebSocket connection, and a
+  clean canvas should show the new graph without reload.
+- Phase 12 will add that e2e guard first. Broader conflict-action e2e tests stay
+  deferred unless this test exposes a real gap, because the component tests
+  already cover those actions and Playwright should stay focused on integration
+  behavior.
+
 TDD/e2e:
 
 - Add or extend frontend/unit/e2e coverage showing agent operation/MCP edits
@@ -597,11 +611,17 @@ TDD/e2e:
 - Cover apply remote, keep local, and save agent version as copy if existing
   tests do not already exercise those paths end to end.
 - Verify failed operation batches do not publish frontend events.
+- First Phase 12 slice: add one Playwright test for backend
+  `/api/v1/workflow-draft-operations/{workflow_id}` `create_node` reaching the
+  active canvas via WebSocket with no `.workflow-draft-conflict` banner and no
+  reload.
 
 Implementation:
 
 - Patch only regressions found by tests.
 - Preserve the existing frontend editing model and conflict actions.
+- Do not add frontend merge logic, CRDTs, or a new editing model. If the e2e
+  test passes without production changes, Phase 12 should remain validation-only.
 
 Review:
 
