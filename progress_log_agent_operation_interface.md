@@ -782,3 +782,45 @@ implementation prompt without expanding scope.
 
 - Before Phase 7 coding, update this plan/log with the exact MCP discovery
   response shape and tests based on existing `ToolMetadata`.
+
+## 2026-06-01: Phase 7 Planning Update
+
+### Planned
+
+- Improve MCP `list_tools` so agents can create useful nodes from discovery
+  metadata.
+- Reuse existing `ToolMetadata` returned by `GET /tools`; do not introduce a
+  second schema or graph-construction engine.
+
+### Learned
+
+- `GET /tools` already exposes the relevant metadata:
+  package/version, `tool_type`, upstream flags, documentation, tags/categories,
+  inputs, outputs, environment, source kind, and editability.
+- Current MCP `list_tools` drops most of that metadata and reads a non-existent
+  `description` field, which usually returns `null`.
+- Frontend creation defaults are mechanical: parameter defaults come from
+  `tool.inputs[*].default`; required unconnected inputs are required inputs that
+  are not connectable by default; connectable inputs come from input
+  `connectable`; output template defaults can be derived from outputs that carry
+  string defaults.
+
+### Plan Changes
+
+- Phase 7 response shape is now concrete in
+  `agent_operation_interface_plan.md`.
+- The first implementation will stay inside MCP response shaping and tests. It
+  will not add REST endpoints, graph mutation semantics, schema coercion, or
+  client-side validation rules.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 7 worktree.
+- Add failing MCP tests for:
+  - preserving `ToolMetadata` fields in `list_tools`;
+  - using `documentation` rather than missing `description`;
+  - deriving `creation.default_parameters`,
+    `creation.required_unconnected_inputs`, `creation.connectable_inputs`, and
+    `creation.default_output_templates`.
+- Implement the smallest MCP `list_tools` shaping changes, validate, review, and
+  integrate.

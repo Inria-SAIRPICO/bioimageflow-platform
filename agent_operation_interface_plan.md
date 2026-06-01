@@ -403,6 +403,15 @@ Exit criteria:
 Goal: let an agent discover enough tool metadata to create useful nodes without
 reading raw workflow JSON.
 
+Phase 7 discovery shape: keep `GET /tools` as the canonical registry source and
+make MCP preserve the useful `ToolMetadata` fields already returned by REST:
+`name`, `display_name`, `documentation`, `package`, `package_version`,
+`tool_type`, `accepts_upstream`, `dynamic_outputs`, `dataframe_output`, `tags`,
+`categories`, `inputs`, `outputs`, `source_kind`, and `editable`. Add only
+mechanical creation hints derived from those fields:
+`default_parameters`, `required_unconnected_inputs`, `connectable_inputs`, and
+`default_output_templates`.
+
 TDD:
 
 - Add tests for compact tool listing with tool name, display name/description,
