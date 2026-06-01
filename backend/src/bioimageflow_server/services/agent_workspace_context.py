@@ -198,6 +198,26 @@ is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
 13. Check or stop execution: `GET $API/execution/status`,
     `POST $API/execution/stop`.
 
+## MCP client setup
+
+Run from the workspace root so `bioimageflow-mcp` can read
+`.bioimageflow/agent-state.json`, or set `BIOIMAGEFLOW_AGENT_STATE` to the
+absolute state file path.
+
+Generic MCP server config:
+
+```json
+{{
+  "command": "bioimageflow-mcp",
+  "cwd": "<workspace root>",
+  "env": {{
+    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json"
+  }}
+}}
+```
+
+If the client does not support `cwd`, set `BIOIMAGEFLOW_AGENT_STATE` explicitly.
+
 ## API URL And Sandbox
 
 The backend port is dynamic. Always read `api_base_url` from

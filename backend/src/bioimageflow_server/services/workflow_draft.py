@@ -205,6 +205,15 @@ class WorkflowDraftService:
                 "request permission to run the same curl command outside the sandbox."
             ),
             "mcp_server_command": "bioimageflow-mcp",
+            "mcp_client_config": {
+                "command": "bioimageflow-mcp",
+                "cwd": str(store.workspace_dir),
+                "env": {
+                    "BIOIMAGEFLOW_AGENT_STATE": str(
+                        workspace_meta / "agent-state.json"
+                    ),
+                },
+            },
             "operation_api_url": (
                 f"{api_url}/workflow-draft-operations/{workflow_id}"
             ),

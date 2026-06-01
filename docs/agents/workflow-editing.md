@@ -27,6 +27,19 @@ Start the MCP server when your environment supports MCP tools:
 bioimageflow-mcp
 ```
 
+MCP client setup: run from the workspace root or set `BIOIMAGEFLOW_AGENT_STATE`
+to the absolute `.bioimageflow/agent-state.json` path.
+
+```json
+{
+  "command": "bioimageflow-mcp",
+  "cwd": "<workspace root>",
+  "env": {
+    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json"
+  }
+}
+```
+
 Use `get_active_workflow` and `list_tools` before graph edits. For common graph
 edits, use MCP tools such as `create_node`, `rename_node`,
 `update_node_parameters`, `connect_nodes`, `delete_edge`, and `delete_node`.

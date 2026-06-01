@@ -24,6 +24,20 @@ Use MCP first when available:
 bioimageflow-mcp
 ```
 
+MCP client setup: use command `bioimageflow-mcp` with `cwd` set to the workspace
+root, or set `BIOIMAGEFLOW_AGENT_STATE` to
+`<workspace root>/.bioimageflow/agent-state.json`.
+
+```json
+{
+  "command": "bioimageflow-mcp",
+  "cwd": "<workspace root>",
+  "env": {
+    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json"
+  }
+}
+```
+
 The MCP graph-editing tools call the backend operation API. They do not mutate
 workflow graph JSON locally.
 

@@ -33,14 +33,13 @@ def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_no
     instructions = (workspace / "AGENTS.md").read_text()
     normalized_instructions = " ".join(instructions.split())
     assert "local app for designing and running bioimage analysis workflows" in normalized_instructions
-    assert (
-        "Your job is to edit the live workflow draft through the local HTTP API"
-        in normalized_instructions
-    )
+    assert "Prefer MCP tools for workflow edits when available" in normalized_instructions
     assert "First-Run Checklist" in instructions
     assert ".bioimageflow/platform-source/" in instructions
     assert "read-only" in instructions
-    assert "API-first through `api_base_url`" in normalized_instructions
+    assert "MCP client setup" in instructions
+    assert "Run from the workspace root" in instructions
+    assert "BIOIMAGEFLOW_AGENT_STATE" in instructions
     assert "Do not guess or hardcode ports such as 8008" in instructions
     assert "Sandboxed agents may be blocked from reaching localhost" in instructions
     assert "request permission to run the same curl command outside the sandbox" in instructions
@@ -98,3 +97,13 @@ def test_user_hidden_agent_doc_is_preserved(tmp_path: Path, monkeypatch) -> None
     context.ensure_agent_workspace_context(workspace, source_root=source)
 
     assert hidden.read_text() == "# Custom User Instructions\nkeep me"
+
+
+def test_agent_docs_include_mcp_client_setup() -> None:
+    docs_root = Path(__file__).parents[3] / "docs" / "agents"
+    for name in ("README.md", "api-reference.md", "workflow-editing.md"):
+        content = (docs_root / name).read_text(encoding="utf-8")
+        assert "MCP client setup" in content
+        assert "bioimageflow-mcp" in content
+        assert "BIOIMAGEFLOW_AGENT_STATE" in content
+        assert "workspace root" in content

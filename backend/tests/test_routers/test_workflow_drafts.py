@@ -136,6 +136,13 @@ async def test_get_synthesizes_draft_from_saved_workflow(
         "POST http://test/api/v1/execution/stop",
     ]
     assert context["mcp_server_command"] == "bioimageflow-mcp"
+    assert context["mcp_client_config"] == {
+        "command": "bioimageflow-mcp",
+        "cwd": str(tmp_path / "workspace"),
+        "env": {
+            "BIOIMAGEFLOW_AGENT_STATE": str(agent_state),
+        },
+    }
     assert (
         context["operation_api_url"]
         == "http://test/api/v1/workflow-draft-operations/wf"
@@ -153,6 +160,9 @@ async def test_get_synthesizes_draft_from_saved_workflow(
         in normalized_instructions
     )
     assert "MCP first" in instructions
+    assert "MCP client setup" in instructions
+    assert "Run from the workspace root" in instructions
+    assert "BIOIMAGEFLOW_AGENT_STATE" in instructions
     assert "Operation REST second" in instructions
     assert "Raw full-DAG HTTP fallback" in instructions
     assert "Raw Full-DAG Fallback Graph Edits" in instructions

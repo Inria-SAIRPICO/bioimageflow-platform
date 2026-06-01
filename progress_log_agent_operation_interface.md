@@ -914,3 +914,61 @@ implementation prompt without expanding scope.
 
 - Before Phase 9 coding, update docs/workspace-context tests for concrete MCP
   client setup: command, cwd/workspace root, and `BIOIMAGEFLOW_AGENT_STATE`.
+
+## 2026-06-01: Phase 9 MCP Client Configuration
+
+### Planned
+
+- Make MCP client setup concrete in generated workspace context and docs.
+- Keep the setup client-agnostic and avoid adding a CLI.
+
+### Implemented
+
+- Added `mcp_client_config` to generated `.bioimageflow/agent-state.json` with:
+  command `bioimageflow-mcp`, workspace `cwd`, and
+  `BIOIMAGEFLOW_AGENT_STATE` pointing at the generated state file.
+- Added an MCP client setup section to generated workspace `AGENTS.md`.
+- Added MCP client setup guidance to `docs/agents/README.md`,
+  `docs/agents/api-reference.md`, and `docs/agents/workflow-editing.md`.
+- Updated tests to assert generated instructions, generated state, and each
+  static doc expose command/cwd/env setup details.
+
+### Learned
+
+- The current MCP implementation already supports this setup model:
+  `BIOIMAGEFLOW_AGENT_STATE` takes precedence, then the server falls back to
+  `$cwd/.bioimageflow/agent-state.json`.
+- Tests should check each static doc independently; concatenated docs can hide a
+  missing setup section in one file.
+
+### Plan Changes
+
+- Marked Phase 9 complete in `agent_operation_interface_plan.md`.
+- Kept client-specific configuration examples deferred. The generic command/cwd
+  and env shape is stable and lower churn.
+
+### Validation
+
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run --extra dev python -m pytest
+  tests/test_services/test_agent_workspace_context.py
+  tests/test_routers/test_workflow_drafts.py tests/test_services/test_agent_mcp.py`
+  passed: 48 tests.
+- `UV_CACHE_DIR=/private/tmp/uv-cache uv run ruff check
+  src/bioimageflow_server/services/workflow_draft.py
+  src/bioimageflow_server/services/agent_workspace_context.py
+  tests/test_services/test_agent_workspace_context.py
+  tests/test_routers/test_workflow_drafts.py`
+  passed.
+
+### Review Notes
+
+- Dedicated review found no blocking issues and confirmed no accidental CLI
+  scope.
+- Review suggested tightening static doc assertions so each file is checked
+  independently; fixed before commit.
+
+### Next Implementation Iteration
+
+- Before Phase 10 coding, update the plan/log with evidence for which broader
+  operations are worth adding now. If evidence remains insufficient, explicitly
+  defer Phase 10 rather than inventing a broad operation DSL.

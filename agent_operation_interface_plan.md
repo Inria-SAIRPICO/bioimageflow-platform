@@ -504,6 +504,9 @@ Exit criteria:
 
 - A new MCP client can be configured from repo/generated docs without guessing
   command, cwd, or environment.
+- Completed on 2026-06-01: generated agent state now includes
+  `mcp_client_config`, generated workspace instructions describe command/cwd/env,
+  and static agent docs include MCP client setup guidance.
 
 ### Phase 10: Broader Operation Coverage
 

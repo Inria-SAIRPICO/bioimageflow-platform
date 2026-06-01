@@ -23,6 +23,24 @@ Workflow editing order:
 3. Raw full-DAG HTTP fallback: use `GET/PUT /workflow-drafts/{workflow_id}` only
    as the canonical diagnostic escape hatch.
 
+## MCP client setup
+
+Configure the MCP server with command `bioimageflow-mcp`. Run it from the
+workspace root so it can read `.bioimageflow/agent-state.json`, or set
+`BIOIMAGEFLOW_AGENT_STATE` to the absolute state file path.
+
+Generic MCP config:
+
+```json
+{
+  "command": "bioimageflow-mcp",
+  "cwd": "<workspace root>",
+  "env": {
+    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json"
+  }
+}
+```
+
 The API port is dynamic. Agents must read `api_base_url` from
 `.bioimageflow/agent-state.json`; they must not guess or hardcode a port such
 as `8008`. If `curl -sS "$API/health"` fails because the agent is sandboxed
