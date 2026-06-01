@@ -471,6 +471,9 @@ Exit criteria:
 
 - After a failed MCP edit, an agent can identify the failing operation and the
   next corrective action.
+- Completed as part of Phase 6 on 2026-06-01: MCP now preserves backend
+  validation errors, preserves operation-response validation errors, and promotes
+  backend `operation_validation_error` fields into compact MCP results.
 
 ### Phase 9: MCP Client Configuration
 

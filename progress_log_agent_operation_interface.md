@@ -885,3 +885,32 @@ implementation prompt without expanding scope.
 - Before Phase 8/9 coding, update the plan/log with whether validation-feedback
   work is already satisfied by Phase 6 and whether the next best phase is MCP
   client configuration.
+
+## 2026-06-01: Phase 8 Scope Resolution
+
+### Planned
+
+- Reconcile Phase 8 validation-feedback goals with the Phase 6 hardening work
+  before starting more code.
+
+### Learned
+
+- Phase 6 already implemented the core Phase 8 requirements:
+  backend validation errors are preserved in `validate_workflow`, operation
+  result validation errors are exposed on successful graph-edit results, and
+  backend `operation_validation_error` fields are promoted to top-level MCP
+  fields.
+- Additional repair hints would require either registry-specific inference or
+  backend validator changes. That is out of scope for the MCP thin-layer rule
+  until real usage shows a concrete missing hint.
+
+### Plan Changes
+
+- Marked Phase 8 complete via Phase 6 implementation in
+  `agent_operation_interface_plan.md`.
+- The next implementation phase is Phase 9 MCP client configuration.
+
+### Next Implementation Iteration
+
+- Before Phase 9 coding, update docs/workspace-context tests for concrete MCP
+  client setup: command, cwd/workspace root, and `BIOIMAGEFLOW_AGENT_STATE`.
