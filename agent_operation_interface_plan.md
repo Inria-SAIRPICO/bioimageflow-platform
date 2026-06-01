@@ -826,6 +826,18 @@ Calibration update, 2026-06-01:
 - The transform must preflight duplicate node ids and missing nodes, then update
   positions atomically while preserving node order and every non-position field.
 
+Phase 15 planning update, 2026-06-01:
+
+- Phase 14 did not change node layout semantics, so the existing `move_node`
+  behavior remains the compatibility baseline.
+- Implement `move_nodes` as a layout-only convenience operation with the request
+  shape calibrated above. Keep it root-scoped for Phase 15; Phase 16 will add
+  explicit scope support.
+- Reject empty `moves`, duplicate `node_id` entries, missing nodes, and invalid
+  coordinate tuples before applying any position changes.
+- Expose MCP `move_nodes` as a thin operation API wrapper after backend model,
+  transform, and REST tests pass.
+
 TDD:
 
 - Pure transform tests for multiple moves, missing node failure, invalid

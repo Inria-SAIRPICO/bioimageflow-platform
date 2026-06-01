@@ -1481,3 +1481,33 @@ implementation prompt without expanding scope.
   dedicated Phase 15 worktree.
 - Implement `move_nodes` with tests first, then review and integrate before
   Phase 16.
+
+## 2026-06-01: Phase 15 Planning Update
+
+### Planned
+
+- Start the bulk layout operation phase after Phase 14 integration.
+- Keep Phase 15 independent from nested sub-workflow scope; scoped layout is
+  reserved for Phase 16.
+
+### Learned
+
+- Phase 14 added published interface operations without changing node layout
+  models or existing `move_node` semantics.
+- The operation API already supports atomic batches, so `move_nodes` should
+  focus on preflight validation and preserving every non-position node field.
+
+### Plan Changes
+
+- Phase 15 will add a single new `move_nodes` operation with
+  `moves: [{node_id, position}]`.
+- The operation will reject empty move lists, duplicate node ids, missing nodes,
+  and invalid coordinates before applying changes.
+- MCP exposure will be added only as a thin wrapper after backend tests pass.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 15 worktree.
+- Write model/service/router/MCP tests first for `move_nodes`, verify they fail,
+  implement, run focused validation, review, fix blockers, update plan/log, and
+  commit.
