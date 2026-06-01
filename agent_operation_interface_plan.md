@@ -740,6 +740,17 @@ Calibration update, 2026-06-01:
 - Names must be trimmed, non-empty, and unique across both published inputs and
   outputs except when updating the same stable target.
 
+Phase 14 implementation update, 2026-06-01:
+
+- Implement backend models and pure transforms first, then REST tests, then MCP
+  wrappers only for these four published interface operations.
+- Keep tool-metadata-aware schema validation out of the first slice unless the
+  existing graph operation service already has the needed registry context. The
+  pure transform can still validate node existence, stable target keys, name
+  uniqueness, non-empty names, and required schema for newly published pins.
+- Docs should explain MCP first, operation REST second for published interface
+  edits after backend/MCP tests pass.
+
 TDD:
 
 - Pure transform tests first for create/update/delete behavior, duplicate

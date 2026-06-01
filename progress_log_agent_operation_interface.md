@@ -1372,3 +1372,35 @@ implementation prompt without expanding scope.
 - Run a dedicated Phase 13 review agent.
 - Fix blockers if any, rerun focused checks, integrate, then update plan/log
   before Phase 14 coding.
+
+## 2026-06-01: Phase 14 Planning Update
+
+### Planned
+
+- Start published workflow interface semantic operations after Phase 13.
+- Keep the first implementation slice backend-owned and bounded.
+
+### Learned
+
+- Phase 13 did not change the graph operation API, so Phase 14 can proceed from
+  the calibrated operation shapes.
+- The pure operation transform does not have registry context today. First-slice
+  validation should therefore focus on graph-local facts: node existence, stable
+  target keys, non-empty/trimmed names, cross-list name uniqueness, delete
+  selectors, and required schema for new pins.
+
+### Plan Changes
+
+- Phase 14 first slice will implement backend models, pure transforms, REST, MCP
+  thin wrappers, and docs for:
+  `set_published_input`, `delete_published_input`, `set_published_output`, and
+  `delete_published_output`.
+- Tool-metadata-aware input/output schema validation remains deferred until the
+  operation layer receives registry context.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 14 worktree.
+- Write model and transform tests first, then REST and MCP tests.
+- Implement the bounded operations and docs, run focused validation, review,
+  and integrate before Phase 15.
