@@ -517,6 +517,13 @@ necessary. Likely candidates include parameter deletion, workflow
 published-input/output edits, optional backend node-id generation, and limited
 bulk layout updates.
 
+Phase 10 first slice: expose already-implemented backend operations through MCP
+before adding any new backend mutation semantics. The backend already owns
+`set_node_enabled` and `move_node`; MCP should add thin tools for those
+operations first. Parameter deletion, published input/output edits, backend
+node-id generation, and bulk layout remain deferred until real usage provides
+evidence that they are needed.
+
 TDD for each accepted operation:
 
 - Pure transform tests first.

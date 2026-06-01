@@ -972,3 +972,34 @@ implementation prompt without expanding scope.
 - Before Phase 10 coding, update the plan/log with evidence for which broader
   operations are worth adding now. If evidence remains insufficient, explicitly
   defer Phase 10 rather than inventing a broad operation DSL.
+
+## 2026-06-01: Phase 10 Planning Update
+
+### Planned
+
+- Broaden agent operation coverage without adding speculative backend mutation
+  semantics.
+
+### Learned
+
+- The backend operation layer already implements `set_node_enabled` and
+  `move_node`, but MCP currently does not expose them.
+- Those operations are in the original backend semantic set, require no new graph
+  semantics, and are useful for agents that need to disable a step or arrange a
+  readable canvas.
+- There is not yet enough evidence to add parameter deletion, published
+  input/output mutation, backend node-id generation, or bulk layout operations.
+
+### Plan Changes
+
+- Phase 10 first slice is limited to adding thin MCP tools for existing backend
+  operations: `set_node_enabled` and `move_node`.
+- New backend operation semantics remain deferred.
+
+### Next Implementation Iteration
+
+- Create a dedicated Phase 10 worktree.
+- Add failing MCP tests for registered `set_node_enabled` and `move_node` tools
+  delegating to `/workflow-draft-operations/{workflow_id}` with the expected
+  operation payloads.
+- Implement only the MCP wrappers and keep backend operation semantics unchanged.
