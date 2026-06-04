@@ -288,6 +288,7 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
     window.events.closing += on_main_window_closing
 
     try:
+        print("BioImageFlow Desktop Initialized")
         webview.start(debug=True)
     finally:
         api.close_code_editor_window()
