@@ -70,8 +70,10 @@ reportMissingTypeStubs = false
 [tool.uv.sources]
 bioimageflow-core = { path = "../bioimageflow/packages/bioimageflow-core", editable = true }
 bioimageflow = { path = "../bioimageflow/packages/bioimageflow", editable = true }
+launcher = { path = "../../launcher", editable = true }
 
 [dependency-groups]
 dev = [
+    "launcher",
     "pyright>=1.1.409",
 ]

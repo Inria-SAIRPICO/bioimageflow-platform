@@ -1,4 +1,5 @@
 .DS_Store
+.bioimageflow
 docs/superpowers/
 .claude/worktrees/
 __pycache__/

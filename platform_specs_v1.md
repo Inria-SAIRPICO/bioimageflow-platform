@@ -39,9 +39,11 @@ Dataset management endpoints (Section 2.4.10) are available in both environments
 - **WebSocket:** For real-time progress, logs, and node state updates
 - **Process model:** Single server process; BioImageFlow workflow execution runs in a background thread/task (via `asyncio.to_thread` or a dedicated executor) to keep the API responsive.
 
-### 2.2 Architecture: Full-State Sync
+### 2.2 Architecture: Draft-Backed Full-State Sync
 
-The frontend owns the graph state (nodes, edges, positions, parameters). The backend is a **thin adapter** between the frontend and the BioImageFlow library. It is stateless *between requests* for graph editing (no `last_valid_workflow` cache — each request is self-contained), but holds **transient execution state** during workflow runs (the running `Workflow` object, DataFrames, intermediate results). This distinction matters for error recovery: a server restart during execution loses the running workflow, but the graph state (owned by the frontend) is unaffected. The frontend sends the full graph as JSON on every meaningful change; the backend reconstructs the `Workflow` from it, validates it, and returns errors.
+The frontend owns immediate interactive canvas state (nodes, edges, positions, parameters), and the backend live draft is the durable source of truth for the current editable workflow. The backend remains the validation and execution authority. `workflow.json` is the saved/exportable artifact; it is updated only by explicit save/promotion flows.
+
+The frontend sends the full graph as JSON on meaningful changes. The backend stores the graph in the workflow draft, validates it, and returns errors. The backend is still stateless *between validation requests* except for draft files, agent context, and transient execution state. A server restart during execution loses the running workflow, but the latest editable graph can be recovered from the backend draft.
 
 **Server state is minimal:**
 
@@ -52,13 +54,14 @@ The frontend owns the graph state (nodes, edges, positions, parameters). The bac
 | `execution_task: Task | None` | Handle to the currently running execution (for cancellation) |
 | `napari_launcher: NapariLauncher | None` | Manages the Napari process (lazily created) |
 
-There is no `last_valid_workflow` cache — the server rebuilds the Workflow from the graph on every `PUT /graph` and `POST /execution/run`. Each request is self-contained.
+There is no `last_valid_workflow` cache. The server rebuilds the Workflow from the submitted or selected draft graph on validation and execution paths.
 
 **Key design points:**
-- **No server-side graph editing logic.** The backend does not have add-node/remove-edge endpoints. It receives the full graph state and either accepts or rejects it.
+- **Backend draft source of truth.** Open workflow state is persisted as a backend draft under the workflow directory. Frontend memory and IndexedDB are fallback/local interaction state, not the authoritative saved draft.
+- **Structured server-side graph editing for agents.** Normal canvas editing still sends full graph state. Agents use validated draft operations instead of hand-editing workflow JSON.
 - **Undo/redo is purely client-side.** The frontend maintains its own undo stack (snapshots of the graph state). No server round-trip needed. See [Section 4.6](#46-undoredo) for details.
 - **Validation is authoritative on the server.** The frontend may do lightweight client-side checks (cycle detection, basic type checks) for instant UX feedback, but the server is the final authority before execution.
-- **Vue Flow already maintains the graph client-side.** This approach aligns naturally with Vue Flow's data model rather than fighting it.
+- **Vue Flow maintains the interactive graph client-side.** This approach keeps editing responsive while the backend draft provides durable state for agents, save, run, and export.
 - **Graph editing is locked during execution.** While a workflow is running, the frontend disables all graph mutations (node/edge creation, deletion, parameter changes). The user can only view data and logs. This avoids race conditions between the running workflow and user edits.
 
 ### 2.3 Tool Discovery and the Tool Store
@@ -343,9 +346,18 @@ traversal, and leading/trailing whitespace are rejected.
 | `GET` | `/workflows` | Compatibility flat list of saved workflows. New callers should use `/workflows/tree`. |
 | `POST` | `/workflows` | Create a new workflow (body: `{id: str, display_name?: str, description?: str}`). Returns **409 Conflict** if a workflow with the same id already exists, with a suggested alternative id. |
 | `GET` | `/workflows/{id}` | Load a workflow (returns full graph JSON including GUI state). |
-| `PUT` | `/workflows/{id}` | Save workflow (body: full graph JSON). Always succeeds (saves even if graph has validation errors). |
+| `PUT` | `/workflows/{id}` | Save workflow from the current graph/draft path. UI save flows flush/promote the backend draft first. Always succeeds even if graph validation errors exist. |
 | `DELETE` | `/workflows/{id}` | Delete a workflow file and its workspace-scoped output/cache directory. |
 | `PATCH` | `/workflows/{id}` | Update workflow metadata, duplicate, rename, or move (body: `{action: "update" \| "duplicate" \| "move", display_name?: str, description?: str, new_id?: str}`). |
+
+Draft endpoints keep unsaved workflow state available to the frontend and terminal agents without overwriting `workflow.json` on every edit. Workflow ids use the same slash-separated path rules as workflow endpoints.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/workflow-drafts/{id}` | Return the live draft, or synthesize clean revision `0` from `workflow.json` when no draft exists. |
+| `PUT` | `/workflow-drafts/{id}` | Replace the live draft with a full graph using `expected_revision`; rejects stale revisions and execution locks. |
+| `PATCH` | `/workflow-drafts/{id}` | Apply validated structured draft operations for agents, using `expected_revision`. |
+
 
 **Workflow loading — missing package resolution:** When loading a workflow that requires tool packages or versions not in the tool store (based on the `tool_package` and `tool_package_version` fields in the serialized nodes), the server returns a `missing_packages` field in the response. The frontend shows a dialog: "This workflow requires packages not installed: [list with versions]. Install them?" with an "Install All" button.
 
@@ -825,6 +837,8 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `environment_status` | `{env_name: str, status: "stopped" | "creating" | "running"}` | Environment state change (asynchronous creation, manual start/stop) |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
 
+There is no `workflow_saved` WebSocket event in the MVP contract. Save/export flows reconcile through the draft and workflow REST APIs instead of relying on a separate save notification.
+
 **Client-to-server messages:**
 
 All client-to-server messages include an optional `message_id: str` field. When present, the server responds with an `ack` message (`{type: "ack", ref: "<message_id>"}`) once the request has been processed. This lets the frontend know when a state change (e.g., log subscription switch) has taken effect, avoiding races where stale messages from the previous state are mixed with new ones.
@@ -888,7 +902,7 @@ Changes are applied automatically — no manual reload action required from the 
 4. Save any pending settings changes
 5. Stop FastAPI server
 
-Unsaved workflow changes are not auto-saved to disk on shutdown. The frontend auto-saves to `IndexedDB` (see Section 4.3), so the user can recover their work on next startup.
+Unsaved workflow changes are not auto-saved to `workflow.json` on shutdown. Pending frontend edits are flushed to the backend draft when possible, and IndexedDB remains a local fallback for frontend/server failures.
 
 ---
 
@@ -1311,20 +1325,21 @@ folder subtree, including child folders and workflows.
 - **Edit workflow:** Each workflow has an **Edit** action to modify display
   name, description, folder, or slug. Moving or renaming changes the workflow
   `id`; the frontend updates any current-workflow references atomically.
-- **Save:** Saves current workflow state including GUI state (Ctrl+S). The full graph JSON (with positions, collapsed state, etc.) is sent to `PUT /workflows/{id}`. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
-- **Save as / Duplicate:** Save under a new id.
+- **Save:** Saves current workflow state including GUI state (Ctrl+S). The frontend flushes the current graph to the backend draft, verifies the draft revision, then saves/promotes that draft through the workflow save path. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
+- **Save as / Duplicate:** Save the current draft under a new id; duplicate saved workflows without copying stale unsaved state unless the current draft is explicitly saved as the new workflow.
 - **Import / Export:** Uses the BioImageFlow library import/export API. The
-  platform does not reimplement the library archive format.
-- **Delete:** Delete with confirmation. Deletes the workflow file, its
-  workspace-scoped output/cache directory, and the auto-saved IndexedDB state for
-  this workflow. Folder deletion uses the platform dialog system. For non-empty
+  platform does not reimplement the library archive format. Export saves/promotes
+  a dirty draft first so the archive matches the current editable graph.
+- **Delete:** Delete with confirmation. Deletes the workflow file, workflow-local
+  `.bioimageflow` draft metadata, workspace-scoped output/cache directory, and
+  any local IndexedDB recovery state for this workflow. Folder deletion uses the platform dialog system. For non-empty
   folders, the dialog offers three choices: delete all child workflows/folders,
   move direct children up to the deleted folder's parent, or cancel.
 
 ### 3.9 Execution Panel (Menu / Toolbar)
 
 **Buttons:**
-- **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" **Disabled** when a validation request is pending or the debounce timer is active. If clicked during the debounce window, the frontend flushes the debounce (sends `PUT /graph` immediately), waits for the validation response, and only then proceeds with execution. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
+- **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" **Disabled** when a validation or draft save is pending. If clicked during the debounce window, the frontend flushes pending draft writes, checks draft revision freshness, waits for validation, and only then proceeds with execution. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
 - **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
@@ -1440,15 +1455,18 @@ A PrimeVue **Dialog** that replaces native file/folder dialogs in browser mode. 
 
 ### 4.1 Principle
 
-The **frontend is the source of truth** for the graph state (nodes, edges, positions, parameters). The **server is the authority** for validation and execution. The workflow is:
+The **backend draft is the source of truth** for the current editable graph. The frontend remains the owner of immediate canvas interaction and optimistic local state. The server remains the authority for validation and execution. The workflow is:
 
 1. User edits the graph in the frontend (instant, no round-trip)
-2. Frontend debounces changes (300ms) then sends the full graph to `PUT /graph` for validation (cancelled and re-sent on new edits)
-3. Server returns validation errors + per-node status (executed, cached, out-of-date)
-4. Frontend updates node visual states accordingly
-5. On "Run", the frontend sends the graph to `POST /execution/run`; the server validates, builds the Workflow, and executes
-6. During execution, the Execution Banner is shown; graph mutations are locked; progress and state updates arrive via WebSocket
-7. On execution complete, the banner auto-dismisses; the frontend sends `PUT /graph` to refresh all node statuses
+2. Frontend debounces changes and sends the full graph to the backend draft API with `expected_revision`
+3. Backend stores the draft, validates it, and returns validation errors plus per-node status
+4. Frontend updates node visual states and records the accepted draft revision
+5. On save, save-as, new workflow creation flows, run, export, or editor/agent launch, the frontend flushes pending draft writes and checks revision freshness
+6. On run, the backend executes the selected/current draft revision after validation
+7. During execution, the Execution Banner is shown; graph mutations are locked; progress and state updates arrive via WebSocket
+8. On execution complete, the frontend refreshes statuses against the current graph/draft state
+
+`workflow.json` is a saved artifact, not the live editing source. Derived workflow/export sections are regenerated from the draft graph through the existing workflow save/export translation path.
 
 ### 4.2 Node State Transitions
 
@@ -1494,7 +1512,7 @@ The **frontend is the source of truth** for the graph state (nodes, edges, posit
 
 ### 4.3 Auto-Save and Startup Recovery
 
-The frontend auto-saves the current graph state to **IndexedDB** on every modification (debounced at 500ms). IndexedDB is used instead of `localStorage` to avoid the ~5-10MB size limit and to support large workflows with many nodes. This protects against browser crashes, accidental tab closure, or server failures.
+The frontend auto-saves meaningful graph changes to the backend workflow draft (debounced at 500ms). IndexedDB remains a fallback for cases where the backend is unavailable, the browser crashes before a draft write completes, or a local recovery path is needed.
 
 **Startup recovery flow:**
 
@@ -1505,26 +1523,24 @@ App starts
   |
   +--> Connect WebSocket /ws
   |
-  +--> Check IndexedDB for auto-saved graph state
+  +--> Load last opened workflow or create a new workflow
   |
-  +--> If auto-save exists:
-  |      Load graph from IndexedDB automatically (no confirmation dialog)
-  |      Show dot/asterisk (*) beside workflow title to indicate unsaved changes
-  |      The user can revert to the last server-saved version via Ctrl+Z (undo) or the Edit > Undo menu
-  |      Send PUT /api/v1/graph for validation
+  +--> GET /api/v1/workflow-drafts/{id}
   |
-  +--> If no auto-save:
-  |      If a "last opened" workflow id is saved in user settings:
-  |        Load it via GET /api/v1/workflows/{id}
-  |      Else:
-  |        Create new empty workflow (POST /api/v1/workflows with default name)
+  +--> If backend draft exists or is synthesized:
+  |      Load graph from the draft and record its revision
+  |      Show unsaved indicator when dirty_against_saved is true
+  |      Send validation/status refresh as needed
+  |
+  +--> If backend draft load fails but IndexedDB recovery exists:
+  |      Load IndexedDB recovery state and schedule a draft save when the backend is available
   |
   +--> Application ready
 ```
 
-**Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the current graph differs from the last saved version. The asterisk disappears on `Ctrl+S` (save). Closing a workflow with unsaved changes shows a confirmation: "Discard unsaved changes?"
+**Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the backend draft differs from the saved workflow. The asterisk disappears after save/promotion. Closing a workflow with unsaved changes shows a confirmation: "Discard unsaved changes?"
 
-Manual save (Ctrl+S) persists to a real file on the server via `PUT /workflows/{id}`.
+Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks revision freshness, and saves/promotes the draft to `workflow.json`.
 
 ### 4.4 Mapping GUI to Library
 
@@ -1627,34 +1643,37 @@ On load, the server reports missing packages in the load response. The frontend 
 | 12 | `PATCH` | `/api/v1/workflows/folders/{path}` | Rename or move folder |
 | 13 | `DELETE` | `/api/v1/workflows/folders/{path}` | Delete empty folder, recursively delete children, or move children up |
 | 14 | `GET` | `/api/v1/workflows` | Compatibility flat workflow list |
-| 15 | `POST` | `/api/v1/workflows` | "New workflow" menu; startup (if no existing workflow) |
+| 15 | `POST` | `/api/v1/workflows` | "New workflow" menu; startup if no existing workflow |
 | 16 | `GET` | `/api/v1/workflows/{id}` | Opening a saved workflow |
-| 17 | `PUT` | `/api/v1/workflows/{id}` | Ctrl+S save; "Save" menu |
+| 17 | `PUT` | `/api/v1/workflows/{id}` | Ctrl+S save after draft flush/promotion; "Save" menu |
 | 18 | `DELETE` | `/api/v1/workflows/{id}` | "Delete workflow" menu |
 | 19 | `PATCH` | `/api/v1/workflows/{id}` | Update, rename/move, or duplicate workflow |
-| 20 | `PUT` | `/api/v1/graph` | On structural changes (debounced 300ms) |
-| 21 | `PATCH` | `/api/v1/graph/nodes/{id}/parameters` | On parameter-only changes (lighter validation) |
-| 22 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
-| 23 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
-| 24 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
-| 25 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
-| 26 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
-| 27 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
-| 28 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
-| 29 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |
-| 30 | `GET` | `/api/v1/settings` | Opening Settings panel; startup |
-| 31 | `PATCH` | `/api/v1/settings` | Changing non-workspace settings |
-| 32 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
-| 33 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table |
-| 34 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
-| 35 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells |
-| 36 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links |
-| 37 | `GET` | `/api/v1/health` | Health check |
-| 38 | `GET` | `/api/v1/datasets` | Dataset Browser modal — populate list (browser mode) |
-| 39 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal — upload button; drag-and-drop in browser mode |
-| 40 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Dataset Browser modal — delete button |
+| 20 | `GET` | `/api/v1/workflow-drafts/{id}` | Workflow open/startup draft load; agent graph inspection |
+| 21 | `PUT` | `/api/v1/workflow-drafts/{id}` | Draft autosave/full-graph replacement with `expected_revision` |
+| 22 | `PATCH` | `/api/v1/workflow-drafts/{id}` | Structured validated draft operations for agents |
+| 23 | `PUT` | `/api/v1/graph` | Validation/status refresh for structural changes |
+| 24 | `PATCH` | `/api/v1/graph/nodes/{id}/parameters` | Parameter-only validation/status refreshes |
+| 25 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
+| 26 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
+| 27 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
+| 28 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection; resync node states |
+| 29 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons after draft freshness check |
+| 30 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
+| 31 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
+| 32 | `GET` | `/api/v1/execution/status` | WebSocket reconnection; resync execution state |
+| 33 | `GET` | `/api/v1/settings` | Opening Settings panel; startup |
+| 34 | `PATCH` | `/api/v1/settings` | Changing non-workspace settings |
+| 35 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
+| 36 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table |
+| 37 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
+| 38 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells; agent/editor launch after draft flush |
+| 39 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links |
+| 40 | `GET` | `/api/v1/health` | Health check |
+| 41 | `GET` | `/api/v1/datasets` | Dataset Browser modal; populate list in browser mode |
+| 42 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal upload button; drag-and-drop in browser mode |
+| 43 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Dataset Browser modal delete button |
 
-Total: 40 endpoints.
+Total: 43 endpoint entries.
 
 ---
 
