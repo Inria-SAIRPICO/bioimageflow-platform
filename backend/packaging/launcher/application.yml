@@ -9,6 +9,15 @@ entrypoint:
     - --desktop
     - --port
     - "8765"
+release:
+  archive:
+    build:
+      - command: ["bun", "install"]
+        cwd: frontend
+      - command: ["bun", "run", "build"]
+        cwd: frontend
+    include:
+      - frontend/dist
 extras:
   - desktop
 init_message: "BioImageFlow Desktop Initialized"
