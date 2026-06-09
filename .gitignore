@@ -6,3 +6,6 @@ __pycache__/
 bif_data/
 wetlands/
 workflows/
+bioimageflow
+external/
+specs.md
