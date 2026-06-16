@@ -26,7 +26,3 @@ init_message: "BioImageFlow Desktop Initialized"
 trust:
   mode: signed_manifest
   public_key: "EkHDcuYwX66v/6gjGreju/Ke+IxfZsa58IZBsnIjPK8="
-  # These default URLs match the manifest and signature produced by
-  # launcher release sign and uploaded by launcher release upload.
-  manifest_url: "https://gitlab.inria.fr/sairpico/bioimageflow-platform/-/releases/{version}/downloads/launcher-manifest.yml"
-  signature_url: "https://gitlab.inria.fr/sairpico/bioimageflow-platform/-/releases/{version}/downloads/launcher-manifest.yml.sig"

@@ -16,8 +16,8 @@ dependencies = [
     "Pillow>=10.0",
     "tifffile>=2024.0",
     "keyring>=25.0",
-    "bioimageflow-core>=0.1.4",
-    "bioimageflow>=0.1.4",
+    "bioimageflow-core>=0.1.6",
+    "bioimageflow>=0.1.6",
     "mcp>=1.0",
 ]
 
