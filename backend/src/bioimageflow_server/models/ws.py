@@ -30,6 +30,8 @@ class ProgressMessage(_MessageBase):
     row: int
     total_rows: int
     timestamp: float
+    result_key: str | None = None
+    record_id: str | None = None
 
 
 # Reuse NodeStatus's status literal so we do not redeclare the 6-value list here.
@@ -43,6 +45,8 @@ class NodeStateMessage(_MessageBase):
     cached: bool
     error: str | None = None
     traceback: str | None = None
+    result_key: str | None = None
+    record_id: str | None = None
 
 
 class LogMessage(_MessageBase):

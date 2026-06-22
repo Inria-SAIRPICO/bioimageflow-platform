@@ -8,7 +8,8 @@ from typing import Annotated, Any
 import numpy as np
 import pandas as pd
 from bioimageflow import DataFrameTool
-from bioimageflow.cache import cache_save
+from bioimageflow.cache import dataframe_publish, dataframe_result_key
+from bioimageflow.storage import Storage
 from bioimageflow_core import IOModel
 from bioimageflow_core.environment import EnvironmentSpec
 from bioimageflow_core.tool import ProcessingTool
@@ -299,11 +300,29 @@ async def seed_image_output(
     image_path = image_dir / "mask.png"
     Image.fromarray(np.arange(64, dtype=np.uint8).reshape(8, 8)).save(image_path)
 
-    cache_save(
-        storage_path / "data" / node_id,
-        "dev-seed",
-        pd.DataFrame({column: [str(image_path)]}),
+    sig_hash = "dev-seed"
+    run_id = "dev-seed"
+    dataframe_publish(storage_path, node_id, sig_hash, pd.DataFrame({column: [str(image_path)]}))
+    storage = Storage(storage_path)
+    result_key = dataframe_result_key(node_id, sig_hash)
+    pointer = storage.load_current(result_key)
+    if pointer is None:
+        raise RuntimeError("Failed to seed dev image output cache record")
+    storage.write_run_metadata(
+        run_id,
+        workflow_identity="dev-seed",
+        engine="direct",
+        status="succeeded",
+        target_nodes=[node_id],
     )
+    storage.write_run_node_result(
+        run_id,
+        node_id,
+        result_key=result_key,
+        record_id=pointer.record_id,
+        cache_hit=False,
+    )
+    storage.update_latest_node(node_id, run_id)
     return {
         "node_id": node_id,
         "column": column,

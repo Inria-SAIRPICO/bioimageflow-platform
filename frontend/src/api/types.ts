@@ -1043,6 +1043,10 @@ export interface components {
             error?: string | null;
             /** Traceback */
             traceback?: string | null;
+            /** Result Key */
+            result_key?: string | null;
+            /** Record Id */
+            record_id?: string | null;
         };
         /**
          * OMEROInstance
@@ -1247,11 +1251,7 @@ export interface components {
              * @default sequential
              * @enum {string}
              */
-            execution_engine: "sequential" | "parsl";
-            /** Cache Max Executions */
-            cache_max_executions?: number | null;
-            /** Cache Max Age */
-            cache_max_age?: string | null;
+            execution_engine: "sequential" | "parallel";
             /**
              * Keyboard Shortcuts
              * @default {}
@@ -3197,6 +3197,33 @@ export interface operations {
 }
 
 // --- Manual aliases (re-applied after every `generate-types` run) ---
-export type Settings = SettingsResponse;
+export type ExecutionBackend = "direct" | "wetlands" | string;
+export type ExecutionScheduling = "sequential" | "parallel" | string;
+export type Settings = SettingsResponse & {
+    /** Current BioImageFlow execution backend, when exposed by the server. */
+    engine?: ExecutionBackend;
+    /** Current BioImageFlow local scheduling policy, when exposed by the server. */
+    execution?: ExecutionScheduling;
+};
 export type OMEROInstance = OmeroInstanceResponse;
 export type OMEROInstancePatch = OmeroInstancePatch;
+
+export interface ProgressInfo {
+    node_id: string;
+    row: number;
+    total_rows: number;
+    result_key?: string | null;
+    record_id?: string | null;
+}
+
+export interface ExecutionResult {
+    success: boolean;
+    errors: Array<Record<string, unknown>>;
+    node_statuses: Record<string, NodeStatus>;
+}
+
+export interface ExecutionStatus {
+    state: "running" | "idle";
+    last_result: ExecutionResult | null;
+    progress: ProgressInfo | null;
+}

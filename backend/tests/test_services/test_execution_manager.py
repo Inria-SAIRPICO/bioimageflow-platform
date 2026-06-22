@@ -77,14 +77,24 @@ class RecordingEventBus:
     def __init__(self) -> None:
         self.progress_events: list[tuple[str, str, int, int, float]] = []
         self.node_state_events: list[tuple[str, str, bool, str | None, str | None]] = []
+        self.progress_identity_events: list[tuple[str, str | None, str | None]] = []
+        self.node_state_identity_events: list[tuple[str, str | None, str | None]] = []
         self.complete_events: list[tuple[bool, list, dict]] = []
         self.log_events: list[tuple[str, str, str | None, float]] = []
         self.environment_events: list[tuple[str, str]] = []
 
     def publish_progress(
-        self, node_id: str, status: str, row: int, total_rows: int, timestamp: float
+        self,
+        node_id: str,
+        status: str,
+        row: int,
+        total_rows: int,
+        timestamp: float,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         self.progress_events.append((node_id, status, row, total_rows, timestamp))
+        self.progress_identity_events.append((node_id, result_key, record_id))
 
     def publish_node_state(
         self,
@@ -93,8 +103,11 @@ class RecordingEventBus:
         cached: bool,
         error: str | None = None,
         traceback: str | None = None,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         self.node_state_events.append((node_id, status, cached, error, traceback))
+        self.node_state_identity_events.append((node_id, result_key, record_id))
 
     def publish_execution_complete(
         self, success: bool, errors: list, node_statuses: dict
@@ -125,6 +138,8 @@ class _ProgressEventStub:
     current: int | None = None
     maximum: int | None = None
     timestamp: float = 0.0
+    result_key: str | None = None
+    record_id: str | None = None
 
 
 class _FakeWorkflow:
@@ -471,6 +486,32 @@ class TestExecutionManagerProgress:
             e[0] == "n1" and e[1] == "row_progress" for e in bus.node_state_events
         )
 
+    async def test_progress_identity_is_preserved(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(
+            events=[
+                _ProgressEventStub(
+                    "n1",
+                    "row_progress",
+                    current=3,
+                    maximum=10,
+                    result_key="rk_123",
+                    record_id="rec_456",
+                )
+            ]
+        )
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+
+        assert em.progress is not None
+        assert em.progress.result_key == "rk_123"
+        assert em.progress.record_id == "rec_456"
+        assert ("n1", "rk_123", "rec_456") in bus.progress_identity_events
+
     async def test_row_complete_emits_progress_and_updates_ref(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -505,14 +546,26 @@ class TestExecutionManagerProgress:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         bus = RecordingEventBus()
-        wf = _FakeWorkflow(events=[_ProgressEventStub("n1", "completed")])
+        wf = _FakeWorkflow(
+            events=[
+                _ProgressEventStub(
+                    "n1",
+                    "completed",
+                    result_key="rk_done",
+                    record_id="rec_done",
+                )
+            ]
+        )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
         await em.start(_graph_with([("n1", True)]))
         await _drain(em)
         assert ("n1", "executed", False, None, None) in bus.node_state_events
+        assert ("n1", "rk_done", "rec_done") in bus.node_state_identity_events
         assert em._node_statuses["n1"].status == "executed"
         assert em._node_statuses["n1"].cached is False
+        assert em._node_statuses["n1"].result_key == "rk_done"
+        assert em._node_statuses["n1"].record_id == "rec_done"
         assert ("INFO", "Node n1 completed", "n1", 0.0) in bus.log_events
 
     async def test_cached_publishes_executed_with_cached_true(

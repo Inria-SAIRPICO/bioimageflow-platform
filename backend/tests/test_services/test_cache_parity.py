@@ -9,26 +9,18 @@ while execution recomputed (or vice versa). Now both paths go through
 ``Workflow.plan()`` / ``compute()`` which share a single hash
 implementation. These tests guard against regressions.
 """
-# pyright: reportInvalidTypeForm=false
-# Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
-# pyright can't evaluate this runtime metadata statically.
-
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
-import pandas as pd
 import pytest
 
-from bioimageflow.cache import cache_save
-from bioimageflow.storage import get_node_dir
-from bioimageflow_core.environment import EnvironmentSpec
-from bioimageflow_core.tool import IOModel, ProcessingTool
-from bioimageflow_core.types import ImageSpec, Semantic
+from bioimageflow.dataframe_tool import DataFrameTool
+from bioimageflow_core.tool import IOModel
 
 from bioimageflow_server.models.graph import (
-    ColumnRefEdge,
     GraphState,
     NodeState,
+    PositionalEdge,
 )
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.graph_builder import build_workflow
@@ -38,39 +30,40 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
 class _SourceInputs(IOModel):
-    input_image: Annotated[Path, ImageSpec(semantics={Semantic.INTENSITY})]
     diameter: float = 30.0
 
 
 class _SourceOutputs(IOModel):
-    mask: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    value: int
 
 
-class SourceTool(ProcessingTool):
-    environment = EnvironmentSpec(name="test", dependencies={})
+class SourceTool(DataFrameTool):
+    accepts_upstream = False
     Inputs = _SourceInputs
     Outputs = _SourceOutputs
 
-    def process_row(self, arguments: Any) -> Any:
-        return {}
+    def transform(self, df: Any, arguments: Any) -> Any:
+        import pandas as pd
+
+        return pd.DataFrame({"value": [int(arguments.diameter)]})
 
 
 class _MidInputs(IOModel):
-    mask_input: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
     scale: float = 1.0
 
 
 class _MidOutputs(IOModel):
-    result: Annotated[Path, ImageSpec(semantics={Semantic.LABEL})]
+    result: int
 
 
-class MidTool(ProcessingTool):
-    environment = EnvironmentSpec(name="test", dependencies={})
+class MidTool(DataFrameTool):
     Inputs = _MidInputs
     Outputs = _MidOutputs
 
-    def process_row(self, arguments: Any) -> Any:
-        return {}
+    def transform(self, df: Any, arguments: Any) -> Any:
+        result = df.copy()
+        result["result"] = result["value"] * int(arguments.scale)
+        return result
 
 
 @pytest.fixture
@@ -82,7 +75,7 @@ def registry() -> ToolRegistryService:
             ToolMetadata(
                 name=name, display_name=name,
                 package="test-pkg", package_version="1.0.0",
-                tool_type="ProcessingTool",
+                tool_type="DataFrameTool",
             ),
             tool_class=cls,
         )
@@ -105,14 +98,9 @@ def session_manager() -> SessionManager:
 
 def _seed_cache(storage_path: Path, registry: ToolRegistryService,
                 graph: GraphState, dev_mode: bool) -> None:
-    """Populate the cache for every node using ``plan()``'s sig hash."""
+    """Populate the cache by executing the workflow through the clean API."""
     workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=storage_path)
-    plans = workflow.plan(dev_mode=dev_mode)
-    for nid, node_plan in plans.items():
-        if node_plan.skipped or not node_plan.sig_hash:
-            continue
-        node_dir = get_node_dir(storage_path, nid)
-        cache_save(node_dir, node_plan.sig_hash, pd.DataFrame({"x": [1]}))
+    workflow.compute(dev_mode=dev_mode)
 
 
 def _chain_graph() -> GraphState:
@@ -120,14 +108,18 @@ def _chain_graph() -> GraphState:
         nodes=[
             NodeState(id="src", name="src", tool_name="SourceTool",
                       position=(0, 0),
-                      parameters={"input_image": "/a", "diameter": 30.0}),
+                      parameters={"diameter": 30.0}),
             NodeState(id="mid", name="mid", tool_name="MidTool",
                       position=(0, 0),
                       parameters={"scale": 2.0}),
         ],
         edges=[
-            ColumnRefEdge(id="e1", source_node="src", target_node="mid",
-                          source_output="mask", target_input="mask_input"),
+            PositionalEdge(
+                id="e1",
+                source_node="src",
+                target_node="mid",
+                positional_index=0,
+            ),
         ],
     )
 
@@ -175,7 +167,7 @@ def test_constant_change_invalidates_downstream(
         nodes=[
             NodeState(id="src", name="src", tool_name="SourceTool",
                       position=(0, 0),
-                      parameters={"input_image": "/a", "diameter": 99.0}),
+                      parameters={"diameter": 99.0}),
             NodeState(id="mid", name="mid", tool_name="MidTool",
                       position=(0, 0),
                       parameters={"scale": 2.0}),
@@ -202,7 +194,7 @@ def test_unrelated_node_stays_cached(
         nodes=[
             NodeState(id="src", name="src", tool_name="SourceTool",
                       position=(0, 0),
-                      parameters={"input_image": "/a", "diameter": 30.0}),
+                      parameters={"diameter": 30.0}),
             NodeState(id="mid", name="mid", tool_name="MidTool",
                       position=(0, 0),
                       parameters={"scale": 99.0}),

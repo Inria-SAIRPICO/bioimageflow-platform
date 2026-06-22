@@ -169,10 +169,19 @@ describe('useWebSocket', () => {
       status: 'running',
       row: 3,
       total_rows: 10,
+      result_key: 'rk-n1',
+      record_id: 'rec-n1',
       timestamp: 1.0,
     })
 
     expect(executionStoreMock.applyProgress).toHaveBeenCalledTimes(1)
+    expect(executionStoreMock.applyProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        node_id: 'n1',
+        result_key: 'rk-n1',
+        record_id: 'rec-n1',
+      }),
+    )
   })
 
   it('dispatches node_state to executionStore.applyNodeState (single target)', async () => {
@@ -185,11 +194,18 @@ describe('useWebSocket', () => {
       node_id: 'n1',
       status: 'executed',
       cached: true,
+      result_key: 'rk-n1',
+      record_id: 'rec-n1',
     })
 
     expect(executionStoreMock.applyNodeState).toHaveBeenCalledTimes(1)
     expect(executionStoreMock.applyNodeState).toHaveBeenCalledWith(
-      expect.objectContaining({ node_id: 'n1', status: 'executed' }),
+      expect.objectContaining({
+        node_id: 'n1',
+        status: 'executed',
+        result_key: 'rk-n1',
+        record_id: 'rec-n1',
+      }),
     )
   })
 

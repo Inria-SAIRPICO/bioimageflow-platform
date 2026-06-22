@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -23,9 +24,49 @@ def _store(tmp_path: Path, registry: MagicMock | None = None) -> ResultStoreServ
     )
 
 
-def _hash_dir(tmp_path: Path, node_id: str, name: str) -> Path:
-    path = tmp_path / "data" / node_id / name
+def _record_dir(tmp_path: Path, node_id: str, run_id: str = "run_1") -> Path:
+    path = tmp_path / "cache" / "v1" / "results" / "aa" / "bb" / "rk_test" / "records" / "rec_test"
     path.mkdir(parents=True)
+    node_dir = tmp_path / "runs" / run_id / "nodes" / node_id
+    node_dir.mkdir(parents=True)
+    (node_dir / "result.json").write_text(
+        json.dumps(
+            {
+                "schema": "bioimageflow.run.node_result.v1",
+                "run_id": run_id,
+                "node_key": node_id,
+                "result_key": "rk_test",
+                "record_id": "rec_test",
+                "cache_hit": False,
+                "canonical": os.path.relpath(path, start=node_dir).replace(os.sep, "/"),
+                "outputs": [],
+            }
+        )
+    )
+    (node_dir / "record.bioimageflow-link.json").write_text(
+        json.dumps(
+            {
+                "schema": "bioimageflow.link.v1",
+                "kind": "directory",
+                "target": os.path.relpath(path, start=node_dir).replace(os.sep, "/"),
+            }
+        )
+    )
+    latest_parent = tmp_path / "latest"
+    parts = node_id.split("/")
+    for part in parts[:-1]:
+        latest_parent /= part
+    latest_parent.mkdir(parents=True)
+    latest_link = latest_parent / f"{parts[-1]}.bioimageflow-link.json"
+    latest_link.write_text(
+        json.dumps(
+            {
+                "schema": "bioimageflow.link.v1",
+                "kind": "directory",
+                "target": os.path.relpath(node_dir, start=latest_parent).replace(os.sep, "/"),
+            }
+        )
+    )
     return path
 
 
@@ -33,18 +74,14 @@ def test_get_latest_dataframe_returns_none_for_missing_node(tmp_path: Path) -> N
     assert _store(tmp_path).get_latest_dataframe("n1") is None
 
 
-def test_get_latest_dataframe_returns_none_for_empty_node_dir(tmp_path: Path) -> None:
-    (tmp_path / "data" / "n1").mkdir(parents=True)
+def test_get_latest_dataframe_returns_none_for_missing_latest_link(tmp_path: Path) -> None:
+    (tmp_path / "runs" / "run_1" / "nodes" / "n1").mkdir(parents=True)
     assert _store(tmp_path).get_latest_dataframe("n1") is None
 
 
-def test_get_latest_dataframe_loads_latest_by_mtime(tmp_path: Path, monkeypatch) -> None:
-    old_dir = _hash_dir(tmp_path, "n1", "20260101_000000_oldhash")
-    new_dir = _hash_dir(tmp_path, "n1", "20260101_000000_newhash")
-    (old_dir / "dataframe.csv").write_text("x\n1\n")
-    (new_dir / "dataframe.csv").write_text("x\n2\n")
-    os.utime(old_dir, (100, 100))
-    os.utime(new_dir, (200, 200))
+def test_get_latest_dataframe_loads_latest_link_record(tmp_path: Path, monkeypatch) -> None:
+    record_dir = _record_dir(tmp_path, "n1")
+    (record_dir / "dataframe.csv").write_text("x\n2\n")
 
     loaded_paths: list[Path] = []
 
@@ -56,13 +93,46 @@ def test_get_latest_dataframe_loads_latest_by_mtime(tmp_path: Path, monkeypatch)
     df = _store(tmp_path).get_latest_dataframe("n1")
 
     assert df is not None
-    assert loaded_paths == [new_dir / "dataframe.csv"]
+    assert loaded_paths == [record_dir / "dataframe.csv"]
+
+
+def test_get_latest_dataframe_loads_library_generated_v1_view(tmp_path: Path) -> None:
+    from bioimageflow.cache import dataframe_publish, dataframe_result_key
+    from bioimageflow.storage import Storage
+
+    node_id = "n1"
+    sig_hash = "sig"
+    dataframe_publish(tmp_path, node_id, sig_hash, pd.DataFrame({"x": [2]}))
+    storage = Storage(tmp_path)
+    result_key = dataframe_result_key(node_id, sig_hash)
+    pointer = storage.load_current(result_key)
+    assert pointer is not None
+    storage.write_run_metadata(
+        "run_1",
+        workflow_identity="test",
+        engine="direct",
+        status="succeeded",
+        target_nodes=[node_id],
+    )
+    storage.write_run_node_result(
+        "run_1",
+        node_id,
+        result_key=result_key,
+        record_id=pointer.record_id,
+        cache_hit=False,
+    )
+    storage.update_latest_node(node_id, "run_1")
+
+    df = _store(tmp_path).get_latest_dataframe(node_id)
+
+    assert df is not None
+    assert df["x"].tolist() == [2]
 
 
 def test_get_latest_dataframe_prefers_parquet_over_csv(tmp_path: Path, monkeypatch) -> None:
-    hash_dir = _hash_dir(tmp_path, "n1", "20260101_000000_hash")
-    (hash_dir / "dataframe.csv").write_text("x\n1\n")
-    (hash_dir / "dataframe.parquet").write_bytes(b"parquet")
+    record_dir = _record_dir(tmp_path, "n1")
+    (record_dir / "dataframe.csv").write_text("x\n1\n")
+    (record_dir / "dataframe.parquet").write_bytes(b"parquet")
 
     loaded_paths: list[Path] = []
 
@@ -72,14 +142,19 @@ def test_get_latest_dataframe_prefers_parquet_over_csv(tmp_path: Path, monkeypat
 
     monkeypatch.setattr("bioimageflow_server.services.result_store.cache_load", fake_load)
     _store(tmp_path).get_latest_dataframe("n1")
-    assert loaded_paths == [hash_dir / "dataframe.parquet"]
+    assert loaded_paths == [record_dir / "dataframe.parquet"]
+
+
+def test_malformed_node_id_does_not_probe_outside_latest(tmp_path: Path) -> None:
+    assert _store(tmp_path).get_latest_dataframe("../escape") is None
+    assert _store(tmp_path).has_data("../escape") is False
 
 
 def test_get_latest_dataframe_raises_not_ready_for_zero_byte_parquet(
     tmp_path: Path,
 ) -> None:
-    hash_dir = _hash_dir(tmp_path, "n1", "20260101_000000_hash")
-    (hash_dir / "dataframe.parquet").write_bytes(b"")
+    record_dir = _record_dir(tmp_path, "n1")
+    (record_dir / "dataframe.parquet").write_bytes(b"")
 
     with pytest.raises(ResultDataNotReadyError):
         _store(tmp_path).get_latest_dataframe("n1")
@@ -89,12 +164,8 @@ def test_zero_byte_latest_hash_does_not_fall_back_to_stale_data(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    old_dir = _hash_dir(tmp_path, "n1", "20260101_000000_oldhash")
-    new_dir = _hash_dir(tmp_path, "n1", "20260101_000000_newhash")
-    (old_dir / "dataframe.csv").write_text("x\n1\n")
-    (new_dir / "dataframe.parquet").write_bytes(b"")
-    os.utime(old_dir, (100, 100))
-    os.utime(new_dir, (200, 200))
+    record_dir = _record_dir(tmp_path, "n1")
+    (record_dir / "dataframe.parquet").write_bytes(b"")
 
     monkeypatch.setattr(
         "bioimageflow_server.services.result_store.cache_load",
@@ -154,8 +225,8 @@ def test_get_column_types_passthrough_falls_back(tmp_path: Path) -> None:
 
 
 def test_get_csv_path_and_has_data(tmp_path: Path) -> None:
-    hash_dir = _hash_dir(tmp_path, "n1", "20260101_000000_hash")
-    csv_path = hash_dir / "dataframe.csv"
+    record_dir = _record_dir(tmp_path, "n1")
+    csv_path = record_dir / "dataframe.csv"
     csv_path.write_text("x\n1\n")
     store = _store(tmp_path)
     assert store.get_csv_path("n1") == csv_path
@@ -167,8 +238,8 @@ def test_get_csv_path_and_has_data(tmp_path: Path) -> None:
 def test_methods_accept_storage_path_override(tmp_path: Path, monkeypatch) -> None:
     fallback = tmp_path / "fallback"
     override = tmp_path / "override"
-    hash_dir = _hash_dir(override, "n1", "20260101_000000_hash")
-    (hash_dir / "dataframe.csv").write_text("x\n1\n")
+    record_dir = _record_dir(override, "n1")
+    (record_dir / "dataframe.csv").write_text("x\n1\n")
 
     monkeypatch.setattr(
         "bioimageflow_server.services.result_store.cache_load",
@@ -177,5 +248,5 @@ def test_methods_accept_storage_path_override(tmp_path: Path, monkeypatch) -> No
     store = _store(fallback)
 
     assert store.get_latest_dataframe("n1", storage_path=override) is not None
-    assert store.get_csv_path("n1", storage_path=override) == hash_dir / "dataframe.csv"
+    assert store.get_csv_path("n1", storage_path=override) == record_dir / "dataframe.csv"
     assert store.has_data("n1", storage_path=override) is True

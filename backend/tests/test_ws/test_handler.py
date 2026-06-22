@@ -108,6 +108,8 @@ async def test_broadcast_progress_sends_to_all() -> None:
         assert payload["row"] == 3
         assert payload["total_rows"] == 10
         assert payload["timestamp"] == 1.0
+        assert payload["result_key"] is None
+        assert payload["record_id"] is None
 
 
 async def test_broadcast_progress_no_connections() -> None:
@@ -157,7 +159,29 @@ async def test_broadcast_node_state_shape() -> None:
         "cached": False,
         "error": "boom",
         "traceback": "tb",
+        "result_key": None,
+        "record_id": None,
     }
+
+
+async def test_broadcast_node_state_includes_cache_identity() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_node_state(
+        "n1",
+        "executed",
+        True,
+        result_key="rk_123",
+        record_id="rec_456",
+    )
+    await _drain(mgr)
+
+    assert ws.sent[0]["result_key"] == "rk_123"
+    assert ws.sent[0]["record_id"] == "rec_456"
 
 
 # ---- broadcast_log and subscription filtering -------------------------------
@@ -298,6 +322,8 @@ async def test_broadcast_execution_complete_serializes_pydantic_node_statuses() 
         "cached": False,
         "error": None,
         "traceback": None,
+        "result_key": None,
+        "record_id": None,
     }
     assert payload["node_statuses"]["n2"]["status"] == "failed"
     assert payload["node_statuses"]["n2"]["error"] == "boom"
@@ -336,6 +362,8 @@ async def test_send_status_snapshot_serializes_pydantic_node_statuses() -> None:
                 "cached": False,
                 "error": None,
                 "traceback": None,
+                "result_key": None,
+                "record_id": None,
             }
         },
     }

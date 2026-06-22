@@ -206,7 +206,13 @@ describe('execution store', () => {
 
   it('applyProgress updates progress', () => {
     const store = useExecutionStore()
-    const p: ProgressInfo = { node_id: 'n1', row: 5, total_rows: 10 }
+    const p: ProgressInfo = {
+      node_id: 'n1',
+      row: 5,
+      total_rows: 10,
+      result_key: 'rk-n1',
+      record_id: 'rec-n1',
+    }
     store.applyProgress(p)
     expect(store.progress).toEqual(p)
     expect(store.state).toBe('running')
@@ -218,6 +224,8 @@ describe('execution store', () => {
       node_id: 'n1',
       status: 'running',
       cached: false,
+      result_key: 'rk-n1',
+      record_id: 'rec-n1',
     })
     expect(store.nodeStatuses.n1).toEqual({
       node_id: 'n1',
@@ -225,6 +233,8 @@ describe('execution store', () => {
       cached: false,
       error: null,
       traceback: null,
+      result_key: 'rk-n1',
+      record_id: 'rec-n1',
     })
     expect(store.state).toBe('running')
   })

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,6 @@ import pandas as pd
 import pytest
 from bioimageflow import DataFrameTool
 from bioimageflow.cache import cache_load
-from bioimageflow.storage import get_node_dir
 from bioimageflow_core.tool import IOModel
 from httpx import ASGITransport
 
@@ -108,7 +108,14 @@ class RecordingEventBus:
         self.environment_events: list[tuple[str, str]] = []
 
     def publish_progress(
-        self, node_id: str, status: str, row: int, total_rows: int, timestamp: float
+        self,
+        node_id: str,
+        status: str,
+        row: int,
+        total_rows: int,
+        timestamp: float,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         self.progress_events.append((node_id, status, row, total_rows, timestamp))
 
@@ -119,6 +126,8 @@ class RecordingEventBus:
         cached: bool,
         error: str | None = None,
         traceback: str | None = None,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         self.node_state_events.append((node_id, status, cached, error, traceback))
 
@@ -158,7 +167,6 @@ def _settings() -> Settings:
     return Settings(
         deployment_mode="desktop",
         dev_mode=False,
-        cache_max_executions=None,
     )
 
 
@@ -237,12 +245,16 @@ async def _poll_idle(client: httpx.AsyncClient, timeout: float = 5.0) -> dict[st
 
 
 def _cached_dataframe(storage_path: Path, node_id: str) -> pd.DataFrame:
-    node_dir = get_node_dir(storage_path, node_id)
-    hash_dirs = sorted(path for path in node_dir.iterdir() if path.is_dir())
-    assert hash_dirs, f"no cache hash directories for {node_id}"
-    cache_path = hash_dirs[-1] / "dataframe.parquet"
+    latest_link = storage_path / "latest" / f"{node_id}.bioimageflow-link.json"
+    assert latest_link.exists(), f"no latest cache link for {node_id}"
+    latest_payload = json.loads(latest_link.read_text())
+    run_node_dir = (latest_link.parent / latest_payload["target"]).resolve()
+    record_link = run_node_dir / "record.bioimageflow-link.json"
+    assert record_link.exists(), f"no record link for {node_id}"
+    record_payload = json.loads(record_link.read_text())
+    record_dir = (record_link.parent / record_payload["target"]).resolve()
+    cache_path = record_dir / "dataframe.parquet"
     assert cache_path.exists()
-    assert (hash_dirs[-1] / "dataframe.csv").exists()
     return cache_load(cache_path)
 
 

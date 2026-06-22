@@ -159,7 +159,8 @@ def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
     workflow, errors, _disabled = build_workflow(graph, registry)
 
     assert errors == []
-    assert workflow.use_wetlands is True
+    assert workflow.engine_type == "wetlands"
+    assert workflow.execution == "sequential"
 
 
 def test_processing_tool_can_feed_dataframe_tool_positionally(

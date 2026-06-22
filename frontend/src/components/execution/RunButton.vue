@@ -241,14 +241,14 @@ defineExpose({
       modal
       :closable="false"
       :close-on-escape="true"
-      header="Re-execute out-of-date nodes?"
+      header="Rebuild nodes before running?"
       :style="{ width: '32rem' }"
       data-testid="out-of-date-confirm"
       @update:visible="onConfirmDialogVisibilityChange"
     >
       <p class="run-button__confirm-message">
-        The following out-of-date nodes will be re-executed, replacing their
-        previous outputs:
+        The following nodes need rebuild and will be re-executed, replacing
+        their previous outputs:
       </p>
       <ul class="run-button__confirm-list">
         <li v-for="nid in pendingOutOfDateNodes" :key="nid">{{ nid }}</li>

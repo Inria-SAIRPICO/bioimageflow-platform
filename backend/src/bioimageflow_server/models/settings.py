@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import posixpath
-import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -11,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 _DEFAULT_MAX_UPLOAD_SIZE = 2 * 1024**3  # 2 GB (v1 §2.4.10)
 _DEFAULT_OUTPUT_DATA_FOLDER = "~/bioimageflow_data/"
-_CACHE_MAX_AGE_PATTERN = re.compile(r"^\d+[smhd]$")
 
 
 class OMEROInstance(BaseModel):
@@ -83,9 +81,7 @@ class Settings(BaseModel):
     output_data_folder: str = Field(default_factory=lambda: _DEFAULT_OUTPUT_DATA_FOLDER)
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
-    execution_engine: Literal["sequential", "parsl"] = "sequential"
-    cache_max_executions: int | None = Field(default=None, ge=0)
-    cache_max_age: str | None = None
+    execution_engine: Literal["sequential", "parallel"] = "sequential"
     keyboard_shortcuts: dict[str, str] = {}
     dev_mode: bool = True
     enable_unsafe_webapp_features: bool = False
@@ -94,13 +90,11 @@ class Settings(BaseModel):
     workspace_path: str | None = None
     workspaces_root: str | None = None
 
-    @field_validator("cache_max_age")
+    @field_validator("execution_engine", mode="before")
     @classmethod
-    def _validate_cache_max_age(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not _CACHE_MAX_AGE_PATTERN.match(value):
-            raise ValueError("cache_max_age must match '<int><s|m|h|d>' (e.g., '30d', '1h')")
+    def _migrate_legacy_execution_engine(cls, value: object) -> object:
+        if value == "parsl":
+            return "parallel"
         return value
 
     @model_validator(mode="after")

@@ -45,10 +45,6 @@ if TYPE_CHECKING:
 POSITIONAL_KEY = "__positional__"
 SUB_WORKFLOW_TOOL_NAME = "__sub_workflow__"
 
-# Library has no native "no limit" for max_executions; map the GUI's
-# ``None`` (unlimited) to a very large integer at translation time.
-# Documented in plan §"Cross-Plan Notes #8".
-_UNLIMITED_MAX_EXECUTIONS = 2**31 - 1
 _SUB_WORKFLOW_TOOL_NAMES = {"__sub_workflow__"}
 
 
@@ -82,6 +78,31 @@ def _ensure_sub_workflow_proxy_validation_compat() -> None:
 
     if not hasattr(_ProxyTool, "Inputs"):
         setattr(_ProxyTool, "Inputs", IOModel)
+
+
+def graph_requires_wetlands(
+    graph: GraphState,
+    registry: ToolRegistryService,
+) -> bool:
+    """Return True when an enabled graph node needs ProcessingTool execution."""
+    from bioimageflow_core.tool import ProcessingTool
+
+    for node in graph.nodes:
+        if not node.enabled:
+            continue
+
+        if node.sub_workflow is not None:
+            if graph_requires_wetlands(node.sub_workflow, registry):
+                return True
+            continue
+
+        tool_class = registry.get_tool_class(node.tool_name)
+        if tool_class is None:
+            # Malformed graphs are validated later; choose the stricter backend.
+            return True
+        if issubclass(tool_class, ProcessingTool):
+            return True
+    return False
 
 
 def _schema_for_config(schema: dict[str, Any] | None, default: Any = None) -> dict[str, Any]:
@@ -1169,21 +1190,8 @@ def graph_state_to_lib_dict(
     )
     storage_str = str(storage_root)
 
-    # Cache config: derived from Settings when supplied; otherwise the legacy
-    # defaults so callers that don't yet thread Settings through (validators,
-    # tests) keep working.
-    if settings is not None:
-        resolved_engine = settings.execution_engine
-        resolved_max_executions = (
-            _UNLIMITED_MAX_EXECUTIONS
-            if settings.cache_max_executions is None
-            else settings.cache_max_executions
-        )
-        resolved_max_age = settings.cache_max_age
-    else:
-        resolved_engine = engine
-        resolved_max_executions = 0
-        resolved_max_age = None
+    resolved_engine = "wetlands" if graph_requires_wetlands(graph, registry) else "direct"
+    resolved_execution = settings.execution_engine if settings is not None else engine
 
     lib_dict: dict[str, Any] = {
         "nodes": nodes_data,
@@ -1191,8 +1199,7 @@ def graph_state_to_lib_dict(
         "config": {
             "storage_path": storage_str,
             "engine": resolved_engine,
-            "max_executions": resolved_max_executions,
-            "max_age": resolved_max_age,
+            "execution": resolved_execution,
         },
     }
 

@@ -83,6 +83,8 @@ class TestGetSettings:
         # Wrapper contains the Settings fields plus the resolved-path helpers.
         assert body["deployment_mode"] == "desktop"
         assert body["execution_engine"] == "sequential"
+        assert "cache_max_executions" not in body
+        assert "cache_max_age" not in body
         assert body["external_editor"] is None
         assert "resolved_tool_store_path" in body
         assert "resolved_output_data_folder" in body
@@ -205,20 +207,26 @@ class TestPatchSettings:
         assert response.status_code == 200
         assert response.json()["external_editor"] is None
 
-    async def test_patch_negative_cache_max_executions(
+    async def test_patch_legacy_execution_engine_parsl_migrates_to_parallel(
         self, settings_client: httpx.AsyncClient
     ) -> None:
         response = await settings_client.patch(
-            "/api/v1/settings", json={"cache_max_executions": -1}
+            "/api/v1/settings", json={"execution_engine": "parsl"}
         )
-        assert response.status_code == 422
+        assert response.status_code == 200
+        assert response.json()["execution_engine"] == "parallel"
 
-    async def test_patch_zero_cache_max_executions_accepted(
+    async def test_patch_cache_max_executions_is_deprecated(
         self, settings_client: httpx.AsyncClient
     ) -> None:
         response = await settings_client.patch("/api/v1/settings", json={"cache_max_executions": 0})
-        assert response.status_code == 200
-        assert response.json()["cache_max_executions"] == 0
+        assert response.status_code == 422
+
+    async def test_patch_cache_max_age_is_deprecated(
+        self, settings_client: httpx.AsyncClient
+    ) -> None:
+        response = await settings_client.patch("/api/v1/settings", json={"cache_max_age": "30d"})
+        assert response.status_code == 422
 
     async def test_patch_omero_password_persists_metadata_only(
         self,

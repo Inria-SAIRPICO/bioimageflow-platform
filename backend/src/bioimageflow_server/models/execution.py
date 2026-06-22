@@ -21,6 +21,8 @@ class ProgressInfo(BaseModel):
     node_id: str
     row: int
     total_rows: int
+    result_key: str | None = None
+    record_id: str | None = None
 
 
 class ExecutionResult(BaseModel):

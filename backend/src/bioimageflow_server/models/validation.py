@@ -23,6 +23,8 @@ class NodeStatus(BaseModel):
     cached: bool
     error: str | None = None
     traceback: str | None = None
+    result_key: str | None = None
+    record_id: str | None = None
 
 
 class GraphValidationError(BaseModel):

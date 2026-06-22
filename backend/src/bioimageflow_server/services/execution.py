@@ -33,7 +33,8 @@ from bioimageflow_server.models.execution import (
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
-from bioimageflow_server.services.graph_builder import build_workflow, graph_requires_wetlands
+from bioimageflow_server.services.graph_builder import build_workflow
+from bioimageflow_server.services.graph_translator import graph_requires_wetlands
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
@@ -64,7 +65,14 @@ class ExecutionEventBus(Protocol):
     """
 
     def publish_progress(
-        self, node_id: str, status: str, row: int, total_rows: int, timestamp: float
+        self,
+        node_id: str,
+        status: str,
+        row: int,
+        total_rows: int,
+        timestamp: float,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None: ...
 
     def publish_node_state(
@@ -74,6 +82,8 @@ class ExecutionEventBus(Protocol):
         cached: bool,
         error: str | None = None,
         traceback: str | None = None,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None: ...
 
     def publish_execution_complete(
@@ -95,7 +105,14 @@ class NullEventBus:
     """No-op event bus used when no transport is attached."""
 
     def publish_progress(
-        self, node_id: str, status: str, row: int, total_rows: int, timestamp: float
+        self,
+        node_id: str,
+        status: str,
+        row: int,
+        total_rows: int,
+        timestamp: float,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         return None
 
@@ -106,6 +123,8 @@ class NullEventBus:
         cached: bool,
         error: str | None = None,
         traceback: str | None = None,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         return None
 
@@ -266,10 +285,12 @@ class ExecutionManager:
             try:
                 workflow = session.to_workflow()
                 workflow.on_progress = on_progress
-                workflow.use_wetlands = graph_requires_wetlands(
-                    build_graph,
-                    self.tool_registry,
+                workflow.engine_type = (
+                    "wetlands"
+                    if graph_requires_wetlands(build_graph, self.tool_registry)
+                    else "direct"
                 )
+                workflow.execution = live_settings.execution_engine
             except Exception as exc:
                 self.state = "idle"
                 raise WorkflowBuildError(
@@ -394,14 +415,20 @@ class ExecutionManager:
                 return
 
             timestamp = float(getattr(event, "timestamp", 0.0) or 0.0)
+            result_key = getattr(event, "result_key", None)
+            record_id = getattr(event, "record_id", None)
 
             if status == "started":
                 self._current_node_id = node_id
                 self._node_statuses[node_id] = NodeStatus(
-                    node_id=node_id, status="running", cached=False
+                    node_id=node_id,
+                    status="running",
+                    cached=False,
+                    result_key=result_key,
+                    record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "running", False, None, None
+                    node_id, "running", False, None, None, result_key, record_id
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -415,10 +442,20 @@ class ExecutionManager:
                 current = int(getattr(event, "current", 0) or 0)
                 maximum = int(getattr(event, "maximum", 0) or 0)
                 self.progress = ProgressInfo(
-                    node_id=node_id, row=current, total_rows=maximum
+                    node_id=node_id,
+                    row=current,
+                    total_rows=maximum,
+                    result_key=result_key,
+                    record_id=record_id,
                 )
                 self.event_bus.publish_progress(
-                    node_id, "row_progress", current, maximum, timestamp
+                    node_id,
+                    "row_progress",
+                    current,
+                    maximum,
+                    timestamp,
+                    result_key,
+                    record_id,
                 )
                 self.event_bus.publish_log(
                     "DEBUG",
@@ -432,10 +469,20 @@ class ExecutionManager:
                 row = int(getattr(event, "row", 0) or 0)
                 total_rows = int(getattr(event, "total_rows", 0) or 0)
                 self.progress = ProgressInfo(
-                    node_id=node_id, row=row, total_rows=total_rows
+                    node_id=node_id,
+                    row=row,
+                    total_rows=total_rows,
+                    result_key=result_key,
+                    record_id=record_id,
                 )
                 self.event_bus.publish_progress(
-                    node_id, "row_complete", row, total_rows, timestamp
+                    node_id,
+                    "row_complete",
+                    row,
+                    total_rows,
+                    timestamp,
+                    result_key,
+                    record_id,
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -447,10 +494,14 @@ class ExecutionManager:
 
             if status == "completed":
                 self._node_statuses[node_id] = NodeStatus(
-                    node_id=node_id, status="executed", cached=False
+                    node_id=node_id,
+                    status="executed",
+                    cached=False,
+                    result_key=result_key,
+                    record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "executed", False, None, None
+                    node_id, "executed", False, None, None, result_key, record_id
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -462,10 +513,14 @@ class ExecutionManager:
 
             if status == "cached":
                 self._node_statuses[node_id] = NodeStatus(
-                    node_id=node_id, status="executed", cached=True
+                    node_id=node_id,
+                    status="executed",
+                    cached=True,
+                    result_key=result_key,
+                    record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "executed", True, None, None
+                    node_id, "executed", True, None, None, result_key, record_id
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -484,9 +539,11 @@ class ExecutionManager:
                     cached=False,
                     error=message,
                     traceback=tb,
+                    result_key=result_key,
+                    record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "failed", False, message, tb
+                    node_id, "failed", False, message, tb, result_key, record_id
                 )
                 self.event_bus.publish_log(
                     "ERROR",
@@ -498,10 +555,14 @@ class ExecutionManager:
 
             if status == "cancelled":
                 self._node_statuses[node_id] = NodeStatus(
-                    node_id=node_id, status="unexecuted", cached=False
+                    node_id=node_id,
+                    status="unexecuted",
+                    cached=False,
+                    result_key=result_key,
+                    record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "unexecuted", False, None, None
+                    node_id, "unexecuted", False, None, None, result_key, record_id
                 )
                 return
 

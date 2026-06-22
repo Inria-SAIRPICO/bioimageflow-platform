@@ -170,6 +170,8 @@ class ConnectionManager:
         row: int,
         total_rows: int,
         timestamp: float,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         payload = {
             "type": "progress",
@@ -178,6 +180,8 @@ class ConnectionManager:
             "row": row,
             "total_rows": total_rows,
             "timestamp": timestamp,
+            "result_key": result_key,
+            "record_id": record_id,
         }
         self._enqueue_all(payload)
 
@@ -188,6 +192,8 @@ class ConnectionManager:
         cached: bool,
         error: str | None = None,
         traceback: str | None = None,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         payload = {
             "type": "node_state",
@@ -196,6 +202,8 @@ class ConnectionManager:
             "cached": cached,
             "error": error,
             "traceback": traceback,
+            "result_key": result_key,
+            "record_id": record_id,
         }
         self._enqueue_all(payload)
 
@@ -345,9 +353,19 @@ class ConnectionManager:
         row: int,
         total_rows: int,
         timestamp: float,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         self._schedule(
-            self.broadcast_progress(node_id, status, row, total_rows, timestamp),
+            self.broadcast_progress(
+                node_id,
+                status,
+                row,
+                total_rows,
+                timestamp,
+                result_key,
+                record_id,
+            ),
             "progress",
         )
 
@@ -358,9 +376,19 @@ class ConnectionManager:
         cached: bool,
         error: str | None = None,
         traceback: str | None = None,
+        result_key: str | None = None,
+        record_id: str | None = None,
     ) -> None:
         self._schedule(
-            self.broadcast_node_state(node_id, status, cached, error, traceback),
+            self.broadcast_node_state(
+                node_id,
+                status,
+                cached,
+                error,
+                traceback,
+                result_key,
+                record_id,
+            ),
             "node_state",
         )
 

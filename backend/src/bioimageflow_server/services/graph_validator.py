@@ -44,12 +44,14 @@ logger = logging.getLogger(__name__)
 _PLAN_STATUS_MAP: dict[str, tuple[NodeStatusValue, bool]] = {
     "cached": ("executed", True),
     "out_of_date": ("out_of_date", False),
+    "prior_selection_miss": ("out_of_date", False),
     "unexecuted": ("unexecuted", False),
     # Skipped-but-not-disabled means downstream of a disabled node.
     # Preserve the prior platform behavior of reporting these as
     # ``unexecuted`` rather than ``disabled`` (which is reserved for
     # explicit ``NodeState.enabled=False``).
     "skipped": ("unexecuted", False),
+    "pending_upstream": ("unexecuted", False),
 }
 
 
@@ -101,7 +103,11 @@ def _build_validation_result(
                     status_str, ("unexecuted", False),
                 )
                 node_statuses[nid] = NodeStatus(
-                    node_id=nid, status=status_label, cached=cached,
+                    node_id=nid,
+                    status=status_label,
+                    cached=cached,
+                    result_key=getattr(node_plan, "final_result_key", None),
+                    record_id=getattr(node_plan, "selected_record_id", None),
                 )
 
     # Fill in ``unexecuted`` for nodes not covered above.
@@ -178,18 +184,13 @@ def _status_from_disk(
     storage_path: Path | None,
     node_id: str,
 ) -> Literal["unexecuted", "out_of_date"]:
-    """Decide ``out_of_date`` vs ``unexecuted`` based on cache presence.
+    """Return a conservative status for PATCH fallback validation.
 
     Used only by :func:`validate_parameters` (the PATCH fallback) which
-    has no workflow context to call ``plan()``.
+    has no workflow context to call ``plan()``. The clean library API no
+    longer exposes cache directory helpers, so this fallback does not
+    inspect storage internals.
     """
-    if storage_path is None:
-        return "unexecuted"
-    from bioimageflow.storage import get_node_dir
-
-    node_dir = get_node_dir(storage_path, node_id)
-    if node_dir.exists() and any(node_dir.iterdir()):
-        return "out_of_date"
     return "unexecuted"
 
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import cast
 
 import pandas as pd
 from bioimageflow.cache import cache_load
+from bioimageflow.storage import validate_relative_posix_path
 
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
@@ -25,10 +27,10 @@ class ResultStoreService:
     def get_latest_dataframe(
         self, node_id: str, storage_path: Path | None = None
     ) -> pd.DataFrame | None:
-        latest_dir = self._latest_hash_dir(node_id, storage_path=storage_path)
-        if latest_dir is None:
+        record_dir = self._latest_record_dir(node_id, storage_path=storage_path)
+        if record_dir is None:
             return None
-        data_path = self._dataframe_path(latest_dir)
+        data_path = self._dataframe_path(record_dir)
         if data_path is None:
             return None
         try:
@@ -41,20 +43,20 @@ class ResultStoreService:
     def get_csv_path(
         self, node_id: str, storage_path: Path | None = None
     ) -> Path | None:
-        latest_dir = self._latest_hash_dir(node_id, storage_path=storage_path)
-        if latest_dir is None:
+        record_dir = self._latest_record_dir(node_id, storage_path=storage_path)
+        if record_dir is None:
             return None
-        csv_path = latest_dir / "dataframe.csv"
+        csv_path = record_dir / "dataframe.csv"
         if csv_path.is_file():
             return csv_path
         return None
 
     def has_data(self, node_id: str, storage_path: Path | None = None) -> bool:
-        latest_dir = self._latest_hash_dir(node_id, storage_path=storage_path)
-        if latest_dir is None:
+        record_dir = self._latest_record_dir(node_id, storage_path=storage_path)
+        if record_dir is None:
             return False
         try:
-            return self._dataframe_path(latest_dir) is not None
+            return self._dataframe_path(record_dir) is not None
         except ResultDataNotReadyError:
             return False
 
@@ -67,21 +69,75 @@ class ResultStoreService:
             for column in df.columns
         }
 
-    def _node_dir(self, node_id: str, storage_path: Path | None = None) -> Path:
+    def _root(self, storage_path: Path | None = None) -> Path:
         root = Path(storage_path) if storage_path is not None else self.storage_path
-        return root / "data" / node_id
+        return root
 
-    def _latest_hash_dir(
+    def _latest_record_dir(
         self, node_id: str, storage_path: Path | None = None
     ) -> Path | None:
-        node_dir = self._node_dir(node_id, storage_path=storage_path)
-        if not node_dir.is_dir():
+        root = self._root(storage_path)
+        latest_link = self._latest_node_link(root, node_id)
+        if latest_link is None:
+            return None
+        if not latest_link.is_file():
             return None
 
-        candidates = [path for path in node_dir.iterdir() if path.is_dir()]
-        if not candidates:
+        node_view = self._resolve_link(latest_link, root)
+        if node_view is None:
             return None
-        return max(candidates, key=lambda p: p.stat().st_mtime)
+        record_link = node_view / "record.bioimageflow-link.json"
+        if record_link.is_file():
+            return self._resolve_link(record_link, root)
+
+        result_path = node_view / "result.json"
+        if not result_path.is_file():
+            return None
+        try:
+            payload = json.loads(result_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ResultDataNotReadyError(
+                f"Output metadata for node '{node_id}' is not ready"
+            ) from exc
+        canonical = payload.get("canonical")
+        if not isinstance(canonical, str):
+            return None
+        return self._resolve_relative(result_path.parent, canonical, root)
+
+    @staticmethod
+    def _latest_node_link(root: Path, node_id: str) -> Path | None:
+        try:
+            safe_node_id = validate_relative_posix_path(str(node_id))
+        except ValueError:
+            return None
+        parts = safe_node_id.split("/")
+        parent = root / "latest"
+        for part in parts[:-1]:
+            parent /= part
+        return parent / f"{parts[-1]}.bioimageflow-link.json"
+
+    def _resolve_link(self, link_path: Path, root: Path) -> Path | None:
+        try:
+            payload = json.loads(link_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ResultDataNotReadyError(
+                f"Output link '{link_path}' is not ready"
+            ) from exc
+        if payload.get("kind") != "directory":
+            return None
+        target = payload.get("target")
+        if not isinstance(target, str):
+            return None
+        return self._resolve_relative(link_path.parent, target, root)
+
+    @staticmethod
+    def _resolve_relative(base: Path, target: str, root: Path) -> Path | None:
+        target_path = (base / target).resolve()
+        try:
+            target_path.relative_to(root.resolve())
+        except ValueError:
+            return None
+        return target_path
 
     @staticmethod
     def _dataframe_path(hash_dir: Path) -> Path | None:

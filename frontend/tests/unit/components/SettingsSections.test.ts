@@ -42,8 +42,6 @@ const baseSettings = {
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
-  cache_max_executions: null,
-  cache_max_age: null,
   keyboard_shortcuts: {},
   dev_mode: true,
   enable_unsafe_webapp_features: false,
@@ -129,63 +127,47 @@ describe('NapariSection', () => {
 })
 
 describe('ExecutionSection', () => {
-  it('renders the unlimited checkbox checked when value is null', () => {
+  it('summarizes direct/sequential execution without stale cache pruning controls', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: {
-        modelValue: { ...baseSettings, cache_max_executions: null },
+        modelValue: {
+          ...baseSettings,
+          engine: 'direct',
+          execution: 'sequential',
+        },
       },
     })
-    // The InputNumber should be hidden when unlimited.
+
+    expect(wrapper.find('[data-testid="execution-backend-value"]').text()).toBe('Direct')
+    expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Sequential')
     expect(
       wrapper.find('[data-testid="cache-max-executions-input"]').exists(),
     ).toBe(false)
-  })
-
-  it('renders the InputNumber when cache_max_executions is 0', () => {
-    const wrapper = mount(ExecutionSection, {
-      ...globalOpts,
-      props: { modelValue: { ...baseSettings, cache_max_executions: 0 } },
-    })
     expect(
-      wrapper.find('[data-testid="cache-max-executions-input"]').exists(),
-    ).toBe(true)
+      wrapper.find('[data-testid="cache-max-age-input"]').exists(),
+    ).toBe(false)
+    expect(wrapper.text()).not.toContain('Parsl')
+    expect(wrapper.emitted('update:field')).toBeUndefined()
   })
 
-  it('toggling Unlimited emits null', async () => {
+  it('maps legacy parsl settings to parallel wording without advertising Parsl', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
-      props: { modelValue: { ...baseSettings, cache_max_executions: 5 } },
+      props: { modelValue: { ...baseSettings, execution_engine: 'parsl' as 'parallel' } },
     })
-    const checkbox = wrapper.find('input[type="checkbox"]')
-    await checkbox.setValue(true)
-    expect(wrapper.emitted('update:field')?.[0]).toEqual([
-      { field: 'cache_max_executions', value: null },
-    ])
+
+    expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Parallel')
+    expect(wrapper.text()).not.toContain('Parsl')
   })
 
-  it('unchecking Unlimited emits the integer count', async () => {
+  it('maps current parallel scheduling setting to parallel wording', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
-      props: { modelValue: { ...baseSettings, cache_max_executions: null } },
+      props: { modelValue: { ...baseSettings, execution_engine: 'parallel' } },
     })
-    const checkbox = wrapper.find('input[type="checkbox"]')
-    await checkbox.setValue(false)
-    expect(wrapper.emitted('update:field')?.[0]).toEqual([
-      { field: 'cache_max_executions', value: 0 },
-    ])
-  })
 
-  it('cache_max_age: blur with empty input emits null', async () => {
-    const wrapper = mount(ExecutionSection, {
-      ...globalOpts,
-      props: { modelValue: { ...baseSettings, cache_max_age: '30d' } },
-    })
-    const input = wrapper.find('[data-testid="cache-max-age-input"]')
-    await input.setValue('')
-    await input.trigger('blur')
-    const events = wrapper.emitted('update:field') ?? []
-    expect(events.at(-1)).toEqual([{ field: 'cache_max_age', value: null }])
+    expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Parallel')
   })
 })
 

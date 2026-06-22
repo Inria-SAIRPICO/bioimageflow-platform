@@ -4,30 +4,13 @@ import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useLoggerStore } from '@/stores/logger'
 import type {
+  ExecutionResult,
+  ExecutionStatus,
   GraphState,
   GraphValidationError,
   NodeStatus,
+  ProgressInfo,
 } from '@/api/types'
-
-// These mirror bioimageflow_server.models.execution but aren't auto-generated
-// because the /execution/status endpoint is typed as a raw dict.
-export interface ProgressInfo {
-  node_id: string
-  row: number
-  total_rows: number
-}
-
-export interface ExecutionResult {
-  success: boolean
-  errors: Array<Record<string, unknown>>
-  node_statuses: Record<string, NodeStatus>
-}
-
-export interface ExecutionStatus {
-  state: 'running' | 'idle'
-  last_result: ExecutionResult | null
-  progress: ProgressInfo | null
-}
 
 interface NodeStateMessage {
   node_id: string
@@ -35,6 +18,8 @@ interface NodeStateMessage {
   cached: boolean
   error?: string | null
   traceback?: string | null
+  result_key?: string | null
+  record_id?: string | null
 }
 
 interface ExecutionStatusResponse extends ExecutionStatus {
@@ -202,6 +187,8 @@ export const useExecutionStore = defineStore('execution', () => {
         cached: msg.cached,
         error: msg.error ?? null,
         traceback: msg.traceback ?? null,
+        ...(msg.result_key !== undefined ? { result_key: msg.result_key } : {}),
+        ...(msg.record_id !== undefined ? { record_id: msg.record_id } : {}),
       },
     }
   }

@@ -17,6 +17,7 @@ from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.validation import GraphValidationError
 from bioimageflow_server.services.graph_translator import (
     graph_state_to_lib_dict,
+    graph_requires_wetlands,
     lib_validation_error_to_graph_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -58,7 +59,8 @@ def build_workflow(
         partial=True,
         storage_path_override=storage_path,
         on_progress=on_progress,
-        use_wetlands=graph_requires_wetlands(graph, registry),
+        engine="wetlands" if graph_requires_wetlands(graph, registry) else "direct",
+        execution=translation.lib_dict["config"]["execution"],
         auto_install=False,
     )
     assert isinstance(result, tuple)
@@ -68,29 +70,3 @@ def build_workflow(
     disabled = {n.id for n in graph.nodes if not n.enabled}
 
     return BuildOutput(workflow, errors, disabled)
-
-
-def graph_requires_wetlands(
-    graph: GraphState,
-    registry: ToolRegistryService,
-) -> bool:
-    """Return True when an enabled graph node needs ProcessingTool execution."""
-    from bioimageflow_core.tool import ProcessingTool
-
-    for node in graph.nodes:
-        if not node.enabled:
-            continue
-
-        if node.sub_workflow is not None:
-            if graph_requires_wetlands(node.sub_workflow, registry):
-                return True
-            continue
-
-        tool_class = registry.get_tool_class(node.tool_name)
-        if tool_class is None:
-            # The graph will surface a missing-tool/package error later.
-            # Default to the stricter execution mode for malformed graphs.
-            return True
-        if issubclass(tool_class, ProcessingTool):
-            return True
-    return False

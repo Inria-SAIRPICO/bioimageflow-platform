@@ -21,6 +21,7 @@ release:
 extras:
   - desktop
 init_message: "BioImageFlow Desktop Initialized"
+init_timeout: 60
 
 
 trust:

@@ -49,8 +49,6 @@ const baseSettings = {
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
-  cache_max_executions: null,
-  cache_max_age: null,
   keyboard_shortcuts: {},
   dev_mode: true,
   enable_unsafe_webapp_features: false,
@@ -104,7 +102,7 @@ describe('SettingsPanel', () => {
 
   it('forwards section update events to settingsStore.updateSettings', async () => {
     mockedApi.patch.mockResolvedValue({
-      data: { ...baseSettings, execution_engine: 'parsl' },
+      data: { ...baseSettings, external_editor: 'code {file_path}' },
     })
     const wrapper = mount(SettingsPanel, mountOpts)
     const store = useSettingsStore()
@@ -113,9 +111,9 @@ describe('SettingsPanel', () => {
 
     // Reach into the panel to trigger an update directly via the store, since
     // simulating the section's emit through the open Dialog is complex.
-    await store.updateSettings({ execution_engine: 'parsl' })
+    await store.updateSettings({ external_editor: 'code {file_path}' })
     expect(mockedApi.patch).toHaveBeenCalledWith('/api/v1/settings', {
-      execution_engine: 'parsl',
+      external_editor: 'code {file_path}',
     })
     wrapper.unmount()
   })

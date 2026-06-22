@@ -26,14 +26,15 @@ describe('settings and execution type structures', () => {
       omero_instances: [],
       tool_store_path: '/tools',
       update_mode: 'manual',
-      execution_engine: 'parsl',
-      cache_max_executions: 10,
-      cache_max_age: '7d',
+      engine: 'wetlands',
+      execution: 'parallel',
+      execution_engine: 'sequential',
       keyboard_shortcuts: { run: 'Ctrl+R' },
       dev_mode: true,
       enable_unsafe_webapp_features: true,
     }
-    expect(settings.execution_engine).toBe('parsl')
+    expect(settings.engine).toBe('wetlands')
+    expect(settings.execution).toBe('parallel')
   })
 
   it('OMEROInstance has required and optional fields', () => {
@@ -63,10 +64,14 @@ describe('settings and execution type structures', () => {
       node_id: 'node-1',
       row: 5,
       total_rows: 100,
+      result_key: 'rk-node-1',
+      record_id: 'rec-node-1',
     }
     expect(progress.node_id).toBe('node-1')
     expect(progress.row).toBe(5)
     expect(progress.total_rows).toBe(100)
+    expect(progress.result_key).toBe('rk-node-1')
+    expect(progress.record_id).toBe('rec-node-1')
   })
 
   it('ExecutionResult has required fields', () => {
@@ -74,12 +79,20 @@ describe('settings and execution type structures', () => {
       success: true,
       errors: [],
       node_statuses: {
-        n1: { node_id: 'n1', status: 'executed', cached: false },
+        n1: {
+          node_id: 'n1',
+          status: 'executed',
+          cached: false,
+          result_key: 'rk-n1',
+          record_id: 'rec-n1',
+        },
       },
     }
     expect(result.success).toBe(true)
     expect(result.errors).toEqual([])
     expect(result.node_statuses.n1.status).toBe('executed')
+    expect(result.node_statuses.n1.result_key).toBe('rk-n1')
+    expect(result.node_statuses.n1.record_id).toBe('rec-n1')
   })
 
   it('ExecutionStatus has required fields', () => {

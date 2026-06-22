@@ -302,53 +302,55 @@ def test_disabled_node_status(registry: ToolRegistryService, session_manager: Se
 
 
 def test_cache_hit_status(registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path) -> None:
-    """A node with a matching cache directory gets status=executed.
+    """A node with a matching v1 cache selection gets status=executed.
 
-    Seeds the cache with a real parquet file using the same
-    ``Workflow.plan()`` signature hash that the validator will compute.
+    Seeds the cache using the same ``Workflow.plan()`` logical signature
+    that the validator will compute.
     """
     import pandas as pd
 
-    from bioimageflow.cache import cache_save
-    from bioimageflow.storage import get_node_dir
+    from bioimageflow.cache import dataframe_publish
     from bioimageflow_server.services.graph_builder import build_workflow
 
     graph = GraphState(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
+            NodeState(id="n1", name="n1", tool_name="MockDataFrameTool",
                       position=(0, 0),
-                      parameters={"input_image": "/a"}),
+                      parameters={"threshold": 0.5}),
         ],
         edges=[],
     )
 
     workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=tmp_path)
     plans = workflow.plan(dev_mode=True)
-    sig = plans["n1"].sig_hash
+    sig = plans["n1"].logical_signature
 
-    node_dir = get_node_dir(tmp_path, "n1")
-    cache_save(node_dir, sig, pd.DataFrame({"x": [1]}))
+    dataframe_publish(tmp_path, "n1", sig, pd.DataFrame({"x": [1]}))
 
     result = validate_graph(graph, registry, session_manager, storage_path=tmp_path, dev_mode=True)
     assert result.node_statuses["n1"].status == "executed"
     assert result.node_statuses["n1"].cached is True
+    refreshed_plan = session_manager.session.to_workflow().plan(dev_mode=True)
+    assert result.node_statuses["n1"].result_key == refreshed_plan["n1"].final_result_key
+    assert result.node_statuses["n1"].record_id == refreshed_plan["n1"].selected_record_id
 
 
 def test_cache_out_of_date(registry: ToolRegistryService, session_manager: SessionManager, tmp_path: Path) -> None:
-    """A previously executed node whose parameters changed is out_of_date."""
-    from bioimageflow.storage import create_hash_dir, get_node_dir
+    """A node with a prior selected result key maps to out_of_date."""
+    import pandas as pd
+
+    from bioimageflow.cache import dataframe_publish
 
     graph = GraphState(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
+            NodeState(id="n1", name="n1", tool_name="MockDataFrameTool",
                       position=(0, 0),
-                      parameters={"input_image": "/a", "diameter": 99.0}),
+                      parameters={"threshold": 0.75}),
         ],
         edges=[],
     )
 
-    node_dir = get_node_dir(tmp_path, "n1")
-    create_hash_dir(node_dir, "0" * 64)
+    dataframe_publish(tmp_path, "n1", "0" * 64, pd.DataFrame({"x": [1]}))
 
     result = validate_graph(graph, registry, session_manager, storage_path=tmp_path)
     assert result.node_statuses["n1"].status == "out_of_date"
@@ -481,15 +483,12 @@ def test_validate_parameters_cache_status_no_dir(
 def test_validate_parameters_cache_status_existing_dir(
     registry: ToolRegistryService, tmp_path: Path
 ) -> None:
-    from bioimageflow.storage import create_hash_dir, get_node_dir
-
-    node_dir = get_node_dir(tmp_path, "n1")
-    create_hash_dir(node_dir, "0" * 64)
+    (tmp_path / "data" / "n1" / "legacy").mkdir(parents=True)
 
     result = validate_parameters(
         "n1", "IntParamTool", {"n": 5}, registry, storage_path=tmp_path
     )
-    assert result.node_statuses["n1"].status == "out_of_date"
+    assert result.node_statuses["n1"].status == "unexecuted"
 
 
 def test_validate_parameters_does_not_call_compute_signature_hash(

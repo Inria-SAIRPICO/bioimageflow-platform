@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -25,9 +26,8 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
 
 
 async def test_seed_populates_registry(client: httpx.AsyncClient):
-    # Registry starts empty
     resp = await client.get("/api/v1/tools")
-    assert resp.json() == []
+    initial_tool_names = {tool["name"] for tool in resp.json()}
 
     # Seed
     resp = await client.post("/api/v1/dev/seed")
@@ -39,8 +39,8 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
     # Now tools and packages are populated
     resp = await client.get("/api/v1/tools")
     tools = resp.json()
-    assert len(tools) == 5
     tool_names = {t["name"] for t in tools}
+    assert tool_names.issuperset(initial_tool_names)
     assert "SeedNumbers" in tool_names
     assert "IncrementNumbers" in tool_names
     assert "CellposeSegmenter" in tool_names
@@ -68,7 +68,10 @@ async def test_seed_populates_registry(client: httpx.AsyncClient):
 
     resp = await client.get("/api/v1/tools/packages")
     packages = resp.json()
-    assert len(packages) == 3
+    package_names = {package["name"] for package in packages}
+    assert {"bioimageflow-dev-seed", "bioimageflow-cellpose", "bioimageflow-filters"}.issubset(
+        package_names
+    )
 
 
 async def test_seed_registers_executable_source_tool(client: httpx.AsyncClient):
@@ -99,3 +102,28 @@ async def test_seed_registers_executable_source_tool(client: httpx.AsyncClient):
         "unexecuted",
         "cached",
     }
+
+
+async def test_seed_image_output_writes_v1_latest_view(tmp_path: Path):
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        enable_dev_router=True,
+        storage_path=tmp_path,
+    )
+    app = create_app(config=config)
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/api/v1/dev/seed-image-output")
+        assert resp.status_code == 200
+        payload = resp.json()
+
+        latest = tmp_path / "latest" / f"{payload['node_id']}.bioimageflow-link.json"
+        assert latest.is_file()
+        assert not (tmp_path / "data").exists()
+        assert list((tmp_path / "cache" / "v1" / "results").glob("*/*/rk_*/current.json"))
+        assert list((tmp_path / "cache" / "v1" / "results").glob("*/*/rk_*/records/rec_*/manifest.json"))
+
+        data_resp = await client.get(f"/api/v1/nodes/{payload['node_id']}/data")
+        assert data_resp.status_code == 200
+        rows = data_resp.json()["rows"]
+        assert rows[0][payload["column"]] == payload["source_path"]

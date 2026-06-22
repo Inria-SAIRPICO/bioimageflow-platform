@@ -510,13 +510,10 @@ def test_missing_tool_detection_is_node_level(registry: ToolRegistryService) -> 
     assert missing[0].tool_name == "RemovedTool"
 
 
-# ---- Cache settings wired through Settings -----------------------------
+# ---- Workflow runtime config wired through Settings --------------------
 
 
-_UNLIMITED = 2**31 - 1
-
-
-def test_default_settings_yields_unlimited_max_executions(
+def test_default_settings_yields_clean_direct_sequential_config(
     registry: ToolRegistryService,
 ) -> None:
     from bioimageflow_server.models.settings import Settings
@@ -526,63 +523,56 @@ def test_default_settings_yields_unlimited_max_executions(
         GraphState(nodes=[], edges=[]), registry, settings=settings
     )
     config = result.lib_dict["config"]
-    assert config["max_executions"] == _UNLIMITED
-    assert config["max_age"] is None
+    assert config["engine"] == "direct"
+    assert config["execution"] == "sequential"
+    assert "max_executions" not in config
+    assert "max_age" not in config
+    assert "use_wetlands" not in config
 
 
-def test_zero_cache_max_executions_round_trips(
+def test_processing_tool_graph_uses_wetlands_engine(
     registry: ToolRegistryService,
 ) -> None:
     from bioimageflow_server.models.settings import Settings
 
-    settings = Settings(deployment_mode="desktop", cache_max_executions=0)
-    result = graph_state_to_lib_dict(
-        GraphState(nodes=[], edges=[]), registry, settings=settings
+    settings = Settings(deployment_mode="desktop")
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="n1",
+                name="n1",
+                tool_name="MockProcessingTool",
+                position=(0, 0),
+                parameters={"input_image": "/tmp/x.tif"},
+            )
+        ],
+        edges=[],
     )
-    assert result.lib_dict["config"]["max_executions"] == 0
+    result = graph_state_to_lib_dict(graph, registry, settings=settings)
+    assert result.lib_dict["config"]["engine"] == "wetlands"
 
 
-def test_positive_cache_max_executions_round_trips(
+def test_parallel_execution_setting_round_trips(
     registry: ToolRegistryService,
 ) -> None:
     from bioimageflow_server.models.settings import Settings
 
-    settings = Settings(deployment_mode="desktop", cache_max_executions=3)
+    settings = Settings(deployment_mode="desktop", execution_engine="parallel")
     result = graph_state_to_lib_dict(
         GraphState(nodes=[], edges=[]), registry, settings=settings
     )
-    assert result.lib_dict["config"]["max_executions"] == 3
+    assert result.lib_dict["config"]["execution"] == "parallel"
 
 
-def test_cache_max_age_round_trips(registry: ToolRegistryService) -> None:
-    from bioimageflow_server.models.settings import Settings
-
-    settings = Settings(deployment_mode="desktop", cache_max_age="30d")
-    result = graph_state_to_lib_dict(
-        GraphState(nodes=[], edges=[]), registry, settings=settings
-    )
-    assert result.lib_dict["config"]["max_age"] == "30d"
-
-
-def test_execution_engine_round_trips(registry: ToolRegistryService) -> None:
-    from bioimageflow_server.models.settings import Settings
-
-    settings = Settings(deployment_mode="desktop", execution_engine="parsl")
-    result = graph_state_to_lib_dict(
-        GraphState(nodes=[], edges=[]), registry, settings=settings
-    )
-    assert result.lib_dict["config"]["engine"] == "parsl"
-
-
-def test_no_settings_preserves_legacy_defaults(
+def test_no_settings_preserves_platform_execution_default(
     registry: ToolRegistryService,
 ) -> None:
-    """Backwards-compat: callers that don't pass settings keep the old behaviour."""
     result = graph_state_to_lib_dict(GraphState(nodes=[], edges=[]), registry)
     config = result.lib_dict["config"]
-    assert config["engine"] == "sequential"
-    assert config["max_executions"] == 0
-    assert config["max_age"] is None
+    assert config["engine"] == "direct"
+    assert config["execution"] == "sequential"
+    assert "max_executions" not in config
+    assert "max_age" not in config
 
 
 # ---- GUI-created sub-workflows ----------------------------------------

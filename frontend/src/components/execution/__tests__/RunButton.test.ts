@@ -231,6 +231,9 @@ describe('RunButton', () => {
     expect(wrapper.find('[data-testid="out-of-date-confirm"]').exists()).toBe(
       true,
     )
+    const dialogText = wrapper.find('[data-testid="out-of-date-confirm"]').text()
+    expect(dialogText).toContain('need rebuild')
+    expect(dialogText).not.toMatch(/corrupt|invalid cache/i)
   })
 
   it('Run Selected does not prompt for out-of-date nodes outside the selected execution set', async () => {

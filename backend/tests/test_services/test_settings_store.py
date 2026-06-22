@@ -90,6 +90,42 @@ class TestLoad:
         assert result.external_editor == "code {file_path}"
         assert result.execution_engine == "sequential"  # default
 
+    async def test_legacy_execution_engine_parsl_loads_as_parallel(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "settings_version": 1,
+                    "deployment_mode": "desktop",
+                    "execution_engine": "parsl",
+                }
+            )
+        )
+        store = SettingsStore(path=path)
+        result = await store.load()
+        assert result.execution_engine == "parallel"
+
+    async def test_legacy_cache_pruning_keys_are_ignored_on_load(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "settings_version": 1,
+                    "deployment_mode": "desktop",
+                    "cache_max_executions": 3,
+                    "cache_max_age": "30d",
+                }
+            )
+        )
+        store = SettingsStore(path=path)
+        result = await store.load()
+        assert not hasattr(result, "cache_max_executions")
+        assert not hasattr(result, "cache_max_age")
+
     async def test_file_without_settings_version_loads_as_v1(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         path.write_text(json.dumps({"deployment_mode": "desktop", "external_editor": "vim"}))
@@ -211,12 +247,22 @@ class TestPatch:
         path = tmp_path / "s.json"
         store = SettingsStore(path=path)
         await store.load()
-        result = await store.patch({"execution_engine": "parsl"})
-        assert result.execution_engine == "parsl"
+        result = await store.patch({"execution_engine": "parallel"})
+        assert result.execution_engine == "parallel"
         on_disk = _read_disk(path)
         assert on_disk["settings_version"] == 1
-        assert on_disk["execution_engine"] == "parsl"
-        assert store.get().execution_engine == "parsl"
+        assert on_disk["execution_engine"] == "parallel"
+        assert store.get().execution_engine == "parallel"
+
+    async def test_patch_legacy_execution_engine_parsl_migrates_to_parallel(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "s.json"
+        store = SettingsStore(path=path)
+        await store.load()
+        result = await store.patch({"execution_engine": "parsl"})
+        assert result.execution_engine == "parallel"
+        assert _read_disk(path)["execution_engine"] == "parallel"
 
     async def test_patch_rejects_invalid_value(self, tmp_path: Path) -> None:
         path = tmp_path / "s.json"
@@ -239,17 +285,17 @@ class TestPatch:
         assert "foo" in str(exc_info.value)
         assert path.read_text() == before
 
-    async def test_patch_negative_cache_max_executions(self, tmp_path: Path) -> None:
+    async def test_patch_cache_max_executions_is_deprecated(self, tmp_path: Path) -> None:
         store = SettingsStore(path=tmp_path / "s.json")
         await store.load()
         with pytest.raises(ValidationError):
-            await store.patch({"cache_max_executions": -1})
+            await store.patch({"cache_max_executions": 0})
 
-    async def test_patch_invalid_cache_max_age(self, tmp_path: Path) -> None:
+    async def test_patch_cache_max_age_is_deprecated(self, tmp_path: Path) -> None:
         store = SettingsStore(path=tmp_path / "s.json")
         await store.load()
         with pytest.raises(ValidationError):
-            await store.patch({"cache_max_age": "1 day"})
+            await store.patch({"cache_max_age": "30d"})
 
     async def test_patch_clears_value_with_none(self, tmp_path: Path) -> None:
         store = SettingsStore(path=tmp_path / "s.json")

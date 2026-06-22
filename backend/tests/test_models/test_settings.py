@@ -67,8 +67,6 @@ class TestSettings:
         assert s.tool_store_path == "~/.bioimageflow/tool_packages/"
         assert s.update_mode == "auto"
         assert s.execution_engine == "sequential"
-        assert s.cache_max_executions is None
-        assert s.cache_max_age is None
         assert s.keyboard_shortcuts == {}
         assert s.dev_mode is True
         assert s.enable_unsafe_webapp_features is False
@@ -98,6 +96,14 @@ class TestSettings:
     def test_execution_engine_dask_rejected(self):
         with pytest.raises(ValidationError):
             Settings(deployment_mode="desktop", execution_engine="dask")
+
+    def test_execution_engine_parallel_is_valid(self):
+        s = Settings(deployment_mode="desktop", execution_engine="parallel")
+        assert s.execution_engine == "parallel"
+
+    def test_legacy_execution_engine_parsl_migrates_to_parallel(self):
+        s = Settings(deployment_mode="desktop", execution_engine="parsl")
+        assert s.execution_engine == "parallel"
 
     def test_with_omero_instances(self):
         s = Settings(
@@ -209,38 +215,6 @@ class TestSettings:
             datasets_root="/elsewhere/datasets",
         )
         assert s.resolved_datasets_root() == "/elsewhere/datasets"
-
-    # --- Validators added by the Settings Panel plan, Task 1 ---
-
-    def test_cache_max_executions_zero_is_valid(self):
-        s = Settings(deployment_mode="desktop", cache_max_executions=0)
-        assert s.cache_max_executions == 0
-
-    def test_cache_max_executions_positive_is_valid(self):
-        s = Settings(deployment_mode="desktop", cache_max_executions=5)
-        assert s.cache_max_executions == 5
-
-    def test_cache_max_executions_none_is_valid(self):
-        s = Settings(deployment_mode="desktop", cache_max_executions=None)
-        assert s.cache_max_executions is None
-
-    def test_cache_max_executions_negative_rejected(self):
-        with pytest.raises(ValidationError):
-            Settings(deployment_mode="desktop", cache_max_executions=-1)
-
-    @pytest.mark.parametrize("value", ["30d", "1h", "45m", "10s", "999d"])
-    def test_cache_max_age_accepts_valid_strings(self, value: str):
-        s = Settings(deployment_mode="desktop", cache_max_age=value)
-        assert s.cache_max_age == value
-
-    @pytest.mark.parametrize("value", ["1 day", "30D", "abc", "", "10x", "d10"])
-    def test_cache_max_age_rejects_invalid_strings(self, value: str):
-        with pytest.raises(ValidationError):
-            Settings(deployment_mode="desktop", cache_max_age=value)
-
-    def test_cache_max_age_none_is_valid(self):
-        s = Settings(deployment_mode="desktop", cache_max_age=None)
-        assert s.cache_max_age is None
 
     def test_unknown_field_is_rejected(self):
         with pytest.raises(ValidationError):
