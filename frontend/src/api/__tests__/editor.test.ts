@@ -27,6 +27,26 @@ describe('editor api helpers', () => {
     expect(mockedGet).toHaveBeenCalledWith('/api/v1/editor/status')
   })
 
+  it('returns editor status diagnostics', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        available: false,
+        url: null,
+        version: null,
+        control_available: false,
+        launch_attempted: true,
+        error_code: 'embedded_launch_failed',
+        error_detail: 'TypeError: bad wetlands api',
+      },
+    })
+
+    await expect(getEditorStatus({ launch: true })).resolves.toMatchObject({
+      launch_attempted: true,
+      error_code: 'embedded_launch_failed',
+      error_detail: 'TypeError: bad wetlands api',
+    })
+  })
+
   it('can request editor startup while fetching status', async () => {
     mockedGet.mockResolvedValueOnce({
       data: { available: true, url: 'http://127.0.0.1:32344', version: '4.106.2', control_available: true },
@@ -98,6 +118,33 @@ describe('editor api helpers', () => {
       path: '/tmp/tool.py',
     })
     window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('dispatches a diagnostic event for clipboard fallback diagnostics', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:code-editor-diagnostic', listener)
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        opened: false,
+        method: 'clipboard',
+        url: null,
+        path: '/tmp/tool.py',
+        message: 'Path copied - open in your local editor.',
+        error_code: 'embedded_launch_failed',
+        error_detail: 'TypeError: bad wetlands api',
+      },
+    })
+
+    await openPathWithEditor('/tmp/tool.py')
+
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({
+        path: '/tmp/tool.py',
+        error_code: 'embedded_launch_failed',
+        error_detail: 'TypeError: bad wetlands api',
+      }),
+    }))
+    window.removeEventListener('bif:code-editor-diagnostic', listener)
   })
 
   it('dispatches loading events around slow embedded open requests', async () => {

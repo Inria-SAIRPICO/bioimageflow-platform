@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUIStore } from '@/stores/ui'
 import { getEditorStatus } from '@/api/editor'
+import type { EditorStatus } from '@/api/editor'
 import { closeCodeEditorWindow } from '@/utils/nativeDialogs'
 
 const uiStore = useUIStore()
@@ -10,6 +11,7 @@ const { codeEditorUrl, codeEditorPath, codeEditorOpening, codeEditorDetached } =
   storeToRefs(uiStore)
 const failed = ref(false)
 const statusLoading = ref(false)
+const statusDiagnostic = ref<EditorStatus | null>(null)
 
 const loading = computed(() => statusLoading.value || codeEditorOpening.value)
 const loadingMessage = computed(() => (
@@ -24,6 +26,13 @@ const available = computed(() => (
 const editorTitle = computed(() => (
   codeEditorPath.value ? `Code editor - ${codeEditorPath.value}` : 'Code editor'
 ))
+const hasStatusDiagnostic = computed(() => Boolean(statusDiagnostic.value?.error_code))
+const unavailableMessage = computed(() => (
+  hasStatusDiagnostic.value
+    ? 'code-server failed to start.'
+    : 'code-server is not available. Configure an external editor in Settings.'
+))
+const unavailableDetail = computed(() => statusDiagnostic.value?.error_detail ?? '')
 
 async function restoreEditor() {
   await closeCodeEditorWindow()
@@ -34,8 +43,27 @@ function onDetachedWindowClosed() {
   uiStore.setCodeEditorDetached(false)
 }
 
+function onCodeEditorDiagnostic(event: Event) {
+  const detail = (event as CustomEvent<{
+    path?: string
+    error_code?: string | null
+    error_detail?: string | null
+  }>).detail
+  if (!detail?.error_code) return
+  statusDiagnostic.value = {
+    available: false,
+    url: null,
+    version: null,
+    control_available: false,
+    launch_attempted: true,
+    error_code: detail.error_code,
+    error_detail: detail.error_detail ?? null,
+  }
+}
+
 onMounted(async () => {
   window.addEventListener('bioimageflow:code-editor-window-closed', onDetachedWindowClosed)
+  window.addEventListener('bif:code-editor-diagnostic', onCodeEditorDiagnostic)
   if (codeEditorUrl.value || codeEditorOpening.value) return
   statusLoading.value = true
   try {
@@ -43,6 +71,9 @@ onMounted(async () => {
     if (status.available && status.url) {
       uiStore.setCodeEditorTarget(status.url, codeEditorPath.value ?? '')
       failed.value = false
+      statusDiagnostic.value = null
+    } else {
+      statusDiagnostic.value = status
     }
   } catch {
     // The unavailable state below is the user-facing fallback.
@@ -53,6 +84,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('bioimageflow:code-editor-window-closed', onDetachedWindowClosed)
+  window.removeEventListener('bif:code-editor-diagnostic', onCodeEditorDiagnostic)
 })
 </script>
 
@@ -87,7 +119,15 @@ onBeforeUnmount(() => {
       <span>{{ loadingMessage }}</span>
     </div>
     <div v-else class="code-editor-panel__unavailable" data-testid="code-editor-unavailable">
-      code-server is not available. Configure an external editor in Settings.
+      <span>{{ unavailableMessage }}</span>
+      <span
+        v-if="unavailableDetail"
+        class="code-editor-panel__unavailable-detail"
+        data-testid="code-editor-unavailable-detail"
+      >
+        {{ unavailableDetail }}
+      </span>
+      <span v-if="hasStatusDiagnostic">Configure an external editor in Settings, or check the server logs.</span>
     </div>
   </section>
 </template>
@@ -113,11 +153,21 @@ onBeforeUnmount(() => {
 .code-editor-panel__unavailable,
 .code-editor-panel__detached {
   flex: 1 1 auto;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   padding: 1rem;
   color: var(--p-text-muted-color);
   text-align: center;
+}
+
+.code-editor-panel__unavailable-detail {
+  max-width: min(48rem, 100%);
+  color: var(--p-text-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
 }
 
 .code-editor-panel__detached {

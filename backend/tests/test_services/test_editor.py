@@ -93,7 +93,7 @@ class _LaunchableEmbedded(_Embedded):
 class _EnvironmentManager:
     def __init__(self) -> None:
         self.created: list[tuple[str, dict[str, object], bool]] = []
-        self.loaded: list[tuple[str, Path]] = []
+        self.loaded: list[tuple[str, Path | None]] = []
         self.executed: list[tuple[object, list[str]]] = []
         self.environment = object()
         self.process = object()
@@ -103,18 +103,38 @@ class _EnvironmentManager:
         name: str,
         dependencies: dict[str, object],
         *,
-        use_existing: bool = False,
+        replace_existing: bool = False,
     ) -> object:
-        self.created.append((name, dependencies, use_existing))
+        self.created.append((name, dependencies, replace_existing))
         return self.environment
 
-    def load(self, name: str, path: Path) -> object:
+    def load(self, name: str, path: Path | None = None) -> object:
         self.loaded.append((name, path))
         return self.environment
 
     def execute_commands(self, environment: object, commands: list[str]) -> object:
         self.executed.append((environment, commands))
         return self.process
+
+
+class EnvironmentReuseError(Exception):
+    pass
+
+
+class _ReuseErrorEnvironmentManager(_EnvironmentManager):
+    def __init__(self, message: str = "metadata is missing") -> None:
+        super().__init__()
+        self.message = message
+
+    def create(
+        self,
+        name: str,
+        dependencies: dict[str, object],
+        *,
+        replace_existing: bool = False,
+    ) -> object:
+        self.created.append((name, dependencies, replace_existing))
+        raise EnvironmentReuseError(self.message)
 
 
 def _settings(command: str | None = None) -> Settings:
@@ -302,6 +322,45 @@ def test_status_can_launch_default_embedded_editor() -> None:
     assert embedded.launches == 1
     assert status.available is True
     assert status.url == "http://127.0.0.1:32344"
+    assert status.launch_attempted is True
+
+
+def test_status_reports_embedded_launch_failure() -> None:
+    class FailingEmbedded(_Embedded):
+        def launch(self) -> None:
+            raise TypeError("bad wetlands api")
+
+    service = _service(embedded=FailingEmbedded())
+
+    status = service.get_status(launch=True)
+
+    assert status.available is False
+    assert status.launch_attempted is True
+    assert status.error_code == "embedded_launch_failed"
+    assert status.error_detail == "TypeError: bad wetlands api"
+
+
+def test_status_reports_embedded_startup_timeout() -> None:
+    embedded = _LaunchableEmbedded()
+    embedded.status = lambda: EditorStatus(  # type: ignore[method-assign]
+        available=False,
+        url=None,
+        version=None,
+        control_available=False,
+    )
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=0.0,
+        embedded_poll_interval=0.0,
+    )
+
+    status = service.get_status(launch=True)
+
+    assert embedded.launches == 1
+    assert status.available is False
+    assert status.launch_attempted is True
+    assert status.error_code == "embedded_startup_timeout"
+    assert status.error_detail == "code-server did not become available before timeout"
 
 
 def test_default_embedded_editor_launches_when_not_already_running(tmp_path: Path) -> None:
@@ -316,6 +375,23 @@ def test_default_embedded_editor_launches_when_not_already_running(tmp_path: Pat
     assert embedded.opened == [tool]
     assert response.method == EditorOpenMethod.EMBEDDED
     assert response.url == "http://127.0.0.1:32344"
+
+
+def test_open_path_clipboard_fallback_reports_embedded_launch_failure(tmp_path: Path) -> None:
+    class FailingEmbedded(_Embedded):
+        def launch(self) -> None:
+            raise TypeError("bad wetlands api")
+
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    service = _service(embedded=FailingEmbedded())
+
+    response = service.open_path(str(tool))
+
+    assert response.opened is False
+    assert response.method == EditorOpenMethod.CLIPBOARD
+    assert response.error_code == "embedded_launch_failed"
+    assert response.error_detail == "TypeError: bad wetlands api"
 
 
 def test_default_embedded_editor_waits_until_control_endpoint_is_ready(
@@ -379,6 +455,8 @@ def test_default_embedded_editor_does_not_report_opened_without_opener(
 
     assert embedded.opened == []
     assert response.method == EditorOpenMethod.CLIPBOARD
+    assert response.error_code == "embedded_startup_timeout"
+    assert response.error_detail == "code-server did not become available before timeout"
     assert response.opened is False
 
 
@@ -449,7 +527,7 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
         (
             "codeserver",
             {"python": "3.10", "conda": ["code-server==4.106.2"], "pip": []},
-            True,
+            False,
         )
     ]
     assert env_manager.executed
@@ -457,6 +535,51 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
     assert commands[0].startswith("code-server --install-extension ")
     assert str(vsix) in commands[0]
     assert commands[-1].endswith("--bind-addr 127.0.0.1:32344")
+
+
+def test_embedded_manager_loads_legacy_default_environment_on_reuse_error(
+    tmp_path: Path,
+) -> None:
+    vsix = tmp_path / "opener-0.0.2.vsix"
+    vsix.write_bytes(b"vsix")
+    env_manager = _ReuseErrorEnvironmentManager()
+
+    manager = EmbeddedCodeServerManager(
+        env_path=None,
+        vsix_path=vsix,
+        environment_manager_provider=lambda: env_manager,
+    )
+    manager.launch()
+
+    assert env_manager.created == [
+        (
+            "codeserver",
+            {"python": "3.10", "conda": ["code-server==4.106.2"], "pip": []},
+            False,
+        )
+    ]
+    assert env_manager.loaded == [("codeserver", None)]
+    assert env_manager.executed
+
+
+def test_embedded_manager_does_not_load_default_environment_on_recipe_mismatch(
+    tmp_path: Path,
+) -> None:
+    vsix = tmp_path / "opener-0.0.2.vsix"
+    vsix.write_bytes(b"vsix")
+    env_manager = _ReuseErrorEnvironmentManager("it was created with a different recipe")
+
+    manager = EmbeddedCodeServerManager(
+        env_path=None,
+        vsix_path=vsix,
+        environment_manager_provider=lambda: env_manager,
+    )
+
+    with pytest.raises(EnvironmentReuseError, match="different recipe"):
+        manager.launch()
+
+    assert env_manager.loaded == []
+    assert env_manager.executed == []
 
 
 def test_embedded_manager_loads_configured_environment_path(tmp_path: Path) -> None:

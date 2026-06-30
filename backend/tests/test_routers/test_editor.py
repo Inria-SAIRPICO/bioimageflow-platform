@@ -58,6 +58,9 @@ async def test_editor_status_endpoint_uses_service() -> None:
         "url": "http://127.0.0.1:32344",
         "version": None,
         "control_available": True,
+        "launch_attempted": False,
+        "error_code": None,
+        "error_detail": None,
     }
 
 

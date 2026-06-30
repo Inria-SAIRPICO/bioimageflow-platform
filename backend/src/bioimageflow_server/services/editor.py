@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shlex
 import subprocess
 import time
@@ -24,6 +25,11 @@ CODE_SERVER_VERSION = "4.106.2"
 DEFAULT_EDITOR_URL = "http://127.0.0.1:32344"
 DEFAULT_CONTROL_URL = "http://127.0.0.1:60351"
 CLIPBOARD_MESSAGE = "Path copied - open in your local editor."
+EMBEDDED_LAUNCH_FAILED = "embedded_launch_failed"
+EMBEDDED_STARTUP_TIMEOUT = "embedded_startup_timeout"
+EMBEDDED_STARTUP_TIMEOUT_DETAIL = "code-server did not become available before timeout"
+
+logger = logging.getLogger(__name__)
 
 
 class EditorError(Exception):
@@ -170,18 +176,30 @@ class EmbeddedCodeServerManager:
         if self.env_path is not None:
             environment = env_manager.load("codeserver", self.env_path)
         else:
-            environment = env_manager.create(
+            environment = self._create_or_load_default_environment(env_manager)
+        commands = [shlex.join(command) for command in self.install_commands()]
+        commands.append(shlex.join(self.launch_command()))
+        return env_manager.execute_commands(environment, commands)
+
+    def _create_or_load_default_environment(self, env_manager: Any) -> object:
+        try:
+            return env_manager.create(
                 "codeserver",
                 dependencies={
                     "python": "3.10",
                     "conda": [f"code-server=={CODE_SERVER_VERSION}"],
                     "pip": [],
                 },
-                use_existing=True,
+                replace_existing=False,
             )
-        commands = [shlex.join(command) for command in self.install_commands()]
-        commands.append(shlex.join(self.launch_command()))
-        return env_manager.execute_commands(environment, commands)
+        except Exception as exc:
+            if not _is_missing_metadata_environment_reuse_error(exc):
+                raise
+            logger.warning(
+                "Loading existing codeserver environment with missing Wetlands metadata: %s",
+                exc,
+            )
+            return env_manager.load("codeserver")
 
     def open_path(
         self,
@@ -252,10 +270,26 @@ class EditorService:
         if callable(start):
             try:
                 start()
-            except Exception:
-                return self._embedded.status()
+            except Exception as exc:
+                logger.exception("Embedded code-server launch failed")
+                return self._embedded.status().model_copy(
+                    update={
+                        "launch_attempted": True,
+                        "error_code": EMBEDDED_LAUNCH_FAILED,
+                        "error_detail": _exception_summary(exc),
+                    }
+                )
 
-        return self._wait_for_embedded_status()
+        status = self._wait_for_embedded_status()
+        if status.available:
+            return status.model_copy(update={"launch_attempted": True})
+        return status.model_copy(
+            update={
+                "launch_attempted": True,
+                "error_code": EMBEDDED_STARTUP_TIMEOUT,
+                "error_detail": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
+            }
+        )
 
     def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
         normalized = self._normalize_path(path)
@@ -278,6 +312,8 @@ class EditorService:
             except Exception:
                 pass
 
+        error_code: str | None = None
+        error_detail: str | None = None
         launch = getattr(self._embedded, "launch", None)
         if callable(launch):
             try:
@@ -285,8 +321,12 @@ class EditorService:
                 response = self._open_after_embedded_launch(normalized, normalized_focus)
                 if response is not None:
                     return response
-            except Exception:
-                pass
+                error_code = EMBEDDED_STARTUP_TIMEOUT
+                error_detail = EMBEDDED_STARTUP_TIMEOUT_DETAIL
+            except Exception as exc:
+                logger.exception("Embedded code-server launch failed")
+                error_code = EMBEDDED_LAUNCH_FAILED
+                error_detail = _exception_summary(exc)
 
         return EditorOpenResponse(
             opened=False,
@@ -294,6 +334,8 @@ class EditorService:
             url=None,
             path=str(normalized_focus or normalized),
             message=CLIPBOARD_MESSAGE,
+            error_code=error_code,
+            error_detail=error_detail,
         )
 
     def _open_after_embedded_launch(
@@ -351,3 +393,11 @@ class EditorService:
             self._process_launcher(rendered)
         except Exception as exc:
             raise EditorLaunchError(str(exc)) from exc
+
+
+def _exception_summary(exc: Exception) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _is_missing_metadata_environment_reuse_error(exc: Exception) -> bool:
+    return type(exc).__name__ == "EnvironmentReuseError" and "metadata is missing" in str(exc)

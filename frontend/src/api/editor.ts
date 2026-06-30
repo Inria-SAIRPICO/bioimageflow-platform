@@ -8,6 +8,9 @@ export interface EditorStatus {
   url: string | null
   version: string | null
   control_available: boolean
+  launch_attempted?: boolean
+  error_code?: string | null
+  error_detail?: string | null
 }
 
 export interface EditorOpenResponse {
@@ -16,6 +19,8 @@ export interface EditorOpenResponse {
   url: string | null
   path: string
   message: string | null
+  error_code?: string | null
+  error_detail?: string | null
 }
 
 type Toast = {
@@ -68,6 +73,17 @@ export function showCodeEditorLoading(path = ''): void {
 export function finishCodeEditorLoading(path?: string): void {
   window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished', {
     detail: { path },
+  }))
+}
+
+export function showCodeEditorDiagnostic(response: EditorOpenResponse): void {
+  if (!response.error_code) return
+  window.dispatchEvent(new CustomEvent('bif:code-editor-diagnostic', {
+    detail: {
+      path: response.path,
+      error_code: response.error_code,
+      error_detail: response.error_detail ?? null,
+    },
   }))
 }
 
@@ -137,6 +153,7 @@ export async function handleEditorOpenResponse(
     }))
     return
   }
+  showCodeEditorDiagnostic(response)
   await navigator.clipboard?.writeText(response.path)
   toast?.add({
     severity: 'info',

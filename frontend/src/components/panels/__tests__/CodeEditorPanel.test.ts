@@ -35,7 +35,56 @@ describe('CodeEditorPanel', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="code-editor-unavailable"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="code-editor-unavailable"]').text()).toContain(
+      'code-server is not available. Configure an external editor in Settings.',
+    )
     expect(mockedGetEditorStatus).toHaveBeenCalledWith({ launch: true })
+  })
+
+  it('shows startup diagnostics when code-server launch fails', async () => {
+    mockedGetEditorStatus.mockResolvedValueOnce({
+      available: false,
+      url: null,
+      version: null,
+      control_available: false,
+      launch_attempted: true,
+      error_code: 'embedded_launch_failed',
+      error_detail: 'TypeError: bad wetlands api',
+    })
+
+    const wrapper = mount(CodeEditorPanel)
+    await flushPromises()
+
+    const unavailable = wrapper.find('[data-testid="code-editor-unavailable"]')
+    expect(unavailable.text()).toContain('code-server failed to start.')
+    expect(unavailable.text()).toContain('Configure an external editor in Settings, or check the server logs.')
+    expect(wrapper.find('[data-testid="code-editor-unavailable-detail"]').text()).toBe(
+      'TypeError: bad wetlands api',
+    )
+  })
+
+  it('shows startup diagnostics emitted during an embedded open request', async () => {
+    const store = useUIStore()
+    store.setCodeEditorOpening('/tmp/tool.py')
+    const wrapper = mount(CodeEditorPanel)
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bif:code-editor-diagnostic', {
+      detail: {
+        path: '/tmp/tool.py',
+        error_code: 'embedded_launch_failed',
+        error_detail: 'TypeError: bad wetlands api',
+      },
+    }))
+    store.clearCodeEditorOpening('/tmp/tool.py')
+    await flushPromises()
+
+    const unavailable = wrapper.find('[data-testid="code-editor-unavailable"]')
+    expect(unavailable.text()).toContain('code-server failed to start.')
+    expect(wrapper.find('[data-testid="code-editor-unavailable-detail"]').text()).toBe(
+      'TypeError: bad wetlands api',
+    )
+    expect(mockedGetEditorStatus).not.toHaveBeenCalled()
   })
 
   it('starts and renders the embedded editor when the panel opens from the menu', async () => {
