@@ -108,6 +108,7 @@ const mockPackages: PackageInfo[] = [
     available_versions: ['0.1.0', '0.2.0'],
     active_version: '0.1.0',
     tools: { threshold: ['0.1.0'], gaussian_blur: ['0.1.0'] },
+    load_errors: {},
     environment_status: 'ready',
   },
   {
@@ -116,6 +117,7 @@ const mockPackages: PackageInfo[] = [
     available_versions: ['0.1.0', '0.2.0'],
     active_version: '0.2.0',
     tools: { cellpose: ['0.2.0'] },
+    load_errors: {},
     environment_status: 'stopped',
   },
 ]
@@ -345,7 +347,12 @@ describe('ToolsPanel', () => {
     })
 
     const vm = wrapper.vm as unknown as {
-      getVersionRows: (name: string) => Array<{ version: string; installed: boolean; available: boolean }>
+      getVersionRows: (name: string) => Array<{
+        version: string
+        installed: boolean
+        available: boolean
+        loadError: string | null
+      }>
     }
 
     const rows = vm.getVersionRows('bioimageflow-core')
@@ -360,6 +367,67 @@ describe('ToolsPanel', () => {
     expect(v020).toBeDefined()
     expect(v020!.installed).toBe(false)
     expect(v020!.available).toBe(true)
+    expect(v020!.loadError).toBeNull()
+  })
+
+  it('getVersionRows exposes installed version load errors', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.packages = [
+      {
+        ...mockPackages[0],
+        installed_versions: ['0.1.0'],
+        available_versions: ['0.1.0'],
+        load_errors: { '0.1.0': 'ValueError: broken environment' },
+      },
+      mockPackages[1],
+    ]
+
+    const vm = wrapper.vm as unknown as {
+      getVersionRows: (name: string) => Array<{
+        version: string
+        installed: boolean
+        available: boolean
+        loadError: string | null
+      }>
+    }
+
+    expect(vm.getVersionRows('bioimageflow-core')).toEqual([
+      {
+        version: '0.1.0',
+        installed: true,
+        available: true,
+        loadError: 'ValueError: broken environment',
+      },
+    ])
+  })
+
+  it('versionTriggerLabel marks failed active versions', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.packages = [
+      {
+        ...mockPackages[0],
+        installed_versions: ['0.1.0'],
+        active_version: '0.1.0',
+        load_errors: { '0.1.0': 'ValueError: broken environment' },
+      },
+      mockPackages[1],
+    ]
+
+    const vm = wrapper.vm as unknown as {
+      versionTriggerLabel: (name: string) => string
+    }
+
+    expect(vm.versionTriggerLabel('bioimageflow-core')).toBe('0.1.0 (failed)')
   })
 
   it('getVersionRows returns empty for unknown package', async () => {
@@ -370,7 +438,12 @@ describe('ToolsPanel', () => {
     })
 
     const vm = wrapper.vm as unknown as {
-      getVersionRows: (name: string) => Array<{ version: string; installed: boolean; available: boolean }>
+      getVersionRows: (name: string) => Array<{
+        version: string
+        installed: boolean
+        available: boolean
+        loadError: string | null
+      }>
     }
     expect(vm.getVersionRows('nonexistent')).toEqual([])
   })
@@ -697,6 +770,32 @@ describe('ToolsPanel', () => {
 
     // No POST should have been issued — onMounted may have called GETs but
     // we only care that no /use POST went out.
+    const useCalls = mockedApi.post.mock.calls.filter((c) => /\/use$/.test(String(c[0])))
+    expect(useCalls).toHaveLength(0)
+  })
+
+  it('useVersionInWorkflow is a no-op for failed installed versions', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.packages = [
+      {
+        ...mockPackages[0],
+        installed_versions: ['0.1.0', '0.2.0'],
+        active_version: '0.1.0',
+        load_errors: { '0.2.0': 'SyntaxError: bad package' },
+      },
+      mockPackages[1],
+    ]
+
+    const vm = wrapper.vm as unknown as {
+      useVersionInWorkflow: (name: string, version: string) => void
+    }
+    vm.useVersionInWorkflow('bioimageflow-core', '0.2.0')
+
     const useCalls = mockedApi.post.mock.calls.filter((c) => /\/use$/.test(String(c[0])))
     expect(useCalls).toHaveLength(0)
   })

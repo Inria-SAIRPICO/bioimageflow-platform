@@ -114,6 +114,7 @@ def test_package_info_full():
     assert info.name == "cellpose"
     assert info.installed_versions == ["2.0", "2.1"]
     assert info.environment_status == "running"
+    assert info.load_errors == {}
 
 
 def test_package_info_defaults():
@@ -121,6 +122,7 @@ def test_package_info_defaults():
     assert info.installed_versions == []
     assert info.available_versions == []
     assert info.tools == {}
+    assert info.load_errors == {}
     assert info.environment_status == "stopped"
 
 

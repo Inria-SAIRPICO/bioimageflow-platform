@@ -26,6 +26,7 @@ const mockPackages: PackageInfo[] = [
     installed_versions: ['0.1.1'],
     available_versions: ['0.1.1', '0.1.2'],
     tools: { threshold: ['0.1.1'] },
+    load_errors: {},
     environment_status: 'ready',
   },
 ]

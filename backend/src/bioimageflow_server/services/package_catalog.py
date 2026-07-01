@@ -64,6 +64,8 @@ class PackageCatalogService:
         pypi_versions: dict[str, list[str]] = {name: [] for name in names}
 
         async def _lookup(name: str) -> None:
+            if name == "__custom__":
+                return
             try:
                 pypi_versions[name] = list(await self._pypi.get_versions(name))
             except (PackageNetworkError, PackageNotFoundError) as exc:
@@ -80,6 +82,7 @@ class PackageCatalogService:
             base = installed.get(name)
             installed_versions = list(base.installed_versions) if base else []
             tools = dict(base.tools) if base else {}
+            load_errors = dict(base.load_errors) if base else {}
             env_status = base.environment_status if base else "stopped"
             # Preserve the registry's active_version through every refresh —
             # otherwise the GUI's "Current" badge disappears whenever the
@@ -96,6 +99,7 @@ class PackageCatalogService:
                 available_versions=merged,
                 active_version=active_version,
                 tools=tools,
+                load_errors=load_errors,
                 environment_status=env_status,
             )
 

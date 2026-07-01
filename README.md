@@ -134,6 +134,23 @@ cd frontend && bun run test:unit
 cd frontend && bun run test:e2e
 ```
 
+## Development
+
+### Install tool packages in editable mode
+
+Create a symlink of the tool package:
+
+```
+mkdir -p ~/.bioimageflow/tool_packages/bioimageflow_common_tools/0.1.6
+
+ln -sfn \
+  /path/to/bioimageflow-common-tools/bioimageflow_common_tools \
+  ~/.bioimageflow/tool_packages/bioimageflow_common_tools/0.1.6/bioimageflow_common_tools
+
+```
+
+Then restart the backend.
+
 ## Documentation
 
 - `specs.md` -- BioImageFlow library specifications

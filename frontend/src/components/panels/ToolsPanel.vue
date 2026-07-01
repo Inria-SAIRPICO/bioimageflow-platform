@@ -315,6 +315,7 @@ export interface VersionRow {
   version: string
   installed: boolean
   available: boolean
+  loadError: string | null
 }
 
 /** Packages whose version list is currently revealed (set-backed per-package,
@@ -347,6 +348,9 @@ function versionTriggerLabel(packageName: string): string {
   const pkg = toolRegistry.packages.find((p) => p.name === packageName)
   if (!pkg || pkg.installed_versions.length === 0) return 'uninstalled'
   if (pkg.active_version) {
+    if (pkg.load_errors?.[pkg.active_version]) {
+      return `${pkg.active_version} (failed)`
+    }
     if (pkg.installed_versions.length > 1) {
       return `${pkg.active_version} (active, +${pkg.installed_versions.length - 1})`
     }
@@ -372,6 +376,7 @@ function getVersionRows(packageName: string): VersionRow[] {
     version,
     installed: pkg.installed_versions.includes(version),
     available: pkg.available_versions.includes(version),
+    loadError: pkg.load_errors?.[version] ?? null,
   }))
 }
 
@@ -453,6 +458,8 @@ function isActiveVersion(packageName: string, version: string): boolean {
  * schema may need to be re-validated. */
 function useVersionInWorkflow(packageName: string, version: string) {
   if (isActiveVersion(packageName, version)) return
+  const pkg = toolRegistry.packages.find((p) => p.name === packageName)
+  if (pkg?.load_errors?.[version]) return
   confirm.require({
     message: `Set ${packageName} ${version} as the active version for this workflow? Every node from this package will use the new version's schema.`,
     header: 'Change Package Version',
@@ -981,23 +988,31 @@ defineExpose({
                       <span class="version-label">{{ row.version }}</span>
                       <span
                         class="version-status-dot"
-                        :class="row.installed ? 'version-status-installed' : 'version-status-missing'"
-                        :title="row.installed ? 'Installed' : 'Not installed'"
-                        :aria-label="row.installed ? 'Installed' : 'Not installed'"
+                        :class="row.loadError ? 'version-status-failed' : row.installed ? 'version-status-installed' : 'version-status-missing'"
+                        :title="row.loadError ?? (row.installed ? 'Installed' : 'Not installed')"
+                        :aria-label="row.loadError ? 'Failed to load' : row.installed ? 'Installed' : 'Not installed'"
                       />
+                      <span
+                        v-if="row.loadError"
+                        class="version-failed-badge"
+                        :title="row.loadError"
+                        :data-testid="`failed-version-${node.data.name}-${row.version}`"
+                      >
+                        Failed
+                      </span>
                       <!-- "Current" badge marks the active version for the
                            workflow. Otherwise, an installed row offers a
                            "Set current" button to switch to it. Only
                            installed versions can be set current. -->
                       <span
-                        v-if="row.installed && isActiveVersion(node.data.name, row.version)"
+                        v-if="row.installed && !row.loadError && isActiveVersion(node.data.name, row.version)"
                         class="version-current-badge"
                         :data-testid="`current-version-${node.data.name}-${row.version}`"
                       >
                         Current
                       </span>
                       <Button
-                        v-else-if="row.installed"
+                        v-else-if="row.installed && !row.loadError"
                         label="Set current"
                         icon="pi pi-check"
                         size="small"
@@ -1488,20 +1503,33 @@ defineExpose({
   background: var(--p-surface-400);
 }
 
+.version-status-failed {
+  background: var(--p-red-500);
+}
+
 .version-row-current {
   background: color-mix(in srgb, var(--p-primary-color) 8%, transparent);
 }
 
-.version-current-badge {
+.version-current-badge,
+.version-failed-badge {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   padding: 2px 6px;
   border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.version-current-badge {
   background: var(--p-primary-color);
   color: var(--p-primary-contrast-color, #fff);
-  flex-shrink: 0;
+}
+
+.version-failed-badge {
+  background: var(--p-red-100);
+  color: var(--p-red-700);
 }
 
 .version-action {

@@ -92,6 +92,10 @@ class PackageInfo(BaseModel):
     # version is installed.
     active_version: str | None = None
     tools: dict[str, list[str]] = {}
+    # Per-version import/indexing failures discovered while scanning the
+    # tool store. A version may be installed but unusable if its package
+    # imports fail under the current BioImageFlow runtime.
+    load_errors: dict[str, str] = {}
     environment_status: str = "stopped"
 
 

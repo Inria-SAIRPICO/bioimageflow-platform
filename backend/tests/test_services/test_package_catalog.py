@@ -279,6 +279,50 @@ async def test_catalog_refresh_preserves_active_version():
     assert pkg.active_version == "0.2.0"
 
 
+async def test_catalog_refresh_preserves_load_errors():
+    reg = ToolRegistryService()
+    reg.register_package(
+        "pkg",
+        PackageInfo(
+            name="pkg",
+            installed_versions=["0.1.0"],
+            available_versions=["0.1.0"],
+            active_version="0.1.0",
+            load_errors={"0.1.0": "ValueError: broken env"},
+        ),
+    )
+    known = _FakeKnown(["pkg"])
+    pypi = _make_pypi({"pkg": ["0.1.0"]})
+    catalog = PackageCatalogService(registry=reg, known=known, pypi=pypi)
+
+    await catalog.refresh()
+
+    pkg = {p.name: p for p in catalog.list_packages()}["pkg"]
+    assert pkg.load_errors == {"0.1.0": "ValueError: broken env"}
+
+
+async def test_catalog_refresh_skips_custom_package_pypi_lookup():
+    reg = ToolRegistryService()
+    reg.register_package(
+        "__custom__",
+        PackageInfo(
+            name="__custom__",
+            installed_versions=["local"],
+            available_versions=["local"],
+            active_version="local",
+        ),
+    )
+    known = _FakeKnown([])
+    pypi = _make_pypi({})
+    catalog = PackageCatalogService(registry=reg, known=known, pypi=pypi)
+
+    await catalog.refresh()
+
+    pkgs = {p.name: p for p in catalog.list_packages()}
+    assert "__custom__" in pkgs
+    assert pypi.get_versions_calls == []
+
+
 async def test_catalog_update_active_version_patches_snapshot():
     """``update_active_version`` keeps the catalog snapshot in sync with a
     registry ``set_active_version`` without rebuilding (which would round

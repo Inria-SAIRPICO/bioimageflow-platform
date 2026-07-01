@@ -96,7 +96,9 @@ class ToolRegistryService:
             ver_dirs.sort(key=lambda d: _version_sort_key(d.name))
 
             installed_versions: list[str] = []
+            loaded_versions: list[str] = []
             tools_by_version: dict[str, list[str]] = {}
+            load_errors: dict[str, str] = {}
             # class_name -> newest version that exports it. The platform
             # registry stores one ToolMetadata per class, so this picks
             # which version's metadata (incl. inputs/outputs schema) we
@@ -112,12 +114,16 @@ class ToolRegistryService:
                         package_name,
                         version,
                     )
-                except Exception:
+                except Exception as exc:
                     logger.exception("Failed to load %s==%s", package_name, version)
+                    load_errors[version] = _format_package_load_error(exc)
+                    unload_versioned_package(package_name, version)
+                    tools_by_version.setdefault(version, [])
                     continue
 
                 tool_names = [m.class_name for m in lib_metas]
                 tools_by_version[version] = tool_names
+                loaded_versions.append(version)
 
                 # Newer iterations overwrite older entries — at the end
                 # of the loop each class points at the newest version
@@ -143,7 +149,11 @@ class ToolRegistryService:
                 # version is the one currently bound in `_classes`. Reflect
                 # that in `active_version` so the GUI knows which version
                 # the workflow will execute against.
-                active_version = installed_versions[-1]
+                active_version = (
+                    loaded_versions[-1]
+                    if loaded_versions
+                    else installed_versions[-1]
+                )
                 self.register_package(
                     package_name,
                     PackageInfo(
@@ -152,6 +162,7 @@ class ToolRegistryService:
                         available_versions=installed_versions,
                         active_version=active_version,
                         tools=tools_by_version,
+                        load_errors=load_errors,
                         environment_status="stopped",
                     ),
                 )
@@ -482,6 +493,11 @@ class ToolRegistryService:
             raise ValueError(f"Package '{package_name}' is not registered")
         if version not in pkg.installed_versions:
             raise ValueError(f"Version '{version}' is not installed for '{package_name}'")
+        if version in pkg.load_errors:
+            raise ValueError(
+                f"Version '{version}' for '{package_name}' failed to load: "
+                f"{pkg.load_errors[version]}"
+            )
 
         try:
             for class_name in pkg.tools.get(version, []):
@@ -689,6 +705,7 @@ class ToolRegistryService:
         if version in pkg.installed_versions:
             pkg.installed_versions = [v for v in pkg.installed_versions if v != version]
         pkg.tools.pop(version, None)
+        pkg.load_errors.pop(version, None)
         if not pkg.installed_versions:
             del self._packages[name]
         for class_name, meta in list(self._tools.items()):
@@ -733,3 +750,10 @@ class ToolRegistryService:
         key = self._lib_registry._key(lib_meta)
         self._lib_registry._classes[key] = tool_class
         self._lib_registry._metadata[key] = lib_meta
+
+
+def _format_package_load_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return type(exc).__name__

@@ -103,6 +103,7 @@ describe('toolRegistry custom tool actions', () => {
       available_versions: ['local'],
       active_version: 'local',
       tools: { local: [] },
+      load_errors: {},
       environment_status: 'stopped',
     }]
 
@@ -115,6 +116,9 @@ describe('toolRegistry custom tool actions', () => {
         package: '__custom__',
         package_version: 'local',
         tool_type: 'ProcessingTool',
+        accepts_upstream: true,
+        dynamic_outputs: false,
+        documentation: '',
         inputs: {},
         outputs: {},
         tags: [],
@@ -136,6 +140,9 @@ describe('toolRegistry custom tool actions', () => {
       package: '__custom__',
       package_version: 'local',
       tool_type: 'ProcessingTool',
+      accepts_upstream: true,
+      dynamic_outputs: false,
+      documentation: '',
       inputs: {},
       outputs: {},
       tags: [],
@@ -149,6 +156,7 @@ describe('toolRegistry custom tool actions', () => {
       available_versions: ['local'],
       active_version: 'local',
       tools: { local: ['CustomTool'] },
+      load_errors: {},
       environment_status: 'stopped',
     }]
 

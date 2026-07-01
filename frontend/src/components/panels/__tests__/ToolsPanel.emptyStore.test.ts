@@ -26,6 +26,7 @@ const emptyStorePackages: PackageInfo[] = [
     installed_versions: [],
     available_versions: ['0.1.1', '0.1.2'],
     tools: {},
+    load_errors: {},
     environment_status: 'stopped',
   },
 ]

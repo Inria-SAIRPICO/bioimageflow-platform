@@ -1127,6 +1127,13 @@ export interface components {
                 [key: string]: string[];
             };
             /**
+             * Load Errors
+             * @default {}
+             */
+            load_errors: {
+                [key: string]: string;
+            };
+            /**
              * Environment Status
              * @default stopped
              */
