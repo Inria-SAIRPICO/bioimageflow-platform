@@ -127,6 +127,7 @@ describe('editor api helpers', () => {
     expect(listener.mock.calls[0][0].detail).toEqual({
       url: 'http://127.0.0.1:32344',
       path: '/tmp/tool.py',
+      projectPath: null,
     })
     window.removeEventListener('bif:open-code-editor', listener)
   })
@@ -135,7 +136,7 @@ describe('editor api helpers', () => {
     const listener = vi.fn()
     window.addEventListener('bif:open-code-editor', listener)
     const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
-    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/old.py')
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/old.py', '/workspace')
     const focusRequest = deferred<{
       data: {
         opened: boolean
@@ -152,6 +153,7 @@ describe('editor api helpers', () => {
           method: 'embedded',
           url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
           path: '/workspace/tools/new.py',
+          project_path: '/workspace',
           message: null,
         },
       })
@@ -170,6 +172,7 @@ describe('editor api helpers', () => {
     expect(listener.mock.calls[0][0].detail).toEqual({
       url: currentUrl,
       path: '/workspace/tools/new.py',
+      projectPath: '/workspace',
     })
     focusRequest.resolve({
       data: {
@@ -183,17 +186,18 @@ describe('editor api helpers', () => {
     window.removeEventListener('bif:open-code-editor', listener)
   })
 
-  it('does not focus the file again when the same project and file are already open', async () => {
+  it('does not focus or re-open the editor when the same project and file are already visible', async () => {
     const listener = vi.fn()
     window.addEventListener('bif:open-code-editor', listener)
     const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
-    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/tool.py')
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/tool.py', '/workspace')
     mockedPost.mockResolvedValueOnce({
       data: {
         opened: true,
         method: 'embedded',
         url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
         path: '/workspace/tools/tool.py',
+        project_path: '/workspace',
         message: null,
       },
     })
@@ -201,11 +205,56 @@ describe('editor api helpers', () => {
     await openPathWithEditor('/workspace', null, { focusPath: '/workspace/tools/tool.py' })
 
     expect(mockedPost).toHaveBeenCalledTimes(1)
+    expect(listener).not.toHaveBeenCalled()
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('preserves the current folder iframe URL for embedded file-focus responses', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/old.py', '/workspace')
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344',
+        path: '/workspace/tools/new.py',
+        message: null,
+      },
+    })
+
+    await openPathWithEditor('/workspace/tools/new.py')
+
+    expect(mockedPost).toHaveBeenCalledTimes(1)
     expect(listener).toHaveBeenCalledTimes(1)
     expect(listener.mock.calls[0][0].detail).toEqual({
       url: currentUrl,
-      path: '/workspace/tools/tool.py',
+      path: '/workspace/tools/new.py',
+      projectPath: '/workspace',
     })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('does not re-open the editor for same-file embedded file-focus responses', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/tool.py', '/workspace')
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344',
+        path: '/workspace/tools/tool.py',
+        message: null,
+      },
+    })
+
+    await openPathWithEditor('/workspace/tools/tool.py')
+
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    expect(listener).not.toHaveBeenCalled()
     window.removeEventListener('bif:open-code-editor', listener)
   })
 
@@ -215,6 +264,7 @@ describe('editor api helpers', () => {
     useUIStore().setCodeEditorTarget(
       'http://127.0.0.1:32344/?folder=%2Fworkspace-a',
       '/workspace-a/tools/old.py',
+      '/workspace-a',
     )
     mockedPost.mockResolvedValueOnce({
       data: {
@@ -222,6 +272,7 @@ describe('editor api helpers', () => {
         method: 'embedded',
         url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
         path: '/workspace-b/tools/new.py',
+        project_path: '/workspace-b',
         message: null,
       },
     })
@@ -232,6 +283,7 @@ describe('editor api helpers', () => {
     expect(listener.mock.calls[0][0].detail).toEqual({
       url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
       path: '/workspace-b/tools/new.py',
+      projectPath: '/workspace-b',
     })
     window.removeEventListener('bif:open-code-editor', listener)
   })

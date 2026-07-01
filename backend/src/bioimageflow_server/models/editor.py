@@ -64,6 +64,7 @@ class EditorOpenResponse(BaseModel):
     method: EditorOpenMethod
     url: str | None = None
     path: str
+    project_path: str | None = None
     message: str | None = None
     error_code: str | None = None
     error_detail: str | None = None

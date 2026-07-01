@@ -156,6 +156,30 @@ describe('CodeEditorPanel', () => {
     )
   })
 
+  it('keeps the iframe element when the same editor target is set again', async () => {
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fworkspace',
+      '/tmp/workspace/tools/tool.py',
+      '/tmp/workspace',
+    )
+    const wrapper = mount(CodeEditorPanel)
+    const iframe = wrapper.find('[data-testid="code-editor-iframe"]')
+    const element = iframe.element
+
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fworkspace',
+      '/tmp/workspace/tools/tool.py',
+      '/tmp/workspace',
+    )
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="code-editor-iframe"]').element).toBe(element)
+    expect(wrapper.find('[data-testid="code-editor-iframe"]').attributes('src')).toBe(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fworkspace',
+    )
+  })
+
   it('focuses the requested file after a project folder iframe loads', async () => {
     const store = useUIStore()
     store.setCodeEditorTarget(

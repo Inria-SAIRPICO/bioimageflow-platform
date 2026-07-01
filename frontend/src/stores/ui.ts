@@ -36,6 +36,7 @@ export const useUIStore = defineStore('ui', () => {
   const isExecutionLocked = ref(false)
   const codeEditorUrl = ref<string | null>(null)
   const codeEditorPath = ref<string | null>(null)
+  const codeEditorProjectPath = ref<string | null>(null)
   const codeEditorOpening = ref(false)
   const codeEditorOpeningPath = ref<string | null>(null)
   const codeEditorDetached = ref(false)
@@ -125,9 +126,10 @@ export const useUIStore = defineStore('ui', () => {
     panels[panel] = visible
   }
 
-  function setCodeEditorTarget(url: string, path: string) {
+  function setCodeEditorTarget(url: string, path: string, projectPath: string | null = null) {
     codeEditorUrl.value = url
     codeEditorPath.value = path
+    codeEditorProjectPath.value = projectPath
     codeEditorOpening.value = false
     codeEditorOpeningPath.value = null
     panels.codeEditor = true
@@ -161,6 +163,7 @@ export const useUIStore = defineStore('ui', () => {
     isExecutionLocked,
     codeEditorUrl,
     codeEditorPath,
+    codeEditorProjectPath,
     codeEditorOpening,
     codeEditorDetached,
     themePreference,

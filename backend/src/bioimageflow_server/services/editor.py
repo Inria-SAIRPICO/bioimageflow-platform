@@ -245,6 +245,7 @@ class EmbeddedCodeServerManager:
                 method=EditorOpenMethod.EMBEDDED,
                 url=f"{self.editor_url}/?{urlencode({'folder': str(path)})}",
                 path=str(focus_path or path),
+                project_path=str(path),
             )
 
         ok = opener(
@@ -329,6 +330,7 @@ class EditorService:
                 method=EditorOpenMethod.EXTERNAL,
                 url=None,
                 path=str(normalized_focus or normalized),
+                project_path=str(normalized) if normalized.is_dir() else None,
             )
 
         status = self._embedded.status()
@@ -371,6 +373,7 @@ class EditorService:
                 method=EditorOpenMethod.CLIPBOARD,
                 url=None,
                 path=str(normalized_focus or normalized),
+                project_path=str(normalized) if normalized.is_dir() else None,
                 message=CLIPBOARD_MESSAGE,
                 error_code=error_code,
                 error_detail=error_detail,
@@ -414,6 +417,7 @@ class EditorService:
             method=EditorOpenMethod.CLIPBOARD,
             url=None,
             path=str(normalized_focus or normalized),
+            project_path=str(normalized) if normalized.is_dir() else None,
             message=CLIPBOARD_MESSAGE,
             error_code=error_code,
             error_detail=error_detail,

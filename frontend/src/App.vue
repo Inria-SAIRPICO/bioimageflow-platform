@@ -308,12 +308,23 @@ function activateCodeEditorPanel() {
 }
 
 function onCodeEditorLoading(event: CustomEvent<{ path?: string }>) {
+  const existingPanel = dockviewApi.value?.getPanel('codeEditor')
   uiStore.setCodeEditorOpening(event.detail?.path ?? '')
-  activateCodeEditorPanel()
+  if (!existingPanel) {
+    activateCodeEditorPanel()
+  }
 }
 
-function onOpenCodeEditor(event: CustomEvent<{ url: string; path: string }>) {
-  uiStore.setCodeEditorTarget(event.detail.url, event.detail.path)
+function onOpenCodeEditor(event: CustomEvent<{
+  url: string
+  path: string
+  projectPath?: string | null
+}>) {
+  uiStore.setCodeEditorTarget(
+    event.detail.url,
+    event.detail.path,
+    event.detail.projectPath ?? null,
+  )
   activateCodeEditorPanel()
 }
 

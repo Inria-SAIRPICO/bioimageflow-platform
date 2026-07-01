@@ -389,10 +389,14 @@ describe('AppShell', () => {
     mountApp()
     await flushPromises()
     const store = useUIStore()
-    store.setCodeEditorTarget(
-      'http://127.0.0.1:32344/?folder=%2Fworkspace',
-      '/workspace/tools/tool.py',
-    )
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+      detail: {
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
+        path: '/workspace/tools/tool.py',
+      },
+    }))
+    await flushPromises()
+    panels.get('codeEditor').api.setActive.mockClear()
 
     window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
       detail: { path: '' },
@@ -403,6 +407,7 @@ describe('AppShell', () => {
     expect(store.codeEditorPath).toBe('/workspace/tools/tool.py')
     expect(store.codeEditorOpening).toBe(true)
     expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(panels.get('codeEditor').api.setActive).not.toHaveBeenCalled()
   })
 
   it('keeps the active code editor path during loading events when an editor is mounted', async () => {

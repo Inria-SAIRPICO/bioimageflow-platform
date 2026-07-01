@@ -19,6 +19,7 @@ export interface EditorOpenResponse {
   method: EditorOpenMethod
   url: string | null
   path: string
+  project_path?: string | null
   message: string | null
   error_code?: string | null
   error_detail?: string | null
@@ -99,6 +100,20 @@ function editorProjectKey(url: string | null): string | null {
   }
 }
 
+function normalizedProjectPath(path: string | null | undefined): string | null {
+  if (!path) return null
+  return path.replace(/\/+$/, '') || path
+}
+
+function isFolderEditorUrl(url: string | null): boolean {
+  if (!url) return false
+  try {
+    return new URL(url, window.location.href).searchParams.has('folder')
+  } catch {
+    return url.includes('folder=')
+  }
+}
+
 export async function openPathWithEditor(
   path: string,
   toast?: Toast | null,
@@ -163,19 +178,42 @@ export async function handleEditorOpenResponse(
     const uiStore = useUIStoreIfAvailable()
     const currentUrl = uiStore?.codeEditorUrl ?? null
     const currentPath = uiStore?.codeEditorPath ?? null
-    const currentProject = editorProjectKey(currentUrl)
-    const nextProject = editorProjectKey(response.url)
+    const currentProjectPath = normalizedProjectPath(uiStore?.codeEditorProjectPath)
+    const nextProjectPath = normalizedProjectPath(response.project_path)
+    const currentProject = currentProjectPath ?? editorProjectKey(currentUrl)
+    const nextProject = nextProjectPath ?? editorProjectKey(response.url)
+    const preserveCurrentEditorUrl = Boolean(currentUrl) && !isFolderEditorUrl(response.url)
     if (currentProject && nextProject && currentProject === nextProject) {
+      if (currentPath === response.path && uiStore?.panels.codeEditor) {
+        return
+      }
       if (currentPath !== response.path) {
         void focusPathInCurrentEmbeddedEditor(response.path, toast)
       }
       window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
-        detail: { url: currentUrl, path: response.path },
+        detail: {
+          url: currentUrl,
+          path: response.path,
+          projectPath: currentProjectPath ?? nextProjectPath ?? null,
+        },
+      }))
+      return
+    }
+    if (preserveCurrentEditorUrl) {
+      if (currentPath === response.path && uiStore?.panels.codeEditor) {
+        return
+      }
+      window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+        detail: {
+          url: currentUrl,
+          path: response.path,
+          projectPath: uiStore?.codeEditorProjectPath ?? null,
+        },
       }))
       return
     }
     window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
-      detail: { url: response.url, path: response.path },
+      detail: { url: response.url, path: response.path, projectPath: response.project_path ?? null },
     }))
     return
   }
