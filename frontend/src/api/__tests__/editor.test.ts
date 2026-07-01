@@ -186,6 +186,60 @@ describe('editor api helpers', () => {
     window.removeEventListener('bif:open-code-editor', listener)
   })
 
+  it('matches current folder URLs with backend project paths when store project is missing', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/old.py')
+    const focusRequest = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        message: null
+      }
+    }>()
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
+          path: '/workspace/tools/new.py',
+          project_path: '/workspace',
+          message: null,
+        },
+      })
+      .mockReturnValueOnce(focusRequest.promise)
+
+    await openPathWithEditor('/workspace', null, { focusPath: '/workspace/tools/new.py' })
+
+    expect(mockedPost).toHaveBeenNthCalledWith(1, '/api/v1/editor/open', {
+      path: '/workspace',
+      focus_path: '/workspace/tools/new.py',
+    })
+    expect(mockedPost).toHaveBeenNthCalledWith(2, '/api/v1/editor/open', {
+      path: '/workspace/tools/new.py',
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      url: currentUrl,
+      path: '/workspace/tools/new.py',
+      projectPath: '/workspace',
+    })
+    focusRequest.resolve({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344',
+        path: '/workspace/tools/new.py',
+        message: null,
+      },
+    })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
   it('does not focus or re-open the editor when the same project and file are already visible', async () => {
     const listener = vi.fn()
     window.addEventListener('bif:open-code-editor', listener)

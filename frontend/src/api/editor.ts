@@ -94,7 +94,7 @@ function editorProjectKey(url: string | null): string | null {
   try {
     const parsed = new URL(url, window.location.href)
     const folder = parsed.searchParams.get('folder')
-    return folder ? `folder:${folder}` : parsed.origin + parsed.pathname
+    return normalizedProjectPath(folder) ?? parsed.origin + parsed.pathname
   } catch {
     return url
   }
@@ -103,6 +103,15 @@ function editorProjectKey(url: string | null): string | null {
 function normalizedProjectPath(path: string | null | undefined): string | null {
   if (!path) return null
   return path.replace(/\/+$/, '') || path
+}
+
+function projectPathFromEditorUrl(url: string | null): string | null {
+  if (!url) return null
+  try {
+    return normalizedProjectPath(new URL(url, window.location.href).searchParams.get('folder'))
+  } catch {
+    return null
+  }
 }
 
 function isFolderEditorUrl(url: string | null): boolean {
@@ -178,8 +187,12 @@ export async function handleEditorOpenResponse(
     const uiStore = useUIStoreIfAvailable()
     const currentUrl = uiStore?.codeEditorUrl ?? null
     const currentPath = uiStore?.codeEditorPath ?? null
-    const currentProjectPath = normalizedProjectPath(uiStore?.codeEditorProjectPath)
-    const nextProjectPath = normalizedProjectPath(response.project_path)
+    const currentProjectPath = (
+      normalizedProjectPath(uiStore?.codeEditorProjectPath) ?? projectPathFromEditorUrl(currentUrl)
+    )
+    const nextProjectPath = (
+      normalizedProjectPath(response.project_path) ?? projectPathFromEditorUrl(response.url)
+    )
     const currentProject = currentProjectPath ?? editorProjectKey(currentUrl)
     const nextProject = nextProjectPath ?? editorProjectKey(response.url)
     const preserveCurrentEditorUrl = Boolean(currentUrl) && !isFolderEditorUrl(response.url)
