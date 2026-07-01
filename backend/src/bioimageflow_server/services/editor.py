@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import shlex
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from importlib.resources import files
@@ -93,7 +94,7 @@ def _default_opener_call(url: str, params: dict[str, str]) -> bool:
 
 
 def default_opener_vsix_path() -> Path:
-    return Path(str(files("bioimageflow_server._external.opener") / "opener-0.0.3.vsix"))
+    return Path(str(files("bioimageflow_server._external.opener") / "bioimageflow-opener-0.1.0.vsix"))
 
 
 def _default_environment_manager_provider() -> Any:
@@ -165,6 +166,9 @@ class EmbeddedCodeServerManager:
             [self.code_server_binary, "--install-extension", "detachhead.basedpyright"],
         ]
 
+    def legacy_uninstall_command(self) -> list[str]:
+        return [self.code_server_binary, "--uninstall-extension", "sairpico.opener"]
+
     def launch_command(self) -> list[str]:
         return [
             self.code_server_binary,
@@ -195,11 +199,20 @@ class EmbeddedCodeServerManager:
             return
         install_runner = install_runner or _default_command_runner
         process_launcher = process_launcher or _default_process_launcher
+        self._uninstall_legacy_opener(install_runner)
         for command in self.install_commands():
             logger.info("Installing code-server extension: %s", shlex.join(command))
             install_runner(command)
         logger.info("Starting code-server process: %s", shlex.join(self.launch_command()))
         self._process = process_launcher(self.launch_command())
+
+    def _uninstall_legacy_opener(self, install_runner: CommandRunner) -> None:
+        command = self.legacy_uninstall_command()
+        logger.info("Removing legacy code-server opener extension: %s", shlex.join(command))
+        try:
+            install_runner(command)
+        except Exception as exc:
+            logger.info("Legacy code-server opener removal skipped or failed: %s", exc)
 
     def _launch_in_environment(self) -> object:
         env_manager = self._environment_manager_provider()
@@ -208,7 +221,8 @@ class EmbeddedCodeServerManager:
             environment = env_manager.load("codeserver", self.env_path)
         else:
             environment = self._create_or_load_default_environment(env_manager)
-        commands = [shlex.join(command) for command in self.install_commands()]
+        commands = [f"{shlex.join(self.legacy_uninstall_command())} || true"]
+        commands.extend(shlex.join(command) for command in self.install_commands())
         commands.append(shlex.join(self.launch_command()))
         logger.info(
             "Executing embedded code-server startup in environment: commands=%s",
@@ -289,36 +303,53 @@ class EditorService:
         self._embedded = embedded_manager or EmbeddedCodeServerManager()
         self._embedded_startup_timeout = embedded_startup_timeout
         self._embedded_poll_interval = embedded_poll_interval
+        self._embedded_lock = threading.RLock()
 
     def get_status(self, *, launch: bool = False) -> EditorStatus:
         status = self._embedded.status()
         if not launch or status.available:
             return status
 
-        start = getattr(self._embedded, "launch", None)
-        if callable(start):
-            try:
-                start()
-            except Exception as exc:
-                logger.exception("Embedded code-server launch failed")
-                return self._embedded.status().model_copy(
+        with self._embedded_lock:
+            status = self._embedded.status()
+            if status.available:
+                return status.model_copy(update={"launch_attempted": True})
+            if status.control_available:
+                status = self._wait_for_embedded_status()
+                if status.available:
+                    return status.model_copy(update={"launch_attempted": True})
+                return status.model_copy(
                     update={
                         "launch_attempted": True,
-                        "error_code": EMBEDDED_LAUNCH_FAILED,
-                        "error_detail": _exception_summary(exc),
+                        "error_code": EMBEDDED_STARTUP_TIMEOUT,
+                        "error_detail": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
                     }
                 )
 
-        status = self._wait_for_embedded_status()
-        if status.available:
-            return status.model_copy(update={"launch_attempted": True})
-        return status.model_copy(
-            update={
-                "launch_attempted": True,
-                "error_code": EMBEDDED_STARTUP_TIMEOUT,
-                "error_detail": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
-            }
-        )
+            start = getattr(self._embedded, "launch", None)
+            if callable(start):
+                try:
+                    start()
+                except Exception as exc:
+                    logger.exception("Embedded code-server launch failed")
+                    return self._embedded.status().model_copy(
+                        update={
+                            "launch_attempted": True,
+                            "error_code": EMBEDDED_LAUNCH_FAILED,
+                            "error_detail": _exception_summary(exc),
+                        }
+                    )
+
+            status = self._wait_for_embedded_status()
+            if status.available:
+                return status.model_copy(update={"launch_attempted": True})
+            return status.model_copy(
+                update={
+                    "launch_attempted": True,
+                    "error_code": EMBEDDED_STARTUP_TIMEOUT,
+                    "error_detail": EMBEDDED_STARTUP_TIMEOUT_DETAIL,
+                }
+            )
 
     def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
         normalized = self._normalize_path(path)
@@ -341,6 +372,14 @@ class EditorService:
                 project_path=str(normalized) if normalized.is_dir() else None,
             )
 
+        with self._embedded_lock:
+            return self._open_path_embedded_locked(normalized, normalized_focus)
+
+    def _open_path_embedded_locked(
+        self,
+        normalized: Path,
+        normalized_focus: Path | None,
+    ) -> EditorOpenResponse:
         status = self._embedded.status()
         logger.info(
             "Embedded editor status before open: available=%s control_available=%s url=%s",
@@ -375,21 +414,11 @@ class EditorService:
                 normalized_focus,
                 _embedded_diagnostics(self._embedded),
             )
-            logger.warning(
-                "Falling back to clipboard for editor open: path=%s error_code=%s error_detail=%s",
+            return self._clipboard_response(
                 normalized_focus or normalized,
                 error_code,
                 error_detail,
-            )
-            return EditorOpenResponse(
-                opened=False,
-                method=EditorOpenMethod.CLIPBOARD,
-                url=None,
-                path=str(normalized_focus or normalized),
-                project_path=str(normalized) if normalized.is_dir() else None,
-                message=CLIPBOARD_MESSAGE,
-                error_code=error_code,
-                error_detail=error_detail,
+                project_path=normalized if normalized.is_dir() else None,
             )
 
         error_code: str | None = None
@@ -419,9 +448,24 @@ class EditorService:
                 error_code = EMBEDDED_LAUNCH_FAILED
                 error_detail = _exception_summary(exc)
 
+        return self._clipboard_response(
+            normalized_focus or normalized,
+            error_code,
+            error_detail,
+            project_path=normalized if normalized.is_dir() else None,
+        )
+
+    def _clipboard_response(
+        self,
+        path: Path,
+        error_code: str | None,
+        error_detail: str | None,
+        *,
+        project_path: Path | None = None,
+    ) -> EditorOpenResponse:
         logger.warning(
             "Falling back to clipboard for editor open: path=%s error_code=%s error_detail=%s",
-            normalized_focus or normalized,
+            path,
             error_code,
             error_detail,
         )
@@ -429,8 +473,8 @@ class EditorService:
             opened=False,
             method=EditorOpenMethod.CLIPBOARD,
             url=None,
-            path=str(normalized_focus or normalized),
-            project_path=str(normalized) if normalized.is_dir() else None,
+            path=str(path),
+            project_path=str(project_path) if project_path is not None else None,
             message=CLIPBOARD_MESSAGE,
             error_code=error_code,
             error_detail=error_detail,

@@ -34,6 +34,17 @@ type Toast = {
   }) => void
 }
 
+let latestEditorOpenRequestId = 0
+
+function beginEditorOpenRequest(): number {
+  latestEditorOpenRequestId += 1
+  return latestEditorOpenRequestId
+}
+
+function isLatestEditorOpenRequest(requestId?: number): boolean {
+  return requestId === undefined || requestId === latestEditorOpenRequestId
+}
+
 export interface OpenPathWithEditorOptions {
   showEmbeddedLoading?: boolean
   focusPath?: string
@@ -66,15 +77,15 @@ export async function openEditorTool(
   return data
 }
 
-export function showCodeEditorLoading(path = ''): void {
+export function showCodeEditorLoading(path = '', requestId?: number): void {
   window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
-    detail: { path },
+    detail: { path, ...(requestId === undefined ? {} : { requestId }) },
   }))
 }
 
-export function finishCodeEditorLoading(path?: string): void {
+export function finishCodeEditorLoading(path?: string, requestId?: number): void {
   window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished', {
-    detail: { path },
+    detail: { path, ...(requestId === undefined ? {} : { requestId }) },
   }))
 }
 
@@ -129,17 +140,18 @@ export async function openPathWithEditor(
   options?: OpenPathWithEditorOptions,
 ): Promise<EditorOpenResponse> {
   const showEmbeddedLoading = options?.showEmbeddedLoading === true
+  const requestId = beginEditorOpenRequest()
   if (showEmbeddedLoading) {
-    showCodeEditorLoading(path)
+    showCodeEditorLoading(path, requestId)
   }
   try {
     await flushDraftIfAvailable()
     const response = await openEditorPath(path, { focusPath: options?.focusPath })
-    await handleEditorOpenResponse(response, toast)
+    await handleEditorOpenResponse(response, toast, requestId)
     return response
   } finally {
     if (showEmbeddedLoading) {
-      finishCodeEditorLoading(path)
+      finishCodeEditorLoading(path, requestId)
     }
   }
 }
@@ -151,17 +163,18 @@ export async function openToolWithEditor(
   options?: OpenPathWithEditorOptions,
 ): Promise<EditorOpenResponse> {
   const showEmbeddedLoading = options?.showEmbeddedLoading === true
+  const requestId = beginEditorOpenRequest()
   if (showEmbeddedLoading) {
-    showCodeEditorLoading()
+    showCodeEditorLoading('', requestId)
   }
   try {
     await flushDraftIfAvailable()
     const response = await openEditorTool(toolName, { workflowId: workflowName })
-    await handleEditorOpenResponse(response, toast)
+    await handleEditorOpenResponse(response, toast, requestId)
     return response
   } finally {
     if (showEmbeddedLoading) {
-      finishCodeEditorLoading()
+      finishCodeEditorLoading('', requestId)
     }
   }
 }
@@ -178,7 +191,9 @@ async function flushDraftIfAvailable(): Promise<void> {
 export async function handleEditorOpenResponse(
   response: EditorOpenResponse,
   toast?: Toast | null,
+  requestId?: number,
 ): Promise<void> {
+  if (!isLatestEditorOpenRequest(requestId)) return
   if (response.method === 'external') {
     toast?.add({ severity: 'success', summary: 'Opened in editor', life: 2500 })
     return
@@ -201,13 +216,14 @@ export async function handleEditorOpenResponse(
         return
       }
       if (currentPath !== response.path) {
-        void focusPathInCurrentEmbeddedEditor(response.path, toast)
+        void focusPathInCurrentEmbeddedEditor(response.path, toast, requestId)
       }
       window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
         detail: {
           url: currentUrl,
           path: response.path,
           projectPath: currentProjectPath ?? nextProjectPath ?? null,
+          ...(requestId === undefined ? {} : { requestId }),
         },
       }))
       return
@@ -221,12 +237,18 @@ export async function handleEditorOpenResponse(
           url: currentUrl,
           path: response.path,
           projectPath: uiStore?.codeEditorProjectPath ?? null,
+          ...(requestId === undefined ? {} : { requestId }),
         },
       }))
       return
     }
     window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
-      detail: { url: response.url, path: response.path, projectPath: response.project_path ?? null },
+      detail: {
+        url: response.url,
+        path: response.path,
+        projectPath: response.project_path ?? null,
+        ...(requestId === undefined ? {} : { requestId }),
+      },
     }))
     return
   }
@@ -242,9 +264,12 @@ export async function handleEditorOpenResponse(
 async function focusPathInCurrentEmbeddedEditor(
   path: string,
   toast?: Toast | null,
+  requestId?: number,
 ): Promise<void> {
+  if (!isLatestEditorOpenRequest(requestId)) return
   try {
     const response = await openEditorPath(path)
+    if (!isLatestEditorOpenRequest(requestId)) return
     if (response.opened && response.method === 'embedded') return
     showCodeEditorDiagnostic(response)
     await navigator.clipboard?.writeText(response.path)
@@ -254,6 +279,7 @@ async function focusPathInCurrentEmbeddedEditor(
       life: 3000,
     })
   } catch (error) {
+    if (!isLatestEditorOpenRequest(requestId)) return
     toast?.add({
       severity: 'warn',
       summary: 'Could not focus file in editor',

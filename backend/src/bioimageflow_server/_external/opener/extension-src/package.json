@@ -1,0 +1,30 @@
+{
+  "name": "bioimageflow-opener",
+  "displayName": "BioImageFlow Opener",
+  "description": "Runs a local control server for focusing files in embedded code-server.",
+  "version": "0.1.0",
+  "publisher": "bioimageflow",
+  "engines": {
+    "vscode": "^1.106.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": []
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "package": "npm run compile && npx @vscode/vsce package --out ../bioimageflow-opener-0.1.0.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "22.x",
+    "@types/vscode": "^1.106.1",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "^5.9.3"
+  }
+}

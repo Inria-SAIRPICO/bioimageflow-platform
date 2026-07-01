@@ -7,12 +7,19 @@ import type { EditorStatus } from '@/api/editor'
 import { closeCodeEditorWindow } from '@/utils/nativeDialogs'
 
 const uiStore = useUIStore()
-const { codeEditorUrl, codeEditorPath, codeEditorOpening, codeEditorDetached } =
+const {
+  codeEditorUrl,
+  codeEditorPath,
+  codeEditorOpening,
+  codeEditorTargetRequestId,
+  codeEditorDetached,
+} =
   storeToRefs(uiStore)
 const failed = ref(false)
 const statusLoading = ref(false)
 const statusDiagnostic = ref<EditorStatus | null>(null)
 const focusedAfterLoadKey = ref<string | null>(null)
+const iframeElement = ref<HTMLIFrameElement | null>(null)
 
 const loading = computed(() => (
   statusLoading.value || (!codeEditorUrl.value && codeEditorOpening.value)
@@ -47,11 +54,15 @@ function shouldFocusPathAfterLoad(url: string | null, path: string | null): path
   return url.includes('folder=')
 }
 
-async function focusPathAfterLoad() {
+async function focusPathAfterLoad(event: Event) {
+  if (event.currentTarget !== iframeElement.value) return
+  if (codeEditorOpening.value) return
   const url = codeEditorUrl.value
   const path = codeEditorPath.value
   if (!shouldFocusPathAfterLoad(url, path)) return
-  const key = `${url}\n${path}`
+  const loadedUrl = iframeElement.value?.getAttribute('src')
+  if (loadedUrl && loadedUrl !== url) return
+  const key = `${codeEditorTargetRequestId.value ?? ''}\n${url}\n${path}`
   if (focusedAfterLoadKey.value === key) return
   focusedAfterLoadKey.value = key
   try {
@@ -119,6 +130,8 @@ watch([codeEditorUrl, codeEditorPath], () => {
   <section class="code-editor-panel" data-testid="code-editor-panel">
     <template v-if="available">
       <iframe
+        ref="iframeElement"
+        :key="codeEditorUrl ?? ''"
         class="code-editor-panel__frame"
         data-testid="code-editor-iframe"
         :src="codeEditorUrl ?? undefined"
