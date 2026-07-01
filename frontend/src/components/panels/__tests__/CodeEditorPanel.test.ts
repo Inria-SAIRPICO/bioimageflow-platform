@@ -126,6 +126,25 @@ describe('CodeEditorPanel', () => {
     expect(mockedGetEditorStatus).not.toHaveBeenCalled()
   })
 
+  it('keeps the existing iframe mounted while opening another file', async () => {
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fworkspace',
+      '/tmp/workspace/tools/old.py',
+    )
+    const wrapper = mount(CodeEditorPanel)
+
+    store.setCodeEditorOpening('/tmp/workspace/tools/new.py')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="code-editor-iframe"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="code-editor-iframe"]').attributes('src')).toBe(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fworkspace',
+    )
+    expect(wrapper.find('[data-testid="code-editor-loading"]').exists()).toBe(false)
+    expect(mockedGetEditorStatus).not.toHaveBeenCalled()
+  })
+
   it('renders an iframe when the embedded editor is available', () => {
     const store = useUIStore()
     store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')

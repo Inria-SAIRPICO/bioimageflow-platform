@@ -14,15 +14,17 @@ const statusLoading = ref(false)
 const statusDiagnostic = ref<EditorStatus | null>(null)
 const focusedAfterLoadKey = ref<string | null>(null)
 
-const loading = computed(() => statusLoading.value || codeEditorOpening.value)
+const loading = computed(() => (
+  statusLoading.value || (!codeEditorUrl.value && codeEditorOpening.value)
+))
 const loadingMessage = computed(() => (
   codeEditorOpening.value ? 'Opening code editor...' : 'Starting code-server...'
 ))
 const detached = computed(() => (
-  codeEditorDetached.value && Boolean(codeEditorUrl.value) && !loading.value
+  codeEditorDetached.value && Boolean(codeEditorUrl.value) && !statusLoading.value
 ))
 const available = computed(() => (
-  Boolean(codeEditorUrl.value) && !failed.value && !loading.value && !detached.value
+  Boolean(codeEditorUrl.value) && !failed.value && !detached.value
 ))
 const editorTitle = computed(() => (
   codeEditorPath.value ? `Code editor - ${codeEditorPath.value}` : 'Code editor'
