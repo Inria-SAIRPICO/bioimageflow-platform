@@ -462,12 +462,12 @@ def _exception_summary(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
-def _can_open_embedded(status: EditorStatus, path: Path, focus_path: Path | None) -> bool:
+def _can_open_embedded(status: EditorStatus, path: Path, _focus_path: Path | None) -> bool:
     if not status.available:
         return False
-    if focus_path is not None:
-        return status.control_available
-    return path.is_dir() or status.control_available
+    if path.is_dir():
+        return True
+    return status.control_available
 
 
 def _embedded_diagnostics(embedded: object) -> dict[str, object] | None:

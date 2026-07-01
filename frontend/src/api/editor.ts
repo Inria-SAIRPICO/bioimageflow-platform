@@ -1,5 +1,6 @@
 import { api } from '@/api/client'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useUIStore } from '@/stores/ui'
 
 export type EditorOpenMethod = 'external' | 'embedded' | 'clipboard'
 
@@ -87,6 +88,17 @@ export function showCodeEditorDiagnostic(response: EditorOpenResponse): void {
   }))
 }
 
+function editorProjectKey(url: string | null): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url, window.location.href)
+    const folder = parsed.searchParams.get('folder')
+    return folder ? `folder:${folder}` : parsed.origin + parsed.pathname
+  } catch {
+    return url
+  }
+}
+
 export async function openPathWithEditor(
   path: string,
   toast?: Toast | null,
@@ -148,6 +160,16 @@ export async function handleEditorOpenResponse(
     return
   }
   if (response.method === 'embedded' && response.url) {
+    const currentUrl = useUIStoreIfAvailable()?.codeEditorUrl ?? null
+    const currentProject = editorProjectKey(currentUrl)
+    const nextProject = editorProjectKey(response.url)
+    if (currentProject && nextProject && currentProject === nextProject) {
+      await openEditorPath(response.path)
+      window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+        detail: { url: currentUrl, path: response.path },
+      }))
+      return
+    }
     window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
       detail: { url: response.url, path: response.path },
     }))
@@ -160,4 +182,12 @@ export async function handleEditorOpenResponse(
     summary: response.message ?? 'Path copied - open in your local editor.',
     life: 3000,
   })
+}
+
+function useUIStoreIfAvailable(): ReturnType<typeof useUIStore> | null {
+  try {
+    return useUIStore()
+  } catch {
+    return null
+  }
 }

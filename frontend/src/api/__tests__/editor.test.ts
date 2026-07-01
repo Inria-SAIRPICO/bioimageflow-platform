@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { api } from '@/api/client'
 import { getEditorStatus, openPathWithEditor, openToolWithEditor } from '@/api/editor'
+import { useUIStore } from '@/stores/ui'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -11,6 +13,7 @@ const mockedPost = vi.mocked(api.post as any)
 
 describe('editor api helpers', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -116,6 +119,74 @@ describe('editor api helpers', () => {
     expect(listener.mock.calls[0][0].detail).toEqual({
       url: 'http://127.0.0.1:32344',
       path: '/tmp/tool.py',
+    })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('focuses a file without reloading code-server when the project is unchanged', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/old.py')
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
+          path: '/workspace/tools/new.py',
+          message: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: 'http://127.0.0.1:32344',
+          path: '/workspace/tools/new.py',
+          message: null,
+        },
+      })
+
+    await openPathWithEditor('/workspace', null, { focusPath: '/workspace/tools/new.py' })
+
+    expect(mockedPost).toHaveBeenNthCalledWith(1, '/api/v1/editor/open', {
+      path: '/workspace',
+      focus_path: '/workspace/tools/new.py',
+    })
+    expect(mockedPost).toHaveBeenNthCalledWith(2, '/api/v1/editor/open', {
+      path: '/workspace/tools/new.py',
+    })
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      url: currentUrl,
+      path: '/workspace/tools/new.py',
+    })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('reloads code-server when the project changes', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    useUIStore().setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Fworkspace-a',
+      '/workspace-a/tools/old.py',
+    )
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
+        path: '/workspace-b/tools/new.py',
+        message: null,
+      },
+    })
+
+    await openPathWithEditor('/workspace-b', null, { focusPath: '/workspace-b/tools/new.py' })
+
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
+      path: '/workspace-b/tools/new.py',
     })
     window.removeEventListener('bif:open-code-editor', listener)
   })

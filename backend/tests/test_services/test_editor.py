@@ -460,7 +460,7 @@ def test_default_embedded_editor_does_not_report_opened_without_opener(
     assert response.opened is False
 
 
-def test_embedded_folder_focus_waits_for_control_endpoint(tmp_path: Path) -> None:
+def test_embedded_folder_focus_opens_project_before_control_endpoint(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     tool = workspace / "tools" / "tool.py"
@@ -481,8 +481,8 @@ def test_embedded_folder_focus_waits_for_control_endpoint(tmp_path: Path) -> Non
 
     response = service.open_path(str(workspace), str(tool))
 
-    assert embedded.opened == []
-    assert response.method == EditorOpenMethod.CLIPBOARD
+    assert embedded.opened == [workspace]
+    assert response.method == EditorOpenMethod.EMBEDDED
     assert response.path == str(tool)
 
 
