@@ -240,6 +240,66 @@ describe('editor api helpers', () => {
     window.removeEventListener('bif:open-code-editor', listener)
   })
 
+  it('prefers the mounted iframe folder over stale stored project paths', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Ftool_store'
+    useUIStore().setCodeEditorTarget(
+      currentUrl,
+      '/tool_store/pkg/1.0/pkg/old.py',
+      '/tool_store/pkg/1.0/pkg',
+    )
+    const focusRequest = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        message: null
+      }
+    }>()
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: 'http://127.0.0.1:32344/?folder=%2Ftool_store',
+          path: '/tool_store/pkg/1.0/pkg/new.py',
+          project_path: '/tool_store',
+          message: null,
+        },
+      })
+      .mockReturnValueOnce(focusRequest.promise)
+
+    await openPathWithEditor('/tool_store', null, {
+      focusPath: '/tool_store/pkg/1.0/pkg/new.py',
+    })
+
+    expect(mockedPost).toHaveBeenNthCalledWith(1, '/api/v1/editor/open', {
+      path: '/tool_store',
+      focus_path: '/tool_store/pkg/1.0/pkg/new.py',
+    })
+    expect(mockedPost).toHaveBeenNthCalledWith(2, '/api/v1/editor/open', {
+      path: '/tool_store/pkg/1.0/pkg/new.py',
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      url: currentUrl,
+      path: '/tool_store/pkg/1.0/pkg/new.py',
+      projectPath: '/tool_store',
+    })
+    focusRequest.resolve({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344',
+        path: '/tool_store/pkg/1.0/pkg/new.py',
+        message: null,
+      },
+    })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
   it('does not focus or re-open the editor when the same project and file are already visible', async () => {
     const listener = vi.fn()
     window.addEventListener('bif:open-code-editor', listener)

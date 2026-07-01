@@ -188,7 +188,7 @@ export async function handleEditorOpenResponse(
     const currentUrl = uiStore?.codeEditorUrl ?? null
     const currentPath = uiStore?.codeEditorPath ?? null
     const currentProjectPath = (
-      normalizedProjectPath(uiStore?.codeEditorProjectPath) ?? projectPathFromEditorUrl(currentUrl)
+      projectPathFromEditorUrl(currentUrl) ?? normalizedProjectPath(uiStore?.codeEditorProjectPath)
     )
     const nextProjectPath = (
       normalizedProjectPath(response.project_path) ?? projectPathFromEditorUrl(response.url)

@@ -199,7 +199,7 @@ async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path
     assert editor.paths == [str(workspace)]
 
 
-async def test_editor_open_package_tool_opens_source_parent(tmp_path: Path) -> None:
+async def test_editor_open_package_tool_opens_tool_store_root(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     tool_store = tmp_path / "tool_store"
@@ -232,4 +232,86 @@ async def test_editor_open_package_tool_opens_source_parent(tmp_path: Path) -> N
 
     assert response.status_code == 200
     assert response.json()["path"] == str(tool)
-    assert editor.paths == [str(package_root)]
+    assert editor.paths == [str(tool_store.resolve())]
+
+
+async def test_editor_open_symlinked_package_tool_opens_tool_store_root(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool_store = tmp_path / "tool_store"
+    package_version_root = tool_store / "package" / "1.0"
+    package_version_root.mkdir(parents=True)
+    source_root = tmp_path / "source_package"
+    source_root.mkdir()
+    tool = source_root / "package_tool.py"
+    tool.write_text("class PackageTool: pass", encoding="utf-8")
+    symlinked_package = package_version_root / "package"
+    symlinked_package.symlink_to(source_root, target_is_directory=True)
+    symlinked_tool = symlinked_package / "package_tool.py"
+    registry = ToolRegistryService()
+    registry.scan_tool_store(tool_store)
+    registry.register_tool(
+        "PackageTool",
+        ToolMetadata(
+            name="PackageTool",
+            display_name="Package Tool",
+            package="package",
+            package_version="1.0",
+            tool_type="ProcessingTool",
+            source_kind="package",
+            editable=False,
+        ),
+    )
+    registry._sources["PackageTool"] = symlinked_tool
+    editor = _EditorStub()
+    config = AppConfig(tool_registry=registry, workflow_root=workspace, editor_service=editor)
+    async for client in _client(config):
+        response = await client.post(
+            "/api/v1/editor/open-tool",
+            json={"tool_name": "PackageTool"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["path"] == str(symlinked_tool)
+    assert editor.paths == [str(tool_store.resolve())]
+
+
+async def test_editor_open_resolved_package_source_still_opens_tool_store_root(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool_store = tmp_path / "tool_store"
+    (tool_store / "package" / "1.0").mkdir(parents=True)
+    source_root = tmp_path / "source_package"
+    source_root.mkdir()
+    tool = source_root / "package_tool.py"
+    tool.write_text("class PackageTool: pass", encoding="utf-8")
+    registry = ToolRegistryService()
+    registry.scan_tool_store(tool_store)
+    registry.register_tool(
+        "PackageTool",
+        ToolMetadata(
+            name="PackageTool",
+            display_name="Package Tool",
+            package="package",
+            package_version="1.0",
+            tool_type="ProcessingTool",
+            source_kind="package",
+            editable=False,
+        ),
+    )
+    registry._sources["PackageTool"] = tool.resolve()
+    editor = _EditorStub()
+    config = AppConfig(tool_registry=registry, workflow_root=workspace, editor_service=editor)
+    async for client in _client(config):
+        response = await client.post(
+            "/api/v1/editor/open-tool",
+            json={"tool_name": "PackageTool"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["path"] == str(tool.resolve())
+    assert editor.paths == [str(tool_store.resolve())]
