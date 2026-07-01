@@ -181,8 +181,10 @@ class WorkflowDraftService:
         workspace_meta = store.workspace_dir / ".bioimageflow"
         workspace_meta.mkdir(parents=True, exist_ok=True)
         api_url = (api_base_url or "http://127.0.0.1:8000/api/v1").rstrip("/")
+        state_path = workspace_meta / "agent-state.json"
         context = {
-            "agent_state_version": 1,
+            "agent_state_version": 2,
+            "mcp_contract_version": 2,
             "generated_at": _utc_now(),
             "server_boot_id": self.server_boot_id,
             "server_pid": os.getpid(),
@@ -193,44 +195,35 @@ class WorkflowDraftService:
             "workspace_path": str(store.workspace_dir),
             "workflows_root": str(store.root_dir),
             "active_draft_path": str(self._draft_path(store, workflow_id)),
-            "recommended_shell_setup": [
-                "STATE=.bioimageflow/agent-state.json",
-                'API=$(jq -r .api_base_url "$STATE")',
-                'WF=$(jq -r .active_workflow_id "$STATE")',
-                'curl -sS "$API/health"',
-            ],
-            "localhost_reachability_note": (
-                "The API URL is dynamic. Do not guess or hardcode ports. "
-                "If localhost or 127.0.0.1 is blocked by the agent sandbox, "
-                "request permission to run the same curl command outside the sandbox."
-            ),
+            "agent_state_path": str(state_path),
             "mcp_server_command": "bioimageflow-mcp",
             "mcp_client_config": {
                 "command": "bioimageflow-mcp",
                 "cwd": str(store.workspace_dir),
                 "env": {
-                    "BIOIMAGEFLOW_AGENT_STATE": str(
-                        workspace_meta / "agent-state.json"
-                    ),
+                    "BIOIMAGEFLOW_AGENT_STATE": str(state_path),
                 },
             },
-            "operation_api_url": (
-                f"{api_url}/workflow-draft-operations/{workflow_id}"
-            ),
             "recommended_commands": [
-                f"GET {api_url}/health",
-                "MCP bioimageflow-mcp",
-                f"POST {api_url}/workflow-draft-operations/{workflow_id}",
-                f"GET {api_url}/workflow-drafts/{workflow_id}",
-                f"GET {api_url}/tools",
-                f"PUT {api_url}/workflow-drafts/{workflow_id}",
-                f"POST {api_url}/execution/run",
-                f"POST {api_url}/execution/stop",
+                "MCP get_bioimageflow_capabilities {}",
+                "MCP describe_workflow {}",
+                "MCP list_tools {}",
+                "MCP describe_bioimageflow_tool {\"tool_name\":\"<tool name>\"}",
+                "MCP create_node {\"node_id\":\"<id>\",\"tool_name\":\"<tool name>\",\"name\":\"<display name>\",\"position\":[0,0],\"parameters\":{}}",
+                "MCP connect_nodes {\"source_node\":\"<id>\",\"source_output\":\"<output>\",\"target_node\":\"<id>\",\"target_input\":\"<input>\"}",
+                "MCP update_node_parameters {\"node_id\":\"<id>\",\"parameters\":{}}",
+                "MCP apply_workflow_operations {\"operations\":[{\"type\":\"create_node\",\"node_id\":\"<id>\",\"tool_name\":\"<tool name>\",\"name\":\"<display name>\",\"position\":[0,0],\"parameters\":{}}]}",
+                "MCP validate_workflow {}",
+                "MCP run_workflow {\"nodes\":[\"<optional node id>\"]}",
+                "MCP get_execution_status {}",
             ],
         }
-        _json_dump_atomic(workspace_meta / "agent-state.json", context)
+        _json_dump_atomic(state_path, context)
+        source_reference = workspace_meta / PLATFORM_SOURCE_DIR
         (store.workspace_dir / "AGENTS.md").write_text(
-            agent_workspace_instructions(source_path=workspace_meta / PLATFORM_SOURCE_DIR),
+            agent_workspace_instructions(
+                source_path=source_reference if source_reference.exists() else None
+            ),
             encoding="utf-8",
         )
 

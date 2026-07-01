@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -366,6 +367,104 @@ def test_running_embedded_opener_failure_does_not_launch_again(tmp_path: Path) -
     assert response.error_code == "embedded_opener_timeout"
 
 
+def test_reloading_embedded_editor_waits_instead_of_launching_again(tmp_path: Path) -> None:
+    class ReloadingEmbedded(_Embedded):
+        def __init__(self) -> None:
+            self.ready_status = EditorStatus(
+                available=True,
+                url="http://127.0.0.1:32344",
+                version=None,
+                control_available=True,
+            )
+            self.status_values = [
+                EditorStatus(
+                    available=False,
+                    url=None,
+                    version=None,
+                    control_available=True,
+                ),
+                self.ready_status,
+            ]
+            super().__init__(
+                status=self.status_values[0],
+                open_response=EditorOpenResponse(
+                    opened=True,
+                    method=EditorOpenMethod.EMBEDDED,
+                    url="http://127.0.0.1:32344",
+                    path="",
+                ),
+            )
+            self.launches = 0
+
+        def status(self) -> EditorStatus:
+            if self.status_values:
+                return self.status_values.pop(0)
+            return self.ready_status
+
+        def launch(self) -> None:
+            self.launches += 1
+
+        def open_path(self, path: Path, focus_path: Path | None = None) -> EditorOpenResponse:
+            self.opened.append(path)
+            return EditorOpenResponse(
+                opened=True,
+                method=EditorOpenMethod.EMBEDDED,
+                url="http://127.0.0.1:32344",
+                path=str(focus_path or path),
+            )
+
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = ReloadingEmbedded()
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=1.0,
+        embedded_poll_interval=0.0,
+    )
+
+    response = service.open_path(str(tool))
+
+    assert embedded.launches == 0
+    assert embedded.opened == [tool]
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert response.path == str(tool)
+
+
+def test_embedded_open_after_launch_retries_transient_opener_failure(tmp_path: Path) -> None:
+    class LaunchingEmbedded(_LaunchableEmbedded):
+        def __init__(self) -> None:
+            super().__init__()
+            self.failures_remaining = 1
+
+        def open_path(self, path: Path, focus_path: Path | None = None) -> EditorOpenResponse:
+            self.opened.append(path)
+            if self.failures_remaining:
+                self.failures_remaining -= 1
+                raise ConnectionError("workspace is still reloading")
+            return EditorOpenResponse(
+                opened=True,
+                method=EditorOpenMethod.EMBEDDED,
+                url=self.url,
+                path=str(focus_path or path),
+            )
+
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = LaunchingEmbedded()
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=1.0,
+        embedded_poll_interval=0.0,
+    )
+
+    response = service.open_path(str(tool))
+
+    assert embedded.launches == 1
+    assert embedded.opened == [tool, tool]
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert response.path == str(tool)
+
+
 def test_clipboard_fallback_when_no_editor_available(tmp_path: Path) -> None:
     tool = tmp_path / "tool.py"
     tool.write_text("print('x')")
@@ -706,9 +805,20 @@ def test_embedded_manager_launch_command_uses_configured_editor_url(tmp_path: Pa
 def test_default_opener_extension_is_packaged() -> None:
     vsix = default_opener_vsix_path()
 
-    assert vsix.name == "opener-0.0.2.vsix"
+    assert vsix.name == "opener-0.0.3.vsix"
     assert vsix.is_file()
     assert vsix.stat().st_size > 0
+
+
+def test_default_opener_extension_reveals_opened_files() -> None:
+    vsix = default_opener_vsix_path()
+
+    with zipfile.ZipFile(vsix) as archive:
+        extension_source = archive.read("extension/out/extension.js").decode("utf-8")
+        package_json = archive.read("extension/package.json").decode("utf-8")
+
+    assert '"version": "0.0.3"' in package_json
+    assert "revealInExplorer" in extension_source
 
 
 def test_embedded_manager_missing_opener_extension_is_unavailable(tmp_path: Path) -> None:

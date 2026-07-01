@@ -13,6 +13,8 @@ import pytest
 from bioimageflow_server.app import create_app
 from bioimageflow_server.agent_mcp import (
     BioImageFlowMCPGateway,
+    SUPPORTED_MCP_TOOLS,
+    SUPPORTED_OPERATION_TYPES,
     create_mcp_server,
     read_agent_state,
 )
@@ -42,6 +44,20 @@ class _FakeExecutionManager:
     def __init__(self) -> None:
         self.start = AsyncMock()
         self.stop = AsyncMock()
+
+    def get_status(self) -> Any:
+        class _Status:
+            node_statuses: dict[str, Any] = {}
+
+            def model_dump(self) -> dict[str, Any]:
+                return {
+                    "state": "idle",
+                    "last_result": None,
+                    "progress": None,
+                    "node_statuses": {},
+                }
+
+        return _Status()
 
 
 def _write_state(tmp_path: Path, *, workflow_id: str = "folder/wf") -> Path:
@@ -86,26 +102,7 @@ def test_create_mcp_server_registers_expected_tools(tmp_path: Path) -> None:
     server = create_mcp_server(state_path=state_path, mcp_factory=factory)
 
     assert server is created[0]
-    assert set(server.tools) == {
-        "get_active_workflow",
-        "list_tools",
-        "create_node",
-        "delete_node",
-        "rename_node",
-        "update_node_parameters",
-        "set_node_enabled",
-        "move_node",
-        "move_nodes",
-        "set_published_input",
-        "delete_published_input",
-        "set_published_output",
-        "delete_published_output",
-        "connect_nodes",
-        "delete_edge",
-        "validate_workflow",
-        "run_workflow",
-        "stop_execution",
-    }
+    assert set(server.tools) == set(SUPPORTED_MCP_TOOLS)
 
 
 async def test_create_node_calls_backend_operation_api_with_auto_revision(
@@ -777,7 +774,7 @@ async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
     ]
 
 
-async def test_validation_run_and_stop_call_existing_rest_endpoints(
+async def test_validation_run_status_and_stop_call_execution_endpoints(
     tmp_path: Path,
 ) -> None:
     state_path = _write_state(tmp_path, workflow_id="wf")
@@ -795,6 +792,16 @@ async def test_validation_run_and_stop_call_existing_rest_endpoints(
             return httpx.Response(200, json={"valid": True, "errors": []})
         if request.url.path.endswith("/execution/run"):
             return httpx.Response(202, json={"status": "started"})
+        if request.url.path.endswith("/execution/status"):
+            return httpx.Response(
+                200,
+                json={
+                    "state": "idle",
+                    "last_result": None,
+                    "progress": None,
+                    "node_statuses": {},
+                },
+            )
         return httpx.Response(200, json={"status": "stopping"})
 
     gateway = BioImageFlowMCPGateway(
@@ -804,10 +811,18 @@ async def test_validation_run_and_stop_call_existing_rest_endpoints(
 
     validation = await gateway.validate_workflow()
     run = await gateway.run_workflow(nodes=["n1"])
+    status = await gateway.get_execution_status()
     stop = await gateway.stop_execution()
 
     assert validation == {"ok": True, "valid": True, "error_count": 0}
     assert run == {"ok": True, "status": "started"}
+    assert status == {
+        "ok": True,
+        "state": "idle",
+        "last_result": None,
+        "progress": None,
+        "node_statuses": {},
+    }
     assert stop == {"ok": True, "status": "stopping"}
     assert calls == [
         ("GET", "/api/v1/workflow-drafts/wf", {}),
@@ -818,6 +833,7 @@ async def test_validation_run_and_stop_call_existing_rest_endpoints(
             "/api/v1/execution/run",
             {"graph": {"nodes": [], "edges": []}, "workflow_name": "wf", "nodes": ["n1"]},
         ),
+        ("GET", "/api/v1/execution/status", {}),
         ("POST", "/api/v1/execution/stop", {}),
     ]
 
@@ -857,31 +873,61 @@ async def test_mcp_registered_tools_smoke_against_asgi_app(tmp_path: Path) -> No
             mcp_factory=_FakeFastMCP,
         )
 
-        active = await server.tools["get_active_workflow"]()
-        created = await server.tools["create_node"](
-            node_id="n1",
-            tool_name="MissingTool",
-            name="Node",
-            position=[0, 0],
+        capabilities = await server.tools["get_bioimageflow_capabilities"]()
+        draft_read = await server.tools["get_workflow_draft"](include_graph=True)
+        operation_result = await server.tools["apply_workflow_operations"](
+            operations=[
+                {
+                    "type": "create_node",
+                    "node_id": "n1",
+                    "tool_name": "MissingTool",
+                    "name": "Node",
+                    "position": [0, 0],
+                    "parameters": {},
+                }
+            ],
         )
         validation = await server.tools["validate_workflow"]()
         run = await server.tools["run_workflow"](nodes=["n1"])
+        status = await server.tools["get_execution_status"]()
         stop = await server.tools["stop_execution"]()
 
-    assert active == {
-        "ok": True,
-        "api_base_url": "http://test/api/v1",
-        "active_workflow_id": "wf",
-        "current_draft_revision": 0,
+    assert capabilities["ok"] is True
+    assert capabilities["mcp_contract_version"] == 2
+    assert capabilities["active_workflow_id"] == "wf"
+    assert capabilities["current_draft_revision"] == 0
+    assert capabilities["backend_reachable"] is True
+    assert {
+        "get_bioimageflow_capabilities",
+        "get_workflow_draft",
+        "apply_workflow_operations",
+        "get_execution_status",
+    }.issubset(set(capabilities["supported_tools"]))
+    assert set(capabilities["supported_tools"]) == set(SUPPORTED_MCP_TOOLS)
+    assert set(capabilities["supported_operation_types"]) == set(SUPPORTED_OPERATION_TYPES)
+    assert capabilities["max_operation_batch_size"] == 10
+    assert capabilities["supports_execution_status"] is True
+    assert draft_read["ok"] is True
+    assert draft_read["workflow_id"] == "wf"
+    assert draft_read["draft_revision"] == 0
+    assert draft_read["graph_included"] is True
+    assert draft_read["graph"] == {
+        "nodes": [],
+        "edges": [],
+        "published_inputs": [],
+        "published_outputs": [],
     }
-    assert created["ok"] is True
-    assert created["draft_revision"] == 1
-    assert created["validation_valid"] is False
-    assert created["validation_errors"]
+    assert operation_result["ok"] is True
+    assert operation_result["draft_revision"] == 1
+    assert operation_result["validation_valid"] is False
+    assert operation_result["validation_errors"]
+    assert "graph" not in operation_result
     assert validation["ok"] is True
     assert validation["valid"] is False
     assert validation["errors"][0]["type"] == "missing_tool"
     assert run == {"ok": True, "status": "started"}
+    assert status["ok"] is True
+    assert status["state"] == "idle"
     assert stop == {"ok": True, "status": "stopping"}
     execution_manager.start.assert_awaited_once()
     execution_manager.stop.assert_awaited_once()
@@ -1039,6 +1085,84 @@ async def test_create_node_promotes_operation_validation_error_fields(
     }
 
 
+async def test_create_node_promotes_draft_revision_conflict(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 2, "graph": {"nodes": [], "edges": []}},
+            )
+        return httpx.Response(
+            409,
+            json={
+                "error": "draft_revision_conflict",
+                "detail": "Draft revision conflict",
+                "expected_revision": 2,
+                "current_revision": 3,
+                "current_updated_by": "frontend",
+                "current_updated_at": "2026-01-01T00:00:00Z",
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.create_node(
+        node_id="n1",
+        tool_name="Tool",
+        name="Node",
+        position=[0, 0],
+    ) == {
+        "ok": False,
+        "status_code": 409,
+        "error": "draft_revision_conflict",
+        "detail": "Draft revision conflict",
+        "expected_revision": 2,
+        "current_revision": 3,
+        "current_updated_by": "frontend",
+        "current_updated_at": "2026-01-01T00:00:00Z",
+    }
+
+
+async def test_create_node_promotes_workflow_locked(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 2, "graph": {"nodes": [], "edges": []}},
+            )
+        return httpx.Response(
+            423,
+            json={
+                "error": "workflow_locked",
+                "detail": "Workflow editing is locked while execution is in progress",
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.create_node(
+        node_id="n1",
+        tool_name="Tool",
+        name="Node",
+        position=[0, 0],
+    ) == {
+        "ok": False,
+        "status_code": 423,
+        "error": "workflow_locked",
+        "detail": "Workflow editing is locked while execution is in progress",
+    }
+
+
 async def test_create_node_result_surfaces_validation_errors(tmp_path: Path) -> None:
     state_path = _write_state(tmp_path, workflow_id="wf")
 
@@ -1097,6 +1221,24 @@ async def test_create_node_result_surfaces_validation_errors(tmp_path: Path) -> 
     }
 
 
+async def test_connect_nodes_returns_structured_error_for_missing_named_fields(
+    tmp_path: Path,
+) -> None:
+    gateway = BioImageFlowMCPGateway(state_path=_write_state(tmp_path, workflow_id="wf"))
+
+    assert await gateway.connect_nodes(
+        source_node="source",
+        target_node="target",
+    ) == {
+        "ok": False,
+        "error": "invalid_connect_nodes_arguments",
+        "detail": (
+            "source_output and target_input are required when positional_index "
+            "is not provided"
+        ),
+    }
+
+
 async def test_run_workflow_returns_compact_error_when_draft_fetch_fails(
     tmp_path: Path,
 ) -> None:
@@ -1113,6 +1255,26 @@ async def test_run_workflow_returns_compact_error_when_draft_fetch_fails(
         "status_code": 404,
         "error": {"detail": "Workflow not found"},
     }
+
+
+async def test_validation_and_run_return_structured_error_for_missing_graph(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json={"draft_revision": 1})
+        ),
+    )
+
+    expected = {
+        "ok": False,
+        "error": "malformed_backend_response",
+        "detail": "Backend draft response did not include a graph object",
+    }
+    assert await gateway.validate_workflow() == expected
+    assert await gateway.run_workflow() == expected
 
 
 async def test_missing_agent_state_returns_structured_error(tmp_path: Path) -> None:
@@ -1189,6 +1351,406 @@ async def test_malformed_backend_response_returns_structured_error(
         "detail": "Backend returned non-JSON response",
         "body": "not json",
     }
+
+
+def _contract_draft_response(
+    *, workflow_id: str = "folder/wf", revision: int = 6
+) -> dict[str, Any]:
+    return {
+        "draft_version": 1,
+        "workflow_id": workflow_id,
+        "base_saved_revision": "sha256:abc123",
+        "draft_revision": revision,
+        "updated_at": "2026-07-01T12:00:00Z",
+        "updated_by": "agent",
+        "dirty_against_saved": True,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "segment_1",
+                    "name": "Segment",
+                    "tool_name": "SegmentCells",
+                    "enabled": False,
+                    "position": [10, 20],
+                    "parameters": {"threshold": 0.4, "method": "otsu"},
+                    "output_templates": {"mask": "mask.tif"},
+                    "published_inputs": [{"name": "image"}],
+                    "published_outputs": [{"name": "mask"}],
+                }
+            ],
+            "edges": [
+                {
+                    "id": "edge_1",
+                    "source": "load_1",
+                    "target": "segment_1",
+                    "source_output": "image",
+                    "target_input": "image",
+                }
+            ],
+            "published_inputs": [
+                {
+                    "name": "image",
+                    "internal_node_id": "segment_1",
+                    "internal_field": "image",
+                    "kind": "input",
+                    "schema": {"type": "ImageFile"},
+                    "default": None,
+                }
+            ],
+            "published_outputs": [
+                {
+                    "name": "mask",
+                    "internal_node_id": "segment_1",
+                    "internal_output": "mask",
+                    "schema": {"type": "ImageFile"},
+                }
+            ],
+        },
+        "validation": {
+            "valid": False,
+            "errors": [
+                {
+                    "type": "missing_input",
+                    "detail": "Image input is not connected.",
+                    "node": "segment_1",
+                    "field": "image",
+                }
+            ],
+            "node_statuses": {"segment_1": "invalid"},
+        },
+    }
+
+
+def _contract_tool_response() -> dict[str, Any]:
+    return {
+        "name": "SegmentCells",
+        "display_name": "Segment Cells",
+        "package": "bioimageflow-common-tools",
+        "package_version": "1.0.0",
+        "tool_type": "ProcessingTool",
+        "accepts_upstream": True,
+        "dynamic_outputs": False,
+        "dataframe_output": True,
+        "documentation": "Segment cells from an image.",
+        "tags": ["segmentation"],
+        "categories": ["image processing"],
+        "inputs": {
+            "image": {
+                "type": "path",
+                "required": True,
+                "nullable": False,
+                "connectable": "by_default",
+                "default": None,
+                "display_name": "Image",
+            },
+            "threshold": {
+                "type": "number",
+                "required": True,
+                "nullable": False,
+                "connectable": "never",
+                "default": None,
+            },
+            "method": {
+                "type": "string",
+                "required": False,
+                "nullable": False,
+                "connectable": "not_by_default",
+                "default": "otsu",
+                "choices": ["otsu", "manual"],
+            },
+        },
+        "outputs": {"mask": {"type": "path", "default": "mask.tif"}},
+        "environment": {"status": "ready"},
+        "source_kind": "package",
+        "editable": False,
+    }
+
+
+async def test_capabilities_include_contract_tools_and_reachable_draft(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="folder/wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/v1/workflow-drafts/folder/wf"
+        return httpx.Response(200, json=_contract_draft_response(revision=12))
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await gateway.get_bioimageflow_capabilities()
+
+    assert result["ok"] is True
+    assert result["mcp_contract_version"] == 2
+    assert result["active_workflow_id"] == "folder/wf"
+    assert result["current_draft_revision"] == 12
+    assert result["backend_reachable"] is True
+    assert result["backend_status"] == "reachable"
+    assert set(result["supported_tools"]) == set(SUPPORTED_MCP_TOOLS)
+    assert set(result["supported_operation_types"]) == set(SUPPORTED_OPERATION_TYPES)
+    assert result["max_operation_batch_size"] == 10
+    assert result["supports_execution_status"] is True
+    assert "draft_revision_conflict" in result["error_codes"]
+    assert "workflow_locked" in result["error_codes"]
+
+
+async def test_get_workflow_draft_includes_graph_metadata_summary_and_validation(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="folder/wf")
+    seen_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        return httpx.Response(200, json=_contract_draft_response())
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await gateway.get_workflow_draft(include_graph=True)
+
+    assert seen_paths == ["/api/v1/workflow-drafts/folder/wf"]
+    assert result["ok"] is True
+    assert result["workflow_id"] == "folder/wf"
+    assert result["draft_version"] == 1
+    assert result["draft_revision"] == 6
+    assert result["base_saved_revision"] == "sha256:abc123"
+    assert result["dirty_against_saved"] is True
+    assert result["graph_summary"] == {
+        "node_count": 1,
+        "edge_count": 1,
+        "published_input_count": 1,
+        "published_output_count": 1,
+    }
+    assert result["graph_included"] is True
+    assert result["graph"] == _contract_draft_response()["graph"]
+    assert result["validation"] == {
+        "valid": False,
+        "error_count": 1,
+        "errors": [
+            {
+                "type": "missing_input",
+                "detail": "Image input is not connected.",
+                "node": "segment_1",
+                "field": "image",
+            }
+        ],
+        "node_statuses": {"segment_1": "invalid"},
+    }
+
+
+async def test_get_workflow_draft_can_omit_graph(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path, workflow_id="folder/wf")
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=_contract_draft_response())
+        ),
+    )
+
+    result = await gateway.get_workflow_draft(include_graph=False)
+
+    assert result["ok"] is True
+    assert result["workflow_id"] == "folder/wf"
+    assert result["graph_summary"]["node_count"] == 1
+    assert result["graph_included"] is False
+    assert "graph" not in result
+
+
+async def test_describe_workflow_compacts_graph_without_parameters(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="folder/wf")
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=_contract_draft_response())
+        ),
+    )
+
+    result = await gateway.describe_workflow(include_parameters=False)
+
+    assert result["ok"] is True
+    assert result["workflow_id"] == "folder/wf"
+    assert result["draft_revision"] == 6
+    assert result["nodes"] == [
+        {
+            "id": "segment_1",
+            "name": "Segment",
+            "tool_name": "SegmentCells",
+            "enabled": False,
+            "position": [10, 20],
+            "parameter_names": ["threshold", "method"],
+            "output_template_names": ["mask"],
+            "has_sub_workflow": False,
+            "published_input_names": ["image"],
+            "published_output_names": ["mask"],
+        }
+    ]
+    assert "parameters" not in result["nodes"][0]
+    assert result["edges"] == _contract_draft_response()["graph"]["edges"]
+    assert result["published_inputs"] == _contract_draft_response()["graph"][
+        "published_inputs"
+    ]
+    assert result["published_outputs"] == _contract_draft_response()["graph"][
+        "published_outputs"
+    ]
+
+
+async def test_describe_workflow_includes_parameters_when_requested(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="folder/wf")
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=_contract_draft_response())
+        ),
+    )
+
+    result = await gateway.describe_workflow(include_parameters=True)
+
+    assert result["nodes"][0]["parameters"] == {
+        "threshold": 0.4,
+        "method": "otsu",
+    }
+
+
+async def test_describe_bioimageflow_tool_returns_one_normalized_tool(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requested_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(request.url.path)
+        return httpx.Response(200, json=[_contract_tool_response()])
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await gateway.describe_bioimageflow_tool("SegmentCells")
+
+    assert requested_paths == ["/api/v1/tools"]
+    assert result["ok"] is True
+    assert result["tool"]["name"] == "SegmentCells"
+    assert result["tool"]["inputs"] == _contract_tool_response()["inputs"]
+    assert result["tool"]["outputs"] == _contract_tool_response()["outputs"]
+    assert result["tool"]["creation"] == {
+        "default_parameters": {"method": "otsu"},
+        "required_unconnected_inputs": ["threshold"],
+        "connectable_inputs": ["image", "method"],
+        "default_output_templates": {"mask": "mask.tif"},
+    }
+
+
+async def test_describe_bioimageflow_tool_returns_tool_not_found(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=[_contract_tool_response()])
+        ),
+    )
+
+    assert await gateway.describe_bioimageflow_tool("MissingTool") == {
+        "ok": False,
+        "error": "tool_not_found",
+        "tool_name": "MissingTool",
+    }
+
+
+async def test_apply_workflow_operations_fetches_revision_and_posts_batch(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="folder/wf")
+    requests: list[tuple[str, str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        requests.append((request.method, request.url.path, payload))
+        if request.method == "GET":
+            return httpx.Response(200, json=_contract_draft_response(revision=12))
+        return httpx.Response(
+            200,
+            json={
+                "workflow_id": "folder/wf",
+                "draft_revision": 13,
+                "validation": {
+                    "valid": False,
+                    "errors": [
+                        {
+                            "type": "missing_tool",
+                            "detail": "Tool not found: MissingTool",
+                            "node": "new_1",
+                            "edge_id": None,
+                            "field": None,
+                        }
+                    ],
+                },
+                "graph": {"nodes": [{"id": "new_1"}], "edges": []},
+            },
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+    operations = [
+        {
+            "type": "create_node",
+            "node_id": "new_1",
+            "tool_name": "MissingTool",
+            "name": "New",
+            "position": [0, 0],
+            "parameters": {},
+        },
+        {"type": "move_node", "node_id": "new_1", "position": [40, 80]},
+    ]
+
+    result = await gateway.apply_workflow_operations(
+        operations=operations,
+        validate=False,
+    )
+
+    assert requests == [
+        ("GET", "/api/v1/workflow-drafts/folder/wf", {}),
+        (
+            "POST",
+            "/api/v1/workflow-draft-operations/folder/wf",
+            {
+                "expected_revision": 12,
+                "updated_by": "agent",
+                "validate": False,
+                "operations": operations,
+            },
+        ),
+    ]
+    assert result == {
+        "ok": True,
+        "workflow_id": "folder/wf",
+        "draft_revision": 13,
+        "validation_valid": False,
+        "validation_errors": [
+            {
+                "type": "missing_tool",
+                "detail": "Tool not found: MissingTool",
+                "node": "new_1",
+                "edge_id": None,
+                "field": None,
+            }
+        ],
+    }
+    assert "graph" not in result
 
 
 def test_mcp_tools_have_descriptions(tmp_path: Path) -> None:

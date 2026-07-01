@@ -1,84 +1,77 @@
 # Execution For Agents
 
-Prefer MCP `run_workflow` and `stop_execution` when MCP tools are available.
-The MCP tools call the existing execution REST endpoints.
+Use MCP tools for validation, execution, status checks, and stopping.
+Do not run saved `workflow.json` directly and do not submit raw graph payloads through shell or REST procedures.
 
-Execution REST uses the graph in the request body. It does not implicitly run
-the current backend draft, the saved `workflow.json`, or a workflow id alone. To
-run the latest draft through REST, first read the draft and send that graph.
+## Before Running
 
-Disabled nodes (`enabled: false`) are skipped when the submitted graph is built
-for execution.
+Refresh context:
 
-The frontend blocks run actions while a user-visible draft conflict is
-unresolved. Agents that run through the HTTP API should still re-read the draft
-immediately before execution so they submit the intended graph.
+```json
+{"tool": "describe_workflow", "arguments": {"include_parameters": false}}
+```
+
+Validate the latest draft:
+
+```json
+{"tool": "validate_workflow", "arguments": {}}
+```
+
+Fix validation errors through MCP editing tools before running unless the user explicitly asks to run despite warnings and the capability contract allows it.
+Disabled nodes are skipped when the latest draft is built for execution.
 
 ## Run Latest Draft
 
-MCP:
+Run the current draft:
 
-```text
-run_workflow
+```json
+{"tool": "run_workflow", "arguments": {}}
 ```
 
-REST fallback:
-
-```sh
-STATE=.bioimageflow/agent-state.json
-API=$(jq -r .api_base_url "$STATE")
-WF=$(jq -r .active_workflow_id "$STATE")
-curl -sS "$API/health"
-```
-
-Use exactly the `API` value from `agent-state.json`; it contains the current
-backend port. If the health check is blocked by an agent sandbox, request
-permission to run the same `curl` command outside the sandbox instead of
-guessing another port.
-
-```sh
-curl -s "$API/workflow-drafts/$WF" > /tmp/bif-run-draft.json
-
-jq -n   --argjson graph "$(jq .graph /tmp/bif-run-draft.json)"   --arg workflow "$WF"   '{graph: $graph, workflow_name: $workflow}'   | curl -s -X POST "$API/execution/run"       -H 'Content-Type: application/json'       --data-binary @-
-```
-
-The run graph is the body you sent. Later draft edits do not alter an already
-started run.
+The execution uses the draft captured by the MCP tool at run start.
+Later workflow edits do not alter an already started run.
 
 ## Run Selected Nodes
 
-Send the full graph plus `nodes`. The backend builds execution from the
-submitted full graph and runs the selected node ids according to current
-execution rules. The request still needs the complete graph.
+Run selected target nodes from the latest draft:
 
 ```json
 {
-  "graph": {},
-  "workflow_name": "wf",
-  "nodes": ["blur_1", "segment_1"]
+  "tool": "run_workflow",
+  "arguments": {
+    "nodes": ["blur_1", "threshold_1"]
+  }
 }
 ```
 
-## Locks
-
-While execution is running, draft writes and graph-editing validation may return
-`423 workflow_locked`. Poll status or stop execution before writing. After the
-lock clears, re-read the draft before retrying any write.
+Selected-node execution still depends on the current workflow graph and its upstream dependencies.
+Use exact node ids from `describe_workflow`.
 
 ## Status
 
-```sh
-curl -s "$API/execution/status" | jq .
-```
+Use `get_execution_status` for progress and final state.
 
-Status includes state, progress, last result, and per-node statuses when
-available.
+Expected status information may include state, progress, active node, last result, and per-node statuses.
 
 ## Stop
 
-```sh
-curl -s -X POST "$API/execution/stop"
+Stop the current execution:
+
+```json
+{"tool": "stop_execution", "arguments": {}}
 ```
 
-Stop returns `stopping`. It is cooperative; keep polling status until execution
-is no longer running.
+Stopping is cooperative.
+Poll status with `get_execution_status` until execution is no longer running when the task requires confirmation.
+
+## Locks
+
+While execution is running, graph edits and validation may return `workflow_locked`.
+Wait for completion, call `stop_execution`, or ask the user which behavior they want.
+After the lock clears, call `describe_workflow` again before retrying any edit.
+
+## Frontend Conflicts
+
+The frontend blocks run actions while a user-visible draft conflict is unresolved.
+Agents should not resolve that conflict by editing saved files.
+Ask the user to resolve the frontend choice, then refresh with `describe_workflow`.

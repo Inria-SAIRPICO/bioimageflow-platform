@@ -34,6 +34,8 @@
                 "--reload-exclude",
                 ".pixi/*",
                 "--reload-exclude",
+                ".worktrees/*",
+                "--reload-exclude",
                 "workflows/.bioimageflow-agent/*",
                 "--log-config",
                 "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"

@@ -109,7 +109,7 @@ The module entrypoint uses the packaged backend logging config by default, so ap
 
 ```bash
 cd backend
-uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude ".pixi/*" --log-config src/bioimageflow_server/logging.yaml
+uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude ".pixi/*" --reload-exclude ".worktrees/*" --log-config src/bioimageflow_server/logging.yaml
 ```
 
 ## Quick Start — Desktop + HMR (development)

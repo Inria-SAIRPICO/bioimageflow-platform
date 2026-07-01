@@ -78,14 +78,22 @@ def _default_url_probe(url: str) -> bool:
 
 def _default_opener_call(url: str, params: dict[str, str]) -> bool:
     try:
-        response = httpx.get(url, params=params, timeout=0.5)
-    except httpx.HTTPError:
+        response = httpx.get(url, params=params, timeout=5.0)
+    except httpx.HTTPError as exc:
+        logger.warning("Embedded editor opener request failed: %s", _exception_summary(exc))
         return False
-    return 200 <= response.status_code < 300
+    if 200 <= response.status_code < 300:
+        return True
+    logger.warning(
+        "Embedded editor opener returned HTTP %s: %s",
+        response.status_code,
+        response.text.strip()[:500],
+    )
+    return False
 
 
 def default_opener_vsix_path() -> Path:
-    return Path(str(files("bioimageflow_server._external.opener") / "opener-0.0.2.vsix"))
+    return Path(str(files("bioimageflow_server._external.opener") / "opener-0.0.3.vsix"))
 
 
 def _default_environment_manager_provider() -> Any:
@@ -345,7 +353,12 @@ class EditorService:
                 "Embedded editor control endpoint unavailable before open: diagnostics=%s",
                 _embedded_diagnostics(self._embedded),
             )
-        if status.available:
+        if status.available or status.control_available:
+            if not status.available:
+                logger.info(
+                    "Embedded editor control endpoint is available while editor URL is unavailable; "
+                    "waiting for the existing editor instead of launching"
+                )
             response = self._open_with_running_embedded(
                 normalized,
                 normalized_focus,
@@ -464,19 +477,26 @@ class EditorService:
     ) -> EditorOpenResponse | None:
         deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
         last_status: EditorStatus | None = None
+        last_error: Exception | None = None
         while True:
             status = self._embedded.status()
             last_status = status
             if _can_open_embedded(status, path, focus_path):
-                return self._embedded.open_path(path, focus_path)
+                try:
+                    return self._embedded.open_path(path, focus_path)
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("Embedded editor open after launch failed: %s", exc)
             if time.monotonic() >= deadline:
                 logger.warning(
                     "Embedded editor did not become ready before timeout: "
-                    "available=%s control_available=%s url=%s focus_requested=%s diagnostics=%s",
+                    "available=%s control_available=%s url=%s focus_requested=%s "
+                    "last_error=%s diagnostics=%s",
                     last_status.available if last_status else None,
                     last_status.control_available if last_status else None,
                     last_status.url if last_status else None,
                     focus_path is not None,
+                    _exception_summary(last_error) if last_error else None,
                     _embedded_diagnostics(self._embedded),
                 )
                 return None

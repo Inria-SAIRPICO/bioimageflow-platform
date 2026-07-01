@@ -1,36 +1,32 @@
 # Agent Docs
 
-Start with the workspace root `AGENTS.md`. It gives the shortest safe path for
-editing the active workflow. These files add task-oriented detail for agents
-that need examples, endpoint shapes, or recovery steps.
+Start with the workspace root `AGENTS.md`.
+It is the shortest contract for editing the active workflow through BioImageFlow MCP tools.
 
-Files:
+These pages expand the same MCP-only agent contract:
 
-- `api-reference.md`: endpoints, request payloads, response fields, and common
-  error codes.
-- `workflow-editing.md`: graph mutation cookbook for creating, editing,
-  connecting, enabling, disabling, executing, deleting nodes, and authoring
-  workflow-local tools.
-- `execution.md`: run semantics, selected-node execution, locks, status, stop
-  behavior, and draft-vs-run graph rules.
-- `troubleshooting.md`: quick fixes for offline API, stale state, 409, 423,
-  validation errors, missing tools, and stale temp files.
+- `api-reference.md`: MCP tool groups, required first calls, arguments, responses, and error handling.
+- `workflow-editing.md`: MCP examples for inspecting, creating, connecting, updating, batching, publishing, and deleting workflow graph elements.
+- `execution.md`: MCP validation, full-run and selected-node execution, locks, status, and stopping behavior.
+- `troubleshooting.md`: MCP failure recovery, stale revisions, frontend conflicts, validation problems, and missing tool metadata.
 
-Workflow editing order:
+## Required First Calls
 
-1. MCP first: use `bioimageflow-mcp` when MCP tools are available.
-2. Operation REST second: use `POST /workflow-draft-operations/{workflow_id}`
-   for semantic graph edits.
-3. Raw full-DAG HTTP fallback: use `GET/PUT /workflow-drafts/{workflow_id}` only
-   as the canonical diagnostic escape hatch.
+Before editing a workflow, call:
 
-## MCP client setup
+1. `get_bioimageflow_capabilities` with `{}`.
+2. `describe_workflow` with `{}` for compact graph state, or `get_workflow_draft` when the full graph is needed.
+3. `list_tools` with `{}` or `describe_bioimageflow_tool` for each BioImageFlow tool you plan to use.
 
-Configure the MCP server with command `bioimageflow-mcp`. Run it from the
-workspace root so it can read `.bioimageflow/agent-state.json`, or set
-`BIOIMAGEFLOW_AGENT_STATE` to the absolute state file path.
+Use exact tool names, input names, output names, and parameter names from MCP metadata.
+Do not infer names from labels, filenames, or saved JSON.
+Use `apply_workflow_operations` for small ordered batches of related graph edits.
+Use `get_execution_status` to inspect progress or the latest execution result after starting or stopping a run.
 
-Generic MCP config:
+## MCP Client Setup
+
+Configure the MCP server with command `bioimageflow-mcp`.
+Run it from the workspace root so it can read `.bioimageflow/agent-state.json`, or set `BIOIMAGEFLOW_AGENT_STATE` to the absolute state file path.
 
 ```json
 {
@@ -42,32 +38,16 @@ Generic MCP config:
 }
 ```
 
-The API port is dynamic. Agents must read `api_base_url` from
-`.bioimageflow/agent-state.json`; they must not guess or hardcode a port such
-as `8008`. If `curl -sS "$API/health"` fails because the agent is sandboxed
-from localhost or 127.0.0.1, retry the same command with the agent's normal
-permission/escalation flow.
+The state file includes `mcp_contract_version`, `active_workflow_id`, `current_draft_revision`, `workspace_path`, `active_draft_path`, and `mcp_client_config`.
+Treat `current_draft_revision` as informational unless the MCP tool asks for an `expected_revision`.
 
-After an agent writes a draft, the frontend is notified. A clean canvas should
-update automatically; a canvas with local edits will ask the user to resolve the
-conflict.
+## Agent Rules
 
-If `.bioimageflow/platform-source/` is present in a workspace, treat it as a
-read-only reference copy. Do not edit files there to change the running app or a
-workflow.
+Use MCP tools for workflow inspection, editing, validation, and execution.
+Do not edit saved `workflow.json` to change the open workflow.
+Do not edit `.bioimageflow/platform-source/`; it is a read-only reference copy.
+Do not use REST or shell request procedures for agent workflow actions.
+If MCP fails, report the tool name, error code, and detail instead of changing files directly.
 
-## Workflow-local tool authoring
-
-Agents may create and edit workflow-local tools for the active workflow. Use the
-active workflow id from `.bioimageflow/agent-state.json` as `$WF`.
-
-- Create a scaffold with `POST /tools?workflow_name=$WF`.
-- Resolve editable source with
-  `GET /tools/{tool_name}/source?workflow_name=$WF`.
-- Edit the returned Python file path directly when changing tool behavior.
-- Verify the backend saw the edit with `GET /tools` or MCP `list_tools`; a valid
-  edit should produce `tool_reload`, and deletion should produce `tool_removed`.
-- Fix Python syntax/import errors if the platform reports `tool_reload_failed`.
-
-Do not edit `.bioimageflow/platform-source/` for workflow-local tool changes;
-that copy is read-only reference material.
+Workflow-local tool source belongs to the active workflow, not `.bioimageflow/platform-source/`.
+Use the MCP metadata and platform docs to identify editable workflow-local tools before changing tool code.

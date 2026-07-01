@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from importlib import resources
 from pathlib import Path
 
 
 PLATFORM_SOURCE_DIR = "platform-source"
+AGENT_INSTRUCTIONS_TEMPLATE = "agent_workspace_instructions.md"
 
 
 def source_checkout_root() -> Path | None:
@@ -108,10 +110,9 @@ def _sanitize_source_reference(source_path: Path) -> None:
     (source_path / "READ_ONLY_AGENT_NOTE.md").write_text(
         """# Read-Only Agent Context
 
-This checkout is a reference copy for agents. Do not edit files here to change
-BioImageFlow behavior or workflows. The running app uses the installed source,
-not this clone. Make workflow changes through the local API described in the
-workspace root `AGENTS.md`.
+This checkout is a reference copy for agents. Do not edit files here to change BioImageFlow behavior or workflows.
+The running app uses the installed source, not this clone.
+Make workflow changes through the BioImageFlow MCP tools described in the workspace root `AGENTS.md`.
 """,
         encoding="utf-8",
     )
@@ -126,13 +127,9 @@ Status: `{status}`
 
 Expected location: `{PLATFORM_SOURCE_DIR}/`
 
-This source tree is for agent context only. It is a read-only reference copy of
-BioImageFlow platform docs and implementation. Editing files here will not change
-the running application and may confuse future agents.
+This source tree is for agent context only. It is a read-only reference copy of BioImageFlow platform docs and implementation. Editing files here will not change the running application and may confuse future agents.
 
-Use it to inspect docs, API models, routers, frontend stores, and implementation
-patterns. Make workflow changes through the local BioImageFlow API described in
-the workspace root `AGENTS.md`.
+Use it to inspect docs, models, frontend stores, and implementation patterns. Make workflow changes through the BioImageFlow MCP tools described in the workspace root `AGENTS.md`.
 """,
         encoding="utf-8",
     )
@@ -144,230 +141,9 @@ def agent_workspace_instructions(*, source_path: Path | None = None) -> str:
         if source_path is not None
         else "optional read-only platform docs and implementation reference"
     )
-    return f"""# BioImageFlow Agent Instructions
-
-BioImageFlow is a local app for designing and running bioimage analysis
-workflows. A workflow is a graph: nodes run tools, and edges connect outputs
-from one node to inputs on another.
-
-Your job is to edit the live workflow draft, validate the graph, and execute it
-when asked. Prefer MCP tools for workflow edits when available. Operation REST
-is the next best path. Raw full-DAG HTTP replacement is a diagnostic fallback.
-
-## What To Read
-
-- `.bioimageflow/agent-state.json`: runtime pointers only. Read
-  `api_base_url` and `active_workflow_id` from here; do not treat this file as
-  workflow data.
-- MCP first: use `bioimageflow-mcp` when your environment supports MCP tools.
-- Operation REST second: `POST /workflow-draft-operations/$WF` applies small
-  semantic edit batches while the backend owns graph mutation rules.
-- Raw full-DAG HTTP fallback: `GET/PUT /workflow-drafts/$WF` remains the
-  canonical source-of-truth contract and diagnostic escape hatch.
-- `workflow.json`: saved/exported artifact. Do not edit it to change the open
-  workflow.
-- `.bioimageflow/platform-source/`: {source_status}.
-  Treat every file under it as read-only; editing it will not change the
-  running app or workflow.
-- `current_draft_revision` and `active_draft_path`, if present in state: useful
-  diagnostics only. Fresh-read the draft before every write.
-
-## First-Run Checklist
-
-1. Set `API` from `api_base_url` and `WF` from `active_workflow_id`.
-2. Health check: `curl -sS "$API/health"`.
-3. MCP first: if MCP is available, start `bioimageflow-mcp` and use its tools.
-4. Use `get_active_workflow` and `list_tools` MCP tools before edits.
-5. Create or edit with MCP graph tools such as `create_node`, `rename_node`,
-   `update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`,
-   `connect_nodes`, `delete_edge`, and `delete_node`.
-   Use `move_nodes` for bulk layout; it only changes node positions.
-   For nested sub-workflow layout, pass `scope.sub_workflow_path` to
-   `move_node` or `move_nodes`. Scoped edits are layout-only.
-   Edit published workflow inputs and outputs with `set_published_input`,
-   `delete_published_input`, `set_published_output`, and
-   `delete_published_output`.
-6. Operation REST second: when MCP is unavailable, use
-   `POST $API/workflow-draft-operations/$WF` with semantic operations.
-7. Raw full-DAG HTTP fallback: read the live draft with
-   `GET $API/workflow-drafts/$WF`.
-8. Save the returned `draft_revision` and full `graph`.
-9. Validate without saving: `PUT $API/graph` with
-   `{{"graph": graph, "workflow_name": WF}}`.
-10. Write the raw draft only as fallback with `PUT $API/workflow-drafts/$WF`:
-   `{{"graph": graph, "expected_revision": draft_revision, "updated_by": "agent", "validate": true}}`
-11. Expect the open canvas to update automatically when the user has no local
-   conflict. If the user has local edits, BioImageFlow will ask them which
-   version to keep.
-12. Execute the latest draft graph: use MCP `run_workflow` or
-   `POST $API/execution/run` with
-   `{{"graph": graph, "workflow_name": WF}}`.
-13. Check or stop execution: `GET $API/execution/status`,
-    `POST $API/execution/stop`.
-
-## Workflow-local tool authoring
-
-Workflow-local tools live in the active workflow's `tools/` directory and are
-the editable tool surface for agents. Package/global tools may be read-only or
-non-deletable.
-
-Create a scaffold when needed:
-
-```sh
-# POST $API/tools?workflow_name=$WF
-curl -sS -X POST "$API/tools?workflow_name=$WF" \
-  -H 'Content-Type: application/json' \
-  -d '{{"name":"MyTool","tool_type":"ProcessingTool"}}'
-```
-
-Resolve the Python source for an existing workflow-local tool before editing:
-
-```sh
-TOOL=MyTool
-# GET $API/tools/$TOOL/source?workflow_name=$WF
-curl -sS "$API/tools/$TOOL/source?workflow_name=$WF"
-```
-
-After editing a workflow-local Python file, the backend hot-reload watcher should
-publish `tool_reload`. If a tool file is deleted, it should publish
-`tool_removed`. If a source edit is invalid, expect a `tool_reload_failed`
-system error and fix the Python source. Verify the platform view with
-`GET $API/tools` or MCP `list_tools`.
-
-Do not edit `.bioimageflow/platform-source/` to create or change workflow tools;
-that directory is a read-only platform reference.
-
-## MCP client setup
-
-Run from the workspace root so `bioimageflow-mcp` can read
-`.bioimageflow/agent-state.json`, or set `BIOIMAGEFLOW_AGENT_STATE` to the
-absolute state file path.
-
-Generic MCP server config:
-
-```json
-{{
-  "command": "bioimageflow-mcp",
-  "cwd": "<workspace root>",
-  "env": {{
-    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json"
-  }}
-}}
-```
-
-If the client does not support `cwd`, set `BIOIMAGEFLOW_AGENT_STATE` explicitly.
-
-## API URL And Sandbox
-
-The backend port is dynamic. Always read `api_base_url` from
-`.bioimageflow/agent-state.json`. Do not guess or hardcode ports such as 8008,
-and do not switch to another port unless the state file changes.
-
-Recommended setup:
-
-```sh
-STATE=.bioimageflow/agent-state.json
-API=$(jq -r .api_base_url "$STATE")
-WF=$(jq -r .active_workflow_id "$STATE")
-curl -sS "$API/health"
-```
-
-Sandboxed agents may be blocked from reaching localhost or 127.0.0.1 even when
-BioImageFlow is running. If the health check fails with a permission, sandbox,
-or connection error, request permission to run the same curl command outside the sandbox.
-Do not edit `workflow.json` or the read-only platform source as a fallback.
-
-## Draft Write Rule
-
-MCP first, Operation REST second, Raw full-DAG HTTP fallback.
-
-MCP graph-editing tools call the backend operation API. They do not mutate graph
-JSON locally. A capable agent can add a node with one MCP `create_node` call.
-Use MCP `move_nodes` or REST `move_nodes` when arranging several nodes; do not
-send the whole graph just to update canvas layout.
-For nested sub-workflows, `scope.sub_workflow_path` addresses the target nested
-graph by node ids from the root. Scoped operation support is limited to
-`move_node` and `move_nodes`.
-Published interface tools (`set_published_input`, `delete_published_input`,
-`set_published_output`, `delete_published_output`) also call the backend
-operation API; do not edit `published_inputs` or `published_outputs` locally
-when MCP or operation REST is available. For nullable published interface fields,
-MCP preserves omitted values; send `set_schema: true` or `set_default: true`
-with `null` only when you intend to clear a stored value.
-Published interface targets are validated against backend tool metadata, so use
-exact input names and static output names from MCP `list_tools` or `GET /tools`.
-Dynamic or passthrough outputs may use resolved or inherited output names, but
-not the internal `_passthrough` marker.
-
-For REST semantic edits, use `POST /workflow-draft-operations/{{workflow_id}}`:
-
-```json
-{{
-  "expected_revision": "<latest draft_revision>",
-  "updated_by": "agent",
-  "validate": true,
-  "operations": [
-    {{
-      "type": "create_node",
-      "node_id": "blur_1",
-      "tool_name": "GaussianBlur",
-      "name": "Blur",
-      "position": [240, 160],
-      "parameters": {{}}
-    }}
-  ]
-}}
-```
-
-`PUT /workflow-drafts/{{workflow_id}}` is full-graph replacement, not patch.
-Always send the complete graph and preserve unchanged `nodes`, `edges`,
-`published_inputs`, and `published_outputs`. Use it when MCP and operation REST
-are unavailable or when diagnosing the complete draft state.
-
-On `409 draft_revision_conflict`: re-read the draft, reapply your intended
-change to the new graph, then retry with the new `draft_revision`.
-
-On `423 workflow_locked`: execution is running. Check status, stop or wait, then
-write after the lock clears.
-
-## Frontend Sync
-
-After a successful draft write, connected frontends receive a draft-change
-event. A clean canvas usually updates automatically. If the user has local
-canvas edits, the UI offers three choices: apply agent changes, keep the canvas,
-or save the agent version as a copy. Do not try to resolve that conflict by
-editing `workflow.json`.
-
-Save, run, and export are blocked while that conflict is unresolved. Export
-prompts the user that the workflow will be saved first, then exports the saved
-workflow.
-
-## Raw Full-DAG Fallback Graph Edits
-
-Use this section only when MCP and operation REST are unavailable or when
-diagnosing the complete draft contract. For normal edits, use MCP graph tools or
-`POST /workflow-draft-operations/{{workflow_id}}`.
-
-- Create node: add an entry to `graph.nodes` with `id`, `name`, `tool_name`,
-  `position`, and `parameters`. Use `GET /tools` for valid tool names and
-  parameter names.
-- Edit node: change `name`, `parameters`, `enabled`, `resources`, or
-  `output_templates`.
-- Connect nodes: add an edge to `graph.edges`. Use `column_ref` for named
-  output-to-input connections; use `positional` for ordered upstream inputs.
-- Replace a connection: remove the old edge for that target input, then add the
-  new edge.
-- Enable or disable node: set `enabled` to `true` or `false`, then save the
-  full draft. Disabled nodes are skipped in future executions; this does not
-  stop an already running execution.
-- Execute selected nodes: send the full graph to `POST /execution/run` with
-  `nodes` set to the node ids to run, for example
-  `{{"graph": graph, "workflow_name": WF, "nodes": ["node_id"]}}`.
-- Stop current execution: `POST $API/execution/stop`, then poll
-  `GET $API/execution/status` until it is idle.
-- Delete node: remove the node and every edge where it is source or target.
-
-## More Detail
-
-- Expanded docs may be available in `.bioimageflow/platform-source/docs/agents/`.
-"""
+    template = (
+        resources.files("bioimageflow_server.data")
+        .joinpath(AGENT_INSTRUCTIONS_TEMPLATE)
+        .read_text(encoding="utf-8")
+    )
+    return template.replace("{{SOURCE_STATUS}}", source_status)

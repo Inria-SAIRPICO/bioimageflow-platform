@@ -1,209 +1,304 @@
-# Agent API Reference
+# Agent MCP Reference
 
-Use `api_base_url` from `.bioimageflow/agent-state.json`; it already includes
-`/api/v1`. The port is dynamic. Do not guess or hardcode ports such as `8008`.
+This page describes the BioImageFlow MCP contract for agents.
+Use these tools for workflow inspection, editing, validation, and execution.
 
-Recommended setup:
+## State Metadata
 
-```sh
-STATE=.bioimageflow/agent-state.json
-API=$(jq -r .api_base_url "$STATE")
-WF=$(jq -r .active_workflow_id "$STATE")
-curl -sS "$API/health"
+`.bioimageflow/agent-state.json` is runtime metadata, not workflow data.
+Useful fields include `mcp_contract_version`, `active_workflow_id`, `current_draft_revision`, `workspace_path`, `workflows_root`, `active_draft_path`, `agent_state_path`, and `mcp_client_config`.
+
+## Required First Calls
+
+`get_bioimageflow_capabilities`
+
+```json
+{"tool": "get_bioimageflow_capabilities", "arguments": {}}
 ```
 
-If localhost or 127.0.0.1 is blocked by the agent sandbox, request permission
-to run the same `curl` command outside the sandbox. Do not use a different port
-unless `agent-state.json` changed.
+Returns supported contract version, available MCP tools, operation limits, and error conventions.
+Use this response to decide whether optional tools such as batch edit or execution status are available.
 
-## Preferred Editing Paths
+`describe_workflow`
 
-Use MCP first when available:
-
-```sh
-bioimageflow-mcp
+```json
+{"tool": "describe_workflow", "arguments": {"include_parameters": false}}
 ```
 
-MCP client setup: use command `bioimageflow-mcp` with `cwd` set to the workspace
-root, or set `BIOIMAGEFLOW_AGENT_STATE` to
-`<workspace root>/.bioimageflow/agent-state.json`.
+Returns the live workflow draft description and revision metadata.
+Use this instead of reading saved `workflow.json`.
+
+`get_workflow_draft`
+
+```json
+{"tool": "get_workflow_draft", "arguments": {"include_graph": true}}
+```
+
+Returns draft metadata, graph summary, validation summary, and optionally the full graph.
+Use this only when the compact `describe_workflow` response is not enough.
+
+`list_tools`
+
+```json
+{"tool": "list_tools", "arguments": {}}
+```
+
+Returns available BioImageFlow tool metadata.
+Call it before creating nodes, connecting fields, publishing interfaces, or interpreting validation errors.
+
+`describe_bioimageflow_tool`
+
+```json
+{"tool": "describe_bioimageflow_tool", "arguments": {"tool_name": "GaussianBlur"}}
+```
+
+Returns detailed metadata for one BioImageFlow tool.
+Use exact names from this response.
+
+## Context And Inspection Tools
+
+`get_active_workflow`
+
+```json
+{"tool": "get_active_workflow", "arguments": {}}
+```
+
+Returns the active workflow id and current draft revision when available.
+
+`describe_workflow`
 
 ```json
 {
-  "command": "bioimageflow-mcp",
-  "cwd": "<workspace root>",
-  "env": {
-    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json"
+  "tool": "describe_workflow",
+  "arguments": {
+    "include_parameters": true
   }
 }
 ```
 
-The MCP graph-editing tools call the backend operation API. They do not mutate
-workflow graph JSON locally.
+Use the default compact description for orientation.
+Set `include_parameters` only when parameter values are needed for the task.
 
-Use operation REST second:
+## Graph Mutation Tools
 
-`POST /workflow-draft-operations/{workflow_id}`
+`create_node`
 
 ```json
 {
-  "expected_revision": "<latest draft_revision>",
-  "updated_by": "agent",
-  "validate": true,
-  "operations": [
-    {
-      "type": "create_node",
-      "node_id": "blur_1",
-      "tool_name": "GaussianBlur",
-      "name": "Blur",
-      "position": [240, 160],
-      "parameters": {}
+  "tool": "create_node",
+  "arguments": {
+    "node_id": "blur_1",
+    "tool_name": "GaussianBlur",
+    "name": "Blur",
+    "position": [240, 160],
+    "parameters": {
+      "sigma": 2.0
     }
-  ]
+  }
 }
 ```
 
-Success returns `WorkflowDraftResponse`. Semantic operation failures return:
+`connect_nodes`
 
 ```json
 {
-  "error": "operation_validation_error",
-  "operation_index": 0,
-  "code": "missing_node",
-  "detail": "Node not found: missing"
+  "tool": "connect_nodes",
+  "arguments": {
+    "source_node": "load_1",
+    "source_output": "image",
+    "target_node": "blur_1",
+    "target_input": "image"
+  }
 }
 ```
 
-Use raw full-DAG HTTP fallback only when MCP and operation REST are unavailable
-or when you need to inspect/diagnose the complete draft contract.
-
-## State
-
-`GET /health`
-
-Returns backend health. Use this before editing.
-
-`GET /tools`
-
-Returns available tool metadata. Use tool names from this response when setting
-`node.tool_name`.
-
-## Full-DAG Draft Fallback
-
-`GET /workflow-drafts/{workflow_id}`
-
-Returns:
+For positional connections:
 
 ```json
 {
-  "draft_version": 1,
-  "workflow_id": "wf",
-  "base_saved_revision": "sha256:...",
-  "draft_revision": 0,
-  "updated_at": "...",
-  "updated_by": "system",
-  "dirty_against_saved": false,
-  "graph": {
-    "nodes": [],
-    "edges": [],
-    "published_inputs": [],
-    "published_outputs": []
-  },
-  "validation": {}
+  "tool": "connect_nodes",
+  "arguments": {
+    "source_node": "blur_1",
+    "target_node": "measure_1",
+    "positional_index": 0
+  }
 }
 ```
 
-`PUT /workflow-drafts/{workflow_id}`
+`update_node_parameters`
 
-Full-graph replacement, not patch. This remains the canonical source-of-truth
-contract and escape hatch. Preserve unchanged `nodes`, `edges`,
-`published_inputs`, and `published_outputs`.
+```json
+{"tool": "update_node_parameters", "arguments": {"node_id": "blur_1", "parameters": {"sigma": 3.0}}}
+```
+
+`rename_node`
+
+```json
+{"tool": "rename_node", "arguments": {"node_id": "blur_1", "name": "Smooth image"}}
+```
+
+`set_node_enabled`
+
+```json
+{"tool": "set_node_enabled", "arguments": {"node_id": "blur_1", "enabled": false}}
+```
+
+`move_node`
+
+```json
+{"tool": "move_node", "arguments": {"node_id": "blur_1", "position": [320, 160]}}
+```
+
+`move_nodes`
 
 ```json
 {
-  "graph": {
-    "nodes": [],
-    "edges": [],
-    "published_inputs": [],
-    "published_outputs": []
-  },
-  "expected_revision": "<latest draft_revision>",
-  "updated_by": "agent",
-  "validate": true
+  "tool": "move_nodes",
+  "arguments": {
+    "moves": [
+      {"node_id": "load_1", "position": [80, 160]},
+      {"node_id": "blur_1", "position": [320, 160]}
+    ]
+  }
 }
 ```
 
-Success returns the same shape as `GET` with an incremented `draft_revision`.
-It also notifies connected frontends that the draft changed. A clean canvas can
-auto-refresh from the new draft; a canvas with local edits asks the user to
-resolve the conflict.
+`delete_edge`
 
-Errors:
+```json
+{"tool": "delete_edge", "arguments": {"edge_id": "edge_1"}}
+```
 
-- `404`: workflow not found.
-- `409 draft_revision_conflict`: stale `expected_revision`. Re-read, reapply,
-  retry.
-- `422`: invalid workflow id, graph shape, or request body.
-- `423 workflow_locked`: execution is running; wait or stop execution first.
+`delete_node`
 
-## Validation
+```json
+{"tool": "delete_node", "arguments": {"node_id": "blur_1"}}
+```
 
-`PUT /graph`
+## Batch Edit Tool
 
-Validate without persisting.
+`apply_workflow_operations`
 
 ```json
 {
-  "graph": {"nodes": [], "edges": []},
-  "workflow_name": "wf"
+  "tool": "apply_workflow_operations",
+  "arguments": {
+    "operations": [
+      {
+        "type": "create_node",
+        "node_id": "threshold_1",
+        "tool_name": "Threshold",
+        "name": "Threshold",
+        "position": [520, 160],
+        "parameters": {
+          "method": "otsu"
+        }
+      },
+      {
+        "type": "connect_column_ref",
+        "source_node": "blur_1",
+        "source_output": "image",
+        "target_node": "threshold_1",
+        "target_input": "image"
+      }
+    ]
+  }
 }
 ```
 
-The response is a validation result; graph problems are reported there. HTTP
-errors include `404` for unknown workflow storage, `422` for malformed request
-body, and `423` while execution locks graph editing.
+Keep batches small and ordered.
+If the tool reports an operation index, fix that operation and retry after refreshing workflow state.
 
-## Execution
+## Published Interface Tools
 
-`POST /execution/run`
-
-Runs the submitted graph. Add `nodes` to execute only selected node ids. Omit
-`nodes` to execute the graph normally.
+`set_published_input`
 
 ```json
 {
-  "graph": {"nodes": [], "edges": []},
-  "workflow_name": "wf",
-  "nodes": ["optional_node_id"]
+  "tool": "set_published_input",
+  "arguments": {
+    "name": "image",
+    "internal_node_id": "load_1",
+    "internal_field": "path",
+    "kind": "input",
+    "schema": {
+      "type": "ImageFile"
+    }
+  }
 }
 ```
 
-Returns `202` with `{"status": "started"}`.
+`set_published_output`
 
-`GET /execution/status`
+```json
+{
+  "tool": "set_published_output",
+  "arguments": {
+    "name": "mask",
+    "internal_node_id": "threshold_1",
+    "internal_output": "mask",
+    "schema": {
+      "type": "LabelImage"
+    }
+  }
+}
+```
 
-Returns current state, progress, last result, and node statuses.
+`delete_published_input`
 
-`POST /execution/stop`
+```json
+{"tool": "delete_published_input", "arguments": {"name": "image"}}
+```
 
-Returns `{"status": "stopping"}`. Stop is cooperative; poll status until the
-state is no longer running.
+`delete_published_output`
 
-Execution errors:
+```json
+{"tool": "delete_published_output", "arguments": {"name": "mask"}}
+```
 
-- `409`: another run is already active.
-- `422 validation_error`: graph failed to build or validate.
-- `503`: execution manager is unavailable.
+## Validation And Execution Tools
 
-## Frontend Conflict Expectations
+`validate_workflow`
 
-Agents do not resolve frontend conflicts directly. If the user has local canvas
-edits when an agent writes a newer draft, the frontend offers:
+```json
+{"tool": "validate_workflow", "arguments": {}}
+```
 
-- Apply agent changes.
-- Keep my canvas.
-- Save agent version as copy.
+Returns whether the latest draft is valid and reports validation errors when present.
 
-Save, run, and export are blocked until the user resolves that choice. Export
-also confirms that the workflow will be saved before the export archive is
-created.
+`run_workflow`
+
+```json
+{"tool": "run_workflow", "arguments": {}}
+```
+
+Runs the latest draft.
+For selected-node execution:
+
+```json
+{"tool": "run_workflow", "arguments": {"nodes": ["blur_1", "threshold_1"]}}
+```
+
+`stop_execution`
+
+```json
+{"tool": "stop_execution", "arguments": {}}
+```
+
+Stops the current execution cooperatively.
+
+`get_execution_status`
+
+```json
+{"tool": "get_execution_status", "arguments": {}}
+```
+
+Returns current execution state, progress, node statuses, and the latest result when available.
+
+## Error Handling
+
+On `draft_revision_conflict`, call `describe_workflow`, reapply the intended logical change to the new draft, and retry through MCP.
+On `workflow_locked`, execution is running; wait, stop through MCP, or ask the user, then refresh workflow state before editing.
+On `operation_validation_error`, fix the reported operation instead of editing graph JSON.
+On `backend_unavailable`, `backend_timeout`, MCP transport failure, or malformed response, stop and report the exact MCP failure.
+Do not use REST or saved-file edits for agent workflow actions.

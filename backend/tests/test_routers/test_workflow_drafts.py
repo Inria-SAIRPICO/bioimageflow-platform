@@ -19,6 +19,19 @@ from bioimageflow_server.ws.handler import ConnectionManager
 pytestmark = pytest.mark.anyio
 
 
+FORBIDDEN_AGENT_CONTEXT_PHRASES = [
+    "Operation REST second",
+    "Raw full-DAG",
+    "REST fallback",
+    "MCP is a protocol",
+    "curl",
+    "human_diagnostic_rest",
+    "workflow-draft-operations",
+    "workflow-drafts",
+    "execution/run",
+]
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
@@ -114,27 +127,17 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     agent_state = tmp_path / "workspace" / ".bioimageflow" / "agent-state.json"
     assert agent_state.exists()
     context = json.loads(agent_state.read_text())
+    assert context["mcp_contract_version"] == 2
     assert context["active_workflow_id"] == "wf"
     assert context["api_base_url"] == "http://test/api/v1"
     assert context["health_url"] == "http://test/api/v1/health"
-    assert context["recommended_shell_setup"] == [
-        "STATE=.bioimageflow/agent-state.json",
-        "API=$(jq -r .api_base_url \"$STATE\")",
-        "WF=$(jq -r .active_workflow_id \"$STATE\")",
-        "curl -sS \"$API/health\"",
-    ]
-    assert "sandbox" in context["localhost_reachability_note"]
-    assert "Do not guess" in context["localhost_reachability_note"]
-    assert context["recommended_commands"] == [
-        "GET http://test/api/v1/health",
-        "MCP bioimageflow-mcp",
-        "POST http://test/api/v1/workflow-draft-operations/wf",
-        "GET http://test/api/v1/workflow-drafts/wf",
-        "GET http://test/api/v1/tools",
-        "PUT http://test/api/v1/workflow-drafts/wf",
-        "POST http://test/api/v1/execution/run",
-        "POST http://test/api/v1/execution/stop",
-    ]
+    assert all(command.startswith("MCP ") for command in context["recommended_commands"])
+    recommended = "\n".join(context["recommended_commands"])
+    assert "get_bioimageflow_capabilities" in recommended
+    assert "describe_workflow" in recommended
+    assert "describe_bioimageflow_tool" in recommended
+    assert "apply_workflow_operations" in recommended
+    assert "get_execution_status" in recommended
     assert context["mcp_server_command"] == "bioimageflow-mcp"
     assert context["mcp_client_config"] == {
         "command": "bioimageflow-mcp",
@@ -143,10 +146,7 @@ async def test_get_synthesizes_draft_from_saved_workflow(
             "BIOIMAGEFLOW_AGENT_STATE": str(agent_state),
         },
     }
-    assert (
-        context["operation_api_url"]
-        == "http://test/api/v1/workflow-draft-operations/wf"
-    )
+    assert "human_diagnostic_rest" not in context
 
     hidden_agent_doc = tmp_path / "workspace" / ".bioimageflow" / "AGENTS.md"
     assert not hidden_agent_doc.exists()
@@ -154,33 +154,20 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     agent_doc = tmp_path / "workspace" / "AGENTS.md"
     instructions = agent_doc.read_text()
     normalized_instructions = " ".join(instructions.split())
-    assert "local app for designing and running bioimage analysis workflows" in normalized_instructions
-    assert (
-        "Prefer MCP tools for workflow edits when available"
-        in normalized_instructions
-    )
-    assert "MCP first" in instructions
+    assert "Use BioImageFlow MCP tools for workflow inspection" in normalized_instructions
+    assert "MCP Tool Reference" in instructions
     assert "MCP client setup" in instructions
-    assert "Run from the workspace root" in instructions
     assert "BIOIMAGEFLOW_AGENT_STATE" in instructions
-    assert "Operation REST second" in instructions
-    assert "Raw full-DAG HTTP fallback" in instructions
-    assert "Raw Full-DAG Fallback Graph Edits" in instructions
-    assert '"expected_revision": "<latest draft_revision>"' in instructions
-    assert "POST $API/workflow-draft-operations/$WF" in instructions
-    assert "set_node_enabled" in instructions
-    assert "move_node" in instructions
-    assert "First-Run Checklist" in instructions
-    assert "Create node" in instructions
-    assert "Enable or disable node" in instructions
-    assert "Execute selected nodes" in instructions
-    assert "full-graph replacement, not patch" in instructions
-    assert "Do not guess or hardcode ports such as 8008" in instructions
-    assert "request permission to run the same curl command outside the sandbox" in instructions
-    assert "POST $API/execution/stop" in instructions
+    assert "get_bioimageflow_capabilities" in instructions
+    assert "get_workflow_draft" in instructions
+    assert "describe_workflow" in instructions
+    assert "describe_bioimageflow_tool" in instructions
+    assert "apply_workflow_operations" in instructions
     assert ".bioimageflow/platform-source/" in instructions
     assert "bioimageflow-mcp" in instructions
     assert "/Users/" not in instructions
+    for phrase in FORBIDDEN_AGENT_CONTEXT_PHRASES:
+        assert phrase not in instructions
 
 
 async def test_put_writes_atomic_draft_and_conflicts_on_stale_revision(

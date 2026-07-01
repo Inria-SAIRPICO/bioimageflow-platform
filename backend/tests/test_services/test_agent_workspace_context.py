@@ -5,6 +5,19 @@ from pathlib import Path
 from bioimageflow_server.services import agent_workspace_context as context
 
 
+FORBIDDEN_AGENT_CONTEXT_PHRASES = [
+    "Operation REST second",
+    "Raw full-DAG",
+    "REST fallback",
+    "MCP is a protocol",
+    "curl",
+    "human_diagnostic_rest",
+    "workflow-draft-operations",
+    "workflow-drafts",
+    "execution/run",
+]
+
+
 def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_note(
     tmp_path: Path,
     monkeypatch,
@@ -32,26 +45,24 @@ def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_no
 
     instructions = (workspace / "AGENTS.md").read_text()
     normalized_instructions = " ".join(instructions.split())
-    assert "local app for designing and running bioimage analysis workflows" in normalized_instructions
-    assert "Prefer MCP tools for workflow edits when available" in normalized_instructions
-    assert "First-Run Checklist" in instructions
+    assert "Use BioImageFlow MCP tools for workflow inspection" in normalized_instructions
+    assert "MCP Tool Reference" in instructions
+    assert "get_bioimageflow_capabilities" in instructions
+    assert "get_workflow_draft" in instructions
+    assert "describe_workflow" in instructions
+    assert "describe_bioimageflow_tool" in instructions
+    assert "apply_workflow_operations" in instructions
+    assert "get_execution_status" in instructions
     assert ".bioimageflow/platform-source/" in instructions
     assert "read-only" in instructions
-    assert "MCP client setup" in instructions
-    assert "Run from the workspace root" in instructions
     assert "BIOIMAGEFLOW_AGENT_STATE" in instructions
-    assert "Do not guess or hardcode ports such as 8008" in instructions
-    assert "Sandboxed agents may be blocked from reaching localhost" in instructions
-    assert "request permission to run the same curl command outside the sandbox" in instructions
     assert "bioimageflow-agent" not in instructions
-    assert "full-graph replacement, not patch" in instructions
-    assert "Enable or disable node" in instructions
-    assert "Execute selected nodes" in instructions
+    assert "batch" in normalized_instructions
     assert "Workflow-local tool authoring" in instructions
-    assert "GET $API/tools/$TOOL/source?workflow_name=$WF" in instructions
-    assert "POST $API/tools?workflow_name=$WF" in instructions
     assert "tool_reload" in instructions
     assert "/Users/" not in instructions
+    for phrase in FORBIDDEN_AGENT_CONTEXT_PHRASES:
+        assert phrase not in instructions
     assert not (workspace / ".bioimageflow" / "AGENTS.md").exists()
     source_clone = workspace / ".bioimageflow" / "platform-source"
     assert (source_clone / "README.md").exists()
@@ -62,6 +73,18 @@ def test_ensure_agent_workspace_context_writes_root_instructions_and_readonly_no
     note = (workspace / ".bioimageflow" / "platform-source.README.md").read_text()
     assert "read-only reference" in note
     assert "Editing files here will not change" in note
+
+
+def test_agent_workspace_instructions_are_loaded_from_markdown_template() -> None:
+    source = Path(context.__file__).read_text(encoding="utf-8")
+    template = (
+        Path(context.__file__).parents[1] / "data" / context.AGENT_INSTRUCTIONS_TEMPLATE
+    ).read_text(encoding="utf-8")
+
+    assert "{{SOURCE_STATUS}}" in template
+    assert "## MCP Tool Reference" in template
+    assert "## MCP Tool Reference" not in source
+    assert "{{SOURCE_STATUS}}" not in context.agent_workspace_instructions()
 
 
 def test_source_reference_failure_is_non_fatal(tmp_path: Path, monkeypatch) -> None:
@@ -105,12 +128,18 @@ def test_user_hidden_agent_doc_is_preserved(tmp_path: Path, monkeypatch) -> None
 
 def test_agent_docs_include_mcp_client_setup() -> None:
     docs_root = Path(__file__).parents[3] / "docs" / "agents"
+    readme = (docs_root / "README.md").read_text(encoding="utf-8")
+    assert "bioimageflow-mcp" in readme
+    assert "BIOIMAGEFLOW_AGENT_STATE" in readme
     for name in ("README.md", "api-reference.md", "workflow-editing.md"):
         content = (docs_root / name).read_text(encoding="utf-8")
-        assert "MCP client setup" in content
-        assert "bioimageflow-mcp" in content
-        assert "BIOIMAGEFLOW_AGENT_STATE" in content
-        assert "workspace root" in content
+        assert "get_bioimageflow_capabilities" in content
+        assert "get_workflow_draft" in content
+        assert "apply_workflow_operations" in content
+        if name != "workflow-editing.md":
+            assert "get_execution_status" in content
+        for phrase in FORBIDDEN_AGENT_CONTEXT_PHRASES:
+            assert phrase not in content
 
 
 def test_agent_docs_include_workflow_local_tool_authoring() -> None:
@@ -120,7 +149,5 @@ def test_agent_docs_include_workflow_local_tool_authoring() -> None:
 
     for content in (workflow_editing, readme):
         assert "workflow-local tool" in content
-        assert "POST /tools?workflow_name=$WF" in content
-        assert "GET /tools/{tool_name}/source?workflow_name=$WF" in content
-        assert "tool_reload" in content
+        assert "describe_bioimageflow_tool" in content
         assert ".bioimageflow/platform-source/" in content
