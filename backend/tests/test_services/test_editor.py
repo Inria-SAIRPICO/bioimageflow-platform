@@ -297,6 +297,75 @@ def test_embedded_connection_failure_falls_back_to_clipboard(tmp_path: Path) -> 
     assert response.method == EditorOpenMethod.CLIPBOARD
 
 
+def test_running_embedded_file_open_without_control_does_not_launch_again(
+    tmp_path: Path,
+) -> None:
+    class AvailableLaunchableEmbedded(_Embedded):
+        def __init__(self) -> None:
+            super().__init__(
+                status=EditorStatus(
+                    available=True,
+                    url="http://127.0.0.1:32344",
+                    version=None,
+                    control_available=False,
+                )
+            )
+            self.launches = 0
+
+        def launch(self) -> None:
+            self.launches += 1
+
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = AvailableLaunchableEmbedded()
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=0.0,
+        embedded_poll_interval=0.0,
+    )
+
+    response = service.open_path(str(tool))
+
+    assert embedded.launches == 0
+    assert embedded.opened == []
+    assert response.method == EditorOpenMethod.CLIPBOARD
+    assert response.error_code == "embedded_opener_timeout"
+
+
+def test_running_embedded_opener_failure_does_not_launch_again(tmp_path: Path) -> None:
+    class AvailableLaunchableEmbedded(_Embedded):
+        def __init__(self) -> None:
+            super().__init__(
+                status=EditorStatus(
+                    available=True,
+                    url="http://127.0.0.1:32344",
+                    version=None,
+                    control_available=True,
+                ),
+                exc=ConnectionError("no opener"),
+            )
+            self.launches = 0
+
+        def launch(self) -> None:
+            self.launches += 1
+
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = AvailableLaunchableEmbedded()
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=0.0,
+        embedded_poll_interval=0.0,
+    )
+
+    response = service.open_path(str(tool))
+
+    assert embedded.launches == 0
+    assert embedded.opened == [tool]
+    assert response.method == EditorOpenMethod.CLIPBOARD
+    assert response.error_code == "embedded_opener_timeout"
+
+
 def test_clipboard_fallback_when_no_editor_available(tmp_path: Path) -> None:
     tool = tmp_path / "tool.py"
     tool.write_text("print('x')")

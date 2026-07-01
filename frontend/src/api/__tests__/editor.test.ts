@@ -11,6 +11,14 @@ vi.mock('@/api/client', () => ({
 const mockedGet = vi.mocked(api.get as any)
 const mockedPost = vi.mocked(api.post as any)
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 describe('editor api helpers', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -128,6 +136,15 @@ describe('editor api helpers', () => {
     window.addEventListener('bif:open-code-editor', listener)
     const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
     useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/old.py')
+    const focusRequest = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        message: null
+      }
+    }>()
     mockedPost
       .mockResolvedValueOnce({
         data: {
@@ -138,15 +155,7 @@ describe('editor api helpers', () => {
           message: null,
         },
       })
-      .mockResolvedValueOnce({
-        data: {
-          opened: true,
-          method: 'embedded',
-          url: 'http://127.0.0.1:32344',
-          path: '/workspace/tools/new.py',
-          message: null,
-        },
-      })
+      .mockReturnValueOnce(focusRequest.promise)
 
     await openPathWithEditor('/workspace', null, { focusPath: '/workspace/tools/new.py' })
 
@@ -157,9 +166,19 @@ describe('editor api helpers', () => {
     expect(mockedPost).toHaveBeenNthCalledWith(2, '/api/v1/editor/open', {
       path: '/workspace/tools/new.py',
     })
+    expect(listener).toHaveBeenCalledTimes(1)
     expect(listener.mock.calls[0][0].detail).toEqual({
       url: currentUrl,
       path: '/workspace/tools/new.py',
+    })
+    focusRequest.resolve({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344',
+        path: '/workspace/tools/new.py',
+        message: null,
+      },
     })
     window.removeEventListener('bif:open-code-editor', listener)
   })

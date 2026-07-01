@@ -164,7 +164,7 @@ export async function handleEditorOpenResponse(
     const currentProject = editorProjectKey(currentUrl)
     const nextProject = editorProjectKey(response.url)
     if (currentProject && nextProject && currentProject === nextProject) {
-      await openEditorPath(response.path)
+      void focusPathInCurrentEmbeddedEditor(response.path, toast)
       window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
         detail: { url: currentUrl, path: response.path },
       }))
@@ -182,6 +182,30 @@ export async function handleEditorOpenResponse(
     summary: response.message ?? 'Path copied - open in your local editor.',
     life: 3000,
   })
+}
+
+async function focusPathInCurrentEmbeddedEditor(
+  path: string,
+  toast?: Toast | null,
+): Promise<void> {
+  try {
+    const response = await openEditorPath(path)
+    if (response.opened && response.method === 'embedded') return
+    showCodeEditorDiagnostic(response)
+    await navigator.clipboard?.writeText(response.path)
+    toast?.add({
+      severity: 'info',
+      summary: response.message ?? 'Path copied - open in your local editor.',
+      life: 3000,
+    })
+  } catch (error) {
+    toast?.add({
+      severity: 'warn',
+      summary: 'Could not focus file in editor',
+      detail: error instanceof Error ? error.message : String(error),
+      life: 3000,
+    })
+  }
 }
 
 function useUIStoreIfAvailable(): ReturnType<typeof useUIStore> | null {

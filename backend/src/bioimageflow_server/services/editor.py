@@ -28,6 +28,10 @@ CLIPBOARD_MESSAGE = "Path copied - open in your local editor."
 EMBEDDED_LAUNCH_FAILED = "embedded_launch_failed"
 EMBEDDED_STARTUP_TIMEOUT = "embedded_startup_timeout"
 EMBEDDED_STARTUP_TIMEOUT_DETAIL = "code-server did not become available before timeout"
+EMBEDDED_OPENER_TIMEOUT = "embedded_opener_timeout"
+EMBEDDED_OPENER_TIMEOUT_DETAIL = (
+    "code-server is running but the opener endpoint did not become available before timeout"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -339,12 +343,38 @@ class EditorService:
                 "Embedded editor control endpoint unavailable before open: diagnostics=%s",
                 _embedded_diagnostics(self._embedded),
             )
-        if _can_open_embedded(status, normalized, normalized_focus):
-            try:
-                logger.info("Opening path with already-running embedded editor")
-                return self._embedded.open_path(normalized, normalized_focus)
-            except Exception as exc:
-                logger.warning("Already-running embedded editor open failed: %s", exc)
+        if status.available:
+            response = self._open_with_running_embedded(
+                normalized,
+                normalized_focus,
+                initial_status=status,
+            )
+            if response is not None:
+                return response
+            error_code = EMBEDDED_OPENER_TIMEOUT
+            error_detail = EMBEDDED_OPENER_TIMEOUT_DETAIL
+            logger.warning(
+                "Embedded editor is running but could not open path: "
+                "project_path=%s focus_path=%s diagnostics=%s",
+                normalized,
+                normalized_focus,
+                _embedded_diagnostics(self._embedded),
+            )
+            logger.warning(
+                "Falling back to clipboard for editor open: path=%s error_code=%s error_detail=%s",
+                normalized_focus or normalized,
+                error_code,
+                error_detail,
+            )
+            return EditorOpenResponse(
+                opened=False,
+                method=EditorOpenMethod.CLIPBOARD,
+                url=None,
+                path=str(normalized_focus or normalized),
+                message=CLIPBOARD_MESSAGE,
+                error_code=error_code,
+                error_detail=error_detail,
+            )
 
         error_code: str | None = None
         error_detail: str | None = None
@@ -388,6 +418,40 @@ class EditorService:
             error_code=error_code,
             error_detail=error_detail,
         )
+
+    def _open_with_running_embedded(
+        self,
+        path: Path,
+        focus_path: Path | None,
+        *,
+        initial_status: EditorStatus,
+    ) -> EditorOpenResponse | None:
+        deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
+        status = initial_status
+        last_error: Exception | None = None
+        while True:
+            if _can_open_embedded(status, path, focus_path):
+                try:
+                    logger.info("Opening path with already-running embedded editor")
+                    return self._embedded.open_path(path, focus_path)
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("Already-running embedded editor open failed: %s", exc)
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    "Already-running embedded editor did not become ready before timeout: "
+                    "available=%s control_available=%s url=%s focus_requested=%s "
+                    "last_error=%s diagnostics=%s",
+                    status.available,
+                    status.control_available,
+                    status.url,
+                    focus_path is not None,
+                    _exception_summary(last_error) if last_error else None,
+                    _embedded_diagnostics(self._embedded),
+                )
+                return None
+            time.sleep(max(0.0, self._embedded_poll_interval))
+            status = self._embedded.status()
 
     def _open_after_embedded_launch(
         self,
