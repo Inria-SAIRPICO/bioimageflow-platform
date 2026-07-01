@@ -320,12 +320,16 @@ function onOpenCodeEditor(event: CustomEvent<{
   path: string
   projectPath?: string | null
 }>) {
+  const existingPanel = dockviewApi.value?.getPanel('codeEditor')
+  const urlChanged = uiStore.codeEditorUrl !== event.detail.url
   uiStore.setCodeEditorTarget(
     event.detail.url,
     event.detail.path,
     event.detail.projectPath ?? null,
   )
-  activateCodeEditorPanel()
+  if (!existingPanel || urlChanged) {
+    activateCodeEditorPanel()
+  }
 }
 
 function onCodeEditorLoadingFinished(event: CustomEvent<{ path?: string }>) {

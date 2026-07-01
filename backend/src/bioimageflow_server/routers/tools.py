@@ -91,16 +91,7 @@ def _project_root_for_source(
     registry: ToolRegistryService,
 ) -> Path:
     if source_kind != "custom":
-        store_path = registry.tool_store_path()
-        if store_path is not None:
-            resolved_store = store_path.resolve()
-            try:
-                source_path.resolve().relative_to(resolved_store)
-            except ValueError:
-                pass
-            else:
-                return resolved_store
-        return source_path.parent
+        return source_path.resolve().parent
     root_candidate = workflow_root.parent if workflow_root.name == "workflows" else workflow_root
     return root_candidate.resolve()
 

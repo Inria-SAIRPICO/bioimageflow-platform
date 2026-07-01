@@ -362,6 +362,62 @@ describe('AppShell', () => {
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
   })
 
+  it('does not reactivate the Code Editor panel when the editor URL is unchanged', async () => {
+    mountApp()
+    await flushPromises()
+    const store = useUIStore()
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+      detail: {
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
+        path: '/workspace/tools/old.py',
+        projectPath: '/workspace',
+      },
+    }))
+    await flushPromises()
+    panels.get('codeEditor').api.setActive.mockClear()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+      detail: {
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
+        path: '/workspace/tools/new.py',
+        projectPath: '/workspace',
+      },
+    }))
+    await flushPromises()
+
+    expect(store.codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace')
+    expect(store.codeEditorPath).toBe('/workspace/tools/new.py')
+    expect(store.codeEditorProjectPath).toBe('/workspace')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(panels.get('codeEditor').api.setActive).not.toHaveBeenCalled()
+  })
+
+  it('reactivates the Code Editor panel when the editor URL changes', async () => {
+    mountApp()
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+      detail: {
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-a',
+        path: '/workspace-a/tools/old.py',
+        projectPath: '/workspace-a',
+      },
+    }))
+    await flushPromises()
+    panels.get('codeEditor').api.setActive.mockClear()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
+      detail: {
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
+        path: '/workspace-b/tools/new.py',
+        projectPath: '/workspace-b',
+      },
+    }))
+    await flushPromises()
+
+    expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace-b')
+    expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
+  })
+
   it('creates and activates the Code Editor panel while embedded editor is opening', async () => {
     mountApp()
     await flushPromises()

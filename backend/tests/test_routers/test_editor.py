@@ -199,7 +199,7 @@ async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path
     assert editor.paths == [str(workspace)]
 
 
-async def test_editor_open_package_tool_opens_tool_store_root(tmp_path: Path) -> None:
+async def test_editor_open_package_tool_opens_source_parent(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     tool_store = tmp_path / "tool_store"
@@ -232,4 +232,4 @@ async def test_editor_open_package_tool_opens_tool_store_root(tmp_path: Path) ->
 
     assert response.status_code == 200
     assert response.json()["path"] == str(tool)
-    assert editor.paths == [str(tool_store)]
+    assert editor.paths == [str(package_root)]
