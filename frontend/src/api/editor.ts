@@ -160,11 +160,15 @@ export async function handleEditorOpenResponse(
     return
   }
   if (response.method === 'embedded' && response.url) {
-    const currentUrl = useUIStoreIfAvailable()?.codeEditorUrl ?? null
+    const uiStore = useUIStoreIfAvailable()
+    const currentUrl = uiStore?.codeEditorUrl ?? null
+    const currentPath = uiStore?.codeEditorPath ?? null
     const currentProject = editorProjectKey(currentUrl)
     const nextProject = editorProjectKey(response.url)
     if (currentProject && nextProject && currentProject === nextProject) {
-      void focusPathInCurrentEmbeddedEditor(response.path, toast)
+      if (currentPath !== response.path) {
+        void focusPathInCurrentEmbeddedEditor(response.path, toast)
+      }
       window.dispatchEvent(new CustomEvent('bif:open-code-editor', {
         detail: { url: currentUrl, path: response.path },
       }))

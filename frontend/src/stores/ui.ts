@@ -37,6 +37,7 @@ export const useUIStore = defineStore('ui', () => {
   const codeEditorUrl = ref<string | null>(null)
   const codeEditorPath = ref<string | null>(null)
   const codeEditorOpening = ref(false)
+  const codeEditorOpeningPath = ref<string | null>(null)
   const codeEditorDetached = ref(false)
   const themePreference = ref<ThemePreference>(readStoredThemePreference())
   const systemPrefersDark = ref(false)
@@ -128,18 +129,23 @@ export const useUIStore = defineStore('ui', () => {
     codeEditorUrl.value = url
     codeEditorPath.value = path
     codeEditorOpening.value = false
+    codeEditorOpeningPath.value = null
     panels.codeEditor = true
   }
 
   function setCodeEditorOpening(path: string) {
-    codeEditorPath.value = path
+    codeEditorOpeningPath.value = path || null
+    if (!codeEditorUrl.value && path) {
+      codeEditorPath.value = path
+    }
     codeEditorOpening.value = true
     panels.codeEditor = true
   }
 
   function clearCodeEditorOpening(path?: string) {
-    if (path !== undefined && codeEditorPath.value !== path) return
+    if (path !== undefined && codeEditorOpeningPath.value !== (path || null)) return
     codeEditorOpening.value = false
+    codeEditorOpeningPath.value = null
   }
 
   function setCodeEditorDetached(detached: boolean) {

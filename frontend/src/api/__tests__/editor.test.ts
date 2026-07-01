@@ -183,6 +183,32 @@ describe('editor api helpers', () => {
     window.removeEventListener('bif:open-code-editor', listener)
   })
 
+  it('does not focus the file again when the same project and file are already open', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/tool.py')
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace',
+        path: '/workspace/tools/tool.py',
+        message: null,
+      },
+    })
+
+    await openPathWithEditor('/workspace', null, { focusPath: '/workspace/tools/tool.py' })
+
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      url: currentUrl,
+      path: '/workspace/tools/tool.py',
+    })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
   it('reloads code-server when the project changes', async () => {
     const listener = vi.fn()
     window.addEventListener('bif:open-code-editor', listener)

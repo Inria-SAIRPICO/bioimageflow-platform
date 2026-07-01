@@ -385,6 +385,53 @@ describe('AppShell', () => {
     expect(store.codeEditorOpening).toBe(false)
   })
 
+  it('keeps the active code editor path during pathless loading events', async () => {
+    mountApp()
+    await flushPromises()
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Fworkspace',
+      '/workspace/tools/tool.py',
+    )
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
+      detail: { path: '' },
+    }))
+    await flushPromises()
+
+    expect(store.codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace')
+    expect(store.codeEditorPath).toBe('/workspace/tools/tool.py')
+    expect(store.codeEditorOpening).toBe(true)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+  })
+
+  it('keeps the active code editor path during loading events when an editor is mounted', async () => {
+    mountApp()
+    await flushPromises()
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Fworkspace',
+      '/workspace/tools/old.py',
+    )
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
+      detail: { path: '/workspace/tools/new.py' },
+    }))
+    await flushPromises()
+
+    expect(store.codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace')
+    expect(store.codeEditorPath).toBe('/workspace/tools/old.py')
+    expect(store.codeEditorOpening).toBe(true)
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished', {
+      detail: { path: '/workspace/tools/new.py' },
+    }))
+    await flushPromises()
+
+    expect(store.codeEditorPath).toBe('/workspace/tools/old.py')
+    expect(store.codeEditorOpening).toBe(false)
+  })
+
   it('opens Avivator in a Dockview panel from image-cell events', async () => {
     mountApp()
     await flushPromises()
