@@ -8,10 +8,15 @@
             "name": "Desktop",
             "type": "debugpy",
             "request": "launch",
-            "module": "bioimageflow_server.desktop",
+            "module": "bioimageflow_server",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/backend",
-            "python": "${workspaceFolder}/backend/.venv/bin/python"
+            "python": "${workspaceFolder}/backend/.venv/bin/python",
+            "args": [
+                "--desktop",
+                "--log-config",
+                "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
+            ]
         },
         {
             "name": "Backend",
@@ -29,7 +34,9 @@
                 "--reload-exclude",
                 ".pixi/*",
                 "--reload-exclude",
-                "workflows/.bioimageflow-agent/*"
+                "workflows/.bioimageflow-agent/*",
+                "--log-config",
+                "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
             ],
             "env": {
                 // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
@@ -60,7 +67,9 @@
                 "127.0.0.1",
                 "--port",
                 "8008",
-                "--reload"
+                "--reload",
+                "--log-config",
+                "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
             ],
             "cwd": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend",
             "env": {

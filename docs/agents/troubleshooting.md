@@ -13,6 +13,12 @@ works, continue using the same `API` value.
 
 Do not edit `workflow.json` or `.bioimageflow/platform-source/` as a fallback.
 
+## Backend Logs
+
+The `python -m bioimageflow_server` entrypoint and desktop mode use the packaged `bioimageflow_server/logging.yaml` config by default.
+That config makes `bioimageflow_server`, `bioimageflow`, and `wetlands` INFO logs visible, including embedded editor startup diagnostics.
+If raw Uvicorn is launched directly, pass `--log-config src/bioimageflow_server/logging.yaml` or a deployment-specific logging config.
+
 ## Stale State
 
 `agent-state.json` contains runtime pointers, not workflow data.

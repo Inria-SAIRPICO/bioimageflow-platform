@@ -514,6 +514,11 @@ function getDocumentation(toolName: string): string {
   return tool?.documentation ?? ''
 }
 
+function getToolDisplayName(toolName: string): string {
+  const tool = toolRegistry.getToolByName(toolName)
+  return tool?.display_name ?? toolName
+}
+
 function parentPath(path: string): string {
   const slash = path.lastIndexOf('/')
   const backslash = path.lastIndexOf('\\')
@@ -717,6 +722,7 @@ defineExpose({
   toggleDocumentation,
   toggleManageDocumentation,
   getDocumentation,
+  getToolDisplayName,
   parentPath,
   openInEditor,
   isEditableTool,
@@ -823,7 +829,7 @@ defineExpose({
                   @click.stop="toggleDocumentation(tool.name)"
                 />
                 <Button
-                  v-if="localToolActionsAvailable && isEditableTool(tool)"
+                  v-if="localToolActionsAvailable"
                   icon="pi pi-code"
                   text
                   size="small"
@@ -904,7 +910,7 @@ defineExpose({
       class="tool-documentation"
     >
       <div class="tool-documentation-header">
-        <h4>{{ activeDoc }}</h4>
+        <h4>{{ getToolDisplayName(activeDoc) }}</h4>
         <Button
           icon="pi pi-times"
           text
@@ -1196,7 +1202,7 @@ defineExpose({
           class="tool-documentation manage-tool-documentation"
         >
           <div class="tool-documentation-header">
-            <h4>{{ manageActiveDoc }}</h4>
+            <h4>{{ getToolDisplayName(manageActiveDoc) }}</h4>
             <Button
               icon="pi pi-times"
               text

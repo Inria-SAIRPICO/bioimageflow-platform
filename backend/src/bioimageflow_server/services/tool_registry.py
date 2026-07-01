@@ -462,6 +462,10 @@ class ToolRegistryService:
             return None
         return Path(source_file).resolve()
 
+    def tool_store_path(self) -> Path | None:
+        """Return the last scanned installed tool store path, if known."""
+        return self._store_path
+
     # -- packages --
 
     def register_package(self, name: str, info: PackageInfo) -> None:

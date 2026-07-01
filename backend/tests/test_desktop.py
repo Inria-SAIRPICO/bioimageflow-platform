@@ -102,8 +102,33 @@ def test_uvicorn_config_and_server_created(
 
     start_desktop(host="0.0.0.0", port=9000)
 
-    mock_uvicorn.Config.assert_called_once_with(mock_app, host="0.0.0.0", port=9000)
+    mock_uvicorn.Config.assert_called_once()
+    _, kwargs = mock_uvicorn.Config.call_args
+    assert mock_uvicorn.Config.call_args.args[0] is mock_app
+    assert kwargs["host"] == "0.0.0.0"
+    assert kwargs["port"] == 9000
+    assert kwargs["log_config"].endswith("logging.yaml")
     mock_uvicorn.Server.assert_called_once_with(mock_uvicorn.Config.return_value)
+
+
+@patch("bioimageflow_server.desktop.webview")
+@patch("bioimageflow_server.desktop.uvicorn")
+@patch("bioimageflow_server.app.create_app")
+@patch("bioimageflow_server.desktop.threading.Thread")
+@patch("bioimageflow_server.desktop.urllib.request.urlopen")
+def test_uvicorn_config_uses_custom_log_config(
+    mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+):
+    """start_desktop forwards a custom Uvicorn log config path."""
+    from bioimageflow_server.desktop import start_desktop
+
+    mock_create_app.return_value = MagicMock()
+    _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+    start_desktop(log_config="/tmp/custom-logging.yaml")
+
+    _, kwargs = mock_uvicorn.Config.call_args
+    assert kwargs["log_config"] == "/tmp/custom-logging.yaml"
 
 
 @patch("bioimageflow_server.desktop.webview")
@@ -278,6 +303,8 @@ class TestMainDesktopFlag:
         main([])
 
         mock_uvicorn.run.assert_called_once()
+        _, kwargs = mock_uvicorn.run.call_args
+        assert kwargs["log_config"].endswith("logging.yaml")
 
     @patch("bioimageflow_server.__main__.uvicorn")
     def test_main_dev_reload_watches_only_backend_source(self, mock_uvicorn):
@@ -292,6 +319,17 @@ class TestMainDesktopFlag:
         assert all("bioimageflow_server" in path for path in kwargs["reload_dirs"])
         assert ".pixi/*" in kwargs["reload_excludes"]
         assert "bif_data/*" in kwargs["reload_excludes"]
+        assert kwargs["log_config"].endswith("logging.yaml")
+
+    @patch("bioimageflow_server.__main__.uvicorn")
+    def test_main_accepts_custom_log_config(self, mock_uvicorn):
+        """--log-config forwards a custom Uvicorn logging config path."""
+        from bioimageflow_server.__main__ import main
+
+        main(["--log-config", "/tmp/custom-logging.yaml"])
+
+        _, kwargs = mock_uvicorn.run.call_args
+        assert kwargs["log_config"] == "/tmp/custom-logging.yaml"
 
     @patch("bioimageflow_server.desktop.start_desktop")
     def test_main_desktop_passes_host_port(self, mock_start_desktop):
@@ -300,9 +338,12 @@ class TestMainDesktopFlag:
 
         main(["--desktop", "--host", "0.0.0.0", "--port", "9000"])
 
-        mock_start_desktop.assert_called_once_with(
-            host="0.0.0.0", port=9000, dev=False
-        )
+        mock_start_desktop.assert_called_once()
+        _, kwargs = mock_start_desktop.call_args
+        assert kwargs["host"] == "0.0.0.0"
+        assert kwargs["port"] == 9000
+        assert kwargs["dev"] is False
+        assert kwargs["log_config"].endswith("logging.yaml")
 
     @patch("bioimageflow_server.desktop.start_desktop")
     def test_main_desktop_with_dev_flag(self, mock_start_desktop):
@@ -311,9 +352,12 @@ class TestMainDesktopFlag:
 
         main(["--desktop", "--dev"])
 
-        mock_start_desktop.assert_called_once_with(
-            host="127.0.0.1", port=8000, dev=True
-        )
+        mock_start_desktop.assert_called_once()
+        _, kwargs = mock_start_desktop.call_args
+        assert kwargs["host"] == "127.0.0.1"
+        assert kwargs["port"] == 8000
+        assert kwargs["dev"] is True
+        assert kwargs["log_config"].endswith("logging.yaml")
 
 
 # ---------------------------------------------------------------------------

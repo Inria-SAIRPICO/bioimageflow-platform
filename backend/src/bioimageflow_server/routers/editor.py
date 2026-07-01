@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import partial
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/editor", tags=["editor"])
+logger = logging.getLogger(__name__)
 
 
 def get_editor_service() -> EditorService:  # pragma: no cover
@@ -49,8 +51,17 @@ async def open_editor_path(
     body: EditorOpenRequest,
     service: EditorService = Depends(get_editor_service),
 ) -> EditorOpenResponse:
+    logger.info("Editor open requested: path=%s focus_path=%s", body.path, body.focus_path)
     try:
-        return await to_thread.run_sync(service.open_path, body.path, body.focus_path)
+        response = await to_thread.run_sync(service.open_path, body.path, body.focus_path)
+        logger.info(
+            "Editor open completed: method=%s opened=%s path=%s error_code=%s",
+            response.method,
+            response.opened,
+            response.path,
+            response.error_code,
+        )
+        return response
     except EditorPathNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Path not found: {exc}") from exc
     except EditorPathError as exc:
@@ -67,19 +78,40 @@ async def open_tool_script(
     workflow_root: Path | None = Depends(get_workflow_root),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
 ) -> EditorOpenResponse:
+    workflow_name = body.workflow_id or body.workflow_name
+    logger.info(
+        "Editor open-tool requested: tool=%s workflow=%s",
+        body.tool_name,
+        workflow_name,
+    )
     try:
         project_path, source_path = resolve_tool_project_open_paths(
             tool_name=body.tool_name,
-            workflow_name=body.workflow_id or body.workflow_name,
+            workflow_name=workflow_name,
             workflow_root=workflow_root,
             registry=registry,
             workflow_store=workflow_store,
         )
-        return await to_thread.run_sync(
+        logger.info(
+            "Editor open-tool resolved: tool=%s project_path=%s focus_path=%s",
+            body.tool_name,
+            project_path,
+            source_path,
+        )
+        response = await to_thread.run_sync(
             service.open_path,
             str(project_path),
             str(source_path),
         )
+        logger.info(
+            "Editor open-tool completed: tool=%s method=%s opened=%s path=%s error_code=%s",
+            body.tool_name,
+            response.method,
+            response.opened,
+            response.path,
+            response.error_code,
+        )
+        return response
     except EditorPathNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Path not found: {exc}") from exc
     except EditorPathError as exc:

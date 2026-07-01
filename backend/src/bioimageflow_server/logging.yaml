@@ -1,0 +1,48 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  default:
+    format: "%(levelname)s:%(name)s:%(message)s"
+  access:
+    format: "%(levelname)s:%(name)s:%(client_addr)s - \"%(request_line)s\" %(status_code)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: default
+    stream: ext://sys.stderr
+  access:
+    class: logging.StreamHandler
+    formatter: access
+    stream: ext://sys.stdout
+
+loggers:
+  bioimageflow_server:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  bioimageflow:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  wetlands:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  uvicorn:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  uvicorn.error:
+    level: INFO
+    handlers: [console]
+    propagate: false
+  uvicorn.access:
+    level: INFO
+    handlers: [access]
+    propagate: false
+
+root:
+  level: WARNING
+  handlers: [console]

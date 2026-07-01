@@ -11,6 +11,8 @@ import urllib.request
 import uvicorn
 import webview
 
+from bioimageflow_server.logging_config import resolve_log_config_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -209,7 +211,12 @@ def main_desktop() -> None:
     start_desktop()
 
 
-def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) -> None:
+def start_desktop(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    dev: bool = False,
+    log_config: str | None = None,
+) -> None:
     """Start the FastAPI server in a background thread and open a pywebview window.
 
     When *dev* is ``True`` the window loads the Vite dev server at
@@ -226,6 +233,8 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
         port: The port to bind the FastAPI server to.
         dev: If ``True``, point the window at the Vite dev server
             (``http://localhost:5173``) for hot-module-replacement.
+        log_config: Optional Uvicorn logging config path. Defaults to the
+            packaged BioImageFlow logging config.
     """
     from pathlib import Path
 
@@ -247,7 +256,12 @@ def start_desktop(host: str = "127.0.0.1", port: int = 8000, dev: bool = False) 
 
     app = create_app(config=app_config)
 
-    config = uvicorn.Config(app, host=host, port=port)
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_config=resolve_log_config_path(log_config),
+    )
     server = uvicorn.Server(config)
 
     server_thread = threading.Thread(

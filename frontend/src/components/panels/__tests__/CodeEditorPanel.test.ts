@@ -3,11 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import CodeEditorPanel from '../CodeEditorPanel.vue'
 import { useUIStore } from '@/stores/ui'
-import { getEditorStatus } from '@/api/editor'
+import { getEditorStatus, openEditorPath } from '@/api/editor'
 import { closeCodeEditorWindow } from '@/utils/nativeDialogs'
 
 vi.mock('@/api/editor', () => ({
   getEditorStatus: vi.fn(),
+  openEditorPath: vi.fn(),
 }))
 
 vi.mock('@/utils/nativeDialogs', () => ({
@@ -15,6 +16,7 @@ vi.mock('@/utils/nativeDialogs', () => ({
 }))
 
 const mockedGetEditorStatus = vi.mocked(getEditorStatus)
+const mockedOpenEditorPath = vi.mocked(openEditorPath)
 const mockedCloseCodeEditorWindow = vi.mocked(closeCodeEditorWindow)
 
 describe('CodeEditorPanel', () => {
@@ -28,6 +30,13 @@ describe('CodeEditorPanel', () => {
       control_available: false,
     })
     mockedCloseCodeEditorWindow.mockResolvedValue(true)
+    mockedOpenEditorPath.mockResolvedValue({
+      opened: true,
+      method: 'embedded',
+      url: 'http://127.0.0.1:32344',
+      path: '/tmp/tool.py',
+      message: null,
+    })
   })
 
   it('shows an unavailable state when no editor URL is present', async () => {
@@ -126,6 +135,31 @@ describe('CodeEditorPanel', () => {
     expect(wrapper.find('[data-testid="code-editor-iframe"]').attributes('src')).toBe(
       'http://127.0.0.1:32344',
     )
+  })
+
+  it('focuses the requested file after a project folder iframe loads', async () => {
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fworkspace',
+      '/tmp/workspace/tools/tool.py',
+    )
+
+    const wrapper = mount(CodeEditorPanel)
+    await wrapper.find('[data-testid="code-editor-iframe"]').trigger('load')
+    await flushPromises()
+
+    expect(mockedOpenEditorPath).toHaveBeenCalledWith('/tmp/workspace/tools/tool.py')
+  })
+
+  it('does not run a follow-up focus request for plain editor URLs', async () => {
+    const store = useUIStore()
+    store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')
+
+    const wrapper = mount(CodeEditorPanel)
+    await wrapper.find('[data-testid="code-editor-iframe"]').trigger('load')
+    await flushPromises()
+
+    expect(mockedOpenEditorPath).not.toHaveBeenCalled()
   })
 
   it('switches to unavailable state on iframe error', async () => {

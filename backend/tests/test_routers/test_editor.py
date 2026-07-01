@@ -199,14 +199,16 @@ async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path
     assert editor.paths == [str(workspace)]
 
 
-async def test_editor_open_package_tool_still_opens_workspace_root(tmp_path: Path) -> None:
+async def test_editor_open_package_tool_opens_tool_store_root(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    package_root = tmp_path / "package"
-    package_root.mkdir()
+    tool_store = tmp_path / "tool_store"
+    package_root = tool_store / "package" / "1.0"
+    package_root.mkdir(parents=True)
     tool = package_root / "package_tool.py"
     tool.write_text("class PackageTool: pass", encoding="utf-8")
     registry = ToolRegistryService()
+    registry.scan_tool_store(tool_store)
     registry.register_tool(
         "PackageTool",
         ToolMetadata(
@@ -230,4 +232,4 @@ async def test_editor_open_package_tool_still_opens_workspace_root(tmp_path: Pat
 
     assert response.status_code == 200
     assert response.json()["path"] == str(tool)
-    assert editor.paths == [str(workspace)]
+    assert editor.paths == [str(tool_store)]

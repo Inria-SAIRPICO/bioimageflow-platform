@@ -134,6 +134,16 @@ class EmbeddedCodeServerManager:
             control_available=control_available,
         )
 
+    def diagnostics(self) -> dict[str, object]:
+        return {
+            "editor_url": self.editor_url,
+            "editor_probe": _url_probe_diagnostic(self.editor_url),
+            "control_url": f"{self.control_url}/open",
+            "control_probe": _url_probe_diagnostic(f"{self.control_url}/open"),
+            "opener_vsix_path": str(self.vsix_path),
+            "opener_vsix_exists": self.vsix_path.exists(),
+        }
+
     def install_commands(self) -> list[list[str]]:
         return [
             [self.code_server_binary, "--install-extension", str(self.vsix_path)],
@@ -160,6 +170,12 @@ class EmbeddedCodeServerManager:
         install_runner: CommandRunner | None = None,
         process_launcher: ProcessLauncher | None = None,
     ) -> None:
+        logger.info(
+            "Launching embedded code-server: editor_url=%s control_url=%s env_path=%s",
+            self.editor_url,
+            self.control_url,
+            self.env_path,
+        )
         if not self.vsix_path.exists():
             raise FileNotFoundError(f"opener extension not found: {self.vsix_path}")
         if install_runner is None and process_launcher is None:
@@ -168,21 +184,32 @@ class EmbeddedCodeServerManager:
         install_runner = install_runner or _default_command_runner
         process_launcher = process_launcher or _default_process_launcher
         for command in self.install_commands():
+            logger.info("Installing code-server extension: %s", shlex.join(command))
             install_runner(command)
+        logger.info("Starting code-server process: %s", shlex.join(self.launch_command()))
         self._process = process_launcher(self.launch_command())
 
     def _launch_in_environment(self) -> object:
         env_manager = self._environment_manager_provider()
         if self.env_path is not None:
+            logger.info("Loading configured code-server environment: %s", self.env_path)
             environment = env_manager.load("codeserver", self.env_path)
         else:
             environment = self._create_or_load_default_environment(env_manager)
         commands = [shlex.join(command) for command in self.install_commands()]
         commands.append(shlex.join(self.launch_command()))
+        logger.info(
+            "Executing embedded code-server startup in environment: commands=%s",
+            commands,
+        )
         return env_manager.execute_commands(environment, commands)
 
     def _create_or_load_default_environment(self, env_manager: Any) -> object:
         try:
+            logger.info(
+                "Creating or reusing default code-server environment: version=%s",
+                CODE_SERVER_VERSION,
+            )
             return env_manager.create(
                 "codeserver",
                 dependencies={
@@ -209,22 +236,11 @@ class EmbeddedCodeServerManager:
         opener: OpenerCall = _default_opener_call,
     ) -> EditorOpenResponse:
         if path.is_dir():
-            if focus_path is not None:
-                query = urlencode({
-                    "folder": str(path),
-                    "file": str(focus_path),
-                })
-                return EditorOpenResponse(
-                    opened=True,
-                    method=EditorOpenMethod.EMBEDDED,
-                    url=f"{self.editor_url}/?{query}",
-                    path=str(focus_path),
-                )
             return EditorOpenResponse(
                 opened=True,
                 method=EditorOpenMethod.EMBEDDED,
                 url=f"{self.editor_url}/?{urlencode({'folder': str(path)})}",
-                path=str(path),
+                path=str(focus_path or path),
             )
 
         ok = opener(
@@ -294,9 +310,15 @@ class EditorService:
     def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
         normalized = self._normalize_path(path)
         normalized_focus = self._normalize_path(focus_path) if focus_path is not None else None
+        logger.info(
+            "Editor service opening path: project_path=%s focus_path=%s",
+            normalized,
+            normalized_focus,
+        )
         settings = self._settings_provider()
         command = (settings.external_editor or "").strip()
         if command:
+            logger.info("Using external editor command for path open")
             self._launch_external(command, normalized, normalized_focus)
             return EditorOpenResponse(
                 opened=True,
@@ -306,21 +328,44 @@ class EditorService:
             )
 
         status = self._embedded.status()
-        if status.available and (normalized.is_dir() or status.control_available):
+        logger.info(
+            "Embedded editor status before open: available=%s control_available=%s url=%s",
+            status.available,
+            status.control_available,
+            status.url,
+        )
+        if normalized_focus is not None and status.available and not status.control_available:
+            logger.warning(
+                "Embedded editor control endpoint unavailable before open: diagnostics=%s",
+                _embedded_diagnostics(self._embedded),
+            )
+        if _can_open_embedded(status, normalized, normalized_focus):
             try:
+                logger.info("Opening path with already-running embedded editor")
                 return self._embedded.open_path(normalized, normalized_focus)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Already-running embedded editor open failed: %s", exc)
 
         error_code: str | None = None
         error_detail: str | None = None
         launch = getattr(self._embedded, "launch", None)
         if callable(launch):
             try:
+                logger.info("Embedded editor is unavailable or incomplete; launching")
                 launch()
                 response = self._open_after_embedded_launch(normalized, normalized_focus)
                 if response is not None:
+                    logger.info("Embedded editor became available after launch")
                     return response
+                logger.warning(
+                    "Embedded editor startup timed out: project_path=%s focus_path=%s",
+                    normalized,
+                    normalized_focus,
+                )
+                logger.warning(
+                    "Embedded editor diagnostics at timeout: diagnostics=%s",
+                    _embedded_diagnostics(self._embedded),
+                )
                 error_code = EMBEDDED_STARTUP_TIMEOUT
                 error_detail = EMBEDDED_STARTUP_TIMEOUT_DETAIL
             except Exception as exc:
@@ -328,6 +373,12 @@ class EditorService:
                 error_code = EMBEDDED_LAUNCH_FAILED
                 error_detail = _exception_summary(exc)
 
+        logger.warning(
+            "Falling back to clipboard for editor open: path=%s error_code=%s error_detail=%s",
+            normalized_focus or normalized,
+            error_code,
+            error_detail,
+        )
         return EditorOpenResponse(
             opened=False,
             method=EditorOpenMethod.CLIPBOARD,
@@ -344,11 +395,22 @@ class EditorService:
         focus_path: Path | None,
     ) -> EditorOpenResponse | None:
         deadline = time.monotonic() + max(0.0, self._embedded_startup_timeout)
+        last_status: EditorStatus | None = None
         while True:
             status = self._embedded.status()
-            if status.available and (path.is_dir() or status.control_available):
+            last_status = status
+            if _can_open_embedded(status, path, focus_path):
                 return self._embedded.open_path(path, focus_path)
             if time.monotonic() >= deadline:
+                logger.warning(
+                    "Embedded editor did not become ready before timeout: "
+                    "available=%s control_available=%s url=%s focus_requested=%s diagnostics=%s",
+                    last_status.available if last_status else None,
+                    last_status.control_available if last_status else None,
+                    last_status.url if last_status else None,
+                    focus_path is not None,
+                    _embedded_diagnostics(self._embedded),
+                )
                 return None
             time.sleep(max(0.0, self._embedded_poll_interval))
 
@@ -390,6 +452,7 @@ class EditorService:
             if focus_path is not None:
                 rendered.append(str(focus_path))
         try:
+            logger.info("Launching external editor command: %s", shlex.join(rendered))
             self._process_launcher(rendered)
         except Exception as exc:
             raise EditorLaunchError(str(exc)) from exc
@@ -397,6 +460,36 @@ class EditorService:
 
 def _exception_summary(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
+
+
+def _can_open_embedded(status: EditorStatus, path: Path, focus_path: Path | None) -> bool:
+    if not status.available:
+        return False
+    if focus_path is not None:
+        return status.control_available
+    return path.is_dir() or status.control_available
+
+
+def _embedded_diagnostics(embedded: object) -> dict[str, object] | None:
+    diagnostics = getattr(embedded, "diagnostics", None)
+    if not callable(diagnostics):
+        return None
+    try:
+        result = diagnostics()
+    except Exception as exc:
+        return {"diagnostics_error": _exception_summary(exc)}
+    return result if isinstance(result, dict) else {"diagnostics": result}
+
+
+def _url_probe_diagnostic(url: str) -> str:
+    try:
+        response = httpx.get(url, timeout=0.5)
+    except httpx.HTTPError as exc:
+        return f"{type(exc).__name__}: {exc}"
+    text = response.text.strip().replace("\n", " ")
+    if len(text) > 200:
+        text = text[:200] + "..."
+    return f"HTTP {response.status_code}: {text}"
 
 
 def _is_missing_metadata_environment_reuse_error(exc: Exception) -> bool:

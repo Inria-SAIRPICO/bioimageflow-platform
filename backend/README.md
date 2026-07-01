@@ -51,13 +51,27 @@ Best for backend development or when running the frontend separately via Vite.
 
 ```bash
 # Dev server with auto-reload
-uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude .bioimageflow/*
-
-# Or via the module entrypoint (add --dev for --reload)
 uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
+
+# Raw Uvicorn is also supported; pass the packaged logging config explicitly
+uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude .bioimageflow/* --log-config src/bioimageflow_server/logging.yaml
 ```
 
 OpenAPI docs: <http://localhost:8000/docs>.
+
+### Logging
+
+The `python -m bioimageflow_server` entrypoint and desktop mode use the packaged `bioimageflow_server/logging.yaml` config by default.
+That config shows INFO logs for `bioimageflow_server`, `bioimageflow`, and `wetlands`, keeps third-party root logs at WARNING, and preserves Uvicorn access logs.
+
+Override it for deployments or local debugging with:
+
+```bash
+uv run python -m bioimageflow_server --log-config /path/to/logging.yaml
+uv run python -m bioimageflow_server --desktop --log-config /path/to/logging.yaml
+```
+
+If you launch raw Uvicorn directly, pass `--log-config src/bioimageflow_server/logging.yaml` or your own config path; raw Uvicorn does not automatically use the packaged config.
 
 ### Desktop mode
 

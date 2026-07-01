@@ -823,7 +823,7 @@ describe('ToolsPanel', () => {
 
   // --- Task 15: Info and Open in Editor tests ---
 
-  it('toggleDocumentation shows tool documentation', async () => {
+  it('toggleDocumentation shows tool documentation with the display name title', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
@@ -836,12 +836,14 @@ describe('ToolsPanel', () => {
       getDocumentation: (name: string) => string
     }
 
-    vm.toggleDocumentation('threshold')
-    expect(vm.activeDoc).toBe('threshold')
-    expect(vm.getDocumentation('threshold')).toBe('Apply threshold to an image')
+    vm.toggleDocumentation('MyCustomTool')
+    await flushPromises()
+    expect(vm.activeDoc).toBe('MyCustomTool')
+    expect(vm.getDocumentation('MyCustomTool')).toBe('Local custom tool')
+    expect(wrapper.find('.tool-documentation-header h4').text()).toBe('My Custom Tool')
 
     // Toggle off
-    vm.toggleDocumentation('threshold')
+    vm.toggleDocumentation('MyCustomTool')
     expect(vm.activeDoc).toBeNull()
   })
 
@@ -970,7 +972,7 @@ describe('ToolsPanel', () => {
     expect(vm.isEditableTool(store.getToolByName('threshold')!)).toBe(false)
   })
 
-  it('renders main-list custom tool script, rename, and delete actions only for custom tools', async () => {
+  it('renders main-list open script for all tools and edit actions only for custom tools', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
@@ -981,7 +983,7 @@ describe('ToolsPanel', () => {
     expect(wrapper.find('[data-testid="tool-rename-MyCustomTool"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tool-delete-MyCustomTool"]').exists()).toBe(true)
 
-    expect(wrapper.find('[data-testid="tool-open-script-threshold"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tool-open-script-threshold"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tool-rename-threshold"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="tool-delete-threshold"]').exists()).toBe(false)
   })

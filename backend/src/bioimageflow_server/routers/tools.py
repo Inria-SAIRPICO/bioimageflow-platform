@@ -86,9 +86,20 @@ def _custom_tool_service(
 def _project_root_for_source(
     source_path: Path,
     *,
+    source_kind: str,
     workflow_root: Path | None,
+    registry: ToolRegistryService,
 ) -> Path:
-    if workflow_root is None:
+    if source_kind != "custom":
+        store_path = registry.tool_store_path()
+        if store_path is not None:
+            resolved_store = store_path.resolve()
+            try:
+                source_path.resolve().relative_to(resolved_store)
+            except ValueError:
+                pass
+            else:
+                return resolved_store
         return source_path.parent
     root_candidate = workflow_root.parent if workflow_root.name == "workflows" else workflow_root
     return root_candidate.resolve()
@@ -151,7 +162,15 @@ def resolve_tool_project_open_paths(
         workflow_store=workflow_store,
     )
     source_path = Path(source.path)
-    return _project_root_for_source(source_path, workflow_root=workflow_root), source_path
+    return (
+        _project_root_for_source(
+            source_path,
+            source_kind=source.source_kind,
+            workflow_root=workflow_root,
+            registry=registry,
+        ),
+        source_path,
+    )
 
 
 # ---------------------------------------------------------------------------

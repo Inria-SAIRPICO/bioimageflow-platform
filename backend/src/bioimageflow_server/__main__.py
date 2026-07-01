@@ -3,6 +3,8 @@
 import argparse
 import uvicorn
 
+from bioimageflow_server.logging_config import resolve_log_config_path
+
 
 _RELOAD_EXCLUDES = [
     ".git/*",
@@ -45,12 +47,19 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Enable development mode",
     )
+    parser.add_argument(
+        "--log-config",
+        type=str,
+        default=None,
+        help="Path to a Uvicorn logging config file. Defaults to the packaged BioImageFlow config.",
+    )
     args = parser.parse_args(argv)
+    log_config = resolve_log_config_path(args.log_config)
 
     if args.desktop:
         from bioimageflow_server.desktop import start_desktop
 
-        start_desktop(host=args.host, port=args.port, dev=args.dev)
+        start_desktop(host=args.host, port=args.port, dev=args.dev, log_config=log_config)
     elif args.dev:
         from pathlib import Path
 
@@ -64,6 +73,7 @@ def main(argv: list[str] | None = None) -> None:
             reload_dirs=[str(package_dir)],
             reload_includes=["*.py"],
             reload_excludes=_RELOAD_EXCLUDES,
+            log_config=log_config,
         )
     else:
         uvicorn.run(
@@ -72,6 +82,7 @@ def main(argv: list[str] | None = None) -> None:
             host=args.host,
             port=args.port,
             reload=False,
+            log_config=log_config,
         )
 
 

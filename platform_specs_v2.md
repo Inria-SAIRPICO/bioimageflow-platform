@@ -217,7 +217,7 @@ Opens a file or folder in the code editor.
 
 #### `POST /editor/open-tool`
 
-Opens the user's workspace as the editor project and focuses a tool source file.
+Opens the editor project that owns a tool source file and focuses that source file.
 
 **Request body:**
 
@@ -228,27 +228,24 @@ Opens the user's workspace as the editor project and focuses a tool source file.
 }
 ```
 
-`workflow_id` is optional for package tools and required when resolving custom
-workflow tools. The response includes the project and focus path:
+`workflow_id` is optional for package tools and required when resolving custom workflow tools.
+The endpoint returns the standard editor-open response; `path` is the focused tool source file:
 
 ```json
 {
-  "fallback": null,
-  "project_path": "/Users/alice/BioImageFlow/workspace",
-  "focus_path": "/Users/alice/BioImageFlow/workspace/workflows/segmentation/tools/cellpose_segmenter.py"
+  "opened": true,
+  "method": "embedded",
+  "url": "http://localhost:8443/?folder=/Users/alice/BioImageFlow/workspace&file=/Users/alice/BioImageFlow/workspace/workflows/segmentation/tools/cellpose_segmenter.py",
+  "path": "/Users/alice/BioImageFlow/workspace/workflows/segmentation/tools/cellpose_segmenter.py",
+  "message": null
 }
 ```
 
 **Behavior:**
-1. The editor project path is always the current user's workspace folder.
-2. If the tool is a custom workflow tool, `focus_path` points under `workspace/workflows/<id>/tools/`.
-3. If the tool comes from an installed package, `focus_path` may point to the
-   package source file, but the project remains the workspace.
-4. Embedded code-server loads the workspace folder first, then uses the opener
-   integration to reveal/focus `focus_path` without replacing the project.
-5. External editor commands receive both `{workspace_path}` and `{file_path}` so
-   VS Code can open the workspace and focus the script, for example
-   `code {workspace_path} --goto {file_path}`.
+1. If the tool is a custom workflow tool, the editor project path is the current user's workspace folder and the focused file points under `workspace/workflows/<id>/tools/`.
+2. If the tool comes from an installed package, the editor project path is the installed tool-store root when the package source lives under that store; otherwise it falls back to the source file's parent directory.
+3. Embedded code-server opens the project folder and focuses the tool source file.
+4. External editor commands receive `{workspace_path}` as the editor project folder and `{file_path}` as the focused source file, for example `code {workspace_path} --goto {file_path}`.
 
 ### 2.3 Frontend
 
@@ -258,8 +255,9 @@ workflow tools. The response includes the project and focus path:
 - The Code Editor Panel is a tab in the Dockview layout. It can be docked, resized, and collapsed like any other panel.
 - On first use, the panel checks `GET /editor/status?launch=true`. If code-server is available, the iframe loads. If not, the panel shows a message: "code-server is not available. Configure an external editor in Settings."
 - Opening a tool's source script (from the Tools Panel "Open in editor" button)
-  sends `POST /editor/open-tool` and activates the Code Editor Panel. The iframe
-  project stays on the user's workspace folder while the tool file is focused.
+  sends `POST /editor/open-tool` and activates the Code Editor Panel. Custom
+  workflow tools open the user's workspace project; installed package tools open
+  the installed tool-store project and focus the package source file.
 
 **Interactions with tool development:**
 - Editing tool source code in the Code Editor triggers the existing **tool hot-reload** mechanism (v1, Section 2.7 of full spec). Changes are detected by the file watcher, and affected nodes are updated automatically.
@@ -270,7 +268,7 @@ The Settings Panel (Section 3.13 of the full spec) includes a Code Editor sectio
 
 | Field | Widget | Description |
 |-------|--------|-------------|
-| **External editor command** | Text input | Command template for opening files in an external editor. Placeholder: `code {workspace_path} --goto {file_path}`. `{workspace_path}` is the current workspace folder and `{file_path}` is the focused file. |
+| **External editor command** | Text input | Command template for opening files in an external editor. Placeholder: `code {workspace_path} --goto {file_path}`. `{workspace_path}` is the editor project folder (the current workspace for custom tools, the installed tool store for package tools) and `{file_path}` is the focused file. |
 | **Enable unsafe webapp features** | File-only boolean | Debug switch for local webapp-mode development. Default `false`. Exposed by `GET /settings`, rejected by `PATCH /settings`. |
 
 `enable_unsafe_webapp_features` only affects `deployment_mode === "webapp"`. With the default `false` value, local source-editing actions are disabled: tool creation, rename, and delete are hidden in the frontend and rejected by the backend, and tool source-opening controls are hidden in the frontend. Setting it to `true` re-enables local debugging actions that can modify or open server-side code: creating tools, renaming custom tools, deleting custom tools, and opening tool source paths in the code editor. This setting is unsafe for hosted or multi-user deployments and must be changed only in the settings file or server-side configuration, never from the GUI.

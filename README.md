@@ -92,7 +92,7 @@ Keep the frontend's hot-module-replacement while iterating on UI code.
 ```bash
 cd backend
 uv sync --extra dev
-uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude ".pixi/*"
+uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
 ```
 
 **2. Frontend** (second terminal):
@@ -104,6 +104,13 @@ bun run dev
 ```
 
 Open <http://localhost:5173>. Vite proxies `/api` and `/ws` to the backend on port 8000.
+
+The module entrypoint uses the packaged backend logging config by default, so application INFO logs are visible during development. To run raw Uvicorn instead, pass the same config explicitly:
+
+```bash
+cd backend
+uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude ".pixi/*" --log-config src/bioimageflow_server/logging.yaml
+```
 
 ## Quick Start — Desktop + HMR (development)
 
@@ -118,6 +125,8 @@ cd backend
 uv sync --extra desktop --extra dev
 uv run python -m bioimageflow_server --desktop --dev
 ```
+
+Use `--log-config /path/to/logging.yaml` with `python -m bioimageflow_server` when you need deployment-specific logging levels or handlers.
 
 The pywebview window loads `http://localhost:5173` while the FastAPI backend runs on port 8000; API calls reach the backend through Vite's proxy.
 

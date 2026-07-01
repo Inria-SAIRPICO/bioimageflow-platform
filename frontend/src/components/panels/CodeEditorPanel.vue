@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUIStore } from '@/stores/ui'
-import { getEditorStatus } from '@/api/editor'
+import { getEditorStatus, openEditorPath } from '@/api/editor'
 import type { EditorStatus } from '@/api/editor'
 import { closeCodeEditorWindow } from '@/utils/nativeDialogs'
 
@@ -12,6 +12,7 @@ const { codeEditorUrl, codeEditorPath, codeEditorOpening, codeEditorDetached } =
 const failed = ref(false)
 const statusLoading = ref(false)
 const statusDiagnostic = ref<EditorStatus | null>(null)
+const focusedAfterLoadKey = ref<string | null>(null)
 
 const loading = computed(() => statusLoading.value || codeEditorOpening.value)
 const loadingMessage = computed(() => (
@@ -37,6 +38,26 @@ const unavailableDetail = computed(() => statusDiagnostic.value?.error_detail ??
 async function restoreEditor() {
   await closeCodeEditorWindow()
   uiStore.setCodeEditorDetached(false)
+}
+
+function shouldFocusPathAfterLoad(url: string | null, path: string | null): path is string {
+  if (!url || !path) return false
+  return url.includes('folder=')
+}
+
+async function focusPathAfterLoad() {
+  const url = codeEditorUrl.value
+  const path = codeEditorPath.value
+  if (!shouldFocusPathAfterLoad(url, path)) return
+  const key = `${url}\n${path}`
+  if (focusedAfterLoadKey.value === key) return
+  focusedAfterLoadKey.value = key
+  try {
+    await openEditorPath(path)
+  } catch {
+    // The editor panel is already open on the project folder; diagnostics for
+    // failed file focus are kept out of the main panel state.
+  }
 }
 
 function onDetachedWindowClosed() {
@@ -86,6 +107,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('bioimageflow:code-editor-window-closed', onDetachedWindowClosed)
   window.removeEventListener('bif:code-editor-diagnostic', onCodeEditorDiagnostic)
 })
+
+watch([codeEditorUrl, codeEditorPath], () => {
+  focusedAfterLoadKey.value = null
+})
 </script>
 
 <template>
@@ -97,6 +122,7 @@ onBeforeUnmount(() => {
         :src="codeEditorUrl ?? undefined"
         :title="editorTitle"
         @error="failed = true"
+        @load="focusPathAfterLoad"
       />
     </template>
     <div

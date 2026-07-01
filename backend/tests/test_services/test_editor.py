@@ -460,6 +460,32 @@ def test_default_embedded_editor_does_not_report_opened_without_opener(
     assert response.opened is False
 
 
+def test_embedded_folder_focus_waits_for_control_endpoint(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    tool = workspace / "tools" / "tool.py"
+    tool.parent.mkdir()
+    tool.write_text("print('x')")
+    embedded = _LaunchableEmbedded()
+    embedded.status = lambda: EditorStatus(  # type: ignore[method-assign]
+        available=bool(embedded.launches),
+        url=embedded.url if embedded.launches else None,
+        version=None,
+        control_available=False,
+    )
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=0.0,
+        embedded_poll_interval=0.0,
+    )
+
+    response = service.open_path(str(workspace), str(tool))
+
+    assert embedded.opened == []
+    assert response.method == EditorOpenMethod.CLIPBOARD
+    assert response.path == str(tool)
+
+
 def test_embedded_folder_open_does_not_require_control_endpoint(tmp_path: Path) -> None:
     tool_dir = tmp_path / "tool_package"
     tool_dir.mkdir()
@@ -625,6 +651,22 @@ def test_embedded_manager_missing_opener_extension_is_unavailable(tmp_path: Path
     assert status.control_available is False
 
 
+def test_embedded_manager_diagnostics_report_probe_results(tmp_path: Path) -> None:
+    manager = EmbeddedCodeServerManager(
+        env_path=tmp_path / "codeserver",
+        vsix_path=tmp_path / "missing.vsix",
+    )
+
+    diagnostics = manager.diagnostics()
+
+    assert diagnostics["editor_url"] == "http://127.0.0.1:32344"
+    assert diagnostics["control_url"] == "http://127.0.0.1:60351/open"
+    assert diagnostics["opener_vsix_path"] == str(tmp_path / "missing.vsix")
+    assert diagnostics["opener_vsix_exists"] is False
+    assert "probe" in str(diagnostics["editor_probe"]).lower() or diagnostics["editor_probe"]
+    assert "probe" in str(diagnostics["control_probe"]).lower() or diagnostics["control_probe"]
+
+
 def test_embedded_manager_open_path_calls_opener_with_file_type(tmp_path: Path) -> None:
     opened: list[tuple[str, dict[str, str]]] = []
     manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver")
@@ -675,4 +717,4 @@ def test_embedded_manager_open_path_can_focus_file_inside_folder(tmp_path: Path)
     assert response.method == EditorOpenMethod.EMBEDDED
     assert response.path == str(tool)
     assert f"folder={str(workspace).replace('/', '%2F')}" in response.url
-    assert f"file={str(tool).replace('/', '%2F')}" in response.url
+    assert "file=" not in response.url
