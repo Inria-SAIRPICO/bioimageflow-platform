@@ -218,6 +218,53 @@ describe('CodeEditorPanel', () => {
     expect(mockedOpenEditorPath).toHaveBeenCalledWith('/tmp/workspace/tools/tool.py')
   })
 
+  it('does not focus an old file while a newer editor open is in progress', async () => {
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fworkspace',
+      '/tmp/workspace/tools/old.py',
+      '/tmp/workspace',
+      1,
+    )
+    store.setCodeEditorOpening('/tmp/workspace/tools/new.py', 2)
+
+    const wrapper = mount(CodeEditorPanel)
+    await wrapper.find('[data-testid="code-editor-iframe"]').trigger('load')
+    await flushPromises()
+
+    expect(mockedOpenEditorPath).not.toHaveBeenCalled()
+  })
+
+  it('ignores a load event from a previous iframe target', async () => {
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fold',
+      '/tmp/old/tools/old.py',
+      '/tmp/old',
+      1,
+    )
+    const wrapper = mount(CodeEditorPanel)
+    const oldFrame = wrapper.find('[data-testid="code-editor-iframe"]').element
+
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?folder=%2Ftmp%2Fnew',
+      '/tmp/new/tools/new.py',
+      '/tmp/new',
+      2,
+    )
+    await flushPromises()
+
+    oldFrame.dispatchEvent(new Event('load'))
+    await flushPromises()
+
+    expect(mockedOpenEditorPath).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="code-editor-iframe"]').trigger('load')
+    await flushPromises()
+
+    expect(mockedOpenEditorPath).toHaveBeenCalledWith('/tmp/new/tools/new.py')
+  })
+
   it('does not run a follow-up focus request for plain editor URLs', async () => {
     const store = useUIStore()
     store.setCodeEditorTarget('http://127.0.0.1:32344', '/tmp/tool.py')

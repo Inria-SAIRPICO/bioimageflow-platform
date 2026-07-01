@@ -493,6 +493,36 @@ describe('AppShell', () => {
     expect(store.codeEditorOpening).toBe(false)
   })
 
+  it('ignores stale code editor loading-finished events', async () => {
+    mountApp()
+    await flushPromises()
+    const store = useUIStore()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
+      detail: { path: '/workspace/tools/old.py', requestId: 1 },
+    }))
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading', {
+      detail: { path: '/workspace/tools/new.py', requestId: 2 },
+    }))
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished', {
+      detail: { path: '/workspace/tools/old.py', requestId: 1 },
+    }))
+    await flushPromises()
+
+    expect(store.codeEditorOpening).toBe(true)
+    expect(store.codeEditorOpeningPath).toBe('/workspace/tools/new.py')
+
+    window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished', {
+      detail: { path: '/workspace/tools/new.py', requestId: 2 },
+    }))
+    await flushPromises()
+
+    expect(store.codeEditorOpening).toBe(false)
+  })
+
   it('opens Avivator in a Dockview panel from image-cell events', async () => {
     mountApp()
     await flushPromises()

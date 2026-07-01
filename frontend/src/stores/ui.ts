@@ -39,6 +39,8 @@ export const useUIStore = defineStore('ui', () => {
   const codeEditorProjectPath = ref<string | null>(null)
   const codeEditorOpening = ref(false)
   const codeEditorOpeningPath = ref<string | null>(null)
+  const codeEditorOpeningRequestId = ref<number | null>(null)
+  const codeEditorTargetRequestId = ref<number | null>(null)
   const codeEditorDetached = ref(false)
   const themePreference = ref<ThemePreference>(readStoredThemePreference())
   const systemPrefersDark = ref(false)
@@ -126,17 +128,25 @@ export const useUIStore = defineStore('ui', () => {
     panels[panel] = visible
   }
 
-  function setCodeEditorTarget(url: string, path: string, projectPath: string | null = null) {
+  function setCodeEditorTarget(
+    url: string,
+    path: string,
+    projectPath: string | null = null,
+    requestId: number | null = null,
+  ) {
     codeEditorUrl.value = url
     codeEditorPath.value = path
     codeEditorProjectPath.value = projectPath
+    codeEditorTargetRequestId.value = requestId
     codeEditorOpening.value = false
     codeEditorOpeningPath.value = null
+    codeEditorOpeningRequestId.value = null
     panels.codeEditor = true
   }
 
-  function setCodeEditorOpening(path: string) {
+  function setCodeEditorOpening(path: string, requestId: number | null = null) {
     codeEditorOpeningPath.value = path || null
+    codeEditorOpeningRequestId.value = requestId
     if (!codeEditorUrl.value && path) {
       codeEditorPath.value = path
     }
@@ -144,10 +154,19 @@ export const useUIStore = defineStore('ui', () => {
     panels.codeEditor = true
   }
 
-  function clearCodeEditorOpening(path?: string) {
+  function clearCodeEditorOpening(path?: string, requestId?: number | null) {
+    if (
+      requestId !== undefined &&
+      requestId !== null &&
+      codeEditorOpeningRequestId.value !== null &&
+      codeEditorOpeningRequestId.value !== requestId
+    ) {
+      return
+    }
     if (path !== undefined && codeEditorOpeningPath.value !== (path || null)) return
     codeEditorOpening.value = false
     codeEditorOpeningPath.value = null
+    codeEditorOpeningRequestId.value = null
   }
 
   function setCodeEditorDetached(detached: boolean) {
@@ -165,6 +184,9 @@ export const useUIStore = defineStore('ui', () => {
     codeEditorPath,
     codeEditorProjectPath,
     codeEditorOpening,
+    codeEditorOpeningPath,
+    codeEditorOpeningRequestId,
+    codeEditorTargetRequestId,
     codeEditorDetached,
     themePreference,
     systemPrefersDark,

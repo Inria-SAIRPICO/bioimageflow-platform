@@ -307,9 +307,9 @@ function activateCodeEditorPanel() {
   })
 }
 
-function onCodeEditorLoading(event: CustomEvent<{ path?: string }>) {
+function onCodeEditorLoading(event: CustomEvent<{ path?: string, requestId?: number }>) {
   const existingPanel = dockviewApi.value?.getPanel('codeEditor')
-  uiStore.setCodeEditorOpening(event.detail?.path ?? '')
+  uiStore.setCodeEditorOpening(event.detail?.path ?? '', event.detail?.requestId ?? null)
   if (!existingPanel) {
     activateCodeEditorPanel()
   }
@@ -319,6 +319,7 @@ function onOpenCodeEditor(event: CustomEvent<{
   url: string
   path: string
   projectPath?: string | null
+  requestId?: number
 }>) {
   const existingPanel = dockviewApi.value?.getPanel('codeEditor')
   const urlChanged = uiStore.codeEditorUrl !== event.detail.url
@@ -326,14 +327,15 @@ function onOpenCodeEditor(event: CustomEvent<{
     event.detail.url,
     event.detail.path,
     event.detail.projectPath ?? null,
+    event.detail.requestId ?? null,
   )
   if (!existingPanel || urlChanged) {
     activateCodeEditorPanel()
   }
 }
 
-function onCodeEditorLoadingFinished(event: CustomEvent<{ path?: string }>) {
-  uiStore.clearCodeEditorOpening(event.detail?.path)
+function onCodeEditorLoadingFinished(event: CustomEvent<{ path?: string, requestId?: number }>) {
+  uiStore.clearCodeEditorOpening(event.detail?.path, event.detail?.requestId ?? null)
 }
 
 function onOpenAvivator(event: CustomEvent<{

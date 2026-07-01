@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import threading
+import time
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -88,6 +92,35 @@ class _LaunchableEmbedded(_Embedded):
             url=self.url,
             path=str(focus_path or path),
         )
+
+
+class _BlockingLaunchEmbedded(_LaunchableEmbedded):
+    def __init__(self, *, url: str = "http://127.0.0.1:32344") -> None:
+        super().__init__(url=url)
+        self.launch_started = threading.Event()
+        self.release_launch = threading.Event()
+        self._launched = False
+        self._lock = threading.Lock()
+
+    def status(self) -> EditorStatus:
+        with self._lock:
+            launched = self._launched
+        if launched:
+            return EditorStatus(
+                available=True,
+                url=self.url,
+                version=None,
+                control_available=True,
+            )
+        return self.status_value
+
+    def launch(self) -> None:
+        with self._lock:
+            self.launches += 1
+        self.launch_started.set()
+        assert self.release_launch.wait(timeout=2.0)
+        with self._lock:
+            self._launched = True
 
 
 class _EnvironmentManager:
@@ -446,6 +479,60 @@ def test_default_embedded_editor_launches_when_not_already_running(tmp_path: Pat
     assert response.url == "http://127.0.0.1:32344"
 
 
+def test_concurrent_embedded_opens_share_single_launch(tmp_path: Path) -> None:
+    tool_a = tmp_path / "a.py"
+    tool_b = tmp_path / "b.py"
+    tool_a.write_text("print('a')")
+    tool_b.write_text("print('b')")
+    embedded = _BlockingLaunchEmbedded()
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=1.0,
+        embedded_poll_interval=0.001,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(service.open_path, str(tool_a))
+        assert embedded.launch_started.wait(timeout=2.0)
+        second = executor.submit(service.open_path, str(tool_b))
+        time.sleep(0.05)
+        embedded.release_launch.set()
+        responses = [first.result(timeout=2.0), second.result(timeout=2.0)]
+
+    assert embedded.launches == 1
+    assert [response.method for response in responses] == [
+        EditorOpenMethod.EMBEDDED,
+        EditorOpenMethod.EMBEDDED,
+    ]
+    assert embedded.opened == [tool_a, tool_b]
+
+
+def test_status_launch_and_open_path_share_single_launch(tmp_path: Path) -> None:
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+    embedded = _BlockingLaunchEmbedded()
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=1.0,
+        embedded_poll_interval=0.001,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        status_future = executor.submit(service.get_status, launch=True)
+        assert embedded.launch_started.wait(timeout=2.0)
+        open_future = executor.submit(service.open_path, str(tool))
+        time.sleep(0.05)
+        embedded.release_launch.set()
+        status = status_future.result(timeout=2.0)
+        response = open_future.result(timeout=2.0)
+
+    assert embedded.launches == 1
+    assert status.available is True
+    assert status.launch_attempted is True
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert embedded.opened == [tool]
+
+
 def test_open_path_clipboard_fallback_reports_embedded_launch_failure(tmp_path: Path) -> None:
     class FailingEmbedded(_Embedded):
         def launch(self) -> None:
@@ -581,7 +668,7 @@ def test_embedded_folder_open_does_not_require_control_endpoint(tmp_path: Path) 
 
 
 def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> None:
-    vsix = tmp_path / "opener-0.0.2.vsix"
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
     vsix.write_bytes(b"vsix")
     calls: list[list[str]] = []
 
@@ -594,7 +681,8 @@ def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> Non
 
     assert manager.editor_url == "http://127.0.0.1:32344"
     assert manager.control_url == "http://127.0.0.1:60351"
-    assert calls[0][-2:] == ["--install-extension", str(vsix)]
+    assert calls[0] == ["code-server", "--uninstall-extension", "sairpico.opener"]
+    assert calls[1][-2:] == ["--install-extension", str(vsix)]
     assert calls[-1] == [
         "code-server",
         "--disable-workspace-trust",
@@ -606,8 +694,29 @@ def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> Non
     ]
 
 
+def test_embedded_manager_ignores_missing_legacy_opener_uninstall(
+    tmp_path: Path,
+) -> None:
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
+    vsix.write_bytes(b"vsix")
+    calls: list[list[str]] = []
+
+    def runner(args: list[str]) -> object:
+        calls.append(args)
+        if args == ["code-server", "--uninstall-extension", "sairpico.opener"]:
+            raise RuntimeError("Extension 'sairpico.opener' is not installed")
+        return object()
+
+    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver", vsix_path=vsix)
+    manager.launch(install_runner=runner, process_launcher=runner)
+
+    assert calls[0] == ["code-server", "--uninstall-extension", "sairpico.opener"]
+    assert calls[1][-2:] == ["--install-extension", str(vsix)]
+    assert calls[-1][0] == "code-server"
+
+
 def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: Path) -> None:
-    vsix = tmp_path / "opener-0.0.2.vsix"
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
     vsix.write_bytes(b"vsix")
     env_manager = _EnvironmentManager()
 
@@ -627,15 +736,16 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
     ]
     assert env_manager.executed
     commands = env_manager.executed[0][1]
-    assert commands[0].startswith("code-server --install-extension ")
-    assert str(vsix) in commands[0]
+    assert commands[0] == "code-server --uninstall-extension sairpico.opener || true"
+    assert commands[1].startswith("code-server --install-extension ")
+    assert str(vsix) in commands[1]
     assert commands[-1].endswith("--bind-addr 127.0.0.1:32344")
 
 
 def test_embedded_manager_loads_legacy_default_environment_on_reuse_error(
     tmp_path: Path,
 ) -> None:
-    vsix = tmp_path / "opener-0.0.2.vsix"
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
     vsix.write_bytes(b"vsix")
     env_manager = _ReuseErrorEnvironmentManager()
 
@@ -660,7 +770,7 @@ def test_embedded_manager_loads_legacy_default_environment_on_reuse_error(
 def test_embedded_manager_does_not_load_default_environment_on_recipe_mismatch(
     tmp_path: Path,
 ) -> None:
-    vsix = tmp_path / "opener-0.0.2.vsix"
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
     vsix.write_bytes(b"vsix")
     env_manager = _ReuseErrorEnvironmentManager("it was created with a different recipe")
 
@@ -678,7 +788,7 @@ def test_embedded_manager_does_not_load_default_environment_on_recipe_mismatch(
 
 
 def test_embedded_manager_loads_configured_environment_path(tmp_path: Path) -> None:
-    vsix = tmp_path / "opener-0.0.2.vsix"
+    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
     vsix.write_bytes(b"vsix")
     env_path = tmp_path / "codeserver"
     env_manager = _EnvironmentManager()
@@ -706,9 +816,32 @@ def test_embedded_manager_launch_command_uses_configured_editor_url(tmp_path: Pa
 def test_default_opener_extension_is_packaged() -> None:
     vsix = default_opener_vsix_path()
 
-    assert vsix.name == "opener-0.0.2.vsix"
+    assert vsix.name == "bioimageflow-opener-0.1.0.vsix"
     assert vsix.is_file()
     assert vsix.stat().st_size > 0
+
+
+def test_default_opener_extension_matches_source_package() -> None:
+    vsix = default_opener_vsix_path()
+    source_package = vsix.parent / "extension-src" / "package.json"
+    source_code = vsix.parent / "extension-src" / "src" / "extension.ts"
+
+    package_text = source_package.read_text(encoding="utf-8")
+    source_text = source_code.read_text(encoding="utf-8")
+    with zipfile.ZipFile(vsix) as archive:
+        packaged_package = archive.read("extension/package.json").decode("utf-8")
+        packaged_extension = archive.read("extension/out/extension.js").decode("utf-8")
+
+    assert '"name": "bioimageflow-opener"' in package_text
+    assert '"publisher": "bioimageflow"' in package_text
+    assert '"version": "0.1.0"' in package_text
+    assert '"name": "bioimageflow-opener"' in packaged_package
+    assert '"publisher": "bioimageflow"' in packaged_package
+    assert '"version": "0.1.0"' in packaged_package
+    assert "openQueue" in source_text
+    assert "openQueue" in packaged_extension
+    assert "revealInExplorer" not in source_text
+    assert "revealInExplorer" not in packaged_extension
 
 
 def test_embedded_manager_missing_opener_extension_is_unavailable(tmp_path: Path) -> None:

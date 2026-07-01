@@ -13,10 +13,12 @@ const mockedPost = vi.mocked(api.post as any)
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise
+    reject = rejectPromise
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 describe('editor api helpers', () => {
@@ -128,6 +130,7 @@ describe('editor api helpers', () => {
       url: 'http://127.0.0.1:32344',
       path: '/tmp/tool.py',
       projectPath: null,
+      requestId: expect.any(Number),
     })
     window.removeEventListener('bif:open-code-editor', listener)
   })
@@ -173,6 +176,7 @@ describe('editor api helpers', () => {
       url: currentUrl,
       path: '/workspace/tools/new.py',
       projectPath: '/workspace',
+      requestId: expect.any(Number),
     })
     focusRequest.resolve({
       data: {
@@ -227,6 +231,7 @@ describe('editor api helpers', () => {
       url: currentUrl,
       path: '/workspace/tools/new.py',
       projectPath: '/workspace',
+      requestId: expect.any(Number),
     })
     focusRequest.resolve({
       data: {
@@ -287,6 +292,7 @@ describe('editor api helpers', () => {
       url: currentUrl,
       path: '/tool_store/pkg/1.0/pkg/new.py',
       projectPath: '/tool_store',
+      requestId: expect.any(Number),
     })
     focusRequest.resolve({
       data: {
@@ -346,6 +352,7 @@ describe('editor api helpers', () => {
       url: currentUrl,
       path: '/workspace/tools/new.py',
       projectPath: '/workspace',
+      requestId: expect.any(Number),
     })
     window.removeEventListener('bif:open-code-editor', listener)
   })
@@ -398,8 +405,211 @@ describe('editor api helpers', () => {
       url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
       path: '/workspace-b/tools/new.py',
       projectPath: '/workspace-b',
+      requestId: expect.any(Number),
     })
     window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('ignores older embedded responses that resolve after a newer open', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const older = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        project_path: string
+        message: null
+      }
+    }>()
+    const newer = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        project_path: string
+        message: null
+      }
+    }>()
+    mockedPost
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+
+    const first = openPathWithEditor('/workspace-a', null, {
+      focusPath: '/workspace-a/tools/old.py',
+    })
+    const second = openPathWithEditor('/workspace-b', null, {
+      focusPath: '/workspace-b/tools/new.py',
+    })
+
+    newer.resolve({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
+        path: '/workspace-b/tools/new.py',
+        project_path: '/workspace-b',
+        message: null,
+      },
+    })
+    await second
+
+    older.resolve({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-a',
+        path: '/workspace-a/tools/old.py',
+        project_path: '/workspace-a',
+        message: null,
+      },
+    })
+    await first
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      url: 'http://127.0.0.1:32344/?folder=%2Fworkspace-b',
+      path: '/workspace-b/tools/new.py',
+      projectPath: '/workspace-b',
+      requestId: expect.any(Number),
+    })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('does not send a stale same-project focus request after a newer open starts', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/current.py', '/workspace')
+    const older = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        project_path: string
+        message: null
+      }
+    }>()
+    const newer = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        project_path: string
+        message: null
+      }
+    }>()
+    mockedPost
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+
+    const first = openPathWithEditor('/workspace', null, {
+      focusPath: '/workspace/tools/old.py',
+    })
+    const second = openPathWithEditor('/workspace', null, {
+      focusPath: '/workspace/tools/new.py',
+    })
+
+    newer.resolve({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: currentUrl,
+        path: '/workspace/tools/new.py',
+        project_path: '/workspace',
+        message: null,
+      },
+    })
+    await second
+    older.resolve({
+      data: {
+        opened: true,
+        method: 'embedded',
+        url: currentUrl,
+        path: '/workspace/tools/old.py',
+        project_path: '/workspace',
+        message: null,
+      },
+    })
+    await first
+
+    expect(mockedPost).toHaveBeenCalledTimes(3)
+    expect(mockedPost).not.toHaveBeenCalledWith('/api/v1/editor/open', {
+      path: '/workspace/tools/old.py',
+    })
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener.mock.calls[0][0].detail.path).toBe('/workspace/tools/new.py')
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('does not warn for a stale same-project focus failure after a newer open starts', async () => {
+    const toast = { add: vi.fn() }
+    const currentUrl = 'http://127.0.0.1:32344/?folder=%2Fworkspace'
+    useUIStore().setCodeEditorTarget(currentUrl, '/workspace/tools/current.py', '/workspace')
+    const olderFocus = deferred<{
+      data: {
+        opened: boolean
+        method: string
+        url: string
+        path: string
+        project_path: string
+        message: null
+      }
+    }>()
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: currentUrl,
+          path: '/workspace/tools/old.py',
+          project_path: '/workspace',
+          message: null,
+        },
+      })
+      .mockReturnValueOnce(olderFocus.promise)
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: currentUrl,
+          path: '/workspace/tools/new.py',
+          project_path: '/workspace',
+          message: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: currentUrl,
+          path: '/workspace/tools/new.py',
+          project_path: '/workspace',
+          message: null,
+        },
+      })
+
+    const first = openPathWithEditor('/workspace', toast, {
+      focusPath: '/workspace/tools/old.py',
+    })
+    await first
+    expect(mockedPost).toHaveBeenCalledTimes(2)
+
+    const second = openPathWithEditor('/workspace', toast, {
+      focusPath: '/workspace/tools/new.py',
+    })
+    olderFocus.reject(new Error('stale focus failed'))
+
+    await second
+    await Promise.resolve()
+
+    expect(toast.add).not.toHaveBeenCalledWith(expect.objectContaining({
+      summary: 'Could not focus file in editor',
+    }))
   })
 
   it('dispatches a diagnostic event for clipboard fallback diagnostics', async () => {
@@ -457,7 +667,7 @@ describe('editor api helpers', () => {
     await openPathWithEditor('/tmp/tool.py', null, { showEmbeddedLoading: true })
 
     expect(events).toEqual(['loading', 'post', 'open', 'finished'])
-    expect(loadingDetail).toEqual({ path: '/tmp/tool.py' })
+    expect(loadingDetail).toEqual({ path: '/tmp/tool.py', requestId: expect.any(Number) })
     window.removeEventListener('bif:open-code-editor-loading', onLoading)
     window.removeEventListener('bif:open-code-editor', onOpen)
     window.removeEventListener('bif:open-code-editor-loading-finished', onFinished)
