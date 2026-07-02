@@ -17,6 +17,7 @@ from starlette.responses import FileResponse
 
 from bioimageflow_server.models.nodes import NodeDataResponse
 from bioimageflow_server.services.result_store import (
+    DATAFRAME_RECORD_DIR_ATTR,
     ResultDataNotReadyError,
     ResultStoreService,
 )
@@ -86,7 +87,18 @@ def _get_dataframe_cell(df: pd.DataFrame, row: int, col: str) -> object:
     return df.iloc[row][col]
 
 
-def _coerce_image_path(value: object, storage_path: Path | None) -> Path:
+def _dataframe_record_dir(df: pd.DataFrame) -> Path | None:
+    value = df.attrs.get(DATAFRAME_RECORD_DIR_ATTR)
+    if isinstance(value, (str, Path)):
+        return Path(value)
+    return None
+
+
+def _coerce_image_path(
+    value: object,
+    storage_path: Path | None,
+    record_dir: Path | None = None,
+) -> Path:
     is_missing = value is None
     if not is_missing and not isinstance(value, (str, Path)):
         try:
@@ -96,11 +108,18 @@ def _coerce_image_path(value: object, storage_path: Path | None) -> Path:
     if is_missing:
         raise HTTPException(status_code=422, detail="Selected image path is empty")
     image_path = Path(str(value)).expanduser()
-    if not image_path.is_absolute() and storage_path is not None:
-        image_path = storage_path / image_path
-    if not image_path.is_file():
-        raise HTTPException(status_code=404, detail=f"Image file not found: {image_path}")
-    return image_path
+    candidate_paths = [image_path]
+    if not image_path.is_absolute():
+        candidate_paths = []
+        if record_dir is not None:
+            candidate_paths.append(record_dir / image_path)
+        if storage_path is not None:
+            candidate_paths.append(storage_path / image_path)
+        candidate_paths.append(image_path)
+    for candidate in candidate_paths:
+        if candidate.is_file():
+            return candidate
+    raise HTTPException(status_code=404, detail=f"Image file not found: {candidate_paths[0]}")
 
 
 def _guess_image_media_type(path: Path) -> str:
@@ -248,7 +267,7 @@ def _tiff_offsets(path: Path) -> list[int]:
         ) from exc
 
 
-@router.get("/{node_id}/data", response_model=NodeDataResponse)
+@router.get("/{node_id:path}/data", response_model=NodeDataResponse)
 async def get_node_data(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
@@ -300,21 +319,38 @@ async def get_node_data(
     )
 
 
-@router.get("/{node_id}/data/csv")
+@router.get("/{node_id:path}/data/csv")
 async def download_node_csv(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
     workflow_name: str | None = None,
-) -> FileResponse:
+    columns: Annotated[list[str] | None, Query()] = None,
+) -> Response:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
-    csv_path = result_store.get_csv_path(node_id, storage_path=storage_path)
-    if csv_path is None:
-        raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
-    return FileResponse(
-        path=csv_path,
+    filename = f"{node_id}.csv"
+    if not columns:
+        csv_path = result_store.get_csv_path(node_id, storage_path=storage_path)
+        if csv_path is not None:
+            return FileResponse(
+                path=csv_path,
+                media_type="text/csv",
+                filename=filename,
+            )
+
+    df = _get_node_dataframe(node_id, result_store, storage_path)
+    if columns:
+        unknown = [column for column in columns if column not in df.columns]
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown column: '{unknown[0]}'",
+            )
+        df = df.loc[:, columns]
+    return Response(
+        content=df.to_csv(index=True),
         media_type="text/csv",
-        filename=f"{node_id}.csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -331,7 +367,7 @@ def _node_image_response(
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
     value = _get_dataframe_cell(df, row, col)
-    image_path = _coerce_image_path(value, storage_path)
+    image_path = _coerce_image_path(value, storage_path, _dataframe_record_dir(df))
     media_type = _guess_image_media_type(image_path)
     filename = response_filename or image_path.name
     if output_format == "ome-tiff":
@@ -358,7 +394,7 @@ def _node_image_response(
     )
 
 
-@router.get("/{node_id}/image/{filename}")
+@router.get("/{node_id:path}/image/{filename}")
 async def get_node_image_with_filename(
     node_id: str,
     filename: str,
@@ -381,7 +417,7 @@ async def get_node_image_with_filename(
     )
 
 
-@router.get("/{node_id}/image")
+@router.get("/{node_id:path}/image")
 async def get_node_image(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
@@ -402,7 +438,7 @@ async def get_node_image(
     )
 
 
-@router.get("/{node_id}/thumbnail")
+@router.get("/{node_id:path}/thumbnail")
 async def get_node_thumbnail(
     node_id: str,
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
@@ -415,9 +451,10 @@ async def get_node_thumbnail(
 ) -> Response:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
     df = _get_node_dataframe(node_id, result_store, storage_path)
-    value = str(_get_dataframe_cell(df, row, col))
+    value = _get_dataframe_cell(df, row, col)
+    image_path = _coerce_image_path(value, storage_path, _dataframe_record_dir(df))
     png = await thumbnail_manager.get_or_queue(
-        value, size, wait_timeout=_THUMBNAIL_WAIT_TIMEOUT_SECONDS
+        image_path, size, wait_timeout=_THUMBNAIL_WAIT_TIMEOUT_SECONDS
     )
 
     # Tell the frontend whether the body is the rendered thumbnail or a

@@ -290,8 +290,7 @@ class ThumbnailManager:
                     "thumbnail",
                     dependencies={
                         "pip": list(_THUMBNAIL_ENV_PIP),
-                    },
-                    use_existing=True,
+                    }
                 )
             env.launch()
             self._env = env

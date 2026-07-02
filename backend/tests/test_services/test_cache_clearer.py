@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any
 
+import pandas as pd
 import pytest
 
 from bioimageflow.dataframe_tool import DataFrameTool
@@ -211,16 +212,46 @@ def test_cleared_node_takes_priority_over_out_of_date(
     assert result["b"].status == "unexecuted"
 
 
-def test_clear_removes_cache_directory(
+def test_clear_removes_current_cache_selection(
     tmp_path: Path, registry: ToolRegistryService,
 ) -> None:
-    graph = _make_graph([("a", "SrcTool")], [])
-    node_dir = tmp_path / "data" / "a"
-    node_dir.mkdir(parents=True)
-    (node_dir / "cached.txt").write_text("hi")
-    assert node_dir.exists()
+    from bioimageflow.cache import dataframe_publish
+    from bioimageflow.storage import Storage
+    from bioimageflow_server.services.graph_builder import build_workflow
+
+    registry.register_tool(
+        "DFTool",
+        ToolMetadata(
+            name="DFTool",
+            display_name="DFTool",
+            package="test-pkg",
+            package_version="1.0.0",
+            tool_type="DataFrameTool",
+        ),
+        tool_class=DFTool,
+    )
+    graph = GraphState(
+        nodes=[
+            NodeState(
+                id="a",
+                name="a",
+                tool_name="DFTool",
+                position=(0, 0),
+                parameters={"threshold": 0.5},
+            )
+        ],
+        edges=[],
+    )
+    workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=tmp_path)
+    plan = workflow.plan(dev_mode=True)["a"]
+    dataframe_publish(tmp_path, "a", plan.logical_signature, pd.DataFrame({"x": [1]}))
+
+    storage = Storage(tmp_path)
+    assert storage.load_current(plan.final_result_key) is not None
+
     clear_node_cache(["a"], graph, registry, tmp_path)
-    assert not node_dir.exists()
+
+    assert storage.load_current(plan.final_result_key) is None
 
 
 def test_positional_edges_count_as_downstream(

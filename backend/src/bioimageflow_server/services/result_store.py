@@ -12,6 +12,8 @@ from bioimageflow.storage import validate_relative_posix_path
 
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
+DATAFRAME_RECORD_DIR_ATTR = "bioimageflow_record_dir"
+
 
 class ResultDataNotReadyError(Exception):
     """Raised when a node cache file exists but is not yet readable."""
@@ -34,11 +36,13 @@ class ResultStoreService:
         if data_path is None:
             return None
         try:
-            return cache_load(data_path)
+            df = cache_load(data_path)
         except (OSError, pd.errors.EmptyDataError) as exc:
             raise ResultDataNotReadyError(
                 f"Output data for node '{node_id}' is not ready"
             ) from exc
+        df.attrs[DATAFRAME_RECORD_DIR_ATTR] = str(record_dir)
+        return df
 
     def get_csv_path(
         self, node_id: str, storage_path: Path | None = None
@@ -111,10 +115,17 @@ class ResultStoreService:
         except ValueError:
             return None
         parts = safe_node_id.split("/")
-        parent = root / "latest"
+        parent = root / "views" / "latest"
         for part in parts[:-1]:
             parent /= part
-        return parent / f"{parts[-1]}.bioimageflow-link.json"
+        latest = parent / f"{parts[-1]}.bioimageflow-link.json"
+        if latest.is_file():
+            return latest
+
+        legacy_parent = root / "latest"
+        for part in parts[:-1]:
+            legacy_parent /= part
+        return legacy_parent / f"{parts[-1]}.bioimageflow-link.json"
 
     def _resolve_link(self, link_path: Path, root: Path) -> Path | None:
         try:

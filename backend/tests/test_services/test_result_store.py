@@ -12,6 +12,7 @@ import pytest
 
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.result_store import (
+    DATAFRAME_RECORD_DIR_ATTR,
     ResultDataNotReadyError,
     ResultStoreService,
 )
@@ -24,10 +25,16 @@ def _store(tmp_path: Path, registry: MagicMock | None = None) -> ResultStoreServ
     )
 
 
-def _record_dir(tmp_path: Path, node_id: str, run_id: str = "run_1") -> Path:
+def _record_dir(
+    tmp_path: Path,
+    node_id: str,
+    run_id: str = "run_1",
+    *,
+    legacy: bool = False,
+) -> Path:
     path = tmp_path / "cache" / "v1" / "results" / "aa" / "bb" / "rk_test" / "records" / "rec_test"
     path.mkdir(parents=True)
-    node_dir = tmp_path / "runs" / run_id / "nodes" / node_id
+    node_dir = tmp_path / ("runs" if legacy else "views/runs") / run_id / "nodes" / node_id
     node_dir.mkdir(parents=True)
     (node_dir / "result.json").write_text(
         json.dumps(
@@ -52,7 +59,7 @@ def _record_dir(tmp_path: Path, node_id: str, run_id: str = "run_1") -> Path:
             }
         )
     )
-    latest_parent = tmp_path / "latest"
+    latest_parent = tmp_path / ("latest" if legacy else "views/latest")
     parts = node_id.split("/")
     for part in parts[:-1]:
         latest_parent /= part
@@ -75,7 +82,7 @@ def test_get_latest_dataframe_returns_none_for_missing_node(tmp_path: Path) -> N
 
 
 def test_get_latest_dataframe_returns_none_for_missing_latest_link(tmp_path: Path) -> None:
-    (tmp_path / "runs" / "run_1" / "nodes" / "n1").mkdir(parents=True)
+    (tmp_path / "views" / "runs" / "run_1" / "nodes" / "n1").mkdir(parents=True)
     assert _store(tmp_path).get_latest_dataframe("n1") is None
 
 
@@ -94,6 +101,25 @@ def test_get_latest_dataframe_loads_latest_link_record(tmp_path: Path, monkeypat
 
     assert df is not None
     assert loaded_paths == [record_dir / "dataframe.csv"]
+    assert df.attrs[DATAFRAME_RECORD_DIR_ATTR] == str(record_dir)
+
+
+def test_get_latest_dataframe_falls_back_to_legacy_latest_link(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    record_dir = _record_dir(tmp_path, "n1", legacy=True)
+    (record_dir / "dataframe.csv").write_text("x\n2\n")
+
+    monkeypatch.setattr(
+        "bioimageflow_server.services.result_store.cache_load",
+        lambda path: pd.DataFrame({"x": [2]}),
+    )
+
+    df = _store(tmp_path).get_latest_dataframe("n1")
+
+    assert df is not None
+    assert df["x"].tolist() == [2]
 
 
 def test_get_latest_dataframe_loads_library_generated_v1_view(tmp_path: Path) -> None:

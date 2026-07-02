@@ -163,11 +163,18 @@ export const useDataTableStore = defineStore('dataTable', () => {
     }
   }
 
-  function downloadCsv(nodeId: string, workflowName?: string | null) {
+  function downloadCsv(
+    nodeId: string,
+    workflowName?: string | null,
+    columns?: string[] | null,
+  ) {
     const link = document.createElement('a')
     const params = new URLSearchParams()
     if (workflowName && workflowName.trim() !== '') {
       params.set('workflow_name', workflowName)
+    }
+    for (const column of columns ?? []) {
+      params.append('columns', column)
     }
     const query = params.toString()
     link.href =

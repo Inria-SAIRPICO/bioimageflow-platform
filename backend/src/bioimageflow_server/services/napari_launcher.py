@@ -226,8 +226,7 @@ class NapariLauncher:
                         "python": "3.12",
                         "conda": ["conda-forge::napari", "conda-forge::pyqt"],
                         "pip": [],
-                    },
-                    use_existing=True,
+                    }
                 )
 
             # Step 6: per-launch authkey (32 random bytes, hex-encoded for

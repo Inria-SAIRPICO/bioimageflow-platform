@@ -491,13 +491,11 @@ class _FakeEnvManager:
         self._logger = _FakeProcessLogger(port_line=port_line)
         self._env = _FakeEnvironment("napari", "/envs/napari")
 
-    def create(self, name, dependencies=None, additional_install_commands=None,
-               use_existing=False):
+    def create(self, name, dependencies=None, additional_install_commands=None):
         self.created.append(
             {
                 "name": name,
                 "dependencies": dependencies,
-                "use_existing": use_existing,
             }
         )
         return self._env
@@ -549,7 +547,6 @@ def test_launch_creates_environment_when_path_is_none(monkeypatch) -> None:
     assert len(em.created) == 1
     rec = em.created[0]
     assert rec["name"] == "napari"
-    assert rec["use_existing"] is True
     deps = rec["dependencies"]
     assert deps["python"] == "3.12"
     assert "conda-forge::napari" in deps["conda"]

@@ -245,7 +245,12 @@ async def _poll_idle(client: httpx.AsyncClient, timeout: float = 5.0) -> dict[st
 
 
 def _cached_dataframe(storage_path: Path, node_id: str) -> pd.DataFrame:
-    latest_link = storage_path / "latest" / f"{node_id}.bioimageflow-link.json"
+    latest_link = (
+        storage_path
+        / "views"
+        / "latest"
+        / f"{node_id}.bioimageflow-link.json"
+    )
     assert latest_link.exists(), f"no latest cache link for {node_id}"
     latest_payload = json.loads(latest_link.read_text())
     run_node_dir = (latest_link.parent / latest_payload["target"]).resolve()

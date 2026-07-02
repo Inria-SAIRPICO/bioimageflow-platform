@@ -7,7 +7,7 @@ import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { NodeState } from '@/api/types'
+import type { NodeState, PublishedOutput } from '@/api/types'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -30,11 +30,105 @@ const displayedNodeIds = computed(() => {
   return []
 })
 
-const visibleNodeIds = computed(() => {
-  if (displayedNodeIds.value.length > 5 && !showAll.value) {
-    return displayedNodeIds.value.slice(0, 5)
+interface DataTableEntry {
+  key: string
+  displayNodeId: string
+  dataNodeId: string
+  label: string
+  subtitle: string
+  toolName: string | null
+  disabled: boolean
+  columnAliases: Record<string, string>
+  columnFilter?: string[]
+}
+
+interface ResolvedPublishedOutput {
+  dataNodeId: string
+  column: string
+  toolName: string | null
+}
+
+function isSubWorkflowNode(node: NodeState | null | undefined): boolean {
+  return node?.tool_name === '__sub_workflow__'
+}
+
+function findNode(graph: { nodes?: NodeState[] } | null | undefined, nodeId: string): NodeState | null {
+  return graph?.nodes?.find((node) => node.id === nodeId) ?? null
+}
+
+function resolvePublishedOutput(
+  parent: NodeState,
+  published: PublishedOutput,
+): ResolvedPublishedOutput {
+  const scopedIds = [parent.id]
+  let graph = parent.sub_workflow
+  let current = published
+
+  while (true) {
+    scopedIds.push(current.internal_node_id)
+    const target = findNode(graph, current.internal_node_id)
+    const nestedOutput = target?.published_outputs?.find(
+      (candidate) => candidate.name === current.internal_output,
+    )
+    if (!isSubWorkflowNode(target) || !nestedOutput) {
+      return {
+        dataNodeId: scopedIds.join('/'),
+        column: current.internal_output,
+        toolName: target?.tool_name ?? null,
+      }
+    }
+    graph = target?.sub_workflow
+    current = nestedOutput
   }
-  return displayedNodeIds.value
+}
+
+function entriesForSubWorkflow(node: NodeState): DataTableEntry[] {
+  const byDataNode = new Map<string, DataTableEntry>()
+  for (const published of node.published_outputs ?? []) {
+    const resolved = resolvePublishedOutput(node, published)
+    const entry = byDataNode.get(resolved.dataNodeId) ?? {
+      key: `${node.id}:${resolved.dataNodeId}`,
+      displayNodeId: node.id,
+      dataNodeId: resolved.dataNodeId,
+      label: nodeLabel(node.id),
+      subtitle: resolved.dataNodeId,
+      toolName: resolved.toolName,
+      disabled: node.enabled === false,
+      columnAliases: {},
+      columnFilter: [],
+    }
+    entry.columnAliases[published.name] = published.name
+    entry.columnAliases[published.internal_output] = published.name
+    entry.columnAliases[resolved.column] = published.name
+    entry.columnFilter?.push(resolved.column)
+    byDataNode.set(resolved.dataNodeId, entry)
+  }
+  return Array.from(byDataNode.values())
+}
+
+function entryForNode(nodeId: string): DataTableEntry[] {
+  const node = nodeById.value[nodeId]
+  if (!node) return []
+  if (isSubWorkflowNode(node)) return entriesForSubWorkflow(node)
+  return [{
+    key: node.id,
+    displayNodeId: node.id,
+    dataNodeId: node.id,
+    label: nodeLabel(node.id),
+    subtitle: node.id,
+    toolName: node.tool_name ?? null,
+    disabled: node.enabled === false,
+    columnAliases: {},
+  }]
+}
+
+const displayedEntries = computed(() => displayedNodeIds.value.flatMap(entryForNode))
+
+const visibleEntries = computed(() => {
+  if (displayedEntries.value.length > 5 && !showAll.value) {
+    return displayedEntries.value.slice(0, 5)
+  }
+  return displayedEntries.value
 })
 
 const allTerminalDisabled = computed(() =>
@@ -44,11 +138,14 @@ const allTerminalDisabled = computed(() =>
 
 const allDisplayedWithoutData = computed(() =>
   displayedNodeIds.value.length > 0 &&
-  displayedNodeIds.value.every((id) =>
-    !dataTableStore.getNodeData(id) &&
-    !dataTableStore.isLoading(id) &&
-    !dataTableStore.isPending(id) &&
-    !dataTableStore.getError(id),
+  (
+    displayedEntries.value.length === 0 ||
+    displayedEntries.value.every((entry) =>
+      !dataTableStore.getNodeData(entry.dataNodeId) &&
+      !dataTableStore.isLoading(entry.dataNodeId) &&
+      !dataTableStore.isPending(entry.dataNodeId) &&
+      !dataTableStore.getError(entry.dataNodeId),
+    )
   ),
 )
 
@@ -56,56 +153,39 @@ function nodeLabel(nodeId: string): string {
   return nodeById.value[nodeId]?.name ?? nodeId
 }
 
-function toolName(nodeId: string): string | null {
-  return nodeById.value[nodeId]?.tool_name ?? null
-}
-
-function isSyntheticSubWorkflowNode(nodeId: string): boolean {
-  return toolName(nodeId) === '__sub_workflow__'
-}
-
-function columnAliases(nodeId: string): Record<string, string> {
-  const aliases: Record<string, string> = {}
-  const publishedOutputs = nodeById.value[nodeId]?.published_outputs ?? []
-  for (const published of publishedOutputs) {
-    aliases[published.name] = published.name
-    aliases[`${published.internal_node_id}.${published.internal_output}`] = published.name
-    aliases[published.internal_output] ??= published.name
-  }
-  return aliases
-}
-
-function fetchIfMissing(nodeId: string) {
-  if (isSyntheticSubWorkflowNode(nodeId)) return
-  if (!dataTableStore.getNodeData(nodeId) && !dataTableStore.isLoading(nodeId)) {
-    void dataTableStore.fetchNodeData(nodeId, {
-      toolName: toolName(nodeId),
+function fetchIfMissing(entry: DataTableEntry) {
+  if (!dataTableStore.getNodeData(entry.dataNodeId) && !dataTableStore.isLoading(entry.dataNodeId)) {
+    void dataTableStore.fetchNodeData(entry.dataNodeId, {
+      toolName: entry.toolName,
       workflowName: workflowStore.currentName,
     })
   }
 }
 
+function refreshEntry(entry: DataTableEntry) {
+  void dataTableStore.fetchNodeData(entry.dataNodeId, {
+    toolName: entry.toolName,
+    workflowName: workflowStore.currentName,
+  })
+}
+
 let scope: EffectScope | null = null
 
 watch(
-  displayedNodeIds,
-  (ids) => {
+  displayedEntries,
+  (entries) => {
     scope?.stop()
     scope = effectScope()
     scope.run(() => {
-      for (const nodeId of ids) {
-        fetchIfMissing(nodeId)
+      for (const entry of entries) {
+        fetchIfMissing(entry)
         watch(
-          () => executionStore.nodeStatuses[nodeId]?.status,
+          () => executionStore.nodeStatuses[entry.dataNodeId]?.status,
           (next, prev) => {
-            if (isSyntheticSubWorkflowNode(nodeId)) return
             if (prev !== 'executed' && next === 'executed') {
-              void dataTableStore.fetchNodeData(nodeId, {
-                toolName: toolName(nodeId),
-                workflowName: workflowStore.currentName,
-              })
+              refreshEntry(entry)
             } else if (next === 'out_of_date' || next === 'unexecuted') {
-              dataTableStore.clearCache(nodeId)
+              dataTableStore.clearCache(entry.dataNodeId)
             }
           },
         )
@@ -113,6 +193,22 @@ watch(
     })
   },
   { immediate: true },
+)
+
+watch(
+  () => executionStore.lastResult,
+  (result) => {
+    if (!result?.success) return
+    const refreshed = new Set<string>()
+    for (const entry of displayedEntries.value) {
+      if (refreshed.has(entry.dataNodeId)) continue
+      const status = result.node_statuses?.[entry.dataNodeId]
+      if (status?.status === 'executed') {
+        refreshed.add(entry.dataNodeId)
+        refreshEntry(entry)
+      }
+    }
+  },
 )
 
 onBeforeUnmount(() => scope?.stop())
@@ -150,38 +246,39 @@ onBeforeUnmount(() => scope?.stop())
 
     <template v-else>
       <div
-        v-if="displayedNodeIds.length > 5"
+        v-if="displayedEntries.length > 5"
         class="data-table-panel__limit"
       >
         <Button
           size="small"
           text
-          :label="showAll ? 'Show first 5' : `Show all (${displayedNodeIds.length})`"
+          :label="showAll ? 'Show first 5' : `Show all (${displayedEntries.length})`"
           @click="showAll = !showAll"
         />
       </div>
 
       <section
-        v-for="nodeId in visibleNodeIds"
-        :key="nodeId"
+        v-for="entry in visibleEntries"
+        :key="entry.key"
         class="data-table-panel__node"
       >
         <header class="data-table-panel__header">
-          <h3>{{ nodeLabel(nodeId) }}</h3>
-          <span class="data-table-panel__id">{{ nodeId }}</span>
+          <h3>{{ entry.label }}</h3>
+          <span class="data-table-panel__id">{{ entry.subtitle }}</span>
         </header>
         <div
-          v-if="nodeById[nodeId]?.enabled === false"
+          v-if="entry.disabled"
           class="data-table-panel__disabled"
         >
           This node is disabled.
         </div>
         <NodeDataTable
-          :node-id="nodeId"
-          :tool-name="toolName(nodeId)"
+          :node-id="entry.dataNodeId"
+          :tool-name="entry.toolName"
           :workflow-name="workflowStore.currentName"
-          :disabled="nodeById[nodeId]?.enabled === false"
-          :column-aliases="columnAliases(nodeId)"
+          :disabled="entry.disabled"
+          :column-aliases="entry.columnAliases"
+          :column-filter="entry.columnFilter"
         />
       </section>
     </template>

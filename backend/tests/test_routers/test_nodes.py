@@ -18,6 +18,7 @@ from PIL import Image
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers import nodes as nodes_router
+from bioimageflow_server.services.result_store import DATAFRAME_RECORD_DIR_ATTR
 
 pytestmark = pytest.mark.anyio
 
@@ -77,6 +78,18 @@ async def test_get_node_data_returns_page_and_absolute_rows() -> None:
     assert body["rows"] == [{"x": 3, "y": "c"}, {"x": 1, "y": "a"}]
     assert body["absolute_rows"] == [0, 1]
     assert body["total_rows"] == 3
+
+
+async def test_get_node_data_accepts_scoped_node_ids() -> None:
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": ["/tmp/m.tif"]})
+    store.get_column_types.return_value = {"mask": "ImageFile"}
+    async with await _client(store) as client:
+        resp = await client.get("/api/v1/nodes/sub_1%2Fsegment_1/data")
+
+    assert resp.status_code == 200, resp.text
+    store.get_latest_dataframe.assert_called_once()
+    assert store.get_latest_dataframe.call_args.args[0] == "sub_1/segment_1"
 
 
 async def test_get_node_data_sort_desc_preserves_original_positions() -> None:
@@ -186,6 +199,41 @@ async def test_download_csv(tmp_path: Path) -> None:
     assert "text/csv" in resp.headers["content-type"]
     assert "n1.csv" in resp.headers["content-disposition"]
     assert resp.text == "x\n1\n"
+
+
+async def test_download_csv_generates_csv_when_only_dataframe_is_available() -> None:
+    store = MagicMock()
+    store.get_csv_path.return_value = None
+    store.get_latest_dataframe.return_value = pd.DataFrame(
+        {"x": [1, 2]},
+        index=pd.Index(["row0", "row1"]),
+    )
+    async with await _client(store) as client:
+        resp = await client.get("/api/v1/nodes/n1/data/csv")
+
+    assert resp.status_code == 200
+    assert "text/csv" in resp.headers["content-type"]
+    assert "n1.csv" in resp.headers["content-disposition"]
+    assert resp.text == ",x\nrow0,1\nrow1,2\n"
+
+
+async def test_download_csv_filters_columns_for_scoped_node_id() -> None:
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame(
+        {"mask": ["/tmp/m.tif"], "score": [0.9]},
+        index=pd.Index(["row0"]),
+    )
+    async with await _client(store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/sub_1%2Fsegment_1/data/csv",
+            params=[("columns", "mask")],
+        )
+
+    assert resp.status_code == 200
+    assert resp.text == ",mask\nrow0,/tmp/m.tif\n"
+    store.get_csv_path.assert_not_called()
+    store.get_latest_dataframe.assert_called_once()
+    assert store.get_latest_dataframe.call_args.args[0] == "sub_1/segment_1"
 
 
 async def test_download_csv_resolves_workflow_storage_path(tmp_path: Path) -> None:
@@ -365,6 +413,26 @@ async def test_node_image_endpoint_resolves_workflow_storage_path(tmp_path: Path
     )
 
 
+async def test_node_image_endpoint_resolves_record_relative_asset_paths(tmp_path: Path) -> None:
+    record_dir = tmp_path / "cache" / "v1" / "results" / "aa" / "bb" / "rk_test" / "records" / "rec_test"
+    image = record_dir / "assets" / "mask.png"
+    image.parent.mkdir(parents=True)
+    Image.fromarray(np.arange(16, dtype=np.uint8).reshape(4, 4)).save(image)
+    df = pd.DataFrame({"mask": ["assets/mask.png"]})
+    df.attrs[DATAFRAME_RECORD_DIR_ATTR] = str(record_dir)
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = df
+
+    async with await _client(store) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/image",
+            params={"row": 0, "col": "mask"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.content == image.read_bytes()
+
+
 async def test_node_image_endpoint_validation(tmp_path: Path) -> None:
     missing = tmp_path / "missing.tif"
     store = MagicMock()
@@ -389,11 +457,13 @@ async def test_node_image_endpoint_validation(tmp_path: Path) -> None:
     assert bad_row.status_code == 422
 
 
-async def test_thumbnail_endpoint() -> None:
+async def test_thumbnail_endpoint(tmp_path: Path) -> None:
     from unittest.mock import AsyncMock
 
+    image_path = tmp_path / "m.tif"
+    image_path.write_bytes(b"tiff")
     store = MagicMock()
-    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [Path("/tmp/m.tif")]})
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image_path]})
     thumbs = MagicMock()
     real_png = b"\x89PNG\r\n\x1a\nrendered"
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
@@ -407,19 +477,21 @@ async def test_thumbnail_endpoint() -> None:
     assert resp.content == real_png
     thumbs.get_or_queue.assert_awaited_once()
     args, kwargs = thumbs.get_or_queue.call_args
-    assert args[0] == "/tmp/m.tif"
+    assert args[0] == image_path
     assert args[1] == 64
 
 
-async def test_thumbnail_endpoint_signals_pending_for_placeholder() -> None:
+async def test_thumbnail_endpoint_signals_pending_for_placeholder(tmp_path: Path) -> None:
     """When the manager returns the placeholder bytes, the endpoint must
     signal X-Thumbnail-Status: pending and Cache-Control: no-store so
     the frontend retries.
     """
     from unittest.mock import AsyncMock
 
+    image_path = tmp_path / "m.tif"
+    image_path.write_bytes(b"tiff")
     store = MagicMock()
-    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [Path("/tmp/m.tif")]})
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image_path]})
     thumbs = MagicMock()
     placeholder = b"\x89PNG\r\n\x1a\nplaceholder"
     thumbs.placeholder_png.return_value = placeholder
@@ -429,6 +501,55 @@ async def test_thumbnail_endpoint_signals_pending_for_placeholder() -> None:
     assert resp.status_code == 200
     assert resp.headers["x-thumbnail-status"] == "pending"
     assert "no-store" in resp.headers["cache-control"]
+
+
+async def test_thumbnail_endpoint_resolves_relative_paths_against_workflow_storage(tmp_path: Path) -> None:
+    image_path = tmp_path / "outputs" / "mask.png"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"png")
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": ["outputs/mask.png"]})
+    thumbs = _default_thumbnail_mock()
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+
+    async with await _client_with_workflow_store(store, workflow_store, thumbs) as client:
+        resp = await client.get(
+            "/api/v1/nodes/sub_1%2Fsegment_1/thumbnail",
+            params={"workflow_name": "wf_a", "row": 0, "col": "mask", "size": 64},
+        )
+
+    assert resp.status_code == 200
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
+    store.get_latest_dataframe.assert_called_once_with("sub_1/segment_1", storage_path=tmp_path)
+    thumbs.get_or_queue.assert_awaited_once()
+    args, kwargs = thumbs.get_or_queue.call_args
+    assert args[0] == image_path
+    assert args[1] == 64
+
+
+async def test_thumbnail_endpoint_resolves_record_relative_asset_paths(tmp_path: Path) -> None:
+    record_dir = tmp_path / "cache" / "v1" / "results" / "aa" / "bb" / "rk_test" / "records" / "rec_test"
+    image_path = record_dir / "assets" / "mask.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"png")
+    df = pd.DataFrame({"mask": ["assets/mask.png"]})
+    df.attrs[DATAFRAME_RECORD_DIR_ATTR] = str(record_dir)
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = df
+    thumbs = _default_thumbnail_mock()
+
+    async with await _client(store, thumbs) as client:
+        resp = await client.get(
+            "/api/v1/nodes/n1/thumbnail",
+            params={"row": 0, "col": "mask", "size": 64},
+        )
+
+    assert resp.status_code == 200
+    thumbs.get_or_queue.assert_awaited_once()
+    args, kwargs = thumbs.get_or_queue.call_args
+    assert args[0] == image_path
+    assert args[1] == 64
 
 
 async def test_thumbnail_endpoint_validation() -> None:

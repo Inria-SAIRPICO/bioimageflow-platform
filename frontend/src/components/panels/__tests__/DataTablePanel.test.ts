@@ -212,15 +212,15 @@ describe('DataTablePanel', () => {
     const uiStore = useUIStore()
     const dataTableStore = useDataTableStore()
     uiStore.setSelectedNodes(['sub_1'])
-    dataTableStore.nodeDataCache.sub_1 = {
-      columns: ['segment_1.mask'],
+    dataTableStore.nodeDataCache['sub_1/segment_1'] = {
+      columns: ['mask', 'score'],
       index: ['0'],
-      rows: [{ 'segment_1.mask': '/data/results/mask.tif' }],
+      rows: [{ mask: '/data/results/mask.tif', score: 0.9 }],
       absolute_rows: [0],
       total_rows: 1,
       page: 0,
       page_size: 50,
-      column_types: { 'segment_1.mask': 'ImageFile' },
+      column_types: { mask: 'ImageFile', score: 'float' },
     }
 
     const { currentGraph } = useGraphSync()
@@ -237,7 +237,7 @@ describe('DataTablePanel', () => {
           enabled: true,
           collapsed: false,
           published_outputs: [{
-            name: 'mask',
+            name: 'published_mask',
             internal_node_id: 'segment_1',
             internal_output: 'mask',
             schema: { type: 'ImageFile' },
@@ -260,13 +260,13 @@ describe('DataTablePanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('mask')
-    expect(wrapper.text()).not.toContain('segment_1.maskImageFile')
+    expect(wrapper.text()).toContain('published_mask')
+    expect(wrapper.text()).not.toContain('scorefloat')
     expect(wrapper.text()).toContain('/data/results/mask.tif')
   })
 
 
-  it('does not request backend result data for synthetic sub-workflow nodes', async () => {
+  it('requests scoped internal result data for synthetic sub-workflow nodes', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const uiStore = useUIStore()
@@ -285,6 +285,12 @@ describe('DataTablePanel', () => {
           output_templates: {},
           enabled: true,
           collapsed: false,
+          published_outputs: [{
+            name: 'mask',
+            internal_node_id: 'segment_1',
+            internal_output: 'mask',
+            schema: { type: 'ImageFile' },
+          }],
         },
       ],
       edges: [],
@@ -301,8 +307,13 @@ describe('DataTablePanel', () => {
     })
     await flushPromises()
 
-    expect(mockedGet).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('No output data available')
+    expect(mockedGet).toHaveBeenCalledWith(
+      '/api/v1/nodes/sub_workflow_1%2Fsegment_1/data',
+      expect.objectContaining({
+        params: expect.objectContaining({ page: 0 }),
+      }),
+    )
+    expect(wrapper.text()).not.toContain('No output data available. Execute the workflow')
   })
 
   it('keeps a selected executed node in a preparing state after 409 and refreshes on executed status', async () => {
@@ -503,6 +514,116 @@ describe('DataTablePanel', () => {
     expect(wrapper.text()).toContain('Preparing output data')
     expect(wrapper.text()).not.toContain('/tmp/stale-before-run.csv')
     vi.useRealTimers()
+  })
+
+  it('refreshes again on execution complete after the latest view is updated', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const uiStore = useUIStore()
+    const executionStore = useExecutionStore()
+    const dataTableStore = useDataTableStore()
+    uiStore.setSelectedNodes(['node-1'])
+    executionStore.nodeStatuses = {
+      'node-1': { node_id: 'node-1', status: 'unexecuted', cached: false },
+    }
+    dataTableStore.nodeDataCache['node-1'] = {
+      columns: ['path'],
+      index: ['0'],
+      rows: [{ path: '/tmp/before-run.csv' }],
+      absolute_rows: [0],
+      total_rows: 1,
+      page: 0,
+      page_size: 50,
+      column_types: { path: 'Path' },
+    }
+
+    const { currentGraph } = useGraphSync()
+    currentGraph.value = {
+      nodes: [
+        {
+          id: 'node-1',
+          name: 'Files 1',
+          tool_name: 'files',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        },
+      ],
+      edges: [],
+    }
+
+    mockedGet
+      .mockResolvedValueOnce({
+        data: {
+          columns: ['path'],
+          index: ['0'],
+          rows: [{ path: '/tmp/old-latest.csv' }],
+          absolute_rows: [0],
+          total_rows: 1,
+          page: 0,
+          page_size: 50,
+          column_types: { path: 'Path' },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          columns: ['path'],
+          index: ['0'],
+          rows: [{ path: '/tmp/fresh-latest.csv' }],
+          absolute_rows: [0],
+          total_rows: 1,
+          page: 0,
+          page_size: 50,
+          column_types: { path: 'Path' },
+        },
+      })
+
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          DataTable: DataTableStub,
+          Column: ColumnStub,
+          ImageCell: ImageCellStub,
+          Paginator: true,
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('/tmp/before-run.csv')
+
+    executionStore.applyNodeState({
+      node_id: 'node-1',
+      status: 'executed',
+      cached: false,
+      result_key: 'rk_new',
+      record_id: 'rec_new',
+    })
+    await flushPromises()
+
+    expect(mockedGet).toHaveBeenCalledTimes(1)
+    expect(dataTableStore.nodeDataCache['node-1']?.rows[0]?.path).toBe('/tmp/old-latest.csv')
+
+    executionStore.applyExecutionComplete({
+      success: true,
+      errors: [],
+      node_statuses: {
+        'node-1': {
+          node_id: 'node-1',
+          status: 'executed',
+          cached: false,
+          result_key: 'rk_new',
+          record_id: 'rec_new',
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(mockedGet).toHaveBeenCalledTimes(2)
+    expect(dataTableStore.nodeDataCache['node-1']?.rows[0]?.path).toBe('/tmp/fresh-latest.csv')
   })
 
   it('shows and copies the full path from path cells', async () => {

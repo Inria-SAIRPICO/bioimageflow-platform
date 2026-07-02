@@ -14,6 +14,7 @@ const props = defineProps<{
   workflowName?: string | null
   disabled?: boolean
   columnAliases?: Record<string, string>
+  columnFilter?: string[]
 }>()
 
 const store = useDataTableStore()
@@ -38,6 +39,14 @@ const rowModels = computed(() => {
   }))
 })
 
+const visibleColumns = computed(() => {
+  const response = data.value
+  if (!response) return []
+  if (!props.columnFilter || props.columnFilter.length === 0) return response.columns
+  const allowed = new Set(props.columnFilter)
+  return response.columns.filter((column) => allowed.has(column))
+})
+
 function isImageColumn(col: string): boolean {
   const type = data.value?.column_types[col]
   return type === 'ImageFile' || type === 'ImageShared'
@@ -59,6 +68,10 @@ function toggleSort(col: string) {
 
 function displayColumnName(col: string): string {
   return props.columnAliases?.[col] ?? col
+}
+
+function downloadCsv() {
+  store.downloadCsv(props.nodeId, props.workflowName, props.columnFilter)
 }
 
 function onPage(event: { page: number; rows: number }) {
@@ -88,7 +101,7 @@ function onPage(event: { page: number; rows: number }) {
         label="CSV"
         size="small"
         :data-testid="`download-csv-${nodeId}`"
-        @click="store.downloadCsv(nodeId, workflowName)"
+        @click="downloadCsv"
       />
     </div>
 
@@ -125,7 +138,7 @@ function onPage(event: { page: number; rows: number }) {
         :loading="loading"
       >
         <Column
-          v-for="col in data.columns"
+          v-for="col in visibleColumns"
           :key="col"
           :field="col"
         >

@@ -1,5 +1,6 @@
 # BioImageFlow Platform Specifications — v2
 
+The library specs are at /Users/amasson/Travail/bioimageflow-platform/bioimageflow/docs/source/specs.md .
 > Builds on [platform_specs_v1.md](platform_specs_v1.md). This document describes features added in v2.
 
 All endpoints listed below use the `/api/v1/` prefix. The architecture, technology stack, full-state sync model, and deployment modes remain unchanged from v1.

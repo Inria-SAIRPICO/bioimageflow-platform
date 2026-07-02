@@ -117,7 +117,12 @@ async def test_seed_image_output_writes_v1_latest_view(tmp_path: Path):
         assert resp.status_code == 200
         payload = resp.json()
 
-        latest = tmp_path / "latest" / f"{payload['node_id']}.bioimageflow-link.json"
+        latest = (
+            tmp_path
+            / "views"
+            / "latest"
+            / f"{payload['node_id']}.bioimageflow-link.json"
+        )
         assert latest.is_file()
         assert not (tmp_path / "data").exists()
         assert list((tmp_path / "cache" / "v1" / "results").glob("*/*/rk_*/current.json"))
