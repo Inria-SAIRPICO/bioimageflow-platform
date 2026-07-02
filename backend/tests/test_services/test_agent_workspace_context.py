@@ -83,6 +83,9 @@ def test_agent_workspace_instructions_are_loaded_from_markdown_template() -> Non
 
     assert "{{SOURCE_STATUS}}" in template
     assert "## MCP Tool Reference" in template
+    assert "get_workspace_context" in template
+    assert "create_workflow" in template
+    assert "delete_workflow" in template
     assert "## MCP Tool Reference" not in source
     assert "{{SOURCE_STATUS}}" not in context.agent_workspace_instructions()
 
@@ -129,11 +132,15 @@ def test_user_hidden_agent_doc_is_preserved(tmp_path: Path, monkeypatch) -> None
 def test_agent_docs_include_mcp_client_setup() -> None:
     docs_root = Path(__file__).parents[3] / "docs" / "agents"
     readme = (docs_root / "README.md").read_text(encoding="utf-8")
-    assert "bioimageflow-mcp" in readme
+    assert "bioimageflow_server.agent_mcp" in readme
     assert "BIOIMAGEFLOW_AGENT_STATE" in readme
     for name in ("README.md", "api-reference.md", "workflow-editing.md"):
         content = (docs_root / name).read_text(encoding="utf-8")
         assert "get_bioimageflow_capabilities" in content
+        assert "get_workspace_context" in content
+        assert "list_workflows" in content
+        assert "create_workflow" in content
+        assert "delete_workflow" in content
         assert "get_workflow_draft" in content
         assert "apply_workflow_operations" in content
         if name != "workflow-editing.md":

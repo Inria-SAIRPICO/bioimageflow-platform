@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import tomllib
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,7 @@ import pytest
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.services import workflow_draft as workflow_draft_service
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 from bioimageflow_server.ws.handler import ConnectionManager
@@ -134,19 +137,69 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert all(command.startswith("MCP ") for command in context["recommended_commands"])
     recommended = "\n".join(context["recommended_commands"])
     assert "get_bioimageflow_capabilities" in recommended
+    assert "get_workspace_context" in recommended
+    assert "list_workflows" in recommended
+    assert "create_workflow" in recommended
+    assert "set_active_workflow" in recommended
     assert "describe_workflow" in recommended
     assert "describe_bioimageflow_tool" in recommended
     assert "apply_workflow_operations" in recommended
     assert "get_execution_status" in recommended
-    assert context["mcp_server_command"] == "bioimageflow-mcp"
+    assert context["mcp_server_command"] == f"{sys.executable} -m bioimageflow_server.agent_mcp"
     assert context["mcp_client_config"] == {
-        "command": "bioimageflow-mcp",
+        "command": sys.executable,
+        "args": ["-m", "bioimageflow_server.agent_mcp"],
         "cwd": str(tmp_path / "workspace"),
         "env": {
             "BIOIMAGEFLOW_AGENT_STATE": str(agent_state),
+            "PYTHONPATH": str(workflow_draft_service._BACKEND_PACKAGE_PARENT),
         },
     }
+    assert "agent_client_config_errors" not in context
+    config_files = context["agent_client_config_files"]
+    assert set(config_files) == {
+        "codex",
+        "claude_code",
+        "opencode",
+        "oh_my_pi",
+        "shared_mcp_json",
+    }
     assert "human_diagnostic_rest" not in context
+
+    codex_config = tomllib.loads((tmp_path / "workspace" / ".codex" / "config.toml").read_text())
+    codex_mcp = codex_config["mcp_servers"]["bioimageflow"]
+    assert codex_mcp["command"] == sys.executable
+    assert codex_mcp["args"] == ["-m", "bioimageflow_server.agent_mcp"]
+    assert codex_mcp["cwd"] == str(tmp_path / "workspace")
+    assert codex_mcp["env"]["BIOIMAGEFLOW_AGENT_STATE"] == str(agent_state)
+    assert codex_mcp["env"]["PYTHONPATH"] == str(workflow_draft_service._BACKEND_PACKAGE_PARENT)
+
+    claude_config = json.loads((tmp_path / "workspace" / ".mcp.json").read_text())
+    assert claude_config["mcpServers"]["bioimageflow"] == context["mcp_client_config"]
+
+    shared_config = json.loads(
+        (tmp_path / "workspace" / ".bioimageflow" / "mcp-client-config.json").read_text()
+    )
+    assert shared_config["mcpServers"]["bioimageflow"] == context["mcp_client_config"]
+
+    omp_config = json.loads((tmp_path / "workspace" / ".omp" / "mcp.json").read_text())
+    assert omp_config["mcpServers"]["bioimageflow"] == {
+        **context["mcp_client_config"],
+        "type": "stdio",
+        "enabled": True,
+        "timeout": 30000,
+    }
+
+    opencode_config = json.loads((tmp_path / "workspace" / "opencode.json").read_text())
+    assert opencode_config["$schema"] == "https://opencode.ai/config.json"
+    assert opencode_config["mcp"]["bioimageflow"] == {
+        "type": "local",
+        "command": [sys.executable, "-m", "bioimageflow_server.agent_mcp"],
+        "cwd": str(tmp_path / "workspace"),
+        "environment": context["mcp_client_config"]["env"],
+        "enabled": True,
+        "timeout": 30000,
+    }
 
     hidden_agent_doc = tmp_path / "workspace" / ".bioimageflow" / "AGENTS.md"
     assert not hidden_agent_doc.exists()
@@ -159,12 +212,16 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert "MCP client setup" in instructions
     assert "BIOIMAGEFLOW_AGENT_STATE" in instructions
     assert "get_bioimageflow_capabilities" in instructions
+    assert "get_workspace_context" in instructions
+    assert "list_workflows" in instructions
+    assert "create_workflow" in instructions
+    assert "delete_workflow" in instructions
     assert "get_workflow_draft" in instructions
     assert "describe_workflow" in instructions
     assert "describe_bioimageflow_tool" in instructions
     assert "apply_workflow_operations" in instructions
+    assert "bioimageflow_server.agent_mcp" in instructions
     assert ".bioimageflow/platform-source/" in instructions
-    assert "bioimageflow-mcp" in instructions
     assert "/Users/" not in instructions
     for phrase in FORBIDDEN_AGENT_CONTEXT_PHRASES:
         assert phrase not in instructions

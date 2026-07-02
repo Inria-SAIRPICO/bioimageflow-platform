@@ -5,9 +5,12 @@ Do not switch to REST, shell request procedures, saved `workflow.json` edits, or
 
 ## MCP Server Cannot Start
 
-Read `.bioimageflow/agent-state.json` and confirm `mcp_client_config.command` is `bioimageflow-mcp`.
+Confirm the agent is using the generated project config for its client: `.codex/config.toml`, `.mcp.json`, `opencode.json`, `.omp/mcp.json`, or `.bioimageflow/mcp-client-config.json`.
+Read `.bioimageflow/agent-state.json` and use its exact `mcp_client_config`, including `command`, `args`, `cwd`, and `env`.
+If a client ignores `args` or resolves a different Python environment, report the mismatch.
 Run the MCP server from `mcp_client_config.cwd`, or set `BIOIMAGEFLOW_AGENT_STATE` to `agent_state_path`.
 If the MCP client cannot start the server, report the startup error and the state path.
+Restart the MCP client after generated config files change.
 
 ## Required First Call Fails
 

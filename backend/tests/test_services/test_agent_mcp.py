@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.agent_mcp import (
@@ -69,11 +73,31 @@ def _write_state(tmp_path: Path, *, workflow_id: str = "folder/wf") -> Path:
                 "api_base_url": "http://bif.test/api/v1",
                 "active_workflow_id": workflow_id,
                 "current_draft_revision": 7,
+                "workspace_path": str(tmp_path),
+                "workflows_root": str(tmp_path / "workflows"),
+                "agent_state_path": str(state),
             }
         ),
         encoding="utf-8",
     )
     return state
+
+
+def _workflow_info(workflow_id: str, *, display_name: str | None = None) -> dict[str, Any]:
+    name = workflow_id.rsplit("/", maxsplit=1)[-1]
+    folder = workflow_id.rsplit("/", maxsplit=1)[0] if "/" in workflow_id else ""
+    return {
+        "id": workflow_id,
+        "name": name,
+        "folder": folder,
+        "display_name": display_name or workflow_id,
+        "description": None,
+        "path": f"/workspace/workflows/{workflow_id}/workflow.json",
+        "storage_path": f"/workspace/results/{workflow_id}",
+        "output_path": f"/workspace/results/{workflow_id}",
+        "workspace_path": "/workspace",
+        "last_modified": "2026-01-01T00:00:00Z",
+    }
 
 
 def _workspace_state_path(tmp_path: Path) -> Path:
@@ -103,6 +127,293 @@ def test_create_mcp_server_registers_expected_tools(tmp_path: Path) -> None:
 
     assert server is created[0]
     assert set(server.tools) == set(SUPPORTED_MCP_TOOLS)
+
+
+async def test_agent_mcp_module_entrypoint_initializes_stdio_server(tmp_path: Path) -> None:
+    state_path = _write_state(tmp_path)
+    env = {
+        "BIOIMAGEFLOW_AGENT_STATE": str(state_path),
+        "PYTHONPATH": os.pathsep.join(
+            (
+                str(Path(__file__).parents[2] / "src"),
+                os.environ.get("PYTHONPATH", ""),
+            )
+        ),
+    }
+    server = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "bioimageflow_server.agent_mcp"],
+        cwd=str(tmp_path),
+        env=env,
+    )
+
+    async with stdio_client(server) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+
+    assert {tool.name for tool in tools.tools} == set(SUPPORTED_MCP_TOOLS)
+
+
+async def test_workflow_lifecycle_tools_call_backend_workflow_api(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[tuple[str, str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        requests.append((request.method, request.url.path, payload))
+        if request.method == "GET" and request.url.path == "/api/v1/workflows":
+            return httpx.Response(
+                200,
+                json=[
+                    _workflow_info("wf"),
+                    _workflow_info("folder/other", display_name="Other"),
+                ],
+            )
+        if request.method == "GET" and request.url.path == "/api/v1/workflows/wf":
+            return httpx.Response(
+                200,
+                json={
+                    "info": _workflow_info("wf"),
+                    "graph": {
+                        "nodes": [{"id": "load_1"}],
+                        "edges": [],
+                        "published_inputs": [],
+                        "published_outputs": [],
+                    },
+                    "missing_packages": [],
+                    "missing_tools": [],
+                },
+            )
+        if request.method == "POST" and request.url.path == "/api/v1/workflows":
+            assert payload == {"name": "new", "display_name": "New"}
+            return httpx.Response(200, json=_workflow_info("new", display_name="New"))
+        if request.method == "PATCH" and request.url.path == "/api/v1/workflows/wf":
+            assert payload == {
+                "action": "duplicate",
+                "new_name": "copy",
+                "display_name": "Copy",
+            }
+            return httpx.Response(200, json=_workflow_info("copy", display_name="Copy"))
+        if request.method == "PATCH" and request.url.path == "/api/v1/workflows/copy":
+            assert payload == {
+                "action": "update",
+                "new_id": "renamed",
+                "display_name": "Renamed",
+            }
+            return httpx.Response(
+                200,
+                json=_workflow_info("renamed", display_name="Renamed"),
+            )
+        if request.method == "DELETE" and request.url.path == "/api/v1/workflows/renamed":
+            return httpx.Response(200, json={"deleted": True})
+        if request.method == "GET" and request.url.path == "/api/v1/workflow-drafts/copy":
+            return httpx.Response(
+                200,
+                json={
+                    "workflow_id": "copy",
+                    "draft_revision": 3,
+                    "dirty_against_saved": False,
+                    "validation": {"valid": True, "errors": []},
+                    "graph": {"nodes": [], "edges": []},
+                },
+            )
+        return httpx.Response(500, json={"detail": f"Unexpected {request.method} {request.url.path}"})
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    context = await gateway.get_workspace_context()
+    workflows = await gateway.list_workflows()
+    info = await gateway.get_workflow_info("wf", include_graph=True)
+    created = await gateway.create_workflow("new", display_name="New")
+    duplicate = await gateway.duplicate_workflow(
+        "wf",
+        "copy",
+        display_name="Copy",
+        set_active=True,
+    )
+    renamed = await gateway.rename_workflow("copy", "renamed", display_name="Renamed")
+    delete_mismatch = await gateway.delete_workflow("renamed", "wrong")
+    deleted = await gateway.delete_workflow("renamed", "renamed")
+
+    assert context == {
+        "ok": True,
+        "active_workflow_id": "wf",
+        "current_draft_revision": 7,
+        "workspace_path": str(tmp_path),
+        "workflows_root": str(tmp_path / "workflows"),
+        "agent_state_path": str(state_path),
+        "mcp_contract_version": 2,
+        "workflow_count": 2,
+        "workflow_ids": ["wf", "folder/other"],
+    }
+    assert workflows["ok"] is True
+    assert workflows["count"] == 2
+    assert workflows["workflows"][1]["display_name"] == "Other"
+    assert info["ok"] is True
+    assert info["graph_summary"] == {
+        "node_count": 1,
+        "edge_count": 0,
+        "published_input_count": 0,
+        "published_output_count": 0,
+    }
+    assert info["graph"]["nodes"] == [{"id": "load_1"}]
+    assert created == {
+        "ok": True,
+        "workflow": {
+            "id": "new",
+            "name": "new",
+            "folder": "",
+            "display_name": "New",
+            "description": None,
+            "storage_path": "/workspace/results/new",
+            "output_path": "/workspace/results/new",
+            "workspace_path": "/workspace",
+            "last_modified": "2026-01-01T00:00:00Z",
+        },
+    }
+    assert duplicate["ok"] is True
+    assert duplicate["source_workflow_id"] == "wf"
+    assert duplicate["workflow"]["id"] == "copy"
+    assert duplicate["active_workflow"] == {
+        "ok": True,
+        "active_workflow_id": "copy",
+        "draft_revision": 3,
+        "dirty_against_saved": False,
+        "validation": {"valid": True, "error_count": 0},
+    }
+    assert renamed["ok"] is True
+    assert renamed["previous_workflow_id"] == "copy"
+    assert renamed["workflow"]["id"] == "renamed"
+    assert delete_mismatch == {
+        "ok": False,
+        "error": "delete_confirmation_mismatch",
+        "detail": "confirm_workflow_id must match workflow_id",
+        "workflow_id": "renamed",
+    }
+    assert deleted == {"ok": True, "workflow_id": "renamed", "deleted": True}
+    assert requests[-1] == ("DELETE", "/api/v1/workflows/renamed", {})
+    assert requests.count(("DELETE", "/api/v1/workflows/renamed", {})) == 1
+
+
+async def test_workflow_lifecycle_tools_return_compact_backend_errors(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                423,
+                json={"detail": "Workflow editing is locked while execution is running."},
+            )
+        ),
+    )
+
+    result = await gateway.rename_workflow("wf", "renamed")
+
+    assert result == {
+        "ok": False,
+        "status_code": 423,
+        "error": "workflow_locked",
+        "detail": "Workflow editing is locked while execution is running.",
+    }
+
+
+async def test_rename_active_workflow_refreshes_agent_state_context(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[tuple[str, str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content.decode() or "{}")
+        requests.append((request.method, request.url.path, payload))
+        if request.method == "PATCH" and request.url.path == "/api/v1/workflows/wf":
+            assert payload == {"action": "update", "new_id": "renamed"}
+            return httpx.Response(200, json=_workflow_info("renamed"))
+        if request.method == "GET" and request.url.path == "/api/v1/workflow-drafts/renamed":
+            return httpx.Response(
+                200,
+                json={
+                    "workflow_id": "wf",
+                    "draft_revision": 8,
+                    "dirty_against_saved": True,
+                    "validation": {"valid": False, "errors": [{"type": "missing_tool"}]},
+                },
+            )
+        return httpx.Response(500, json={"detail": f"Unexpected {request.method} {request.url.path}"})
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await gateway.rename_workflow("wf", "renamed")
+
+    assert result == {
+        "ok": True,
+        "previous_workflow_id": "wf",
+        "workflow": {
+            "id": "renamed",
+            "name": "renamed",
+            "folder": "",
+            "display_name": "renamed",
+            "description": None,
+            "storage_path": "/workspace/results/renamed",
+            "output_path": "/workspace/results/renamed",
+            "workspace_path": "/workspace",
+            "last_modified": "2026-01-01T00:00:00Z",
+        },
+        "active_workflow": {
+            "ok": True,
+            "active_workflow_id": "renamed",
+            "draft_revision": 8,
+            "dirty_against_saved": True,
+            "validation": {
+                "valid": False,
+                "error_count": 1,
+                "errors": [{"type": "missing_tool"}],
+            },
+            "draft_workflow_id": "wf",
+        },
+    }
+    assert requests == [
+        ("PATCH", "/api/v1/workflows/wf", {"action": "update", "new_id": "renamed"}),
+        ("GET", "/api/v1/workflow-drafts/renamed", {}),
+    ]
+
+
+async def test_delete_active_workflow_is_rejected_before_backend_delete(
+    tmp_path: Path,
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"deleted": True})
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await gateway.delete_workflow("wf", "wf")
+
+    assert result == {
+        "ok": False,
+        "error": "active_workflow_delete_forbidden",
+        "detail": "Call set_active_workflow with another workflow before deleting the current active workflow.",
+        "workflow_id": "wf",
+    }
+    assert requests == []
 
 
 async def test_create_node_calls_backend_operation_api_with_auto_revision(
@@ -907,6 +1218,14 @@ async def test_mcp_registered_tools_smoke_against_asgi_app(tmp_path: Path) -> No
     assert set(capabilities["supported_operation_types"]) == set(SUPPORTED_OPERATION_TYPES)
     assert capabilities["max_operation_batch_size"] == 10
     assert capabilities["supports_execution_status"] is True
+    assert capabilities["workflow_management"] == {
+        "supports_list": True,
+        "supports_create": True,
+        "supports_duplicate": True,
+        "supports_rename": True,
+        "supports_delete": True,
+        "supports_set_active": True,
+    }
     assert draft_read["ok"] is True
     assert draft_read["workflow_id"] == "wf"
     assert draft_read["draft_revision"] == 0
@@ -953,7 +1272,8 @@ async def test_create_node_returns_compact_error_when_draft_fetch_fails(
     assert result == {
         "ok": False,
         "status_code": 404,
-        "error": {"detail": "no"},
+        "error": "not_found",
+        "detail": "no",
     }
 
 
@@ -978,7 +1298,8 @@ async def test_validate_workflow_preserves_backend_validation_error(
     assert await gateway.validate_workflow() == {
         "ok": False,
         "status_code": 423,
-        "error": {"detail": "locked"},
+        "error": "workflow_locked",
+        "detail": "locked",
     }
 
 
@@ -1253,7 +1574,8 @@ async def test_run_workflow_returns_compact_error_when_draft_fetch_fails(
     assert await gateway.run_workflow() == {
         "ok": False,
         "status_code": 404,
-        "error": {"detail": "Workflow not found"},
+        "error": "not_found",
+        "detail": "Workflow not found",
     }
 
 
@@ -1493,6 +1815,14 @@ async def test_capabilities_include_contract_tools_and_reachable_draft(
     assert set(result["supported_operation_types"]) == set(SUPPORTED_OPERATION_TYPES)
     assert result["max_operation_batch_size"] == 10
     assert result["supports_execution_status"] is True
+    assert result["workflow_management"] == {
+        "supports_list": True,
+        "supports_create": True,
+        "supports_duplicate": True,
+        "supports_rename": True,
+        "supports_delete": True,
+        "supports_set_active": True,
+    }
     assert "draft_revision_conflict" in result["error_codes"]
     assert "workflow_locked" in result["error_codes"]
 

@@ -6,33 +6,50 @@ Do not use REST, shell requests, saved `workflow.json` edits, or raw graph repla
 ## Workspace Files
 
 - `.bioimageflow/agent-state.json`: runtime metadata for MCP clients, including `mcp_contract_version`, `mcp_client_config`, `active_workflow_id`, `current_draft_revision`, workspace paths, and optional human diagnostics.
+- `.codex/config.toml`: generated Codex MCP startup config for the `bioimageflow` MCP server.
+- `.mcp.json`: generated project MCP config for Claude Code and generic MCP-aware clients.
+- `opencode.json`: generated OpenCode project config entry for the `bioimageflow` MCP server.
+- `.omp/mcp.json`: generated oh-my-pi/OMP project MCP config.
+- `.bioimageflow/mcp-client-config.json`: generated shared MCP JSON config for clients that can import standard `mcpServers` entries.
 - `workflow.json`: saved/exported artifact. Never edit this file to change the open workflow.
 - `.bioimageflow/platform-source/`: {{SOURCE_STATUS}}. Treat every file under it as read-only; editing it will not change the running app or workflow.
 - Expanded agent docs may be available in `.bioimageflow/platform-source/docs/agents/`.
 
 ## Required First Calls
 
-Call these MCP tools before any workflow edit:
+For workspace lifecycle tasks such as listing, creating, duplicating, renaming, deleting, or switching workflows, call:
 
 1. `get_bioimageflow_capabilities` with `{}`.
-2. `describe_workflow` with `{}`.
-3. `list_tools` with `{}` or `describe_bioimageflow_tool` for every tool you plan to create, edit, connect, publish, validate, or execute.
+2. `get_workspace_context` with `{}`.
+3. `list_workflows` with `{}`.
+
+For active workflow graph edits, validation, or execution, call:
+
+1. `get_bioimageflow_capabilities` with `{}`.
+2. `get_workspace_context` with `{}`.
+3. `describe_workflow` with `{}`.
+4. `list_tools` with `{}` or `describe_bioimageflow_tool` for every BioImageFlow tool you plan to create, edit, connect, publish, validate, or execute.
 
 If any required call fails, stop and report the MCP tool name, error code, and detail.
 Do not switch to REST, edit local workflow files, or guess tool schemas.
 
 ## MCP client setup
 
-Run from the workspace root so `bioimageflow-mcp` can read `.bioimageflow/agent-state.json`, or set `BIOIMAGEFLOW_AGENT_STATE` to the absolute state file path.
+Use the generated client config for your agent: `.codex/config.toml`, `.mcp.json`, `opencode.json`, `.omp/mcp.json`, or `.bioimageflow/mcp-client-config.json`.
+These files are generated from `.bioimageflow/agent-state.json` and pin MCP to the same Python environment as the running backend.
+Restart the MCP client after these files are generated or changed.
+If you must configure manually, copy the `mcp_client_config` from `.bioimageflow/agent-state.json`, run from the workspace root, and set `BIOIMAGEFLOW_AGENT_STATE` to the absolute state file path.
 
 Generic MCP server config:
 
 ```json
 {
-  "command": "bioimageflow-mcp",
+  "command": "<running backend Python executable>",
+  "args": ["-m", "bioimageflow_server.agent_mcp"],
   "cwd": "<workspace root>",
   "env": {
-    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json"
+    "BIOIMAGEFLOW_AGENT_STATE": "<workspace root>/.bioimageflow/agent-state.json",
+    "PYTHONPATH": "<backend package parent>"
   }
 }
 ```
@@ -44,7 +61,18 @@ If the client does not support `cwd`, set `BIOIMAGEFLOW_AGENT_STATE` explicitly.
 Context:
 
 - `get_bioimageflow_capabilities`: returns supported tool names, contract version, limits, and error semantics.
+- `get_workspace_context`: returns workspace paths, active workflow id, revision metadata, workflow count, and workflow ids.
 - `get_active_workflow`: returns the active workflow id and current draft revision when available.
+
+Workflow management:
+
+- `list_workflows`: returns the workspace workflow list.
+- `get_workflow_info`: returns metadata for one workflow, and optionally the full saved graph.
+- `create_workflow`: creates an empty workflow. Pass `set_active: true` when subsequent MCP calls should target it.
+- `duplicate_workflow`: copies the saved workflow and workflow-local tools to a new workflow id. Unsaved active draft edits are not copied. Pass `set_active: true` when subsequent MCP calls should target the copy.
+- `rename_workflow`: renames or moves one workflow to a new workflow id.
+- `delete_workflow`: deletes one non-active workflow. `confirm_workflow_id` must exactly match `workflow_id`; call `set_active_workflow` with another workflow before deleting the current active workflow.
+- `set_active_workflow`: makes one workflow the active workflow for subsequent MCP calls by refreshing its draft context.
 
 Inspection:
 
@@ -75,6 +103,36 @@ Inspect the active workflow:
 
 ```json
 {"tool": "describe_workflow", "arguments": {"include_parameters": false}}
+```
+
+List workspace workflows:
+
+```json
+{"tool": "list_workflows", "arguments": {}}
+```
+
+Create and activate a new workflow:
+
+```json
+{"tool": "create_workflow", "arguments": {"workflow_id": "segmentation-demo", "display_name": "Segmentation Demo", "set_active": true}}
+```
+
+Duplicate and activate a workflow:
+
+```json
+{"tool": "duplicate_workflow", "arguments": {"source_workflow_id": "segmentation-demo", "new_workflow_id": "segmentation-demo-copy", "display_name": "Segmentation Demo Copy", "set_active": true}}
+```
+
+Rename or move a workflow:
+
+```json
+{"tool": "rename_workflow", "arguments": {"workflow_id": "segmentation-demo-copy", "new_workflow_id": "examples/segmentation-demo-copy", "display_name": "Segmentation Demo Copy"}}
+```
+
+Delete a workflow:
+
+```json
+{"tool": "delete_workflow", "arguments": {"workflow_id": "examples/segmentation-demo-copy", "confirm_workflow_id": "examples/segmentation-demo-copy"}}
 ```
 
 Create a node:

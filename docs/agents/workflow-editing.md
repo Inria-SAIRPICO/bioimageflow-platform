@@ -3,12 +3,16 @@
 Read root `AGENTS.md` first.
 All workflow inspection and mutation in this guide uses BioImageFlow MCP tools.
 
-## Start Every Editing Session
+## Start Every Graph Editing Session
 
-Call the required context tools before edits:
+Call the required context tools before active workflow graph edits:
 
 ```json
 {"tool": "get_bioimageflow_capabilities", "arguments": {}}
+```
+
+```json
+{"tool": "get_workspace_context", "arguments": {}}
 ```
 
 ```json
@@ -183,6 +187,69 @@ Keep batches focused and let the backend validate mutation semantics.
 
 Common batch operation `type` values are `create_node`, `delete_node`, `rename_node`, `update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`, `connect_column_ref`, `connect_positional`, `delete_edge`, `set_published_input`, `delete_published_input`, `set_published_output`, and `delete_published_output`.
 Use only operation types advertised by `get_bioimageflow_capabilities`.
+
+## Manage Workspace Workflows
+
+List available workflows before changing the active workflow:
+
+```json
+{"tool": "list_workflows", "arguments": {}}
+```
+
+Inspect one workflow:
+
+```json
+{"tool": "get_workflow_info", "arguments": {"workflow_id": "segmentation-demo", "include_graph": false}}
+```
+
+Create a new workflow and make it active:
+
+```json
+{
+  "tool": "create_workflow",
+  "arguments": {
+    "workflow_id": "segmentation-demo",
+    "display_name": "Segmentation Demo",
+    "set_active": true
+  }
+}
+```
+
+Duplicate an existing workflow and continue editing the copy:
+
+```json
+{
+  "tool": "duplicate_workflow",
+  "arguments": {
+    "source_workflow_id": "segmentation-demo",
+    "new_workflow_id": "segmentation-demo-copy",
+    "display_name": "Segmentation Demo Copy",
+    "set_active": true
+  }
+}
+```
+
+This copies the saved workflow and workflow-local tools, not unsaved active draft edits.
+
+Rename or move a workflow:
+
+```json
+{"tool": "rename_workflow", "arguments": {"workflow_id": "segmentation-demo-copy", "new_workflow_id": "examples/segmentation-demo-copy"}}
+```
+
+Delete a workflow only when the request is explicit:
+
+```json
+{"tool": "delete_workflow", "arguments": {"workflow_id": "examples/segmentation-demo-copy", "confirm_workflow_id": "examples/segmentation-demo-copy"}}
+```
+
+The active workflow cannot be deleted; call `set_active_workflow` with another workflow before deleting the current active workflow.
+
+Switch the active workflow:
+
+```json
+{"tool": "set_active_workflow", "arguments": {"workflow_id": "segmentation-demo"}}
+```
 
 ## Published Inputs And Outputs
 

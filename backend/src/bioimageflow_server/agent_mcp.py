@@ -18,6 +18,9 @@ class AgentState(BaseModel):
     api_base_url: str
     active_workflow_id: str
     current_draft_revision: int | None = None
+    workspace_path: str | None = None
+    workflows_root: str | None = None
+    agent_state_path: str | None = None
 
 
 class ToolRegistrar(Protocol):
@@ -26,7 +29,15 @@ class ToolRegistrar(Protocol):
 
 SUPPORTED_MCP_TOOLS = [
     "get_bioimageflow_capabilities",
+    "get_workspace_context",
     "get_active_workflow",
+    "list_workflows",
+    "get_workflow_info",
+    "create_workflow",
+    "duplicate_workflow",
+    "rename_workflow",
+    "delete_workflow",
+    "set_active_workflow",
     "get_workflow_draft",
     "describe_workflow",
     "list_tools",
@@ -77,6 +88,8 @@ MCP_ERROR_CODES = [
     "operation_validation_error",
     "draft_revision_conflict",
     "workflow_locked",
+    "delete_confirmation_mismatch",
+    "active_workflow_delete_forbidden",
 ]
 
 
@@ -113,6 +126,14 @@ class BioImageFlowMCPGateway:
             "supported_operation_types": SUPPORTED_OPERATION_TYPES,
             "max_operation_batch_size": 10,
             "supports_execution_status": True,
+            "workflow_management": {
+                "supports_list": True,
+                "supports_create": True,
+                "supports_duplicate": True,
+                "supports_rename": True,
+                "supports_delete": True,
+                "supports_set_active": True,
+            },
             "error_codes": MCP_ERROR_CODES,
             "backend_reachable": not _is_error(draft),
             "backend_status": "reachable",
@@ -139,6 +160,202 @@ class BioImageFlowMCPGateway:
             "active_workflow_id": state.active_workflow_id,
             "current_draft_revision": state.current_draft_revision,
         }
+
+    async def get_workspace_context(self) -> dict[str, Any]:
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
+        workflows = await self._request("GET", "/workflows")
+        payload: dict[str, Any] = {
+            "ok": not _is_error(workflows),
+            "active_workflow_id": state.active_workflow_id,
+            "current_draft_revision": state.current_draft_revision,
+            "workspace_path": state.workspace_path,
+            "workflows_root": state.workflows_root,
+            "agent_state_path": state.agent_state_path or str(default_state_path()),
+            "mcp_contract_version": 2,
+        }
+        if _is_error(workflows):
+            payload["backend_error"] = workflows
+            return payload
+        payload["workflow_count"] = len(workflows)
+        payload["workflow_ids"] = [
+            workflow.get("id") or workflow.get("name") for workflow in workflows
+        ]
+        return payload
+
+    async def list_workflows(self) -> dict[str, Any]:
+        workflows = await self._request("GET", "/workflows")
+        if _is_error(workflows):
+            return workflows
+        return {
+            "ok": True,
+            "count": len(workflows),
+            "workflows": [_compact_workflow_info(workflow) for workflow in workflows],
+        }
+
+    async def get_workflow_info(
+        self,
+        workflow_id: str,
+        include_graph: bool = False,
+    ) -> dict[str, Any]:
+        result = await self._request("GET", f"/workflows/{_workflow_url(workflow_id)}")
+        if _is_error(result):
+            return result
+        payload = {
+            "ok": True,
+            "info": _compact_workflow_info(result.get("info") or {}),
+            "missing_packages": result.get("missing_packages") or [],
+            "missing_tools": result.get("missing_tools") or [],
+        }
+        graph = result.get("graph")
+        if isinstance(graph, dict):
+            payload["graph_summary"] = _graph_summary(graph)
+            if include_graph:
+                payload["graph"] = graph
+        return payload
+
+    async def create_workflow(
+        self,
+        workflow_id: str,
+        display_name: str | None = None,
+        description: str | None = None,
+        storage_path: str | None = None,
+        set_active: bool = False,
+    ) -> dict[str, Any]:
+        result = await self._request(
+            "POST",
+            "/workflows",
+            json=_without_none(
+                {
+                    "name": workflow_id,
+                    "display_name": display_name,
+                    "description": description,
+                    "storage_path": storage_path,
+                }
+            ),
+        )
+        if _is_error(result):
+            return result
+        payload: dict[str, Any] = {"ok": True, "workflow": _compact_workflow_info(result)}
+        if set_active:
+            active = await self.set_active_workflow(workflow_id)
+            payload["active_workflow"] = active
+            payload["ok"] = not _is_error(active)
+        return payload
+
+    async def duplicate_workflow(
+        self,
+        source_workflow_id: str,
+        new_workflow_id: str,
+        display_name: str | None = None,
+        description: str | None = None,
+        storage_path: str | None = None,
+        set_active: bool = False,
+    ) -> dict[str, Any]:
+        result = await self._request(
+            "PATCH",
+            f"/workflows/{_workflow_url(source_workflow_id)}",
+            json=_without_none(
+                {
+                    "action": "duplicate",
+                    "new_name": new_workflow_id,
+                    "display_name": display_name,
+                    "description": description,
+                    "storage_path": storage_path,
+                }
+            ),
+        )
+        if _is_error(result):
+            return result
+        payload: dict[str, Any] = {
+            "ok": True,
+            "source_workflow_id": source_workflow_id,
+            "workflow": _compact_workflow_info(result),
+        }
+        if set_active:
+            active = await self.set_active_workflow(new_workflow_id)
+            payload["active_workflow"] = active
+            payload["ok"] = not _is_error(active)
+        return payload
+
+    async def rename_workflow(
+        self,
+        workflow_id: str,
+        new_workflow_id: str,
+        display_name: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
+        result = await self._request(
+            "PATCH",
+            f"/workflows/{_workflow_url(workflow_id)}",
+            json=_without_none(
+                {
+                    "action": "update",
+                    "new_id": new_workflow_id,
+                    "display_name": display_name,
+                    "description": description,
+                }
+            ),
+        )
+        if _is_error(result):
+            return result
+        payload: dict[str, Any] = {
+            "ok": True,
+            "previous_workflow_id": workflow_id,
+            "workflow": _compact_workflow_info(result),
+        }
+        if workflow_id == state.active_workflow_id:
+            active = await self.set_active_workflow(new_workflow_id)
+            payload["active_workflow"] = active
+            payload["ok"] = not _is_error(active)
+        return payload
+
+    async def delete_workflow(
+        self,
+        workflow_id: str,
+        confirm_workflow_id: str,
+    ) -> dict[str, Any]:
+        state = _read_state_or_error(self.state_path)
+        if _is_error(state):
+            return state
+        if confirm_workflow_id != workflow_id:
+            return {
+                "ok": False,
+                "error": "delete_confirmation_mismatch",
+                "detail": "confirm_workflow_id must match workflow_id",
+                "workflow_id": workflow_id,
+            }
+        if workflow_id == state.active_workflow_id:
+            return {
+                "ok": False,
+                "error": "active_workflow_delete_forbidden",
+                "detail": "Call set_active_workflow with another workflow before deleting the current active workflow.",
+                "workflow_id": workflow_id,
+            }
+        result = await self._request("DELETE", f"/workflows/{_workflow_url(workflow_id)}")
+        if _is_error(result):
+            return result
+        return {"ok": True, "workflow_id": workflow_id, **result}
+
+    async def set_active_workflow(self, workflow_id: str) -> dict[str, Any]:
+        draft = await self._request("GET", f"/workflow-drafts/{_workflow_url(workflow_id)}")
+        if _is_error(draft):
+            return draft
+        payload: dict[str, Any] = {
+            "ok": True,
+            "active_workflow_id": workflow_id,
+            "draft_revision": draft.get("draft_revision"),
+            "dirty_against_saved": draft.get("dirty_against_saved"),
+            "validation": _validation_summary(draft.get("validation")),
+        }
+        draft_workflow_id = draft.get("workflow_id")
+        if draft_workflow_id not in (None, workflow_id):
+            payload["draft_workflow_id"] = draft_workflow_id
+        return payload
 
     async def list_tools(self) -> dict[str, Any]:
         tools = await self._request("GET", "/tools")
@@ -627,6 +844,94 @@ def create_mcp_server(
         return await gateway.get_active_workflow()
 
     @server.tool()
+    async def get_workspace_context() -> dict[str, Any]:
+        """Return workspace paths, active workflow, and workflow ids."""
+        return await gateway.get_workspace_context()
+
+    @server.tool()
+    async def list_workflows() -> dict[str, Any]:
+        """List workflows in the current workspace."""
+        return await gateway.list_workflows()
+
+    @server.tool()
+    async def get_workflow_info(
+        workflow_id: str,
+        include_graph: bool = False,
+    ) -> dict[str, Any]:
+        """Return metadata and optional graph for one workflow."""
+        return await gateway.get_workflow_info(
+            workflow_id=workflow_id,
+            include_graph=include_graph,
+        )
+
+    @server.tool()
+    async def create_workflow(
+        workflow_id: str,
+        display_name: str | None = None,
+        description: str | None = None,
+        storage_path: str | None = None,
+        set_active: bool = False,
+    ) -> dict[str, Any]:
+        """Create an empty workflow in the workspace."""
+        return await gateway.create_workflow(
+            workflow_id=workflow_id,
+            display_name=display_name,
+            description=description,
+            storage_path=storage_path,
+            set_active=set_active,
+        )
+
+    @server.tool()
+    async def duplicate_workflow(
+        source_workflow_id: str,
+        new_workflow_id: str,
+        display_name: str | None = None,
+        description: str | None = None,
+        storage_path: str | None = None,
+        set_active: bool = False,
+    ) -> dict[str, Any]:
+        """Duplicate one workflow to a new workflow id."""
+        return await gateway.duplicate_workflow(
+            source_workflow_id=source_workflow_id,
+            new_workflow_id=new_workflow_id,
+            display_name=display_name,
+            description=description,
+            storage_path=storage_path,
+            set_active=set_active,
+        )
+
+    @server.tool()
+    async def rename_workflow(
+        workflow_id: str,
+        new_workflow_id: str,
+        display_name: str | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Rename or move a workflow to a new workflow id."""
+        return await gateway.rename_workflow(
+            workflow_id=workflow_id,
+            new_workflow_id=new_workflow_id,
+            display_name=display_name,
+            description=description,
+        )
+
+    @server.tool()
+    async def delete_workflow(
+        workflow_id: str,
+        confirm_workflow_id: str,
+    ) -> dict[str, Any]:
+        """Delete one workflow after explicit id confirmation."""
+        return await gateway.delete_workflow(
+            workflow_id=workflow_id,
+            confirm_workflow_id=confirm_workflow_id,
+        )
+
+    @server.tool()
+    async def set_active_workflow(workflow_id: str) -> dict[str, Any]:
+        """Set the active workflow for subsequent MCP calls."""
+        return await gateway.set_active_workflow(workflow_id=workflow_id)
+
+    @server.tool()
     async def list_tools() -> dict[str, Any]:
         """List available BioImageFlow tool schemas."""
         return await gateway.list_tools()
@@ -1032,6 +1337,14 @@ def _read_state_or_error(path: Path | None) -> AgentState | dict[str, Any]:
 
 def _http_error_result(response: httpx.Response) -> dict[str, Any]:
     payload = _json_or_text(response)
+    if response.status_code == 423:
+        detail = payload.get("detail") if isinstance(payload, dict) else payload
+        return {
+            "ok": False,
+            "status_code": response.status_code,
+            "error": "workflow_locked",
+            "detail": detail,
+        }
     if isinstance(payload, dict) and payload.get("error") == "operation_validation_error":
         result: dict[str, Any] = {
             "ok": False,
@@ -1051,10 +1364,54 @@ def _http_error_result(response: httpx.Response) -> dict[str, Any]:
             "status_code": response.status_code,
             **payload,
         }
+    if isinstance(payload, dict) and isinstance(payload.get("error"), str):
+        return {
+            "ok": False,
+            "status_code": response.status_code,
+            **payload,
+        }
+    if isinstance(payload, dict) and "detail" in payload:
+        return {
+            "ok": False,
+            "status_code": response.status_code,
+            "error": _http_status_error(response.status_code),
+            "detail": payload["detail"],
+        }
     return {
         "ok": False,
         "status_code": response.status_code,
         "error": payload,
+    }
+
+
+def _http_status_error(status_code: int) -> str:
+    return {
+        400: "bad_request",
+        404: "not_found",
+        409: "conflict",
+        422: "validation_error",
+    }.get(status_code, "http_error")
+
+
+def _without_none(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if value is not None}
+
+
+def _compact_workflow_info(workflow: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: workflow.get(key)
+        for key in (
+            "id",
+            "name",
+            "folder",
+            "display_name",
+            "description",
+            "storage_path",
+            "output_path",
+            "workspace_path",
+            "last_modified",
+        )
+        if key in workflow
     }
 
 
@@ -1139,3 +1496,7 @@ def _json_or_text(response: httpx.Response) -> Any:
 
 def _workflow_url(workflow_id: str) -> str:
     return "/".join(quote(part, safe="") for part in workflow_id.split("/"))
+
+
+if __name__ == "__main__":
+    main()

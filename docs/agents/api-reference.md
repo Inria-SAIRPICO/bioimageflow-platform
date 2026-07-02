@@ -10,6 +10,8 @@ Useful fields include `mcp_contract_version`, `active_workflow_id`, `current_dra
 
 ## Required First Calls
 
+For workspace lifecycle tasks, use this sequence:
+
 `get_bioimageflow_capabilities`
 
 ```json
@@ -18,6 +20,24 @@ Useful fields include `mcp_contract_version`, `active_workflow_id`, `current_dra
 
 Returns supported contract version, available MCP tools, operation limits, and error conventions.
 Use this response to decide whether optional tools such as batch edit or execution status are available.
+
+`get_workspace_context`
+
+```json
+{"tool": "get_workspace_context", "arguments": {}}
+```
+
+Returns workspace paths, active workflow id, current draft revision, workflow count, and workflow ids.
+
+`list_workflows`
+
+```json
+{"tool": "list_workflows", "arguments": {}}
+```
+
+Returns compact metadata for all workflows in the workspace.
+
+For active graph edits, validation, or execution, call the same first two tools, then inspect the active workflow and tool metadata:
 
 `describe_workflow`
 
@@ -78,6 +98,99 @@ Returns the active workflow id and current draft revision when available.
 
 Use the default compact description for orientation.
 Set `include_parameters` only when parameter values are needed for the task.
+
+## Workflow Management Tools
+
+`list_workflows`
+
+```json
+{"tool": "list_workflows", "arguments": {}}
+```
+
+Returns compact metadata for all workflows in the workspace.
+
+`get_workflow_info`
+
+```json
+{"tool": "get_workflow_info", "arguments": {"workflow_id": "segmentation-demo", "include_graph": false}}
+```
+
+Returns metadata, missing package/tool diagnostics, and a graph summary for one workflow.
+Set `include_graph: true` only when the saved graph is required.
+
+`create_workflow`
+
+```json
+{
+  "tool": "create_workflow",
+  "arguments": {
+    "workflow_id": "segmentation-demo",
+    "display_name": "Segmentation Demo",
+    "set_active": true
+  }
+}
+```
+
+Creates an empty workflow.
+Optional arguments are `display_name`, `description`, `storage_path`, and `set_active`.
+
+`duplicate_workflow`
+
+```json
+{
+  "tool": "duplicate_workflow",
+  "arguments": {
+    "source_workflow_id": "segmentation-demo",
+    "new_workflow_id": "segmentation-demo-copy",
+    "display_name": "Segmentation Demo Copy",
+    "set_active": true
+  }
+}
+```
+
+Copies an existing workflow to a new workflow id.
+Optional arguments are `display_name`, `description`, `storage_path`, and `set_active`.
+This copies the saved workflow and workflow-local tools, not unsaved active draft edits.
+
+`rename_workflow`
+
+```json
+{
+  "tool": "rename_workflow",
+  "arguments": {
+    "workflow_id": "segmentation-demo-copy",
+    "new_workflow_id": "examples/segmentation-demo-copy",
+    "display_name": "Segmentation Demo Copy"
+  }
+}
+```
+
+Renames or moves one workflow.
+Optional arguments are `display_name` and `description`.
+
+`delete_workflow`
+
+```json
+{
+  "tool": "delete_workflow",
+  "arguments": {
+    "workflow_id": "examples/segmentation-demo-copy",
+    "confirm_workflow_id": "examples/segmentation-demo-copy"
+  }
+}
+```
+
+Deletes one workflow.
+`confirm_workflow_id` must exactly match `workflow_id`.
+The active workflow cannot be deleted; call `set_active_workflow` with another workflow before deleting the current active workflow.
+
+`set_active_workflow`
+
+```json
+{"tool": "set_active_workflow", "arguments": {"workflow_id": "segmentation-demo"}}
+```
+
+Sets the active workflow for subsequent MCP calls by refreshing the workflow draft context.
 
 ## Graph Mutation Tools
 
