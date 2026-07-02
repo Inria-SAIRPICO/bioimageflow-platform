@@ -915,6 +915,14 @@ export interface components {
              * @default false
              */
             clear_layers: boolean;
+            /** Node Id */
+            node_id?: string | null;
+            /** Row */
+            row?: number | null;
+            /** Col */
+            col?: string | null;
+            /** Workflow Name */
+            workflow_name?: string | null;
         };
         /**
          * NapariStatus

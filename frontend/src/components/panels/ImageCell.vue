@@ -195,6 +195,10 @@ async function openNapari(event: MouseEvent) {
     await api.post('/api/v1/napari/open', {
       paths: [props.value],
       clear_layers: event.ctrlKey || event.metaKey,
+      node_id: props.nodeId,
+      row: props.row,
+      col: props.col,
+      workflow_name: props.workflowName ?? null,
     })
   } catch (exc: any) {
     const status = exc?.response?.status

@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
+import logging
+import pandas as pd
 import pytest
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.napari import NapariStatus
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.services.result_store import DATAFRAME_RECORD_DIR_ATTR
 from bioimageflow_server.services.napari_launcher import (
     NapariLauncher,
     NapariLaunchError,
@@ -95,34 +99,106 @@ async def test_open_with_clear_layers_passes_flag(
     launcher.open.assert_awaited_once_with(["/tmp/a.tif"], True)
 
 
+async def test_open_resolves_record_relative_asset_path(tmp_path: Path) -> None:
+    record_dir = tmp_path / "records" / "rec_test"
+    image_path = record_dir / "assets" / "mask.tif"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"tif")
+    df = pd.DataFrame({"mask": ["assets/mask.tif"]})
+    df.attrs[DATAFRAME_RECORD_DIR_ATTR] = str(record_dir)
+    result_store = MagicMock()
+    result_store.get_latest_dataframe.return_value = df
+    launcher = _fake_launcher()
+    config = AppConfig(
+        napari_launcher=launcher,  # type: ignore[arg-type]
+        result_store=result_store,
+    )
+    app = create_app(config=config)
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post(
+            "/api/v1/napari/open",
+            json={
+                "paths": ["assets/mask.tif"],
+                "node_id": "n1",
+                "row": 0,
+                "col": "mask",
+            },
+        )
+    assert res.status_code == 200
+    result_store.get_latest_dataframe.assert_called_once_with("n1", storage_path=None)
+    launcher.open.assert_awaited_once_with([str(image_path)], False)
+
+
+async def test_open_resolves_relative_path_against_workflow_storage(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "outputs" / "mask.tif"
+    image_path.parent.mkdir()
+    image_path.write_bytes(b"tif")
+    result_store = MagicMock()
+    result_store.get_latest_dataframe.return_value = pd.DataFrame(
+        {"mask": ["outputs/mask.tif"]}
+    )
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    launcher = _fake_launcher()
+    config = AppConfig(
+        napari_launcher=launcher,  # type: ignore[arg-type]
+        result_store=result_store,
+        workflow_store=workflow_store,
+    )
+    app = create_app(config=config)
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post(
+            "/api/v1/napari/open",
+            json={
+                "paths": ["outputs/mask.tif"],
+                "node_id": "n1",
+                "row": 0,
+                "col": "mask",
+                "workflow_name": "wf_a",
+            },
+        )
+    assert res.status_code == 200
+    workflow_store.get_storage_path.assert_called_once_with("wf_a")
+    result_store.get_latest_dataframe.assert_called_once_with("n1", storage_path=tmp_path)
+    launcher.open.assert_awaited_once_with([str(image_path)], False)
+
+
 async def test_open_returns_400_when_launcher_raises_filenotfound(
-    client_with_launcher,
+    client_with_launcher, caplog: pytest.LogCaptureFixture,
 ) -> None:
     client, launcher = client_with_launcher
     launcher.open.side_effect = FileNotFoundError(["/tmp/missing.tif"])
-    res = await client.post(
-        "/api/v1/napari/open",
-        json={"paths": ["/tmp/missing.tif"]},
-    )
+    with caplog.at_level(logging.WARNING, logger="bioimageflow_server.routers.napari"):
+        res = await client.post(
+            "/api/v1/napari/open",
+            json={"paths": ["/tmp/missing.tif"]},
+        )
     assert res.status_code == 400
     body = res.json()
     assert body["error"] == "path_not_found"
     assert "missing.tif" in body["detail"]
+    assert "Napari open request rejected because paths were not found" in caplog.text
 
 
 async def test_open_returns_503_on_napari_launch_error(
-    client_with_launcher,
+    client_with_launcher, caplog: pytest.LogCaptureFixture,
 ) -> None:
     client, launcher = client_with_launcher
     launcher.open.side_effect = NapariLaunchError("solver crashed")
-    res = await client.post(
-        "/api/v1/napari/open",
-        json={"paths": ["/tmp/a.tif"]},
-    )
+    with caplog.at_level(logging.ERROR, logger="bioimageflow_server.routers.napari"):
+        res = await client.post(
+            "/api/v1/napari/open",
+            json={"paths": ["/tmp/a.tif"]},
+        )
     assert res.status_code == 503
     body = res.json()
     assert body["error"] == "napari_launch_failed"
     assert "solver crashed" in body["detail"]
+    assert "Napari open request failed while launching or contacting Napari" in caplog.text
 
 
 async def test_open_with_empty_paths_is_valid(client_with_launcher) -> None:

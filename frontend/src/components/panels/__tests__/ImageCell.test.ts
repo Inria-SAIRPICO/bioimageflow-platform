@@ -215,6 +215,14 @@ describe('ImageCell', () => {
     await button.trigger('click')
     await flushPromises()
 
+    expect(mockedPost).toHaveBeenCalledWith('/api/v1/napari/open', {
+      paths: ['/tmp/m.tif'],
+      clear_layers: false,
+      node_id: 'n1',
+      row: 0,
+      col: 'mask',
+      workflow_name: null,
+    })
     expect(button.attributes('disabled')).toBeUndefined()
   })
 

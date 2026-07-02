@@ -10,6 +10,10 @@ class NapariOpenRequest(BaseModel):
 
     paths: list[str]
     clear_layers: bool = False
+    node_id: str | None = None
+    row: int | None = None
+    col: str | None = None
+    workflow_name: str | None = None
 
 
 class NapariStatus(BaseModel):

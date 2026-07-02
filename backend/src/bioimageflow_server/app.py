@@ -57,6 +57,8 @@ from bioimageflow_server.routers.execution import (
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.napari import (
     get_napari_launcher,
+    get_result_store as napari_get_result_store,
+    get_workflow_store as napari_get_workflow_store,
     router as napari_router,
 )
 from bioimageflow_server.routers.nodes import (
@@ -546,6 +548,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[graph_get_settings] = _live_settings
     app.dependency_overrides[get_editor_service] = lambda: editor_service
     app.dependency_overrides[get_result_store] = lambda: result_store
+    app.dependency_overrides[napari_get_result_store] = lambda: result_store
+    app.dependency_overrides[napari_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[get_thumbnail_manager] = lambda: thumbnail_manager
     app.dependency_overrides[nodes_get_workflow_store] = _current_workflow_store
 
