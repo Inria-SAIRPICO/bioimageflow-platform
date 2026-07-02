@@ -1,6 +1,11 @@
 """Error response models."""
 
+from typing import TypeVar
+
 from pydantic import BaseModel, ConfigDict
+
+HTTP_EXCEPTION_LOGGED_ATTR = "_bioimageflow_logged"
+_ExceptionT = TypeVar("_ExceptionT", bound=Exception)
 
 
 class ErrorResponse(BaseModel):
@@ -16,3 +21,13 @@ class ErrorResponse(BaseModel):
     error: str
     detail: str
     field: str | None = None
+
+
+def mark_exception_logged(exc: _ExceptionT) -> _ExceptionT:
+    """Mark an exception whose operational context has already been logged."""
+    setattr(exc, HTTP_EXCEPTION_LOGGED_ATTR, True)
+    return exc
+
+
+def exception_was_logged(exc: Exception) -> bool:
+    return bool(getattr(exc, HTTP_EXCEPTION_LOGGED_ATTR, False))

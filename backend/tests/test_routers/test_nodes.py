@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -340,6 +341,27 @@ async def test_node_image_endpoint_returns_offsets_json_for_avivator(
     assert resp.status_code == 200, resp.text
     assert resp.headers["content-type"].startswith("application/json")
     assert resp.json() == expected_offsets
+
+
+async def test_node_image_endpoint_logs_unreadable_avivator_image(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    image = tmp_path / "broken.png"
+    image.write_bytes(b"not an image")
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"mask": [image]})
+
+    async with await _client(store) as client:
+        with caplog.at_level(logging.WARNING, logger="bioimageflow_server.routers.nodes"):
+            resp = await client.get(
+                "/api/v1/nodes/n1/image/broken.ome.tif",
+                params={"row": 0, "col": "mask", "format": "ome-tiff"},
+            )
+
+    assert resp.status_code == 422
+    assert "Could not read image for Avivator" in caplog.text
+    assert str(image) in caplog.text
 
 
 async def test_node_image_endpoint_prunes_stale_avivator_cache_files(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from httpx import ASGITransport
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.editor import EditorOpenMethod, EditorOpenResponse, EditorStatus
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
+from bioimageflow_server.services.editor import EditorLaunchError
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 pytestmark = pytest.mark.anyio
@@ -145,6 +147,25 @@ async def test_editor_open_missing_path_returns_404(tmp_path: Path) -> None:
         )
 
     assert response.status_code == 404
+
+
+async def test_editor_open_launch_error_is_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _FailingEditor(_EditorStub):
+        def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
+            raise EditorLaunchError("code failed")
+
+    config = AppConfig(editor_service=_FailingEditor())
+    async for client in _client(config):
+        with caplog.at_level(logging.ERROR, logger="bioimageflow_server.routers.editor"):
+            response = await client.post("/api/v1/editor/open", json={"path": "/tmp/a.py"})
+
+    assert response.status_code == 503
+    assert response.json()["error"] == "service_unavailable"
+    assert "Editor open failed to launch" in caplog.text
+    assert "/tmp/a.py" in caplog.text
+    assert "HTTP 503 returned" not in caplog.text
 
 
 async def test_editor_open_accepts_focus_path(tmp_path: Path) -> None:

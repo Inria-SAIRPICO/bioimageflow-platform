@@ -9,6 +9,7 @@ from pathlib import Path
 from anyio import to_thread
 from fastapi import APIRouter, Depends, HTTPException
 
+from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.editor import (
     EditorOpenRequest,
     EditorOpenResponse,
@@ -63,11 +64,32 @@ async def open_editor_path(
         )
         return response
     except EditorPathNotFoundError as exc:
+        logger.warning(
+            "Editor open rejected because path was not found: path=%s focus_path=%s detail=%s",
+            body.path,
+            body.focus_path,
+            exc,
+        )
         raise HTTPException(status_code=404, detail=f"Path not found: {exc}") from exc
     except EditorPathError as exc:
+        logger.warning(
+            "Editor open rejected because path is invalid: path=%s focus_path=%s detail=%s",
+            body.path,
+            body.focus_path,
+            exc,
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except EditorLaunchError as exc:
-        raise HTTPException(status_code=503, detail=f"Could not launch editor: {exc}") from exc
+        logger.error(
+            "Editor open failed to launch: path=%s focus_path=%s detail=%s",
+            body.path,
+            body.focus_path,
+            exc,
+            exc_info=exc,
+        )
+        raise mark_exception_logged(
+            HTTPException(status_code=503, detail=f"Could not launch editor: {exc}")
+        ) from exc
 
 
 @router.post("/open-tool", response_model=EditorOpenResponse)
@@ -113,8 +135,29 @@ async def open_tool_script(
         )
         return response
     except EditorPathNotFoundError as exc:
+        logger.warning(
+            "Editor open-tool rejected because path was not found: tool=%s workflow=%s detail=%s",
+            body.tool_name,
+            workflow_name,
+            exc,
+        )
         raise HTTPException(status_code=404, detail=f"Path not found: {exc}") from exc
     except EditorPathError as exc:
+        logger.warning(
+            "Editor open-tool rejected because path is invalid: tool=%s workflow=%s detail=%s",
+            body.tool_name,
+            workflow_name,
+            exc,
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except EditorLaunchError as exc:
-        raise HTTPException(status_code=503, detail=f"Could not launch editor: {exc}") from exc
+        logger.error(
+            "Editor open-tool failed to launch: tool=%s workflow=%s detail=%s",
+            body.tool_name,
+            workflow_name,
+            exc,
+            exc_info=exc,
+        )
+        raise mark_exception_logged(
+            HTTPException(status_code=503, detail=f"Could not launch editor: {exc}")
+        ) from exc

@@ -1,5 +1,6 @@
 """Tests for the filesystem router."""
 
+import logging
 from unittest.mock import patch
 
 import httpx
@@ -41,15 +42,22 @@ async def test_reveal_path_requires_path(client: httpx.AsyncClient) -> None:
     assert response.status_code == 422
 
 
-async def test_reveal_path_handles_os_error(client: httpx.AsyncClient) -> None:
+async def test_reveal_path_handles_os_error(
+    client: httpx.AsyncClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """POST /fs/reveal returns 500 when reveal_in_file_browser raises OSError."""
     with patch(
         "bioimageflow_server.routers.filesystem.reveal_in_file_browser",
         side_effect=OSError("Unsupported platform: UnknownOS"),
     ):
-        response = await client.post(
-            "/api/v1/fs/reveal",
-            json={"path": "/some/path"},
-        )
+        with caplog.at_level(logging.ERROR, logger="bioimageflow_server.routers.filesystem"):
+            response = await client.post(
+                "/api/v1/fs/reveal",
+                json={"path": "/some/path"},
+            )
 
     assert response.status_code == 500
+    assert "Could not reveal path in file browser" in caplog.text
+    assert "/some/path" in caplog.text
+    assert "HTTP 500 returned" not in caplog.text

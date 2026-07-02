@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -110,17 +111,21 @@ class TestGetSettings:
     async def test_get_omero_keyring_failure_returns_structured_error(
         self,
         omero_settings_client: tuple[httpx.AsyncClient, SettingsStore, FakeOmeroCredentials, Path],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         client, store, credentials, _path = omero_settings_client
         await store.patch({"omero_instances": [{"host": "omero.example.com", "username": "admin"}]})
         credentials.fail_get = True
 
-        response = await client.get("/api/v1/settings")
+        with caplog.at_level(logging.ERROR, logger="bioimageflow_server.routers.settings"):
+            response = await client.get("/api/v1/settings")
 
         assert response.status_code == 500
         body = response.json()
         assert body["error"] == "settings_keyring_error"
         assert body["detail"] == "keyring read failed"
+        assert "Settings keyring operation failed" in caplog.text
+        assert "HTTP 500 returned" not in caplog.text
 
 
 class TestPatchSettings:
@@ -299,29 +304,33 @@ class TestPatchSettings:
     async def test_patch_omero_keyring_failure_returns_error_without_persisting(
         self,
         omero_settings_client: tuple[httpx.AsyncClient, SettingsStore, FakeOmeroCredentials, Path],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         client, store, credentials, path = omero_settings_client
         before_disk = path.read_text()
         before_settings = store.get()
         credentials.fail_set = True
 
-        response = await client.patch(
-            "/api/v1/settings",
-            json={
-                "omero_instances": [
-                    {
-                        "host": "omero.example.com",
-                        "username": "admin",
-                        "password": "secret",
-                    }
-                ]
-            },
-        )
+        with caplog.at_level(logging.ERROR, logger="bioimageflow_server.routers.settings"):
+            response = await client.patch(
+                "/api/v1/settings",
+                json={
+                    "omero_instances": [
+                        {
+                            "host": "omero.example.com",
+                            "username": "admin",
+                            "password": "secret",
+                        }
+                    ]
+                },
+            )
 
         assert response.status_code == 500
         assert response.json()["error"] == "settings_keyring_error"
         assert path.read_text() == before_disk
         assert store.get() is before_settings
+        assert "Settings keyring operation failed" in caplog.text
+        assert "HTTP 500 returned" not in caplog.text
 
 
 class TestDevModeAtModelLayer:

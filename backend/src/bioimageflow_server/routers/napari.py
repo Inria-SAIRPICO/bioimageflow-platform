@@ -18,6 +18,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.napari import NapariOpenRequest, NapariStatus
 from bioimageflow_server.routers.nodes import (
     _coerce_image_path,
@@ -136,9 +137,11 @@ async def open_in_napari(
             exc,
             exc_info=exc,
         )
-        raise HTTPException(
-            status_code=503,
-            detail={"error": "napari_launch_failed", "detail": str(exc)},
+        raise mark_exception_logged(
+            HTTPException(
+                status_code=503,
+                detail={"error": "napari_launch_failed", "detail": str(exc)},
+            )
         ) from exc
     return {"status": "ok"}
 

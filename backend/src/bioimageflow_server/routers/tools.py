@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
+from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.tools import (
     PackageImportResponse,
     PackageImportUrlRequest,
@@ -27,6 +29,7 @@ from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/tools", tags=["tools"])
+_logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +201,8 @@ async def refresh_packages(
     try:
         await catalog.refresh()
     except PackageNetworkError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        _logger.warning("Package catalog refresh failed: %s", exc)
+        raise mark_exception_logged(HTTPException(status_code=502, detail=str(exc))) from exc
     return {"status": "refreshed"}
 
 
@@ -352,8 +356,8 @@ async def _refresh_package_catalog(catalog: Any) -> None:
         return
     try:
         await catalog.refresh()
-    except PackageNetworkError:
-        pass
+    except PackageNetworkError as exc:
+        _logger.warning("Package catalog refresh failed after package operation: %s", exc)
 
 
 def _package_import_response(result: Any) -> PackageImportResponse:
@@ -398,7 +402,12 @@ def _raise_package_install_error(exc: Exception, package_name: str | None = None
         detail = str(exc) if package_name is None else f"Package '{package_name}' not found"
         raise HTTPException(status_code=404, detail=detail) from exc
     if isinstance(exc, PackageNetworkError):
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _logger.warning(
+            "Package operation failed due to network error: package=%s detail=%s",
+            package_name,
+            exc,
+        )
+        raise mark_exception_logged(HTTPException(status_code=502, detail=str(exc))) from exc
     raise exc
 
 

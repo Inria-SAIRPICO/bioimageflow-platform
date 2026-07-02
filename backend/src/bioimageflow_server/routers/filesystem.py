@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import subprocess
@@ -9,7 +10,10 @@ import subprocess
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 
+from bioimageflow_server.models.errors import mark_exception_logged
+
 router = APIRouter()
+_logger = logging.getLogger(__name__)
 
 
 class RevealRequest(BaseModel):
@@ -44,5 +48,11 @@ async def reveal_path(body: RevealRequest) -> dict[str, str]:
     try:
         reveal_in_file_browser(body.path)
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        _logger.error(
+            "Could not reveal path in file browser: path=%s detail=%s",
+            body.path,
+            exc,
+            exc_info=exc,
+        )
+        raise mark_exception_logged(HTTPException(status_code=500, detail=str(exc))) from exc
     return {"status": "ok"}

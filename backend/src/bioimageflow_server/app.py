@@ -18,7 +18,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 
-from bioimageflow_server.models.errors import ErrorResponse
+from bioimageflow_server.models.errors import ErrorResponse, exception_was_logged
 from bioimageflow_server.models.settings import Settings, _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.dev import (
@@ -142,10 +142,44 @@ _STATUS_TO_ERROR: dict[int, str] = {
     405: "method_not_allowed",
     409: "conflict",
     413: "file_too_large",
+    415: "unsupported_media_type",
     422: "validation_error",
     423: "locked",
     500: "internal_server_error",
+    502: "bad_gateway",
+    503: "service_unavailable",
 }
+
+_logger = logging.getLogger(__name__)
+
+
+def _log_http_exception(request: Request, exc: HTTPException, body: ErrorResponse) -> None:
+    """Log HTTP errors that represent operational failures or security-relevant rejects."""
+    if exception_was_logged(exc):
+        return
+    status = exc.status_code
+    if status >= 500:
+        level = logging.ERROR
+    elif status in {400, 403, 413, 415} and body.error in {
+        "path_traversal",
+        "file_too_large",
+        "unsupported_media_type",
+    }:
+        level = logging.WARNING
+    else:
+        return
+
+    cause = exc.__cause__
+    _logger.log(
+        level,
+        "HTTP %s returned for %s %s: error=%s detail=%s",
+        status,
+        request.method,
+        request.url.path,
+        body.error,
+        body.detail,
+        exc_info=cause,
+    )
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -461,6 +495,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 error=error_code,
                 detail=str(exc.detail),
             )
+        _log_http_exception(request, exc, body)
         return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
     @app.exception_handler(RequestValidationError)

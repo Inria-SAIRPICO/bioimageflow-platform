@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -643,6 +644,7 @@ async def test_install_package_network_error():
     async for client in _client(config):
         resp = await client.post("/api/v1/tools/packages/cellpose/install")
     assert resp.status_code == 502
+    assert resp.json()["error"] == "bad_gateway"
 
 
 class _KnownPackages:
@@ -1158,7 +1160,9 @@ async def test_uninstall_triggers_catalog_refresh():
     assert catalog.refresh_calls == 1
 
 
-async def test_refresh_endpoint_network_error_returns_502():
+async def test_refresh_endpoint_network_error_returns_502(
+    caplog: pytest.LogCaptureFixture,
+):
     class _BrokenCatalog(_FakeCatalog):
         async def refresh(self) -> None:
             raise PackageNetworkError("pypi unreachable")
@@ -1168,5 +1172,31 @@ async def test_refresh_endpoint_network_error_returns_502():
         package_catalog=_BrokenCatalog([]),
     )
     async for client in _client(config):
-        resp = await client.post("/api/v1/tools/packages/refresh")
+        with caplog.at_level(logging.WARNING, logger="bioimageflow_server.routers.tools"):
+            resp = await client.post("/api/v1/tools/packages/refresh")
     assert resp.status_code == 502
+    assert resp.json()["error"] == "bad_gateway"
+    assert "Package catalog refresh failed" in caplog.text
+    assert "HTTP 502 returned" not in caplog.text
+
+
+async def test_install_logs_catalog_refresh_failure_after_success(
+    caplog: pytest.LogCaptureFixture,
+):
+    class _BrokenCatalog(_FakeCatalog):
+        async def refresh(self) -> None:
+            raise PackageNetworkError("pypi unreachable")
+
+    installer = AsyncMock(spec=PackageInstallerService)
+    config = AppConfig(
+        tool_registry=ToolRegistryService(),
+        package_installer=installer,
+        package_catalog=_BrokenCatalog([]),
+    )
+    async for client in _client(config):
+        with caplog.at_level(logging.WARNING, logger="bioimageflow_server.routers.tools"):
+            resp = await client.post("/api/v1/tools/packages/cellpose/install")
+    assert resp.status_code == 200
+    installer.install.assert_awaited_once_with("cellpose", version=None)
+    assert "Package catalog refresh failed after package operation" in caplog.text
+    assert "HTTP 502 returned" not in caplog.text

@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
 from pydantic import ConfigDict, ValidationError
 
+from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.settings import OMEROInstanceResponse, Settings
 from bioimageflow_server.services.omero_credentials import OmeroCredentialError
 from bioimageflow_server.services.settings_store import SettingsStore
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+_logger = logging.getLogger(__name__)
 
 
 def get_settings_store() -> SettingsStore:  # pragma: no cover
@@ -67,13 +70,14 @@ def _resolved_tool_store_path(store: SettingsStore):
 
 
 def _keyring_http_error(exc: OmeroCredentialError) -> HTTPException:
-    return HTTPException(
+    _logger.error("Settings keyring operation failed: %s", exc, exc_info=exc)
+    return mark_exception_logged(HTTPException(
         status_code=500,
         detail={
             "error": "settings_keyring_error",
             "detail": str(exc),
         },
-    )
+    ))
 
 
 @router.get("", response_model=SettingsResponse)

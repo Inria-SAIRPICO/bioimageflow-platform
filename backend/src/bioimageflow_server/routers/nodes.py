@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import mimetypes
 import tempfile
 import time
@@ -26,6 +27,7 @@ from bioimageflow_server.services.workflow_context import resolve_workflow_stora
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
+_logger = logging.getLogger(__name__)
 
 
 # Bounded wait the endpoint applies on a cache miss. The Wetlands env
@@ -190,6 +192,12 @@ def _read_image_array(image_path: Path) -> np.ndarray:
         with Image.open(image_path) as image:
             frames = [np.asarray(frame.copy()) for frame in ImageSequence.Iterator(image)]
     except Exception as exc:
+        _logger.warning(
+            "Could not read image for Avivator: path=%s detail=%s",
+            image_path,
+            exc,
+            exc_info=exc,
+        )
         raise HTTPException(
             status_code=422,
             detail=f"Could not read image for Avivator: {image_path.name}",
@@ -247,6 +255,12 @@ def _as_ome_tiff(image_path: Path) -> Path:
         tmp_path.replace(cache_path)
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
+        _logger.warning(
+            "Could not convert image to OME-TIFF for Avivator: path=%s detail=%s",
+            image_path,
+            exc,
+            exc_info=exc,
+        )
         raise HTTPException(
             status_code=422,
             detail=f"Could not convert image to OME-TIFF for Avivator: {image_path.name}",
@@ -261,6 +275,12 @@ def _tiff_offsets(path: Path) -> list[int]:
         with tifffile.TiffFile(path) as tif:
             return [int(page.offset) for page in tif.pages]
     except Exception as exc:
+        _logger.warning(
+            "Could not read TIFF offsets for Avivator: path=%s detail=%s",
+            path,
+            exc,
+            exc_info=exc,
+        )
         raise HTTPException(
             status_code=422,
             detail=f"Could not read TIFF offsets for Avivator: {path.name}",
