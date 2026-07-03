@@ -69,6 +69,36 @@ describe('toolRegistry custom tool actions', () => {
     expect(store.customToolBusy).toBe(false)
   })
 
+  it('deleteEnvironment calls the environment delete endpoint and refreshes read models', async () => {
+    mockedApi.delete.mockResolvedValueOnce({
+      data: { environment: 'cellpose-env', status: 'deleted' },
+    })
+    const store = useToolRegistryStore()
+
+    const result = await store.deleteEnvironment({
+      kind: 'delete_environment',
+      envName: 'cellpose-env',
+      path: '/wetlands/pixi/workspaces/cellpose-env/pixi.toml',
+      existingHash: 'sha256:old',
+      requestedHash: 'sha256:new',
+    })
+
+    expect(result).toEqual({ environment: 'cellpose-env', status: 'deleted' })
+    expect(mockedApi.delete).toHaveBeenCalledWith(
+      '/api/v1/tools/environments/cellpose-env',
+      {
+        data: {
+          path: '/wetlands/pixi/workspaces/cellpose-env/pixi.toml',
+          existing_hash: 'sha256:old',
+          requested_hash: 'sha256:new',
+        },
+      },
+    )
+    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools')
+    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/packages')
+    expect(store.environmentStatuses['cellpose-env']).toBe('stopped')
+  })
+
   it('custom tool busy state is isolated from package install calls', async () => {
     let resolvePost: (value: unknown) => void = () => {}
     mockedApi.post.mockImplementationOnce(

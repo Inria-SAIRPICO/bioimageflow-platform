@@ -34,6 +34,15 @@ interface ClearResponse {
   node_statuses: Record<string, NodeStatus>
 }
 
+export interface EnvironmentRecoveryAction {
+  kind: 'delete_environment'
+  envName: string
+  path?: string
+  existingHash?: string
+  requestedHash?: string
+  nodeId?: string
+}
+
 interface RunError {
   status?: number
   response?: {
@@ -61,6 +70,58 @@ function stringifyExecutionErrorWithTraceback(err: Record<string, unknown>): str
   return tb ? `${summary}\n${tb}` : summary
 }
 
+function failedNodeIdFromResult(result: ExecutionResult): string | undefined {
+  const failed = Object.values(result.node_statuses ?? {}).find(
+    (status) => status.status === 'failed',
+  )
+  return failed?.node_id
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function recoveryActionKey(action: EnvironmentRecoveryAction): string {
+  return [
+    action.kind,
+    action.envName,
+    action.path ?? '',
+    action.existingHash ?? '',
+    action.requestedHash ?? '',
+  ].join('\n')
+}
+
+function extractEnvironmentRecoveryAction(
+  result: ExecutionResult | null,
+): EnvironmentRecoveryAction | null {
+  if (!result || result.success) return null
+  for (const error of result.errors ?? []) {
+    const recovery = error.recovery_action
+    if (typeof recovery !== 'object' || recovery === null) continue
+    const action = recovery as Record<string, unknown>
+    if (action.kind !== 'delete_environment') continue
+    const envName = stringField(action.env_name)
+    if (!envName) continue
+    return {
+      kind: 'delete_environment',
+      envName,
+      ...(stringField(action.path) ? { path: stringField(action.path) } : {}),
+      ...(stringField(action.existing_hash)
+        ? { existingHash: stringField(action.existing_hash) }
+        : {}),
+      ...(stringField(action.requested_hash)
+        ? { requestedHash: stringField(action.requested_hash) }
+        : {}),
+      ...(stringField(action.node_id)
+        ? { nodeId: stringField(action.node_id) }
+        : failedNodeIdFromResult(result)
+          ? { nodeId: failedNodeIdFromResult(result) }
+          : {}),
+    }
+  }
+  return null
+}
+
 function hasExistingFailureLog(
   nodeId: string | undefined,
   detail: string,
@@ -85,8 +146,30 @@ export const useExecutionStore = defineStore('execution', () => {
   const error = ref<string | null>(null)
   const isConflict = ref(false)
   const validationErrors = ref<GraphValidationError[]>([])
+  const environmentRecoveryAction = ref<EnvironmentRecoveryAction | null>(null)
+  const dismissedEnvironmentRecoveryKey = ref<string | null>(null)
 
   const isRunning = computed(() => state.value === 'running')
+  const isEnvironmentRecoveryDialogVisible = computed(() => {
+    const action = environmentRecoveryAction.value
+    if (action === null) return false
+    return dismissedEnvironmentRecoveryKey.value !== recoveryActionKey(action)
+  })
+
+  function updateEnvironmentRecovery(result: ExecutionResult | null): void {
+    environmentRecoveryAction.value = extractEnvironmentRecoveryAction(result)
+  }
+
+  function clearEnvironmentRecovery(): void {
+    environmentRecoveryAction.value = null
+    dismissedEnvironmentRecoveryKey.value = null
+  }
+
+  function dismissEnvironmentRecovery(): void {
+    const action = environmentRecoveryAction.value
+    if (action === null) return
+    dismissedEnvironmentRecoveryKey.value = recoveryActionKey(action)
+  }
 
   async function fetchStatus() {
     try {
@@ -95,6 +178,7 @@ export const useExecutionStore = defineStore('execution', () => {
       )
       state.value = data.state
       lastResult.value = data.last_result
+      updateEnvironmentRecovery(data.last_result)
       progress.value = data.progress
       if (data.node_statuses) {
         nodeStatuses.value = { ...nodeStatuses.value, ...data.node_statuses }
@@ -115,6 +199,7 @@ export const useExecutionStore = defineStore('execution', () => {
     error.value = null
     isConflict.value = false
     validationErrors.value = []
+    clearEnvironmentRecovery()
     lastResult.value = null
     progress.value = null
     nodeStatuses.value = {}
@@ -196,6 +281,7 @@ export const useExecutionStore = defineStore('execution', () => {
   function applyStatusSnapshot(snapshot: ExecutionStatusSnapshot) {
     state.value = snapshot.state
     lastResult.value = snapshot.last_result
+    updateEnvironmentRecovery(snapshot.last_result)
     progress.value = snapshot.progress
     if (snapshot.node_statuses) {
       nodeStatuses.value = { ...snapshot.node_statuses }
@@ -205,6 +291,7 @@ export const useExecutionStore = defineStore('execution', () => {
   function applyExecutionComplete(payload: ExecutionResult) {
     state.value = 'idle'
     lastResult.value = payload
+    updateEnvironmentRecovery(payload)
     progress.value = null
     if (payload.node_statuses) {
       nodeStatuses.value = { ...nodeStatuses.value, ...payload.node_statuses }
@@ -269,11 +356,14 @@ export const useExecutionStore = defineStore('execution', () => {
     error,
     isConflict,
     validationErrors,
+    environmentRecoveryAction,
+    isEnvironmentRecoveryDialogVisible,
     isRunning,
     fetchStatus,
     run,
     stop,
     clear,
+    dismissEnvironmentRecovery,
     applyProgress,
     applyNodeState,
     applyStatusSnapshot,

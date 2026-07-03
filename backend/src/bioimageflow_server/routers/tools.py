@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.tools import (
@@ -71,6 +72,12 @@ def get_workflow_store() -> WorkflowStoreService | None:  # pragma: no cover
 
 def get_tool_environment_service() -> Any:  # pragma: no cover
     return None
+
+
+class EnvironmentDeleteRequest(BaseModel):
+    path: str
+    existing_hash: str
+    requested_hash: str | None = None
 
 
 def _custom_tool_service(
@@ -555,6 +562,27 @@ async def stop_environment(
     if service is None:
         return {"environment": env_name, "status": "stopped"}
     status = await service.stop(env_name)
+    return {"environment": env_name, "status": status}
+
+
+@router.delete("/environments/{env_name}")
+async def delete_environment(
+    env_name: str,
+    body: EnvironmentDeleteRequest,
+    service: Any = Depends(get_tool_environment_service),
+) -> dict[str, str]:
+    if service is None:
+        return {"environment": env_name, "status": "deleted"}
+    try:
+        status = await service.delete(
+            env_name,
+            expected_path=body.path,
+            expected_existing_hash=body.existing_hash,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"environment": env_name, "status": status}
 
 

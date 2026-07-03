@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from wetlands.exceptions import EnvironmentReuseError
 
 from bioimageflow_server.models.graph import ColumnRefEdge, GraphState, NodeState
 from bioimageflow_server.models.settings import Settings
@@ -685,6 +686,61 @@ class TestExecutionManagerResult:
         assert em.last_result.success is False
         assert em.last_result.errors
         assert "kaboom" in str(em.last_result.errors[0])
+
+    async def test_environment_recipe_mismatch_adds_recovery_action(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(events=[_ProgressEventStub("cellpose_1", "started")])
+        wf.raise_exc = EnvironmentReuseError(
+            "Environment 'segmentation-cellpose-v3' already exists at "
+            "/Users/amasson/.bioimageflow/wetlands/pixi/workspaces/"
+            "segmentation-cellpose-v3/pixi.toml but cannot be reused: "
+            "it was created with a different recipe.\n"
+            "Existing hash: sha256:12825e7c20f47da18ba92c11cb9179dd2df35fbb6b4f54050c157abbc1a3425f\n"
+            "Requested hash: sha256:61bc60ebf72d2fe1c24c29f363954fd68100ece113ccaa80b5beea5605b867ce\n"
+            "Use replace_existing=True to recreate the default managed environment, "
+            "load(name) to load the existing environment without recipe validation, or choose a different name."
+        )
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        await em.start(_graph_with([("cellpose_1", True)]))
+        await _drain(em)
+
+        assert em.last_result is not None
+        assert em.last_result.success is False
+        error = em.last_result.errors[0]
+        assert error["type"] == "EnvironmentReuseError"
+        assert error["detail"].startswith(
+            "Environment 'segmentation-cellpose-v3' already exists"
+        )
+        assert error["recovery_action"] == {
+            "kind": "delete_environment",
+            "env_name": "segmentation-cellpose-v3",
+            "path": "/Users/amasson/.bioimageflow/wetlands/pixi/workspaces/segmentation-cellpose-v3/pixi.toml",
+            "existing_hash": "sha256:12825e7c20f47da18ba92c11cb9179dd2df35fbb6b4f54050c157abbc1a3425f",
+            "requested_hash": "sha256:61bc60ebf72d2fe1c24c29f363954fd68100ece113ccaa80b5beea5605b867ce",
+        }
+
+    async def test_environment_reuse_error_without_recipe_mismatch_has_no_recovery_action(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow()
+        wf.raise_exc = EnvironmentReuseError(
+            "Environment 'custom-env' already exists at /somewhere but cannot be reused: "
+            "it is loaded from a non-default path.\nRequested hash: sha256:abc"
+        )
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        await em.start(_graph_with([("n1", True)]))
+        await _drain(em)
+
+        assert em.last_result is not None
+        assert em.last_result.success is False
+        assert "recovery_action" not in em.last_result.errors[0]
 
     async def test_wetlands_payload_is_summarized_for_client(
         self, monkeypatch: pytest.MonkeyPatch
