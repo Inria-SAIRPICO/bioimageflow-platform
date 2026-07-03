@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { ref, watch } from 'vue'
 import type { ValidationResult } from '@/api/types'
 
 vi.mock('@/api/client', () => ({
@@ -144,6 +145,36 @@ describe('useGraphSync', () => {
 
     await flushNow()
     expect(mockedPut).toHaveBeenCalledTimes(1)
+  })
+
+  it('flushNow waits for pending Vue watchers before sending', async () => {
+    mockedPut.mockResolvedValue({ data: makeValidation() })
+    const { syncGraph, flushNow } = useGraphSync()
+    const parameter = ref('old')
+
+    watch(parameter, (value) => {
+      const graph = makeVueFlowGraph()
+      graph.nodes[0]!.data.parameters = { path: value }
+      syncGraph(graph)
+    })
+
+    parameter.value = 'new'
+    await flushNow()
+
+    expect(mockedPut).toHaveBeenCalledWith(
+      '/api/v1/graph',
+      {
+        graph: expect.objectContaining({
+          nodes: [
+            expect.objectContaining({
+              parameters: { path: 'new' },
+            }),
+          ],
+        }),
+        workflow_name: null,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    )
   })
 
   it('syncGraphState keeps backend graph state authoritative', async () => {

@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -232,6 +232,7 @@ function _createGraphSync() {
   }
 
   async function flushNow(): Promise<void> {
+    await nextTick()
     await sendNow()
   }
 
