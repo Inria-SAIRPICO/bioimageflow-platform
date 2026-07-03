@@ -193,6 +193,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tools/environments/{env_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Environment */
+        delete: operations["delete_environment_api_v1_tools_environments__env_name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dev/seed": {
         parameters: {
             query?: never;
@@ -782,6 +799,18 @@ export interface components {
             nodes?: string[] | null;
             /** Workflow Name */
             workflow_name?: string | null;
+        };
+        /**
+         * EnvironmentDeleteRequest
+         * @description Request to delete a Wetlands environment after a validated recipe-mismatch recovery prompt.
+         */
+        EnvironmentDeleteRequest: {
+            /** Path */
+            path: string;
+            /** Existing Hash */
+            existing_hash: string;
+            /** Requested Hash */
+            requested_hash?: string | null;
         };
         /**
          * GraphState
@@ -1682,6 +1711,7 @@ export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['B
 export type ClearRequest = components['schemas']['ClearRequest'];
 export type ColumnRefEdge = components['schemas']['ColumnRefEdge'];
 export type Dataset = components['schemas']['Dataset'];
+export type EnvironmentDeleteRequest = components['schemas']['EnvironmentDeleteRequest'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
 export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
@@ -2109,6 +2139,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_environment_api_v1_tools_environments__env_name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                env_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvironmentDeleteRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -662,6 +662,9 @@ class ExecutionManager:
                         "traceback": tb,
                     }
                 )
+                recovery_action = _environment_reuse_recovery_action(exc)
+                if recovery_action is not None:
+                    errors[-1]["recovery_action"] = recovery_action
                 logger.error(
                     "Workflow execution failed: %s",
                     exc,
@@ -794,6 +797,31 @@ def _format_exception_for_client(exc: BaseException, local_tb: str) -> tuple[str
     if local_tb:
         detail_parts.append(f"Local traceback:\n{local_tb.rstrip()}")
     return summary, "\n\n".join(detail_parts)
+
+
+def _environment_reuse_recovery_action(exc: BaseException) -> dict[str, str] | None:
+    if type(exc).__name__ != "EnvironmentReuseError":
+        return None
+    message = str(exc)
+    if "it was created with a different recipe" not in message:
+        return None
+    match = re.search(
+        r"Environment '(?P<env>[^']+)' already exists at (?P<path>.+?) "
+        r"but cannot be reused: it was created with a different recipe\.\n"
+        r"Existing hash: (?P<existing>\S+)\n"
+        r"Requested hash: (?P<requested>\S+)",
+        message,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        return None
+    return {
+        "kind": "delete_environment",
+        "env_name": match.group("env"),
+        "path": match.group("path"),
+        "existing_hash": match.group("existing"),
+        "requested_hash": match.group("requested"),
+    }
 
 
 def _extract_remote_exception_payload(exc: BaseException) -> dict[str, Any] | None:

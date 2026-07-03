@@ -52,6 +52,69 @@ describe('execution store', () => {
     })
   })
 
+  it('captures environment delete recovery actions from execution failures', () => {
+    const execution = useExecutionStore()
+
+    execution.state = 'running'
+    execution.applyExecutionComplete({
+      success: false,
+      errors: [{
+        type: 'EnvironmentReuseError',
+        detail: 'Environment recipe mismatch',
+        recovery_action: {
+          kind: 'delete_environment',
+          env_name: 'cellpose-env',
+          path: '/wetlands/pixi/workspaces/cellpose-env/pixi.toml',
+          existing_hash: 'sha256:old',
+          requested_hash: 'sha256:new',
+        },
+      }],
+      node_statuses: {
+        cellpose_1: {
+          node_id: 'cellpose_1',
+          status: 'failed',
+          cached: false,
+          error: 'Environment recipe mismatch',
+        },
+      },
+    })
+
+    expect(execution.environmentRecoveryAction).toEqual({
+      kind: 'delete_environment',
+      envName: 'cellpose-env',
+      path: '/wetlands/pixi/workspaces/cellpose-env/pixi.toml',
+      existingHash: 'sha256:old',
+      requestedHash: 'sha256:new',
+      nodeId: 'cellpose_1',
+    })
+    expect(execution.isEnvironmentRecoveryDialogVisible).toBe(true)
+  })
+
+  it('dismisses and clears environment recovery actions when a new run starts', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'started' } })
+    const execution = useExecutionStore()
+    execution.state = 'running'
+    execution.applyExecutionComplete({
+      success: false,
+      errors: [{
+        detail: 'Environment recipe mismatch',
+        recovery_action: {
+          kind: 'delete_environment',
+          env_name: 'cellpose-env',
+        },
+      }],
+      node_statuses: {},
+    })
+
+    execution.dismissEnvironmentRecovery()
+    expect(execution.isEnvironmentRecoveryDialogVisible).toBe(false)
+
+    await execution.run({ nodes: [], edges: [] })
+
+    expect(execution.environmentRecoveryAction).toBeNull()
+    expect(execution.isEnvironmentRecoveryDialogVisible).toBe(false)
+  })
+
   it('posts workflow_name when starting execution', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'started' } })
     const execution = useExecutionStore()

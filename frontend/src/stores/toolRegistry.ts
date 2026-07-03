@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
+import type { EnvironmentRecoveryAction } from '@/stores/execution'
 import type {
   PackageInfo,
   ToolCreateResponse,
@@ -25,6 +26,11 @@ export interface ToolRemovedPayload {
 export interface EnvironmentStatusPayload {
   type: 'environment_status'
   env_name: string
+  status: string
+}
+
+export interface EnvironmentDeleteResponse {
+  environment: string
   status: string
 }
 
@@ -215,6 +221,34 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     }
   }
 
+  async function deleteEnvironment(
+    action: EnvironmentRecoveryAction,
+  ): Promise<EnvironmentDeleteResponse> {
+    try {
+      const { data } = await api.delete<EnvironmentDeleteResponse>(
+        `/api/v1/tools/environments/${action.envName}`,
+        {
+          data: {
+            path: action.path,
+            existing_hash: action.existingHash,
+            requested_hash: action.requestedHash ?? null,
+          },
+        },
+      )
+      applyEnvironmentStatus({
+        type: 'environment_status',
+        env_name: action.envName,
+        status: 'stopped',
+      })
+      await Promise.all([fetchTools(), fetchPackages()])
+      error.value = null
+      return data
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : String(e)
+      throw e
+    }
+  }
+
   function applyToolReload(payload: ToolReloadPayload) {
     const meta = payload.tool_metadata
     const idx = tools.value.findIndex((t) => t.name === payload.tool_name)
@@ -288,6 +322,7 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     getToolUsage,
     renameTool,
     deleteTool,
+    deleteEnvironment,
     getToolByName,
     searchTools,
     getEnvStatusForTool,
