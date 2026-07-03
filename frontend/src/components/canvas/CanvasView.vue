@@ -186,6 +186,7 @@ const remoteDraftActionError = ref<string | null>(null)
 const remoteDraftResolutionMessage = ref<string | null>(null)
 let isApplyingGraphState = false
 let isAutoApplyingRemoteDraft = false
+let isRefreshingToolMetadata = false
 let clipboardToast: ReturnType<typeof useToast> | null = null
 
 const hasLocalRemoteDraftConflict = computed(() => (
@@ -232,6 +233,20 @@ function rememberAuthoritativeGraph(graph: GraphState): GraphState {
   const snapshot = deepClone(graph)
   lastAuthoritativeGraph.value = snapshot
   return snapshot
+}
+
+function graphWithAuthoritativeEdges(state: {
+  nodes: any[]
+  edges: any[]
+  published_inputs?: PublishedInput[]
+  published_outputs?: PublishedOutput[]
+}): GraphState {
+  const graph = serializeGraph(state) as GraphState
+  const previous = lastAuthoritativeGraph.value
+  if (previous !== null) {
+    graph.edges = deepClone(previous.edges ?? []) as GraphState['edges']
+  }
+  return graph
 }
 
 function dockviewParams() {
@@ -1028,6 +1043,7 @@ watch(
   }]),
   () => {
     if (isApplyingGraphState) return
+    if (isRefreshingToolMetadata) return
     emitGraphChanged()
   },
   { deep: true },
@@ -1051,27 +1067,37 @@ watch(
     if (!tools || tools.length === 0) return
     const byName = new Map(tools.map((t) => [t.name, t]))
     let changed = false
-    for (const n of getNodes.value as any[]) {
-      const toolName = n.data?.toolName
-      if (!toolName) continue
-      const fresh = byName.get(toolName)
-      if (!fresh) continue
-      const prev = n.data.tool
-      if (prev && prev.package_version === fresh.package_version) continue
-      n.data.tool = fresh
-      n.data.output_templates = reconcileOutputTemplates(
-        fresh,
-        n.data.output_templates ?? {},
-      )
-      // Only invalidate executed nodes — leave unexecuted/failed/disabled
-      // alone so the version switch doesn't visually thrash the canvas.
-      if (n.data.status === 'executed') {
-        n.data.status = 'out_of_date'
+    isRefreshingToolMetadata = true
+    try {
+      for (const n of getNodes.value as any[]) {
+        const toolName = n.data?.toolName
+        if (!toolName) continue
+        const fresh = byName.get(toolName)
+        if (!fresh) continue
+        const prev = n.data.tool
+        if (prev && prev.package_version === fresh.package_version) continue
+        n.data.tool = fresh
+        n.data.output_templates = reconcileOutputTemplates(
+          fresh,
+          n.data.output_templates ?? {},
+        )
+        // Only invalidate executed nodes — leave unexecuted/failed/disabled
+        // alone so the version switch doesn't visually thrash the canvas.
+        if (n.data.status === 'executed') {
+          n.data.status = 'out_of_date'
+        }
+        changed = true
       }
-      changed = true
+    } finally {
+      void nextTick().then(() => {
+        isRefreshingToolMetadata = false
+      })
     }
     if (changed) {
-      emitGraphChanged()
+      const graph = rememberAuthoritativeGraph(
+        graphWithAuthoritativeEdges(currentVueFlowState()),
+      )
+      syncGraphState(graph)
     }
   },
   { deep: false },

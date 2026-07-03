@@ -2412,6 +2412,44 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('does not let late tool metadata refresh overwrite authoritative edges', async () => {
+      const name = 'saved'
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [savedEdge('e1', 'a', 'b')]
+      const graph = { nodes, edges }
+      mockSavedWorkflow(graph, name, [])
+      dropNextNonEmptySetEdges = true
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes).toHaveLength(2)
+      expect(mockEdges).toEqual([])
+
+      graphSyncMocks.syncGraph.mockClear()
+      graphSyncMocks.syncGraphState.mockClear()
+      autoSaveMocks.scheduleAutoSave.mockClear()
+      const graphChangedCount = w.emitted('graph-changed')?.length ?? 0
+
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '2.0.0' })] as any
+      await nextTick()
+      await flushPromises()
+
+      expect(mockEdges).toEqual([])
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
+      expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount)
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledTimes(1)
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
+        edges,
+      }))
+
+      w.unmount()
+    })
+
     it('ignores stale autosave entries older than the server workflow', async () => {
       const name = 'saved'
       const serverGraph = {
