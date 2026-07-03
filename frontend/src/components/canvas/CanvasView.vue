@@ -131,6 +131,17 @@ const {
 
 watch(validationResult, (result) => {
   applyValidationResult(result)
+  if (!result?.node_statuses) return
+  for (const node of getNodes.value) {
+    const status = result.node_statuses[node.id]
+    if (!status || !node.data) continue
+    if (node.data.status !== status.status) {
+      node.data.status = status.status
+    }
+    if (node.data.provisional) {
+      node.data.provisional = false
+    }
+  }
 })
 
 // Mirror per-edge validation errors onto each edge's `data.errors` so the
@@ -2272,7 +2283,16 @@ function emitGraphChanged() {
   // Mark all nodes provisional during the debounce window so the UI can
   // render a desaturated status indicator until the server response lands.
   for (const n of state.nodes) {
-    markProvisional(n.id, 'unexecuted')
+    const currentStatus = n.data?.status
+    const provisionalStatus =
+      currentStatus === 'executed' || currentStatus === 'out_of_date'
+        ? 'out_of_date'
+        : 'unexecuted'
+    markProvisional(n.id, provisionalStatus)
+    if (n.data) {
+      n.data.status = provisionalStatus
+      n.data.provisional = true
+    }
   }
   if (isSubWorkflowEditor && props.subWorkflowSessionId) {
     syncGraph(state as any)

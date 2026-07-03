@@ -261,4 +261,45 @@ describe('CanvasView execution lock', () => {
     expect(mockNodes[0].data.status).toBe('executed')
     w.unmount()
   })
+
+  it('marks executed nodes out of date after a graph edit', async () => {
+    mockNodes = [
+      {
+        id: 'source',
+        data: {
+          name: 'Source',
+          toolName: 'SourceTool',
+          status: 'executed',
+          parameters: {},
+          connectedInputs: {},
+        },
+      },
+      {
+        id: 'target',
+        data: {
+          name: 'Target',
+          toolName: 'TargetTool',
+          status: 'executed',
+          parameters: { in: '/old' },
+          connectedInputs: {},
+        },
+      },
+    ]
+    const w = mountCanvas()
+    expect(connectHandler).not.toBeNull()
+
+    connectHandler!({
+      source: 'source',
+      target: 'target',
+      sourceHandle: 'out',
+      targetHandle: 'in',
+    })
+    await nextTick()
+
+    expect(mockNodes[0].data.status).toBe('out_of_date')
+    expect(mockNodes[1].data.status).toBe('out_of_date')
+    expect(mockNodes[0].data.provisional).toBe(true)
+    expect(mockNodes[1].data.provisional).toBe(true)
+    w.unmount()
+  })
 })
