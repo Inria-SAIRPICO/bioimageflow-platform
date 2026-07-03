@@ -34,7 +34,6 @@ from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.graph_builder import build_workflow
-from bioimageflow_server.services.graph_translator import graph_requires_wetlands
 from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
@@ -266,85 +265,33 @@ class ExecutionManager:
 
         on_progress = self._make_progress_callback()
 
-        # Prefer the session's cached workflow — avoids a redundant
-        # build_workflow() call when validation already loaded the graph.
-        # For Run Selected, rebuild a pruned upstream-only graph so
-        # unrelated downstream validation errors cannot block the subset.
-        session = (
-            self.session_manager.session
-            if self.session_manager is not None and not nodes
-            else None
-        )
-        session_storage_path = (
-            self.session_manager.storage_path
-            if self.session_manager is not None
-            else None
-        )
-        session_matches_storage = _paths_equal(session_storage_path, run_storage_path)
-        if session is not None and session_matches_storage:
-            try:
-                workflow = session.to_workflow()
-                workflow.on_progress = on_progress
-                workflow.engine_type = (
-                    "wetlands"
-                    if graph_requires_wetlands(build_graph, self.tool_registry)
-                    else "direct"
-                )
-                workflow.execution = live_settings.execution_engine
-            except Exception as exc:
-                self.state = "idle"
-                raise WorkflowBuildError(
-                    [
-                        GraphValidationError(
-                            type="parameter_invalid",
-                            detail=f"Workflow build failed: {exc}",
-                        )
-                    ]
-                ) from exc
-
-            # Check for translation-level errors from the session load.
-            translation_errors = (
-                self.session_manager.translation_errors
-                if self.session_manager is not None
-                else []
+        # Execution must use the graph submitted with this run request.
+        # The validation session is an editing cache and can lag behind
+        # the frontend's current graph when a run is triggered immediately
+        # after parameter edits.
+        try:
+            build_result = build_workflow(
+                build_graph,
+                self.tool_registry,
+                storage_path=run_storage_path,
+                on_progress=on_progress,
+                settings=live_settings,
             )
-            build_errors = list(translation_errors)
-            if workflow.errors:
-                from bioimageflow_server.services.graph_translator import (
-                    lib_validation_error_to_graph_error,
-                )
+        except Exception as exc:
+            self.state = "idle"
+            raise WorkflowBuildError(
+                [
+                    GraphValidationError(
+                        type="parameter_invalid",
+                        detail=f"Workflow build failed: {exc}",
+                    )
+                ]
+            ) from exc
 
-                build_errors.extend(
-                    lib_validation_error_to_graph_error(e)
-                    for e in workflow.errors
-                )
-            if build_errors:
-                self.state = "idle"
-                raise WorkflowBuildError(build_errors)
-        else:
-            try:
-                build_result = build_workflow(
-                    build_graph,
-                    self.tool_registry,
-                    storage_path=run_storage_path,
-                    on_progress=on_progress,
-                    settings=live_settings,
-                )
-            except Exception as exc:
-                self.state = "idle"
-                raise WorkflowBuildError(
-                    [
-                        GraphValidationError(
-                            type="parameter_invalid",
-                            detail=f"Workflow build failed: {exc}",
-                        )
-                    ]
-                ) from exc
-
-            workflow, errors, _disabled = build_result
-            if errors:
-                self.state = "idle"
-                raise WorkflowBuildError(errors)
+        workflow, errors, _disabled = build_result
+        if errors:
+            self.state = "idle"
+            raise WorkflowBuildError(errors)
 
         self._workflow = workflow
         self._attach_environment_status_hook(workflow)

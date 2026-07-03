@@ -323,6 +323,72 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
     assert validation.node_statuses["offset"].cached is True
 
 
+async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    session_manager = SessionManager()
+    bus = RecordingEventBus()
+    manager = ExecutionManager(
+        bus,
+        registry,
+        _settings(),
+        storage_path=tmp_path,
+        session_manager=session_manager,
+    )
+    original = _real_graph()
+    modified = GraphState(
+        nodes=[
+            NodeState(
+                id="source",
+                name="source",
+                tool_name="SourceNumbers",
+                position=(0, 0),
+                parameters={"start": 10, "count": 3},
+            ),
+            NodeState(
+                id="offset",
+                name="offset",
+                tool_name="AddOffset",
+                position=(200, 0),
+                parameters={"offset": 5},
+            ),
+        ],
+        edges=original.edges,
+    )
+
+    validation = validate_graph(
+        original,
+        registry,
+        session_manager,
+        storage_path=tmp_path,
+        dev_mode=False,
+        settings=_settings(),
+    )
+    assert validation.valid is True
+
+    await manager.start(original)
+    await _drain_manager(manager)
+    assert manager.last_result is not None
+    assert manager.last_result.node_statuses["source"].cached is False
+    assert _cached_dataframe(tmp_path, "source")["value"].tolist() == [2, 3, 4]
+
+    await manager.start(modified)
+    await _drain_manager(manager)
+
+    assert manager.last_result is not None
+    assert manager.last_result.success is True
+    assert manager.last_result.node_statuses["source"].cached is False
+    assert manager.last_result.node_statuses["offset"].cached is False
+    assert _cached_dataframe(tmp_path, "source")["value"].tolist() == [10, 11, 12]
+    assert _cached_dataframe(tmp_path, "offset")[["value", "shifted"]].to_dict(
+        orient="list"
+    ) == {
+        "value": [10, 11, 12],
+        "shifted": [15, 16, 17],
+    }
+
+
 async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path) -> None:
     registry = _registry()
     graph = _real_graph()
