@@ -226,6 +226,21 @@ describe('ImageCell', () => {
     expect(button.attributes('disabled')).toBeUndefined()
   })
 
+  it('reveals the selected image through the node-aware backend endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountCell({ workflowName: 'wf a' })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="reveal-0-mask"]').trigger('click')
+    await flushPromises()
+
+    expect(mockedPost).toHaveBeenCalledWith(
+      '/api/v1/nodes/n1/reveal?row=0&col=mask&workflow_name=wf+a',
+    )
+  })
+
   it('requests an Avivator dock panel with an OME-TIFF image_url', async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)

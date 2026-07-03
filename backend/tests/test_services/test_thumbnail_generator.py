@@ -77,6 +77,35 @@ def test_create_thumbnail_writes_png_for_2d_array(tmp_path: Path) -> None:
     assert captured["order"] == "TCZYX"
 
 
+def test_create_thumbnail_passes_string_path_to_bioimage(tmp_path: Path) -> None:
+    import numpy as np
+
+    captured: dict[str, Any] = {"data": np.zeros((1, 1, 1, 8, 8), dtype=np.uint8)}
+
+    class _StrictBioImage:
+        def __init__(self, path: Any) -> None:
+            if not isinstance(path, str):
+                raise TypeError(f"expected str path, got {type(path)}")
+            captured["path"] = path
+
+        def get_image_data(self, order: str) -> Any:
+            captured["order"] = order
+            return captured["data"]
+
+    bioio_stub = ModuleType("bioio")
+    bioio_stub.__dict__["BioImage"] = _StrictBioImage
+    tg = _load_module(bioio_stub)
+
+    image_path = tmp_path / "image.tif"
+    image_path.write_bytes(b"x")
+    thumbnail_path = tmp_path / "thumb.png"
+
+    tg.create_thumbnail(str(image_path), "tif", str(thumbnail_path), size=(8, 8))
+
+    assert captured["path"] == str(image_path)
+    assert thumbnail_path.is_file()
+
+
 def test_create_thumbnail_handles_constant_image(tmp_path: Path) -> None:
     """All-zero image must not crash on division by zero — should still write a PNG."""
     import numpy as np

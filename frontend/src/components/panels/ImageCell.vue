@@ -236,7 +236,14 @@ async function copyPath() {
 
 async function reveal() {
   try {
-    await api.post('/api/v1/fs/reveal', { path: props.value })
+    const params = new URLSearchParams({
+      row: String(props.row),
+      col: props.col,
+    })
+    if (props.workflowName && props.workflowName.trim() !== '') {
+      params.set('workflow_name', props.workflowName)
+    }
+    await api.post(`/api/v1/nodes/${encodeURIComponent(props.nodeId)}/reveal?${params.toString()}`)
   } catch (exc: any) {
     showError(exc?.response?.data?.detail ?? exc?.message ?? 'Could not reveal file')
   }

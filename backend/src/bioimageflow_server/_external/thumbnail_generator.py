@@ -52,7 +52,7 @@ def create_thumbnail(
             image_path_with_extension.symlink_to(image_path)
             created_symlink = True
 
-        image = BioImage(image_path_with_extension)
+        image = BioImage(str(image_path_with_extension))
         data = image.get_image_data("TCZYX")
     finally:
         if created_symlink and image_path_with_extension.exists():

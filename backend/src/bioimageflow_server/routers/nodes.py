@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
 from starlette.responses import FileResponse
 
+from bioimageflow_server.routers.filesystem import reveal_in_file_browser
 from bioimageflow_server.models.nodes import NodeDataResponse
 from bioimageflow_server.services.result_store import (
     DATAFRAME_RECORD_DIR_ATTR,
@@ -456,6 +457,26 @@ async def get_node_image(
         workflow_name=workflow_name,
         output_format=output_format,
     )
+
+
+@router.post("/{node_id:path}/reveal")
+async def reveal_node_image(
+    node_id: str,
+    result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+    col: str,
+    row: Annotated[int, Query(ge=0)] = 0,
+    workflow_name: str | None = None,
+) -> dict[str, str]:
+    storage_path = _workflow_storage_path(workflow_name, workflow_store)
+    df = _get_node_dataframe(node_id, result_store, storage_path)
+    value = _get_dataframe_cell(df, row, col)
+    image_path = _coerce_image_path(value, storage_path, _dataframe_record_dir(df))
+    try:
+        reveal_in_file_browser(str(image_path))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok"}
 
 
 @router.get("/{node_id:path}/thumbnail")

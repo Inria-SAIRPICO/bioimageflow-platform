@@ -455,6 +455,31 @@ async def test_node_image_endpoint_resolves_record_relative_asset_paths(tmp_path
     assert resp.content == image.read_bytes()
 
 
+async def test_node_reveal_endpoint_resolves_record_relative_asset_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record_dir = tmp_path / "cache" / "v1" / "results" / "aa" / "bb" / "rk_test" / "records" / "rec_test"
+    image = record_dir / "assets" / "mask.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"png")
+    df = pd.DataFrame({"mask": ["assets/mask.png"]})
+    df.attrs[DATAFRAME_RECORD_DIR_ATTR] = str(record_dir)
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = df
+    reveal = MagicMock()
+    monkeypatch.setattr(nodes_router, "reveal_in_file_browser", reveal)
+
+    async with await _client(store) as client:
+        resp = await client.post(
+            "/api/v1/nodes/n1/reveal",
+            params={"row": 0, "col": "mask"},
+        )
+
+    assert resp.status_code == 200, resp.text
+    reveal.assert_called_once_with(str(image))
+
+
 async def test_node_image_endpoint_validation(tmp_path: Path) -> None:
     missing = tmp_path / "missing.tif"
     store = MagicMock()
