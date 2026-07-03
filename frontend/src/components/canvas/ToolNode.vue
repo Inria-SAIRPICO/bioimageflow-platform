@@ -72,7 +72,8 @@ const connectableInputs = computed(() => {
   }
   if (!props.data.tool) return []
   return Object.entries(props.data.tool.inputs).filter(
-    ([name, field]) => field.connectable !== 'never' && (props.data.pinnedInputs[name] !== false),
+    ([name, field]) => field.connectable !== 'never'
+      && (props.data.pinnedInputs[name] !== false || name in props.data.connectedInputs),
   )
 })
 

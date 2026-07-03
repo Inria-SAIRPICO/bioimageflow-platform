@@ -52,12 +52,18 @@ export function graphStateToVueFlow(
   })
 
   const connectedInputsByNode = new Map<string, Record<string, string>>()
+  const connectedBodyInputsByNode = new Map<string, Set<string>>()
   for (const edge of edges) {
     const targetHandle = edge.targetHandle ?? ''
     if (!targetHandle) continue
     const connected = connectedInputsByNode.get(edge.target) ?? {}
     connected[targetHandle] = sourceLabel(edge)
     connectedInputsByNode.set(edge.target, connected)
+    if (edge.type === 'column_ref') {
+      const bodyInputs = connectedBodyInputsByNode.get(edge.target) ?? new Set<string>()
+      bodyInputs.add(targetHandle)
+      connectedBodyInputsByNode.set(edge.target, bodyInputs)
+    }
   }
 
   const nodes = graph.nodes.map((node) => {
@@ -68,6 +74,15 @@ export function graphStateToVueFlow(
         if (field.connectable !== 'never') {
           const isPathType = ['Path', 'ImageFile', 'MaskPath'].includes(field.type)
           pinnedInputs[key] = isPathType && field.required
+        }
+      }
+    }
+    const isSubWorkflow = hasSubWorkflowFields(node as any)
+    if (!isSubWorkflow && tool) {
+      for (const targetHandle of connectedBodyInputsByNode.get(node.id) ?? []) {
+        const field = tool.inputs[targetHandle]
+        if (field && field.connectable !== 'never') {
+          pinnedInputs[targetHandle] = true
         }
       }
     }
@@ -86,7 +101,6 @@ export function graphStateToVueFlow(
       pinnedInputs,
       output_templates: reconcileOutputTemplates(tool, node.output_templates ?? {}),
     }
-    const isSubWorkflow = hasSubWorkflowFields(node as any)
     if (isSubWorkflow) {
       data.sub_workflow = (node as any).sub_workflow ?? null
       data.published_inputs = (node as any).published_inputs ?? []

@@ -228,6 +228,21 @@ describe('NodePanel', () => {
       expect(data.pinnedInputs.image).toBe(false)
     })
 
+    it('does not hide a currently connected input pin', async () => {
+      const data = makeNodeData({
+        connectedInputs: { image: 'Source.result' },
+        pinnedInputs: { image: false },
+      })
+      const w = mountPanel(data)
+      const pinToggle = w.find('[data-testid="pin-toggle"]')
+
+      expect(pinToggle.attributes('aria-pressed')).toBe('true')
+      await pinToggle.trigger('click')
+      await w.vm.$nextTick()
+
+      expect(data.pinnedInputs.image).toBe(true)
+    })
+
     it('treats both by_default and not_by_default as connectable (pin visible)', () => {
       const tool = makeTool({
         inputs: {

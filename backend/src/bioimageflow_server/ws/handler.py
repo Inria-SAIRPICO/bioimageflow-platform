@@ -323,6 +323,30 @@ class ConnectionManager:
         }
         self._enqueue_all(payload)
 
+    async def broadcast_workflow_tree_changed(
+        self,
+        action: str,
+        workflow_id: str | None = None,
+    ) -> None:
+        payload = {
+            "type": "workflow_tree_changed",
+            "action": action,
+            "workflow_id": workflow_id,
+        }
+        self._enqueue_all(payload)
+
+    async def broadcast_active_workflow_changed(
+        self,
+        workflow_id: str,
+        updated_by: str,
+    ) -> None:
+        payload = {
+            "type": "active_workflow_changed",
+            "workflow_id": workflow_id,
+            "updated_by": updated_by,
+        }
+        self._enqueue_all(payload)
+
     async def send_ack(self, websocket: Any, ref: str) -> None:
         state = self._states.get(websocket)
         if state is None:
@@ -449,6 +473,32 @@ class ConnectionManager:
                 dirty_against_saved=dirty_against_saved,
             ),
             "workflow_draft_changed",
+        )
+
+    def publish_workflow_tree_changed(
+        self,
+        action: str,
+        workflow_id: str | None = None,
+    ) -> None:
+        self._schedule(
+            self.broadcast_workflow_tree_changed(
+                action=action,
+                workflow_id=workflow_id,
+            ),
+            "workflow_tree_changed",
+        )
+
+    def publish_active_workflow_changed(
+        self,
+        workflow_id: str,
+        updated_by: str,
+    ) -> None:
+        self._schedule(
+            self.broadcast_active_workflow_changed(
+                workflow_id=workflow_id,
+                updated_by=updated_by,
+            ),
+            "active_workflow_changed",
         )
 
     # ---- internals ------------------------------------------------------

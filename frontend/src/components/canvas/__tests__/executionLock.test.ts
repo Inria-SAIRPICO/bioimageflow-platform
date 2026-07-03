@@ -90,6 +90,7 @@ vi.mock('@/composables/useGraphSync', () => ({
   }),
   useGraphSync: () => ({
     syncGraph: vi.fn(),
+    syncGraphState: vi.fn(),
     flushNow: vi.fn(),
     patchParameters: vi.fn(),
     loadWorkflow: vi.fn().mockResolvedValue(null),

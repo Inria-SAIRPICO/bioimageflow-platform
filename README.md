@@ -145,6 +145,15 @@ cd frontend && bun run test:e2e
 
 ## Development
 
+### Use the local core package in Wetlands workers
+
+Wetlands tool environments install `bioimageflow-core` separately from the backend Python environment.
+By default they inject the pinned published package version for reproducible user/runtime environments.
+For local source development, set `BIOIMAGEFLOW_USE_LOCAL_CORE=1` before launching the backend so new Wetlands tool environments install the editable local `bioimageflow-core` checkout instead.
+The VS Code launch profiles in `.vscode/launch.json` set this variable automatically.
+
+Existing Wetlands envs are not rewritten when this flag changes.
+
 ### Install tool packages in editable mode
 
 Create a symlink of the tool package:

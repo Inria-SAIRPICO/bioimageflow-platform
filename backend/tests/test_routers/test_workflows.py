@@ -46,11 +46,38 @@ class _FakeArchiveAdapter:
         return self.library
 
 
+class _ConnectionManager:
+    def __init__(self) -> None:
+        self.workflow_tree_events: list[dict[str, str | None]] = []
+        self.active_workflow_events: list[dict[str, str]] = []
+
+    def publish_workflow_tree_changed(
+        self,
+        *,
+        action: str,
+        workflow_id: str | None = None,
+    ) -> None:
+        self.workflow_tree_events.append(
+            {"action": action, "workflow_id": workflow_id}
+        )
+
+    def publish_active_workflow_changed(
+        self,
+        *,
+        workflow_id: str,
+        updated_by: str,
+    ) -> None:
+        self.active_workflow_events.append(
+            {"workflow_id": workflow_id, "updated_by": updated_by}
+        )
+
+
 async def _client(
     tmp_path: Path,
     *,
     is_running: bool = False,
     archive_adapter: _FakeArchiveAdapter | None = None,
+    connection_manager: _ConnectionManager | None = None,
 ) -> AsyncIterator[httpx.AsyncClient]:
     registry = ToolRegistryService()
     store = WorkflowStoreService(
@@ -65,6 +92,7 @@ async def _client(
             workflow_store=store,
             execution_manager=_ExecutionManager(is_running=is_running),
             storage_path=tmp_path / "bif_data",
+            connection_manager=connection_manager,  # type: ignore[arg-type]
         )
     )
     transport = httpx.ASGITransport(app=app)
@@ -125,6 +153,49 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     deleted = await client.delete("/api/v1/workflows/wf")
     assert deleted.status_code == 200
     assert deleted.json() == {"deleted": True}
+
+
+async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> None:
+    connection_manager = _ConnectionManager()
+    async for client in _client(tmp_path, connection_manager=connection_manager):
+        create = await client.post(
+            "/api/v1/workflows",
+            json={"name": "wf", "display_name": "Workflow"},
+        )
+        assert create.status_code == 201
+
+        patch = await client.patch(
+            "/api/v1/workflows/wf",
+            json={"action": "update", "display_name": "Renamed"},
+        )
+        assert patch.status_code == 200
+        patched_id = patch.json()["id"]
+
+        delete = await client.delete(f"/api/v1/workflows/{patched_id}")
+        assert delete.status_code == 200
+
+    assert connection_manager.workflow_tree_events == [
+        {"action": "workflow_created", "workflow_id": "wf"},
+        {"action": "workflow_updated", "workflow_id": patched_id},
+        {"action": "workflow_deleted", "workflow_id": patched_id},
+    ]
+
+
+async def test_activate_workflow_publishes_active_workflow_event(tmp_path: Path) -> None:
+    connection_manager = _ConnectionManager()
+    async for client in _client(tmp_path, connection_manager=connection_manager):
+        create = await client.post(
+            "/api/v1/workflows",
+            json={"name": "folder/wf", "display_name": "Workflow"},
+        )
+        assert create.status_code == 201
+
+        response = await client.post("/api/v1/workflows/folder/wf/activate")
+        assert response.status_code == 200
+
+    assert connection_manager.active_workflow_events == [
+        {"workflow_id": "folder/wf", "updated_by": "agent"}
+    ]
 
 
 async def test_export_workflow_download_response(tmp_path: Path) -> None:

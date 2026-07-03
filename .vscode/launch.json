@@ -16,7 +16,10 @@
                 "--desktop",
                 "--log-config",
                 "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
-            ]
+            ],
+            "env": {
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "1"
+            }
         },
         {
             "name": "Backend",
@@ -41,6 +44,7 @@
                 "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
             ],
             "env": {
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "1",
                 // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
             },
             "python": "${workspaceFolder}/backend/.venv/bin/python",
@@ -75,6 +79,7 @@
             ],
             "cwd": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend",
             "env": {
+                "BIOIMAGEFLOW_USE_LOCAL_CORE": "1",
                 // "GALAXY_CONFIG_FILE": "${workspaceFolder}/config/galaxy_debug.yml"
             },
             "python": "${workspaceFolder}/.claude/worktrees/known-packages-installer/backend/.venv/bin/python",

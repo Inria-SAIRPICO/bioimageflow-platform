@@ -502,6 +502,50 @@ async def test_broadcast_workflow_draft_changed() -> None:
         ]
 
 
+async def test_broadcast_workflow_tree_changed() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_workflow_tree_changed(
+        action="workflow_created",
+        workflow_id="folder/wf",
+    )
+    await _drain(mgr)
+
+    assert ws.sent == [
+        {
+            "type": "workflow_tree_changed",
+            "action": "workflow_created",
+            "workflow_id": "folder/wf",
+        }
+    ]
+
+
+async def test_broadcast_active_workflow_changed() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_active_workflow_changed(
+        workflow_id="folder/wf",
+        updated_by="agent",
+    )
+    await _drain(mgr)
+
+    assert ws.sent == [
+        {
+            "type": "active_workflow_changed",
+            "workflow_id": "folder/wf",
+            "updated_by": "agent",
+        }
+    ]
+
+
 async def test_send_ack() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -723,6 +767,60 @@ async def test_publish_workflow_draft_changed_schedules_broadcast() -> None:
                 updated_by="frontend",
                 updated_at="2026-05-29T12:00:00Z",
                 dirty_against_saved=True,
+            )
+            mock_schedule.assert_called_once()
+            scheduled_coro, scheduled_loop = mock_schedule.call_args.args
+            assert scheduled_loop is loop
+            scheduled_coro.close()
+
+
+async def test_publish_workflow_tree_changed_schedules_broadcast() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    loop = asyncio.get_running_loop()
+    mgr = ConnectionManager(loop=loop)
+
+    with patch.object(mgr, "broadcast_workflow_tree_changed") as mock_broadcast:
+        async def _fake(*args, **kwargs):
+            return None
+
+        mock_broadcast.side_effect = _fake
+
+        with patch(
+            "bioimageflow_server.ws.handler.asyncio.run_coroutine_threadsafe"
+        ) as mock_schedule:
+            fut = MagicMock()
+            mock_schedule.return_value = fut
+            mgr.publish_workflow_tree_changed(
+                action="workflow_created",
+                workflow_id="wf",
+            )
+            mock_schedule.assert_called_once()
+            scheduled_coro, scheduled_loop = mock_schedule.call_args.args
+            assert scheduled_loop is loop
+            scheduled_coro.close()
+
+
+async def test_publish_active_workflow_changed_schedules_broadcast() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    loop = asyncio.get_running_loop()
+    mgr = ConnectionManager(loop=loop)
+
+    with patch.object(mgr, "broadcast_active_workflow_changed") as mock_broadcast:
+        async def _fake(*args, **kwargs):
+            return None
+
+        mock_broadcast.side_effect = _fake
+
+        with patch(
+            "bioimageflow_server.ws.handler.asyncio.run_coroutine_threadsafe"
+        ) as mock_schedule:
+            fut = MagicMock()
+            mock_schedule.return_value = fut
+            mgr.publish_active_workflow_changed(
+                workflow_id="wf",
+                updated_by="agent",
             )
             mock_schedule.assert_called_once()
             scheduled_coro, scheduled_loop = mock_schedule.call_args.args

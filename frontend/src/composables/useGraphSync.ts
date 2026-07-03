@@ -140,7 +140,7 @@ function _createGraphSync() {
   const currentGraph = ref<GraphState>({ nodes: [], edges: [] })
 
   let timer: ReturnType<typeof setTimeout> | null = null
-  let pendingGraph: { nodes: any[]; edges: any[] } | null = null
+  let pendingGraph: GraphState | null = null
   let requestId = 0
   let inflightController: AbortController | null = null
 
@@ -157,8 +157,21 @@ function _createGraphSync() {
   }
 
   function syncGraph(graph: { nodes: any[]; edges: any[] }): void {
-    pendingGraph = graph
-    currentGraph.value = serializeGraph(graph)
+    const next = serializeGraph(graph)
+    pendingGraph = next
+    currentGraph.value = next
+    if (timer !== null) {
+      clearTimeout(timer)
+    }
+    timer = setTimeout(() => {
+      sendNow()
+    }, 300)
+  }
+
+  function syncGraphState(graph: GraphState): void {
+    const next = deepCloneJson(graph)
+    pendingGraph = next
+    currentGraph.value = next
     if (timer !== null) {
       clearTimeout(timer)
     }
@@ -169,7 +182,7 @@ function _createGraphSync() {
 
   async function sendNow(): Promise<void> {
     if (pendingGraph === null) return
-    const raw = pendingGraph
+    const graph = pendingGraph
     pendingGraph = null
     if (timer !== null) {
       clearTimeout(timer)
@@ -186,8 +199,6 @@ function _createGraphSync() {
     const thisId = ++requestId
     isPending.value = true
     syncState.value = 'pending'
-
-    const graph = serializeGraph(raw)
 
     try {
       const workflowName = useWorkflowStore().currentName
@@ -274,6 +285,7 @@ function _createGraphSync() {
 
   return {
     syncGraph,
+    syncGraphState,
     flushNow,
     patchParameters,
     validationResult,

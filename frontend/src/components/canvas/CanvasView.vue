@@ -112,7 +112,7 @@ const {
   fitView,
 } = useVueFlow()
 
-const { syncGraph, flushNow, patchParameters, validationResult, syncState } = useGraphSync()
+const { syncGraph, syncGraphState, flushNow, patchParameters, validationResult, syncState } = useGraphSync()
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
@@ -178,6 +178,7 @@ const nodeContextMenu = ref<{
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
 const rootPublishedInputs = ref<PublishedInput[]>([])
 const rootPublishedOutputs = ref<PublishedOutput[]>([])
+const lastAuthoritativeGraph = ref<GraphState | null>(null)
 const isActiveCanvasTab = ref(true)
 const hasLoadedGraphState = ref(false)
 const remoteDraftAction = ref<'apply' | 'keep' | 'copy' | null>(null)
@@ -225,6 +226,12 @@ interface PublicationContext {
 
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function rememberAuthoritativeGraph(graph: GraphState): GraphState {
+  const snapshot = deepClone(graph)
+  lastAuthoritativeGraph.value = snapshot
+  return snapshot
 }
 
 function dockviewParams() {
@@ -362,7 +369,7 @@ async function applyGraphState(
     // no visible path.
     await nextTick()
     setEdges(vueFlowGraph.edges)
-    syncGraph(currentVueFlowState() as any)
+    syncGraphState(rememberAuthoritativeGraph(graph))
     if (!isSubWorkflowEditor) {
       const identity = workflowIdentity()
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
@@ -480,7 +487,9 @@ function handleCanvasTabActivatedEvent(event: Event) {
   if (!isActiveCanvasTab.value) return
   trackDraftWorkflowForActiveRootCanvas()
   uiStore.setGraphNodes(getNodes.value)
-  syncGraph(currentVueFlowState() as any)
+  if (lastAuthoritativeGraph.value !== null) {
+    syncGraphState(lastAuthoritativeGraph.value)
+  }
   void maybeApplyRemoteDraftToActiveCanvas()
 }
 
@@ -950,6 +959,7 @@ onConnect((connection) => {
       ...targetNode.data.connectedInputs,
       [targetHandle]: sourceLabel,
     }
+    pinConnectedBodyInput(targetNode, targetHandle, connection.sourceHandle)
     // Drop any constant the user (or default-seeding) had stashed for this
     // input. The wire schema says `parameters` carries non-connected fields
     // only, and a stray value here (notably ``null``) would otherwise ride
@@ -1171,6 +1181,7 @@ onEdgeUpdate(({ edge, connection }) => {
       ...targetNode.data.connectedInputs,
       [newTargetHandle]: sourceLabel,
     }
+    pinConnectedBodyInput(targetNode, newTargetHandle, newSourceHandle)
     // Mirror the onConnect cleanup: drop any constant for this input so
     // the wire payload carries non-connected fields only.
     const newEdgeIsHeader = isHeaderHandle(newTargetHandle) || isHeaderHandle(newSourceHandle)
@@ -1283,6 +1294,21 @@ function reindexPositionalInputs(
 function isHeaderHandle(handle: string | null | undefined): boolean {
   if (!handle) return false
   return handle.startsWith('__positional_') || handle === '__dataframe_out'
+}
+
+function pinConnectedBodyInput(
+  targetNode: any,
+  targetHandle: string,
+  sourceHandle: string | null | undefined,
+): void {
+  if (!targetHandle || isHeaderHandle(targetHandle) || isHeaderHandle(sourceHandle)) return
+  const tool = toolForNode(targetNode)
+  const field = tool?.inputs?.[targetHandle]
+  if (!field || field.connectable === 'never') return
+  targetNode.data.pinnedInputs = {
+    ...(targetNode.data.pinnedInputs ?? {}),
+    [targetHandle]: true,
+  }
 }
 
 function toolForNode(node: any): ToolMetadata | undefined {
@@ -1787,6 +1813,7 @@ function populateConnectedInputsForPastedNodes(nodes: any[], edges: any[]) {
       ...(targetNode.data.connectedInputs ?? {}),
       [targetHandle]: `${edge.source}.${sourceHandle}`,
     }
+    pinConnectedBodyInput(targetNode, targetHandle, edge.sourceHandle)
   }
 }
 
@@ -2190,7 +2217,7 @@ function handleKeydown(event: KeyboardEvent) {
 function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
   const name = workflowStore.currentName
   if (!name) return
-  const graph = serializeGraph(state)
+  const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
   workflowStore.markDirty()
   autoSave.scheduleAutoSave(name, graph)
   workflowDraftStore.scheduleSave(name, graph)
@@ -2223,7 +2250,8 @@ function emitGraphChanged() {
   }
   if (isSubWorkflowEditor && props.subWorkflowSessionId) {
     syncGraph(state as any)
-    subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, serializeGraph(state))
+    const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
+    subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
     emit('graph-changed', state)
     return
   }

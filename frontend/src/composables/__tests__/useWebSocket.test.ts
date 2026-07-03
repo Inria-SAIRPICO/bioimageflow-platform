@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { useWebSocket, __resetForTests } from '@/composables/useWebSocket'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
+import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 
 class FakeWebSocket {
@@ -100,5 +101,53 @@ describe('useWebSocket workflow draft dispatch', () => {
     } as MessageEvent)
 
     expect(registry.getToolByName('CustomTool')).toBeUndefined()
+  })
+
+  it('refreshes the workflow tree for workflow_tree_changed messages', async () => {
+    const workflow = useWorkflowStore()
+    const fetchWorkflowTree = vi.spyOn(workflow, 'fetchWorkflowTree')
+      .mockResolvedValue([])
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'workflow_tree_changed',
+        action: 'workflow_created',
+        workflow_id: 'wf',
+      }),
+    } as MessageEvent)
+    await Promise.resolve()
+
+    expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+  })
+
+  it('refreshes workflows and requests existing open behavior for active workflow changes', async () => {
+    const workflow = useWorkflowStore()
+    const fetchWorkflowTree = vi.spyOn(workflow, 'fetchWorkflowTree')
+      .mockResolvedValue([])
+    const commandListener = vi.fn()
+    window.addEventListener('bioimageflow:workflow-command', commandListener)
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'active_workflow_changed',
+        workflow_id: 'folder/wf',
+        updated_by: 'agent',
+      }),
+    } as MessageEvent)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(commandListener).toHaveBeenCalledOnce()
+    expect((commandListener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      action: 'open',
+      name: 'folder/wf',
+    })
+
+    window.removeEventListener('bioimageflow:workflow-command', commandListener)
   })
 })

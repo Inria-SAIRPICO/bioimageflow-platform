@@ -342,6 +342,9 @@ class BioImageFlowMCPGateway:
         return {"ok": True, "workflow_id": workflow_id, **result}
 
     async def set_active_workflow(self, workflow_id: str) -> dict[str, Any]:
+        active = await self._request("POST", f"/workflows/{_workflow_url(workflow_id)}/activate")
+        if _is_error(active):
+            return active
         draft = await self._request("GET", f"/workflow-drafts/{_workflow_url(workflow_id)}")
         if _is_error(draft):
             return draft

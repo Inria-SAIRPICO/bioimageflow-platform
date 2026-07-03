@@ -34,6 +34,10 @@ def get_execution_manager() -> Any | None:
     return None
 
 
+def get_connection_manager() -> Any | None:
+    return None
+
+
 def _ensure_unlocked(execution_manager: Any | None) -> None:
     if execution_manager is None:
         return
@@ -42,6 +46,34 @@ def _ensure_unlocked(execution_manager: Any | None) -> None:
             status_code=423,
             detail="Workflow editing is locked while execution is in progress",
         )
+
+
+def _publish_workflow_tree_changed(
+    connection_manager: Any | None,
+    *,
+    action: str,
+    workflow_id: str | None = None,
+) -> None:
+    if connection_manager is None:
+        return
+    connection_manager.publish_workflow_tree_changed(
+        action=action,
+        workflow_id=workflow_id,
+    )
+
+
+def _publish_active_workflow_changed(
+    connection_manager: Any | None,
+    *,
+    workflow_id: str,
+    updated_by: str = "agent",
+) -> None:
+    if connection_manager is None:
+        return
+    connection_manager.publish_active_workflow_changed(
+        workflow_id=workflow_id,
+        updated_by=updated_by,
+    )
 
 
 @router.get("", response_model=list[WorkflowInfo])
@@ -66,9 +98,15 @@ async def workflow_tree(
 async def create_folder(
     body: WorkflowFolderCreate,
     store: WorkflowStoreService = Depends(get_workflow_store),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowFolderInfo | JSONResponse:
     try:
-        return store.create_folder(body.path)
+        folder = store.create_folder(body.path)
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="folder_created",
+        )
+        return folder
     except FileExistsError:
         return JSONResponse(
             status_code=409,
@@ -84,10 +122,16 @@ async def rename_folder(
     body: WorkflowFolderUpdate,
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowFolderInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:
-        return store.rename_folder(path, body.new_path)
+        folder = store.rename_folder(path, body.new_path)
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="folder_updated",
+        )
+        return folder
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Folder not found") from exc
     except FileExistsError:
@@ -105,10 +149,15 @@ async def delete_folder(
     body: WorkflowFolderDelete = Body(default_factory=WorkflowFolderDelete),
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> Any:
     _ensure_unlocked(execution_manager)
     try:
         store.delete_folder(path, body)
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="folder_deleted",
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Folder not found") from exc
     except FileExistsError:
@@ -128,9 +177,16 @@ async def delete_folder(
 async def create_workflow(
     body: WorkflowCreate,
     store: WorkflowStoreService = Depends(get_workflow_store),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowInfo | JSONResponse:
     try:
-        return store.create_workflow(body)
+        info = store.create_workflow(body)
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="workflow_created",
+            workflow_id=info.id,
+        )
+        return info
     except FileExistsError:
         return JSONResponse(
             status_code=409,
@@ -183,6 +239,7 @@ async def import_workflow(
     name_override: str | None = Form(default=None),
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowImportResponse | JSONResponse:
     _ensure_unlocked(execution_manager)
     raw_upload = await file.read()
@@ -192,11 +249,17 @@ async def import_workflow(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail="Workflow imports must be .bioimageflow.zip archives",
             )
-        return store.import_workflow_archive(
+        response = store.import_workflow_archive(
             raw_upload,
             filename=file.filename,
             name_override=name_override,
         )
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="workflow_imported",
+            workflow_id=response.info.id,
+        )
+        return response
     except WorkflowArchiveError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except FileExistsError as exc:
@@ -230,10 +293,16 @@ async def delete_workflow(
     name: str,
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> dict[str, bool]:
     _ensure_unlocked(execution_manager)
     try:
         store.delete_workflow(name)
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="workflow_deleted",
+            workflow_id=name,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
     return {"deleted": True}
@@ -245,10 +314,17 @@ async def patch_workflow(
     body: WorkflowUpdate,
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:
-        return store.patch_workflow(name, body)
+        info = store.patch_workflow(name, body)
+        _publish_workflow_tree_changed(
+            connection_manager,
+            action="workflow_updated",
+            workflow_id=info.id,
+        )
+        return info
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
     except FileExistsError as exc:
@@ -274,3 +350,20 @@ async def rebind_workflow_versions(
         return store.rebind_versions(name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
+
+
+@router.post("/{name:path}/activate", response_model=WorkflowFile)
+async def activate_workflow(
+    name: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    connection_manager: Any | None = Depends(get_connection_manager),
+) -> WorkflowFile:
+    try:
+        workflow = store.get_workflow(name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
+    _publish_active_workflow_changed(
+        connection_manager,
+        workflow_id=workflow.info.id,
+    )
+    return workflow

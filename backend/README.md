@@ -59,6 +59,19 @@ uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --p
 
 OpenAPI docs: <http://localhost:8000/docs>.
 
+### Local BioImageFlow core in Wetlands workers
+
+Wetlands creates separate Python environments for tools, so a backend running from the editable checkout can still dispatch workers that import the published `bioimageflow-core` wheel.
+For source development across `bioimageflow-core` and tool packages, launch the backend with:
+
+```bash
+BIOIMAGEFLOW_USE_LOCAL_CORE=1 uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
+```
+
+The VS Code launch profiles already set `BIOIMAGEFLOW_USE_LOCAL_CORE=1`.
+Normal CLI and desktop commands omit it by default so released/runtime sessions keep pinned, reproducible worker dependencies.
+After changing this flag, recreate any already-created Wetlands workspaces that still pin the wheel under `~/.bioimageflow/wetlands/pixi/workspaces/`.
+
 ### Logging
 
 The `python -m bioimageflow_server` entrypoint and desktop mode use the packaged `bioimageflow_server/logging.yaml` config by default.

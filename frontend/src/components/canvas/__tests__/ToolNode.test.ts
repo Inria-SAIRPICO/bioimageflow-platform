@@ -77,6 +77,26 @@ describe('ToolNode', () => {
     expect(pins[0].props('nodeId')).toBe('node-1')
   })
 
+  it('renders a connected body input even when stale pinnedInputs marks it hidden', () => {
+    const tool = makeTool({
+      inputs: {
+        image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
+        sigma: { type: 'float', required: false, nullable: false, connectable: 'not_by_default', default: 1.0 },
+      },
+    })
+    const w = factory(makeData({
+      tool,
+      connectedInputs: { sigma: 'Source.sigma' },
+      pinnedInputs: { image: true, sigma: false },
+    }))
+
+    const pins = w.findAllComponents({ name: 'InputPin' })
+    expect(pins.map((pin) => pin.props('fieldName'))).toContain('sigma')
+    const sigmaPin = pins.find((pin) => pin.props('fieldName') === 'sigma')!
+    expect(sigmaPin.props('connected')).toBe(true)
+    expect(sigmaPin.props('sourceLabel')).toBe('Source.sigma')
+  })
+
   it('renders output pins for all outputs', () => {
     const w = factory()
     const pins = w.find('.body-outputs').findAllComponents({ name: 'OutputPin' })

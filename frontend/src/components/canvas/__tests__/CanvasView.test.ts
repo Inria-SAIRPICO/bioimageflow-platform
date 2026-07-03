@@ -52,6 +52,7 @@ let connectHandler: ((connection: any) => void) | null = null
 let selectionHandler: ((params: any) => void) | null = null
 let dragStartHandler: ((event: any) => void) | null = null
 let dragStopHandler: ((event: any) => void) | null = null
+let dropNextNonEmptySetEdges = false
 
 vi.mock('@vue-flow/core', () => {
   const VueFlow = defineComponent({
@@ -82,6 +83,11 @@ vi.mock('@vue-flow/core', () => {
         mockNodes.splice(0, mockNodes.length, ...nodes)
       },
       setEdges: (edges: any[]) => {
+        if (dropNextNonEmptySetEdges && edges.length > 0) {
+          dropNextNonEmptySetEdges = false
+          mockEdges.splice(0, mockEdges.length)
+          return
+        }
         mockEdges.splice(0, mockEdges.length, ...edges)
       },
       updateEdge: (oldEdge: any, conn: any) => {
@@ -114,6 +120,7 @@ vi.mock('@vue-flow/controls', () => ({
 
 const graphSyncMocks = vi.hoisted(() => ({
   syncGraph: vi.fn(),
+  syncGraphState: vi.fn(),
   flushNow: vi.fn(),
   patchParameters: vi.fn(),
   serializeGraph: vi.fn((state: { nodes: any[]; edges: any[] }) => ({
@@ -311,7 +318,9 @@ describe('CanvasView', () => {
     selectionHandler = null
     dragStartHandler = null
     dragStopHandler = null
+    dropNextNonEmptySetEdges = false
     graphSyncMocks.syncGraph.mockClear()
+    graphSyncMocks.syncGraphState.mockClear()
     graphSyncMocks.flushNow.mockClear()
     graphSyncMocks.patchParameters.mockClear()
     graphSyncMocks.serializeGraph.mockClear()
@@ -467,6 +476,48 @@ describe('CanvasView', () => {
       expect('image' in targetNode.data.parameters).toBe(false)
       expect(targetNode.data.parameters.sigma).toBe(1.0)
       expect(targetNode.data.connectedInputs.image).toBe('a.result')
+      w.unmount()
+    })
+
+    it('onConnect pins optional non-path body inputs that become connected', () => {
+      const tool = makeTool({
+        inputs: {
+          image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
+          sigma: { type: 'float', required: false, nullable: false, connectable: 'not_by_default', default: 1.0 },
+        },
+        outputs: {
+          result: { type: 'ImageFile' },
+          sigma: { type: 'float' },
+        },
+      })
+      mockNodes = [
+        { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', tool, parameters: {}, connectedInputs: {} } },
+        {
+          id: 'b',
+          data: {
+            toolName: 'gaussian_blur',
+            name: 'b',
+            tool,
+            parameters: { sigma: 1.0 },
+            connectedInputs: {},
+            pinnedInputs: { image: true, sigma: false },
+          },
+        },
+      ]
+      mockEdges = []
+
+      const w = mountCanvas()
+
+      connectHandler!({
+        source: 'a',
+        target: 'b',
+        sourceHandle: 'sigma',
+        targetHandle: 'sigma',
+      })
+
+      const targetNode = mockNodes.find((n: any) => n.id === 'b')!
+      expect(targetNode.data.connectedInputs.sigma).toBe('a.sigma')
+      expect(targetNode.data.pinnedInputs.sigma).toBe(true)
       w.unmount()
     })
 
@@ -1488,6 +1539,7 @@ describe('CanvasView', () => {
       const w = mountCanvas({ subWorkflowSessionId: session.id })
       await flushPromises()
       graphSyncMocks.syncGraph.mockClear()
+      graphSyncMocks.syncGraphState.mockClear()
 
       sessions.updateDraft(session.id, {
         nodes: [{
@@ -1604,7 +1656,7 @@ describe('CanvasView', () => {
 
       const innerNode = mockNodes.find((n: any) => n.id === 'inner_1')!
       expect(innerNode.data.publicationContext.published_inputs[0].name).toBe('image')
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
         published_inputs: [expect.objectContaining({ name: 'image' })],
       }))
       innerNode.data.publicationContext.published_inputs[0].name = 'input_image'
@@ -1872,6 +1924,7 @@ describe('CanvasView', () => {
       await nextTick()
       await flushPromises()
       graphSyncMocks.syncGraph.mockClear()
+      graphSyncMocks.syncGraphState.mockClear()
       autoSaveMocks.scheduleAutoSave.mockClear()
       return { w, draftStore }
     }
@@ -1897,8 +1950,9 @@ describe('CanvasView', () => {
       expect(draftStore.appliedDraftRevision).toBe(2)
       expect(draftStore.remoteAvailableRevision).toBeNull()
       expect(useUIStore().hasUnsavedChanges).toBe(false)
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(1)
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledTimes(1)
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
         nodes: [expect.objectContaining({ id: 'remote' })],
       }))
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
@@ -2147,6 +2201,7 @@ describe('CanvasView', () => {
       }))
       await nextTick()
       graphSyncMocks.syncGraph.mockClear()
+      graphSyncMocks.syncGraphState.mockClear()
       apiMocks.get.mockClear()
 
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
@@ -2165,6 +2220,45 @@ describe('CanvasView', () => {
 
       expect(mockNodes.map((node: any) => node.id)).toEqual(['remote'])
       expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf')
+      w.unmount()
+    })
+
+    it('does not let tab activation overwrite loaded edges from degraded Vue Flow state', async () => {
+      useToolRegistryStore().tools = [makeTool()] as any
+      const graph = {
+        nodes: [graphNode('a'), graphNode('b', 120)],
+        edges: [{
+          type: 'column_ref',
+          id: 'e1',
+          source_node: 'a',
+          target_node: 'b',
+          source_output: 'result',
+          target_input: 'image',
+        }],
+      }
+      const w = mountCanvas({
+        params: {
+          panelId: 'canvas:wf',
+          workflowName: 'wf',
+          workflowDisplayName: 'WF',
+          graph,
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      mockEdges.splice(0, mockEdges.length)
+      graphSyncMocks.syncGraph.mockClear()
+      graphSyncMocks.syncGraphState.mockClear()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+        detail: { panelId: 'canvas:wf' },
+      }))
+      await nextTick()
+
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(graph)
       w.unmount()
     })
 
@@ -2290,10 +2384,30 @@ describe('CanvasView', () => {
       await flushPromises()
 
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(1)
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
-        edges: [expect.objectContaining({ id: 'e1' })],
-      }))
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledTimes(1)
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(graph)
+
+      w.unmount()
+    })
+
+    it('keeps the loaded graph authoritative if Vue Flow drops restored edges', async () => {
+      const name = 'saved'
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [savedEdge('e1', 'a', 'b')]
+      const graph = { nodes, edges }
+      mockSavedWorkflow(graph, name)
+      dropNextNonEmptySetEdges = true
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockEdges).toEqual([])
+      expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(graph)
 
       w.unmount()
     })

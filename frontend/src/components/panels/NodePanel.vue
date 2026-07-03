@@ -198,11 +198,16 @@ function togglePinned(key: string) {
   if (!nodeData.value.pinnedInputs) {
     nodeData.value.pinnedInputs = {}
   }
+  if (key in (nodeData.value.connectedInputs ?? {})) {
+    nodeData.value.pinnedInputs[key] = true
+    return
+  }
   const current = nodeData.value.pinnedInputs[key] !== false
   nodeData.value.pinnedInputs[key] = !current
 }
 
 function isPinned(key: string): boolean {
+  if (key in (nodeData.value?.connectedInputs ?? {})) return true
   if (!nodeData.value?.pinnedInputs) return true
   return nodeData.value.pinnedInputs[key] !== false
 }

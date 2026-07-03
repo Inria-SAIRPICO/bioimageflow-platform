@@ -146,6 +146,49 @@ describe('useGraphSync', () => {
     expect(mockedPut).toHaveBeenCalledTimes(1)
   })
 
+  it('syncGraphState keeps backend graph state authoritative', async () => {
+    mockedPut.mockResolvedValue({ data: makeValidation() })
+    const graph = {
+      nodes: [{
+        id: 'a',
+        name: 'A',
+        tool_name: 'tool_a',
+        position: [1, 2],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [{
+        type: 'column_ref',
+        id: 'e1',
+        source_node: 'a',
+        target_node: 'b',
+        source_output: 'result',
+        target_input: 'image',
+      }],
+    } as any
+    const { syncGraphState, currentGraph, flushNow } = useGraphSync()
+
+    syncGraphState(graph)
+    graph.edges = []
+
+    expect(currentGraph.value.edges).toEqual([expect.objectContaining({ id: 'e1' })])
+    await flushNow()
+
+    expect(mockedPut).toHaveBeenCalledWith(
+      '/api/v1/graph',
+      {
+        graph: expect.objectContaining({
+          edges: [expect.objectContaining({ id: 'e1' })],
+        }),
+        workflow_name: null,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    )
+  })
+
   it('isPending is true while request is in-flight', async () => {
     let resolve!: (v: unknown) => void
     mockedPut.mockReturnValue(new Promise(r => { resolve = r }))

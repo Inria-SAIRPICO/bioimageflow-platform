@@ -3,6 +3,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useLoggerStore, type LogEntry } from '@/stores/logger'
 import { useErrorStore } from '@/stores/errors'
+import { useWorkflowStore } from '@/stores/workflow'
 import {
   useWorkflowDraftStore,
   type WorkflowDraftChangedMessage,
@@ -85,6 +86,27 @@ function cancelAllPending(reason: Error) {
     p.reject(reason)
   }
   state.pending.clear()
+}
+
+async function refreshWorkflowTree(): Promise<void> {
+  try {
+    await useWorkflowStore().fetchWorkflowTree()
+  } catch (err) {
+    console.warn('[useWebSocket] fetchWorkflowTree failed:', err)
+  }
+}
+
+function requestOpenWorkflow(workflowId: string): void {
+  window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+    detail: { action: 'open', name: workflowId },
+  }))
+}
+
+async function handleActiveWorkflowChanged(msg: Record<string, unknown>): Promise<void> {
+  const workflowId = msg.workflow_id
+  if (typeof workflowId !== 'string' || workflowId.length === 0) return
+  await refreshWorkflowTree()
+  requestOpenWorkflow(workflowId)
 }
 
 // Dispatch targets intentionally duck-typed: applyToolReload,
@@ -175,6 +197,12 @@ function dispatch(raw: unknown) {
       useWorkflowDraftStore().noteRemoteChange(
         msg as unknown as WorkflowDraftChangedMessage,
       )
+      break
+    case 'workflow_tree_changed':
+      void refreshWorkflowTree()
+      break
+    case 'active_workflow_changed':
+      void handleActiveWorkflowChanged(msg)
       break
     case 'system_error':
       mirrorSystemError(msg)

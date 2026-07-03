@@ -207,6 +207,16 @@ async def test_workflow_lifecycle_tools_call_backend_workflow_api(
                 200,
                 json=_workflow_info("renamed", display_name="Renamed"),
             )
+        if request.method == "POST" and request.url.path == "/api/v1/workflows/copy/activate":
+            return httpx.Response(
+                200,
+                json={
+                    "info": _workflow_info("copy", display_name="Copy"),
+                    "graph": {"nodes": [], "edges": []},
+                    "missing_packages": [],
+                    "missing_tools": [],
+                },
+            )
         if request.method == "DELETE" and request.url.path == "/api/v1/workflows/renamed":
             return httpx.Response(200, json={"deleted": True})
         if request.method == "GET" and request.url.path == "/api/v1/workflow-drafts/copy":
@@ -338,6 +348,16 @@ async def test_rename_active_workflow_refreshes_agent_state_context(
         if request.method == "PATCH" and request.url.path == "/api/v1/workflows/wf":
             assert payload == {"action": "update", "new_id": "renamed"}
             return httpx.Response(200, json=_workflow_info("renamed"))
+        if request.method == "POST" and request.url.path == "/api/v1/workflows/renamed/activate":
+            return httpx.Response(
+                200,
+                json={
+                    "info": _workflow_info("renamed"),
+                    "graph": {"nodes": [], "edges": []},
+                    "missing_packages": [],
+                    "missing_tools": [],
+                },
+            )
         if request.method == "GET" and request.url.path == "/api/v1/workflow-drafts/renamed":
             return httpx.Response(
                 200,
@@ -386,6 +406,7 @@ async def test_rename_active_workflow_refreshes_agent_state_context(
     }
     assert requests == [
         ("PATCH", "/api/v1/workflows/wf", {"action": "update", "new_id": "renamed"}),
+        ("POST", "/api/v1/workflows/renamed/activate", {}),
         ("GET", "/api/v1/workflow-drafts/renamed", {}),
     ]
 

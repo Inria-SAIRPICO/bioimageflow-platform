@@ -84,6 +84,7 @@ from bioimageflow_server.routers.tools import (
     router as tools_router,
 )
 from bioimageflow_server.routers.workflows import (
+    get_connection_manager as workflows_get_connection_manager,
     get_execution_manager as workflows_get_execution_manager,
     get_workflow_store as workflows_get_workflow_store,
     router as workflows_router,
@@ -565,6 +566,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workspace_service] = _current_workspace_service
     app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[workflows_get_connection_manager] = lambda: ws_manager
     app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_connection_manager] = lambda: ws_manager
