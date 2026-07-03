@@ -160,6 +160,11 @@ function _createGraphSync() {
     const next = serializeGraph(graph)
     pendingGraph = next
     currentGraph.value = next
+    requestId += 1
+    if (inflightController !== null) {
+      inflightController.abort()
+      inflightController = null
+    }
     if (timer !== null) {
       clearTimeout(timer)
     }
@@ -172,6 +177,11 @@ function _createGraphSync() {
     const next = deepCloneJson(graph)
     pendingGraph = next
     currentGraph.value = next
+    requestId += 1
+    if (inflightController !== null) {
+      inflightController.abort()
+      inflightController = null
+    }
     if (timer !== null) {
       clearTimeout(timer)
     }
@@ -196,7 +206,7 @@ function _createGraphSync() {
     const controller = new AbortController()
     inflightController = controller
 
-    const thisId = ++requestId
+    const thisId = requestId
     isPending.value = true
     syncState.value = 'pending'
 

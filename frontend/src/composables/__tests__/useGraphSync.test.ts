@@ -136,6 +136,41 @@ describe('useGraphSync', () => {
     expect(validationResult.value).toEqual(makeValidation(true))
   })
 
+  it('ignores an in-flight response after a newer graph is queued', async () => {
+    let resolveFirst!: (v: unknown) => void
+    let resolveSecond!: (v: unknown) => void
+
+    mockedPut
+      .mockReturnValueOnce(new Promise(r => { resolveFirst = r }))
+      .mockReturnValueOnce(new Promise(r => { resolveSecond = r }))
+
+    const { syncGraph, validationResult } = useGraphSync()
+
+    syncGraph(makeVueFlowGraph('old'))
+    await vi.advanceTimersByTimeAsync(300)
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+
+    syncGraph(makeVueFlowGraph('new'))
+    resolveFirst({
+      data: {
+        valid: true,
+        node_statuses: {
+          old: { node_id: 'old', status: 'executed', cached: true },
+        },
+        errors: [],
+      },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(validationResult.value).toBeNull()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(mockedPut).toHaveBeenCalledTimes(2)
+
+    resolveSecond({ data: makeValidation(true) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(validationResult.value).toEqual(makeValidation(true))
+  })
+
   it('flushNow sends immediately', async () => {
     mockedPut.mockResolvedValue({ data: makeValidation() })
     const { syncGraph, flushNow } = useGraphSync()
