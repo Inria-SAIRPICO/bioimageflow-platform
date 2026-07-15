@@ -44,6 +44,7 @@ import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
 import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput, WorkflowInfo } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
@@ -70,6 +71,7 @@ const props = defineProps<{
     graph?: GraphState
     missingTools?: MissingTool[]
     dirty?: boolean
+    draft?: WorkflowDraftResponse
     params?: {
       panelId?: string
       parentCanvasPanelId?: string
@@ -78,6 +80,7 @@ const props = defineProps<{
       graph?: GraphState
       missingTools?: MissingTool[]
       dirty?: boolean
+      draft?: WorkflowDraftResponse
     }
   }
 }>()
@@ -164,11 +167,14 @@ const canvasDescriptor: CanvasSessionDescriptor = isSubWorkflowEditor
         canvasId,
         workflowId: initialCanvasParams?.workflowName ?? null,
       }
-const graphSync = useGraphSync({
+const canvasPersistence = useCanvasPersistence({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
 })
-const canvasPersistence = useCanvasPersistence({
+if (!isSubWorkflowEditor && initialCanvasParams?.draft) {
+  canvasPersistence.initializeFromDraft(initialCanvasParams.draft)
+}
+const graphSync = useGraphSync({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
 })
@@ -194,6 +200,7 @@ uiStore.setCanvasGraphNodes(canvasId, getNodes.value)
 const {
   syncGraph,
   syncGraphState,
+  revalidateGraphState,
   flushNow,
   validationResult,
   syncState,
@@ -223,37 +230,32 @@ const {
   applyValidationResult,
 } = useStatusReconciliation(reconciliationNodes, validationResult, wsMessages)
 
-watch(validationResult, (result) => {
+function applyValidationToCanvas(result = validationResult.value): void {
   applyValidationResult(result)
-  if (!result?.node_statuses) return
-  for (const node of getNodes.value) {
-    const status = result.node_statuses[node.id]
-    if (!status || !node.data) continue
-    if (node.data.status !== status.status) {
-      node.data.status = status.status
-    }
-    if (node.data.provisional) {
-      node.data.provisional = false
+  if (result?.node_statuses) {
+    for (const node of getNodes.value) {
+      const status = result.node_statuses[node.id]
+      if (!status || !node.data) continue
+      if (node.data.status !== status.status) {
+        node.data.status = status.status
+      }
+      if (node.data.provisional) {
+        node.data.provisional = false
+      }
     }
   }
-})
 
-// Mirror per-edge validation errors onto each edge's `data.errors` so the
-// edge component can render the red stroke + tooltip.
-watch(
-  edgeErrors,
-  (byEdge) => {
-    for (const edge of getEdges.value) {
-      const errs = byEdge[edge.id] ?? []
-      const prev = (edge.data as { errors?: unknown[] } | undefined)?.errors ?? []
-      // Cheap reference check to avoid noisy reactive churn when the result
-      // hasn't changed shape.
-      if (errs.length === 0 && prev.length === 0) continue
-      edge.data = { ...(edge.data ?? {}), errors: errs }
-    }
-  },
-  { deep: true },
-)
+  // Mirror per-edge validation errors so edge components can render them.
+  const byEdge = edgeErrors.value
+  for (const edge of getEdges.value) {
+    const errs = byEdge[edge.id] ?? []
+    const prev = (edge.data as { errors?: unknown[] } | undefined)?.errors ?? []
+    if (errs.length === 0 && prev.length === 0) continue
+    edge.data = { ...(edge.data ?? {}), errors: errs }
+  }
+}
+
+watch(validationResult, applyValidationToCanvas, { deep: true })
 
 // Live per-node status from the execution store takes precedence while an
 // execution is running and for its terminal transition. Later idle snapshots
@@ -567,6 +569,7 @@ async function applyGraphState(
     await nextTick()
     if (isCanvasUnmounted) return
     setEdges(vueFlowGraph.edges)
+    applyValidationToCanvas()
     if (isCanvasUnmounted) return
     const authoritativeGraph = rememberAuthoritativeGraph(graph)
     syncGraphState(authoritativeGraph)
@@ -766,12 +769,12 @@ async function applyAgentDraftChanges(): Promise<void> {
   workflowDraftStore.cancelPendingSave()
   try {
     const draft = await workflowDraftStore.loadDraft(workflowName)
+    resolveCanvasPersistenceFromDraft(draft)
     await applyGraphState(
       draft.graph,
       workflowStore.missingTools,
       draft.dirty_against_saved,
     )
-    resolveCanvasPersistenceFromDraft(draft)
   } catch (err) {
     showRemoteDraftActionError('Could not apply agent changes', err)
   } finally {
@@ -1058,7 +1061,7 @@ function reconcilePendingToolState(): void {
     return
   }
   stageGraphValidation(state)
-  syncGraphState(rememberAuthoritativeGraph(graph))
+  revalidateGraphState(rememberAuthoritativeGraph(graph))
 }
 
 function handleToolRenamedEvent(event: Event) {
@@ -1086,12 +1089,12 @@ async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
   isAutoApplyingRemoteDraft = true
   try {
     const draft = await workflowDraftStore.loadDraft(workflowName)
+    resolveCanvasPersistenceFromDraft(draft)
     await applyGraphState(
       draft.graph,
       workflowStore.missingTools,
       draft.dirty_against_saved,
     )
-    resolveCanvasPersistenceFromDraft(draft)
   } catch (err) {
     console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
   } finally {
@@ -2545,8 +2548,8 @@ function applyHistoryState(state: CanvasHistoryState) {
     setEdges(state.edges)
     if (!replacePublishedInterface(state.published_inputs, state.published_outputs)) return
     const currentState = currentVueFlowState()
-    syncGraph(currentState)
     if (isSubWorkflowEditor && props.subWorkflowSessionId) {
+      syncGraph(currentState)
       const graph = rememberAuthoritativeGraph(
         serializeGraph(currentState) as GraphState,
       )
@@ -2984,11 +2987,6 @@ function emitGraphChanged(options: GraphChangeOptions = {}) {
     uiStore.markCanvasDirty(canvasId)
     emit('graph-changed', publishedState)
     return
-  }
-  if (authoritativeGraph) {
-    syncGraphState(authoritativeGraph)
-  } else {
-    syncGraph(state as any)
   }
   markDirtyAndAutoSave(state, authoritativeGraph ?? undefined)
   emit('graph-changed', publishedState)

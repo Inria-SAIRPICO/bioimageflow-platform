@@ -5,6 +5,7 @@ import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 
 vi.mock('@/api/client', () => ({
   api: {
+    get: vi.fn(),
     put: vi.fn(),
   },
 }))
@@ -19,6 +20,7 @@ import {
 } from '../useGraphSync'
 
 const mockedPut = vi.mocked(api.put)
+const mockedGet = vi.mocked(api.get)
 
 function graph(value: string): GraphState {
   return {
@@ -41,11 +43,53 @@ function validation(valid: boolean): ValidationResult {
   return { valid, node_statuses: {}, errors: [] }
 }
 
+function draftResponse(
+  workflowId: string,
+  draftRevision: number,
+  value: GraphState,
+  result = validation(true),
+) {
+  return {
+    draft_version: 1 as const,
+    workflow_id: workflowId,
+    base_saved_revision: 'sha256:base',
+    draft_revision: draftRevision,
+    updated_at: '2026-07-16T00:00:00Z',
+    updated_by: 'frontend' as const,
+    dirty_against_saved: true,
+    graph: value,
+    validation: result,
+  }
+}
+
+function workflowIdFromUrl(url: string): string {
+  const segments = url.split('/')
+  return decodeURIComponent(segments[segments.length - 1] ?? '')
+}
+
 describe('canvas-scoped graph sync routing', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
     mockedPut.mockReset()
+    mockedGet.mockReset().mockImplementation(async (url) => ({
+      data: draftResponse(workflowIdFromUrl(String(url)), 1, graph('initial')),
+    }))
+    mockedPut.mockImplementation(async (url, body) => {
+      const workflowId = workflowIdFromUrl(String(url))
+      const request = body as {
+        graph: GraphState
+        expected_revision: number
+      }
+      return {
+        data: draftResponse(
+          workflowId,
+          request.expected_revision + 1,
+          request.graph,
+          validation(workflowId === 'workflow-a'),
+        ),
+      }
+    })
     _resetGraphSyncForTest()
   })
 
@@ -69,9 +113,6 @@ describe('canvas-scoped graph sync routing', () => {
   })
 
   it('isolates repeated node ids and samples an inactive canvas workflow at queue time', async () => {
-    mockedPut.mockImplementation(async (_url, body) => ({
-      data: validation((body as any).workflow_name === 'workflow-a'),
-    }))
     let workflowA = 'workflow-a'
     let workflowB = 'workflow-b'
     const canvasA = canvasIdFromPanelId('workflow:a')
@@ -87,15 +128,18 @@ describe('canvas-scoped graph sync routing', () => {
 
     activateGraphSyncCanvas(canvasB)
     syncA.syncGraphState(graph('a'))
+    syncB.syncGraphState(graph('b'))
     workflowA = 'renamed-after-queue'
     workflowB = 'active-workflow-changed'
-    syncB.syncGraphState(graph('b'))
     await Promise.all([syncA.flushNow(), syncB.flushNow()])
 
     expect(mockedPut).toHaveBeenCalledWith(
-      '/api/v1/graph',
-      { graph: graph('a'), workflow_name: 'workflow-a' },
-      expect.objectContaining({ signal: expect.anything() }),
+      '/api/v1/workflow-drafts/workflow-a',
+      expect.objectContaining({
+        graph: graph('a'),
+        expected_revision: 1,
+        validate: true,
+      }),
     )
     expect(syncA.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'a' })
     expect(syncB.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'b' })
@@ -104,9 +148,6 @@ describe('canvas-scoped graph sync routing', () => {
   })
 
   it('routes the no-argument facade to the explicitly active canvas', async () => {
-    mockedPut.mockImplementation(async (_url, body) => ({
-      data: validation((body as any).workflow_name === 'workflow-a'),
-    }))
     const canvasA = canvasIdFromPanelId('workflow:a')
     const canvasB = canvasIdFromPanelId('workflow:b')
     const syncA = useGraphSync({
@@ -130,9 +171,11 @@ describe('canvas-scoped graph sync routing', () => {
     expect(syncA.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'active-a' })
     expect(syncB.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'b' })
     expect(mockedPut).toHaveBeenLastCalledWith(
-      '/api/v1/graph',
-      { graph: graph('active-a'), workflow_name: 'workflow-a' },
-      expect.objectContaining({ signal: expect.anything() }),
+      '/api/v1/workflow-drafts/workflow-a',
+      expect.objectContaining({
+        graph: graph('active-a'),
+        validate: true,
+      }),
     )
     expect(syncA.validationResult.value).toEqual(validation(true))
     expect(syncB.validationResult.value).toBeNull()
@@ -143,7 +186,6 @@ describe('canvas-scoped graph sync routing', () => {
   })
 
   it('unregisters one canvas without disposing or selecting another', async () => {
-    mockedPut.mockResolvedValue({ data: validation(true) })
     const canvasA = canvasIdFromPanelId('workflow:a')
     const canvasB = canvasIdFromPanelId('workflow:b')
     useGraphSync({

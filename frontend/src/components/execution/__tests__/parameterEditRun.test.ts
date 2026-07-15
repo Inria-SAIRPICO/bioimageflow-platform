@@ -11,6 +11,7 @@ vi.mock('@/api/client', () => ({
 
 const workflowDraftMocks = vi.hoisted(() => ({
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
+  acknowledgeAcceptedDraft: vi.fn(),
 }))
 
 vi.mock('@/stores/workflowDraft', () => ({
@@ -22,6 +23,7 @@ import RunButton from '@/components/execution/RunButton.vue'
 import { api } from '@/api/client'
 import {
   _resetGraphSyncForTest,
+  serializeGraph,
   useGraphSync,
 } from '@/composables/useGraphSync'
 import {
@@ -35,6 +37,7 @@ import {
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { GraphState, ToolMetadata } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -114,38 +117,48 @@ describe('parameter edit followed immediately by Run', () => {
       canvasId,
       workflowId: 'parameter_edit',
     }
-    const graphSync = useGraphSync({
-      descriptor,
-      getWorkflowId: () => 'parameter_edit',
+    let persistedDraft: WorkflowDraftResponse = {
+      draft_version: 1,
+      workflow_id: 'parameter_edit',
+      base_saved_revision: 'sha256:test',
+      draft_revision: 1,
+      updated_at: '2026-01-01T00:00:00Z',
+      updated_by: 'frontend',
+      dirty_against_saved: false,
+      graph,
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    }
+    const putDraft = vi.fn(async (
+      _workflowId: string,
+      body: {
+        graph: GraphState
+        expected_revision: number
+        validate?: boolean
+      },
+    ) => {
+      persistedDraft = {
+        ...persistedDraft,
+        draft_revision: body.expected_revision + 1,
+        dirty_against_saved: true,
+        graph: body.graph,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+      }
+      return persistedDraft
     })
-    useCanvasPersistence({
+    const writeRecovery = vi.fn(async () => {})
+    const canvasPersistence = useCanvasPersistence({
       descriptor,
       getWorkflowId: () => 'parameter_edit',
       transports: {
-        fetchDraft: async () => ({
-          draft_version: 1,
-          workflow_id: 'parameter_edit',
-          base_saved_revision: 'sha256:test',
-          draft_revision: 1,
-          updated_at: '2026-01-01T00:00:00Z',
-          updated_by: 'frontend',
-          dirty_against_saved: false,
-          graph,
-          validation: { valid: true, node_statuses: {}, errors: [] },
-        }),
-        putDraft: async () => ({
-          draft_version: 1,
-          workflow_id: 'parameter_edit',
-          base_saved_revision: 'sha256:test',
-          draft_revision: 1,
-          updated_at: '2026-01-01T00:00:00Z',
-          updated_by: 'frontend',
-          dirty_against_saved: false,
-          graph,
-          validation: { valid: true, node_statuses: {}, errors: [] },
-        }),
-        writeRecovery: async () => {},
+        fetchDraft: async () => persistedDraft,
+        putDraft,
+        writeRecovery,
       },
+    })
+    canvasPersistence.initializeFromDraft(persistedDraft)
+    const graphSync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'parameter_edit',
     })
     canvasSessionRegistry.activate(canvasId)
 
@@ -174,7 +187,6 @@ describe('parameter edit followed immediately by Run', () => {
       { id: 'files', data: nodeData, position: { x: 0, y: 0 } },
       { id: 'untouched', data: untouchedNodeData, position: { x: 100, y: 0 } },
     ]
-    graphSync.syncGraph({ nodes: canvasNodes, edges: [] })
     ui.setCanvasGraphNodes(canvasId, [
       canvasNodes[0],
       canvasNodes[1],
@@ -198,7 +210,7 @@ describe('parameter edit followed immediately by Run', () => {
         selected.data.parameters = parameters
         selected.data.status = 'unexecuted'
         for (const node of canvasNodes) node.data.provisional = true
-        graphSync.syncGraph({ nodes: canvasNodes, edges: [] })
+        canvasPersistence.queueGraph(serializeGraph({ nodes: canvasNodes, edges: [] }))
         return true
       },
     })
@@ -248,6 +260,20 @@ describe('parameter edit followed immediately by Run', () => {
         }),
       }),
     )
+    expect(putDraft).toHaveBeenCalledOnce()
+    expect(putDraft).toHaveBeenCalledWith(
+      'parameter_edit',
+      expect.objectContaining({
+        graph: expect.objectContaining({
+          nodes: expect.arrayContaining([
+            expect.objectContaining({ parameters: { path: '/data/new' } }),
+          ]),
+        }),
+        validate: true,
+      }),
+    )
+    expect(writeRecovery).toHaveBeenCalledOnce()
+    expect(mockedApi.put).not.toHaveBeenCalled()
 
     panel.unmount()
     runButton.unmount()

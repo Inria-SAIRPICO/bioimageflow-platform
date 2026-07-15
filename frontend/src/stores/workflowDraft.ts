@@ -144,6 +144,25 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     remoteDirtyAgainstSaved.value = message.dirty_against_saved
   }
 
+  function acknowledgeAcceptedDraft(response: WorkflowDraftResponse): void {
+    if (workflowId.value !== response.workflow_id) return
+    currentDraftRevision.value = Math.max(
+      currentDraftRevision.value ?? -1,
+      response.draft_revision,
+    )
+    appliedDraftRevision.value = Math.max(
+      appliedDraftRevision.value ?? -1,
+      response.draft_revision,
+    )
+    if (
+      remoteAvailableRevision.value !== null
+      && remoteAvailableRevision.value <= response.draft_revision
+    ) {
+      clearRemoteChange()
+    }
+    lastWriter.value = response.updated_by
+  }
+
   function scheduleSave(id: string, graph: GraphState): void {
     if (isStale.value) return
     workflowId.value = id
@@ -248,6 +267,7 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     reset,
     trackWorkflow,
     noteRemoteChange,
+    acknowledgeAcceptedDraft,
     clearRemoteChange,
     cancelPendingSave,
     scheduleSave,

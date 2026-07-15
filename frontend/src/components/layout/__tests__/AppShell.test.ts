@@ -617,12 +617,24 @@ describe('AppShell', () => {
   it('opens and activates a named canvas tab for a root workflow graph', async () => {
     mountApp()
     await flushPromises()
+    const openedDraft = {
+      draft_version: 1 as const,
+      workflow_id: 'analysis',
+      base_saved_revision: 'sha256:analysis',
+      draft_revision: 4,
+      updated_at: '2026-07-16T01:00:00Z',
+      updated_by: 'agent' as const,
+      dirty_against_saved: false,
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    }
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
       detail: {
         workflowName: 'analysis',
         workflowDisplayName: 'Analysis',
-        graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+        graph: openedDraft.graph,
+        draft: openedDraft,
         missingTools: [],
         dirty: false,
       },
@@ -647,6 +659,7 @@ describe('AppShell', () => {
       params: expect.objectContaining({
         workflowName: 'analysis',
         workflowDisplayName: 'Analysis',
+        draft: openedDraft,
       }),
     })
     expect(lastCall.id).toBe('workflow:analysis')

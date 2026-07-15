@@ -24,6 +24,7 @@ import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import {
   canvasSessionRegistry,
   type CanvasId,
@@ -173,6 +174,7 @@ function applyGraph(
     workflowName: string
     workflowDisplayName: string
     missingTools: MissingTool[]
+    draft?: WorkflowDraftResponse
   },
 ): void {
   if (executionStore.isMutationLocked) return
@@ -185,6 +187,7 @@ function applyGraph(
         ?? workflowStore.currentName,
       missingTools: presentation?.missingTools ?? workflowStore.missingTools,
       dirty,
+      draft: presentation?.draft,
     },
   }))
 }
@@ -195,6 +198,7 @@ async function loadWorkflowGraph(name: string): Promise<{
   workflowName: string
   workflowDisplayName: string
   missingTools: MissingTool[]
+  draft?: WorkflowDraftResponse
 }> {
   const savedGraph = await workflowStore.loadWorkflow(name)
   const info = workflowStore.workflows.find((workflow) => workflowId(workflow) === name)
@@ -208,6 +212,7 @@ async function loadWorkflowGraph(name: string): Promise<{
     return {
       graph: draft.graph,
       dirty: draft.dirty_against_saved,
+      draft,
       ...presentation,
     }
   } catch {

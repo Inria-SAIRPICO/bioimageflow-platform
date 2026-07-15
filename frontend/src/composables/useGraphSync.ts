@@ -3,6 +3,11 @@ import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useWorkflowStore } from '@/stores/workflow'
 import {
+  getOrCreateRootPersistenceResource,
+  ROOT_PERSISTENCE_RESOURCE,
+  type RootCanvasPersistenceResource,
+} from '@/composables/useCanvasPersistence'
+import {
   canvasSessionRegistry,
   canvasIdFromPanelId,
   type CanvasId,
@@ -35,6 +40,7 @@ export interface CanvasScopedGraphSyncOptions {
 export interface GraphSyncApi {
   syncGraph(graph: Parameters<typeof serializeGraph>[0]): void
   syncGraphState(graph: GraphState): void
+  revalidateGraphState(graph: GraphState): void
   syncNodeParameters(nodeId: string, parameters: Record<string, unknown>): void
   flushNow(): Promise<void>
   validationResult: Ref<ValidationResult | null>
@@ -175,6 +181,19 @@ export function _resetGraphSyncForTest(): void {
 
 function registerScopedGraphSync(options: CanvasScopedGraphSyncOptions): GraphSyncApi {
   graphSyncCanvasSessions.register(options.descriptor)
+  if (options.descriptor.kind === 'root') {
+    const resource = getOrCreateRootPersistenceResource({
+      descriptor: options.descriptor,
+      getWorkflowId: options.getWorkflowId,
+    })
+    graphSyncCanvasSessions.getOrCreateCoordinator(
+      options.descriptor.canvasId,
+      () => resource,
+    )
+    return createRootBoundApi(resource, () => {
+      unregisterGraphSyncCanvas(options.descriptor.canvasId)
+    })
+  }
   const coordinator = graphSyncCanvasSessions.getOrCreateCoordinator(
     options.descriptor.canvasId,
     descriptor => createCoordinator(
@@ -230,6 +249,10 @@ function createBoundApi(
     coordinator.queue(graph)
   }
 
+  function revalidateGraphState(graph: GraphState): void {
+    coordinator.queue(graph)
+  }
+
   function syncNodeParameters(
     nodeId: string,
     parameters: Record<string, unknown>,
@@ -249,6 +272,7 @@ function createBoundApi(
   return {
     syncGraph,
     syncGraphState,
+    revalidateGraphState,
     syncNodeParameters,
     flushNow,
     validationResult: coordinator.validationResult,
@@ -259,11 +283,54 @@ function createBoundApi(
   }
 }
 
+function createRootBoundApi(
+  resource: RootCanvasPersistenceResource,
+  dispose: () => void,
+): GraphSyncApi {
+  function syncGraphState(graph: GraphState): void {
+    resource.queueValidation(graph)
+  }
+
+  return {
+    syncGraph: graph => resource.queueValidation(serializeGraph(graph)),
+    syncGraphState,
+    revalidateGraphState: graph => resource.queueValidation(graph, { force: true }),
+    syncNodeParameters: (nodeId, parameters) => {
+      const graph = deepCloneJson(resource.currentGraph.value)
+      const node = graph.nodes.find(candidate => candidate.id === nodeId)
+      if (!node) return
+      node.parameters = deepCloneJson(parameters)
+      syncGraphState(graph)
+    },
+    flushNow: async () => {
+      await nextTick()
+      await resource.flushValidation()
+    },
+    validationResult: resource.validationResult,
+    isPending: resource.isValidationPending,
+    syncState: resource.validationSyncState,
+    currentGraph: resource.currentGraph,
+    dispose,
+  }
+}
+
 function createActiveFacade(): GraphSyncApi {
   const selected = (): GraphSyncApi | null => {
     const canvasId = graphSyncCanvasSessions.activeCanvasId.value
     if (canvasId !== null) {
-      const coordinator = graphSyncCanvasSessions.get(canvasId)?.coordinator
+      const session = graphSyncCanvasSessions.get(canvasId)
+      if (session?.descriptor.kind === 'root') {
+        const resource = graphSyncCanvasSessions.getResource<RootCanvasPersistenceResource>(
+          canvasId,
+          ROOT_PERSISTENCE_RESOURCE,
+        )
+        if (resource) {
+          return createRootBoundApi(resource, () => {
+            unregisterGraphSyncCanvas(canvasId)
+          })
+        }
+      }
+      const coordinator = session?.coordinator
       if (coordinator) {
         return createBoundApi(coordinator as GraphSyncCoordinator, () => {
           unregisterGraphSyncCanvas(canvasId)
@@ -285,6 +352,7 @@ function createActiveFacade(): GraphSyncApi {
   return {
     syncGraph: graph => required().syncGraph(graph),
     syncGraphState: graph => required().syncGraphState(graph),
+    revalidateGraphState: graph => required().revalidateGraphState(graph),
     syncNodeParameters: (nodeId, parameters) => {
       required().syncNodeParameters(nodeId, parameters)
     },

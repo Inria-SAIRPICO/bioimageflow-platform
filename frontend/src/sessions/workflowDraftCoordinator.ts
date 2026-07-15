@@ -54,6 +54,7 @@ export interface CreateWorkflowDraftCoordinatorOptions {
     error: unknown,
     request: Omit<WorkflowDraftWriteRequest, 'signal'>,
   ) => void
+  onAccepted?: (acceptance: WorkflowDraftAcceptance) => void
 }
 
 interface QueuedDraft {
@@ -193,6 +194,7 @@ export function createWorkflowDraftCoordinator(
         if (latest?.queueRevision === snapshot.queueRevision) {
           isPending.value = false
           syncState.value = 'idle'
+          options.onAccepted?.(cloneJson(acceptance))
         } else {
           isPending.value = true
           syncState.value = 'pending'

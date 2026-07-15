@@ -41,17 +41,29 @@ vi.mock('@/api/client', () => ({
   api: apiMocks,
 }))
 
-vi.mock('@/composables/useAutoSave', () => ({
-  useAutoSave: () => autoSaveMocks,
-}))
+vi.mock('@/composables/useAutoSave', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/composables/useAutoSave')
+  >()
+  return {
+    ...actual,
+    useAutoSave: () => autoSaveMocks,
+  }
+})
 
 vi.mock('@/stores/workflowDraft', () => ({
   useWorkflowDraftStore: () => workflowDraftMocks,
 }))
 
-vi.mock('@/composables/useCanvasPersistence', () => ({
-  useCanvasPersistence: () => persistenceMocks,
-}))
+vi.mock('@/composables/useCanvasPersistence', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/composables/useCanvasPersistence')
+  >()
+  return {
+    ...actual,
+    useCanvasPersistence: () => persistenceMocks,
+  }
+})
 
 vi.mock('@/composables/useCanvasCommands', () => ({
   useCanvasCommands: () => canvasCommandMocks,
@@ -365,8 +377,8 @@ describe('MenuBar', () => {
         descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
         getWorkflowId: () => 'b',
       })
-      syncA.syncGraphState(graphA)
-      syncB.syncGraphState(graphB)
+      syncA.currentGraph.value = graphA
+      syncB.currentGraph.value = graphB
       const store = useWorkflowStore()
       const ui = useUIStore()
       store.workflows = [
@@ -468,7 +480,18 @@ describe('MenuBar', () => {
           missing_tools: [],
         },
       })
-      let resolveDraft!: (value: { graph: GraphState; dirty_against_saved: boolean }) => void
+      const openedDraft = {
+        draft_version: 1 as const,
+        workflow_id: 'a',
+        base_saved_revision: 'sha256:a',
+        draft_revision: 7,
+        updated_at: '2026-07-16T01:00:00Z',
+        updated_by: 'agent' as const,
+        dirty_against_saved: false,
+        graph: graphA,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+      }
+      let resolveDraft!: (value: typeof openedDraft) => void
       workflowDraftMocks.loadDraft.mockReturnValueOnce(new Promise((resolve) => {
         resolveDraft = resolve
       }))
@@ -482,13 +505,14 @@ describe('MenuBar', () => {
       }))
       await flushPromises()
       useWorkflowStore().current = { name: 'b', display_name: 'Workflow B' } as any
-      resolveDraft({ graph: graphA, dirty_against_saved: false })
+      resolveDraft(openedDraft)
       await flushPromises()
 
       expect(applied[applied.length - 1]).toMatchObject({
         graph: graphA,
         workflowName: 'a',
         workflowDisplayName: 'Workflow A',
+        draft: openedDraft,
       })
       window.removeEventListener('bioimageflow:apply-graph', onApply)
       wrapper.unmount()
