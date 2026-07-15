@@ -190,6 +190,17 @@ function _createGraphSync() {
     }, 300)
   }
 
+  function syncNodeParameters(
+    nodeId: string,
+    parameters: Record<string, unknown>,
+  ): void {
+    const graph = deepCloneJson(currentGraph.value)
+    const node = graph.nodes.find((candidate) => candidate.id === nodeId)
+    if (!node) return
+    node.parameters = deepCloneJson(parameters)
+    syncGraphState(graph)
+  }
+
   async function sendNow(): Promise<void> {
     if (pendingGraph === null) return
     const graph = pendingGraph
@@ -297,6 +308,7 @@ function _createGraphSync() {
   return {
     syncGraph,
     syncGraphState,
+    syncNodeParameters,
     flushNow,
     patchParameters,
     validationResult,

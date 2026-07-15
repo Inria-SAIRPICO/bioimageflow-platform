@@ -55,7 +55,7 @@ function fileTypesForField(type: string): string[] {
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const loggerStore = useLoggerStore()
-const { validationResult } = useGraphSync()
+const { validationResult, syncNodeParameters } = useGraphSync()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
 
 const selectedNodeErrors = computed(() => {
@@ -147,8 +147,14 @@ function finishEditName() {
 }
 
 function updateParameter(key: string, value: unknown) {
-  if (!nodeData.value) return
-  nodeData.value.parameters[key] = value
+  const nodeId = selectedNode.value?.id
+  if (!nodeData.value || !nodeId) return
+  const parameters = {
+    ...nodeData.value.parameters,
+    [key]: value,
+  }
+  nodeData.value.parameters = parameters
+  syncNodeParameters(nodeId, parameters)
 }
 
 function toggleEnabled() {

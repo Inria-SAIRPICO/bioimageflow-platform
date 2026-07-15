@@ -161,13 +161,13 @@ watch(
   { deep: true },
 )
 
-// Live per-node status from the execution store — takes precedence over the
-// validation-result status while an execution is running so nodes turn green
-// (executed) or pulse blue (running) in real time as events arrive.
+// Live per-node status from the execution store takes precedence while an
+// execution is running and for its terminal transition. Later idle snapshots
+// must not overwrite validation for a graph edited after that execution.
 watch(
-  () => executionStore.nodeStatuses,
-  (statuses) => {
-    if (!statuses) return
+  [() => executionStore.isRunning, () => executionStore.nodeStatuses],
+  ([running, statuses], [wasRunning]) => {
+    if (!statuses || (!running && !wasRunning)) return
     for (const node of getNodes.value) {
       const s = statuses[node.id]
       if (s && node.data && node.data.status !== s.status) {
@@ -2283,14 +2283,9 @@ function emitGraphChanged() {
   // Mark all nodes provisional during the debounce window so the UI can
   // render a desaturated status indicator until the server response lands.
   for (const n of state.nodes) {
-    const currentStatus = n.data?.status
-    const provisionalStatus =
-      currentStatus === 'executed' || currentStatus === 'out_of_date'
-        ? 'out_of_date'
-        : 'unexecuted'
+    const provisionalStatus = n.data?.status ?? 'unexecuted'
     markProvisional(n.id, provisionalStatus)
     if (n.data) {
-      n.data.status = provisionalStatus
       n.data.provisional = true
     }
   }

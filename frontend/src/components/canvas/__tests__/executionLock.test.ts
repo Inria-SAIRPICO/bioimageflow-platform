@@ -262,7 +262,45 @@ describe('CanvasView execution lock', () => {
     w.unmount()
   })
 
-  it('marks executed nodes out of date after a graph edit', async () => {
+  it('does not let idle execution statuses overwrite newer validation state', async () => {
+    mockNodes = [
+      { id: 'n1', data: { toolName: 'T', status: 'out_of_date' } },
+    ]
+    const w = mountCanvas()
+    const exec = useExecutionStore()
+    exec.state = 'idle'
+    exec.nodeStatuses = {
+      n1: { node_id: 'n1', status: 'executed', cached: true },
+    }
+    await nextTick()
+
+    expect(mockNodes[0].data.status).toBe('out_of_date')
+    w.unmount()
+  })
+
+  it('applies terminal statuses on the running-to-idle transition', async () => {
+    mockNodes = [
+      { id: 'n1', data: { toolName: 'T', status: 'running' } },
+    ]
+    const w = mountCanvas()
+    const exec = useExecutionStore()
+    exec.state = 'running'
+    await nextTick()
+
+    exec.applyExecutionComplete({
+      success: true,
+      errors: [],
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'executed', cached: false },
+      },
+    })
+    await nextTick()
+
+    expect(mockNodes[0].data.status).toBe('executed')
+    w.unmount()
+  })
+
+  it('keeps authoritative statuses while marking a graph edit provisional', async () => {
     mockNodes = [
       {
         id: 'source',
@@ -296,8 +334,8 @@ describe('CanvasView execution lock', () => {
     })
     await nextTick()
 
-    expect(mockNodes[0].data.status).toBe('out_of_date')
-    expect(mockNodes[1].data.status).toBe('out_of_date')
+    expect(mockNodes[0].data.status).toBe('executed')
+    expect(mockNodes[1].data.status).toBe('executed')
     expect(mockNodes[0].data.provisional).toBe(true)
     expect(mockNodes[1].data.provisional).toBe(true)
     w.unmount()
