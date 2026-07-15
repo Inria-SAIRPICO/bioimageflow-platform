@@ -167,6 +167,81 @@ describe('DataTablePanel', () => {
     wrapper.unmount()
   })
 
+  it('does not render a delayed response from another canvas with the same node id', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    graphSyncCanvasSessions.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+    graphSyncCanvasSessions.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+    const store = useDataTableStore()
+    let resolveA!: (value: { data: any }) => void
+    const delayedA = new Promise<{ data: any }>((resolve) => {
+      resolveA = resolve
+    })
+    mockedGet
+      .mockReturnValueOnce(delayedA as any)
+      .mockResolvedValueOnce({
+        data: {
+          columns: ['path'],
+          index: ['0'],
+          rows: [{ path: '/canvas-b.csv' }],
+          absolute_rows: [0],
+          total_rows: 1,
+          page: 4,
+          page_size: 50,
+          column_types: { path: 'Path' },
+        },
+      })
+
+    const fetchA = store.fetchCanvasNodeData(canvasA, 'shared', {
+      page: 2,
+      workflowName: 'a',
+    })
+    await store.fetchCanvasNodeData(canvasB, 'shared', {
+      page: 4,
+      workflowName: 'b',
+    })
+    graphSyncCanvasSessions.activate(canvasB)
+
+    const getPageState = vi.spyOn(store, 'getPageState')
+    const wrapper = mount(NodeDataTable, {
+      props: { nodeId: 'shared', workflowName: 'b' },
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: {
+          DataTable: DataTableStub,
+          Column: ColumnStub,
+          ImageCell: ImageCellStub,
+          Paginator: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('/canvas-b.csv')
+    expect(getPageState).toHaveBeenCalledWith('shared')
+
+    resolveA({
+      data: {
+        columns: ['path'],
+        index: ['0'],
+        rows: [{ path: '/delayed-canvas-a.csv' }],
+        absolute_rows: [0],
+        total_rows: 1,
+        page: 2,
+        page_size: 50,
+        column_types: { path: 'Path' },
+      },
+    })
+    await fetchA
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('/canvas-b.csv')
+    expect(wrapper.text()).not.toContain('/delayed-canvas-a.csv')
+    wrapper.unmount()
+  })
+
   it('renders image path rows as thumbnail, path, Napari, reveal, copy only', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

@@ -18,6 +18,27 @@ vi.mock('@/composables/useIndexedDB', () => ({
 }))
 
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
+function registerCanvases(): [CanvasId, CanvasId] {
+  const canvasA = canvasIdFromPanelId('workflow:a')
+  const canvasB = canvasIdFromPanelId('workflow:b')
+  canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+  canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+  return [canvasA, canvasB]
+}
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
@@ -40,6 +61,7 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
 
 describe('resolvedOutputs store', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     mockFetchNodeOutputSchema.mockReset()
     vi.useFakeTimers()
@@ -260,5 +282,194 @@ describe('resolvedOutputs store', () => {
     store.resolvedOutputsByNodeId['gen_1'] = { resolved: true, columns: {} }
     store.removeNode('gen_1')
     expect(store.resolvedOutputsByNodeId['gen_1']).toBeUndefined()
+  })
+
+  it('keeps resolved outputs and debounce timers independent for identical node ids', async () => {
+    const [canvasA, canvasB] = registerCanvases()
+    const store = useResolvedOutputsStore()
+    const resultA = deferred<{ resolved: boolean; columns: Record<string, unknown> }>()
+    const resultB = deferred<{ resolved: boolean; columns: Record<string, unknown> }>()
+    mockFetchNodeOutputSchema
+      .mockReturnValueOnce(resultA.promise)
+      .mockReturnValueOnce(resultB.promise)
+
+    const graphA = makeGraph()
+    const graphB = makeGraph()
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graphA, () => undefined)
+    store.refreshCanvasResolvedOutputs(canvasB, 'gen_1', () => graphB, () => undefined)
+
+    vi.advanceTimersByTime(200)
+    await Promise.resolve()
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledTimes(2)
+
+    resultB.resolve({ resolved: true, columns: { from_b: { type: 'str' } } })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(store.getCanvasResolvedOutput(canvasA, 'gen_1')).toBeUndefined()
+    expect(store.getCanvasResolvedOutput(canvasB, 'gen_1')).toEqual({
+      resolved: true,
+      columns: { from_b: { type: 'str' } },
+    })
+
+    resultA.resolve({ resolved: true, columns: { from_a: { type: 'int' } } })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(store.getCanvasResolvedOutput(canvasA, 'gen_1')).toEqual({
+      resolved: true,
+      columns: { from_a: { type: 'int' } },
+    })
+    expect(store.getCanvasResolvedOutput(canvasB, 'gen_1')).toEqual({
+      resolved: true,
+      columns: { from_b: { type: 'str' } },
+    })
+
+    canvasSessionRegistry.activate(canvasB)
+    expect(store.resolvedOutputsByNodeId.gen_1?.columns).toEqual({
+      from_b: { type: 'str' },
+    })
+  })
+
+  it('releasing one canvas cancels only its timers and cache', async () => {
+    const [canvasA, canvasB] = registerCanvases()
+    const store = useResolvedOutputsStore()
+    mockFetchNodeOutputSchema.mockResolvedValue({ resolved: true, columns: {} })
+    const graph = makeGraph()
+
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, () => undefined)
+    store.refreshCanvasResolvedOutputs(canvasB, 'gen_1', () => graph, () => undefined)
+    store.releaseCanvas(canvasA)
+
+    await vi.advanceTimersByTimeAsync(200)
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledTimes(1)
+    expect(store.getCanvasResolvedOutput(canvasA, 'gen_1')).toBeUndefined()
+    expect(store.getCanvasResolvedOutput(canvasB, 'gen_1')).toEqual({
+      resolved: true,
+      columns: {},
+    })
+  })
+
+  it('does not propagate through a downstream request superseded while it is in flight', async () => {
+    const [canvasA] = registerCanvases()
+    const store = useResolvedOutputsStore()
+    const oldCrossResult = deferred<{ resolved: boolean; columns: Record<string, unknown> }>()
+    let crossCalls = 0
+    mockFetchNodeOutputSchema.mockImplementation((nodeId: string) => {
+      if (nodeId === 'gen_1') {
+        return Promise.resolve({ resolved: true, columns: { source: { type: 'str' } } })
+      }
+      if (nodeId === 'cross_1') {
+        crossCalls += 1
+        if (crossCalls === 1) return oldCrossResult.promise
+        return Promise.resolve({ resolved: true, columns: { current: { type: 'str' } } })
+      }
+      return Promise.resolve({ resolved: true, columns: { stale_tail: { type: 'str' } } })
+    })
+    const graph = {
+      ...makeGraph(),
+      nodes: [
+        ...makeGraph().nodes,
+        {
+          id: 'tail_1',
+          type: 'tool',
+          position: { x: 200, y: 0 },
+          data: { tool: makeTool({ name: 'Tail', dynamic_outputs: true }) },
+        },
+      ],
+      edges: [
+        ...makeGraph().edges,
+        {
+          id: 'e2',
+          source: 'cross_1',
+          target: 'tail_1',
+          targetHandle: '__positional_0',
+        },
+      ],
+    }
+    const getTool = (nodeId: string) => (
+      graph.nodes.find((node) => node.id === nodeId)?.data?.tool as ToolMetadata | undefined
+    )
+
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, getTool)
+    vi.advanceTimersByTime(200)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(mockFetchNodeOutputSchema.mock.calls.map(([nodeId]) => nodeId)).toEqual([
+      'gen_1',
+      'cross_1',
+    ])
+
+    await store.refreshCanvasNow(canvasA, 'cross_1', () => graph)
+    oldCrossResult.resolve({ resolved: true, columns: { stale: { type: 'str' } } })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('tail_1', expect.anything())
+    expect(store.getCanvasResolvedOutput(canvasA, 'cross_1')?.columns).toEqual({
+      current: { type: 'str' },
+    })
+  })
+
+  it('stops sibling propagation when the source is superseded during an awaited child', async () => {
+    const [canvasA] = registerCanvases()
+    const store = useResolvedOutputsStore()
+    const childResult = deferred<{ resolved: boolean; columns: Record<string, unknown> }>()
+    mockFetchNodeOutputSchema.mockImplementation((nodeId: string) => {
+      if (nodeId === 'cross_1') return childResult.promise
+      return Promise.resolve({ resolved: true, columns: {} })
+    })
+    const base = makeGraph()
+    const graph = {
+      ...base,
+      nodes: [
+        ...base.nodes,
+        {
+          id: 'sibling_1',
+          type: 'tool',
+          position: { x: 100, y: 100 },
+          data: { tool: makeTool({ name: 'Sibling', dynamic_outputs: true }) },
+        },
+      ],
+      edges: [
+        ...base.edges,
+        {
+          id: 'e-sibling',
+          source: 'gen_1',
+          target: 'sibling_1',
+          targetHandle: '__positional_0',
+        },
+      ],
+    }
+    const getTool = (nodeId: string) => (
+      graph.nodes.find((node) => node.id === nodeId)?.data?.tool as ToolMetadata | undefined
+    )
+
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, getTool)
+    vi.advanceTimersByTime(200)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledWith('cross_1', expect.anything())
+
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, getTool)
+    childResult.resolve({ resolved: true, columns: {} })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('sibling_1', expect.anything())
+  })
+
+  it('does not expose or mutate legacy output state while registered canvases have no active canvas', async () => {
+    const store = useResolvedOutputsStore()
+    store.resolvedOutputsByNodeId.gen_1 = {
+      resolved: true,
+      columns: { legacy: { type: 'str' } },
+    }
+    registerCanvases()
+    const graph = makeGraph()
+
+    expect(store.resolvedOutputsByNodeId.gen_1).toBeUndefined()
+    store.refreshResolvedOutputs('gen_1', () => graph, () => undefined)
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalled()
   })
 })
