@@ -190,7 +190,46 @@ describe('execution store', () => {
     expect(store.state).toBe('idle')
   })
 
-  it('ignores idle status snapshots while a start request is in flight', async () => {
+  it('does not let a stale start failure overwrite a newer start', async () => {
+    const firstRequest = deferred<never>()
+    const secondRequest = deferred<{ data: { status: string } }>()
+    mockedApi.post
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+    const store = useExecutionStore()
+
+    const firstStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    const secondStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    const staleValidationError = {
+      type: 'cycle_detected',
+      detail: 'stale cycle',
+      node: null,
+      edge_id: null,
+      field: null,
+    }
+
+    firstRequest.reject({
+      message: 'stale start failed',
+      response: {
+        status: 422,
+        data: { detail: 'stale start failed', errors: [staleValidationError] },
+      },
+    })
+    await expect(firstStart).rejects.toMatchObject({ message: 'stale start failed' })
+
+    expect(store.state).toBe('starting')
+    expect(store.error).toBeNull()
+    expect(store.isConflict).toBe(false)
+    expect(store.validationErrors).toEqual([])
+    expect(useLoggerStore().entries).toEqual([])
+
+    secondRequest.resolve({ data: { status: 'started' } })
+    await secondStart
+    expect(store.state).toBe('running')
+  })
+
+  it('rejects entire idle status payloads while a start request is in flight', async () => {
     const request = deferred<{ data: { status: string } }>()
     mockedApi.post.mockReturnValueOnce(request.promise)
     const priorResult: ExecutionResult = {
@@ -198,11 +237,16 @@ describe('execution store', () => {
       errors: [],
       node_statuses: {},
     }
+    const staleProgress: ProgressInfo = {
+      node_id: 'stale',
+      row: 3,
+      total_rows: 10,
+    }
     mockedApi.get.mockResolvedValueOnce({
       data: {
         state: 'idle',
         last_result: priorResult,
-        progress: null,
+        progress: staleProgress,
         node_statuses: {
           fetched: { node_id: 'fetched', status: 'executed', cached: true },
         },
@@ -214,17 +258,20 @@ describe('execution store', () => {
     store.applyStatusSnapshot({
       state: 'idle',
       last_result: priorResult,
-      progress: null,
+      progress: staleProgress,
       node_statuses: {
         snapshot: { node_id: 'snapshot', status: 'executed', cached: true },
       },
     })
     expect(store.state).toBe('starting')
-    expect(store.lastResult).toEqual(priorResult)
-    expect(store.nodeStatuses.snapshot.status).toBe('executed')
+    expect(store.lastResult).toBeNull()
+    expect(store.progress).toBeNull()
+    expect(store.nodeStatuses).toEqual({})
     await store.fetchStatus()
     expect(store.state).toBe('starting')
-    expect(store.nodeStatuses.fetched.status).toBe('executed')
+    expect(store.lastResult).toBeNull()
+    expect(store.progress).toBeNull()
+    expect(store.nodeStatuses).toEqual({})
 
     request.resolve({ data: { status: 'started' } })
     await start

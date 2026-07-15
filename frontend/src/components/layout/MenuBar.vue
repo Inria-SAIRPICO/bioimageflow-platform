@@ -175,6 +175,7 @@ function applyGraph(
     missingTools: MissingTool[]
   },
 ): void {
+  if (executionStore.isMutationLocked) return
   window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
     detail: {
       graph,
@@ -618,6 +619,7 @@ async function confirmDeleteWorkflow(): Promise<void> {
   const target = deleteCanvasTarget.value
   try {
     await workflowStore.deleteWorkflow(name)
+    if (executionStore.isMutationLocked) return
     deleteDialogVisible.value = false
     deleteTargetName.value = null
     deleteCanvasTarget.value = null

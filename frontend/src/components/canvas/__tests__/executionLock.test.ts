@@ -11,6 +11,10 @@ import InputText from 'primevue/inputtext'
 let mockNodes: any[] = []
 let mockEdges: any[] = []
 let connectHandler: ((connection: any) => void) | null = null
+let edgeUpdateHandler: ((event: any) => void) | null = null
+let nodeDragStartHandler: ((event: any) => void) | null = null
+let nodeDragStopHandler: ((event: any) => void) | null = null
+const vueFlowMocks = vi.hoisted(() => ({ updateEdge: vi.fn() }))
 
 vi.mock('@vue-flow/core', () => {
   const VueFlow = defineComponent({
@@ -24,6 +28,7 @@ vi.mock('@vue-flow/core', () => {
       'selectionKeyCode',
       'fitViewOnInit',
       'edgesUpdatable',
+      'nodesDraggable',
     ],
     template: '<div class="vue-flow-mock"><slot /></div>',
   })
@@ -51,17 +56,23 @@ vi.mock('@vue-flow/core', () => {
       setEdges: (edges: any[]) => {
         mockEdges = [...edges]
       },
-      updateEdge: vi.fn(),
+      updateEdge: vueFlowMocks.updateEdge,
       getNodes: computed(() => mockNodes),
       getEdges: computed(() => mockEdges),
       onConnect: (handler: any) => {
         connectHandler = handler
       },
       onNodesChange: vi.fn(),
-      onEdgeUpdate: vi.fn(),
+      onEdgeUpdate: (handler: any) => {
+        edgeUpdateHandler = handler
+      },
       onEdgeUpdateEnd: vi.fn(),
-      onNodeDragStart: vi.fn(),
-      onNodeDragStop: vi.fn(),
+      onNodeDragStart: (handler: any) => {
+        nodeDragStartHandler = handler
+      },
+      onNodeDragStop: (handler: any) => {
+        nodeDragStopHandler = handler
+      },
       fitView: vi.fn(),
     }),
     Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
@@ -174,6 +185,10 @@ describe('CanvasView execution lock', () => {
     mockNodes = []
     mockEdges = []
     connectHandler = null
+    edgeUpdateHandler = null
+    nodeDragStartHandler = null
+    nodeDragStopHandler = null
+    vueFlowMocks.updateEdge.mockClear()
     canvasCommandMocks.updateParameter = null
   })
 
@@ -195,6 +210,66 @@ describe('CanvasView execution lock', () => {
     w.unmount()
     },
   )
+
+  it.each(['starting', 'running', 'stopping'] as const)(
+    'disables Vue Flow mutation gestures while execution is %s',
+    async (phase) => {
+      const w = mountCanvas()
+      useExecutionStore().state = phase
+      await nextTick()
+      const vueFlow = w.findComponent({ name: 'VueFlow' })
+
+      expect(vueFlow.props('nodesDraggable')).toBe(false)
+      expect(vueFlow.props('edgesUpdatable')).toBe(false)
+      w.unmount()
+    },
+  )
+
+  it('reverts a drag that crosses into the starting phase', async () => {
+    const node = {
+      id: 'a',
+      position: { x: 0, y: 0 },
+      data: { toolName: 'T' },
+    }
+    mockNodes = [node]
+    const w = mountCanvas()
+    nodeDragStartHandler!({ nodes: [node] })
+    node.position = { x: 50, y: 75 }
+    useExecutionStore().state = 'starting'
+    await nextTick()
+
+    nodeDragStopHandler!({ nodes: [node] })
+
+    expect(node.position).toEqual({ x: 0, y: 0 })
+    w.unmount()
+  })
+
+  it('rejects an edge update delivered after the stopping phase begins', async () => {
+    const edge = {
+      id: 'edge-1',
+      source: 'a',
+      target: 'b',
+      sourceHandle: 'out',
+      targetHandle: 'in',
+    }
+    mockEdges = [edge]
+    const w = mountCanvas()
+    useExecutionStore().state = 'stopping'
+    await nextTick()
+
+    edgeUpdateHandler!({
+      edge,
+      connection: {
+        source: 'a',
+        target: 'c',
+        sourceHandle: 'out',
+        targetHandle: 'other',
+      },
+    })
+
+    expect(vueFlowMocks.updateEdge).not.toHaveBeenCalled()
+    w.unmount()
+  })
 
   it('deleteSelected is blocked when locked', async () => {
     mockNodes = [

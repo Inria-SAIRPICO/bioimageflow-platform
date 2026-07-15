@@ -178,6 +178,25 @@ describe('ExecutionBanner', () => {
     expect(wrapper.find('[data-testid="execution-banner"]').exists()).toBe(false)
   })
 
+  it('auto-dismisses when completion arrives before the start request resolves', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    exec.state = 'starting'
+    await nextTick()
+    exec.applyExecutionComplete({
+      success: true,
+      errors: [],
+      node_statuses: {},
+    })
+    await nextTick()
+
+    expect((wrapper.vm as any).mode).toBe('success')
+    vi.advanceTimersByTime(5000)
+    await flushPromises()
+    await nextTick()
+    expect(wrapper.find('[data-testid="execution-banner"]').exists()).toBe(false)
+  })
+
   it('auto-dismisses after 3s on stop (no lastResult)', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()

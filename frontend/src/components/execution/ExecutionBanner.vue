@@ -44,9 +44,12 @@ watch(
       return
     }
     // idle transition
-    if (prev === 'running' || prev === 'stopping') {
+    if (prev === 'starting' || prev === 'running' || prev === 'stopping') {
       const result = exec.lastResult
       if (result == null) {
+        // A rejected start reports through RunButton instead of presenting a
+        // successfully stopped execution.
+        if (prev === 'starting') return
         // Explicit stop without a last_result yet.
         terminalMode.value = 'stopped'
         scheduleDismiss(DISMISS_STOPPED_MS)

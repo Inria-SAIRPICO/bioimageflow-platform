@@ -183,7 +183,9 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyBackendPhase(next: 'idle' | 'running'): boolean {
-    if (state.value === 'starting' && next === 'idle') return true
+    // An idle payload cannot describe the run whose start request still owns
+    // this phase; reject its result, progress, and node statuses together.
+    if (state.value === 'starting' && next === 'idle') return false
     if (state.value === 'stopping' && next === 'running') return true
     if (state.value === 'idle' && terminalFence && next === 'running') return false
     const wasActive = state.value === 'running' || state.value === 'stopping'
