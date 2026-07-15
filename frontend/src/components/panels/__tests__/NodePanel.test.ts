@@ -61,6 +61,13 @@ function makeNodeData(overrides: Record<string, unknown> = {}) {
 
 let mountedCanvasIndex = 0
 
+const nodeEditCommandCalls = {
+  renameNode: vi.fn(),
+  setNodeEnabled: vi.fn(),
+  setInputPinned: vi.fn(),
+  setOutputTemplate: vi.fn(),
+}
+
 function mountPanel(
   nodeData: ReturnType<typeof makeNodeData> | null = null,
   executionRunning = false,
@@ -78,6 +85,41 @@ function mountPanel(
   useGraphSync({ descriptor, getWorkflowId: () => null })
   useCanvasCommands({
     descriptor,
+    renameNode: (nodeId, name) => {
+      nodeEditCommandCalls.renameNode(nodeId, name)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      if (!node?.data) return false
+      const trimmed = name.trim()
+      if (!trimmed || trimmed === node.data.name) return false
+      if (uiStore.graphNodes.some((candidate: any) => (
+        candidate.id !== nodeId && candidate.data?.name === trimmed
+      ))) return false
+      node.data.name = trimmed
+      return true
+    },
+    setNodeEnabled: (nodeId, enabled) => {
+      nodeEditCommandCalls.setNodeEnabled(nodeId, enabled)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      if (!node?.data || node.data.enabled === enabled) return false
+      node.data.enabled = enabled
+      return true
+    },
+    setInputPinned: (nodeId, key, pinned) => {
+      nodeEditCommandCalls.setInputPinned(nodeId, key, pinned)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      if (!node?.data) return false
+      const nextPinned = key in (node.data.connectedInputs ?? {}) ? true : pinned
+      if (node.data.pinnedInputs?.[key] === nextPinned) return false
+      node.data.pinnedInputs = { ...(node.data.pinnedInputs ?? {}), [key]: nextPinned }
+      return true
+    },
+    setOutputTemplate: (nodeId, key, value) => {
+      nodeEditCommandCalls.setOutputTemplate(nodeId, key, value)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      if (!node?.data || node.data.output_templates?.[key] === value) return false
+      node.data.output_templates = { ...(node.data.output_templates ?? {}), [key]: value }
+      return true
+    },
     updateParameter: (nodeId, key, value) => {
       const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
       if (!node?.data) return false
@@ -114,6 +156,7 @@ describe('NodePanel', () => {
     _resetGraphSyncForTest()
     _resetCanvasCommandsForTest()
     mountedCanvasIndex = 0
+    for (const command of Object.values(nodeEditCommandCalls)) command.mockClear()
   })
 
   // --- Empty state ---
@@ -168,6 +211,32 @@ describe('NodePanel', () => {
       const toggle = w.find('[data-testid="node-enabled-toggle"]')
       expect(toggle.exists()).toBe(true)
     })
+
+    it('routes enabled changes through the active canvas command', async () => {
+      const data = makeNodeData({ enabled: true })
+      const w = mountPanel(data)
+
+      w.findComponent({ name: 'ToggleSwitch' }).vm.$emit('update:modelValue', false)
+      await w.vm.$nextTick()
+
+      expect(nodeEditCommandCalls.setNodeEnabled).toHaveBeenCalledWith('node-1', false)
+      expect(data.enabled).toBe(false)
+    })
+  })
+
+  describe('node rename', () => {
+    it('routes the requested display name through the active canvas command', async () => {
+      const data = makeNodeData()
+      const w = mountPanel(data)
+
+      await w.find('.node-name').trigger('dblclick')
+      await w.find('.name-input').setValue('Renamed node')
+      await w.find('.name-input').trigger('blur')
+      await w.vm.$nextTick()
+
+      expect(nodeEditCommandCalls.renameNode).toHaveBeenCalledWith('node-1', 'Renamed node')
+      expect(data.name).toBe('Renamed node')
+    })
   })
 
   // --- Fix 13: Package + version display ---
@@ -217,15 +286,26 @@ describe('NodePanel', () => {
       expect(data.parameters.sigma).toBe(1.0)
     })
 
-    it('makes parameter controls read-only while execution is running', async () => {
+    it('makes NodePanel edit controls read-only while execution is running', async () => {
       const w = mountPanel(makeNodeData(), true)
       await w.vm.$nextTick()
 
-      expect((w.vm as any).isParameterEditingDisabled).toBe(true)
+      expect((w.vm as any).isNodeEditingDisabled).toBe(true)
       for (const reset of w.findAll('[data-testid="reset-default"]')) {
         expect(reset.attributes('disabled')).toBeDefined()
       }
       expect(w.find('.param-number input').attributes('disabled')).toBeDefined()
+      expect(
+        w.find('[data-testid="node-enabled-toggle"]').find('input').attributes('disabled'),
+      ).toBeDefined()
+      expect(w.find('[data-testid="pin-toggle"]').attributes('disabled')).toBeDefined()
+      expect(
+        w.find('[data-testid="output-template"]').attributes('disabled'),
+      ).toBeDefined()
+
+      await w.find('.node-name').trigger('dblclick')
+      expect(w.find('.name-input').exists()).toBe(false)
+      expect(nodeEditCommandCalls.renameNode).not.toHaveBeenCalled()
     })
   })
 
@@ -306,6 +386,7 @@ describe('NodePanel', () => {
       const pinToggle = w.find('[data-testid="pin-toggle"]')
       await pinToggle.trigger('click')
       await w.vm.$nextTick()
+      expect(nodeEditCommandCalls.setInputPinned).toHaveBeenCalledWith('node-1', 'image', false)
       expect(data.pinnedInputs.image).toBe(false)
     })
 
@@ -321,6 +402,7 @@ describe('NodePanel', () => {
       await pinToggle.trigger('click')
       await w.vm.$nextTick()
 
+      expect(nodeEditCommandCalls.setInputPinned).toHaveBeenCalledWith('node-1', 'image', false)
       expect(data.pinnedInputs.image).toBe(true)
     })
 
@@ -428,6 +510,21 @@ describe('NodePanel', () => {
       const w = mountPanel(makeNodeData({ tool, output_templates: {} }))
       const templateInputs = w.findAll('[data-testid="output-template"]')
       expect(templateInputs.length).toBe(0)
+    })
+
+    it('routes template values through the active canvas command', async () => {
+      const data = makeNodeData()
+      const w = mountPanel(data)
+
+      await w.findAll('[data-testid="output-template"]')[0].setValue('/tmp/result.tif')
+      await w.vm.$nextTick()
+
+      expect(nodeEditCommandCalls.setOutputTemplate).toHaveBeenCalledWith(
+        'node-1',
+        'result',
+        '/tmp/result.tif',
+      )
+      expect(data.output_templates.result).toBe('/tmp/result.tif')
     })
   })
 

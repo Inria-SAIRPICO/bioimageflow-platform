@@ -168,6 +168,10 @@ const canvasPersistence = useCanvasPersistence({
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
   save: isSubWorkflowEditor ? () => saveSubWorkflowSession() : undefined,
+  renameNode,
+  setNodeEnabled,
+  setInputPinned,
+  setOutputTemplate,
   updateParameter: updateNodeParameter,
 })
 uiStore.setCanvasWorkflow(
@@ -902,10 +906,10 @@ function toggleContextNodeEnabled() {
   const menu = nodeContextMenu.value
   if (!menu) return
   const node = getNodes.value.find((n: any) => n.id === menu.nodeId)
-  if (!node?.data) return
-  node.data.enabled = node.data.enabled === false
+  if (node?.data) {
+    setNodeEnabled(menu.nodeId, node.data.enabled === false)
+  }
   closeNodeContextMenu()
-  emitGraphChanged()
 }
 
 function deleteContextNode() {
@@ -1160,25 +1164,16 @@ watch(getNodes, (nodes) => {
   uiStore.setCanvasGraphNodes(canvasId, nodes)
 }, { deep: true })
 
-// Persist the NodePanel fields that have not yet moved to canvas commands.
-// Parameter edits publish synchronously through updateNodeParameter, while
-// structural Vue Flow events publish from their own handlers.
+// Publication-interface and sub-workflow edits still publish through this
+// watcher. NodePanel edits and structural Vue Flow events have explicit owners.
 watch(
   () => getNodes.value.map((n: any) => ({
     id: n.id,
-    name: n.data?.name,
-    enabled: n.data?.enabled,
-    pinnedInputs: n.data?.pinnedInputs,
-    output_templates: n.data?.output_templates,
     sub_workflow: n.data?.sub_workflow,
     published_inputs: n.data?.published_inputs,
     published_outputs: n.data?.published_outputs,
   })).concat([{
     id: '__root_publication_context__',
-    name: null,
-    enabled: true,
-    pinnedInputs: null,
-    output_templates: null,
     sub_workflow: null,
     published_inputs: rootPublishedInputs.value,
     published_outputs: rootPublishedOutputs.value,
@@ -1191,30 +1186,38 @@ watch(
   { deep: true },
 )
 
-function parameterStateSnapshot(nodes: any[] = getNodes.value): string {
+function nodeEditStateSnapshot(nodes: any[] = getNodes.value): string {
   return JSON.stringify(nodes.map((node: any) => [
     node.id,
     node.data?.parameters ?? {},
+    node.data?.name ?? null,
+    node.data?.enabled ?? true,
+    node.data?.pinnedInputs ?? {},
+    node.data?.output_templates ?? {},
   ]))
 }
 
-let lastPublishedParameterSnapshot = parameterStateSnapshot()
+let lastPublishedNodeEditSnapshot = nodeEditStateSnapshot()
 
-// Tool-schema reconciliation can replace parameters outside NodePanel. Keep a
-// canvas-local fallback for those replacements without publishing command
-// edits twice on Vue's next tick.
+// Tool-schema reconciliation can replace parameter and template maps outside
+// NodePanel. Keep one canvas-local fallback without republishing command or
+// structural-handler edits on Vue's next tick.
 watch(
   () => getNodes.value.map((node: any) => ({
     id: node.id,
     parameters: node.data?.parameters,
+    name: node.data?.name,
+    enabled: node.data?.enabled,
+    pinnedInputs: node.data?.pinnedInputs,
+    output_templates: node.data?.output_templates,
   })),
   () => {
-    const snapshot = parameterStateSnapshot()
+    const snapshot = nodeEditStateSnapshot()
     if (isApplyingGraphState) {
-      lastPublishedParameterSnapshot = snapshot
+      lastPublishedNodeEditSnapshot = snapshot
       return
     }
-    if (snapshot === lastPublishedParameterSnapshot) return
+    if (snapshot === lastPublishedNodeEditSnapshot) return
     emitGraphChanged()
   },
   { deep: true },
@@ -1265,10 +1268,12 @@ watch(
       })
     }
     if (changed) {
-      const graph = rememberAuthoritativeGraph(
-        graphWithAuthoritativeEdges(currentVueFlowState()),
-      )
-      syncGraphState(graph)
+      const graph = graphWithAuthoritativeEdges(currentVueFlowState())
+      if (nodeEditStateSnapshot() !== lastPublishedNodeEditSnapshot) {
+        emitGraphChanged(graph)
+      } else {
+        syncGraphState(rememberAuthoritativeGraph(graph))
+      }
     }
   },
   { deep: false },
@@ -1968,7 +1973,7 @@ function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
   }
 }
 
-function vueFlowEdgeFromClipboardEdge(e: ClipboardPayload['edges'][number]) {
+function vueFlowEdgeFromGraphEdge(e: GraphState['edges'][number]) {
   if (e.type === 'positional') {
     return {
       id: e.id,
@@ -2072,7 +2077,7 @@ async function pasteFromClipboard() {
   const newNodes = attachPublicationContextToNodes(
     prepared.nodes.map(vueFlowNodeFromClipboardNode),
   )
-  const newEdges = prepared.edges.map(vueFlowEdgeFromClipboardEdge)
+  const newEdges = prepared.edges.map(vueFlowEdgeFromGraphEdge)
   populateConnectedInputsForPastedNodes(newNodes, newEdges)
 
   undoRedo.push(currentVueFlowState())
@@ -2305,26 +2310,30 @@ function selectAll() {
   }
 }
 
-function redoGraphChange() {
-  if (isLocked.value) return
-  const state = undoRedo.redo()
-  if (state) {
+function applyHistoryState(state: { nodes: any[]; edges: any[] }) {
+  isApplyingGraphState = true
+  try {
     setNodes(state.nodes)
     setEdges(state.edges)
     syncGraph(state as any)
     markDirtyAndAutoSave(state)
+  } finally {
+    void nextTick().then(() => {
+      isApplyingGraphState = false
+    })
   }
+}
+
+function redoGraphChange() {
+  if (isLocked.value) return
+  const state = undoRedo.redo()
+  if (state) applyHistoryState(state)
 }
 
 function undoGraphChange() {
   if (isLocked.value) return
   const state = undoRedo.undo()
-  if (state) {
-    setNodes(state.nodes)
-    setEdges(state.edges)
-    syncGraph(state as any)
-    markDirtyAndAutoSave(state)
-  }
+  if (state) applyHistoryState(state)
 }
 
 function handleEditCommandEvent(event: CustomEvent<{ command?: string }>) {
@@ -2421,13 +2430,75 @@ function handleKeydown(event: KeyboardEvent) {
 
 // --- Graph change emission ---
 
-function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
-  lastPublishedParameterSnapshot = parameterStateSnapshot(state.nodes)
+function markDirtyAndAutoSave(
+  state: { nodes: any[]; edges: any[] },
+  graphOverride?: GraphState,
+) {
+  lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(state.nodes)
   const name = owningWorkflowId()
   if (!name) return
-  const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
+  const graph = graphOverride ?? rememberAuthoritativeGraph(
+    serializeGraph(state) as GraphState,
+  )
   uiStore.markCanvasDirty(canvasId)
   queueCanvasPersistence(graph)
+}
+
+function renameNode(nodeId: string, name: string): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data) return false
+  const trimmedName = name.trim()
+  if (!trimmedName || trimmedName === node.data.name) return false
+  if (getNodes.value.some((candidate: any) => (
+    candidate.id !== nodeId && candidate.data?.name === trimmedName
+  ))) return false
+  node.data.name = trimmedName
+  emitGraphChanged()
+  return true
+}
+
+function setNodeEnabled(nodeId: string, enabled: boolean): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data || node.data.enabled === enabled) return false
+  node.data.enabled = enabled
+  emitGraphChanged()
+  return true
+}
+
+function setInputPinned(
+  nodeId: string,
+  input: string,
+  pinned: boolean,
+): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data) return false
+  const nextPinned = input in (node.data.connectedInputs ?? {}) ? true : pinned
+  if (node.data.pinnedInputs?.[input] === nextPinned) return false
+  node.data.pinnedInputs = {
+    ...(node.data.pinnedInputs ?? {}),
+    [input]: nextPinned,
+  }
+  emitGraphChanged()
+  return true
+}
+
+function setOutputTemplate(
+  nodeId: string,
+  output: string,
+  value: string,
+): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data || node.data.output_templates?.[output] === value) return false
+  node.data.output_templates = {
+    ...(node.data.output_templates ?? {}),
+    [output]: value,
+  }
+  emitGraphChanged()
+  return true
 }
 
 function updateNodeParameter(
@@ -2448,10 +2519,19 @@ function updateNodeParameter(
   return true
 }
 
-function emitGraphChanged() {
+function emitGraphChanged(graphOverride?: GraphState) {
   const state = currentVueFlowState()
-  lastPublishedParameterSnapshot = parameterStateSnapshot(state.nodes)
-  undoRedo.push(state)
+  lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(state.nodes)
+  const authoritativeGraph = graphOverride
+    ? rememberAuthoritativeGraph(graphOverride)
+    : null
+  const publishedState = authoritativeGraph
+    ? {
+        ...state,
+        edges: authoritativeGraph.edges.map(vueFlowEdgeFromGraphEdge),
+      }
+    : state
+  undoRedo.push(publishedState)
   // Update the reconciliation node list to match the current graph.
   reconciliationNodes.value = state.nodes.map((n: any) => ({
     id: n.id,
@@ -2479,16 +2559,26 @@ function emitGraphChanged() {
     }
   }
   if (isSubWorkflowEditor && props.subWorkflowSessionId) {
-    syncGraph(state as any)
-    const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
+    if (authoritativeGraph) {
+      syncGraphState(authoritativeGraph)
+    } else {
+      syncGraph(state as any)
+    }
+    const graph = authoritativeGraph ?? rememberAuthoritativeGraph(
+      serializeGraph(state) as GraphState,
+    )
     subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
     uiStore.markCanvasDirty(canvasId)
-    emit('graph-changed', state)
+    emit('graph-changed', publishedState)
     return
   }
-  syncGraph(state as any)
-  markDirtyAndAutoSave(state)
-  emit('graph-changed', state)
+  if (authoritativeGraph) {
+    syncGraphState(authoritativeGraph)
+  } else {
+    syncGraph(state as any)
+  }
+  markDirtyAndAutoSave(state, authoritativeGraph ?? undefined)
+  emit('graph-changed', publishedState)
 }
 
 // Expose for testing
