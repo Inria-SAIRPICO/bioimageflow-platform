@@ -20,6 +20,11 @@ interface ResolvedOutputContext {
   released: boolean
 }
 
+interface ResolvedOutputRequest {
+  nodeId: string
+  requestId: number
+}
+
 const EMPTY_OUTPUTS = Object.freeze({}) as Record<string, NodeOutputSchemaResponse>
 
 function createContext(): ResolvedOutputContext {
@@ -34,8 +39,10 @@ function createContext(): ResolvedOutputContext {
 export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
   const legacyContext = createContext()
   const canvasContexts = shallowReactive(new Map<CanvasId, ResolvedOutputContext>())
+  const releasedCanvasIds = new Set<CanvasId>()
 
-  function contextForCanvas(canvasId: CanvasId): ResolvedOutputContext {
+  function contextForCanvas(canvasId: CanvasId): ResolvedOutputContext | null {
+    if (releasedCanvasIds.has(canvasId)) return null
     const existing = canvasContexts.get(canvasId)
     if (existing) return existing
     const created = createContext()
@@ -66,7 +73,10 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
   function resolvedOutputsForCanvas(
     canvasId: CanvasId,
   ): Record<string, NodeOutputSchemaResponse> {
-    return contextForCanvas(canvasId).outputs
+    releasedCanvasIds.delete(canvasId)
+    const context = contextForCanvas(canvasId)
+    if (context === null) throw new Error(`Could not register canvas '${canvasId}'`)
+    return context.outputs
   }
 
   function getCanvasResolvedOutput(
@@ -103,6 +113,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     nodeId: string,
     graph: SerializedGraph,
     requestId: number,
+    origin?: ResolvedOutputRequest,
   ): Promise<boolean> {
     let result: NodeOutputSchemaResponse
     try {
@@ -110,7 +121,13 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     } catch {
       result = { resolved: false, columns: {} }
     }
-    if (!isCurrentRequest(context, nodeId, requestId)) return false
+    if (
+      !isCurrentRequest(context, nodeId, requestId)
+      || (
+        origin !== undefined
+        && !isCurrentRequest(context, origin.nodeId, origin.requestId)
+      )
+    ) return false
     context.outputs[nodeId] = result
     return true
   }
@@ -124,25 +141,25 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     if (context.released) return
     clearTimer(context, nodeId)
     const requestId = nextRequestId(context, nodeId)
-    context.timers.set(
-      nodeId,
-      setTimeout(async () => {
+    const timer = setTimeout(async () => {
+      if (context.timers.get(nodeId) === timer) {
         context.timers.delete(nodeId)
-        if (!isCurrentRequest(context, nodeId, requestId)) return
-        const raw = getGraph()
-        const graph = serializeGraph(raw)
-        const published = await fetchAndPublish(context, nodeId, graph, requestId)
-        if (!published) return
-        await propagateDownstream(
-          context,
-          nodeId,
-          requestId,
-          raw,
-          graph,
-          getToolForNode,
-        )
-      }, 200),
-    )
+      }
+      if (!isCurrentRequest(context, nodeId, requestId)) return
+      const raw = getGraph()
+      const graph = serializeGraph(raw)
+      const published = await fetchAndPublish(context, nodeId, graph, requestId)
+      if (!published) return
+      await propagateDownstream(
+        context,
+        nodeId,
+        requestId,
+        raw,
+        graph,
+        getToolForNode,
+      )
+    }, 200)
+    context.timers.set(nodeId, timer)
   }
 
   function refreshResolvedOutputs(
@@ -160,7 +177,8 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     getGraph: GraphGetter,
     getToolForNode: ToolGetter,
   ): void {
-    refreshInContext(contextForCanvas(canvasId), nodeId, getGraph, getToolForNode)
+    const context = contextForCanvas(canvasId)
+    if (context) refreshInContext(context, nodeId, getGraph, getToolForNode)
   }
 
   async function propagateDownstream(
@@ -191,7 +209,13 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
         if (targetTool?.dynamic_outputs === true) {
           clearTimer(context, targetId)
           const requestId = nextRequestId(context, targetId)
-          const published = await fetchAndPublish(context, targetId, graph, requestId)
+          const published = await fetchAndPublish(
+            context,
+            targetId,
+            graph,
+            requestId,
+            { nodeId: startNodeId, requestId: startRequestId },
+          )
           if (!isCurrentRequest(context, startNodeId, startRequestId)) return
           if (!published) continue
           queue.push(targetId)
@@ -224,7 +248,10 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     nodeId: string,
     getGraph: GraphGetter,
   ): Promise<void> {
-    return refreshNowInContext(contextForCanvas(canvasId), nodeId, getGraph)
+    const context = contextForCanvas(canvasId)
+    return context
+      ? refreshNowInContext(context, nodeId, getGraph)
+      : Promise.resolve()
   }
 
   function removeNodeFromContext(
@@ -266,6 +293,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
   }
 
   function releaseCanvas(canvasId: CanvasId): void {
+    releasedCanvasIds.add(canvasId)
     const context = existingCanvasContext(canvasId)
     if (!context) return
     context.released = true

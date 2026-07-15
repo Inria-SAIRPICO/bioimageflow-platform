@@ -96,13 +96,22 @@ const NOT_READY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 export const useDataTableStore = defineStore('dataTable', () => {
   const legacyContext = createContext()
   const canvasContexts = shallowReactive(new Map<CanvasId, DataTableContext>())
+  const releasedCanvasIds = new Set<CanvasId>()
 
-  function contextForCanvas(canvasId: CanvasId): DataTableContext {
+  function contextForCanvas(canvasId: CanvasId): DataTableContext | null {
+    if (releasedCanvasIds.has(canvasId)) return null
     const existing = canvasContexts.get(canvasId)
     if (existing) return existing
     const created = createContext()
     canvasContexts.set(canvasId, created)
     return created
+  }
+
+  function registerCanvas(canvasId: CanvasId): void {
+    releasedCanvasIds.delete(canvasId)
+    if (!canvasContexts.has(canvasId)) {
+      canvasContexts.set(canvasId, createContext())
+    }
   }
 
   function existingCanvasContext(canvasId: CanvasId): DataTableContext | null {
@@ -179,17 +188,17 @@ export const useDataTableStore = defineStore('dataTable', () => {
 
     context.state.pending[nodeId] = true
     context.state.errors[nodeId] = null
-    context.retryTimers.set(
-      nodeId,
-      setTimeout(() => {
+    const timer = setTimeout(() => {
+      if (context.retryTimers.get(nodeId) === timer) {
         context.retryTimers.delete(nodeId)
-        if (!isCurrentRequest(context, nodeId, requestId)) return
-        void fetchInContext(context, nodeId, {
-          ...opts,
-          retryAttempt: retryAttempt + 1,
-        })
-      }, delay),
-    )
+      }
+      if (!isCurrentRequest(context, nodeId, requestId)) return
+      void fetchInContext(context, nodeId, {
+        ...opts,
+        retryAttempt: retryAttempt + 1,
+      })
+    }, delay)
+    context.retryTimers.set(nodeId, timer)
   }
 
   async function fetchInContext(
@@ -277,7 +286,8 @@ export const useDataTableStore = defineStore('dataTable', () => {
     nodeId: string,
     opts: FetchOpts = {},
   ): Promise<void> {
-    return fetchInContext(contextForCanvas(canvasId), nodeId, opts)
+    const context = contextForCanvas(canvasId)
+    return context ? fetchInContext(context, nodeId, opts) : Promise.resolve()
   }
 
   function downloadCsv(
@@ -315,6 +325,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
           ...Object.keys(context.state.pending),
           ...context.inflightControllers.keys(),
           ...context.retryTimers.keys(),
+          ...context.requestIds.keys(),
         ]))
     for (const key of keys) {
       invalidateRequest(context, key)
@@ -438,6 +449,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
   }
 
   function releaseCanvas(canvasId: CanvasId): void {
+    releasedCanvasIds.add(canvasId)
     const context = existingCanvasContext(canvasId)
     if (!context) return
     context.released = true
@@ -452,6 +464,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
     loading,
     errors,
     pending,
+    registerCanvas,
     fetchNodeData,
     fetchCanvasNodeData,
     downloadCsv,

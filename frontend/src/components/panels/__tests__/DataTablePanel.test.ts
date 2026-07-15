@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { defineComponent, h, inject, provide, type VNodeChild } from 'vue'
+import { defineComponent, h, inject, nextTick, provide, type VNodeChild } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import DataTablePanel from '../DataTablePanel.vue'
@@ -161,6 +161,75 @@ describe('DataTablePanel', () => {
     await flushPromises()
 
     expect(fetchNodeData).toHaveBeenCalledWith('shared', {
+      toolName: 'files',
+      workflowName: 'a',
+    })
+    wrapper.unmount()
+  })
+
+  it('keeps a queued status refresh bound to the canvas that installed its watcher', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    const graphA = useGraphSync({
+      descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+      getWorkflowId: () => 'a',
+    })
+    const graphB = useGraphSync({
+      descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
+      getWorkflowId: () => 'b',
+    })
+    const graph = {
+      nodes: [{
+        id: 'shared',
+        name: 'Shared node',
+        tool_name: 'files',
+        position: [0, 0] as [number, number],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    graphA.syncGraphState(graph)
+    graphB.syncGraphState(graph)
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+    ui.setCanvasSelectedNodes(canvasA, ['shared'])
+    ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+    ui.setCanvasSelectedNodes(canvasB, ['shared'])
+    const execution = useExecutionStore()
+    execution.nodeStatuses = {
+      shared: { node_id: 'shared', status: 'unexecuted', cached: false },
+    }
+    graphSyncCanvasSessions.activate(canvasA)
+    const store = useDataTableStore()
+    vi.spyOn(store, 'fetchNodeData').mockResolvedValue(undefined)
+    const fetchCanvasNodeData = vi
+      .spyOn(store, 'fetchCanvasNodeData')
+      .mockResolvedValue(undefined)
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: { Button: true, NodeDataTable: true },
+      },
+    })
+    await flushPromises()
+    fetchCanvasNodeData.mockClear()
+
+    execution.applyNodeState({
+      node_id: 'shared',
+      status: 'executed',
+      cached: false,
+    })
+    graphSyncCanvasSessions.activate(canvasB)
+    await nextTick()
+    await flushPromises()
+
+    expect(fetchCanvasNodeData).toHaveBeenCalledWith(canvasA, 'shared', {
       toolName: 'files',
       workflowName: 'a',
     })

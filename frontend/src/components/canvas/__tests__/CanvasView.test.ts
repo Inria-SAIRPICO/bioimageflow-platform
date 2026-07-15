@@ -427,6 +427,7 @@ describe('CanvasView', () => {
     it('publishes and releases cache state against its fixed canvas id', () => {
       const resolvedOutputsStore = useResolvedOutputsStore()
       const dataTableStore = useDataTableStore()
+      const registerDataTable = vi.spyOn(dataTableStore, 'registerCanvas')
       const releaseDataTable = vi.spyOn(dataTableStore, 'releaseCanvas')
       const w = mountCanvas({
         params: {
@@ -439,6 +440,7 @@ describe('CanvasView', () => {
       expect(resolvedOutputsStore.resolvedOutputsForCanvas).toHaveBeenCalledWith(
         'workflow:analysis',
       )
+      expect(registerDataTable).toHaveBeenCalledWith('workflow:analysis')
       w.unmount()
       expect(resolvedOutputsStore.releaseCanvas).toHaveBeenCalledWith('workflow:analysis')
       expect(releaseDataTable).toHaveBeenCalledWith('workflow:analysis')

@@ -8,7 +8,10 @@ import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { NodeState, PublishedOutput } from '@/api/types'
-import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import {
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -53,6 +56,11 @@ interface ResolvedPublishedOutput {
   dataNodeId: string
   column: string
   toolName: string | null
+}
+
+interface DataTableTarget {
+  canvasId: CanvasId | null
+  workflowName: string | null
 }
 
 function isSubWorkflowNode(node: NodeState | null | undefined): boolean {
@@ -160,7 +168,26 @@ function nodeLabel(nodeId: string): string {
   return nodeById.value[nodeId]?.name ?? nodeId
 }
 
-function fetchIfMissing(entry: DataTableEntry) {
+function currentDataTableTarget(): DataTableTarget {
+  return {
+    canvasId: canvasSessionRegistry.activeCanvasId.value,
+    workflowName: activeWorkflowId.value,
+  }
+}
+
+function refreshEntry(entry: DataTableEntry, target: DataTableTarget): void {
+  const options = {
+    toolName: entry.toolName,
+    workflowName: target.workflowName,
+  }
+  if (target.canvasId === null) {
+    void dataTableStore.fetchNodeData(entry.dataNodeId, options)
+  } else {
+    void dataTableStore.fetchCanvasNodeData(target.canvasId, entry.dataNodeId, options)
+  }
+}
+
+function fetchIfMissing(entry: DataTableEntry): void {
   if (!dataTableStore.getNodeData(entry.dataNodeId) && !dataTableStore.isLoading(entry.dataNodeId)) {
     void dataTableStore.fetchNodeData(entry.dataNodeId, {
       toolName: entry.toolName,
@@ -169,11 +196,12 @@ function fetchIfMissing(entry: DataTableEntry) {
   }
 }
 
-function refreshEntry(entry: DataTableEntry) {
-  void dataTableStore.fetchNodeData(entry.dataNodeId, {
-    toolName: entry.toolName,
-    workflowName: activeWorkflowId.value,
-  })
+function clearEntry(entry: DataTableEntry, target: DataTableTarget): void {
+  if (target.canvasId === null) {
+    dataTableStore.clearCache(entry.dataNodeId)
+  } else {
+    dataTableStore.clearCanvasCache(target.canvasId, entry.dataNodeId)
+  }
 }
 
 let scope: EffectScope | null = null
@@ -181,6 +209,7 @@ let scope: EffectScope | null = null
 watch(
   displayedEntries,
   (entries) => {
+    const target = currentDataTableTarget()
     scope?.stop()
     scope = effectScope()
     scope.run(() => {
@@ -190,9 +219,9 @@ watch(
           () => executionStore.nodeStatuses[entry.dataNodeId]?.status,
           (next, prev) => {
             if (prev !== 'executed' && next === 'executed') {
-              refreshEntry(entry)
+              refreshEntry(entry, target)
             } else if (next === 'out_of_date' || next === 'unexecuted') {
-              dataTableStore.clearCache(entry.dataNodeId)
+              clearEntry(entry, target)
             }
           },
         )
@@ -206,13 +235,14 @@ watch(
   () => executionStore.lastResult,
   (result) => {
     if (!result?.success) return
+    const target = currentDataTableTarget()
     const refreshed = new Set<string>()
     for (const entry of displayedEntries.value) {
       if (refreshed.has(entry.dataNodeId)) continue
       const status = result.node_statuses?.[entry.dataNodeId]
       if (status?.status === 'executed') {
         refreshed.add(entry.dataNodeId)
-        refreshEntry(entry)
+        refreshEntry(entry, target)
       }
     }
   },

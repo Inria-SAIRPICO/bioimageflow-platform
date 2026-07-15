@@ -454,7 +454,33 @@ describe('resolvedOutputs store', () => {
     await Promise.resolve()
     await Promise.resolve()
 
+    expect(store.getCanvasResolvedOutput(canvasA, 'cross_1')).toBeUndefined()
     expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('sibling_1', expect.anything())
+  })
+
+  it('does not recreate a released canvas context from delayed fixed-canvas work', async () => {
+    const [canvasA] = registerCanvases()
+    const store = useResolvedOutputsStore()
+    const graph = makeGraph()
+    mockFetchNodeOutputSchema.mockResolvedValue({ resolved: true, columns: {} })
+
+    store.resolvedOutputsForCanvas(canvasA)
+    store.releaseCanvas(canvasA)
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, () => undefined)
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(mockFetchNodeOutputSchema).not.toHaveBeenCalled()
+    expect(store.getCanvasResolvedOutput(canvasA, 'gen_1')).toBeUndefined()
+
+    store.resolvedOutputsForCanvas(canvasA)
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, () => undefined)
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(mockFetchNodeOutputSchema).toHaveBeenCalledTimes(1)
+    expect(store.getCanvasResolvedOutput(canvasA, 'gen_1')).toEqual({
+      resolved: true,
+      columns: {},
+    })
   })
 
   it('does not expose or mutate legacy output state while registered canvases have no active canvas', async () => {

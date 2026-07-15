@@ -117,6 +117,7 @@ const ownedWorkflowDisplayName = ref<string | null>(
 )
 
 // ToolNode must always read the map owned by this mounted canvas.
+dataTableStore.registerCanvas(canvasId)
 const canvasResolvedOutputs = resolvedOutputsStore.resolvedOutputsForCanvas(canvasId)
 provide('bioimageflow:resolvedOutputs', canvasResolvedOutputs)
 

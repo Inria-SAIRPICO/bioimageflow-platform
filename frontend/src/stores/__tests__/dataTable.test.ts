@@ -212,4 +212,26 @@ describe('dataTable store canvas ownership', () => {
     expect(store.getCanvasNodeData(canvasA, 'shared')).toBeUndefined()
     expect(store.getCanvasNodeData(canvasB, 'shared')?.rows[0]?.path).toBe('/b.csv')
   })
+
+  it('does not recreate a released canvas context from a delayed fixed-canvas action', async () => {
+    const [canvasA] = registerCanvases()
+    const store = useDataTableStore()
+    mockedGet.mockResolvedValue({ data: response('/a.csv', 0) } as any)
+
+    await store.fetchCanvasNodeData(canvasA, 'shared', { workflowName: 'a' })
+    store.releaseCanvas(canvasA)
+    await store.fetchCanvasNodeData(canvasA, 'shared', { workflowName: 'a' })
+
+    expect(mockedGet).toHaveBeenCalledTimes(1)
+    expect(store.getCanvasNodeData(canvasA, 'shared')).toBeUndefined()
+
+    store.registerCanvas(canvasA)
+    mockedGet.mockResolvedValueOnce({ data: response('/remounted-a.csv', 0) } as any)
+    await store.fetchCanvasNodeData(canvasA, 'shared', { workflowName: 'a' })
+
+    expect(mockedGet).toHaveBeenCalledTimes(2)
+    expect(store.getCanvasNodeData(canvasA, 'shared')?.rows[0]?.path).toBe(
+      '/remounted-a.csv',
+    )
+  })
 })
