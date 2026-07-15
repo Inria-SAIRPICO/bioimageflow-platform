@@ -44,6 +44,24 @@ function makeThresholdTool(): ToolMetadata {
   })
 }
 
+function makeGraphNode(
+  id: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    name: id,
+    tool_name: 'gaussian_blur',
+    position: [0, 0],
+    parameters: { sigma: 1 },
+    resources: {},
+    output_templates: { result: '' },
+    enabled: true,
+    collapsed: false,
+    ...overrides,
+  }
+}
+
 // --- Mock stores & composables ---
 
 let mockNodes: any[] = []
@@ -56,6 +74,8 @@ let dropNextNonEmptySetEdges = false
 
 const vueFlowMocks = vi.hoisted(() => ({
   instanceIds: [] as Array<string | undefined>,
+  isolateByInstance: false,
+  graphs: new Map<string, { nodes: any[]; edges: any[] }>(),
 }))
 
 vi.mock('@vue-flow/core', () => {
@@ -68,42 +88,54 @@ vi.mock('@vue-flow/core', () => {
     VueFlow,
     useVueFlow: (id?: string) => {
       vueFlowMocks.instanceIds.push(id)
+      const graph = vueFlowMocks.isolateByInstance
+        ? reactive({ nodes: [] as any[], edges: [] as any[] })
+        : null
+      if (graph && id) vueFlowMocks.graphs.set(id, graph)
+      const nodes = () => graph?.nodes ?? mockNodes
+      const edges = () => graph?.edges ?? mockEdges
       return {
       project: (pos: { x: number; y: number }) => pos,
-      addNodes: (nodes: any[]) => { mockNodes.push(...nodes) },
-      addEdges: (edges: any[]) => { mockEdges.push(...edges) },
+      addNodes: (added: any[]) => { nodes().push(...added) },
+      addEdges: (added: any[]) => { edges().push(...added) },
       removeNodes: (ids: string[]) => {
         const idSet = new Set(ids)
-        const kept = mockNodes.filter((n: any) => !idSet.has(n.id))
-        mockNodes.splice(0, mockNodes.length, ...kept)
+        const current = nodes()
+        const kept = current.filter((n: any) => !idSet.has(n.id))
+        current.splice(0, current.length, ...kept)
       },
       removeEdges: (ids: string[]) => {
         const idSet = new Set(ids)
-        const kept = mockEdges.filter((e: any) => !idSet.has(e.id))
-        mockEdges.splice(0, mockEdges.length, ...kept)
+        const current = edges()
+        const kept = current.filter((e: any) => !idSet.has(e.id))
+        current.splice(0, current.length, ...kept)
       },
       // Mutate the array in place so the `computed(() => mockNodes)` ref
       // above keeps the same array identity and downstream consumers see
       // the new contents.
       setNodes: (nodes: any[]) => {
-        mockNodes.splice(0, mockNodes.length, ...nodes)
+        const current = graph?.nodes ?? mockNodes
+        current.splice(0, current.length, ...nodes)
       },
       setEdges: (edges: any[]) => {
         if (dropNextNonEmptySetEdges && edges.length > 0) {
           dropNextNonEmptySetEdges = false
-          mockEdges.splice(0, mockEdges.length)
+          const current = graph?.edges ?? mockEdges
+          current.splice(0, current.length)
           return
         }
-        mockEdges.splice(0, mockEdges.length, ...edges)
+        const current = graph?.edges ?? mockEdges
+        current.splice(0, current.length, ...edges)
       },
       updateEdge: (oldEdge: any, conn: any) => {
-        const idx = mockEdges.findIndex((e: any) => e.id === oldEdge.id)
+        const current = edges()
+        const idx = current.findIndex((e: any) => e.id === oldEdge.id)
         if (idx < 0) return false
-        mockEdges[idx] = { ...mockEdges[idx], ...conn }
-        return mockEdges[idx]
+        current[idx] = { ...current[idx], ...conn }
+        return current[idx]
       },
-      getNodes: computed(() => mockNodes),
-      getEdges: computed(() => mockEdges),
+      getNodes: computed(nodes),
+      getEdges: computed(edges),
       onConnect: (handler: any) => { connectHandler = handler },
       onNodesChange: (handler: any) => { selectionHandler = handler },
       onEdgeUpdate: vi.fn(),
@@ -131,6 +163,7 @@ const graphSyncMocks = vi.hoisted(() => ({
   flushNow: vi.fn(),
   dispose: vi.fn(),
   scopes: [] as any[],
+  apis: [] as any[],
   serializeGraph: vi.fn((state: {
     nodes: any[]
     edges: any[]
@@ -183,6 +216,7 @@ const persistenceMocks = vi.hoisted(() => ({
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
   dispose: vi.fn(),
   scopes: [] as any[],
+  apis: [] as any[],
   isPending: { value: false },
   hasConflict: { value: false },
   currentGraph: { value: { nodes: [], edges: [] } },
@@ -218,6 +252,12 @@ const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(() => Promise.resolve({ data: {} })),
 }))
 
+const toastMocks = vi.hoisted(() => ({ add: vi.fn() }))
+
+vi.mock('primevue/usetoast', () => ({
+  useToast: () => toastMocks,
+}))
+
 vi.mock('@/api/client', () => ({
   api: apiMocks,
 }))
@@ -232,12 +272,17 @@ vi.mock('@/composables/useGraphSync', async () => {
     serializeGraph: graphSyncMocks.serializeGraph,
     useGraphSync: (options?: unknown) => {
       graphSyncMocks.scopes.push(options)
-      return {
+      const scoped = {
         ...graphSyncMocks,
+        syncGraph: vi.fn((...args: any[]) => graphSyncMocks.syncGraph(...args)),
+        syncGraphState: vi.fn((...args: any[]) => graphSyncMocks.syncGraphState(...args)),
+        flushNow: vi.fn((...args: any[]) => graphSyncMocks.flushNow(...args)),
         validationResult: ref(null),
         isPending: ref(false),
         syncState: ref('idle'),
       }
+      graphSyncMocks.apis.push(scoped)
+      return scoped
     },
   }
 })
@@ -245,7 +290,13 @@ vi.mock('@/composables/useGraphSync', async () => {
 vi.mock('@/composables/useCanvasPersistence', () => ({
   useCanvasPersistence: (options?: unknown) => {
     persistenceMocks.scopes.push(options)
-    return persistenceMocks
+    const scoped = {
+      ...persistenceMocks,
+      queueGraph: vi.fn((...args: any[]) => persistenceMocks.queueGraph(...args)),
+      queueDraft: vi.fn((...args: any[]) => persistenceMocks.queueDraft(...args)),
+    }
+    persistenceMocks.apis.push(scoped)
+    return scoped
   },
 }))
 
@@ -289,6 +340,11 @@ import { useWorkflowDraftStore, type WorkflowDraftChangedMessage } from '@/store
 import { useUIStore } from '@/stores/ui'
 import { useDataTableStore } from '@/stores/dataTable'
 import { useExecutionStore } from '@/stores/execution'
+import {
+  __resetForTests as resetFieldFocusForTests,
+  useFieldFocusTracker,
+} from '@/composables/useFieldFocusTracker'
+import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -421,11 +477,16 @@ describe('CanvasView', () => {
     dragStopHandler = null
     dropNextNonEmptySetEdges = false
     vueFlowMocks.instanceIds.length = 0
+    vueFlowMocks.isolateByInstance = false
+    vueFlowMocks.graphs.clear()
+    resetFieldFocusForTests()
+    toastMocks.add.mockClear()
     graphSyncMocks.syncGraph.mockClear()
     graphSyncMocks.syncGraphState.mockClear()
     graphSyncMocks.flushNow.mockClear()
     graphSyncMocks.dispose.mockClear()
     graphSyncMocks.scopes.length = 0
+    graphSyncMocks.apis.length = 0
     graphSyncMocks.serializeGraph.mockClear()
     persistenceMocks.queueGraph.mockClear()
     persistenceMocks.queueDraft.mockClear()
@@ -435,6 +496,7 @@ describe('CanvasView', () => {
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.dispose.mockClear()
     persistenceMocks.scopes.length = 0
+    persistenceMocks.apis.length = 0
     persistenceMocks.isPending.value = false
     canvasCommandMocks.registrations.length = 0
     canvasCommandMocks.dispose.mockClear()
@@ -1110,87 +1172,6 @@ describe('CanvasView', () => {
       w.unmount()
       },
     )
-
-    it('publishes one tool-reload-style parameter replacement outside the command path', async () => {
-      mockNodes = reactive([{
-        id: 'shared',
-        data: {
-          name: 'Reloaded',
-          toolName: 'gaussian_blur',
-          status: 'executed',
-          parameters: { sigma: 1, removed: true },
-        },
-        position: { x: 0, y: 0 },
-      }]) as any[]
-      const w = mountCanvas({
-        params: {
-          panelId: 'workflow:analysis',
-          workflowName: 'analysis',
-          workflowDisplayName: 'Analysis',
-        },
-      })
-      graphSyncMocks.syncGraph.mockClear()
-      persistenceMocks.queueGraph.mockClear()
-
-      mockNodes[0].data.parameters = { sigma: 1 }
-      await nextTick()
-
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
-      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
-        nodes: [expect.objectContaining({
-          id: 'shared',
-          parameters: { sigma: 1 },
-        })],
-      }))
-
-      await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
-      w.unmount()
-      await flushPromises()
-    })
-
-    it('publishes one tool-reload-style output-template replacement outside the command path', async () => {
-      mockNodes = reactive([{
-        id: 'shared',
-        data: {
-          name: 'Reloaded',
-          toolName: 'gaussian_blur',
-          status: 'executed',
-          parameters: { sigma: 1 },
-          output_templates: { result: 'old', removed: 'stale' },
-        },
-        position: { x: 0, y: 0 },
-      }]) as any[]
-      const w = mountCanvas({
-        params: {
-          panelId: 'workflow:analysis',
-          workflowName: 'analysis',
-          workflowDisplayName: 'Analysis',
-        },
-      })
-      graphSyncMocks.syncGraph.mockClear()
-      persistenceMocks.queueGraph.mockClear()
-
-      mockNodes[0].data.output_templates = { result: 'new' }
-      await nextTick()
-
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
-      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
-        nodes: [expect.objectContaining({
-          id: 'shared',
-          output_templates: { result: 'new' },
-        })],
-      }))
-
-      await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
-      w.unmount()
-      await flushPromises()
-    })
 
     it.each(['starting', 'stopping'] as const)(
       'rejects its parameter command while execution is %s',
@@ -2303,6 +2284,337 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('reconciles same-version metadata as a validation-only canvas refresh', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool({ package_version: '1.0.0' })] as any
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+
+      store.tools = [makeTool({
+        package_version: '1.0.0',
+        documentation: 'Reloaded in place',
+      })] as any
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool.documentation).toBe('Reloaded in place')
+      expect(mockNodes[0].data.updatedBadge).toBe(true)
+      expect(mockNodes[0].data.status).toBe('unexecuted')
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+      expect(useUIStore().canvasHasUnsavedChanges(
+        canvasIdFromPanelId('workflow:analysis'),
+      )).toBe(false)
+      w.unmount()
+    })
+
+    it('coalesces reloads and publishes removed parameters and templates once', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool()] as any
+      const edge = {
+        type: 'column_ref' as const,
+        id: 'e1',
+        source_node: 'shared',
+        target_node: 'other',
+        source_output: 'result',
+        target_input: 'image',
+      }
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: {
+            nodes: [
+              makeGraphNode('shared', {
+                parameters: { sigma: 3, removed: 9 },
+                output_templates: { result: 'old.tif' },
+              }),
+              makeGraphNode('other', { position: [120, 0] }),
+            ],
+            edges: [edge],
+          },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+
+      store.tools = [makeTool({ documentation: 'first' })] as any
+      store.tools = [makeTool({ documentation: 'second' })] as any
+      store.tools = [makeTool({
+        documentation: 'latest',
+        inputs: {
+          image: makeTool().inputs.image,
+        },
+        outputs: { count: { type: 'int' } },
+      })] as any
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool.documentation).toBe('latest')
+      expect(mockNodes[0].data.parameters).toEqual({})
+      expect(mockNodes[0].data.output_templates).toEqual({})
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
+        edges: [edge],
+      }))
+      expect(persistence.queueGraph).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'shared',
+            parameters: {},
+            output_templates: {},
+          }),
+        ]),
+        edges: [edge],
+      }))
+
+      await nextTick()
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
+    it('defers and coalesces the latest registry state through all locked phases', async () => {
+      const store = useToolRegistryStore()
+      const execution = useExecutionStore()
+      store.tools = [makeTool()] as any
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+
+      execution.state = 'starting'
+      store.tools = [makeTool({ documentation: 'starting' })] as any
+      await nextTick()
+      execution.state = 'running'
+      store.tools = [makeTool({ documentation: 'running' })] as any
+      await nextTick()
+      execution.state = 'stopping'
+      store.tools = [makeTool({
+        documentation: 'stopping-latest',
+        inputs: { image: makeTool().inputs.image },
+      })] as any
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool.documentation).toBe('')
+      expect(mockNodes[0].data.parameters).toEqual({ sigma: 1 })
+      expect(mockNodes[0].data.updatedBadge).toBeUndefined()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+
+      execution.state = 'idle'
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool.documentation).toBe('stopping-latest')
+      expect(mockNodes[0].data.parameters).toEqual({})
+      expect(mockNodes[0].data.updatedBadge).toBe(true)
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
+    it('reconciles identical node ids independently across mounted canvases', async () => {
+      vueFlowMocks.isolateByInstance = true
+      const store = useToolRegistryStore()
+      store.tools = [makeTool()] as any
+      const graph = { nodes: [makeGraphNode('shared')], edges: [] }
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      const first = mountCanvas({
+        params: {
+          panelId: canvasA,
+          workflowName: 'a',
+          workflowDisplayName: 'A',
+          graph,
+          dirty: false,
+        },
+      })
+      const second = mountCanvas({
+        params: {
+          panelId: canvasB,
+          workflowName: 'b',
+          workflowDisplayName: 'B',
+          graph,
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      const firstGraph = vueFlowMocks.graphs.get(canvasA)!
+      const secondGraph = vueFlowMocks.graphs.get(canvasB)!
+      const focus = useFieldFocusTracker()
+      focus.trackFocus({ canvasId: canvasA, nodeId: 'shared', fieldName: 'sigma' })
+      for (const api of graphSyncMocks.apis) api.syncGraphState.mockClear()
+      for (const api of persistenceMocks.apis) api.queueGraph.mockClear()
+
+      store.tools = [makeTool({
+        documentation: 'scoped reload',
+        inputs: { image: makeTool().inputs.image },
+      })] as any
+      await nextTick()
+      await flushPromises()
+
+      expect(firstGraph.nodes[0].data.tool.documentation).toBe('')
+      expect(firstGraph.nodes[0].data.parameters).toEqual({ sigma: 1 })
+      expect(secondGraph.nodes[0].data.tool.documentation).toBe('scoped reload')
+      expect(secondGraph.nodes[0].data.parameters).toEqual({})
+      expect(graphSyncMocks.apis[0].syncGraphState).not.toHaveBeenCalled()
+      expect(persistenceMocks.apis[0].queueGraph).not.toHaveBeenCalled()
+      expect(graphSyncMocks.apis[1].syncGraphState).toHaveBeenCalledOnce()
+      expect(persistenceMocks.apis[1].queueGraph).toHaveBeenCalledOnce()
+
+      focus.trackBlur({ canvasId: canvasA, nodeId: 'shared', fieldName: 'sigma' })
+      await nextTick()
+      await flushPromises()
+
+      expect(firstGraph.nodes[0].data.tool.documentation).toBe('scoped reload')
+      expect(firstGraph.nodes[0].data.parameters).toEqual({})
+      expect(graphSyncMocks.apis[0].syncGraphState).toHaveBeenCalledOnce()
+      expect(persistenceMocks.apis[0].queueGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.apis[1].syncGraphState).toHaveBeenCalledOnce()
+      expect(persistenceMocks.apis[1].queueGraph).toHaveBeenCalledOnce()
+      expect(toastMocks.add).toHaveBeenCalledWith(expect.objectContaining({
+        detail: expect.stringContaining('sigma'),
+      }))
+      first.unmount()
+      second.unmount()
+    })
+
+    it('uses structured missing-tool state and clears it when the tool reappears', async () => {
+      const store = useToolRegistryStore()
+      const execution = useExecutionStore()
+      store.tools = [makeTool()] as any
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+
+      execution.state = 'starting'
+      store.tools = []
+      window.dispatchEvent(new CustomEvent('bioimageflow:tool-deleted', {
+        detail: { tool_name: 'gaussian_blur' },
+      }))
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool).toEqual(makeTool())
+      expect(mockNodes[0].data.missingTool).toBeNull()
+      expect(mockNodes[0].data.updatedBadge).toBeUndefined()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+
+      execution.state = 'idle'
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool).toBeNull()
+      expect(mockNodes[0].data.missingTool).toEqual({
+        node_id: 'shared',
+        tool_name: 'gaussian_blur',
+        installed_versions: [],
+      })
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+
+      store.tools = [makeTool({ documentation: 'available again' })] as any
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool.documentation).toBe('available again')
+      expect(mockNodes[0].data.missingTool).toBeNull()
+      expect(mockNodes[0].data.updatedBadge).toBe(true)
+      expect(sync.syncGraphState).toHaveBeenCalledTimes(2)
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+      w.unmount()
+    })
+
+    it('defers a tool rename event while locked and publishes the new identity once', async () => {
+      const store = useToolRegistryStore()
+      const execution = useExecutionStore()
+      store.tools = [makeTool()] as any
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+
+      execution.state = 'starting'
+      store.tools = [makeTool({ name: 'gaussian_blur_v2' })] as any
+      window.dispatchEvent(new CustomEvent('bioimageflow:tool-renamed', {
+        detail: { old_name: 'gaussian_blur', new_name: 'gaussian_blur_v2' },
+      }))
+      await nextTick()
+      expect(mockNodes[0].data.toolName).toBe('gaussian_blur')
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+
+      execution.state = 'idle'
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.toolName).toBe('gaussian_blur_v2')
+      expect(mockNodes[0].data.tool.name).toBe('gaussian_blur_v2')
+      expect(mockNodes[0].data.missingTool).toBeNull()
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
     it('reconciles output templates when registry outputs change', async () => {
       const store = useToolRegistryStore()
       store.tools = [makeTool({ package_version: '1.0.0' })] as any
@@ -2514,7 +2826,7 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('marks executed nodes as out_of_date after a version switch', async () => {
+    it('does not optimistically overwrite an authoritative executed status', async () => {
       const store = useToolRegistryStore()
       store.tools = [makeTool({ package_version: '1.0.0' })] as any
 
@@ -2527,7 +2839,7 @@ describe('CanvasView', () => {
       store.tools = [makeTool({ package_version: '2.0.0' })] as any
       await nextTick()
 
-      expect(mockNodes[0].data.status).toBe('out_of_date')
+      expect(mockNodes[0].data.status).toBe('executed')
       w.unmount()
     })
 

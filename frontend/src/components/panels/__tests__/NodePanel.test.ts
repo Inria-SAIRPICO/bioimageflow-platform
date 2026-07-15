@@ -16,6 +16,10 @@ import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
+import {
+  __resetForTests as resetFieldFocusForTests,
+  useFieldFocusTracker,
+} from '@/composables/useFieldFocusTracker'
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
@@ -271,8 +275,43 @@ describe('NodePanel', () => {
     setActivePinia(createPinia())
     _resetGraphSyncForTest()
     _resetCanvasCommandsForTest()
+    resetFieldFocusForTests()
     mountedCanvasIndex = 0
     for (const command of Object.values(nodeEditCommandCalls)) command.mockClear()
+  })
+
+  it('reports parameter focus with the active canvas identity', async () => {
+    const w = mountPanel(makeNodeData())
+    const tracker = useFieldFocusTracker()
+    const canvasId = canvasIdFromPanelId('node-panel:test-0')
+    const sigmaRow = w.findAll('.param-row').find(row => row.text().includes('sigma'))
+
+    expect(sigmaRow).toBeDefined()
+    await sigmaRow!.trigger('focusin')
+    expect(tracker.focusedFields(canvasId, 'node-1')).toEqual([{
+      canvasId,
+      nodeId: 'node-1',
+      fieldName: 'sigma',
+    }])
+
+    await sigmaRow!.trigger('focusout', { relatedTarget: null })
+    expect(tracker.focusedFields(canvasId, 'node-1')).toEqual([])
+    w.unmount()
+  })
+
+  it('clears tracked parameter focus when the selection changes without focusout', async () => {
+    const w = mountPanel(makeNodeData())
+    const tracker = useFieldFocusTracker()
+    const canvasId = canvasIdFromPanelId('node-panel:test-0')
+    const sigmaRow = w.findAll('.param-row').find(row => row.text().includes('sigma'))
+
+    await sigmaRow!.trigger('focusin')
+    expect(tracker.isAnyFocused(canvasId, 'node-1')).toBe(true)
+    useUIStore().setCanvasSelectedNodes(canvasId, [])
+    await w.vm.$nextTick()
+
+    expect(tracker.isAnyFocused(canvasId, 'node-1')).toBe(false)
+    w.unmount()
   })
 
   // --- Empty state ---

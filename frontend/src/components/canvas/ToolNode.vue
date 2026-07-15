@@ -27,11 +27,8 @@ export interface NodeData {
   published_outputs?: PublishedOutput[]
   sub_workflow_readonly_reason?: string | null
   provisional?: boolean
-  // Set by useHotReload when this node's tool source was edited.
-  // Cleared when the user clicks the refresh-icon badge.
+  // Marks refreshed tool metadata; cleared when the user clicks the badge.
   updatedBadge?: boolean
-  // Set by useHotReload when the tool was removed from the registry.
-  toolMissing?: boolean
 }
 
 const props = defineProps<{
@@ -205,7 +202,6 @@ function onDismissBadge(event: MouseEvent) {
         'sub-workflow': isSubWorkflow,
         'readonly-sub-workflow': isSubWorkflow && data.sub_workflow_readonly_reason,
         'missing-tool': data.missingTool,
-        'tool-missing': data.toolMissing,
       },
     ]"
     @contextmenu="onContextMenu"
@@ -458,10 +454,6 @@ function onDismissBadge(event: MouseEvent) {
   background: var(--p-primary-100, var(--p-primary-50));
 }
 
-.tool-missing {
-  border-color: var(--p-red-500);
-  background: var(--bif-danger-surface);
-}
 </style>
 
 <style>
