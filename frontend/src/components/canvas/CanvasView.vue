@@ -906,10 +906,10 @@ function toggleContextNodeEnabled() {
   const menu = nodeContextMenu.value
   if (!menu) return
   const node = getNodes.value.find((n: any) => n.id === menu.nodeId)
-  if (!node?.data) return
-  node.data.enabled = node.data.enabled === false
+  if (node?.data) {
+    setNodeEnabled(menu.nodeId, node.data.enabled === false)
+  }
   closeNodeContextMenu()
-  emitGraphChanged()
 }
 
 function deleteContextNode() {
@@ -1268,10 +1268,12 @@ watch(
       })
     }
     if (changed) {
-      const graph = rememberAuthoritativeGraph(
-        graphWithAuthoritativeEdges(currentVueFlowState()),
-      )
-      syncGraphState(graph)
+      const graph = graphWithAuthoritativeEdges(currentVueFlowState())
+      if (nodeEditStateSnapshot() !== lastPublishedNodeEditSnapshot) {
+        emitGraphChanged(graph)
+      } else {
+        syncGraphState(rememberAuthoritativeGraph(graph))
+      }
     }
   },
   { deep: false },
@@ -1971,7 +1973,7 @@ function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
   }
 }
 
-function vueFlowEdgeFromClipboardEdge(e: ClipboardPayload['edges'][number]) {
+function vueFlowEdgeFromGraphEdge(e: GraphState['edges'][number]) {
   if (e.type === 'positional') {
     return {
       id: e.id,
@@ -2075,7 +2077,7 @@ async function pasteFromClipboard() {
   const newNodes = attachPublicationContextToNodes(
     prepared.nodes.map(vueFlowNodeFromClipboardNode),
   )
-  const newEdges = prepared.edges.map(vueFlowEdgeFromClipboardEdge)
+  const newEdges = prepared.edges.map(vueFlowEdgeFromGraphEdge)
   populateConnectedInputsForPastedNodes(newNodes, newEdges)
 
   undoRedo.push(currentVueFlowState())
@@ -2308,26 +2310,30 @@ function selectAll() {
   }
 }
 
-function redoGraphChange() {
-  if (isLocked.value) return
-  const state = undoRedo.redo()
-  if (state) {
+function applyHistoryState(state: { nodes: any[]; edges: any[] }) {
+  isApplyingGraphState = true
+  try {
     setNodes(state.nodes)
     setEdges(state.edges)
     syncGraph(state as any)
     markDirtyAndAutoSave(state)
+  } finally {
+    void nextTick().then(() => {
+      isApplyingGraphState = false
+    })
   }
+}
+
+function redoGraphChange() {
+  if (isLocked.value) return
+  const state = undoRedo.redo()
+  if (state) applyHistoryState(state)
 }
 
 function undoGraphChange() {
   if (isLocked.value) return
   const state = undoRedo.undo()
-  if (state) {
-    setNodes(state.nodes)
-    setEdges(state.edges)
-    syncGraph(state as any)
-    markDirtyAndAutoSave(state)
-  }
+  if (state) applyHistoryState(state)
 }
 
 function handleEditCommandEvent(event: CustomEvent<{ command?: string }>) {
@@ -2424,11 +2430,16 @@ function handleKeydown(event: KeyboardEvent) {
 
 // --- Graph change emission ---
 
-function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
+function markDirtyAndAutoSave(
+  state: { nodes: any[]; edges: any[] },
+  graphOverride?: GraphState,
+) {
   lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(state.nodes)
   const name = owningWorkflowId()
   if (!name) return
-  const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
+  const graph = graphOverride ?? rememberAuthoritativeGraph(
+    serializeGraph(state) as GraphState,
+  )
   uiStore.markCanvasDirty(canvasId)
   queueCanvasPersistence(graph)
 }
@@ -2508,10 +2519,19 @@ function updateNodeParameter(
   return true
 }
 
-function emitGraphChanged() {
+function emitGraphChanged(graphOverride?: GraphState) {
   const state = currentVueFlowState()
   lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(state.nodes)
-  undoRedo.push(state)
+  const authoritativeGraph = graphOverride
+    ? rememberAuthoritativeGraph(graphOverride)
+    : null
+  const publishedState = authoritativeGraph
+    ? {
+        ...state,
+        edges: authoritativeGraph.edges.map(vueFlowEdgeFromGraphEdge),
+      }
+    : state
+  undoRedo.push(publishedState)
   // Update the reconciliation node list to match the current graph.
   reconciliationNodes.value = state.nodes.map((n: any) => ({
     id: n.id,
@@ -2539,16 +2559,26 @@ function emitGraphChanged() {
     }
   }
   if (isSubWorkflowEditor && props.subWorkflowSessionId) {
-    syncGraph(state as any)
-    const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
+    if (authoritativeGraph) {
+      syncGraphState(authoritativeGraph)
+    } else {
+      syncGraph(state as any)
+    }
+    const graph = authoritativeGraph ?? rememberAuthoritativeGraph(
+      serializeGraph(state) as GraphState,
+    )
     subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
     uiStore.markCanvasDirty(canvasId)
-    emit('graph-changed', state)
+    emit('graph-changed', publishedState)
     return
   }
-  syncGraph(state as any)
-  markDirtyAndAutoSave(state)
-  emit('graph-changed', state)
+  if (authoritativeGraph) {
+    syncGraphState(authoritativeGraph)
+  } else {
+    syncGraph(state as any)
+  }
+  markDirtyAndAutoSave(state, authoritativeGraph ?? undefined)
+  emit('graph-changed', publishedState)
 }
 
 // Expose for testing
