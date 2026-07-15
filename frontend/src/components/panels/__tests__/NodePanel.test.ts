@@ -66,6 +66,10 @@ const nodeEditCommandCalls = {
   setNodeEnabled: vi.fn(),
   setInputPinned: vi.fn(),
   setOutputTemplate: vi.fn(),
+  togglePublishedInput: vi.fn(),
+  togglePublishedOutput: vi.fn(),
+  renamePublishedInput: vi.fn(),
+  renamePublishedOutput: vi.fn(),
 }
 
 function mountPanel(
@@ -119,6 +123,118 @@ function mountPanel(
       if (!node?.data || node.data.output_templates?.[key] === value) return false
       node.data.output_templates = { ...(node.data.output_templates ?? {}), [key]: value }
       return true
+    },
+    togglePublishedInput: (nodeId, key) => {
+      nodeEditCommandCalls.togglePublishedInput(nodeId, key)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      const context = node?.data?.publicationContext ?? node?.data?.subWorkflowContext
+      const field = node?.data?.tool?.inputs?.[key]
+      if (!node?.data || !context || !field) {
+        return { status: 'rejected' as const, reason: 'not_found' as const }
+      }
+      const index = (context.published_inputs ?? []).findIndex((item: any) => (
+        item.internal_node_id === nodeId && item.internal_field === key
+      ))
+      if (index >= 0) {
+        context.published_inputs = context.published_inputs.filter(
+          (_item: any, candidateIndex: number) => candidateIndex !== index,
+        )
+        return { status: 'changed' as const }
+      }
+      const name = `${nodeId}.${key}`
+      const names = [...(context.published_inputs ?? []), ...(context.published_outputs ?? [])]
+        .map((item: any) => item.name)
+      if (names.includes(name)) {
+        return { status: 'rejected' as const, reason: 'duplicate_name' as const, name }
+      }
+      context.published_inputs = [...(context.published_inputs ?? []), {
+        name,
+        internal_node_id: nodeId,
+        internal_field: key,
+        kind: 'input',
+        schema: field,
+        default: node.data.parameters?.[key] ?? field.default ?? null,
+      }]
+      return { status: 'changed' as const }
+    },
+    togglePublishedOutput: (nodeId, key) => {
+      nodeEditCommandCalls.togglePublishedOutput(nodeId, key)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      const context = node?.data?.publicationContext ?? node?.data?.subWorkflowContext
+      const field = node?.data?.tool?.outputs?.[key]
+      if (!node?.data || !context || !field) {
+        return { status: 'rejected' as const, reason: 'not_found' as const }
+      }
+      const index = (context.published_outputs ?? []).findIndex((item: any) => (
+        item.internal_node_id === nodeId && item.internal_output === key
+      ))
+      if (index >= 0) {
+        context.published_outputs = context.published_outputs.filter(
+          (_item: any, candidateIndex: number) => candidateIndex !== index,
+        )
+        return { status: 'changed' as const }
+      }
+      const name = `${nodeId}.${key}`
+      const names = [...(context.published_inputs ?? []), ...(context.published_outputs ?? [])]
+        .map((item: any) => item.name)
+      if (names.includes(name)) {
+        return { status: 'rejected' as const, reason: 'duplicate_name' as const, name }
+      }
+      context.published_outputs = [...(context.published_outputs ?? []), {
+        name,
+        internal_node_id: nodeId,
+        internal_output: key,
+        schema: field,
+      }]
+      return { status: 'changed' as const }
+    },
+    renamePublishedInput: (nodeId, key, value) => {
+      nodeEditCommandCalls.renamePublishedInput(nodeId, key, value)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      const context = node?.data?.publicationContext ?? node?.data?.subWorkflowContext
+      const index = (context?.published_inputs ?? []).findIndex((item: any) => (
+        item.internal_node_id === nodeId && item.internal_field === key
+      )) ?? -1
+      if (!context || index < 0) {
+        return { status: 'rejected' as const, reason: 'not_found' as const }
+      }
+      const next = value.trim()
+      if (!next) return { status: 'rejected' as const, reason: 'empty_name' as const }
+      const current = context.published_inputs[index]
+      if (current.name === next) return { status: 'unchanged' as const }
+      const duplicate = [...context.published_inputs, ...(context.published_outputs ?? [])]
+        .some((item: any) => item !== current && item.name === next)
+      if (duplicate) {
+        return { status: 'rejected' as const, reason: 'duplicate_name' as const, name: next }
+      }
+      context.published_inputs = context.published_inputs.map((item: any, itemIndex: number) => (
+        itemIndex === index ? { ...item, name: next } : item
+      ))
+      return { status: 'changed' as const }
+    },
+    renamePublishedOutput: (nodeId, key, value) => {
+      nodeEditCommandCalls.renamePublishedOutput(nodeId, key, value)
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      const context = node?.data?.publicationContext ?? node?.data?.subWorkflowContext
+      const index = (context?.published_outputs ?? []).findIndex((item: any) => (
+        item.internal_node_id === nodeId && item.internal_output === key
+      )) ?? -1
+      if (!context || index < 0) {
+        return { status: 'rejected' as const, reason: 'not_found' as const }
+      }
+      const next = value.trim()
+      if (!next) return { status: 'rejected' as const, reason: 'empty_name' as const }
+      const current = context.published_outputs[index]
+      if (current.name === next) return { status: 'unchanged' as const }
+      const duplicate = [...(context.published_inputs ?? []), ...context.published_outputs]
+        .some((item: any) => item !== current && item.name === next)
+      if (duplicate) {
+        return { status: 'rejected' as const, reason: 'duplicate_name' as const, name: next }
+      }
+      context.published_outputs = context.published_outputs.map((item: any, itemIndex: number) => (
+        itemIndex === index ? { ...item, name: next } : item
+      ))
+      return { status: 'changed' as const }
     },
     updateParameter: (nodeId, key, value) => {
       const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
@@ -546,6 +662,10 @@ describe('NodePanel', () => {
       await inputButtons[0].trigger('click')
       await w.vm.$nextTick()
 
+      expect(nodeEditCommandCalls.togglePublishedInput).toHaveBeenCalledWith(
+        'node-1',
+        'image',
+      )
       expect((data as any).publicationContext.published_inputs).toEqual([
         expect.objectContaining({
           name: 'node-1.image',
@@ -575,6 +695,11 @@ describe('NodePanel', () => {
       await imageButton.trigger('click')
       await w.vm.$nextTick()
 
+      expect(nodeEditCommandCalls.togglePublishedInput).toHaveBeenCalledWith(
+        'node-1',
+        'image',
+      )
+
       expect((data as any).subWorkflowContext.published_inputs).toEqual([
         expect.objectContaining({
           name: 'node-1.image',
@@ -588,6 +713,7 @@ describe('NodePanel', () => {
       expect(w.find('[data-testid="published-input-name-image"]').exists()).toBe(true)
 
       await imageButton.trigger('click')
+      expect(nodeEditCommandCalls.togglePublishedInput).toHaveBeenCalledTimes(2)
       expect((data as any).subWorkflowContext.published_inputs).toEqual([])
     })
 
@@ -610,8 +736,101 @@ describe('NodePanel', () => {
 
       await w.find('[data-testid="publish-output-toggle-result"]').trigger('click')
 
+      expect(nodeEditCommandCalls.togglePublishedOutput).toHaveBeenCalledWith(
+        'node-1',
+        'result',
+      )
       expect((data as any).subWorkflowContext.published_outputs).toEqual([])
       expect(w.find('[data-testid="publish-name-error"]').text()).toContain('already used')
+    })
+
+    it('routes published names and surfaces duplicate and empty-name results', async () => {
+      const data = makeNodeData({
+        publicationContext: {
+          published_inputs: [{
+            name: 'input_image',
+            internal_node_id: 'node-1',
+            internal_field: 'image',
+            kind: 'input',
+            schema: {},
+            default: null,
+          }],
+          published_outputs: [{
+            name: 'result_path',
+            internal_node_id: 'node-1',
+            internal_output: 'result',
+            schema: {},
+          }],
+        },
+      })
+      const w = mountPanel(data)
+      const inputName = w.find('[data-testid="published-input-name-image"]')
+      const outputName = w.find('[data-testid="published-output-name-result"]')
+
+      await inputName.setValue('  source_image  ')
+      await w.vm.$nextTick()
+      expect(nodeEditCommandCalls.renamePublishedInput).toHaveBeenCalledWith(
+        'node-1',
+        'image',
+        '  source_image  ',
+      )
+      expect((data as any).publicationContext.published_inputs[0].name)
+        .toBe('source_image')
+      expect(w.find('[data-testid="publish-name-error"]').exists()).toBe(false)
+
+      await outputName.setValue('source_image')
+      await w.vm.$nextTick()
+      expect(nodeEditCommandCalls.renamePublishedOutput).toHaveBeenCalledWith(
+        'node-1',
+        'result',
+        'source_image',
+      )
+      expect((data as any).publicationContext.published_outputs[0].name)
+        .toBe('result_path')
+      expect(w.find('[data-testid="publish-name-error"]').text()).toContain('already used')
+
+      await outputName.setValue('   ')
+      await w.vm.$nextTick()
+      expect(w.find('[data-testid="publish-name-error"]').text()).toContain('cannot be empty')
+
+      await outputName.setValue('renamed_result')
+      await w.vm.$nextTick()
+      expect((data as any).publicationContext.published_outputs[0].name)
+        .toBe('renamed_result')
+      expect(w.find('[data-testid="publish-name-error"]').exists()).toBe(false)
+    })
+
+    it('disables publication toggles and names while execution is running', async () => {
+      const data = makeNodeData({
+        publicationContext: {
+          published_inputs: [{
+            name: 'input_image',
+            internal_node_id: 'node-1',
+            internal_field: 'image',
+            kind: 'input',
+            schema: {},
+            default: null,
+          }],
+          published_outputs: [{
+            name: 'result_path',
+            internal_node_id: 'node-1',
+            internal_output: 'result',
+            schema: {},
+          }],
+        },
+      })
+      const w = mountPanel(data, true)
+      await w.vm.$nextTick()
+
+      for (const toggle of w.findAll('.publish-toggle-btn')) {
+        expect(toggle.attributes('disabled')).toBeDefined()
+      }
+      expect(
+        w.find('[data-testid="published-input-name-image"]').attributes('disabled'),
+      ).toBeDefined()
+      expect(
+        w.find('[data-testid="published-output-name-result"]').attributes('disabled'),
+      ).toBeDefined()
     })
   })
 

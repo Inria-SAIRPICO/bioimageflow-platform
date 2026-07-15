@@ -9,6 +9,23 @@ const CANVAS_COMMAND_RESOURCE = 'canvas-commands'
 
 export type CanvasSaveRoute = 'root' | 'nested' | 'legacy' | 'unavailable'
 
+export type CanvasPublicationRejectionReason =
+  | 'duplicate_name'
+  | 'empty_name'
+  | 'locked'
+  | 'not_found'
+  | 'not_publishable'
+  | 'unavailable'
+
+export type CanvasPublicationCommandResult =
+  | { status: 'changed' }
+  | { status: 'unchanged' }
+  | {
+      status: 'rejected'
+      reason: CanvasPublicationRejectionReason
+      name?: string
+    }
+
 export interface CanvasScopedCommandsOptions {
   descriptor: CanvasSessionDescriptor
   save?: () => void | Promise<void>
@@ -16,6 +33,24 @@ export interface CanvasScopedCommandsOptions {
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
+  togglePublishedInput: (
+    nodeId: string,
+    input: string,
+  ) => CanvasPublicationCommandResult
+  togglePublishedOutput: (
+    nodeId: string,
+    output: string,
+  ) => CanvasPublicationCommandResult
+  renamePublishedInput: (
+    nodeId: string,
+    input: string,
+    name: string,
+  ) => CanvasPublicationCommandResult
+  renamePublishedOutput: (
+    nodeId: string,
+    output: string,
+    name: string,
+  ) => CanvasPublicationCommandResult
   updateParameter: (nodeId: string, key: string, value: unknown) => boolean
 }
 
@@ -25,6 +60,18 @@ export interface CanvasCommandsApi {
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
+  togglePublishedInput(nodeId: string, input: string): CanvasPublicationCommandResult
+  togglePublishedOutput(nodeId: string, output: string): CanvasPublicationCommandResult
+  renamePublishedInput(
+    nodeId: string,
+    input: string,
+    name: string,
+  ): CanvasPublicationCommandResult
+  renamePublishedOutput(
+    nodeId: string,
+    output: string,
+    name: string,
+  ): CanvasPublicationCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
   dispose(): void
 }
@@ -35,6 +82,18 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
+  togglePublishedInput(nodeId: string, input: string): CanvasPublicationCommandResult
+  togglePublishedOutput(nodeId: string, output: string): CanvasPublicationCommandResult
+  renamePublishedInput(
+    nodeId: string,
+    input: string,
+    name: string,
+  ): CanvasPublicationCommandResult
+  renamePublishedOutput(
+    nodeId: string,
+    output: string,
+    name: string,
+  ): CanvasPublicationCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
 }
 
@@ -76,6 +135,18 @@ export function useCanvasCommands(
     setOutputTemplate: (nodeId, output, value) => (
       resource.setOutputTemplate(nodeId, output, value)
     ),
+    togglePublishedInput: (nodeId, input) => (
+      resource.togglePublishedInput(nodeId, input)
+    ),
+    togglePublishedOutput: (nodeId, output) => (
+      resource.togglePublishedOutput(nodeId, output)
+    ),
+    renamePublishedInput: (nodeId, input, name) => (
+      resource.renamePublishedInput(nodeId, input, name)
+    ),
+    renamePublishedOutput: (nodeId, output, name) => (
+      resource.renamePublishedOutput(nodeId, output, name)
+    ),
     updateParameter: (nodeId, key, value) => (
       resource.updateParameter(nodeId, key, value)
     ),
@@ -116,6 +187,22 @@ function createCommandResource(
     setOutputTemplate: (nodeId, output, value) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.setOutputTemplate(nodeId, output, value)
+    },
+    togglePublishedInput: (nodeId, input) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.togglePublishedInput(nodeId, input)
+    },
+    togglePublishedOutput: (nodeId, output) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.togglePublishedOutput(nodeId, output)
+    },
+    renamePublishedInput: (nodeId, input, name) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.renamePublishedInput(nodeId, input, name)
+    },
+    renamePublishedOutput: (nodeId, output, name) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.renamePublishedOutput(nodeId, output, name)
     },
     updateParameter: (nodeId, key, value) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
@@ -159,6 +246,22 @@ function createActiveFacade(): CanvasCommandsApi {
     setOutputTemplate: (nodeId, output, value) => (
       activeCommandResource()?.setOutputTemplate(nodeId, output, value) ?? false
     ),
+    togglePublishedInput: (nodeId, input) => (
+      activeCommandResource()?.togglePublishedInput(nodeId, input)
+      ?? publicationUnavailable()
+    ),
+    togglePublishedOutput: (nodeId, output) => (
+      activeCommandResource()?.togglePublishedOutput(nodeId, output)
+      ?? publicationUnavailable()
+    ),
+    renamePublishedInput: (nodeId, input, name) => (
+      activeCommandResource()?.renamePublishedInput(nodeId, input, name)
+      ?? publicationUnavailable()
+    ),
+    renamePublishedOutput: (nodeId, output, name) => (
+      activeCommandResource()?.renamePublishedOutput(nodeId, output, name)
+      ?? publicationUnavailable()
+    ),
     updateParameter: (nodeId, key, value) => {
       return activeCommandResource()?.updateParameter(nodeId, key, value) ?? false
     },
@@ -177,4 +280,8 @@ function activeCommandResource(): CanvasCommandResource | undefined {
     activeCanvasId,
     CANVAS_COMMAND_RESOURCE,
   ) ?? undefined
+}
+
+function publicationUnavailable(): CanvasPublicationCommandResult {
+  return { status: 'rejected', reason: 'unavailable' }
 }

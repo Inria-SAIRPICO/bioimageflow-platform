@@ -6,22 +6,26 @@ import {
 import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 import { graphSyncCanvasSessions } from '../useGraphSync'
 
-function makeNodeEditHandlers() {
+function makeCanvasCommandHandlers() {
   return {
     renameNode: vi.fn(() => true),
     setNodeEnabled: vi.fn(() => true),
     setInputPinned: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
+    togglePublishedInput: vi.fn(() => ({ status: 'changed' as const })),
+    togglePublishedOutput: vi.fn(() => ({ status: 'changed' as const })),
+    renamePublishedInput: vi.fn(() => ({ status: 'changed' as const })),
+    renamePublishedOutput: vi.fn(() => ({ status: 'changed' as const })),
   }
 }
 
 type CanvasCommands = ReturnType<typeof useCanvasCommands>
-type NodeEditHandlers = ReturnType<typeof makeNodeEditHandlers>
+type CommandHandlers = ReturnType<typeof makeCanvasCommandHandlers>
 
 const nodeEditCases: Array<{
   name: string
   invoke: (commands: CanvasCommands) => boolean
-  spy: (handlers: NodeEditHandlers) => ReturnType<typeof vi.fn>
+  spy: (handlers: CommandHandlers) => ReturnType<typeof vi.fn>
   expectedArgs: unknown[]
 }> = [
   {
@@ -50,6 +54,38 @@ const nodeEditCases: Array<{
   },
 ]
 
+const publicationCases: Array<{
+  name: string
+  invoke: (commands: CanvasCommands) => unknown
+  spy: (handlers: CommandHandlers) => ReturnType<typeof vi.fn>
+  expectedArgs: unknown[]
+}> = [
+  {
+    name: 'input publication toggle',
+    invoke: commands => commands.togglePublishedInput('shared', 'image'),
+    spy: handlers => handlers.togglePublishedInput,
+    expectedArgs: ['shared', 'image'],
+  },
+  {
+    name: 'output publication toggle',
+    invoke: commands => commands.togglePublishedOutput('shared', 'result'),
+    spy: handlers => handlers.togglePublishedOutput,
+    expectedArgs: ['shared', 'result'],
+  },
+  {
+    name: 'published input rename',
+    invoke: commands => commands.renamePublishedInput('shared', 'image', 'source'),
+    spy: handlers => handlers.renamePublishedInput,
+    expectedArgs: ['shared', 'image', 'source'],
+  },
+  {
+    name: 'published output rename',
+    invoke: commands => commands.renamePublishedOutput('shared', 'result', 'mask'),
+    spy: handlers => handlers.renamePublishedOutput,
+    expectedArgs: ['shared', 'result', 'mask'],
+  },
+]
+
 afterEach(() => {
   _resetCanvasCommandsForTest()
 })
@@ -65,7 +101,7 @@ describe('active canvas commands', () => {
         canvasId: rootId,
         workflowId: 'root',
       },
-      ...makeNodeEditHandlers(),
+      ...makeCanvasCommandHandlers(),
       updateParameter: vi.fn(),
     })
     useCanvasCommands({
@@ -76,7 +112,7 @@ describe('active canvas commands', () => {
         parentCanvasId: rootId,
       },
       save: saveNested,
-      ...makeNodeEditHandlers(),
+      ...makeCanvasCommandHandlers(),
       updateParameter: vi.fn(),
     })
     const active = useCanvasCommands()
@@ -95,7 +131,7 @@ describe('active canvas commands', () => {
         canvasId: rootId,
         workflowId: 'root',
       },
-      ...makeNodeEditHandlers(),
+      ...makeCanvasCommandHandlers(),
       updateParameter: vi.fn(),
     })
     const active = useCanvasCommands()
@@ -117,7 +153,7 @@ describe('active canvas commands', () => {
         canvasId: rootId,
         workflowId: 'root',
       },
-      ...makeNodeEditHandlers(),
+      ...makeCanvasCommandHandlers(),
       updateParameter: updateRoot,
     })
     useCanvasCommands({
@@ -128,7 +164,7 @@ describe('active canvas commands', () => {
         parentCanvasId: rootId,
       },
       save: vi.fn(),
-      ...makeNodeEditHandlers(),
+      ...makeCanvasCommandHandlers(),
       updateParameter: updateNested,
     })
     const active = useCanvasCommands()
@@ -148,8 +184,8 @@ describe('active canvas commands', () => {
     ({ invoke, spy, expectedArgs }) => {
       const rootId = canvasIdFromPanelId('workflow:root')
       const nestedId = canvasIdFromPanelId('sub-workflow:nested')
-      const rootHandlers = makeNodeEditHandlers()
-      const nestedHandlers = makeNodeEditHandlers()
+      const rootHandlers = makeCanvasCommandHandlers()
+      const nestedHandlers = makeCanvasCommandHandlers()
       const root = useCanvasCommands({
         descriptor: {
           kind: 'root',
@@ -182,6 +218,45 @@ describe('active canvas commands', () => {
     },
   )
 
+  it.each(publicationCases)(
+    'routes $name only to the explicitly active canvas with shared node ids',
+    ({ invoke, spy, expectedArgs }) => {
+      const rootId = canvasIdFromPanelId('workflow:root')
+      const nestedId = canvasIdFromPanelId('sub-workflow:nested')
+      const rootHandlers = makeCanvasCommandHandlers()
+      const nestedHandlers = makeCanvasCommandHandlers()
+      const root = useCanvasCommands({
+        descriptor: {
+          kind: 'root',
+          canvasId: rootId,
+          workflowId: 'root',
+        },
+        ...rootHandlers,
+        updateParameter: vi.fn(() => true),
+      })
+      useCanvasCommands({
+        descriptor: {
+          kind: 'nested',
+          canvasId: nestedId,
+          sessionId: 'nested',
+          parentCanvasId: rootId,
+        },
+        save: vi.fn(),
+        ...nestedHandlers,
+        updateParameter: vi.fn(() => true),
+      })
+
+      graphSyncCanvasSessions.activate(nestedId)
+      expect(invoke(useCanvasCommands())).toEqual({ status: 'changed' })
+      expect(spy(nestedHandlers)).toHaveBeenCalledWith(...expectedArgs)
+      expect(spy(rootHandlers)).not.toHaveBeenCalled()
+
+      expect(invoke(root)).toEqual({ status: 'changed' })
+      expect(spy(rootHandlers)).toHaveBeenCalledWith(...expectedArgs)
+      expect(spy(nestedHandlers)).toHaveBeenCalledOnce()
+    },
+  )
+
   it('does not infer a parameter target when sessions exist without an active canvas', () => {
     const rootId = canvasIdFromPanelId('workflow:root')
     const updateParameter = vi.fn(() => true)
@@ -191,7 +266,7 @@ describe('active canvas commands', () => {
         canvasId: rootId,
         workflowId: 'root',
       },
-      ...makeNodeEditHandlers(),
+      ...makeCanvasCommandHandlers(),
       updateParameter,
     })
 
@@ -203,7 +278,7 @@ describe('active canvas commands', () => {
     'does not infer a $name target when sessions exist without an active canvas',
     ({ invoke, spy }) => {
       const rootId = canvasIdFromPanelId('workflow:root')
-      const handlers = makeNodeEditHandlers()
+      const handlers = makeCanvasCommandHandlers()
       useCanvasCommands({
         descriptor: {
           kind: 'root',
@@ -219,6 +294,29 @@ describe('active canvas commands', () => {
     },
   )
 
+  it.each(publicationCases)(
+    'rejects $name when sessions exist without an active canvas',
+    ({ invoke, spy }) => {
+      const rootId = canvasIdFromPanelId('workflow:root')
+      const handlers = makeCanvasCommandHandlers()
+      useCanvasCommands({
+        descriptor: {
+          kind: 'root',
+          canvasId: rootId,
+          workflowId: 'root',
+        },
+        ...handlers,
+        updateParameter: vi.fn(() => true),
+      })
+
+      expect(invoke(useCanvasCommands())).toEqual({
+        status: 'rejected',
+        reason: 'unavailable',
+      })
+      expect(spy(handlers)).not.toHaveBeenCalled()
+    },
+  )
+
   it('rejects late calls through a disposed fixed-canvas resource', () => {
     const rootId = canvasIdFromPanelId('workflow:root')
     const updateParameter = vi.fn(() => true)
@@ -228,7 +326,7 @@ describe('active canvas commands', () => {
         canvasId: rootId,
         workflowId: 'root',
       },
-      ...makeNodeEditHandlers(),
+      ...makeCanvasCommandHandlers(),
       updateParameter,
     })
 
@@ -244,7 +342,29 @@ describe('active canvas commands', () => {
     'rejects late $name calls through a disposed fixed-canvas resource',
     ({ invoke, spy }) => {
       const rootId = canvasIdFromPanelId('workflow:root')
-      const handlers = makeNodeEditHandlers()
+      const handlers = makeCanvasCommandHandlers()
+      const fixed = useCanvasCommands({
+        descriptor: {
+          kind: 'root',
+          canvasId: rootId,
+          workflowId: 'root',
+        },
+        ...handlers,
+        updateParameter: vi.fn(() => true),
+      })
+
+      fixed.dispose()
+
+      expect(() => invoke(fixed)).toThrow('Canvas commands have been disposed')
+      expect(spy(handlers)).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(publicationCases)(
+    'rejects late $name calls through a disposed fixed-canvas resource',
+    ({ invoke, spy }) => {
+      const rootId = canvasIdFromPanelId('workflow:root')
+      const handlers = makeCanvasCommandHandlers()
       const fixed = useCanvasCommands({
         descriptor: {
           kind: 'root',

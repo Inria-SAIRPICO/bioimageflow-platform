@@ -13,7 +13,10 @@ import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
-import { useCanvasCommands } from '@/composables/useCanvasCommands'
+import {
+  useCanvasCommands,
+  type CanvasPublicationCommandResult,
+} from '@/composables/useCanvasCommands'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
 import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
@@ -241,23 +244,6 @@ function selectedInternalNodeId(): string {
   return selectedNode.value?.id ?? ''
 }
 
-function usedPublishedNames(except?: string): Set<string> {
-  const ctx = publicationContext.value
-  const used = new Set<string>()
-  if (!ctx) return used
-  for (const item of [
-    ...(ctx.published_inputs ?? []),
-    ...(ctx.published_outputs ?? []),
-  ]) {
-    if (item.name !== except) used.add(item.name)
-  }
-  return used
-}
-
-function defaultPublishedName(fieldName: string): string {
-  return `${selectedInternalNodeId()}.${fieldName}`
-}
-
 function inputPublishIndex(fieldName: string): number {
   const ctx = publicationContext.value
   if (!ctx) return -1
@@ -282,84 +268,44 @@ function isOutputPublished(outputName: string): boolean {
   return outputPublishIndex(outputName) >= 0
 }
 
-function togglePublishInput(fieldName: string, field: InputFieldSchema) {
-  const ctx = publicationContext.value
-  if (!ctx || !nodeData.value || !canConnect(field)) return
-  publishNameError.value = null
-  ctx.published_inputs ??= []
-  const existingIndex = inputPublishIndex(fieldName)
-  if (existingIndex >= 0) {
-    ctx.published_inputs.splice(existingIndex, 1)
+function applyPublicationResult(result: CanvasPublicationCommandResult): void {
+  if (result.status === 'rejected' && result.reason === 'duplicate_name') {
+    publishNameError.value = `Published name '${result.name ?? ''}' is already used.`
     return
   }
+  if (result.status === 'rejected' && result.reason === 'empty_name') {
+    publishNameError.value = 'Published name cannot be empty.'
+    return
+  }
+  if (result.status !== 'rejected') publishNameError.value = null
+}
 
-  const name = defaultPublishedName(fieldName)
-  if (usedPublishedNames().has(name)) {
-    publishNameError.value = `Published name '${name}' is already used.`
-    return
-  }
-  ctx.published_inputs.push({
-    name,
-    internal_node_id: selectedInternalNodeId(),
-    internal_field: fieldName,
-    kind: 'input',
-    schema: field,
-    default: nodeData.value.parameters?.[fieldName] ?? field.default ?? null,
-  })
+function togglePublishInput(fieldName: string) {
+  const nodeId = selectedNode.value?.id
+  if (!nodeId) return
+  applyPublicationResult(canvasCommands.togglePublishedInput(nodeId, fieldName))
 }
 
 function updatePublishedInputName(fieldName: string, value: string) {
-  const ctx = publicationContext.value
-  if (!ctx) return
-  const index = inputPublishIndex(fieldName)
-  if (index < 0) return
-  const next = value.trim()
-  if (!next) return
-  if (usedPublishedNames(ctx.published_inputs[index].name).has(next)) {
-    publishNameError.value = `Published name '${next}' is already used.`
-    return
-  }
-  publishNameError.value = null
-  ctx.published_inputs[index].name = next
+  const nodeId = selectedNode.value?.id
+  if (!nodeId) return
+  applyPublicationResult(
+    canvasCommands.renamePublishedInput(nodeId, fieldName, value),
+  )
 }
 
-function togglePublishOutput(outputName: string, field: OutputFieldSchema) {
-  const ctx = publicationContext.value
-  if (!ctx) return
-  publishNameError.value = null
-  ctx.published_outputs ??= []
-  const existingIndex = outputPublishIndex(outputName)
-  if (existingIndex >= 0) {
-    ctx.published_outputs.splice(existingIndex, 1)
-    return
-  }
-
-  const name = defaultPublishedName(outputName)
-  if (usedPublishedNames().has(name)) {
-    publishNameError.value = `Published name '${name}' is already used.`
-    return
-  }
-  ctx.published_outputs.push({
-    name,
-    internal_node_id: selectedInternalNodeId(),
-    internal_output: outputName,
-    schema: field,
-  })
+function togglePublishOutput(outputName: string) {
+  const nodeId = selectedNode.value?.id
+  if (!nodeId) return
+  applyPublicationResult(canvasCommands.togglePublishedOutput(nodeId, outputName))
 }
 
 function updatePublishedOutputName(outputName: string, value: string) {
-  const ctx = publicationContext.value
-  if (!ctx) return
-  const index = outputPublishIndex(outputName)
-  if (index < 0) return
-  const next = value.trim()
-  if (!next) return
-  if (usedPublishedNames(ctx.published_outputs[index].name).has(next)) {
-    publishNameError.value = `Published name '${next}' is already used.`
-    return
-  }
-  publishNameError.value = null
-  ctx.published_outputs[index].name = next
+  const nodeId = selectedNode.value?.id
+  if (!nodeId) return
+  applyPublicationResult(
+    canvasCommands.renamePublishedOutput(nodeId, outputName, value),
+  )
 }
 
 async function pickFile(key: string, type: string) {
@@ -471,9 +417,10 @@ async function pickFolder(key: string) {
               v-if="publicationContext && canConnect(field as InputFieldSchema)"
               :icon="isInputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
               class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
+              :disabled="isNodeEditingDisabled"
               :title="isInputPublished(key) ? 'Unpublish input' : 'Publish input'"
               :aria-pressed="isInputPublished(key)"
-              @click="togglePublishInput(key, field as InputFieldSchema)"
+              @click="togglePublishInput(key)"
               data-testid="publish-input-toggle"
             />
             <!-- Pin visibility toggle (icon-only, before the label) -->
@@ -520,6 +467,7 @@ async function pickFolder(key: string) {
             v-if="publicationContext && isInputPublished(key)"
             :model-value="publicationContext.published_inputs[inputPublishIndex(key)].name"
             class="published-name-input"
+            :disabled="isNodeEditingDisabled"
             :data-testid="`published-input-name-${key}`"
             @update:model-value="updatePublishedInputName(key, $event as string)"
           />
@@ -668,10 +616,11 @@ async function pickFolder(key: string) {
               v-if="publicationContext"
               :icon="isOutputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
               class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
+              :disabled="isNodeEditingDisabled"
               :title="isOutputPublished(key) ? 'Unpublish output' : 'Publish output'"
               :aria-pressed="isOutputPublished(key)"
               :data-testid="`publish-output-toggle-${key}`"
-              @click="togglePublishOutput(key, field as OutputFieldSchema)"
+              @click="togglePublishOutput(key)"
             />
             <span class="output-name">{{ key }}</span>
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
@@ -680,6 +629,7 @@ async function pickFolder(key: string) {
             v-if="publicationContext && isOutputPublished(key)"
             :model-value="publicationContext.published_outputs[outputPublishIndex(key)].name"
             class="published-name-input"
+            :disabled="isNodeEditingDisabled"
             :data-testid="`published-output-name-${key}`"
             @update:model-value="updatePublishedOutputName(key, $event as string)"
           />

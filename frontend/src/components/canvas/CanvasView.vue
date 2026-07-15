@@ -21,7 +21,11 @@ import {
 import { useUndoRedo } from '@/composables/useUndoRedo'
 import { serializeGraph, useGraphSync } from '@/composables/useGraphSync'
 import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
-import { useCanvasCommands } from '@/composables/useCanvasCommands'
+import {
+  useCanvasCommands,
+  type CanvasPublicationCommandResult,
+  type CanvasPublicationRejectionReason,
+} from '@/composables/useCanvasCommands'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
@@ -172,6 +176,10 @@ const canvasCommands = useCanvasCommands({
   setNodeEnabled,
   setInputPinned,
   setOutputTemplate,
+  togglePublishedInput,
+  togglePublishedOutput,
+  renamePublishedInput,
+  renamePublishedOutput,
   updateParameter: updateNodeParameter,
 })
 uiStore.setCanvasWorkflow(
@@ -323,6 +331,10 @@ function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function rememberAuthoritativeGraph(graph: GraphState): GraphState {
   const snapshot = deepClone(graph)
   lastAuthoritativeGraph.value = snapshot
@@ -465,6 +477,38 @@ function attachPublicationContext(node: any) {
 
 function attachPublicationContextToNodes(nodes: any[]) {
   return nodes.map((node) => attachPublicationContext(node))
+}
+
+function refreshPublicationContextOnNodes(): void {
+  for (const node of getNodes.value) attachPublicationContext(node)
+}
+
+function replacePublishedInputs(inputs: PublishedInput[]): boolean {
+  if (!isSubWorkflowEditor) {
+    rootPublishedInputs.value = inputs
+    refreshPublicationContextOnNodes()
+    return true
+  }
+  if (!props.subWorkflowSessionId) return false
+  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  if (!session) return false
+  session.published_inputs = inputs
+  refreshPublicationContextOnNodes()
+  return true
+}
+
+function replacePublishedOutputs(outputs: PublishedOutput[]): boolean {
+  if (!isSubWorkflowEditor) {
+    rootPublishedOutputs.value = outputs
+    refreshPublicationContextOnNodes()
+    return true
+  }
+  if (!props.subWorkflowSessionId) return false
+  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  if (!session) return false
+  session.published_outputs = outputs
+  refreshPublicationContextOnNodes()
+  return true
 }
 
 // --- Workflow startup / graph application ---
@@ -1164,20 +1208,13 @@ watch(getNodes, (nodes) => {
   uiStore.setCanvasGraphNodes(canvasId, nodes)
 }, { deep: true })
 
-// Publication-interface and sub-workflow edits still publish through this
-// watcher. NodePanel edits and structural Vue Flow events have explicit owners.
+// Sub-workflow payload replacements retain a compatibility watcher. Published
+// interface edits and structural Vue Flow events have explicit owners.
 watch(
   () => getNodes.value.map((n: any) => ({
     id: n.id,
     sub_workflow: n.data?.sub_workflow,
-    published_inputs: n.data?.published_inputs,
-    published_outputs: n.data?.published_outputs,
-  })).concat([{
-    id: '__root_publication_context__',
-    sub_workflow: null,
-    published_inputs: rootPublishedInputs.value,
-    published_outputs: rootPublishedOutputs.value,
-  }]),
+  })),
   () => {
     if (isApplyingGraphState) return
     if (isRefreshingToolMetadata) return
@@ -2499,6 +2536,171 @@ function setOutputTemplate(
   }
   emitGraphChanged()
   return true
+}
+
+function publicationRejected(
+  reason: CanvasPublicationRejectionReason,
+  name?: string,
+): CanvasPublicationCommandResult {
+  return name === undefined
+    ? { status: 'rejected', reason }
+    : { status: 'rejected', reason, name }
+}
+
+function publishedInputIndex(
+  context: PublicationContext,
+  nodeId: string,
+  input: string,
+): number {
+  return context.published_inputs.findIndex((item) => (
+    item.internal_node_id === nodeId && item.internal_field === input
+  ))
+}
+
+function publishedOutputIndex(
+  context: PublicationContext,
+  nodeId: string,
+  output: string,
+): number {
+  return context.published_outputs.findIndex((item) => (
+    item.internal_node_id === nodeId && item.internal_output === output
+  ))
+}
+
+function publishedNameIsUsed(
+  context: PublicationContext,
+  name: string,
+  except?: { collection: 'input' | 'output'; index: number },
+): boolean {
+  return context.published_inputs.some((item, index) => (
+    !(except?.collection === 'input' && except.index === index) && item.name === name
+  )) || context.published_outputs.some((item, index) => (
+    !(except?.collection === 'output' && except.index === index) && item.name === name
+  ))
+}
+
+function togglePublishedInput(
+  nodeId: string,
+  input: string,
+): CanvasPublicationCommandResult {
+  if (isLocked.value) return publicationRejected('locked')
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data) return publicationRejected('not_found')
+  const context = currentPublicationContext()
+  if (!context) return publicationRejected('unavailable')
+  const existingIndex = publishedInputIndex(context, nodeId, input)
+  if (existingIndex >= 0) {
+    const nextInputs = context.published_inputs.filter(
+      (_item, index) => index !== existingIndex,
+    )
+    if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
+    emitGraphChanged()
+    return { status: 'changed' }
+  }
+
+  const field = toolForNode(node)?.inputs?.[input]
+  if (!field) return publicationRejected('not_found')
+  if (field.connectable === 'never') return publicationRejected('not_publishable')
+  const name = `${nodeId}.${input}`
+  if (publishedNameIsUsed(context, name)) {
+    return publicationRejected('duplicate_name', name)
+  }
+  const nextInputs: PublishedInput[] = [...context.published_inputs, {
+    name,
+    internal_node_id: nodeId,
+    internal_field: input,
+    kind: 'input',
+    schema: deepClone(field),
+    default: node.data.parameters?.[input] ?? field.default ?? null,
+  }]
+  if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
+  emitGraphChanged()
+  return { status: 'changed' }
+}
+
+function togglePublishedOutput(
+  nodeId: string,
+  output: string,
+): CanvasPublicationCommandResult {
+  if (isLocked.value) return publicationRejected('locked')
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data) return publicationRejected('not_found')
+  const context = currentPublicationContext()
+  if (!context) return publicationRejected('unavailable')
+  const existingIndex = publishedOutputIndex(context, nodeId, output)
+  if (existingIndex >= 0) {
+    const nextOutputs = context.published_outputs.filter(
+      (_item, index) => index !== existingIndex,
+    )
+    if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
+    emitGraphChanged()
+    return { status: 'changed' }
+  }
+
+  const field = toolForNode(node)?.outputs?.[output]
+  if (!field) return publicationRejected('not_found')
+  const name = `${nodeId}.${output}`
+  if (publishedNameIsUsed(context, name)) {
+    return publicationRejected('duplicate_name', name)
+  }
+  const schema: Record<string, unknown> = isRecord(field) ? deepClone(field) : {}
+  const nextOutputs: PublishedOutput[] = [...context.published_outputs, {
+    name,
+    internal_node_id: nodeId,
+    internal_output: output,
+    schema,
+  }]
+  if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
+  emitGraphChanged()
+  return { status: 'changed' }
+}
+
+function renamePublishedInput(
+  nodeId: string,
+  input: string,
+  name: string,
+): CanvasPublicationCommandResult {
+  if (isLocked.value) return publicationRejected('locked')
+  const context = currentPublicationContext()
+  if (!context) return publicationRejected('unavailable')
+  const index = publishedInputIndex(context, nodeId, input)
+  if (index < 0) return publicationRejected('not_found')
+  const nextName = name.trim()
+  if (!nextName) return publicationRejected('empty_name')
+  if (context.published_inputs[index].name === nextName) return { status: 'unchanged' }
+  if (publishedNameIsUsed(context, nextName, { collection: 'input', index })) {
+    return publicationRejected('duplicate_name', nextName)
+  }
+  const nextInputs = context.published_inputs.map((item, itemIndex) => (
+    itemIndex === index ? { ...item, name: nextName } : item
+  ))
+  if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
+  emitGraphChanged()
+  return { status: 'changed' }
+}
+
+function renamePublishedOutput(
+  nodeId: string,
+  output: string,
+  name: string,
+): CanvasPublicationCommandResult {
+  if (isLocked.value) return publicationRejected('locked')
+  const context = currentPublicationContext()
+  if (!context) return publicationRejected('unavailable')
+  const index = publishedOutputIndex(context, nodeId, output)
+  if (index < 0) return publicationRejected('not_found')
+  const nextName = name.trim()
+  if (!nextName) return publicationRejected('empty_name')
+  if (context.published_outputs[index].name === nextName) return { status: 'unchanged' }
+  if (publishedNameIsUsed(context, nextName, { collection: 'output', index })) {
+    return publicationRejected('duplicate_name', nextName)
+  }
+  const nextOutputs = context.published_outputs.map((item, itemIndex) => (
+    itemIndex === index ? { ...item, name: nextName } : item
+  ))
+  if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
+  emitGraphChanged()
+  return { status: 'changed' }
 }
 
 function updateNodeParameter(
