@@ -2688,6 +2688,7 @@ describe('CanvasView', () => {
         edges: [],
       }
       const lastModified = '2026-04-30T12:00:00.000Z'
+      let rejectDraft!: (reason: Error) => void
 
       apiMocks.get.mockImplementation((url: string) => {
         if (url === '/api/v1/workflows') {
@@ -2715,6 +2716,11 @@ describe('CanvasView', () => {
             },
           })
         }
+        if (url === `/api/v1/workflow-drafts/${name}`) {
+          return new Promise((_resolve, reject) => {
+            rejectDraft = reject
+          })
+        }
         if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
         return Promise.resolve({ data: {} })
       })
@@ -2725,6 +2731,13 @@ describe('CanvasView', () => {
       })
 
       const w = mountCanvas()
+      await flushPromises()
+      useWorkflowStore().current = {
+        name: 'other',
+        display_name: 'Other workflow',
+        last_modified: '2026-04-30T10:00:00.000Z',
+      } as any
+      rejectDraft(new Error('No workflow draft'))
       await flushPromises()
       await nextTick()
       await flushPromises()

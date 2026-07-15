@@ -518,6 +518,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function patchWorkflow(
     name: string,
     patch: WorkflowUpdate,
+    target?: WorkflowSaveTarget,
   ): Promise<WorkflowInfo> {
     try {
       const { data } = await api.patch<WorkflowInfo>(
@@ -525,12 +526,31 @@ export const useWorkflowStore = defineStore('workflow', () => {
         patch,
       )
       upsertWorkflow(data, patch.action === 'update' ? name : undefined)
-      setCurrent(data)
       const dataId = workflowId(data)
       if (patch.action === 'update' && dataId !== name) {
         await autoSave.renameWorkflow(name, dataId)
       }
-      await autoSave.setLastOpenedWorkflow(dataId)
+      if (target === undefined) {
+        if (canvasSessionRegistry.sessionCount.value === 0) {
+          setCurrent(data)
+          await autoSave.setLastOpenedWorkflow(dataId)
+        } else if (patch.action === 'update' && currentName.value === name) {
+          current.value = data
+        }
+        return data
+      }
+
+      if (uiStore.canvasWorkflowId(target.canvasId) !== target.workflowName) {
+        return data
+      }
+      uiStore.setCanvasWorkflow(target.canvasId, dataId, data.display_name)
+      if (
+        canvasSessionRegistry.activeCanvasId.value === target.canvasId
+        && currentName.value === target.workflowName
+      ) {
+        current.value = data
+        await autoSave.setLastOpenedWorkflow(dataId)
+      }
       return data
     } catch (err: unknown) {
       const conflict = conflictFromError(err)

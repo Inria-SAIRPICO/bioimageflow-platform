@@ -110,6 +110,45 @@ describe('workflow store', () => {
     expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(false)
   })
 
+  it('finishes a delayed rename against its original canvas presentation', async () => {
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+    const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
+    const workflowB = { name: 'b', display_name: 'Workflow B' } as WorkflowInfo
+    const store = useWorkflowStore()
+    const ui = useUIStore()
+    store.workflows = [workflowA, workflowB]
+    store.current = workflowA
+    ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+    ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+    canvasSessionRegistry.activate(canvasA)
+    let resolveRename!: (value: { data: WorkflowInfo }) => void
+    vi.mocked(api.patch).mockReturnValueOnce(new Promise((resolve) => {
+      resolveRename = resolve
+    }))
+
+    const rename = store.patchWorkflow('a', {
+      action: 'update',
+      display_name: 'Workflow A renamed',
+    }, {
+      canvasId: canvasA,
+      workflowName: 'a',
+    })
+    canvasSessionRegistry.activate(canvasB)
+    store.current = workflowB
+    resolveRename({
+      data: { ...workflowA, display_name: 'Workflow A renamed' },
+    })
+    await rename
+
+    expect(store.currentName).toBe('b')
+    expect(ui.activeWorkflowName).toBe('Workflow B')
+    canvasSessionRegistry.activate(canvasA)
+    expect(ui.activeWorkflowName).toBe('Workflow A renamed')
+  })
+
   it('does not rename or clean an active canvas while loading another workflow', async () => {
     const canvasA = canvasIdFromPanelId('workflow:a')
     canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })

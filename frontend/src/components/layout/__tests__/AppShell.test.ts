@@ -739,6 +739,18 @@ describe('AppShell', () => {
     expect(graphSyncCanvasSessions.activeCanvasId.value).toBe(workflowCanvasId)
   })
 
+  it('closes the canvas identified by a targeted close event', async () => {
+    mountApp()
+    await flushPromises()
+    const panel = panels.get('canvas')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:close-canvas', {
+      detail: { canvasId: 'canvas' },
+    }))
+
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(panel)
+  })
+
   it('renames the startup canvas tab when its workflow context is loaded', async () => {
     mountApp()
     await flushPromises()

@@ -111,6 +111,7 @@ onMounted(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
+  window.addEventListener('bioimageflow:close-canvas', onCloseCanvas as EventListener)
   if (shortcutEnabled) {
     window.addEventListener('keydown', onPreferencesShortcut)
   }
@@ -143,6 +144,7 @@ onBeforeUnmount(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
+  window.removeEventListener('bioimageflow:close-canvas', onCloseCanvas as EventListener)
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
   }
@@ -547,6 +549,13 @@ function onCanvasContextUpdated(event: CustomEvent<{
     title,
   )
   dockviewApi.value?.getPanel(detail.panelId)?.api.setTitle(title)
+}
+
+function onCloseCanvas(event: CustomEvent<{ canvasId?: string }>): void {
+  const canvasId = event.detail?.canvasId
+  if (!canvasId) return
+  const panel = dockviewApi.value?.getPanel(canvasId)
+  if (panel) dockviewApi.value?.removePanel(panel)
 }
 
 function openWorkflowCanvasPanel(detail: {

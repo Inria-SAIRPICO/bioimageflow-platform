@@ -572,10 +572,13 @@ async function recoverStartupWorkflow() {
         dirty: false,
       }
     }
+    const workflow = workflowStore.workflows.find(
+      candidate => workflowInfoId(candidate) === targetName,
+    )
+    const serverModified = Date.parse(workflow?.last_modified ?? '')
     const draft = await workflowDraftStore.loadDraft(targetName).catch(() => null)
     if (draft !== null) initializeCanvasPersistenceFromDraft(draft)
     const draftModified = Date.parse(draft?.updated_at ?? '')
-    const serverModified = Date.parse(workflowStore.current?.last_modified ?? '')
     const latestPersistedModified = Math.max(
       Number.isFinite(serverModified) ? serverModified : 0,
       Number.isFinite(draftModified) ? draftModified : 0,
@@ -591,9 +594,6 @@ async function recoverStartupWorkflow() {
     ) {
       await autoSave.clearAutoSave(targetName)
     }
-    const workflow = workflowStore.workflows.find(
-      candidate => workflowInfoId(candidate) === targetName,
-    )
     return {
       graph: autoSaveIsFresh
         ? matchingAutoSave.graph
