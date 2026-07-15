@@ -252,6 +252,36 @@ describe('RunButton', () => {
     expect(dialogText).not.toMatch(/corrupt|invalid cache/i)
   })
 
+  it('flushes fresh validation before deciding whether confirmation is required', async () => {
+    const { wrapper, flushNow, validationResult } = mountButton()
+    flushNow.mockImplementation(async () => {
+      validationResult.value = {
+        valid: true,
+        node_statuses: {
+          n1: { node_id: 'n1', status: 'out_of_date', cached: false },
+        },
+        errors: [],
+      }
+    })
+    const exec = useExecutionStore()
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(flushNow).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-testid="out-of-date-confirm"]').exists()).toBe(true)
+    expect(runSpy).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="out-of-date-continue"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(flushNow).toHaveBeenCalledTimes(2)
+    expect(runSpy).toHaveBeenCalled()
+  })
+
   it('Run Selected does not prompt for out-of-date nodes outside the selected execution set', async () => {
     const { wrapper } = mountButton({
       validationResult: {

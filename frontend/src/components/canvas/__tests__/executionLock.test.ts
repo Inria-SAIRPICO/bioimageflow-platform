@@ -261,9 +261,12 @@ describe('CanvasView execution lock', () => {
     w.unmount()
   })
 
-  it('does not let idle execution statuses overwrite newer validation state', async () => {
+  it('does not let idle execution statuses overwrite a provisional parameter edit', async () => {
     mockNodes = [
-      { id: 'n1', data: { toolName: 'T', status: 'out_of_date' } },
+      {
+        id: 'n1',
+        data: { toolName: 'T', status: 'unexecuted', provisional: true },
+      },
     ]
     const w = mountCanvas()
     const exec = useExecutionStore()
@@ -273,7 +276,8 @@ describe('CanvasView execution lock', () => {
     }
     await nextTick()
 
-    expect(mockNodes[0].data.status).toBe('out_of_date')
+    expect(mockNodes[0].data.status).toBe('unexecuted')
+    expect(mockNodes[0].data.provisional).toBe(true)
     w.unmount()
   })
 

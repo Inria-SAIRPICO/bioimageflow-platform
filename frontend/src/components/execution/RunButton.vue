@@ -112,6 +112,7 @@ async function runCore(nodes?: string[]) {
       })
       return
     }
+    await props.graphSync.flushNow()
     graph = currentExecutionGraph()
     const outOfDate = findOutOfDateNodes(graph, nodes)
     if (outOfDate.length > 0) {

@@ -25,6 +25,7 @@ import {
   useGraphSync,
 } from '@/composables/useGraphSync'
 import { useUIStore } from '@/stores/ui'
+import { useWorkflowStore } from '@/stores/workflow'
 import type { GraphState, ToolMetadata } from '@/api/types'
 
 const mockedApi = api as unknown as {
@@ -88,11 +89,21 @@ describe('parameter edit followed immediately by Run', () => {
     const graphSync = useGraphSync()
     graphSync.syncGraphState(graph)
 
+    useWorkflowStore().current = {
+      name: 'parameter_edit',
+      display_name: 'Parameter edit',
+      description: null,
+      storage_path: '/tmp/workflows/parameter_edit',
+      path: '/tmp/workflows/parameter_edit.json',
+      last_modified: '2026-01-01T00:00:00Z',
+    }
+
     const nodeData = {
       name: 'Files',
       toolName: 'files',
       tool,
       status: 'executed',
+      provisional: undefined as boolean | undefined,
       parameters: { path: '/data/old' },
       resources: {},
       output_templates: {},
@@ -102,7 +113,16 @@ describe('parameter edit followed immediately by Run', () => {
       pinnedInputs: {},
     }
     const ui = useUIStore()
-    ui.setGraphNodes([{ id: 'files', data: nodeData }])
+    const untouchedNodeData = {
+      ...nodeData,
+      name: 'Untouched',
+      status: 'executed',
+      parameters: { path: '/data/untouched' },
+    }
+    ui.setGraphNodes([
+      { id: 'files', data: nodeData },
+      { id: 'untouched', data: untouchedNodeData },
+    ])
     ui.setSelectedNodes(['files'])
 
     const panel = mount(NodePanel, {
@@ -129,6 +149,15 @@ describe('parameter edit followed immediately by Run', () => {
       .find('[data-testid="path-input-path"]')
       .findComponent(InputText)
       .vm.$emit('update:modelValue', '/data/new')
+
+    expect(nodeData.status).toBe('unexecuted')
+    expect(nodeData.provisional).toBe(true)
+    expect(untouchedNodeData.status).toBe('executed')
+    expect(untouchedNodeData.provisional).toBeUndefined()
+    expect(graphSync.currentGraph.value.nodes[0]?.parameters).toEqual({
+      path: '/data/new',
+    })
+
     await runButton.find('[data-testid="run-workflow-button"]').trigger('click')
     await flushPromises()
 
