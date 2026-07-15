@@ -154,6 +154,8 @@ function updateParameter(key: string, value: unknown) {
     [key]: value,
   }
   nodeData.value.parameters = parameters
+  nodeData.value.status = 'unexecuted'
+  nodeData.value.provisional = true
   syncNodeParameters(nodeId, parameters)
 }
 
