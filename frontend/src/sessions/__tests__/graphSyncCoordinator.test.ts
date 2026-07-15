@@ -217,6 +217,7 @@ describe('graph sync coordinator', () => {
 
   it('continues with a newer revision when the superseded request fails', async () => {
     const oldRequest = deferred<ValidationResult>()
+    const onOperationalError = vi.fn()
     const transport = vi.fn()
       .mockReturnValueOnce(oldRequest.promise)
       .mockResolvedValueOnce(validation(true))
@@ -224,6 +225,7 @@ describe('graph sync coordinator', () => {
       canvasId: canvasIdFromPanelId('workflow:a'),
       workflowId: 'a',
       transport,
+      onOperationalError,
     })
 
     coordinator.queue(graph('old'), { semanticRevision: 1 })
@@ -244,6 +246,7 @@ describe('graph sync coordinator', () => {
     expect(coordinator.acceptedRevision.value).toBe(2)
     expect(coordinator.validationResult.value).toEqual(validation(true))
     expect(coordinator.isPending.value).toBe(false)
+    expect(onOperationalError).not.toHaveBeenCalled()
   })
 
   it('disposing one coordinator rejects its work without affecting another', async () => {

@@ -195,19 +195,22 @@ export function createGraphSyncCoordinator(
         if (isDisposed.value) {
           throw new CanvasSessionDisposedError(options.canvasId)
         }
-        if (latest?.semanticRevision === snapshot.semanticRevision) {
+        const isCurrentRevision = latest?.semanticRevision === snapshot.semanticRevision
+        if (isCurrentRevision) {
           isPending.value = false
           syncState.value = 'error'
         } else {
           isPending.value = true
           syncState.value = 'pending'
         }
-        options.onOperationalError?.(error, {
-          canvasId: request.canvasId,
-          workflowId: request.workflowId,
-          semanticRevision: request.semanticRevision,
-          graph: request.graph,
-        })
+        if (isCurrentRevision) {
+          options.onOperationalError?.(error, {
+            canvasId: request.canvasId,
+            workflowId: request.workflowId,
+            semanticRevision: request.semanticRevision,
+            graph: request.graph,
+          })
+        }
         throw error
       })
       .finally(() => {
