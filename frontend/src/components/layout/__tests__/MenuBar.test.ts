@@ -61,6 +61,7 @@ import MenuBar from '../MenuBar.vue'
 import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useExecutionStore } from '@/stores/execution'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -952,6 +953,48 @@ describe('MenuBar', () => {
       )
       expect(runSelected.disabled).toBe(false)
     })
+
+    it.each(['starting', 'stopping'] as const)(
+      'locks workflow and edit actions while execution is %s',
+      async (phase) => {
+        setActiveWorkflow()
+        useUIStore().setSelectedNodes(['n1'])
+        useExecutionStore().state = phase
+        const wrapper = mountMenuBar()
+        const vm = wrapper.vm as any
+        const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+        const edit = vm.menuItems.find((item: any) => item.label === 'Edit')
+        const execution = vm.menuItems.find((item: any) => item.label === 'Execution')
+
+        expect(workflow.items.every((item: any) => item.disabled)).toBe(true)
+        expect(edit.items.filter((item: any) => !item.separator && item.label !== 'Preferences...')
+          .every((item: any) => item.disabled)).toBe(true)
+        expect(execution.items.find((item: any) => item.label === 'Run Workflow').disabled)
+          .toBe(true)
+        expect(execution.items.find((item: any) => item.label === 'Stop').disabled)
+          .toBe(true)
+        expect(wrapper.find('[data-testid="workflow-title-edit"]').attributes('disabled'))
+          .toBeDefined()
+      },
+    )
+
+    it.each(['starting', 'stopping'] as const)(
+      'ignores workflow mutation commands while execution is %s',
+      async (phase) => {
+        setActiveWorkflow()
+        useExecutionStore().state = phase
+        const wrapper = mountMenuBar()
+        const vm = wrapper.vm as any
+        const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+        canvasCommandMocks.routeSave.mockClear()
+
+        workflow.items.find((item: any) => item.label === 'Save').command()
+        await flushPromises()
+
+        expect(canvasCommandMocks.routeSave).not.toHaveBeenCalled()
+        wrapper.unmount()
+      },
+    )
 
     it('renders RunButton in the end slot', () => {
       const wrapper = mountMenuBar()

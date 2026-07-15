@@ -82,7 +82,7 @@ const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const workflowStore = useWorkflowStore()
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
-// executionStore.isRunning anywhere in the tree. The composable has a
+// executionStore.isMutationLocked anywhere in the tree. The composable has a
 // side-effectful watch; the return values are unused here.
 useExecutionLock()
 

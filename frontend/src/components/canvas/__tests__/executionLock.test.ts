@@ -177,10 +177,12 @@ describe('CanvasView execution lock', () => {
     canvasCommandMocks.updateParameter = null
   })
 
-  it('onConnect is blocked when execution is running', async () => {
+  it.each(['starting', 'stopping'] as const)(
+    'onConnect is blocked when execution is %s',
+    async (phase) => {
     const w = mountCanvas()
     const exec = useExecutionStore()
-    exec.state = 'running'
+    exec.state = phase as any
     await nextTick()
     expect(connectHandler).not.toBeNull()
     connectHandler!({
@@ -191,7 +193,8 @@ describe('CanvasView execution lock', () => {
     })
     expect(mockEdges).toEqual([])
     w.unmount()
-  })
+    },
+  )
 
   it('deleteSelected is blocked when locked', async () => {
     mockNodes = [

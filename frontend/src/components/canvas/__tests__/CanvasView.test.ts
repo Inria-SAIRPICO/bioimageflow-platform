@@ -1066,7 +1066,9 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('rejects every publication command while execution owns the canvas', async () => {
+    it.each(['starting', 'stopping'] as const)(
+      'rejects every publication command while execution is %s',
+      async (phase) => {
       const tool = makeTool()
       mockNodes = reactive([{
         id: 'shared',
@@ -1080,7 +1082,7 @@ describe('CanvasView', () => {
         position: { x: 0, y: 0 },
       }]) as any[]
       const w = mountCanvas()
-      useExecutionStore().state = 'running'
+      useExecutionStore().state = phase as any
       await nextTick()
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
@@ -1106,7 +1108,8 @@ describe('CanvasView', () => {
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       w.unmount()
-    })
+      },
+    )
 
     it('publishes one tool-reload-style parameter replacement outside the command path', async () => {
       mockNodes = reactive([{
@@ -1189,7 +1192,9 @@ describe('CanvasView', () => {
       await flushPromises()
     })
 
-    it('rejects its parameter command while execution owns the canvas', async () => {
+    it.each(['starting', 'stopping'] as const)(
+      'rejects its parameter command while execution is %s',
+      async (phase) => {
       mockNodes = reactive([{
         id: 'shared',
         data: {
@@ -1208,7 +1213,7 @@ describe('CanvasView', () => {
       })
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
-      useExecutionStore().state = 'running'
+      useExecutionStore().state = phase as any
       await nextTick()
 
       const updateParameter = canvasCommandMocks.registrations[0].updateParameter
@@ -1218,9 +1223,12 @@ describe('CanvasView', () => {
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       w.unmount()
-    })
+      },
+    )
 
-    it('rejects every NodePanel edit command while execution owns the canvas', async () => {
+    it.each(['starting', 'stopping'] as const)(
+      'rejects every NodePanel edit command while execution is %s',
+      async (phase) => {
       const originalData = reactive({
         name: 'Edited',
         toolName: 'gaussian_blur',
@@ -1239,7 +1247,7 @@ describe('CanvasView', () => {
       const w = mountCanvas()
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
-      useExecutionStore().state = 'running'
+      useExecutionStore().state = phase as any
       await nextTick()
       const registration = canvasCommandMocks.registrations[0]
 
@@ -1257,7 +1265,8 @@ describe('CanvasView', () => {
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       w.unmount()
-    })
+      },
+    )
 
     it('routes the context-menu enable action through the execution lock', async () => {
       mockNodes = reactive([{

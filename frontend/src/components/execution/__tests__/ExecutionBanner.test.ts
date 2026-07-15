@@ -46,6 +46,39 @@ describe('ExecutionBanner', () => {
     expect(headline.text()).toContain('Executing')
   })
 
+  it('shows a non-terminal starting message', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    exec.state = 'starting'
+    await nextTick()
+
+    expect((wrapper.vm as any).mode).toBe('starting')
+    expect(wrapper.find('[data-testid="execution-banner-headline"]').text())
+      .toContain('Starting')
+    await wrapper.find('[data-testid="execution-banner"]').trigger('click')
+    expect(wrapper.find('[data-testid="execution-banner"]').exists()).toBe(true)
+  })
+
+  it('shows a non-terminal stopping message until idle is accepted', async () => {
+    const wrapper = mountBanner()
+    const exec = useExecutionStore()
+    exec.state = 'running'
+    await nextTick()
+    exec.state = 'stopping'
+    await nextTick()
+
+    expect((wrapper.vm as any).mode).toBe('stopping')
+    expect(wrapper.find('[data-testid="execution-banner-headline"]').text())
+      .toContain('Stopping')
+    expect(wrapper.find('[data-testid="execution-banner-overall-progress"]').exists())
+      .toBe(false)
+
+    exec.applyStatusSnapshot({ state: 'idle', last_result: null, progress: null })
+    await nextTick()
+    expect(wrapper.find('[data-testid="execution-banner-headline"]').text())
+      .toContain('stopped')
+  })
+
   it('displays current node name when running with progress', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()

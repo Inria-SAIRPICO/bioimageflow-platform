@@ -44,13 +44,18 @@ const activeWorkflowId = computed(() => {
 })
 
 const runDisabled = computed(
-  () => exec.isRunning || !activeWorkflowId.value,
+  () => exec.isMutationLocked || !activeWorkflowId.value,
 )
 const runTooltip = computed(() => {
+  if (exec.isStarting) return 'Execution is starting'
+  if (exec.isStopping) return 'Execution is stopping'
   if (exec.isRunning) return 'Execution in progress'
   if (!activeWorkflowId.value) return 'Open or save a workflow before running'
   return ''
 })
+
+const runLabel = computed(() => exec.isStarting ? 'Starting...' : 'Run Workflow')
+const stopLabel = computed(() => exec.isStopping ? 'Stopping...' : 'Stop')
 
 const runSelectedDisabled = computed(
   () => runDisabled.value || ui.selectedNodeIds.length === 0,
@@ -96,6 +101,7 @@ function findOutOfDateNodes(graph: GraphState, nodes?: string[]): string[] {
 }
 
 async function runCore(nodes?: string[]) {
+  if (exec.isMutationLocked) return
   const targetCanvasId = canvasPersistence.canvasId
   const workflowName = activeWorkflowId.value
   if (!workflowName) return
@@ -226,7 +232,7 @@ defineExpose({
     <Button
       v-if="!exec.isRunning"
       icon="pi pi-play"
-      label="Run Workflow"
+      :label="runLabel"
       :disabled="runDisabled"
       :title="runTooltip"
       data-testid="run-workflow-button"
@@ -244,7 +250,8 @@ defineExpose({
     <Button
       v-if="exec.isRunning"
       icon="pi pi-stop"
-      label="Stop"
+      :label="stopLabel"
+      :disabled="!exec.canStop"
       severity="danger"
       data-testid="stop-execution-button"
       @click="onStop"

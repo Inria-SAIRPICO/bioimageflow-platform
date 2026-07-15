@@ -45,6 +45,23 @@ describe('useExecutionLock', () => {
     expect(isLocked.value).toBe(false)
   })
 
+  it.each(['starting', 'stopping'] as const)(
+    'shares the global mutation lock across consumers while execution is %s',
+    (phase) => {
+      const firstCanvas = useExecutionLock()
+      const secondCanvas = useExecutionLock()
+      const exec = useExecutionStore()
+      const ui = useUIStore()
+
+      exec.state = phase as any
+
+      expect(exec.isMutationLocked).toBe(true)
+      expect(ui.isExecutionLocked).toBe(true)
+      expect(firstCanvas.isLocked.value).toBe(true)
+      expect(secondCanvas.isLocked.value).toBe(true)
+    },
+  )
+
   it('lockForExecution flushes graph sync, then calls run when valid', async () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
