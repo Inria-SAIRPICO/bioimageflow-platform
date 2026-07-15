@@ -25,7 +25,6 @@ from bioimageflow_server.services.agent_workspace_context import (
     agent_workspace_instructions,
 )
 from bioimageflow_server.services.graph_validator import validate_graph
-from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
@@ -474,13 +473,9 @@ class WorkflowDraftService:
         workflow_id: str,
         graph: GraphState,
     ) -> ValidationResult:
-        # Deliberately isolated: draft validation must not replace the active
-        # frontend graph session used by /graph and parameter patching.
-        session_manager = SessionManager()
         return validate_graph(
             graph,
             store.tool_registry,
-            session_manager,
             storage_path=store.get_storage_path(workflow_id),
             dev_mode=self._dev_mode_provider(),
             settings=self._settings_provider(),

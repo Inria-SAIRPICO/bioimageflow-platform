@@ -122,7 +122,6 @@ const graphSyncMocks = vi.hoisted(() => ({
   syncGraph: vi.fn(),
   syncGraphState: vi.fn(),
   flushNow: vi.fn(),
-  patchParameters: vi.fn(),
   serializeGraph: vi.fn((state: { nodes: any[]; edges: any[] }) => ({
     nodes: state.nodes.map((n: any) => ({
       id: n.id,
@@ -322,7 +321,6 @@ describe('CanvasView', () => {
     graphSyncMocks.syncGraph.mockClear()
     graphSyncMocks.syncGraphState.mockClear()
     graphSyncMocks.flushNow.mockClear()
-    graphSyncMocks.patchParameters.mockClear()
     graphSyncMocks.serializeGraph.mockClear()
     autoSaveMocks.scheduleAutoSave.mockClear()
     autoSaveMocks.flushAutoSave.mockClear()

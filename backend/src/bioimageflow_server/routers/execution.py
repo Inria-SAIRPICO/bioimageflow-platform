@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from bioimageflow_server.models.execution import (
     ExecutionRequest,
@@ -28,7 +28,6 @@ from bioimageflow_server.services.execution import (
     WorkflowBuildError,
     clear_node_cache,
 )
-from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_context import resolve_workflow_storage_path
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -48,10 +47,6 @@ def get_tool_registry() -> ToolRegistryService:  # pragma: no cover
     raise RuntimeError("tool_registry dependency not configured")
 
 
-def get_session_manager() -> SessionManager:  # pragma: no cover
-    raise RuntimeError("session_manager dependency not configured")
-
-
 def get_workflow_store() -> WorkflowStoreService | None:
     return None
 
@@ -59,7 +54,7 @@ def get_workflow_store() -> WorkflowStoreService | None:
 class ClearRequest(BaseModel):
     graph: GraphState
     nodes: list[str]
-    workflow_name: str | None = None
+    workflow_name: str = Field(min_length=1)
 
 
 @router.post("/run", status_code=202, response_model=None)
@@ -121,19 +116,23 @@ async def stop_execution(
     return {"status": "stopping"}
 
 
-@router.post("/clear")
+@router.post("/clear", response_model=None)
 async def clear_execution(
     body: ClearRequest,
     execution_manager: ExecutionManager | None = Depends(get_execution_manager),
     storage_path: Path | None = Depends(get_storage_path),
     registry: ToolRegistryService = Depends(get_tool_registry),
-    session_manager: SessionManager = Depends(get_session_manager),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
-) -> dict:
+) -> dict | JSONResponse:
     if execution_manager is not None and execution_manager.is_running:
         raise HTTPException(
-            status_code=409,
+            status_code=423,
             detail="Cannot clear cache while execution is running",
+        )
+    if workflow_store is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Workflow store is required for cache clearing",
         )
     try:
         clear_storage_path = resolve_workflow_storage_path(
@@ -146,10 +145,22 @@ async def clear_execution(
             status_code=404,
             detail=f"Workflow '{body.workflow_name}' not found",
         ) from exc
-    statuses = clear_node_cache(
-        body.nodes, body.graph, registry, clear_storage_path,
-        session_manager=session_manager,
-    )
+    try:
+        statuses = clear_node_cache(
+            body.nodes,
+            body.graph,
+            registry,
+            clear_storage_path,
+        )
+    except WorkflowBuildError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "validation_error",
+                "detail": str(exc),
+                "errors": [error.model_dump() for error in exc.errors],
+            },
+        )
     return {
         "node_statuses": {nid: ns.model_dump() for nid, ns in statuses.items()}
     }

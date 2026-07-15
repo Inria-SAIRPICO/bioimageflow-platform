@@ -33,8 +33,7 @@ from bioimageflow_server.models.execution import (
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
-from bioimageflow_server.services.graph_builder import build_workflow
-from bioimageflow_server.services.session_manager import SessionManager
+from bioimageflow_server.services.graph_compiler import GraphCompiler
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 logger = logging.getLogger(__name__)
@@ -176,7 +175,6 @@ class ExecutionManager:
         tool_registry: ToolRegistryService,
         settings: Settings,
         storage_path: Path | None = None,
-        session_manager: SessionManager | None = None,
         settings_provider: Callable[[], Settings] | None = None,
     ) -> None:
         self.event_bus = event_bus
@@ -187,7 +185,6 @@ class ExecutionManager:
         # effect on the next run without restarting the app.
         self._settings_provider = settings_provider
         self.storage_path = storage_path
-        self.session_manager = session_manager
 
         self.state: Literal["running", "idle"] = "idle"
         self.progress: ProgressInfo | None = None
@@ -265,14 +262,11 @@ class ExecutionManager:
 
         on_progress = self._make_progress_callback()
 
-        # Execution must use the graph submitted with this run request.
-        # The validation session is an editing cache and can lag behind
-        # the frontend's current graph when a run is triggered immediately
-        # after parameter edits.
+        # Execution compiles the graph submitted with this run request; no
+        # validation or editor session can alter its meaning.
         try:
-            build_result = build_workflow(
+            build_result = GraphCompiler(self.tool_registry).compile(
                 build_graph,
-                self.tool_registry,
                 storage_path=run_storage_path,
                 on_progress=on_progress,
                 settings=live_settings,
@@ -889,28 +883,21 @@ def clear_node_cache(
     graph: GraphState,
     registry: ToolRegistryService,
     storage_path: Path | None,
-    session_manager: SessionManager | None = None,
 ) -> dict[str, NodeStatus]:
     """Clear cache directories for ``node_ids`` and compute downstream impact.
 
-    Uses the session's cached :class:`Workflow` when available to avoid
-    building a throwaway workflow. Falls back to :func:`build_workflow`
-    otherwise. Returns a dict keyed by node ID. Cleared nodes get
+    Compiles and validates the complete request graph before performing
+    any invalidation. Returns a dict keyed by node ID. Cleared nodes get
     status ``"unexecuted"``; their transitive downstream receives
     ``"out_of_date"``. Unknown node IDs are silently skipped.
     """
-    session = (
-        session_manager.session if session_manager is not None else None
+    compilation = GraphCompiler(registry).compile(
+        graph,
+        storage_path=storage_path,
     )
-    session_storage_path = (
-        session_manager.storage_path if session_manager is not None else None
-    )
-    if session is not None and _paths_equal(session_storage_path, storage_path):
-        workflow = session.to_workflow()
-    else:
-        workflow, _errors, _disabled = build_workflow(
-            graph, registry, storage_path=storage_path,
-        )
+    if compilation.errors:
+        raise WorkflowBuildError(compilation.errors)
+    workflow = compilation.workflow
 
     # Filter to valid node IDs known to the workflow.
     known = set(workflow.nodes.keys())
@@ -943,10 +930,3 @@ def clear_node_cache(
         result[nid] = NodeStatus(node_id=nid, status="out_of_date", cached=False)
 
     return result
-
-
-def _paths_equal(left: Path | None, right: Path | None) -> bool:
-    """Compare optional paths without requiring them to exist."""
-    if left is None or right is None:
-        return left is None and right is None
-    return Path(left).expanduser().absolute() == Path(right).expanduser().absolute()

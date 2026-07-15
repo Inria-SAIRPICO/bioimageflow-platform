@@ -23,7 +23,8 @@ from bioimageflow_server.models.graph import (
     PositionalEdge,
 )
 from bioimageflow_server.models.tools import ToolMetadata
-from bioimageflow_server.services.execution import clear_node_cache
+from bioimageflow_server.services.execution import WorkflowBuildError, clear_node_cache
+from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
@@ -120,9 +121,21 @@ def _edge(source: str, target: str, idx: int = 0) -> ColumnRefEdge:
 def _make_graph(
     nodes: list[tuple[str, str]], edges: list[tuple[str, str]]
 ) -> GraphState:
+    tools_by_node = dict(nodes)
     return GraphState(
         nodes=[_node(n, tool) for n, tool in nodes],
-        edges=[_edge(s, t, i) for i, (s, t) in enumerate(edges)],
+        edges=[
+            ColumnRefEdge(
+                id=f"{source}->{target}-{index}",
+                source_node=source,
+                target_node=target,
+                source_output=(
+                    "mask" if tools_by_node[source] == "SrcTool" else "result"
+                ),
+                target_input="mask_input",
+            )
+            for index, (source, target) in enumerate(edges)
+        ],
     )
 
 
@@ -133,6 +146,29 @@ def test_clear_single_node_returns_unexecuted(
     result = clear_node_cache(["a"], graph, registry, tmp_path)
     assert result["a"].status == "unexecuted"
     assert result["a"].cached is False
+
+
+def test_clear_uses_request_graph_when_same_path_session_is_stale(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+) -> None:
+    stale_graph = _make_graph([("a", "SrcTool")], [])
+    request_graph = _make_graph(
+        [("a", "SrcTool"), ("b", "DstTool")],
+        [("a", "b")],
+    )
+    session_manager = SessionManager()
+    session_manager.load(stale_graph, registry, storage_path=tmp_path)
+
+    result = clear_node_cache(
+        ["a"],
+        request_graph,
+        registry,
+        tmp_path,
+    )
+
+    assert result["a"].status == "unexecuted"
+    assert result["b"].status == "out_of_date"
 
 
 def test_clear_propagates_out_of_date_to_downstream(
@@ -252,6 +288,73 @@ def test_clear_removes_current_cache_selection(
     clear_node_cache(["a"], graph, registry, tmp_path)
 
     assert storage.load_current(plan.final_result_key) is None
+
+
+def test_invalid_graph_does_not_clear_existing_cache(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow.cache import dataframe_publish
+    from bioimageflow.storage import Storage
+    from bioimageflow_server.services.graph_builder import build_workflow
+
+    registry.register_tool(
+        "DFTool",
+        ToolMetadata(
+            name="DFTool",
+            display_name="DFTool",
+            package="test-pkg",
+            package_version="1.0.0",
+            tool_type="DataFrameTool",
+        ),
+        tool_class=DFTool,
+    )
+    valid_graph = GraphState(
+        nodes=[
+            NodeState(
+                id="a",
+                name="a",
+                tool_name="DFTool",
+                position=(0, 0),
+                parameters={"threshold": 0.5},
+            )
+        ],
+        edges=[],
+    )
+    workflow, errors, _disabled = build_workflow(
+        valid_graph,
+        registry,
+        storage_path=tmp_path,
+    )
+    assert errors == []
+    plan = workflow.plan(dev_mode=True)["a"]
+    dataframe_publish(
+        tmp_path,
+        "a",
+        plan.logical_signature,
+        pd.DataFrame({"x": [1]}),
+    )
+    storage = Storage(tmp_path)
+    assert storage.load_current(plan.final_result_key) is not None
+
+    invalid_graph = GraphState(
+        nodes=[
+            *valid_graph.nodes,
+            NodeState(
+                id="broken",
+                name="broken",
+                tool_name="MissingTool",
+                position=(100, 0),
+                parameters={},
+            ),
+        ],
+        edges=[],
+    )
+
+    with pytest.raises(WorkflowBuildError):
+        clear_node_cache(["a"], invalid_graph, registry, tmp_path)
+
+    assert storage.load_current(plan.final_result_key) is not None
 
 
 def test_positional_edges_count_as_downstream(

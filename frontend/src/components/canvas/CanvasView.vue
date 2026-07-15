@@ -112,7 +112,7 @@ const {
   fitView,
 } = useVueFlow()
 
-const { syncGraph, syncGraphState, flushNow, patchParameters, validationResult, syncState } = useGraphSync()
+const { syncGraph, syncGraphState, flushNow, validationResult, syncState } = useGraphSync()
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
@@ -2316,7 +2316,6 @@ defineExpose({
   saveSubWorkflowSession,
   isValidConnection,
   clipboardData,
-  patchParameters,
   reconciledStatuses,
   syncState,
 })

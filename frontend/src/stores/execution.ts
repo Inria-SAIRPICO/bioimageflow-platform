@@ -237,11 +237,11 @@ export const useExecutionStore = defineStore('execution', () => {
   async function clear(
     graph: GraphState,
     nodeIds: string[],
-    workflowName?: string | null,
+    workflowName: string,
   ) {
     const { data } = await api.post<ClearResponse>(
       '/api/v1/execution/clear',
-      { graph, nodes: nodeIds, workflow_name: workflowName ?? null },
+      { graph, nodes: nodeIds, workflow_name: workflowName },
     )
     if (data?.node_statuses) {
       nodeStatuses.value = { ...nodeStatuses.value, ...data.node_statuses }

@@ -22,7 +22,6 @@ from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.execution import ExecutionManager
 from bioimageflow_server.services.graph_validator import validate_graph
-from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 pytestmark = pytest.mark.anyio
@@ -280,14 +279,12 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
 ) -> None:
     graph = _real_graph()
     registry = _registry()
-    session_manager = SessionManager()
     bus = RecordingEventBus()
     manager = ExecutionManager(
         bus,
         registry,
         _settings(),
         storage_path=tmp_path,
-        session_manager=session_manager,
     )
 
     await manager.start(graph)
@@ -310,7 +307,6 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
     validation = validate_graph(
         graph,
         registry,
-        SessionManager(),
         storage_path=tmp_path,
         dev_mode=False,
         settings=_settings(),
@@ -327,14 +323,12 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
     tmp_path: Path,
 ) -> None:
     registry = _registry()
-    session_manager = SessionManager()
     bus = RecordingEventBus()
     manager = ExecutionManager(
         bus,
         registry,
         _settings(),
         storage_path=tmp_path,
-        session_manager=session_manager,
     )
     original = _real_graph()
     modified = GraphState(
@@ -360,7 +354,6 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
     validation = validate_graph(
         original,
         registry,
-        session_manager,
         storage_path=tmp_path,
         dev_mode=False,
         settings=_settings(),

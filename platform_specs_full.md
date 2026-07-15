@@ -30,7 +30,7 @@ The BioImageFlow GUI is a web application for building, executing, and inspectin
 - **WebSocket:** For real-time progress, logs, and node state updates
 - **Process model:** Single server process; BioImageFlow workflow execution runs in a background thread/task (via `asyncio.to_thread` or a dedicated executor) to keep the API responsive.
 - **CORS:** In webapp mode, the server configures CORS middleware to allow requests from the frontend's origin. The allowed origins list is configurable at deployment time. In desktop mode, CORS is permissive (localhost only).
-- **Rate limiting (webapp mode):** The `PUT /graph` and `PATCH /graph/nodes/{id}/parameters` endpoints are rate-limited server-side (e.g., 10 requests/second) to prevent abuse. Request body size is capped (default: 5MB). Validation computation has a timeout (default: 10 seconds) — if exceeded, the server returns HTTP 504.
+- **Rate limiting (webapp mode):** The `PUT /graph` endpoint is rate-limited server-side (e.g., 10 requests/second) to prevent abuse. Request body size is capped (default: 5MB). Validation computation has a timeout (default: 10 seconds) — if exceeded, the server returns HTTP 504.
 
 ### 2.2 Architecture: Full-State Sync
 
@@ -418,8 +418,7 @@ The backend translation layer maps between the GUI schema and the library's `wor
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `PUT` | `/graph` | Submit full graph state for validation. Returns validation result. |
-| `PATCH` | `/graph/nodes/{id}/parameters` | Submit parameter-only change for a single node (body: `{parameters: {...}}`). Validates the patched node's parameters and recomputes **cache status** for the patched node and its transitive downstream (since their upstream signature hash changed). Does **not** re-check type compatibility downstream (parameter changes don't alter output schemas). Lighter than full `PUT /graph`. |
+| `PUT` | `/graph` | Submit the complete graph state for request-local validation. Returns validation and cache status derived only from that request snapshot. |
 
 **Request body — example `GraphState`:**
 
@@ -508,7 +507,7 @@ Changes are **debounced**: the frontend accumulates changes and sends `PUT /grap
 
 **Ctrl+Enter** triggers immediate validation without waiting for the debounce.
 
-For **parameter-only changes** (no structural change to edges/nodes), the frontend may use the lighter `PATCH /graph/nodes/{id}/parameters` endpoint, which validates only the affected node and its downstream. This avoids full graph reconstruction for the most common edit operation.
+Parameter changes use the same full-state `PUT /graph` contract as structural changes. The server does not retain an active graph between requests, so validation meaning never depends on request history.
 
 #### 2.4.4 Node Data (Outputs)
 
@@ -569,7 +568,7 @@ The server reads the image file referenced by the specified row and column in th
 |--------|----------|-------------|
 | `POST` | `/execution/run` | Submit graph + run (body: `{graph: {...}, nodes?: [str]}`) |
 | `POST` | `/execution/stop` | Stop the current execution |
-| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{nodes: [str]}`). Returns updated `NodeStatus` for the cleared nodes and all their downstream dependents (cleared nodes become "unexecuted"; downstream nodes become "out-of-date"). |
+| `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required. The server compiles the submitted graph in that workflow's storage context and rejects build errors before invalidating cache. Returns updated `NodeStatus` for the cleared nodes and all downstream dependents. |
 | `GET` | `/execution/status` | Get full execution state (see response schema below) |
 
 The `run` endpoint accepts the full graph (same `GraphState` format as `PUT /graph`). This ensures the executed workflow always matches what the user sees. The backend validates, builds the Workflow, and executes. If `nodes` is provided, those nodes and all their out-of-date or unexecuted dependencies are re-executed — stale cached results are never used. If `nodes` is omitted, all enabled unexecuted/out-of-date nodes are executed.
@@ -1206,7 +1205,7 @@ Instead of a blocking modal, the GUI shows a **persistent execution banner** at 
 - **Allowed interactions during execution:** Selecting nodes, viewing the Node Panel (read-only), browsing the Data Table (completed nodes show their output), scrolling the Logger Panel, panning/zooming the canvas, opening images in Napari/Viv.
 - **Stop button:** Cancels execution. The banner updates to "Execution stopped" and disappears after 3 seconds (or on click).
 - **On completion:** The banner shows "Execution complete" (green) or "Execution failed" (red, with error summary) and disappears after 5 seconds (or on click). On failure, the failed node is auto-selected so its error is visible in the Node Panel.
-- **Safety guarantee:** Since all graph mutations are locked, the running workflow cannot be affected by user actions. The server also rejects `PUT /graph` and `PATCH /graph/nodes/{id}/parameters` during execution (returns HTTP 423 Locked).
+- **Safety guarantee:** Since all graph mutations are locked, the running workflow cannot be affected by user actions. The server also rejects graph validation and cache clearing during execution with HTTP 423 Locked.
 
 ### 3.10 Code Editor Panel
 
@@ -1558,31 +1557,30 @@ All shortcuts are customizable via Settings (Section 3.13.6).
 | 16 | `PATCH` | `/api/v1/workflows/{name}` | Rename or duplicate workflow |
 | 17 | `POST` | `/api/v1/workflows/{name}/export` | "Export" menu (download JSON) |
 | 18 | `POST` | `/api/v1/workflows/import` | "Import" menu (upload JSON) |
-| 19 | `PUT` | `/api/v1/graph` | On structural changes (debounced 300ms) |
-| 20 | `PATCH` | `/api/v1/graph/nodes/{id}/parameters` | On parameter-only changes (lighter validation) |
-| 21 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
-| 22 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
-| 23 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
-| 24 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
-| 25 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
-| 26 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
-| 27 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
-| 28 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |
-| 29 | `GET` | `/api/v1/settings` | Opening Settings panel; startup (deployment mode) |
-| 30 | `PATCH` | `/api/v1/settings` | Changing any setting |
-| 31 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" (desktop only) |
-| 32 | `GET` | `/api/v1/datasets` | Opening Dataset Browser modal (webapp mode) |
-| 33 | `POST` | `/api/v1/datasets/upload` | Upload button in Dataset Browser modal (webapp mode) |
-| 34 | `DELETE` | `/api/v1/datasets/{id}` | Delete button in Dataset Browser modal (webapp mode) |
-| 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table (desktop only) |
-| 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability (desktop only) |
-| 37 | `POST` | `/api/v1/editor/open` | "Open in editor" from Tools Panel or Data Table |
-| 38 | `GET` | `/api/v1/editor/status` | Checking code-server availability for embedded editor |
-| 39 | `GET` | `/api/v1/health` | Health check (monitoring, reverse proxy) |
-| 40 | `POST` | `/api/v1/nodes/summary` | Summary DataFrame for multi-node selection |
-| 41 | `GET` | `/api/v1/nodes/{node_id}/image` | Full image file for Viv viewer |
+| 19 | `PUT` | `/api/v1/graph` | On all meaningful graph changes (debounced 300ms) |
+| 20 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
+| 21 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
+| 22 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
+| 23 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection (resync node states) |
+| 24 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons |
+| 25 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
+| 26 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
+| 27 | `GET` | `/api/v1/execution/status` | WebSocket reconnection (resync execution state) |
+| 28 | `GET` | `/api/v1/settings` | Opening Settings panel; startup (deployment mode) |
+| 29 | `PATCH` | `/api/v1/settings` | Changing any setting |
+| 30 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" (desktop only) |
+| 31 | `GET` | `/api/v1/datasets` | Opening Dataset Browser modal (webapp mode) |
+| 32 | `POST` | `/api/v1/datasets/upload` | Upload button in Dataset Browser modal (webapp mode) |
+| 33 | `DELETE` | `/api/v1/datasets/{id}` | Delete button in Dataset Browser modal (webapp mode) |
+| 34 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table (desktop only) |
+| 35 | `GET` | `/api/v1/napari/status` | Checking Napari availability (desktop only) |
+| 36 | `POST` | `/api/v1/editor/open` | "Open in editor" from Tools Panel or Data Table |
+| 37 | `GET` | `/api/v1/editor/status` | Checking code-server availability for embedded editor |
+| 38 | `GET` | `/api/v1/health` | Health check (monitoring, reverse proxy) |
+| 39 | `POST` | `/api/v1/nodes/summary` | Summary DataFrame for multi-node selection |
+| 40 | `GET` | `/api/v1/nodes/{node_id}/image` | Full image file for Viv viewer |
 
-Total: 41 endpoints.
+Total: 40 endpoints.
 
 ---
 

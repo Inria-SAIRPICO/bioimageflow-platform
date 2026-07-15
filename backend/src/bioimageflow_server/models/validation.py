@@ -1,6 +1,6 @@
 """Validation models: node statuses, graph errors, and validation results."""
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -53,9 +53,3 @@ class ValidationResult(BaseModel):
     valid: bool
     node_statuses: dict[str, NodeStatus] = {}
     errors: list[GraphValidationError] = []
-
-
-class ParameterPatchRequest(BaseModel):
-    """Body of PATCH /graph/nodes/{id}/parameters — constants only."""
-
-    parameters: dict[str, Any]

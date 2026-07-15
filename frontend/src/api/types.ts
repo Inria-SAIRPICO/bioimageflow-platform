@@ -267,23 +267,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/graph/nodes/{node_id}/parameters": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Patch Node Parameters */
-        patch: operations["patch_node_parameters_api_v1_graph_nodes__node_id__parameters_patch"];
-        trace?: never;
-    };
     "/api/v1/graph/nodes/{node_id}/output_schema": {
         parameters: {
             query?: never;
@@ -745,7 +728,7 @@ export interface components {
             /** Nodes */
             nodes: string[];
             /** Workflow Name */
-            workflow_name?: string | null;
+            workflow_name: string;
         };
         /**
          * ColumnRefEdge
@@ -1175,16 +1158,6 @@ export interface components {
              * @default stopped
              */
             environment_status: string;
-        };
-        /**
-         * ParameterPatchRequest
-         * @description Body of PATCH /graph/nodes/{id}/parameters — constants only.
-         */
-        ParameterPatchRequest: {
-            /** Parameters */
-            parameters: {
-                [key: string]: unknown;
-            };
         };
         /**
          * PositionalEdge
@@ -1730,7 +1703,6 @@ export type OmeroInstance = components['schemas']['OMEROInstance'];
 export type OmeroInstancePatch = components['schemas']['OMEROInstancePatch'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
 export type PackageInfo = components['schemas']['PackageInfo'];
-export type ParameterPatchRequest = components['schemas']['ParameterPatchRequest'];
 export type PositionalEdge = components['schemas']['PositionalEdge'];
 export type PublishedInput = components['schemas']['PublishedInput'];
 export type PublishedOutput = components['schemas']['PublishedOutput'];
@@ -2266,43 +2238,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GraphState"] | components["schemas"]["GraphValidationRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ValidationResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    patch_node_parameters_api_v1_graph_nodes__node_id__parameters_patch: {
-        parameters: {
-            query?: {
-                tool_name?: string | null;
-            };
-            header?: never;
-            path: {
-                node_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ParameterPatchRequest"];
             };
         };
         responses: {

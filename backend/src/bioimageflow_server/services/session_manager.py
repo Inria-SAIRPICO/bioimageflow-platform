@@ -1,14 +1,8 @@
-"""Per-graph :class:`WorkflowSession` lifecycle manager.
+"""Legacy :class:`WorkflowSession` compatibility helper.
 
-The platform supports one active graph at a time. The session manager
-holds a single :class:`WorkflowSession` that is rebuilt on every
-``PUT /graph`` (full replace) and mutated in place on
-``PATCH /node/{id}/parameters`` (keystroke-rate constant edits).
-
-The session caches a :class:`Workflow` across non-structural edits so
-that constant changes never trigger tool re-resolution — the
-load-bearing contract documented in the library's
-``PLATFORM_MIGRATION.md`` section 10.
+The application no longer wires this class into validation, execution,
+draft persistence, or cache operations. It remains temporarily for
+library compatibility tests and must not determine request meaning.
 """
 
 from __future__ import annotations
@@ -29,11 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionManager:
-    """Manages the active :class:`WorkflowSession` for the platform.
-
-    Singleton-like: one instance is created at startup and injected into
-    routers. There is at most one active session at any time.
-    """
+    """Own one isolated legacy session without application authority."""
 
     def __init__(self) -> None:
         self._session: Any | None = None

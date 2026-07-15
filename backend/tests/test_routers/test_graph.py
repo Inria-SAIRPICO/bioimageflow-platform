@@ -285,76 +285,16 @@ async def test_put_with_no_execution_manager_is_unlocked(
     assert resp.status_code == 200
 
 
-# ---- PATCH /graph/nodes/{id}/parameters ------------------------------------
+# ---- Removed PATCH /graph/nodes/{id}/parameters ----------------------------
 
 
-async def test_patch_valid_parameters(client: httpx.AsyncClient) -> None:
+async def test_parameter_patch_endpoint_is_removed(client: httpx.AsyncClient) -> None:
     resp = await client.patch(
         "/api/v1/graph/nodes/n1/parameters",
         params={"tool_name": "IntTool"},
         json={"parameters": {"n": 5}},
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["valid"] is True
-    assert list(data["node_statuses"].keys()) == ["n1"]
-
-
-async def test_patch_invalid_parameters(client: httpx.AsyncClient) -> None:
-    resp = await client.patch(
-        "/api/v1/graph/nodes/n1/parameters",
-        params={"tool_name": "IntTool"},
-        json={"parameters": {"n": "not-an-int"}},
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["valid"] is False
-    assert any(e["type"] == "parameter_invalid" for e in data["errors"])
-
-
-async def test_patch_missing_tool_name(client: httpx.AsyncClient) -> None:
-    resp = await client.patch(
-        "/api/v1/graph/nodes/n1/parameters",
-        json={"parameters": {"n": 5}},
-    )
-    assert resp.status_code == 400
-
-
-async def test_patch_with_binding_shape_rejected(
-    client: httpx.AsyncClient,
-) -> None:
-    resp = await client.patch(
-        "/api/v1/graph/nodes/n1/parameters",
-        params={"tool_name": "MockProcessingTool"},
-        json={
-            "parameters": {"input_image": {"node_id": "up", "output": "mask"}}
-        },
-    )
-    assert resp.status_code == 400
-
-
-async def test_patch_returns_423_when_locked(
-    client_locked: httpx.AsyncClient,
-) -> None:
-    resp = await client_locked.patch(
-        "/api/v1/graph/nodes/n1/parameters",
-        params={"tool_name": "IntTool"},
-        json={"parameters": {"n": 5}},
-    )
-    assert resp.status_code == 423
-
-
-async def test_patch_unknown_tool_surfaces_missing_tool(
-    client: httpx.AsyncClient,
-) -> None:
-    resp = await client.patch(
-        "/api/v1/graph/nodes/n1/parameters",
-        params={"tool_name": "NoSuchTool"},
-        json={"parameters": {}},
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert any(e["type"] == "missing_tool" for e in data["errors"])
+    assert resp.status_code == 404
 
 
 # ---- POST /graph/nodes/{node_id}/output_schema ----------------------------

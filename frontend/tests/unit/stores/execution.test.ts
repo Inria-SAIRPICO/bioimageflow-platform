@@ -174,7 +174,7 @@ describe('execution store', () => {
     ])
   })
 
-  it('clear sends {graph, nodes} and merges returned node_statuses', async () => {
+  it('clear sends {graph, nodes, workflow_name} and merges returned node_statuses', async () => {
     const graph = { nodes: [], edges: [] }
     const responseData = {
       node_statuses: {
@@ -185,12 +185,12 @@ describe('execution store', () => {
     mockedApi.post.mockResolvedValueOnce({ data: responseData })
 
     const store = useExecutionStore()
-    const result = await store.clear(graph, ['n1', 'n2'])
+    const result = await store.clear(graph, ['n1', 'n2'], 'workflow-a')
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/clear', {
       graph,
       nodes: ['n1', 'n2'],
-      workflow_name: null,
+      workflow_name: 'workflow-a',
     })
     expect(result).toEqual(responseData)
     expect(store.nodeStatuses.n1.status).toBe('unexecuted')

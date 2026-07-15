@@ -20,7 +20,6 @@ from wetlands.exceptions import EnvironmentReuseError
 
 from bioimageflow_server.models.graph import ColumnRefEdge, GraphState, NodeState
 from bioimageflow_server.models.settings import Settings
-from bioimageflow_server.services import execution as execution_module
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     ExecutionEventBus,
@@ -222,10 +221,11 @@ def _install_fake_builder(
     workflow: _FakeWorkflow | None,
     errors: list | None = None,
 ) -> MagicMock:
-    """Replace ``graph_builder.build_workflow`` with a fake returning ``BuildOutput``."""
+    """Replace request-local compilation with a fake ``BuildOutput``."""
     from bioimageflow_server.services.graph_builder import BuildOutput
+    from bioimageflow_server.services.graph_compiler import GraphCompiler
 
-    def _builder(graph, registry, storage_path=None, on_progress=None, settings=None):
+    def _builder(graph, *, storage_path=None, on_progress=None, settings=None):
         # Wire the progress callback into the fake workflow so scripted
         # events are delivered through it.
         if workflow is not None:
@@ -237,7 +237,7 @@ def _install_fake_builder(
         )
 
     mock = MagicMock(side_effect=_builder)
-    monkeypatch.setattr(execution_module, "build_workflow", mock)
+    monkeypatch.setattr(GraphCompiler, "compile", mock)
     return mock
 
 
@@ -1105,22 +1105,15 @@ class TestExecutionManagerStoragePath:
         await _drain(em)
         assert builder.call_args.kwargs["storage_path"] == Path("/tmp/workflows/wf_a")
 
-    async def test_session_storage_mismatch_rebuilds_workflow(
+    async def test_start_always_compiles_the_request_graph(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         wf = _FakeWorkflow()
         builder = _install_fake_builder(monkeypatch, wf)
-        cached_session = MagicMock()
-        cached_session.to_workflow.return_value = _FakeWorkflow()
-        session_manager = MagicMock()
-        session_manager.session = cached_session
-        session_manager.storage_path = Path("/tmp/workflows/old")
-        session_manager.translation_errors = []
         em = ExecutionManager(
             RecordingEventBus(),
             MagicMock(),
             _settings(),
-            session_manager=session_manager,
         )
 
         await em.start(
@@ -1129,5 +1122,5 @@ class TestExecutionManagerStoragePath:
         )
         await _drain(em)
 
-        cached_session.to_workflow.assert_not_called()
+        assert builder.call_args.args[0].nodes[0].id == "n1"
         assert builder.call_args.kwargs["storage_path"] == Path("/tmp/workflows/new")

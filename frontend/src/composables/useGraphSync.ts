@@ -257,60 +257,11 @@ function _createGraphSync() {
     await sendNow()
   }
 
-  async function patchParameters(
-    nodeId: string,
-    toolName: string,
-    parameters: Record<string, unknown>,
-  ): Promise<void> {
-    syncState.value = 'pending'
-    try {
-      const response = await api.patch(
-        `/api/v1/graph/nodes/${nodeId}/parameters`,
-        { parameters },
-        { params: { tool_name: toolName } },
-      )
-      const patch = response.data as ValidationResult | undefined
-      if (patch) {
-        // Merge: update only the patched node's entry; replace the errors
-        // list with the server response's errors scoped to that node.
-        const prev = validationResult.value
-        const mergedStatuses = {
-          ...(prev?.node_statuses ?? {}),
-          ...(patch.node_statuses ?? {}),
-        }
-        const otherErrors = (prev?.errors ?? []).filter(
-          (e) => e.node !== nodeId,
-        )
-        validationResult.value = {
-          valid:
-            (patch.valid ?? true) &&
-            (prev?.valid ?? true) &&
-            otherErrors.length === 0,
-          node_statuses: mergedStatuses,
-          errors: [...otherErrors, ...(patch.errors ?? [])],
-        }
-      }
-      syncState.value = 'idle'
-    } catch (err: any) {
-      syncState.value = 'error'
-      _reportError(
-        err?.response?.status,
-        err?.message ?? 'PATCH /graph failed',
-      )
-    }
-    // Always trigger a debounced PUT /graph follow-up to refresh the full
-    // graph's statuses. The caller is responsible for supplying the current
-    // graph to `syncGraph`; we schedule here only if there's a pending graph
-    // from the caller. This keeps the PATCH fast pre-flight / PUT authoritative
-    // split clean.
-  }
-
   return {
     syncGraph,
     syncGraphState,
     syncNodeParameters,
     flushNow,
-    patchParameters,
     validationResult,
     isPending,
     syncState,

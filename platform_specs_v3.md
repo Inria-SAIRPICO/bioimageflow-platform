@@ -495,7 +495,6 @@ The following endpoints are rate-limited server-side:
 | Endpoint | Limit | Reason |
 |----------|-------|--------|
 | `PUT /api/v1/graph` | 10 requests/second per session | Prevents validation flooding from rapid edits |
-| `PATCH /api/v1/graph/nodes/{id}/parameters` | 10 requests/second per session | Prevents parameter change flooding |
 
 Rate limiting is per-session (identified by the authentication token). Requests exceeding the limit receive HTTP 429 Too Many Requests with a `Retry-After` header.
 
@@ -736,18 +735,17 @@ Dataset management endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE 
 | # | Endpoint | Change |
 |---|----------|--------|
 | 1 | `PUT /api/v1/graph` | Rate-limited in webapp mode (10 req/s). Validation timeout (10s). |
-| 2 | `PATCH /api/v1/graph/nodes/{id}/parameters` | Rate-limited in webapp mode (10 req/s). |
-| 3 | `POST /api/v1/tools` | Returns 403 Forbidden in webapp mode. |
-| 4 | `POST /api/v1/tools/packages/{name}/install` | In webapp mode, only known packages are allowed (403 for unknown). |
-| 5 | `POST /api/v1/fs/reveal` | Returns 501 Not Implemented in webapp mode. |
-| 6 | `POST /api/v1/napari/open` | Returns 403 Forbidden in webapp mode. |
-| 7 | `GET /api/v1/napari/status` | Returns 403 Forbidden in webapp mode. |
-| 8 | `POST /api/v1/editor/open` | Returns 403 Forbidden in webapp mode. |
-| 9 | `POST /api/v1/editor/open-tool` | Returns 403 Forbidden in webapp mode. |
-| 10 | `GET /api/v1/workspace` | Returns the derived per-user workspace and admin-managed flags. |
-| 11 | `PATCH /api/v1/workspace` | Returns 403 Forbidden for ordinary webapp users. |
-| 12 | `GET /api/v1/settings` | Response includes `deployment_mode` (read-only) and read-only workspace path information. |
-| 13 | WebSocket `/ws` | Requires `?token=<token>` query parameter in webapp mode. |
+| 2 | `POST /api/v1/tools` | Returns 403 Forbidden in webapp mode. |
+| 3 | `POST /api/v1/tools/packages/{name}/install` | In webapp mode, only known packages are allowed (403 for unknown). |
+| 4 | `POST /api/v1/fs/reveal` | Returns 501 Not Implemented in webapp mode. |
+| 5 | `POST /api/v1/napari/open` | Returns 403 Forbidden in webapp mode. |
+| 6 | `GET /api/v1/napari/status` | Returns 403 Forbidden in webapp mode. |
+| 7 | `POST /api/v1/editor/open` | Returns 403 Forbidden in webapp mode. |
+| 8 | `POST /api/v1/editor/open-tool` | Returns 403 Forbidden in webapp mode. |
+| 9 | `GET /api/v1/workspace` | Returns the derived per-user workspace and admin-managed flags. |
+| 10 | `PATCH /api/v1/workspace` | Returns 403 Forbidden for ordinary webapp users. |
+| 11 | `GET /api/v1/settings` | Response includes `deployment_mode` (read-only) and read-only workspace path information. |
+| 12 | WebSocket `/ws` | Requires `?token=<token>` query parameter in webapp mode. |
 
 ### 11.3 Launcher Service Endpoints (New Service)
 

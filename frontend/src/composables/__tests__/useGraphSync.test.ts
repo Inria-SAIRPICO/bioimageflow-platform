@@ -6,7 +6,6 @@ import type { ValidationResult } from '@/api/types'
 vi.mock('@/api/client', () => ({
   api: {
     put: vi.fn(),
-    patch: vi.fn(),
   },
 }))
 
@@ -14,7 +13,6 @@ import { api } from '@/api/client'
 import { useGraphSync, serializeGraph, _resetGraphSyncForTest } from '../useGraphSync'
 
 const mockedPut = vi.mocked(api.put)
-const mockedPatch = vi.mocked(api.patch)
 
 /**
  * Build a Vue Flow-shaped graph (the format emitGraphChanged produces).
@@ -65,7 +63,6 @@ describe('useGraphSync', () => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
     mockedPut.mockReset()
-    mockedPatch.mockReset()
     _resetGraphSyncForTest()
   })
 
@@ -272,51 +269,6 @@ describe('useGraphSync', () => {
     resolve({ data: makeValidation() })
     await vi.advanceTimersByTimeAsync(0)
     expect(isPending.value).toBe(false)
-  })
-
-  it('patchParameters sends {parameters} wrapper and tool_name query param', async () => {
-    mockedPatch.mockResolvedValue({ data: { valid: true, node_statuses: {}, errors: [] } })
-    const { patchParameters } = useGraphSync()
-
-    await patchParameters('node_1', 'MyTool', { threshold: 0.5 })
-
-    expect(mockedPatch).toHaveBeenCalledWith(
-      '/api/v1/graph/nodes/node_1/parameters',
-      { parameters: { threshold: 0.5 } },
-      { params: { tool_name: 'MyTool' } },
-    )
-  })
-
-  it('patchParameters merges single-node status without clobbering others', async () => {
-    // Seed validationResult with two nodes via PUT first
-    mockedPut.mockResolvedValue({
-      data: {
-        valid: true,
-        node_statuses: {
-          a: { node_id: 'a', status: 'unexecuted', cached: false },
-          b: { node_id: 'b', status: 'unexecuted', cached: false },
-        },
-        errors: [],
-      },
-    })
-    const { syncGraph, patchParameters, validationResult } = useGraphSync()
-    syncGraph(makeVueFlowGraph('a'))
-    await vi.advanceTimersByTimeAsync(300)
-
-    mockedPatch.mockResolvedValue({
-      data: {
-        valid: true,
-        node_statuses: {
-          a: { node_id: 'a', status: 'out_of_date', cached: false },
-        },
-        errors: [],
-      },
-    })
-    await patchParameters('a', 'MyTool', { x: 1 })
-
-    // a updated, b preserved
-    expect(validationResult.value?.node_statuses?.a.status).toBe('out_of_date')
-    expect(validationResult.value?.node_statuses?.b.status).toBe('unexecuted')
   })
 
   it('syncState is "pending" while PUT in flight and "idle" on success', async () => {

@@ -39,7 +39,6 @@ from bioimageflow_server.routers.editor import (
 from bioimageflow_server.routers.graph import (
     get_dev_mode as graph_get_dev_mode,
     get_execution_manager as graph_get_execution_manager,
-    get_session_manager as graph_get_session_manager,
     get_settings as graph_get_settings,
     get_storage_path as graph_get_storage_path,
     get_tool_registry as graph_get_tool_registry,
@@ -48,7 +47,6 @@ from bioimageflow_server.routers.graph import (
 )
 from bioimageflow_server.routers.execution import (
     get_execution_manager as execution_get_manager,
-    get_session_manager as execution_get_session_manager,
     get_storage_path as execution_get_storage_path,
     get_tool_registry as execution_get_tool_registry,
     get_workflow_store as execution_get_workflow_store,
@@ -113,7 +111,6 @@ from bioimageflow_server.services.agent_workspace_context import ensure_agent_wo
 from bioimageflow_server.services.editor import EditorService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
-from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
     PackageNetworkError,
@@ -199,8 +196,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.tool_registry is None:
         registry.scan_tool_store()
 
-    session_manager = SessionManager()
-
     # Resolve Settings once: a loaded SettingsStore wins, then caller-supplied
     # settings, then a minimal default. Used for the initial services graph;
     # request-time settings still go through _live_settings().
@@ -249,7 +244,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             tool_registry=registry,
             settings=resolved_settings,
             storage_path=resolved_storage_path,
-            session_manager=session_manager,
             settings_provider=settings_provider,
         )
 
@@ -553,14 +547,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_result_store] = lambda: result_store
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
-    app.dependency_overrides[graph_get_session_manager] = lambda: session_manager
     app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[graph_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
     app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
-    app.dependency_overrides[execution_get_session_manager] = lambda: session_manager
     app.dependency_overrides[execution_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[get_workspace_service] = _current_workspace_service

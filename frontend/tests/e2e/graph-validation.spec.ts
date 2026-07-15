@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test'
 /**
  * E2E coverage for the graph validation flow.
  *
- * These tests exercise the PUT /graph and PATCH /graph/nodes/{id}/parameters
- * endpoints via the canvas. The Playwright backend exposes the dev seed
+ * These tests exercise request-local full-graph validation via the canvas.
+ * The Playwright backend exposes the dev seed
  * router, so these tests create their own deterministic tool registry.
  */
 test.describe('graph validation', () => {
@@ -29,7 +29,7 @@ test.describe('graph validation', () => {
     expect(result.body.valid).toBe(true)
   })
 
-  test('PATCH without tool_name returns 400', async ({ page }) => {
+  test('request-history parameter PATCH is not exposed', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const res = await fetch('/api/v1/graph/nodes/n1/parameters', {
         method: 'PATCH',
@@ -38,24 +38,7 @@ test.describe('graph validation', () => {
       })
       return { status: res.status }
     })
-    expect(result.status).toBe(400)
-  })
-
-  test('PATCH with binding-shaped parameter is rejected', async ({ page }) => {
-    const result = await page.evaluate(async () => {
-      const res = await fetch(
-        '/api/v1/graph/nodes/n1/parameters?tool_name=AnyTool',
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            parameters: { x: { node_id: 'u', output: 'mask' } },
-          }),
-        },
-      )
-      return { status: res.status }
-    })
-    expect(result.status).toBe(400)
+    expect(result.status).toBe(404)
   })
 
   test('PUT /graph with a tool node returns a node status', async ({ page }) => {

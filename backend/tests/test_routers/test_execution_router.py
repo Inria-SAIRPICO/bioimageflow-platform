@@ -281,11 +281,18 @@ async def test_clear_returns_node_statuses(tmp_path: Path) -> None:
         ],
         "edges": [],
     }
-    c = await _make_client(tmp_path, execution_manager=em, tool_registry=reg)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        tool_registry=reg,
+        workflow_store=workflow_store,
+    )
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": graph, "nodes": ["a"]},
+            json={"graph": graph, "nodes": ["a"], "workflow_name": "wf"},
         )
     assert resp.status_code == 200
     body = resp.json()
@@ -298,12 +305,13 @@ async def test_clear_without_graph_returns_422(tmp_path: Path) -> None:
     c = await _make_client(tmp_path, execution_manager=em)
     async with c:
         resp = await c.post(
-            "/api/v1/execution/clear", json={"nodes": ["n1"]}
+            "/api/v1/execution/clear",
+            json={"nodes": ["n1"], "workflow_name": "wf"},
         )
     assert resp.status_code == 422
 
 
-async def test_clear_while_running_returns_409(tmp_path: Path) -> None:
+async def test_clear_while_running_returns_423(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=True)
     reg = _make_registry()
     graph = {
@@ -317,9 +325,48 @@ async def test_clear_while_running_returns_409(tmp_path: Path) -> None:
     async with c:
         resp = await c.post(
             "/api/v1/execution/clear",
-            json={"graph": graph, "nodes": ["a"]},
+            json={"graph": graph, "nodes": ["a"], "workflow_name": "wf"},
         )
-    assert resp.status_code == 409
+    assert resp.status_code == 423
+
+
+async def test_clear_requires_workflow_identity(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        tool_registry=_make_registry(),
+    )
+    async with c:
+        resp = await c.post(
+            "/api/v1/execution/clear",
+            json={"graph": _minimal_graph(), "nodes": ["n1"]},
+        )
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("workflow_name", [None, ""])
+async def test_clear_rejects_empty_workflow_identity(
+    tmp_path: Path,
+    workflow_name: str | None,
+) -> None:
+    c = await _make_client(
+        tmp_path,
+        execution_manager=_FakeExecutionManager(running=False),
+        tool_registry=_make_registry(),
+    )
+    async with c:
+        resp = await c.post(
+            "/api/v1/execution/clear",
+            json={
+                "graph": _minimal_graph(),
+                "nodes": ["n1"],
+                "workflow_name": workflow_name,
+            },
+        )
+
+    assert resp.status_code == 422
 
 
 async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
@@ -343,10 +390,18 @@ async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
             }
         ],
     }
-    c = await _make_client(tmp_path, execution_manager=em, tool_registry=reg)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        tool_registry=reg,
+        workflow_store=workflow_store,
+    )
     async with c:
         resp = await c.post(
-            "/api/v1/execution/clear", json={"graph": graph, "nodes": ["a"]}
+            "/api/v1/execution/clear",
+            json={"graph": graph, "nodes": ["a"], "workflow_name": "wf"},
         )
     assert resp.status_code == 200
     body = resp.json()
@@ -364,7 +419,7 @@ async def test_clear_resolves_workflow_storage_path(
     workflow_store.get_storage_path.return_value = workflow_storage
     seen: dict[str, Path | None] = {}
 
-    def _fake_clear(nodes, graph, registry, storage_path, session_manager=None):
+    def _fake_clear(nodes, graph, registry, storage_path):
         seen["storage_path"] = storage_path
         return {
             "a": NodeStatus(node_id="a", status="unexecuted", cached=False),
