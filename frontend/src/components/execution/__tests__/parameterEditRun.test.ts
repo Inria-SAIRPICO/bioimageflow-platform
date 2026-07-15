@@ -187,6 +187,10 @@ describe('parameter edit followed immediately by Run', () => {
       setNodeEnabled: () => false,
       setInputPinned: () => false,
       setOutputTemplate: () => false,
+      togglePublishedInput: () => ({ status: 'unchanged' }),
+      togglePublishedOutput: () => ({ status: 'unchanged' }),
+      renamePublishedInput: () => ({ status: 'unchanged' }),
+      renamePublishedOutput: () => ({ status: 'unchanged' }),
       updateParameter: (nodeId, key, value) => {
         const selected = canvasNodes.find(node => node.id === nodeId)
         if (!selected?.data) return false
