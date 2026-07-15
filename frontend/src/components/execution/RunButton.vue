@@ -12,6 +12,7 @@ import {
   validationErrorsForExecution,
 } from '@/utils/executionSelection'
 import type { GraphState, ValidationResult } from '@/api/types'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 
 const props = defineProps<{
   graph: GraphState
@@ -35,13 +36,19 @@ const { lockForExecution } = useExecutionLock()
 const confirmOpen = ref(false)
 const confirmResolve = ref<((value: boolean) => void) | null>(null)
 const pendingOutOfDateNodes = ref<string[]>([])
+const activeWorkflowId = computed(() => {
+  if (ui.activeWorkflowId !== null) return ui.activeWorkflowId
+  return canvasSessionRegistry.sessionCount.value === 0
+    ? workflowStore.currentName
+    : null
+})
 
 const runDisabled = computed(
-  () => exec.isRunning || !workflowStore.currentName,
+  () => exec.isRunning || !activeWorkflowId.value,
 )
 const runTooltip = computed(() => {
   if (exec.isRunning) return 'Execution in progress'
-  if (!workflowStore.currentName) return 'Open or save a workflow before running'
+  if (!activeWorkflowId.value) return 'Open or save a workflow before running'
   return ''
 })
 
@@ -90,11 +97,12 @@ function findOutOfDateNodes(graph: GraphState, nodes?: string[]): string[] {
 
 async function runCore(nodes?: string[]) {
   const targetCanvasId = canvasPersistence.canvasId
+  const workflowName = activeWorkflowId.value
+  if (!workflowName) return
   const isTargetActive = () => canvasPersistence.canvasId === targetCanvasId
+    && activeWorkflowId.value === workflowName
   let graph = currentExecutionGraph()
   try {
-    const workflowName = workflowStore.currentName
-    if (!workflowName) return
     const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
     if (!isTargetActive()) return
     if (!fresh) {

@@ -1,7 +1,29 @@
 import { ref, reactive, computed } from 'vue'
 import { defineStore } from 'pinia'
+import {
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
+
+interface CanvasPresentationContext {
+  selectedNodeIds: string[]
+  graphNodes: any[]
+  activeWorkflowId: string | null
+  activeWorkflowName: string | null
+  hasUnsavedChanges: boolean
+}
+
+function createPresentationContext(): CanvasPresentationContext {
+  return {
+    selectedNodeIds: [],
+    graphNodes: [],
+    activeWorkflowId: null,
+    activeWorkflowName: null,
+    hasUnsavedChanges: false,
+  }
+}
 
 const THEME_STORAGE_KEY = 'bioimageflow.theme'
 
@@ -29,10 +51,10 @@ function writeStoredThemePreference(preference: ThemePreference): void {
 }
 
 export const useUIStore = defineStore('ui', () => {
-  const selectedNodeIds = ref<string[]>([])
-  const graphNodes = ref<any[]>([])
-  const activeWorkflowName = ref<string | null>(null)
-  const hasUnsavedChanges = ref(false)
+  const legacyPresentation = reactive(createPresentationContext())
+  const canvasPresentations = reactive(
+    new Map<CanvasId, CanvasPresentationContext>(),
+  )
   const isExecutionLocked = ref(false)
   const codeEditorUrl = ref<string | null>(null)
   const codeEditorPath = ref<string | null>(null)
@@ -67,6 +89,43 @@ export const useUIStore = defineStore('ui', () => {
     codeEditor: false,
   })
 
+  function activePresentation(): CanvasPresentationContext | null {
+    const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+    if (activeCanvasId !== null) {
+      return canvasPresentations.get(activeCanvasId) ?? null
+    }
+    return canvasSessionRegistry.sessionCount.value === 0
+      ? legacyPresentation
+      : null
+  }
+
+  function writableActivePresentation(): CanvasPresentationContext | null {
+    const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+    if (activeCanvasId !== null) return canvasPresentation(activeCanvasId)
+    return canvasSessionRegistry.sessionCount.value === 0
+      ? legacyPresentation
+      : null
+  }
+
+  function canvasPresentation(canvasId: CanvasId): CanvasPresentationContext {
+    const existing = canvasPresentations.get(canvasId)
+    if (existing) return existing
+    const created = reactive(createPresentationContext()) as CanvasPresentationContext
+    canvasPresentations.set(canvasId, created)
+    return created
+  }
+
+  const selectedNodeIds = computed(() => activePresentation()?.selectedNodeIds ?? [])
+  const graphNodes = computed(() => activePresentation()?.graphNodes ?? [])
+  const activeWorkflowName = computed(
+    () => activePresentation()?.activeWorkflowName ?? null,
+  )
+  const activeWorkflowId = computed(
+    () => activePresentation()?.activeWorkflowId ?? null,
+  )
+  const hasUnsavedChanges = computed(
+    () => activePresentation()?.hasUnsavedChanges ?? false,
+  )
   const hasSelection = computed(() => selectedNodeIds.value.length > 0)
   const isSingleSelection = computed(() => selectedNodeIds.value.length === 1)
   const isMultiSelection = computed(() => selectedNodeIds.value.length > 1)
@@ -88,27 +147,81 @@ export const useUIStore = defineStore('ui', () => {
   })
 
   function setSelectedNodes(ids: string[]) {
-    selectedNodeIds.value = ids
+    const presentation = writableActivePresentation()
+    if (presentation) presentation.selectedNodeIds = [...ids]
   }
 
   function clearSelection() {
-    selectedNodeIds.value = []
+    const presentation = writableActivePresentation()
+    if (presentation) presentation.selectedNodeIds = []
   }
 
   function setGraphNodes(nodes: any[]) {
-    graphNodes.value = nodes
+    const presentation = writableActivePresentation()
+    if (presentation) presentation.graphNodes = nodes
   }
 
   function setActiveWorkflow(name: string | null) {
-    activeWorkflowName.value = name
+    const presentation = writableActivePresentation()
+    if (presentation) presentation.activeWorkflowName = name
+  }
+
+  function setActiveWorkflowIdentity(
+    workflowId: string | null,
+    displayName: string | null,
+  ) {
+    const presentation = writableActivePresentation()
+    if (!presentation) return
+    presentation.activeWorkflowId = workflowId
+    presentation.activeWorkflowName = displayName
   }
 
   function markDirty() {
-    hasUnsavedChanges.value = true
+    const presentation = writableActivePresentation()
+    if (presentation) presentation.hasUnsavedChanges = true
   }
 
   function markClean() {
-    hasUnsavedChanges.value = false
+    const presentation = writableActivePresentation()
+    if (presentation) presentation.hasUnsavedChanges = false
+  }
+
+  function setCanvasSelectedNodes(canvasId: CanvasId, ids: string[]) {
+    canvasPresentation(canvasId).selectedNodeIds = [...ids]
+  }
+
+  function setCanvasGraphNodes(canvasId: CanvasId, nodes: any[]) {
+    canvasPresentation(canvasId).graphNodes = nodes
+  }
+
+  function setCanvasWorkflow(
+    canvasId: CanvasId,
+    workflowId: string | null,
+    displayName: string | null,
+  ) {
+    const presentation = canvasPresentation(canvasId)
+    presentation.activeWorkflowId = workflowId
+    presentation.activeWorkflowName = displayName
+  }
+
+  function canvasWorkflowId(canvasId: CanvasId): string | null {
+    return canvasPresentations.get(canvasId)?.activeWorkflowId ?? null
+  }
+
+  function markCanvasDirty(canvasId: CanvasId) {
+    canvasPresentation(canvasId).hasUnsavedChanges = true
+  }
+
+  function markCanvasClean(canvasId: CanvasId) {
+    canvasPresentation(canvasId).hasUnsavedChanges = false
+  }
+
+  function canvasHasUnsavedChanges(canvasId: CanvasId): boolean {
+    return canvasPresentations.get(canvasId)?.hasUnsavedChanges ?? false
+  }
+
+  function releaseCanvasPresentation(canvasId: CanvasId) {
+    canvasPresentations.delete(canvasId)
   }
 
   function setExecutionLocked(locked: boolean) {
@@ -178,6 +291,7 @@ export const useUIStore = defineStore('ui', () => {
     selectedNodeIds,
     graphNodes,
     activeWorkflowName,
+    activeWorkflowId,
     hasUnsavedChanges,
     isExecutionLocked,
     codeEditorUrl,
@@ -201,8 +315,17 @@ export const useUIStore = defineStore('ui', () => {
     clearSelection,
     setGraphNodes,
     setActiveWorkflow,
+    setActiveWorkflowIdentity,
     markDirty,
     markClean,
+    setCanvasSelectedNodes,
+    setCanvasGraphNodes,
+    setCanvasWorkflow,
+    canvasWorkflowId,
+    markCanvasDirty,
+    markCanvasClean,
+    canvasHasUnsavedChanges,
+    releaseCanvasPresentation,
     setExecutionLocked,
     setThemePreference,
     togglePanel,

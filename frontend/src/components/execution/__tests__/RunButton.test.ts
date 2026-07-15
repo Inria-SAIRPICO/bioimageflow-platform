@@ -30,6 +30,10 @@ import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { GraphState, ValidationResult } from '@/api/types'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 
 function mountButton(opts: {
   validationResult?: ValidationResult | null
@@ -69,6 +73,7 @@ function mountButton(opts: {
 
 describe('RunButton', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     useWorkflowStore().current = {
       name: 'wf_a',
@@ -95,6 +100,21 @@ describe('RunButton', () => {
     useWorkflowStore().current = null
     const { wrapper } = mountButton()
     const btn = wrapper.find('[data-testid="run-workflow-button"]')
+    expect(btn.attributes('disabled')).toBeDefined()
+    expect(btn.attributes('title')).toMatch(/workflow/i)
+  })
+
+  it('does not fall back to the global workflow when no registered canvas is active', () => {
+    const canvasId = canvasIdFromPanelId('workflow:registered')
+    canvasSessionRegistry.register({
+      kind: 'root',
+      canvasId,
+      workflowId: 'registered',
+    })
+
+    const { wrapper } = mountButton()
+    const btn = wrapper.find('[data-testid="run-workflow-button"]')
+
     expect(btn.attributes('disabled')).toBeDefined()
     expect(btn.attributes('title')).toMatch(/workflow/i)
   })
@@ -188,6 +208,32 @@ describe('RunButton', () => {
     await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
     await nextTick()
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], 'wf_a')
+  })
+
+  it('runs the active canvas selection and workflow identity', async () => {
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'wf_b' })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasA, 'wf_a', 'Workflow A')
+    ui.setCanvasSelectedNodes(canvasA, ['node-a'])
+    ui.setCanvasWorkflow(canvasB, 'wf_b', 'Workflow B')
+    ui.setCanvasSelectedNodes(canvasB, ['node-b'])
+    canvasSessionRegistry.activate(canvasA)
+    useWorkflowStore().current = {
+      name: 'wf_b',
+      display_name: 'Workflow B',
+    } as any
+    const { wrapper } = mountButton()
+    const exec = useExecutionStore()
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['node-a'], 'wf_a')
   })
 
   it('passes the active workflow name to run', async () => {

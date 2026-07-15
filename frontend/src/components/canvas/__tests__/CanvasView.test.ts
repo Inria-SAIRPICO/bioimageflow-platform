@@ -472,6 +472,47 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('writes presentation state through its fixed canvas identity', () => {
+      mockNodes = [
+        {
+          id: 'shared',
+          selected: true,
+          data: { name: 'Analysis node', toolName: 'gaussian_blur' },
+          position: { x: 0, y: 0 },
+        },
+      ]
+      const ui = useUIStore()
+      const setWorkflow = vi.spyOn(ui, 'setCanvasWorkflow')
+      const setNodes = vi.spyOn(ui, 'setCanvasGraphNodes')
+      const setSelection = vi.spyOn(ui, 'setCanvasSelectedNodes')
+      const markDirty = vi.spyOn(ui, 'markCanvasDirty')
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+
+      selectionHandler!([{ type: 'select' }])
+      connectHandler!({
+        source: 'shared',
+        target: 'missing',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+      })
+
+      expect(setWorkflow).toHaveBeenCalledWith(
+        'workflow:analysis',
+        'analysis',
+        'Analysis',
+      )
+      expect(setNodes).toHaveBeenCalledWith('workflow:analysis', mockNodes)
+      expect(setSelection).toHaveBeenCalledWith('workflow:analysis', ['shared'])
+      expect(markDirty).toHaveBeenCalledWith('workflow:analysis')
+      w.unmount()
+    })
+
     it('registers a nested canvas with its parent canvas identity', () => {
       const sessions = useSubWorkflowSessionsStore()
       const session = sessions.openSession({
@@ -2647,6 +2688,7 @@ describe('CanvasView', () => {
         edges: [],
       }
       const lastModified = '2026-04-30T12:00:00.000Z'
+      let rejectDraft!: (reason: Error) => void
 
       apiMocks.get.mockImplementation((url: string) => {
         if (url === '/api/v1/workflows') {
@@ -2674,6 +2716,11 @@ describe('CanvasView', () => {
             },
           })
         }
+        if (url === `/api/v1/workflow-drafts/${name}`) {
+          return new Promise((_resolve, reject) => {
+            rejectDraft = reject
+          })
+        }
         if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
         return Promise.resolve({ data: {} })
       })
@@ -2684,6 +2731,13 @@ describe('CanvasView', () => {
       })
 
       const w = mountCanvas()
+      await flushPromises()
+      useWorkflowStore().current = {
+        name: 'other',
+        display_name: 'Other workflow',
+        last_modified: '2026-04-30T10:00:00.000Z',
+      } as any
+      rejectDraft(new Error('No workflow draft'))
       await flushPromises()
       await nextTick()
       await flushPromises()

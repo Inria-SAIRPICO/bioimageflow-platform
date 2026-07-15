@@ -4,6 +4,10 @@ import { AxiosError } from 'axios'
 import { api } from '@/api/client'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useUIStore } from '@/stores/ui'
+import {
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
 import type {
   GraphState,
   MissingPackage,
@@ -54,6 +58,11 @@ export type WorkflowTreeFolderNode = {
 }
 
 export type WorkflowTreeNode = WorkflowTreeFolderNode | WorkflowTreeWorkflowNode
+
+export interface WorkflowSaveTarget {
+  canvasId: CanvasId
+  workflowName: string
+}
 
 export class WorkflowConflictError extends Error {
   suggestedName?: string
@@ -324,15 +333,28 @@ export const useWorkflowStore = defineStore('workflow', () => {
     sanitizeWorkflowTreeState()
   }
 
-  function setCurrent(info: WorkflowInfo | null): void {
+  function setCurrent(info: WorkflowInfo | null, canvasId?: CanvasId): void {
     current.value = info
-    uiStore.setActiveWorkflow(info?.display_name ?? null)
+    const id = info === null ? null : workflowId(info)
+    if (canvasId !== undefined) {
+      uiStore.setCanvasWorkflow(canvasId, id, info?.display_name ?? null)
+    } else if (canvasSessionRegistry.sessionCount.value === 0) {
+      uiStore.setActiveWorkflowIdentity(id, info?.display_name ?? null)
+    }
   }
 
-  function activateWorkflow(name: string): WorkflowInfo | null {
+  function markPresentationClean(canvasId?: CanvasId): void {
+    if (canvasId !== undefined) {
+      uiStore.markCanvasClean(canvasId)
+    } else if (canvasSessionRegistry.sessionCount.value === 0) {
+      uiStore.markClean()
+    }
+  }
+
+  function activateWorkflow(name: string, canvasId?: CanvasId): WorkflowInfo | null {
     const info = workflows.value.find((workflow) => workflowId(workflow) === name) ?? null
     if (info) {
-      setCurrent(info)
+      setCurrent(info, canvasId)
     }
     return info
   }
@@ -367,14 +389,17 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  async function createWorkflow(body: WorkflowCreate): Promise<WorkflowInfo> {
+  async function createWorkflow(
+    body: WorkflowCreate,
+    canvasId?: CanvasId,
+  ): Promise<WorkflowInfo> {
     try {
       const { data } = await api.post<WorkflowInfo>('/api/v1/workflows', body)
       upsertWorkflow(data)
-      setCurrent(data)
+      setCurrent(data, canvasId)
       missingPackages.value = []
       missingTools.value = []
-      uiStore.markClean()
+      markPresentationClean(canvasId)
       await autoSave.setLastOpenedWorkflow(workflowId(data))
       return data
     } catch (err: unknown) {
@@ -384,30 +409,56 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  async function loadWorkflow(name: string): Promise<GraphState> {
+  async function loadWorkflow(name: string, canvasId?: CanvasId): Promise<GraphState> {
     const { data } = await api.get<WorkflowFile>(`/api/v1/workflows/${workflowUrl(name)}`)
     upsertWorkflow(data.info)
-    setCurrent(data.info)
+    setCurrent(data.info, canvasId)
     missingPackages.value = data.missing_packages ?? []
     missingTools.value = data.missing_tools ?? []
-    uiStore.markClean()
+    markPresentationClean(canvasId)
     await autoSave.setLastOpenedWorkflow(workflowId(data.info))
     return data.graph
   }
 
-  async function saveWorkflow(graph: GraphState): Promise<WorkflowInfo> {
-    if (current.value === null) {
+  async function saveWorkflow(
+    graph: GraphState,
+    target?: WorkflowSaveTarget,
+  ): Promise<WorkflowInfo> {
+    const targetWorkflowName = target?.workflowName
+      ?? currentName.value
+      ?? (current.value === null ? null : workflowId(current.value))
+    if (targetWorkflowName === null) {
       throw new Error('No active workflow to save')
     }
     const { data } = await api.put<WorkflowInfo>(
-      `/api/v1/workflows/${workflowUrl(currentName.value || workflowId(current.value))}`,
+      `/api/v1/workflows/${workflowUrl(targetWorkflowName)}`,
       { graph },
     )
     upsertWorkflow(data)
-    setCurrent(data)
-    uiStore.markClean()
     await autoSave.clearAutoSave(workflowId(data))
-    await autoSave.setLastOpenedWorkflow(workflowId(data))
+    if (target === undefined) {
+      setCurrent(data)
+      markPresentationClean()
+      await autoSave.setLastOpenedWorkflow(workflowId(data))
+      return data
+    }
+
+    if (uiStore.canvasWorkflowId(target.canvasId) !== targetWorkflowName) {
+      return data
+    }
+    uiStore.setCanvasWorkflow(
+      target.canvasId,
+      workflowId(data),
+      data.display_name,
+    )
+    uiStore.markCanvasClean(target.canvasId)
+    if (
+      canvasSessionRegistry.activeCanvasId.value === target.canvasId
+      && currentName.value === targetWorkflowName
+    ) {
+      current.value = data
+      await autoSave.setLastOpenedWorkflow(workflowId(data))
+    }
     return data
   }
 
@@ -421,7 +472,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       setCurrent(null)
       missingPackages.value = []
       missingTools.value = []
-      uiStore.markClean()
+      markPresentationClean()
       await autoSave.setLastOpenedWorkflow(null)
     }
   }
@@ -467,6 +518,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function patchWorkflow(
     name: string,
     patch: WorkflowUpdate,
+    target?: WorkflowSaveTarget,
   ): Promise<WorkflowInfo> {
     try {
       const { data } = await api.patch<WorkflowInfo>(
@@ -474,12 +526,31 @@ export const useWorkflowStore = defineStore('workflow', () => {
         patch,
       )
       upsertWorkflow(data, patch.action === 'update' ? name : undefined)
-      setCurrent(data)
       const dataId = workflowId(data)
       if (patch.action === 'update' && dataId !== name) {
         await autoSave.renameWorkflow(name, dataId)
       }
-      await autoSave.setLastOpenedWorkflow(dataId)
+      if (target === undefined) {
+        if (canvasSessionRegistry.sessionCount.value === 0) {
+          setCurrent(data)
+          await autoSave.setLastOpenedWorkflow(dataId)
+        } else if (patch.action === 'update' && currentName.value === name) {
+          current.value = data
+        }
+        return data
+      }
+
+      if (uiStore.canvasWorkflowId(target.canvasId) !== target.workflowName) {
+        return data
+      }
+      uiStore.setCanvasWorkflow(target.canvasId, dataId, data.display_name)
+      if (
+        canvasSessionRegistry.activeCanvasId.value === target.canvasId
+        && currentName.value === target.workflowName
+      ) {
+        current.value = data
+        await autoSave.setLastOpenedWorkflow(dataId)
+      }
       return data
     } catch (err: unknown) {
       const conflict = conflictFromError(err)
@@ -502,12 +573,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return data.graph
   }
 
-  function markDirty(): void {
-    uiStore.markDirty()
+  function markDirty(canvasId?: CanvasId): void {
+    if (canvasId !== undefined) {
+      uiStore.markCanvasDirty(canvasId)
+    } else if (canvasSessionRegistry.sessionCount.value === 0) {
+      uiStore.markDirty()
+    }
   }
 
-  function markClean(): void {
-    uiStore.markClean()
+  function markClean(canvasId?: CanvasId): void {
+    markPresentationClean(canvasId)
   }
 
   async function createWorkflowFolder(

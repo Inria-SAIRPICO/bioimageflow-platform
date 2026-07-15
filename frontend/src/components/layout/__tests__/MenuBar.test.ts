@@ -61,6 +61,12 @@ import MenuBar from '../MenuBar.vue'
 import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
+import { useGraphSync } from '@/composables/useGraphSync'
+import type { GraphState } from '@/api/types'
 
 // PrimeVue Menubar uses matchMedia for responsive behavior
 Object.defineProperty(window, 'matchMedia', {
@@ -116,6 +122,7 @@ function setActiveWorkflow(): void {
 
 describe('MenuBar', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     window.localStorage.clear()
     pinia = createPinia()
     setActivePinia(pinia)
@@ -238,6 +245,254 @@ describe('MenuBar', () => {
   })
 
   describe('Workflow menu', () => {
+    it('does not expose the global workflow when no registered canvas is active', () => {
+      setActiveWorkflow()
+      const canvasId = canvasIdFromPanelId('workflow:registered')
+      canvasSessionRegistry.register({
+        kind: 'root',
+        canvasId,
+        workflowId: 'registered',
+      })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      const execution = vm.menuItems.find((item: any) => item.label === 'Execution')
+
+      expect(wrapper.find('[data-testid="workflow-title"]').text()).toBe('No workflow')
+      expect(workflow.items.find((item: any) => item.label === 'Export').disabled).toBe(true)
+      expect(execution.items.find((item: any) => item.label === 'Run Workflow').disabled)
+        .toBe(true)
+    })
+
+    it('uses the active canvas workflow for action metadata and branching', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+      const ui = useUIStore()
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      canvasSessionRegistry.activate(canvasA)
+      const store = useWorkflowStore()
+      store.workflows = [
+        { name: 'a', display_name: 'Workflow A', description: 'Description A' },
+        { name: 'b', display_name: 'Workflow B', description: 'Description B' },
+      ] as any
+      store.current = store.workflows[1]
+      const exportWorkflow = vi.spyOn(store, 'exportWorkflow').mockResolvedValue(undefined)
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      workflow.items.find((item: any) => item.label === 'Save As').command()
+      expect(vm.workflowDialogInitialName).toBe('a_copy')
+      expect(vm.workflowDialogInitialDescription).toBe('Description A')
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'export', name: 'a' },
+      }))
+      await flushPromises()
+      expect(vm.exportSaveDialogVisible).toBe(true)
+      expect(exportWorkflow).not.toHaveBeenCalled()
+
+      workflow.items.find((item: any) => item.label === 'Delete').command()
+      expect(vm.deleteDialogWorkflow.name).toBe('a')
+    })
+
+    it('keeps Rename bound to the canvas that opened the dialog', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as any
+      const workflowB = { name: 'b', display_name: 'Workflow B' } as any
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA, workflowB]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      apiMocks.patch.mockResolvedValueOnce({
+        data: { ...workflowA, display_name: 'Workflow A renamed' },
+      })
+      const wrapper = mountMenuBar()
+      await wrapper.find('[data-testid="workflow-title-edit"]').trigger('click')
+      const vm = wrapper.vm as any
+      vm.renameDisplayName = 'Workflow A renamed'
+
+      canvasSessionRegistry.activate(canvasB)
+      persistenceMocks.canvasId = canvasB
+      store.current = workflowB
+      await vm.submitRename()
+
+      expect(apiMocks.patch).toHaveBeenCalledWith('/api/v1/workflows/a', {
+        action: 'update',
+        display_name: 'Workflow A renamed',
+      })
+      expect(store.currentName).toBe('b')
+      expect(ui.activeWorkflowName).toBe('Workflow B')
+      canvasSessionRegistry.activate(canvasA)
+      expect(ui.activeWorkflowName).toBe('Workflow A renamed')
+      wrapper.unmount()
+    })
+
+    it('saves a copy from the canvas that opened Save As after activation changes', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      const graphA: GraphState = {
+        nodes: [{
+          id: 'a-node',
+          name: 'A node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const graphB: GraphState = { nodes: [], edges: [] }
+      const syncA = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+        getWorkflowId: () => 'a',
+      })
+      const syncB = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
+        getWorkflowId: () => 'b',
+      })
+      syncA.syncGraphState(graphA)
+      syncB.syncGraphState(graphB)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [
+        { name: 'a', display_name: 'Workflow A' },
+        { name: 'b', display_name: 'Workflow B' },
+      ] as any
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflow.items.find((item: any) => item.label === 'Save As').command()
+      const applied: any[] = []
+      const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:apply-graph', onApply)
+      apiMocks.patch.mockResolvedValueOnce({
+        data: { name: 'a_copy', display_name: 'Workflow A copy' },
+      })
+      apiMocks.put.mockResolvedValueOnce({
+        data: { name: 'a_copy', display_name: 'Workflow A copy' },
+      })
+
+      canvasSessionRegistry.activate(canvasB)
+      persistenceMocks.canvasId = canvasB
+      await vm.onWorkflowDialogSubmit({
+        name: 'a_copy',
+        display_name: 'Workflow A copy',
+        description: null,
+      })
+
+      expect(apiMocks.patch).toHaveBeenCalledWith('/api/v1/workflows/a', expect.objectContaining({
+        action: 'duplicate',
+        new_name: 'a_copy',
+      }))
+      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a_copy', { graph: graphA })
+      expect(applied[applied.length - 1]).toMatchObject({
+        graph: graphA,
+        workflowName: 'a_copy',
+        workflowDisplayName: 'Workflow A copy',
+      })
+      window.removeEventListener('bioimageflow:apply-graph', onApply)
+      wrapper.unmount()
+    })
+
+    it('closes only the canvas that requested a delayed workflow deletion', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as any
+      const workflowB = { name: 'b', display_name: 'Workflow B' } as any
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA, workflowB]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      let resolveDelete!: (value: { data: { deleted: boolean } }) => void
+      apiMocks.delete.mockReturnValueOnce(new Promise((resolve) => {
+        resolveDelete = resolve
+      }))
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflow.items.find((item: any) => item.label === 'Delete').command()
+      const closed: string[] = []
+      const applied: any[] = []
+      const onClose = (event: Event) => closed.push((event as CustomEvent).detail.canvasId)
+      const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:close-canvas', onClose)
+      window.addEventListener('bioimageflow:apply-graph', onApply)
+
+      const deletion = vm.confirmDeleteWorkflow()
+      canvasSessionRegistry.activate(canvasB)
+      persistenceMocks.canvasId = canvasB
+      store.current = workflowB
+      resolveDelete({ data: { deleted: true } })
+      await deletion
+
+      expect(closed).toEqual([canvasA])
+      expect(applied).toEqual([])
+      expect(store.currentName).toBe('b')
+      window.removeEventListener('bioimageflow:close-canvas', onClose)
+      window.removeEventListener('bioimageflow:apply-graph', onApply)
+      wrapper.unmount()
+    })
+
+    it('opens the workflow that finished loading even if global current changes later', async () => {
+      const graphA: GraphState = { nodes: [], edges: [] }
+      apiMocks.get.mockResolvedValueOnce({
+        data: {
+          info: { name: 'a', display_name: 'Workflow A' },
+          graph: graphA,
+          missing_packages: [],
+          missing_tools: [],
+        },
+      })
+      let resolveDraft!: (value: { graph: GraphState; dirty_against_saved: boolean }) => void
+      workflowDraftMocks.loadDraft.mockReturnValueOnce(new Promise((resolve) => {
+        resolveDraft = resolve
+      }))
+      const wrapper = mountMenuBar()
+      const applied: any[] = []
+      const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:apply-graph', onApply)
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'open', name: 'a' },
+      }))
+      await flushPromises()
+      useWorkflowStore().current = { name: 'b', display_name: 'Workflow B' } as any
+      resolveDraft({ graph: graphA, dirty_against_saved: false })
+      await flushPromises()
+
+      expect(applied[applied.length - 1]).toMatchObject({
+        graph: graphA,
+        workflowName: 'a',
+        workflowDisplayName: 'Workflow A',
+      })
+      window.removeEventListener('bioimageflow:apply-graph', onApply)
+      wrapper.unmount()
+    })
+
     it('omits dependency-only entries and shows an icon for Save As', () => {
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any

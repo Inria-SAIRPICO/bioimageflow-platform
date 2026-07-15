@@ -8,6 +8,10 @@ import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore } from '@/stores/logger'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
 import type { ToolMetadata, InputFieldSchema } from '@/api/types'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
@@ -82,6 +86,36 @@ describe('NodePanel', () => {
     const w = mountPanel()
     expect(w.find('.empty-state').exists()).toBe(true)
     expect(w.find('.empty-state').text()).toContain('Select a node')
+  })
+
+  it('renders the selected node from the explicitly active canvas', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+    const ui = useUIStore()
+    ui.setCanvasSelectedNodes(canvasA, ['shared'])
+    ui.setCanvasGraphNodes(canvasA, [{
+      id: 'shared',
+      data: makeNodeData({ name: 'Node A' }),
+    }])
+    ui.setCanvasSelectedNodes(canvasB, ['shared'])
+    ui.setCanvasGraphNodes(canvasB, [{
+      id: 'shared',
+      data: makeNodeData({ name: 'Node B' }),
+    }])
+    canvasSessionRegistry.activate(canvasA)
+    const w = mount(NodePanel, {
+      global: { plugins: [pinia, PrimeVue] },
+    })
+
+    expect(w.find('.node-name').text()).toBe('Node A')
+    canvasSessionRegistry.activate(canvasB)
+    await w.vm.$nextTick()
+    expect(w.find('.node-name').text()).toBe('Node B')
+    w.unmount()
   })
 
   // --- Fix 12: Enable/Disable toggle ---
