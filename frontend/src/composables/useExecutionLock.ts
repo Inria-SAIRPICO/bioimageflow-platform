@@ -24,13 +24,13 @@ export function useExecutionLock() {
   const exec = useExecutionStore()
   const ui = useUIStore()
 
-  // Sync uiStore.isExecutionLocked with executionStore.isRunning.
+  // Sync the global canvas lock with every non-idle execution phase.
   watch(
-    () => exec.isRunning,
-    (running) => {
-      ui.setExecutionLocked(running)
+    () => exec.isMutationLocked,
+    (locked) => {
+      ui.setExecutionLocked(locked)
     },
-    { immediate: true },
+    { immediate: true, flush: 'sync' },
   )
 
   const isLocked = computed(() => ui.isExecutionLocked)

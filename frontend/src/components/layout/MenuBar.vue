@@ -158,6 +158,8 @@ function toggleThemeMenu(event: Event): void {
 }
 
 function runDisabledReason(): string | null {
+  if (executionStore.isStarting) return 'Execution is starting'
+  if (executionStore.isStopping) return 'Execution is stopping'
   if (executionStore.isRunning) return 'Execution in progress'
   if (isPending.value) return 'Waiting for validation…'
   if (!activeWorkflowId.value) return 'Open or save a workflow before running'
@@ -173,6 +175,7 @@ function applyGraph(
     missingTools: MissingTool[]
   },
 ): void {
+  if (executionStore.isMutationLocked) return
   window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
     detail: {
       graph,
@@ -231,6 +234,7 @@ function hasMissingImportDependencies(): boolean {
 }
 
 function runAfterDiscard(action: () => void | Promise<void>): void {
+  if (executionStore.isMutationLocked) return
   if (!uiStore.hasUnsavedChanges) {
     void action()
     return
@@ -243,6 +247,7 @@ async function confirmDiscard(): Promise<void> {
   const action = pendingDiscardAction.value
   pendingDiscardAction.value = null
   discardDialogVisible.value = false
+  if (executionStore.isMutationLocked) return
   if (action) {
     await action()
   }
@@ -271,6 +276,7 @@ async function onWorkflowDialogSubmit(payload: {
   display_name: string
   description: string | null
 }): Promise<void> {
+  if (executionStore.isMutationLocked) return
   try {
     if (workflowDialogMode.value === 'new') {
       const info = await workflowStore.createWorkflow({
@@ -334,6 +340,7 @@ async function onWorkflowDialogSubmit(payload: {
 }
 
 async function openWorkflow(): Promise<void> {
+  if (executionStore.isMutationLocked) return
   runAfterDiscard(async () => {
     try {
       await workflowStore.fetchWorkflows()
@@ -345,8 +352,10 @@ async function openWorkflow(): Promise<void> {
 }
 
 async function onOpenWorkflow(name: string): Promise<void> {
+  if (executionStore.isMutationLocked) return
   try {
     const loaded = await loadWorkflowGraph(name)
+    if (executionStore.isMutationLocked) return
     openDialogVisible.value = false
     applyGraph(loaded.graph, loaded.dirty, loaded)
   } catch (err: unknown) {
@@ -405,8 +414,10 @@ async function saveCurrentWorkflowGraph(options: {
 }
 
 async function saveWorkflow(): Promise<void> {
+  if (executionStore.isMutationLocked) return
   const target = currentSaveTarget()
   const route = await canvasCommands.routeSave()
+  if (executionStore.isMutationLocked) return
   if (!isSaveTargetActive(target)) return
   if (route === 'nested' || route === 'unavailable') return
   if (!target.workflowName) {
@@ -428,12 +439,14 @@ async function saveWorkflow(): Promise<void> {
 }
 
 function exportCurrentWorkflow(): void {
+  if (executionStore.isMutationLocked) return
   const name = activeWorkflowId.value
   if (!name) return
   exportSaveDialogVisible.value = true
 }
 
 async function confirmExportCurrentWorkflow(): Promise<void> {
+  if (executionStore.isMutationLocked) return
   exportSaveDialogVisible.value = false
   try {
     const info = await saveCurrentWorkflowGraph({
@@ -448,6 +461,7 @@ async function confirmExportCurrentWorkflow(): Promise<void> {
 }
 
 function chooseImportFile(): void {
+  if (executionStore.isMutationLocked) return
   runAfterDiscard(() => {
     importFileInput.value?.click()
   })
@@ -478,6 +492,7 @@ async function onImportFileSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
+  if (executionStore.isMutationLocked) return
   if (!file) return
   pendingImportFile.value = file
   try {
@@ -494,6 +509,7 @@ async function onImportFileSelected(event: Event): Promise<void> {
 }
 
 async function confirmImportRename(): Promise<void> {
+  if (executionStore.isMutationLocked) return
   const file = pendingImportFile.value
   const nameOverride = importRenameName.value.trim()
   if (!file || !nameOverride) return
@@ -517,6 +533,7 @@ async function confirmImportRename(): Promise<void> {
 }
 
 async function rebindImportedDependencies(): Promise<void> {
+  if (executionStore.isMutationLocked) return
   try {
     const graph = await workflowStore.rebindVersions()
     dependencyDialogVisible.value = false
@@ -527,6 +544,7 @@ async function rebindImportedDependencies(): Promise<void> {
 }
 
 function saveWorkflowAs(): void {
+  if (executionStore.isMutationLocked) return
   const target = currentSaveTarget()
   if (!target.workflowName) return
   workflowDialogFolderId.value = null
@@ -546,6 +564,7 @@ function saveWorkflowAs(): void {
 }
 
 async function duplicateWorkflowByName(name: string): Promise<void> {
+  if (executionStore.isMutationLocked) return
   const source = workflowStore.workflows.find((workflow) => workflowId(workflow) === name)
   const displayName = `${source?.display_name ?? name} copy`
   try {
@@ -563,6 +582,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
 }
 
 async function exportWorkflowByName(name: string): Promise<void> {
+  if (executionStore.isMutationLocked) return
   try {
     if (activeWorkflowId.value === name) {
       exportCurrentWorkflow()
@@ -575,6 +595,7 @@ async function exportWorkflowByName(name: string): Promise<void> {
 }
 
 function deleteWorkflowByName(name: string): void {
+  if (executionStore.isMutationLocked) return
   deleteTargetName.value = name
   deleteCanvasTarget.value = activeWorkflowId.value === name
     ? currentSaveTarget()
@@ -583,6 +604,7 @@ function deleteWorkflowByName(name: string): void {
 }
 
 function deleteWorkflow(): void {
+  if (executionStore.isMutationLocked) return
   const name = activeWorkflowId.value
   if (!name) return
   deleteTargetName.value = name
@@ -591,11 +613,13 @@ function deleteWorkflow(): void {
 }
 
 async function confirmDeleteWorkflow(): Promise<void> {
+  if (executionStore.isMutationLocked) return
   const name = deleteTargetName.value ?? activeWorkflowId.value
   if (!name) return
   const target = deleteCanvasTarget.value
   try {
     await workflowStore.deleteWorkflow(name)
+    if (executionStore.isMutationLocked) return
     deleteDialogVisible.value = false
     deleteTargetName.value = null
     deleteCanvasTarget.value = null
@@ -624,7 +648,7 @@ function onGlobalKeydown(event: KeyboardEvent): void {
   const meta = event.metaKey || event.ctrlKey
   if (meta && event.key === 's') {
     event.preventDefault()
-    if (!executionStore.isRunning) {
+    if (!executionStore.isMutationLocked) {
       void saveWorkflow()
     }
   }
@@ -633,13 +657,14 @@ function onGlobalKeydown(event: KeyboardEvent): void {
 function dispatchEditCommand(
   command: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'select-all',
 ): void {
+  if (executionStore.isMutationLocked) return
   window.dispatchEvent(new CustomEvent('bioimageflow:edit-command', {
     detail: { command },
   }))
 }
 
 function editCommandDisabled(command: 'cut' | 'copy' | 'paste' | 'select-all' | 'undo' | 'redo'): boolean {
-  if (executionStore.isRunning) return true
+  if (executionStore.isMutationLocked) return true
   if (command === 'cut' || command === 'copy') {
     return uiStore.selectedNodeIds.length === 0
   }
@@ -647,6 +672,7 @@ function editCommandDisabled(command: 'cut' | 'copy' | 'paste' | 'select-all' | 
 }
 
 function openRenameDialog(): void {
+  if (executionStore.isMutationLocked) return
   if (!activeWorkflowId.value) return
   renameTarget.value = currentSaveTarget()
   renameDisplayName.value = uiStore.activeWorkflowName || activeWorkflowId.value
@@ -654,6 +680,7 @@ function openRenameDialog(): void {
 }
 
 async function submitRename(): Promise<void> {
+  if (executionStore.isMutationLocked) return
   const target = renameTarget.value
   const workflowName = target?.workflowName
   if (!workflowName) return
@@ -690,6 +717,7 @@ function onBeforeUnload(): void {
 }
 
 function onWorkflowPanelCommand(event: Event): void {
+  if (executionStore.isMutationLocked) return
   const detail = (event as CustomEvent<WorkflowPanelCommand>).detail
   const action = detail?.action
   if (!action) return
@@ -726,13 +754,13 @@ const menuItems = computed<MenuItem[]>(() => [
   {
     label: 'Workflow',
     items: [
-      { label: 'New', icon: 'pi pi-plus', disabled: executionStore.isRunning, command: () => createNewWorkflow() },
-      { label: 'Open', icon: 'pi pi-folder-open', disabled: executionStore.isRunning, command: openWorkflow },
-      { label: 'Save', icon: 'pi pi-save', disabled: executionStore.isRunning, command: saveWorkflow },
-      { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isRunning, command: saveWorkflowAs },
-      { label: 'Import', icon: 'pi pi-upload', disabled: executionStore.isRunning, command: chooseImportFile },
-      { label: 'Export', icon: 'pi pi-download', disabled: executionStore.isRunning || !activeWorkflowId.value, command: exportCurrentWorkflow },
-      { label: 'Delete', icon: 'pi pi-trash', disabled: executionStore.isRunning || !activeWorkflowId.value, command: deleteWorkflow },
+      { label: 'New', icon: 'pi pi-plus', disabled: executionStore.isMutationLocked, command: () => createNewWorkflow() },
+      { label: 'Open', icon: 'pi pi-folder-open', disabled: executionStore.isMutationLocked, command: openWorkflow },
+      { label: 'Save', icon: 'pi pi-save', disabled: executionStore.isMutationLocked, command: saveWorkflow },
+      { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isMutationLocked, command: saveWorkflowAs },
+      { label: 'Import', icon: 'pi pi-upload', disabled: executionStore.isMutationLocked, command: chooseImportFile },
+      { label: 'Export', icon: 'pi pi-download', disabled: executionStore.isMutationLocked || !activeWorkflowId.value, command: exportCurrentWorkflow },
+      { label: 'Delete', icon: 'pi pi-trash', disabled: executionStore.isMutationLocked || !activeWorkflowId.value, command: deleteWorkflow },
     ],
   },
   {
@@ -773,7 +801,7 @@ const menuItems = computed<MenuItem[]>(() => [
       {
         label: 'Stop',
         icon: 'pi pi-stop',
-        disabled: !executionStore.isRunning,
+        disabled: !executionStore.canStop,
         command: () => runButtonRef.value?.onStop(),
       },
     ],
@@ -863,7 +891,7 @@ defineExpose({
           aria-label="Rename workflow"
           title="Rename workflow"
           data-testid="workflow-title-edit"
-          :disabled="executionStore.isRunning"
+          :disabled="executionStore.isMutationLocked"
           @click="openRenameDialog"
         />
         <ErrorIndicator @open="historyPanelOpen = true" />

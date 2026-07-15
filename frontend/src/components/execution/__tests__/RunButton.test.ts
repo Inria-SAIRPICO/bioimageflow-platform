@@ -133,6 +133,32 @@ describe('RunButton', () => {
     )
   })
 
+  it('shows a disabled starting state without exposing Stop', async () => {
+    const { wrapper } = mountButton()
+    const exec = useExecutionStore()
+    exec.state = 'starting'
+    await nextTick()
+
+    const run = wrapper.find('[data-testid="run-workflow-button"]')
+    expect(run.exists()).toBe(true)
+    expect(run.attributes('disabled')).toBeDefined()
+    expect(run.text()).toContain('Starting')
+    expect(wrapper.find('[data-testid="stop-execution-button"]').exists()).toBe(false)
+  })
+
+  it('shows a disabled stopping state so Stop cannot be repeated', async () => {
+    const { wrapper } = mountButton()
+    const exec = useExecutionStore()
+    exec.state = 'stopping'
+    await nextTick()
+
+    const stop = wrapper.find('[data-testid="stop-execution-button"]')
+    expect(stop.exists()).toBe(true)
+    expect(stop.attributes('disabled')).toBeDefined()
+    expect(stop.text()).toContain('Stopping')
+    expect(wrapper.find('[data-testid="run-workflow-button"]').exists()).toBe(false)
+  })
+
   it('Run remains clickable while validation is pending and flushes before execution', async () => {
     const { wrapper, flushNow } = mountButton({ syncPending: true })
     const exec = useExecutionStore()
@@ -333,7 +359,7 @@ describe('RunButton', () => {
   it('Stop button calls executionStore.stop()', async () => {
     const { wrapper } = mountButton()
     const exec = useExecutionStore()
-    const stopSpy = vi.spyOn(exec, 'stop').mockResolvedValue()
+    const stopSpy = vi.spyOn(exec, 'stop').mockResolvedValue(true)
     exec.state = 'running'
     await nextTick()
     await wrapper.find('[data-testid="stop-execution-button"]').trigger('click')

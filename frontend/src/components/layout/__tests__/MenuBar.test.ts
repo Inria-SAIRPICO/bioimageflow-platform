@@ -61,6 +61,7 @@ import MenuBar from '../MenuBar.vue'
 import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useExecutionStore } from '@/stores/execution'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -674,6 +675,66 @@ describe('MenuBar', () => {
       })
     })
 
+    it('does not apply a workflow whose delayed creation finishes after execution starts', async () => {
+      let resolveCreate!: (value: { data: Record<string, unknown> }) => void
+      apiMocks.post.mockReturnValueOnce(new Promise((resolve) => {
+        resolveCreate = resolve
+      }))
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflow.items.find((item: any) => item.label === 'New').command()
+      const applied: unknown[] = []
+      const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:apply-graph', onApply)
+
+      const submission = vm.onWorkflowDialogSubmit({
+        name: 'delayed',
+        display_name: 'Delayed',
+        description: null,
+      })
+      await vi.waitFor(() => expect(apiMocks.post).toHaveBeenCalledOnce())
+      useExecutionStore().state = 'starting'
+      resolveCreate({
+        data: {
+          name: 'delayed',
+          display_name: 'Delayed',
+          path: '/tmp/delayed/workflow.json',
+          last_modified: '2026-07-15T00:00:00Z',
+        },
+      })
+      await submission
+
+      expect(applied).toEqual([])
+      window.removeEventListener('bioimageflow:apply-graph', onApply)
+      wrapper.unmount()
+    })
+
+    it('does not close a canvas when delayed deletion finishes after execution starts', async () => {
+      setActiveWorkflow()
+      let resolveDelete!: (value: { data: { deleted: boolean } }) => void
+      apiMocks.delete.mockReturnValueOnce(new Promise((resolve) => {
+        resolveDelete = resolve
+      }))
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflow.items.find((item: any) => item.label === 'Delete').command()
+      const closed: unknown[] = []
+      const onClose = (event: Event) => closed.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:close-canvas', onClose)
+
+      const deletion = vm.confirmDeleteWorkflow()
+      await vi.waitFor(() => expect(apiMocks.delete).toHaveBeenCalledOnce())
+      useExecutionStore().state = 'starting'
+      resolveDelete({ data: { deleted: true } })
+      await deletion
+
+      expect(closed).toEqual([])
+      window.removeEventListener('bioimageflow:close-canvas', onClose)
+      wrapper.unmount()
+    })
+
     it('shows the import rename dialog when upload returns a conflict', async () => {
       apiMocks.post.mockRejectedValueOnce(new AxiosError(
         'conflict',
@@ -952,6 +1013,48 @@ describe('MenuBar', () => {
       )
       expect(runSelected.disabled).toBe(false)
     })
+
+    it.each(['starting', 'stopping'] as const)(
+      'locks workflow and edit actions while execution is %s',
+      async (phase) => {
+        setActiveWorkflow()
+        useUIStore().setSelectedNodes(['n1'])
+        useExecutionStore().state = phase
+        const wrapper = mountMenuBar()
+        const vm = wrapper.vm as any
+        const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+        const edit = vm.menuItems.find((item: any) => item.label === 'Edit')
+        const execution = vm.menuItems.find((item: any) => item.label === 'Execution')
+
+        expect(workflow.items.every((item: any) => item.disabled)).toBe(true)
+        expect(edit.items.filter((item: any) => !item.separator && item.label !== 'Preferences...')
+          .every((item: any) => item.disabled)).toBe(true)
+        expect(execution.items.find((item: any) => item.label === 'Run Workflow').disabled)
+          .toBe(true)
+        expect(execution.items.find((item: any) => item.label === 'Stop').disabled)
+          .toBe(true)
+        expect(wrapper.find('[data-testid="workflow-title-edit"]').attributes('disabled'))
+          .toBeDefined()
+      },
+    )
+
+    it.each(['starting', 'stopping'] as const)(
+      'ignores workflow mutation commands while execution is %s',
+      async (phase) => {
+        setActiveWorkflow()
+        useExecutionStore().state = phase
+        const wrapper = mountMenuBar()
+        const vm = wrapper.vm as any
+        const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
+        canvasCommandMocks.routeSave.mockClear()
+
+        workflow.items.find((item: any) => item.label === 'Save').command()
+        await flushPromises()
+
+        expect(canvasCommandMocks.routeSave).not.toHaveBeenCalled()
+        wrapper.unmount()
+      },
+    )
 
     it('renders RunButton in the end slot', () => {
       const wrapper = mountMenuBar()

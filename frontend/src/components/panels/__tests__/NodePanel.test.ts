@@ -74,7 +74,7 @@ const nodeEditCommandCalls = {
 
 function mountPanel(
   nodeData: ReturnType<typeof makeNodeData> | null = null,
-  executionRunning = false,
+  executionPhase: 'idle' | 'starting' | 'running' | 'stopping' = 'idle',
 ) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -255,7 +255,7 @@ function mountPanel(
     uiStore.setCanvasSelectedNodes(canvasId, [nodeId])
     uiStore.setCanvasGraphNodes(canvasId, [{ id: nodeId, data: nodeData }])
   }
-  if (executionRunning) useExecutionStore(pinia).state = 'running'
+  useExecutionStore(pinia).state = executionPhase as any
 
   const wrapper = mount(NodePanel, {
     global: {
@@ -402,8 +402,10 @@ describe('NodePanel', () => {
       expect(data.parameters.sigma).toBe(1.0)
     })
 
-    it('makes NodePanel edit controls read-only while execution is running', async () => {
-      const w = mountPanel(makeNodeData(), true)
+    it.each(['starting', 'running', 'stopping'] as const)(
+      'makes NodePanel edit controls read-only while execution is %s',
+      async (phase) => {
+      const w = mountPanel(makeNodeData(), phase)
       await w.vm.$nextTick()
 
       expect((w.vm as any).isNodeEditingDisabled).toBe(true)
@@ -422,7 +424,8 @@ describe('NodePanel', () => {
       await w.find('.node-name').trigger('dblclick')
       expect(w.find('.name-input').exists()).toBe(false)
       expect(nodeEditCommandCalls.renameNode).not.toHaveBeenCalled()
-    })
+      },
+    )
   })
 
   // --- Fix 16: None toggle for nullable fields ---
@@ -800,7 +803,9 @@ describe('NodePanel', () => {
       expect(w.find('[data-testid="publish-name-error"]').exists()).toBe(false)
     })
 
-    it('disables publication toggles and names while execution is running', async () => {
+    it.each(['starting', 'running', 'stopping'] as const)(
+      'disables publication toggles and names while execution is %s',
+      async (phase) => {
       const data = makeNodeData({
         publicationContext: {
           published_inputs: [{
@@ -819,7 +824,7 @@ describe('NodePanel', () => {
           }],
         },
       })
-      const w = mountPanel(data, true)
+      const w = mountPanel(data, phase)
       await w.vm.$nextTick()
 
       for (const toggle of w.findAll('.publish-toggle-btn')) {
@@ -831,7 +836,8 @@ describe('NodePanel', () => {
       expect(
         w.find('[data-testid="published-output-name-result"]').attributes('disabled'),
       ).toBeDefined()
-    })
+      },
+    )
   })
 
   // --- Path input: file/folder pickers (pywebview bridge) ---

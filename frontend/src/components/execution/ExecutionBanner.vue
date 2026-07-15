@@ -4,7 +4,7 @@ import ProgressBar from 'primevue/progressbar'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 
-type BannerMode = 'running' | 'stopped' | 'success' | 'failure' | 'hidden'
+type BannerMode = 'starting' | 'running' | 'stopping' | 'stopped' | 'success' | 'failure' | 'hidden'
 
 const exec = useExecutionStore()
 const ui = useUIStore()
@@ -37,16 +37,19 @@ function scheduleDismiss(ms: number) {
 watch(
   () => exec.state,
   (next, prev) => {
-    if (next === 'running') {
+    if (next === 'starting' || next === 'running' || next === 'stopping') {
       clearTimer()
       dismissed.value = false
       terminalMode.value = null
       return
     }
     // idle transition
-    if (prev === 'running') {
+    if (prev === 'starting' || prev === 'running' || prev === 'stopping') {
       const result = exec.lastResult
       if (result == null) {
+        // A rejected start reports through RunButton instead of presenting a
+        // successfully stopped execution.
+        if (prev === 'starting') return
         // Explicit stop without a last_result yet.
         terminalMode.value = 'stopped'
         scheduleDismiss(DISMISS_STOPPED_MS)
@@ -69,7 +72,9 @@ watch(
 
 const mode = computed<BannerMode>(() => {
   if (dismissed.value) return 'hidden'
+  if (exec.state === 'starting') return 'starting'
   if (exec.state === 'running') return 'running'
+  if (exec.state === 'stopping') return 'stopping'
   if (terminalMode.value) return terminalMode.value
   if (exec.lastResult) {
     return exec.lastResult.success ? 'success' : 'failure'
@@ -81,8 +86,12 @@ const isVisible = computed(() => mode.value !== 'hidden')
 
 const headline = computed(() => {
   switch (mode.value) {
+    case 'starting':
+      return 'Starting execution...'
     case 'running':
       return 'Executing workflow…'
+    case 'stopping':
+      return 'Stopping execution...'
     case 'stopped':
       return 'Execution stopped'
     case 'success':
@@ -125,6 +134,8 @@ const modeClass = computed(() => {
       return 'execution-banner--failure'
     case 'stopped':
       return 'execution-banner--stopped'
+    case 'starting':
+    case 'stopping':
     case 'running':
     default:
       return 'execution-banner--running'
@@ -132,7 +143,7 @@ const modeClass = computed(() => {
 })
 
 function onBannerClick() {
-  if (mode.value === 'running') return
+  if (mode.value === 'starting' || mode.value === 'running' || mode.value === 'stopping') return
   clearTimer()
   dismissed.value = true
   terminalMode.value = null

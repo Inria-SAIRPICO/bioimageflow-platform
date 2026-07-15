@@ -62,7 +62,7 @@ const loggerStore = useLoggerStore()
 const { validationResult } = useGraphSync()
 const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
-const isNodeEditingDisabled = computed(() => executionStore.isRunning)
+const isNodeEditingDisabled = computed(() => executionStore.isMutationLocked)
 
 const selectedNodeErrors = computed(() => {
   const nodeId = uiStore.selectedNodeIds[0]

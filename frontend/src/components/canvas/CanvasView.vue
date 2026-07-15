@@ -1103,6 +1103,10 @@ onBeforeUnmount(() => {
 // --- Node drag tracking (undo support) ---
 
 onNodeDragStart(({ nodes }) => {
+  if (isLocked.value) {
+    dragStartPositions.value = {}
+    return
+  }
   const positions: Record<string, { x: number; y: number }> = {}
   for (const node of nodes) {
     positions[node.id] = { x: node.position.x, y: node.position.y }
@@ -1112,6 +1116,14 @@ onNodeDragStart(({ nodes }) => {
 
 onNodeDragStop(({ nodes }) => {
   const start = dragStartPositions.value
+  if (isLocked.value) {
+    for (const node of nodes) {
+      const position = start[node.id]
+      if (position) node.position = { ...position }
+    }
+    dragStartPositions.value = {}
+    return
+  }
   const moved = nodes.some((node) => {
     const prev = start[node.id]
     if (!prev) return true
@@ -1374,6 +1386,7 @@ function refreshIfDynamicOutputs(nodeId: string): void {
  * connection.
  */
 function disconnectEdgeByInput(edgeId: string) {
+  if (isLocked.value) return
   const edge = getEdges.value.find((e: any) => e.id === edgeId)
   if (!edge) return
   const targetHandle = edge.targetHandle ?? ''
@@ -1394,6 +1407,10 @@ provide('bioimageflow:disconnectEdge', disconnectEdgeByInput)
 const updatedEdgeIds = new Set<string>()
 
 onEdgeUpdate(({ edge, connection }) => {
+  if (isLocked.value) {
+    updatedEdgeIds.delete(edge.id)
+    return
+  }
   updatedEdgeIds.add(edge.id)
 
   const newTarget = connection.target ?? edge.target
@@ -1461,6 +1478,10 @@ onEdgeUpdate(({ edge, connection }) => {
 // fired for this gesture).
 onEdgeUpdateEnd(({ edge }) => {
   if (!edge) return
+  if (isLocked.value) {
+    updatedEdgeIds.delete(edge.id)
+    return
+  }
   if (updatedEdgeIds.delete(edge.id)) return
   const targetHandle = edge.targetHandle ?? ''
   const target = edge.target
@@ -2913,7 +2934,8 @@ defineExpose({
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
       :is-valid-connection="isValidConnection"
-      :edges-updatable="true"
+      :nodes-draggable="!isLocked"
+      :edges-updatable="!isLocked"
       :fit-view-on-init="shouldFitViewOnInit"
       @node-context-menu="onNodeContextMenu"
       @node-double-click="onNodeDoubleClick"

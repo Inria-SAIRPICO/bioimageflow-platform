@@ -34,6 +34,8 @@ interface ClearResponse {
   node_statuses: Record<string, NodeStatus>
 }
 
+export type ExecutionPhase = 'idle' | 'starting' | 'running' | 'stopping'
+
 export interface EnvironmentRecoveryAction {
   kind: 'delete_environment'
   envName: string
@@ -139,7 +141,7 @@ function hasExistingFailureLog(
 }
 
 export const useExecutionStore = defineStore('execution', () => {
-  const state = ref<'running' | 'idle'>('idle')
+  const state = ref<ExecutionPhase>('idle')
   const lastResult = ref<ExecutionResult | null>(null)
   const progress = ref<ProgressInfo | null>(null)
   const nodeStatuses = ref<Record<string, NodeStatus>>({})
@@ -149,7 +151,16 @@ export const useExecutionStore = defineStore('execution', () => {
   const environmentRecoveryAction = ref<EnvironmentRecoveryAction | null>(null)
   const dismissedEnvironmentRecoveryKey = ref<string | null>(null)
 
-  const isRunning = computed(() => state.value === 'running')
+  let requestSequence = 0
+  let activeStartRequest: number | null = null
+  let activeStopRequest: number | null = null
+  let terminalFence = false
+
+  const isStarting = computed(() => state.value === 'starting')
+  const isRunning = computed(() => state.value === 'running' || state.value === 'stopping')
+  const isStopping = computed(() => state.value === 'stopping')
+  const isMutationLocked = computed(() => state.value !== 'idle')
+  const canStop = computed(() => state.value === 'running')
   const isEnvironmentRecoveryDialogVisible = computed(() => {
     const action = environmentRecoveryAction.value
     if (action === null) return false
@@ -171,12 +182,24 @@ export const useExecutionStore = defineStore('execution', () => {
     dismissedEnvironmentRecoveryKey.value = recoveryActionKey(action)
   }
 
+  function applyBackendPhase(next: 'idle' | 'running'): boolean {
+    // An idle payload cannot describe the run whose start request still owns
+    // this phase; reject its result, progress, and node statuses together.
+    if (state.value === 'starting' && next === 'idle') return false
+    if (state.value === 'stopping' && next === 'running') return true
+    if (state.value === 'idle' && terminalFence && next === 'running') return false
+    const wasActive = state.value === 'running' || state.value === 'stopping'
+    state.value = next
+    if (next === 'idle' && wasActive) terminalFence = true
+    return true
+  }
+
   async function fetchStatus() {
     try {
       const { data } = await api.get<ExecutionStatusResponse>(
         '/api/v1/execution/status',
       )
-      state.value = data.state
+      if (!applyBackendPhase(data.state)) return
       lastResult.value = data.last_result
       updateEnvironmentRecovery(data.last_result)
       progress.value = data.progress
@@ -196,9 +219,13 @@ export const useExecutionStore = defineStore('execution', () => {
     if (workflowName.trim().length === 0) {
       throw new Error('Workflow identity is required for execution')
     }
-    if (state.value === 'running') {
+    if (state.value !== 'idle') {
       throw new Error('already running')
     }
+    const requestId = ++requestSequence
+    activeStartRequest = requestId
+    terminalFence = false
+    state.value = 'starting'
     error.value = null
     isConflict.value = false
     validationErrors.value = []
@@ -212,29 +239,50 @@ export const useExecutionStore = defineStore('execution', () => {
         nodes,
         workflow_name: workflowName,
       })
-      state.value = 'running'
-    } catch (e: unknown) {
-      state.value = 'idle'
-      const err = e as RunError
-      const status = err.response?.status ?? err.status
-      if (status === 409) {
-        isConflict.value = true
-      } else if (status === 422) {
-        validationErrors.value = err.response?.data?.errors ?? []
+      if (activeStartRequest === requestId && state.value === 'starting') {
+        state.value = 'running'
       }
-      error.value = messageFromError(err)
-      useLoggerStore().addEntry({
-        level: 'ERROR',
-        message: error.value,
-        nodeId: null,
-        timestamp: Date.now() / 1000,
-      })
+    } catch (e: unknown) {
+      if (activeStartRequest === requestId && state.value === 'starting') {
+        state.value = 'idle'
+        terminalFence = true
+        const err = e as RunError
+        const status = err.response?.status ?? err.status
+        if (status === 409) {
+          isConflict.value = true
+        } else if (status === 422) {
+          validationErrors.value = err.response?.data?.errors ?? []
+        }
+        error.value = messageFromError(err)
+        useLoggerStore().addEntry({
+          level: 'ERROR',
+          message: error.value,
+          nodeId: null,
+          timestamp: Date.now() / 1000,
+        })
+      }
       throw e
+    } finally {
+      if (activeStartRequest === requestId) activeStartRequest = null
     }
   }
 
-  async function stop() {
-    await api.post('/api/v1/execution/stop')
+  async function stop(): Promise<boolean> {
+    if (state.value !== 'running') return false
+    const requestId = ++requestSequence
+    activeStopRequest = requestId
+    state.value = 'stopping'
+    try {
+      await api.post('/api/v1/execution/stop')
+      return true
+    } catch (e: unknown) {
+      if (activeStopRequest === requestId && state.value === 'stopping') {
+        state.value = 'running'
+      }
+      throw e
+    } finally {
+      if (activeStopRequest === requestId) activeStopRequest = null
+    }
   }
 
   async function clear(
@@ -262,12 +310,14 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyProgress(p: ProgressInfo) {
-    state.value = 'running'
+    if (state.value === 'idle' && terminalFence) return
+    if (state.value !== 'stopping') state.value = 'running'
     progress.value = p
   }
 
   function applyNodeState(msg: NodeStateMessage) {
-    if (msg.status === 'running') {
+    if (msg.status === 'running' && state.value === 'idle' && terminalFence) return
+    if (msg.status === 'running' && state.value !== 'stopping') {
       state.value = 'running'
     }
     nodeStatuses.value = {
@@ -285,7 +335,7 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyStatusSnapshot(snapshot: ExecutionStatusSnapshot) {
-    state.value = snapshot.state
+    if (!applyBackendPhase(snapshot.state)) return
     lastResult.value = snapshot.last_result
     updateEnvironmentRecovery(snapshot.last_result)
     progress.value = snapshot.progress
@@ -296,6 +346,7 @@ export const useExecutionStore = defineStore('execution', () => {
 
   function applyExecutionComplete(payload: ExecutionResult) {
     state.value = 'idle'
+    terminalFence = true
     lastResult.value = payload
     updateEnvironmentRecovery(payload)
     progress.value = null
@@ -364,7 +415,11 @@ export const useExecutionStore = defineStore('execution', () => {
     validationErrors,
     environmentRecoveryAction,
     isEnvironmentRecoveryDialogVisible,
+    isStarting,
     isRunning,
+    isStopping,
+    isMutationLocked,
+    canStop,
     fetchStatus,
     run,
     stop,

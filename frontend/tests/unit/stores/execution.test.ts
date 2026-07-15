@@ -15,6 +15,16 @@ const mockedApi = api as unknown as {
   post: ReturnType<typeof vi.fn>
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe('execution store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -25,6 +35,7 @@ describe('execution store', () => {
     const store = useExecutionStore()
     expect(store.state).toBe('idle')
     expect(store.isRunning).toBe(false)
+    expect(store.isMutationLocked).toBe(false)
     expect(store.lastResult).toBeNull()
     expect(store.progress).toBeNull()
     expect(store.error).toBeNull()
@@ -104,6 +115,169 @@ describe('execution store', () => {
     ])
   })
 
+  it('locks synchronously while starting and suppresses duplicate starts', async () => {
+    const request = deferred<{ data: { status: string } }>()
+    mockedApi.post.mockReturnValueOnce(request.promise)
+    const store = useExecutionStore()
+    const graph = { nodes: [], edges: [] }
+
+    const start = store.run(graph, undefined, 'wf_a')
+
+    expect(store.state).toBe('starting')
+    expect(store.isRunning).toBe(false)
+    expect(store.isMutationLocked).toBe(true)
+    await expect(store.run(graph, undefined, 'wf_a')).rejects.toThrow(/already/i)
+    expect(mockedApi.post).toHaveBeenCalledOnce()
+
+    request.resolve({ data: { status: 'started' } })
+    await start
+    expect(store.state).toBe('running')
+    expect(store.isRunning).toBe(true)
+  })
+
+  it.each(['starting', 'running', 'stopping'] as const)(
+    'rejects a start while execution is %s',
+    async (phase) => {
+      const store = useExecutionStore()
+      store.state = phase as any
+
+      await expect(
+        store.run({ nodes: [], edges: [] }, undefined, 'wf_a'),
+      ).rejects.toThrow(/already/i)
+      expect(mockedApi.post).not.toHaveBeenCalled()
+    },
+  )
+
+  it('does not let a late start response override a terminal event or newer start', async () => {
+    const firstRequest = deferred<{ data: { status: string } }>()
+    const secondRequest = deferred<{ data: { status: string } }>()
+    mockedApi.post
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+    const store = useExecutionStore()
+
+    const firstStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    const secondStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    expect(store.state).toBe('starting')
+
+    firstRequest.resolve({ data: { status: 'started' } })
+    await firstStart
+    expect(store.state).toBe('starting')
+
+    secondRequest.resolve({ data: { status: 'started' } })
+    await secondStart
+    expect(store.state).toBe('running')
+  })
+
+  it('rolls back a failed start only while that start still owns the phase', async () => {
+    const firstRequest = deferred<never>()
+    mockedApi.post.mockReturnValueOnce(firstRequest.promise)
+    const store = useExecutionStore()
+
+    const start = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    expect(store.state).toBe('starting')
+    firstRequest.reject(new Error('start failed'))
+    await expect(start).rejects.toThrow('start failed')
+    expect(store.state).toBe('idle')
+
+    const lateFailure = deferred<never>()
+    mockedApi.post.mockReturnValueOnce(lateFailure.promise)
+    const nextStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    lateFailure.reject(new Error('late failure'))
+    await expect(nextStart).rejects.toThrow('late failure')
+    expect(store.state).toBe('idle')
+  })
+
+  it('does not let a stale start failure overwrite a newer start', async () => {
+    const firstRequest = deferred<never>()
+    const secondRequest = deferred<{ data: { status: string } }>()
+    mockedApi.post
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+    const store = useExecutionStore()
+
+    const firstStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    const secondStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    const staleValidationError = {
+      type: 'cycle_detected',
+      detail: 'stale cycle',
+      node: null,
+      edge_id: null,
+      field: null,
+    }
+
+    firstRequest.reject({
+      message: 'stale start failed',
+      response: {
+        status: 422,
+        data: { detail: 'stale start failed', errors: [staleValidationError] },
+      },
+    })
+    await expect(firstStart).rejects.toMatchObject({ message: 'stale start failed' })
+
+    expect(store.state).toBe('starting')
+    expect(store.error).toBeNull()
+    expect(store.isConflict).toBe(false)
+    expect(store.validationErrors).toEqual([])
+    expect(useLoggerStore().entries).toEqual([])
+
+    secondRequest.resolve({ data: { status: 'started' } })
+    await secondStart
+    expect(store.state).toBe('running')
+  })
+
+  it('rejects entire idle status payloads while a start request is in flight', async () => {
+    const request = deferred<{ data: { status: string } }>()
+    mockedApi.post.mockReturnValueOnce(request.promise)
+    const priorResult: ExecutionResult = {
+      success: true,
+      errors: [],
+      node_statuses: {},
+    }
+    const staleProgress: ProgressInfo = {
+      node_id: 'stale',
+      row: 3,
+      total_rows: 10,
+    }
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        state: 'idle',
+        last_result: priorResult,
+        progress: staleProgress,
+        node_statuses: {
+          fetched: { node_id: 'fetched', status: 'executed', cached: true },
+        },
+      },
+    })
+    const store = useExecutionStore()
+
+    const start = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    store.applyStatusSnapshot({
+      state: 'idle',
+      last_result: priorResult,
+      progress: staleProgress,
+      node_statuses: {
+        snapshot: { node_id: 'snapshot', status: 'executed', cached: true },
+      },
+    })
+    expect(store.state).toBe('starting')
+    expect(store.lastResult).toBeNull()
+    expect(store.progress).toBeNull()
+    expect(store.nodeStatuses).toEqual({})
+    await store.fetchStatus()
+    expect(store.state).toBe('starting')
+    expect(store.lastResult).toBeNull()
+    expect(store.progress).toBeNull()
+    expect(store.nodeStatuses).toEqual({})
+
+    request.resolve({ data: { status: 'started' } })
+    await start
+    expect(store.state).toBe('running')
+  })
+
   it('run rejects a missing workflow identity before changing execution state', async () => {
     const graph = { nodes: [], edges: [] }
     const store = useExecutionStore()
@@ -165,8 +339,9 @@ describe('execution store', () => {
     expect(store.validationErrors[0].type).toBe('cycle_detected')
   })
 
-  it('stop sends POST /execution/stop and waits for backend log messages', async () => {
-    mockedApi.post.mockResolvedValueOnce({ data: {} })
+  it('stop locks synchronously, suppresses duplicates, and waits for terminal state', async () => {
+    const request = deferred<{ data: Record<string, never> }>()
+    mockedApi.post.mockReturnValueOnce(request.promise)
 
     const store = useExecutionStore()
     const logger = useLoggerStore()
@@ -177,11 +352,17 @@ describe('execution store', () => {
       timestamp: 1,
     })
     store.state = 'running'
-    await store.stop()
+    const stop = store.stop()
 
+    expect(store.state).toBe('stopping')
+    expect(store.isRunning).toBe(true)
+    expect(store.isMutationLocked).toBe(true)
+    await expect(store.stop()).resolves.toBe(false)
+    expect(mockedApi.post).toHaveBeenCalledOnce()
+    request.resolve({ data: {} })
+    await expect(stop).resolves.toBe(true)
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/stop')
-    // Per F1: stop waits for server, does not immediately change state.
-    expect(store.state).toBe('running')
+    expect(store.state).toBe('stopping')
     expect(logger.entries).toEqual([
       expect.objectContaining({
         level: 'INFO',
@@ -189,6 +370,57 @@ describe('execution store', () => {
         nodeId: null,
       }),
     ])
+  })
+
+  it('rolls back a failed stop only while that stop still owns the phase', async () => {
+    const request = deferred<never>()
+    mockedApi.post.mockReturnValueOnce(request.promise)
+    const store = useExecutionStore()
+    store.state = 'running'
+
+    const stop = store.stop()
+    request.reject(new Error('stop failed'))
+    await expect(stop).rejects.toThrow('stop failed')
+    expect(store.state).toBe('running')
+
+    const lateFailure = deferred<never>()
+    mockedApi.post.mockReturnValueOnce(lateFailure.promise)
+    const nextStop = store.stop()
+    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    lateFailure.reject(new Error('late stop failure'))
+    await expect(nextStop).rejects.toThrow('late stop failure')
+    expect(store.state).toBe('idle')
+  })
+
+  it('keeps stopping through late running events and unlocks on idle', () => {
+    const store = useExecutionStore()
+    store.state = 'stopping' as any
+    const progress: ProgressInfo = { node_id: 'n1', row: 1, total_rows: 2 }
+
+    store.applyProgress(progress)
+    store.applyNodeState({ node_id: 'n1', status: 'running', cached: false })
+    store.applyStatusSnapshot({ state: 'running', last_result: null, progress })
+    expect(store.state).toBe('stopping')
+    expect(store.isMutationLocked).toBe(true)
+
+    store.applyStatusSnapshot({ state: 'idle', last_result: null, progress: null })
+    expect(store.state).toBe('idle')
+    expect(store.isMutationLocked).toBe(false)
+  })
+
+  it('does not resurrect a terminal execution from late running events', () => {
+    const store = useExecutionStore()
+    store.state = 'stopping'
+    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    const progress: ProgressInfo = { node_id: 'n1', row: 1, total_rows: 2 }
+
+    store.applyProgress(progress)
+    store.applyNodeState({ node_id: 'n1', status: 'running', cached: false })
+    store.applyStatusSnapshot({ state: 'running', last_result: null, progress })
+
+    expect(store.state).toBe('idle')
+    expect(store.isMutationLocked).toBe(false)
+    expect(store.lastResult).toEqual({ success: true, errors: [], node_statuses: {} })
   })
 
   it('clear sends {graph, nodes, workflow_name} and merges returned node_statuses', async () => {
