@@ -18,8 +18,13 @@ from unittest.mock import MagicMock
 import pytest
 from wetlands.exceptions import EnvironmentReuseError
 
+from bioimageflow_server.models.execution import (
+    ExecutionResult,
+    ProgressInfo,
+)
 from bioimageflow_server.models.graph import ColumnRefEdge, GraphState, NodeState
 from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     ExecutionEventBus,
@@ -940,6 +945,20 @@ class TestExecutionManagerResult:
         )
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        prior_status = NodeStatus(
+            node_id="previous",
+            status="executed",
+            cached=True,
+        )
+        prior_result = ExecutionResult(
+            success=True,
+            errors=[],
+            node_statuses={"previous": prior_status},
+        )
+        prior_progress = ProgressInfo(node_id="previous", row=1, total_rows=1)
+        em.last_result = prior_result
+        em.progress = prior_progress
+        em._node_statuses = {"previous": prior_status}
 
         with pytest.raises(WorkflowBuildError) as exc_info:
             await em.start(_graph_with([("n1", True)]))
@@ -948,6 +967,9 @@ class TestExecutionManagerResult:
         assert exc_info.value.errors[0].field == "count"
         assert wf.compute_calls == 0
         assert em.state == "idle"
+        assert em.last_result is prior_result
+        assert em.progress is prior_progress
+        assert em._node_statuses == {"previous": prior_status}
 
     async def test_disabled_nodes_seeded_as_disabled(
         self, monkeypatch: pytest.MonkeyPatch

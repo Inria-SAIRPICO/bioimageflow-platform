@@ -239,32 +239,17 @@ class ExecutionManager:
             )
         self.state = "running"
 
-        # Clear per-run state.
-        self.progress = None
-        self.last_result = None
-        self._node_statuses = {}
-        self._current_node_id = None
-
-        live_settings = (
-            self._settings_provider() if self._settings_provider else self.settings
-        )
-        run_storage_path = storage_path if storage_path is not None else self.storage_path
-        build_graph = _execution_subgraph(graph, nodes) if nodes else graph
-
-        # Seed disabled nodes so they appear in the final result.
-        for node in build_graph.nodes:
-            if not node.enabled:
-                self._node_statuses[node.id] = NodeStatus(
-                    node_id=node.id,
-                    status="disabled",
-                    cached=False,
-                )
-
-        on_progress = self._make_progress_callback()
-
         # Execution compiles the graph submitted with this run request; no
         # validation or editor session can alter its meaning.
         try:
+            live_settings = (
+                self._settings_provider() if self._settings_provider else self.settings
+            )
+            run_storage_path = (
+                storage_path if storage_path is not None else self.storage_path
+            )
+            build_graph = _execution_subgraph(graph, nodes) if nodes else graph
+            on_progress = self._make_progress_callback()
             validation_output = GraphValidationService(
                 self.tool_registry
             ).validate_with_compilation(
@@ -288,6 +273,20 @@ class ExecutionManager:
         if not validation_output.validation.valid:
             self.state = "idle"
             raise WorkflowBuildError(validation_output.validation.errors)
+
+        # An accepted run supersedes the prior result. Rejected requests leave
+        # the observable execution status unchanged.
+        self.progress = None
+        self.last_result = None
+        self._node_statuses = {}
+        self._current_node_id = None
+        for node in build_graph.nodes:
+            if not node.enabled:
+                self._node_statuses[node.id] = NodeStatus(
+                    node_id=node.id,
+                    status="disabled",
+                    cached=False,
+                )
 
         workflow = validation_output.compilation.workflow
         self._workflow = workflow

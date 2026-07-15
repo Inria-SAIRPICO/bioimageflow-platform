@@ -781,7 +781,7 @@ export interface components {
             /** Nodes */
             nodes?: string[] | null;
             /** Workflow Name */
-            workflow_name?: string | null;
+            workflow_name: string;
         };
         /**
          * EnvironmentDeleteRequest

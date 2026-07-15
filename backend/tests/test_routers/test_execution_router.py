@@ -24,6 +24,9 @@ from bioimageflow_server.models.execution import (
 )
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
+from bioimageflow_server.routers.execution import (
+    get_workflow_store as execution_get_workflow_store,
+)
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     WorkflowBuildError,
@@ -158,7 +161,13 @@ async def _make_client(
 @pytest.fixture
 async def idle_client(tmp_path: Path) -> AsyncIterator[tuple[httpx.AsyncClient, _FakeExecutionManager]]:
     em = _FakeExecutionManager(running=False)
-    c = await _make_client(tmp_path, execution_manager=em)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
     async with c:
         yield c, em
 
@@ -169,7 +178,8 @@ async def idle_client(tmp_path: Path) -> AsyncIterator[tuple[httpx.AsyncClient, 
 async def test_run_returns_202(idle_client) -> None:
     client, em = idle_client
     resp = await client.post(
-        "/api/v1/execution/run", json={"graph": _minimal_graph()}
+        "/api/v1/execution/run",
+        json={"graph": _minimal_graph(), "workflow_name": "wf"},
     )
     assert resp.status_code == 202, resp.text
     assert resp.json() == {"status": "started"}
@@ -179,10 +189,17 @@ async def test_run_returns_202(idle_client) -> None:
 async def test_run_conflict_returns_409(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=True)
     em.start.side_effect = ExecutionConflictError("already running")
-    c = await _make_client(tmp_path, execution_manager=em)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
     async with c:
         resp = await c.post(
-            "/api/v1/execution/run", json={"graph": _minimal_graph()}
+            "/api/v1/execution/run",
+            json={"graph": _minimal_graph(), "workflow_name": "wf"},
         )
     assert resp.status_code == 409
 
@@ -192,10 +209,17 @@ async def test_run_build_failure_returns_422(tmp_path: Path) -> None:
     em.start.side_effect = WorkflowBuildError(
         [GraphValidationError(type="cycle_detected", detail="cycle")]
     )
-    c = await _make_client(tmp_path, execution_manager=em)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
     async with c:
         resp = await c.post(
-            "/api/v1/execution/run", json={"graph": _minimal_graph()}
+            "/api/v1/execution/run",
+            json={"graph": _minimal_graph(), "workflow_name": "wf"},
         )
     assert resp.status_code == 422
     body = resp.json()
@@ -206,7 +230,11 @@ async def test_run_passes_nodes_subset(idle_client) -> None:
     client, em = idle_client
     resp = await client.post(
         "/api/v1/execution/run",
-        json={"graph": _minimal_graph(), "nodes": ["n1"]},
+        json={
+            "graph": _minimal_graph(),
+            "nodes": ["n1"],
+            "workflow_name": "wf",
+        },
     )
     assert resp.status_code == 202
     call_args = em.start.call_args
@@ -236,7 +264,7 @@ async def test_run_resolves_workflow_storage_path(tmp_path: Path) -> None:
     assert em.start.call_args.kwargs["storage_path"] == workflow_storage
 
 
-async def test_run_without_workflow_uses_fallback_storage(tmp_path: Path) -> None:
+async def test_run_requires_workflow_identity(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
     workflow_store = MagicMock()
     c = await _make_client(
@@ -250,9 +278,61 @@ async def test_run_without_workflow_uses_fallback_storage(tmp_path: Path) -> Non
             json={"graph": _minimal_graph()},
         )
 
-    assert resp.status_code == 202
+    assert resp.status_code == 422
     workflow_store.get_storage_path.assert_not_called()
-    assert em.start.call_args.kwargs["storage_path"] == tmp_path
+    em.start.assert_not_awaited()
+
+
+async def test_run_requires_workflow_store(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    app = create_app(
+        AppConfig(
+            storage_path=tmp_path,
+            execution_manager=em,
+            workflow_store=MagicMock(),
+        )
+    )
+    app.dependency_overrides[execution_get_workflow_store] = lambda: None
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": _minimal_graph(),
+                "workflow_name": "wf",
+            },
+        )
+
+    assert resp.status_code == 503
+    em.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("workflow_name", [None, "", " ", "../outside"])
+async def test_run_rejects_invalid_workflow_identity(
+    tmp_path: Path,
+    workflow_name: str | None,
+) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = MagicMock()
+    c = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
+    async with c:
+        resp = await c.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": _minimal_graph(),
+                "workflow_name": workflow_name,
+            },
+        )
+
+    assert resp.status_code == 422
+    workflow_store.get_storage_path.assert_not_called()
+    em.start.assert_not_awaited()
 
 
 # ---- POST /execution/stop ---------------------------------------------------

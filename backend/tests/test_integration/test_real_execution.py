@@ -7,6 +7,7 @@ import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import httpx
 import pandas as pd
@@ -385,12 +386,15 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
 async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path) -> None:
     registry = _registry()
     graph = _real_graph()
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
     app = create_app(
         AppConfig(
             storage_path=tmp_path,
             tool_registry=registry,
             settings=_settings(),
             disable_hot_reload=True,
+            workflow_store=workflow_store,
         )
     )
     client = httpx.AsyncClient(
@@ -411,7 +415,10 @@ async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path)
 
         run_response = await client.post(
             "/api/v1/execution/run",
-            json={"graph": graph.model_dump(mode="json")},
+            json={
+                "graph": graph.model_dump(mode="json"),
+                "workflow_name": "test-workflow",
+            },
         )
         assert run_response.status_code == 202, run_response.text
 
@@ -427,7 +434,10 @@ async def test_api_runs_real_dataframe_workflow_and_reuses_cache(tmp_path: Path)
 
         cached_response = await client.post(
             "/api/v1/execution/run",
-            json={"graph": graph.model_dump(mode="json")},
+            json={
+                "graph": graph.model_dump(mode="json"),
+                "workflow_name": "test-workflow",
+            },
         )
         assert cached_response.status_code == 202, cached_response.text
 
@@ -444,12 +454,15 @@ async def test_api_real_dataframe_tool_failure_propagates_node_error(
 ) -> None:
     registry = _registry()
     graph = _failure_graph()
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
     app = create_app(
         AppConfig(
             storage_path=tmp_path,
             tool_registry=registry,
             settings=_settings(),
             disable_hot_reload=True,
+            workflow_store=workflow_store,
         )
     )
     client = httpx.AsyncClient(
@@ -460,7 +473,10 @@ async def test_api_real_dataframe_tool_failure_propagates_node_error(
     async with client:
         run_response = await client.post(
             "/api/v1/execution/run",
-            json={"graph": graph.model_dump(mode="json")},
+            json={
+                "graph": graph.model_dump(mode="json"),
+                "workflow_name": "test-workflow",
+            },
         )
         assert run_response.status_code == 202, run_response.text
 

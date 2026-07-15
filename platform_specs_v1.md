@@ -648,12 +648,12 @@ Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not y
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/execution/run` | Submit graph + run (body: `{graph: {...}, nodes?: [str]}`) |
+| `POST` | `/execution/run` | Submit graph + run (body: `{graph: GraphState, nodes?: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. |
 | `POST` | `/execution/stop` | Stop the current execution |
 | `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects errors before invalidating cache. Returns updated `NodeStatus` for the cleared nodes and all downstream dependents. |
 | `GET` | `/execution/status` | Get full execution state (see response schema below) |
 
-The `run` endpoint accepts the full graph (same `GraphState` format as `PUT /graph`). This ensures the executed workflow always matches what the user sees. The backend validates, builds the Workflow, and executes. If `nodes` is provided, those nodes and all their out-of-date or unexecuted dependencies are re-executed — stale cached results are never used. If `nodes` is omitted, all enabled unexecuted/out-of-date nodes are executed.
+The `run` endpoint accepts the full graph (same `GraphState` format as `PUT /graph`) and resolves cache state from the required workflow identity. This ensures the executed workflow always matches what the user sees and cannot fall back to a shared cache namespace. The backend validates, builds the Workflow, and executes. If `nodes` is provided, those nodes and all their out-of-date or unexecuted dependencies are re-executed — stale cached results are never used. If `nodes` is omitted, all enabled unexecuted/out-of-date nodes are executed.
 
 A second `POST /execution/run` while one is already running returns HTTP 409 Conflict.
 

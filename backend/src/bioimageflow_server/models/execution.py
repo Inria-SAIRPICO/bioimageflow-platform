@@ -2,9 +2,10 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from bioimageflow_server.models.validation import NodeStatus
+from bioimageflow_server.models.workflow import validate_workflow_id
 
 
 class ExecutionRequest(BaseModel):
@@ -12,7 +13,12 @@ class ExecutionRequest(BaseModel):
 
     graph: dict[str, Any]
     nodes: list[str] | None = None
-    workflow_name: str | None = None
+    workflow_name: str = Field(min_length=1)
+
+    @field_validator("workflow_name")
+    @classmethod
+    def validate_workflow_name(cls, value: str) -> str:
+        return validate_workflow_id(value)
 
 
 class ProgressInfo(BaseModel):

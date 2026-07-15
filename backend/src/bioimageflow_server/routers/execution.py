@@ -88,6 +88,11 @@ async def run_execution(
         graph = GraphState.model_validate(body.graph)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid graph: {exc}") from exc
+    if workflow_store is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Workflow store is required for execution",
+        )
     try:
         run_storage_path = resolve_workflow_storage_path(
             body.workflow_name,
