@@ -251,8 +251,16 @@ vi.mock('@/composables/useCanvasCommands', () => ({
 
 vi.mock('@/stores/resolvedOutputs', () => {
   const { reactive } = require('vue')
+  const resolvedOutputsByNodeId = reactive({} as Record<string, any>)
   const store = {
-    resolvedOutputsByNodeId: reactive({} as Record<string, any>),
+    resolvedOutputsByNodeId,
+    resolvedOutputsForCanvas: vi.fn(() => resolvedOutputsByNodeId),
+    getCanvasResolvedOutput: vi.fn((_canvasId: string, nodeId: string) => (
+      resolvedOutputsByNodeId[nodeId]
+    )),
+    refreshCanvasResolvedOutputs: vi.fn(),
+    removeCanvasNode: vi.fn(),
+    releaseCanvas: vi.fn(),
     refreshResolvedOutputs: vi.fn(),
     refreshNow: vi.fn(),
     removeNode: vi.fn(),
@@ -272,6 +280,7 @@ import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore, type WorkflowDraftChangedMessage } from '@/stores/workflowDraft'
 import { useUIStore } from '@/stores/ui'
+import { useDataTableStore } from '@/stores/dataTable'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -405,11 +414,38 @@ describe('CanvasView', () => {
     apiMocks.put.mockReset().mockResolvedValue({ data: {} })
     apiMocks.patch.mockReset().mockResolvedValue({ data: {} })
     apiMocks.delete.mockReset().mockResolvedValue({ data: {} })
+    const resolvedOutputsStore = useResolvedOutputsStore()
+    ;(resolvedOutputsStore.resolvedOutputsForCanvas as any).mockClear()
+    ;(resolvedOutputsStore.getCanvasResolvedOutput as any).mockClear()
+    ;(resolvedOutputsStore.refreshCanvasResolvedOutputs as any).mockClear()
+    ;(resolvedOutputsStore.releaseCanvas as any).mockClear()
   })
 
   // --- Task 6: Core Vue Flow Setup ---
 
   describe('core setup', () => {
+    it('publishes and releases cache state against its fixed canvas id', () => {
+      const resolvedOutputsStore = useResolvedOutputsStore()
+      const dataTableStore = useDataTableStore()
+      const registerDataTable = vi.spyOn(dataTableStore, 'registerCanvas')
+      const releaseDataTable = vi.spyOn(dataTableStore, 'releaseCanvas')
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+
+      expect(resolvedOutputsStore.resolvedOutputsForCanvas).toHaveBeenCalledWith(
+        'workflow:analysis',
+      )
+      expect(registerDataTable).toHaveBeenCalledWith('workflow:analysis')
+      w.unmount()
+      expect(resolvedOutputsStore.releaseCanvas).toHaveBeenCalledWith('workflow:analysis')
+      expect(releaseDataTable).toHaveBeenCalledWith('workflow:analysis')
+    })
+
     it('registers graph sync and Vue Flow with the stable Dockview panel id', () => {
       const w = mountCanvas({
         params: {
@@ -1883,6 +1919,7 @@ describe('CanvasView', () => {
     })
 
     it('reconciles parent pins, parameters, and edges when applying a published interface', () => {
+      const clearCanvasCache = vi.spyOn(useDataTableStore(), 'clearCanvasCache')
       const w = mountCanvas()
       mockNodes.splice(0, mockNodes.length, {
         id: 'sub_1',
@@ -1967,6 +2004,7 @@ describe('CanvasView', () => {
       expect(subNode.data.published_inputs[0].name).toBe('input_folder')
       expect(subNode.data.published_outputs[0].name).toBe('label_count')
       expect(subNode.data.status).toBe('out_of_date')
+      expect(clearCanvasCache).toHaveBeenCalledWith('canvas', 'sub_1')
       expect(w.emitted('graph-changed')).toBeTruthy()
       w.unmount()
     })
@@ -3307,7 +3345,7 @@ describe('CanvasView', () => {
       mockEdges = []
 
       const resolvedStore = useResolvedOutputsStore()
-      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+      ;(resolvedStore.refreshCanvasResolvedOutputs as any).mockClear()
 
       const w = mountCanvas()
       await flushPromises()
@@ -3317,7 +3355,7 @@ describe('CanvasView', () => {
         { id: 'join_1', data: { toolName: 'cross_join', tool: joinTool, name: 'CrossJoin 1', connectedInputs: {} } },
       )
       mockEdges.splice(0, mockEdges.length)
-      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+      ;(resolvedStore.refreshCanvasResolvedOutputs as any).mockClear()
 
       connectHandler!({
         source: 'files_1',
@@ -3330,8 +3368,10 @@ describe('CanvasView', () => {
       await nextTick()
       await flushPromises()
 
-      const calls = (resolvedStore.refreshResolvedOutputs as any).mock.calls
-      const calledForJoin = calls.some((c: any[]) => c[0] === 'join_1')
+      const calls = (resolvedStore.refreshCanvasResolvedOutputs as any).mock.calls
+      const calledForJoin = calls.some(
+        (c: any[]) => c[0] === 'canvas' && c[1] === 'join_1',
+      )
       expect(calledForJoin).toBe(true)
       w.unmount()
     })
@@ -3367,7 +3407,7 @@ describe('CanvasView', () => {
       ]
 
       const resolvedStore = useResolvedOutputsStore()
-      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+      ;(resolvedStore.refreshCanvasResolvedOutputs as any).mockClear()
 
       const w = mountCanvas()
       await flushPromises()
@@ -3393,7 +3433,7 @@ describe('CanvasView', () => {
         type: 'positional',
         selected: true,
       })
-      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+      ;(resolvedStore.refreshCanvasResolvedOutputs as any).mockClear()
 
       const vm = w.vm as any
       vm.deleteSelected()
@@ -3401,8 +3441,10 @@ describe('CanvasView', () => {
       await flushPromises()
       await nextTick()
 
-      const calls = (resolvedStore.refreshResolvedOutputs as any).mock.calls
-      const calledForJoin = calls.some((c: any[]) => c[0] === 'join_1')
+      const calls = (resolvedStore.refreshCanvasResolvedOutputs as any).mock.calls
+      const calledForJoin = calls.some(
+        (c: any[]) => c[0] === 'canvas' && c[1] === 'join_1',
+      )
       expect(calledForJoin).toBe(true)
       w.unmount()
     })
@@ -3428,7 +3470,7 @@ describe('CanvasView', () => {
       mockEdges = []
 
       const resolvedStore = useResolvedOutputsStore()
-      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+      ;(resolvedStore.refreshCanvasResolvedOutputs as any).mockClear()
 
       const w = mountCanvas()
       await flushPromises()
@@ -3438,7 +3480,7 @@ describe('CanvasView', () => {
         { id: 'filter_1', data: { toolName: 'filter_rows', tool: passthroughTool, name: 'Filter 1', connectedInputs: {} } },
       )
       mockEdges.splice(0, mockEdges.length)
-      ;(resolvedStore.refreshResolvedOutputs as any).mockClear()
+      ;(resolvedStore.refreshCanvasResolvedOutputs as any).mockClear()
 
       connectHandler!({
         source: 'files_1',
@@ -3451,8 +3493,10 @@ describe('CanvasView', () => {
       await nextTick()
       await flushPromises()
 
-      const calls = (resolvedStore.refreshResolvedOutputs as any).mock.calls
-      const calledForFilter = calls.some((c: any[]) => c[0] === 'filter_1')
+      const calls = (resolvedStore.refreshCanvasResolvedOutputs as any).mock.calls
+      const calledForFilter = calls.some(
+        (c: any[]) => c[0] === 'canvas' && c[1] === 'filter_1',
+      )
       expect(calledForFilter).toBe(false)
       w.unmount()
     })

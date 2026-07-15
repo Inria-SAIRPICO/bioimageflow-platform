@@ -23,12 +23,7 @@ const data = computed(() => store.getNodeData(props.nodeId))
 const loading = computed(() => store.isLoading(props.nodeId))
 const pending = computed(() => store.isPending(props.nodeId))
 const error = computed(() => store.getError(props.nodeId))
-const pageState = computed(() => store.paginationState[props.nodeId] ?? {
-  page: 0,
-  pageSize: 50,
-  sortBy: null,
-  sortOrder: 'asc' as const,
-})
+const pageState = computed(() => store.getPageState(props.nodeId))
 
 const rowModels = computed(() => {
   const response = data.value

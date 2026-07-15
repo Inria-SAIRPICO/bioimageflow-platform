@@ -116,8 +116,10 @@ const ownedWorkflowDisplayName = ref<string | null>(
       ?? null,
 )
 
-// Provide the resolved-outputs map so ToolNode can read it via inject.
-provide('bioimageflow:resolvedOutputs', resolvedOutputsStore.resolvedOutputsByNodeId)
+// ToolNode must always read the map owned by this mounted canvas.
+dataTableStore.registerCanvas(canvasId)
+const canvasResolvedOutputs = resolvedOutputsStore.resolvedOutputsForCanvas(canvasId)
+provide('bioimageflow:resolvedOutputs', canvasResolvedOutputs)
 
 const {
   project,
@@ -1005,6 +1007,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   isCanvasUnmounted = true
+  dataTableStore.releaseCanvas(canvasId)
+  resolvedOutputsStore.releaseCanvas(canvasId)
   disposeGraphSync()
   disposeCanvasPersistence()
   canvasCommands.dispose()
@@ -1279,7 +1283,12 @@ function refreshIfDynamicOutputs(nodeId: string): void {
     const n = getNodes.value.find((nn: any) => nn.id === id)
     return n?.data?.tool ?? toolRegistryStore.getToolByName(n?.data?.toolName)
   }
-  resolvedOutputsStore.refreshResolvedOutputs(nodeId, getGraph, getToolForNode)
+  resolvedOutputsStore.refreshCanvasResolvedOutputs(
+    canvasId,
+    nodeId,
+    getGraph,
+    getToolForNode,
+  )
 }
 
 /**
@@ -1500,7 +1509,7 @@ function outputTypeForHandle(node: any, handle: string): string | undefined {
   const sourceOutput = tool?.outputs?.[handle] as { type?: string } | undefined
   let sourceType = sourceOutput?.type
   if (!sourceType && tool?.dynamic_outputs) {
-    const resolved = resolvedOutputsStore.resolvedOutputsByNodeId[node.id]
+    const resolved = canvasResolvedOutputs[node.id]
     if (resolved?.resolved && resolved.columns) {
       const col = (resolved.columns as Record<string, any>)[handle]
       sourceType = col?.type
@@ -2233,7 +2242,7 @@ function applySubWorkflowDraft(
   if (node.data.status === 'executed') {
     node.data.status = 'out_of_date'
   }
-  dataTableStore.clearCache(parentNodeId)
+  dataTableStore.clearCanvasCache(canvasId, parentNodeId)
   emitGraphChanged()
 }
 

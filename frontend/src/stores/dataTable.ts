@@ -1,7 +1,11 @@
-import { computed, reactive } from 'vue'
+import { computed, reactive, shallowReactive } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import type { NodeDataResponse } from '@/api/types'
+import {
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
 
 export interface DataTablePageState {
   page: number
@@ -20,6 +24,52 @@ interface FetchOpts {
   retryAttempt?: number
 }
 
+interface DataTableState {
+  nodeDataCache: Record<string, NodeDataResponse>
+  paginationState: Record<string, DataTablePageState>
+  loading: Record<string, boolean>
+  errors: Record<string, string | null>
+  pending: Record<string, boolean>
+}
+
+interface DataTableContext {
+  readonly state: DataTableState
+  readonly inflightControllers: Map<string, AbortController>
+  readonly requestIds: Map<string, number>
+  readonly retryTimers: Map<string, ReturnType<typeof setTimeout>>
+  released: boolean
+}
+
+const EMPTY_NODE_DATA = Object.freeze({}) as Record<string, NodeDataResponse>
+const EMPTY_PAGINATION = Object.freeze({}) as Record<string, DataTablePageState>
+const EMPTY_FLAGS = Object.freeze({}) as Record<string, boolean>
+const EMPTY_ERRORS = Object.freeze({}) as Record<string, string | null>
+
+function defaultPageState(): DataTablePageState {
+  return {
+    page: 0,
+    pageSize: 50,
+    sortBy: null,
+    sortOrder: 'asc',
+  }
+}
+
+function createContext(): DataTableContext {
+  return {
+    state: reactive({
+      nodeDataCache: {},
+      paginationState: {},
+      loading: {},
+      errors: {},
+      pending: {},
+    }) as DataTableState,
+    inflightControllers: new Map(),
+    requestIds: new Map(),
+    retryTimers: new Map(),
+    released: false,
+  }
+}
+
 function errorMessage(exc: unknown): string {
   if (typeof exc === 'object' && exc !== null && 'response' in exc) {
     const response = (exc as { response?: { data?: { detail?: string } } }).response
@@ -36,89 +86,146 @@ function errorStatus(exc: unknown): number | null {
   return null
 }
 
+function isCanceled(exc: unknown): boolean {
+  const maybeCanceled = exc as { name?: string; code?: string }
+  return maybeCanceled.name === 'CanceledError' || maybeCanceled.code === 'ERR_CANCELED'
+}
+
 const NOT_READY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 
 export const useDataTableStore = defineStore('dataTable', () => {
-  const nodeDataCache = reactive<Record<string, NodeDataResponse>>({})
-  const paginationState = reactive<Record<string, DataTablePageState>>({})
-  const loading = reactive<Record<string, boolean>>({})
-  const errors = reactive<Record<string, string | null>>({})
-  const pending = reactive<Record<string, boolean>>({})
+  const legacyContext = createContext()
+  const canvasContexts = shallowReactive(new Map<CanvasId, DataTableContext>())
+  const releasedCanvasIds = new Set<CanvasId>()
 
-  const inflightController = new Map<string, AbortController>()
-  const requestIds = new Map<string, number>()
-  const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-  function stateFor(nodeId: string): DataTablePageState {
-    if (!paginationState[nodeId]) {
-      paginationState[nodeId] = {
-        page: 0,
-        pageSize: 50,
-        sortBy: null,
-        sortOrder: 'asc',
-      }
-    }
-    return paginationState[nodeId]
+  function contextForCanvas(canvasId: CanvasId): DataTableContext | null {
+    if (releasedCanvasIds.has(canvasId)) return null
+    const existing = canvasContexts.get(canvasId)
+    if (existing) return existing
+    const created = createContext()
+    canvasContexts.set(canvasId, created)
+    return created
   }
 
-  function clearRetry(nodeId: string) {
-    const timer = retryTimers.get(nodeId)
+  function registerCanvas(canvasId: CanvasId): void {
+    releasedCanvasIds.delete(canvasId)
+    if (!canvasContexts.has(canvasId)) {
+      canvasContexts.set(canvasId, createContext())
+    }
+  }
+
+  function existingCanvasContext(canvasId: CanvasId): DataTableContext | null {
+    return canvasContexts.get(canvasId) ?? null
+  }
+
+  function activeContext(create: boolean): DataTableContext | null {
+    const canvasId = canvasSessionRegistry.activeCanvasId.value
+    if (canvasId !== null) {
+      return create
+        ? contextForCanvas(canvasId)
+        : existingCanvasContext(canvasId)
+    }
+    return canvasSessionRegistry.sessionCount.value === 0
+      ? legacyContext
+      : null
+  }
+
+  const nodeDataCache = computed(() => (
+    activeContext(false)?.state.nodeDataCache ?? EMPTY_NODE_DATA
+  ))
+  const paginationState = computed(() => (
+    activeContext(false)?.state.paginationState ?? EMPTY_PAGINATION
+  ))
+  const loading = computed(() => activeContext(false)?.state.loading ?? EMPTY_FLAGS)
+  const errors = computed(() => activeContext(false)?.state.errors ?? EMPTY_ERRORS)
+  const pending = computed(() => activeContext(false)?.state.pending ?? EMPTY_FLAGS)
+
+  function stateFor(context: DataTableContext, nodeId: string): DataTablePageState {
+    if (!context.state.paginationState[nodeId]) {
+      context.state.paginationState[nodeId] = defaultPageState()
+    }
+    return context.state.paginationState[nodeId]
+  }
+
+  function clearRetry(context: DataTableContext, nodeId: string): void {
+    const timer = context.retryTimers.get(nodeId)
     if (timer !== undefined) {
       clearTimeout(timer)
-      retryTimers.delete(nodeId)
+      context.retryTimers.delete(nodeId)
     }
+  }
+
+  function isCurrentRequest(
+    context: DataTableContext,
+    nodeId: string,
+    requestId: number,
+  ): boolean {
+    return !context.released && context.requestIds.get(nodeId) === requestId
+  }
+
+  function invalidateRequest(context: DataTableContext, nodeId: string): void {
+    context.requestIds.set(nodeId, (context.requestIds.get(nodeId) ?? 0) + 1)
+    clearRetry(context, nodeId)
+    context.inflightControllers.get(nodeId)?.abort()
+    context.inflightControllers.delete(nodeId)
   }
 
   function scheduleNotReadyRetry(
+    context: DataTableContext,
     nodeId: string,
     opts: FetchOpts,
     retryAttempt: number,
     requestId: number,
     detail: string,
-  ) {
-    clearRetry(nodeId)
+  ): void {
+    clearRetry(context, nodeId)
     const delay = NOT_READY_RETRY_DELAYS_MS[retryAttempt]
     if (delay === undefined) {
-      pending[nodeId] = false
-      errors[nodeId] = detail
+      context.state.pending[nodeId] = false
+      context.state.errors[nodeId] = detail
       return
     }
 
-    pending[nodeId] = true
-    errors[nodeId] = null
-    retryTimers.set(
-      nodeId,
-      setTimeout(() => {
-        retryTimers.delete(nodeId)
-        if (requestIds.get(nodeId) !== requestId) return
-        void fetchNodeData(nodeId, {
-          ...opts,
-          retryAttempt: retryAttempt + 1,
-        })
-      }, delay),
-    )
+    context.state.pending[nodeId] = true
+    context.state.errors[nodeId] = null
+    const timer = setTimeout(() => {
+      if (context.retryTimers.get(nodeId) === timer) {
+        context.retryTimers.delete(nodeId)
+      }
+      if (!isCurrentRequest(context, nodeId, requestId)) return
+      void fetchInContext(context, nodeId, {
+        ...opts,
+        retryAttempt: retryAttempt + 1,
+      })
+    }, delay)
+    context.retryTimers.set(nodeId, timer)
   }
 
-  async function fetchNodeData(nodeId: string, opts: FetchOpts = {}) {
+  async function fetchInContext(
+    context: DataTableContext,
+    nodeId: string,
+    opts: FetchOpts = {},
+  ): Promise<void> {
+    if (context.released) return
     const retryAttempt = opts.retryAttempt ?? 0
-    const current = stateFor(nodeId)
+    const current = stateFor(context, nodeId)
     const nextState: DataTablePageState = {
       page: opts.page ?? current.page,
       pageSize: opts.pageSize ?? current.pageSize,
       sortBy: opts.sortBy ?? current.sortBy,
       sortOrder: opts.sortOrder ?? current.sortOrder,
     }
-    paginationState[nodeId] = nextState
+    context.state.paginationState[nodeId] = nextState
 
-    clearRetry(nodeId)
-    inflightController.get(nodeId)?.abort()
+    clearRetry(context, nodeId)
+    context.inflightControllers.get(nodeId)?.abort()
     const controller = new AbortController()
-    inflightController.set(nodeId, controller)
-    const requestId = (requestIds.get(nodeId) ?? 0) + 1
-    requestIds.set(nodeId, requestId)
+    context.inflightControllers.set(nodeId, controller)
+    const requestId = (context.requestIds.get(nodeId) ?? 0) + 1
+    context.requestIds.set(nodeId, requestId)
 
-    loading[nodeId] = true
-    errors[nodeId] = null
+    context.state.loading[nodeId] = true
+    context.state.errors[nodeId] = null
     try {
       const params: Record<string, string | number> = {
         page: nextState.page,
@@ -136,31 +243,51 @@ export const useDataTableStore = defineStore('dataTable', () => {
         `/api/v1/nodes/${encodeURIComponent(nodeId)}/data`,
         { params, signal: controller.signal },
       )
-      if (requestIds.get(nodeId) === requestId) {
-        nodeDataCache[nodeId] = data
-        pending[nodeId] = false
+      if (isCurrentRequest(context, nodeId, requestId)) {
+        context.state.nodeDataCache[nodeId] = data
+        context.state.pending[nodeId] = false
       }
     } catch (exc: unknown) {
-      const maybeCanceled = exc as { name?: string; code?: string }
-      if (maybeCanceled.name !== 'CanceledError' && maybeCanceled.code !== 'ERR_CANCELED') {
+      if (!isCanceled(exc) && isCurrentRequest(context, nodeId, requestId)) {
         const message = errorMessage(exc)
-        if (errorStatus(exc) === 409 && requestIds.get(nodeId) === requestId) {
-          delete nodeDataCache[nodeId]
-          scheduleNotReadyRetry(nodeId, opts, retryAttempt, requestId, message)
+        if (errorStatus(exc) === 409) {
+          delete context.state.nodeDataCache[nodeId]
+          scheduleNotReadyRetry(
+            context,
+            nodeId,
+            opts,
+            retryAttempt,
+            requestId,
+            message,
+          )
         } else {
-          pending[nodeId] = false
-          errors[nodeId] = message
-          delete nodeDataCache[nodeId]
+          context.state.pending[nodeId] = false
+          context.state.errors[nodeId] = message
+          delete context.state.nodeDataCache[nodeId]
         }
       }
     } finally {
-      if (requestIds.get(nodeId) === requestId) {
-        loading[nodeId] = false
-        if (inflightController.get(nodeId) === controller) {
-          inflightController.delete(nodeId)
+      if (isCurrentRequest(context, nodeId, requestId)) {
+        context.state.loading[nodeId] = false
+        if (context.inflightControllers.get(nodeId) === controller) {
+          context.inflightControllers.delete(nodeId)
         }
       }
     }
+  }
+
+  function fetchNodeData(nodeId: string, opts: FetchOpts = {}): Promise<void> {
+    const context = activeContext(true)
+    return context ? fetchInContext(context, nodeId, opts) : Promise.resolve()
+  }
+
+  function fetchCanvasNodeData(
+    canvasId: CanvasId,
+    nodeId: string,
+    opts: FetchOpts = {},
+  ): Promise<void> {
+    const context = contextForCanvas(canvasId)
+    return context ? fetchInContext(context, nodeId, opts) : Promise.resolve()
   }
 
   function downloadCsv(
@@ -187,45 +314,77 @@ export const useDataTableStore = defineStore('dataTable', () => {
     link.remove()
   }
 
-  function clearCache(nodeId?: string) {
-    const keys = nodeId ? [nodeId] : Object.keys(nodeDataCache)
+  function clearContextCache(context: DataTableContext, nodeId?: string): void {
+    const keys = nodeId
+      ? [nodeId]
+      : Array.from(new Set([
+          ...Object.keys(context.state.nodeDataCache),
+          ...Object.keys(context.state.paginationState),
+          ...Object.keys(context.state.errors),
+          ...Object.keys(context.state.loading),
+          ...Object.keys(context.state.pending),
+          ...context.inflightControllers.keys(),
+          ...context.retryTimers.keys(),
+          ...context.requestIds.keys(),
+        ]))
     for (const key of keys) {
-      delete nodeDataCache[key]
-      delete paginationState[key]
-      delete errors[key]
-      delete loading[key]
-      delete pending[key]
-      clearRetry(key)
-      inflightController.get(key)?.abort()
-      inflightController.delete(key)
+      invalidateRequest(context, key)
+      delete context.state.nodeDataCache[key]
+      delete context.state.paginationState[key]
+      delete context.state.errors[key]
+      delete context.state.loading[key]
+      delete context.state.pending[key]
     }
+  }
+
+  function clearCache(nodeId?: string): void {
+    const context = activeContext(false)
+    if (context) clearContextCache(context, nodeId)
+  }
+
+  function clearCanvasCache(canvasId: CanvasId, nodeId?: string): void {
+    const context = existingCanvasContext(canvasId)
+    if (context) clearContextCache(context, nodeId)
+  }
+
+  function setPageInContext(
+    context: DataTableContext,
+    nodeId: string,
+    page: number,
+    opts: { toolName?: string | null; workflowName?: string | null } = {},
+  ): Promise<void> {
+    return fetchInContext(context, nodeId, {
+      ...stateFor(context, nodeId),
+      page,
+      ...opts,
+    })
   }
 
   function setPage(
     nodeId: string,
     page: number,
     opts: { toolName?: string | null; workflowName?: string | null } = {},
-  ) {
-    return fetchNodeData(nodeId, {
-      ...stateFor(nodeId),
-      page,
-      toolName: opts.toolName,
-      workflowName: opts.workflowName,
-    })
+  ): Promise<void> {
+    const context = activeContext(true)
+    return context
+      ? setPageInContext(context, nodeId, page, opts)
+      : Promise.resolve()
   }
 
   function setPageSize(
     nodeId: string,
     pageSize: number,
     opts: { toolName?: string | null; workflowName?: string | null } = {},
-  ) {
-    return fetchNodeData(nodeId, {
-      ...stateFor(nodeId),
-      page: 0,
-      pageSize,
-      toolName: opts.toolName,
-      workflowName: opts.workflowName,
-    })
+  ): Promise<void> {
+    const context = activeContext(true)
+    return context
+      ? fetchInContext(context, nodeId, {
+          ...stateFor(context, nodeId),
+          page: 0,
+          pageSize,
+          ...opts,
+        })
+      : Promise.resolve()
   }
 
   function setSort(
@@ -233,20 +392,71 @@ export const useDataTableStore = defineStore('dataTable', () => {
     sortBy: string | null,
     sortOrder: 'asc' | 'desc',
     opts: { toolName?: string | null; workflowName?: string | null } = {},
-  ) {
-    return fetchNodeData(nodeId, {
-      ...stateFor(nodeId),
-      sortBy,
-      sortOrder,
-      toolName: opts.toolName,
-      workflowName: opts.workflowName,
-    })
+  ): Promise<void> {
+    const context = activeContext(true)
+    return context
+      ? fetchInContext(context, nodeId, {
+          ...stateFor(context, nodeId),
+          sortBy,
+          sortOrder,
+          ...opts,
+        })
+      : Promise.resolve()
   }
 
-  const getNodeData = computed(() => (nodeId: string) => nodeDataCache[nodeId])
-  const isLoading = computed(() => (nodeId: string) => loading[nodeId] === true)
-  const getError = computed(() => (nodeId: string) => errors[nodeId] ?? null)
-  const isPending = computed(() => (nodeId: string) => pending[nodeId] === true)
+  function getNodeData(nodeId: string): NodeDataResponse | undefined {
+    return activeContext(false)?.state.nodeDataCache[nodeId]
+  }
+
+  function getCanvasNodeData(
+    canvasId: CanvasId,
+    nodeId: string,
+  ): NodeDataResponse | undefined {
+    return existingCanvasContext(canvasId)?.state.nodeDataCache[nodeId]
+  }
+
+  function getPageState(nodeId: string): DataTablePageState {
+    return activeContext(false)?.state.paginationState[nodeId] ?? defaultPageState()
+  }
+
+  function getCanvasPageState(canvasId: CanvasId, nodeId: string): DataTablePageState {
+    return existingCanvasContext(canvasId)?.state.paginationState[nodeId]
+      ?? defaultPageState()
+  }
+
+  function isLoading(nodeId: string): boolean {
+    return activeContext(false)?.state.loading[nodeId] === true
+  }
+
+  function isCanvasLoading(canvasId: CanvasId, nodeId: string): boolean {
+    return existingCanvasContext(canvasId)?.state.loading[nodeId] === true
+  }
+
+  function getError(nodeId: string): string | null {
+    return activeContext(false)?.state.errors[nodeId] ?? null
+  }
+
+  function getCanvasError(canvasId: CanvasId, nodeId: string): string | null {
+    return existingCanvasContext(canvasId)?.state.errors[nodeId] ?? null
+  }
+
+  function isPending(nodeId: string): boolean {
+    return activeContext(false)?.state.pending[nodeId] === true
+  }
+
+  function isCanvasPending(canvasId: CanvasId, nodeId: string): boolean {
+    return existingCanvasContext(canvasId)?.state.pending[nodeId] === true
+  }
+
+  function releaseCanvas(canvasId: CanvasId): void {
+    releasedCanvasIds.add(canvasId)
+    const context = existingCanvasContext(canvasId)
+    if (!context) return
+    context.released = true
+    clearContextCache(context)
+    context.requestIds.clear()
+    canvasContexts.delete(canvasId)
+  }
 
   return {
     nodeDataCache,
@@ -254,15 +464,25 @@ export const useDataTableStore = defineStore('dataTable', () => {
     loading,
     errors,
     pending,
+    registerCanvas,
     fetchNodeData,
+    fetchCanvasNodeData,
     downloadCsv,
     clearCache,
+    clearCanvasCache,
     setPage,
     setPageSize,
     setSort,
     getNodeData,
+    getCanvasNodeData,
+    getPageState,
+    getCanvasPageState,
     isLoading,
+    isCanvasLoading,
     getError,
+    getCanvasError,
     isPending,
+    isCanvasPending,
+    releaseCanvas,
   }
 })
