@@ -145,14 +145,27 @@ class _ProgressEventStub:
 class _FakeWorkflow:
     """Minimal stand-in for ``bioimageflow.Workflow``."""
 
-    def __init__(self, on_progress: Any = None, events: list | None = None) -> None:
+    def __init__(
+        self,
+        on_progress: Any = None,
+        events: list | None = None,
+        validation_errors: list | None = None,
+    ) -> None:
         self.on_progress = on_progress
         self.events = events or []
+        self.errors: list = []
+        self.validation_errors = validation_errors or []
         self.raise_exc: BaseException | None = None
         self.compute_calls = 0
         self.cancel_called = False
         self.targets_received: tuple = ()
         self.dev_mode_received: bool | None = None
+
+    def validate(self, *, dev_mode: bool = True) -> list:
+        return list(self.validation_errors)
+
+    def plan(self, *, dev_mode: bool = True) -> dict:
+        return {}
 
     def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
         self.compute_calls += 1
@@ -908,6 +921,32 @@ class TestExecutionManagerResult:
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
         with pytest.raises(WorkflowBuildError):
             await em.start(_graph_with([("n1", True)]))
+        assert em.state == "idle"
+
+    async def test_validation_error_rejects_run_before_compute(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from bioimageflow.validation import ValidationError
+
+        wf = _FakeWorkflow(
+            validation_errors=[
+                ValidationError(
+                    kind="parameter_invalid",
+                    message="Input should be a valid integer",
+                    node="n1",
+                    field="count",
+                )
+            ]
+        )
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        with pytest.raises(WorkflowBuildError) as exc_info:
+            await em.start(_graph_with([("n1", True)]))
+
+        assert exc_info.value.errors[0].node == "n1"
+        assert exc_info.value.errors[0].field == "count"
+        assert wf.compute_calls == 0
         assert em.state == "idle"
 
     async def test_disabled_nodes_seeded_as_disabled(

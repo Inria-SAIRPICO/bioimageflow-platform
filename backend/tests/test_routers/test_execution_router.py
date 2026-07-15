@@ -3,8 +3,6 @@
 # Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
 # pyright can't evaluate this runtime metadata statically.
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated, Any
@@ -346,8 +344,8 @@ async def test_clear_requires_workflow_identity(tmp_path: Path) -> None:
     assert resp.status_code == 422
 
 
-@pytest.mark.parametrize("workflow_name", [None, ""])
-async def test_clear_rejects_empty_workflow_identity(
+@pytest.mark.parametrize("workflow_name", [None, "", " ", "../outside"])
+async def test_clear_rejects_invalid_workflow_identity(
     tmp_path: Path,
     workflow_name: str | None,
 ) -> None:
@@ -419,8 +417,10 @@ async def test_clear_resolves_workflow_storage_path(
     workflow_store.get_storage_path.return_value = workflow_storage
     seen: dict[str, Path | None] = {}
 
-    def _fake_clear(nodes, graph, registry, storage_path):
+    def _fake_clear(nodes, graph, registry, storage_path, *, dev_mode, settings):
         seen["storage_path"] = storage_path
+        seen["dev_mode"] = dev_mode
+        seen["settings"] = settings
         return {
             "a": NodeStatus(node_id="a", status="unexecuted", cached=False),
         }
@@ -448,6 +448,8 @@ async def test_clear_resolves_workflow_storage_path(
     assert resp.status_code == 200
     workflow_store.get_storage_path.assert_called_once_with("wf_a")
     assert seen["storage_path"] == workflow_storage
+    assert seen["dev_mode"] is True
+    assert seen["settings"] is not None
 
 
 # ---- GET /execution/status --------------------------------------------------

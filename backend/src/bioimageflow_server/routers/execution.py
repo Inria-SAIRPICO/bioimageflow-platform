@@ -15,13 +15,15 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from bioimageflow_server.models.execution import (
     ExecutionRequest,
 )
 from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import NodeStatus
+from bioimageflow_server.models.workflow import validate_workflow_id
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     ExecutionManager,
@@ -51,10 +53,23 @@ def get_workflow_store() -> WorkflowStoreService | None:
     return None
 
 
+def get_dev_mode() -> bool:
+    return True
+
+
+def get_settings() -> Settings | None:
+    return None
+
+
 class ClearRequest(BaseModel):
     graph: GraphState
     nodes: list[str]
     workflow_name: str = Field(min_length=1)
+
+    @field_validator("workflow_name")
+    @classmethod
+    def validate_workflow_name(cls, value: str) -> str:
+        return validate_workflow_id(value)
 
 
 @router.post("/run", status_code=202, response_model=None)
@@ -123,6 +138,8 @@ async def clear_execution(
     storage_path: Path | None = Depends(get_storage_path),
     registry: ToolRegistryService = Depends(get_tool_registry),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
+    dev_mode: bool = Depends(get_dev_mode),
+    settings: Settings | None = Depends(get_settings),
 ) -> dict | JSONResponse:
     if execution_manager is not None and execution_manager.is_running:
         raise HTTPException(
@@ -151,6 +168,8 @@ async def clear_execution(
             body.graph,
             registry,
             clear_storage_path,
+            dev_mode=dev_mode,
+            settings=settings,
         )
     except WorkflowBuildError as exc:
         return JSONResponse(

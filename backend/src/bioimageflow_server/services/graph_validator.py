@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -78,12 +79,13 @@ def _validation_from_compilation(
         _append_unique_error(errors, seen_errors, error)
 
     workflow = compilation.workflow
-    for library_error in [*workflow.errors, *workflow.validate(dev_mode=dev_mode)]:
-        _append_unique_error(
-            errors,
-            seen_errors,
-            lib_validation_error_to_graph_error(library_error),
-        )
+    if workflow is not None:
+        for library_error in [*workflow.errors, *workflow.validate(dev_mode=dev_mode)]:
+            _append_unique_error(
+                errors,
+                seen_errors,
+                lib_validation_error_to_graph_error(library_error),
+            )
 
     node_statuses = {
         node_id: NodeStatus(
@@ -95,7 +97,7 @@ def _validation_from_compilation(
     }
 
     has_cycle = any(error.type == "cycle_detected" for error in errors)
-    if not has_cycle:
+    if workflow is not None and not has_cycle:
         try:
             plans = workflow.plan(dev_mode=dev_mode)
         except CycleInWorkflowError:
@@ -146,10 +148,12 @@ class GraphValidationService:
         storage_path: Path | None = None,
         dev_mode: bool = True,
         settings: Settings | None = None,
+        on_progress: Callable[[Any], None] | None = None,
     ) -> GraphValidationOutput:
         compilation = self._compiler.compile(
             graph,
             storage_path=storage_path,
+            on_progress=on_progress,
             settings=settings,
         )
         validation = _validation_from_compilation(
@@ -169,12 +173,14 @@ class GraphValidationService:
         storage_path: Path | None = None,
         dev_mode: bool = True,
         settings: Settings | None = None,
+        on_progress: Callable[[Any], None] | None = None,
     ) -> ValidationResult:
         return self.validate_with_compilation(
             graph,
             storage_path=storage_path,
             dev_mode=dev_mode,
             settings=settings,
+            on_progress=on_progress,
         ).validation
 
 

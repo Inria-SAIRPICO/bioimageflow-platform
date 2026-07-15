@@ -33,7 +33,7 @@ from bioimageflow_server.models.execution import (
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
-from bioimageflow_server.services.graph_compiler import GraphCompiler
+from bioimageflow_server.services.graph_validator import GraphValidationService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 logger = logging.getLogger(__name__)
@@ -265,10 +265,13 @@ class ExecutionManager:
         # Execution compiles the graph submitted with this run request; no
         # validation or editor session can alter its meaning.
         try:
-            build_result = GraphCompiler(self.tool_registry).compile(
+            validation_output = GraphValidationService(
+                self.tool_registry
+            ).validate_with_compilation(
                 build_graph,
                 storage_path=run_storage_path,
                 on_progress=on_progress,
+                dev_mode=bool(live_settings.dev_mode),
                 settings=live_settings,
             )
         except Exception as exc:
@@ -282,11 +285,11 @@ class ExecutionManager:
                 ]
             ) from exc
 
-        workflow, errors, _disabled = build_result
-        if errors:
+        if not validation_output.validation.valid:
             self.state = "idle"
-            raise WorkflowBuildError(errors)
+            raise WorkflowBuildError(validation_output.validation.errors)
 
+        workflow = validation_output.compilation.workflow
         self._workflow = workflow
         self._attach_environment_status_hook(workflow)
 
@@ -883,6 +886,9 @@ def clear_node_cache(
     graph: GraphState,
     registry: ToolRegistryService,
     storage_path: Path | None,
+    *,
+    dev_mode: bool = True,
+    settings: Settings | None = None,
 ) -> dict[str, NodeStatus]:
     """Clear cache directories for ``node_ids`` and compute downstream impact.
 
@@ -891,13 +897,27 @@ def clear_node_cache(
     status ``"unexecuted"``; their transitive downstream receives
     ``"out_of_date"``. Unknown node IDs are silently skipped.
     """
-    compilation = GraphCompiler(registry).compile(
-        graph,
-        storage_path=storage_path,
-    )
-    if compilation.errors:
-        raise WorkflowBuildError(compilation.errors)
-    workflow = compilation.workflow
+    try:
+        validation_output = GraphValidationService(
+            registry
+        ).validate_with_compilation(
+            graph,
+            storage_path=storage_path,
+            dev_mode=dev_mode,
+            settings=settings,
+        )
+    except Exception as exc:
+        raise WorkflowBuildError(
+            [
+                GraphValidationError(
+                    type="parameter_invalid",
+                    detail=f"Workflow build failed: {exc}",
+                )
+            ]
+        ) from exc
+    if not validation_output.validation.valid:
+        raise WorkflowBuildError(validation_output.validation.errors)
+    workflow = validation_output.compilation.workflow
 
     # Filter to valid node IDs known to the workflow.
     known = set(workflow.nodes.keys())

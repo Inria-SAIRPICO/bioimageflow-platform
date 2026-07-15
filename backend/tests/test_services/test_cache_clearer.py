@@ -3,8 +3,6 @@
 # Rationale: image file fields use ``Annotated[Path, ImageSpec(...)]`` metadata;
 # pyright can't evaluate this runtime metadata statically.
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -355,6 +353,91 @@ def test_invalid_graph_does_not_clear_existing_cache(
         clear_node_cache(["a"], invalid_graph, registry, tmp_path)
 
     assert storage.load_current(plan.final_result_key) is not None
+
+
+def test_semantically_invalid_graph_does_not_clear_existing_cache(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+) -> None:
+    from bioimageflow.cache import dataframe_publish
+    from bioimageflow.storage import Storage
+    from bioimageflow_server.services.graph_builder import build_workflow
+
+    registry.register_tool(
+        "DFTool",
+        ToolMetadata(
+            name="DFTool",
+            display_name="DFTool",
+            package="test-pkg",
+            package_version="1.0.0",
+            tool_type="DataFrameTool",
+        ),
+        tool_class=DFTool,
+    )
+    valid_graph = GraphState(
+        nodes=[
+            NodeState(
+                id="a",
+                name="a",
+                tool_name="DFTool",
+                position=(0, 0),
+                parameters={"threshold": 0.5},
+            )
+        ],
+        edges=[],
+    )
+    workflow, errors, _disabled = build_workflow(
+        valid_graph,
+        registry,
+        storage_path=tmp_path,
+    )
+    assert errors == []
+    plan = workflow.plan(dev_mode=True)["a"]
+    dataframe_publish(
+        tmp_path,
+        "a",
+        plan.logical_signature,
+        pd.DataFrame({"x": [1]}),
+    )
+    storage = Storage(tmp_path)
+    assert storage.load_current(plan.final_result_key) is not None
+
+    invalid_graph = GraphState(
+        nodes=[
+            valid_graph.nodes[0].model_copy(
+                update={"parameters": {"threshold": "not-a-float"}}
+            )
+        ],
+        edges=[],
+    )
+
+    with pytest.raises(WorkflowBuildError):
+        clear_node_cache(["a"], invalid_graph, registry, tmp_path)
+
+    assert storage.load_current(plan.final_result_key) is not None
+
+
+def test_compiler_failure_is_reported_as_workflow_build_error(
+    tmp_path: Path,
+    registry: ToolRegistryService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow_server.services.graph_compiler import GraphCompiler
+
+    def fail_compile(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("compiler failed")
+
+    monkeypatch.setattr(GraphCompiler, "compile", fail_compile)
+
+    with pytest.raises(WorkflowBuildError) as exc_info:
+        clear_node_cache(
+            ["a"],
+            _make_graph([("a", "SrcTool")], []),
+            registry,
+            tmp_path,
+        )
+
+    assert exc_info.value.errors[0].detail == "Workflow build failed: compiler failed"
 
 
 def test_positional_edges_count_as_downstream(
