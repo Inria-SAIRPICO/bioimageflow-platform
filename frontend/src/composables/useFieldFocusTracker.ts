@@ -1,46 +1,55 @@
 import { reactive } from 'vue'
+import type { CanvasId } from '@/sessions/canvasSessionRegistry'
 
 /**
- * Tracks which input fields currently hold the user's focus, so callers
- * (e.g. useHotReload) can defer mutations to a node's parameter shape
- * until the field is no longer being edited. Field keys use the
- * convention `<nodeId>.<fieldName>`.
- *
- * The tracker is a process-wide singleton — every call to
- * useFieldFocusTracker() returns the same maps, so the parameter row
- * that fires `trackFocus` and the composable that observes
- * `isAnyFocused` see the same state without prop drilling.
+ * Tracks focused parameter fields across the active NodePanel and mounted
+ * canvases. Canvas identity is part of every key because node ids are only
+ * unique within a graph.
  */
 
+export interface FieldFocusTarget {
+  canvasId: CanvasId
+  nodeId: string
+  fieldName: string
+}
+
 interface State {
-  focused: Map<string, boolean>
+  focused: Map<string, FieldFocusTarget>
   blurOnceCallbacks: Map<string, Array<() => void>>
 }
 
 function createState(): State {
   return {
-    focused: reactive(new Map<string, boolean>()),
+    focused: reactive(new Map<string, FieldFocusTarget>()),
     blurOnceCallbacks: new Map<string, Array<() => void>>(),
   }
 }
 
 let state: State = createState()
 
-function nodeIdOf(fieldKey: string): string {
-  const idx = fieldKey.indexOf('.')
-  return idx === -1 ? fieldKey : fieldKey.slice(0, idx)
+function targetKey(target: FieldFocusTarget): string {
+  return JSON.stringify([target.canvasId, target.nodeId, target.fieldName])
+}
+
+function belongsToNode(
+  target: FieldFocusTarget,
+  canvasId: CanvasId,
+  nodeId: string,
+): boolean {
+  return target.canvasId === canvasId && target.nodeId === nodeId
 }
 
 export function useFieldFocusTracker() {
-  function trackFocus(fieldKey: string): void {
-    state.focused.set(fieldKey, true)
+  function trackFocus(target: FieldFocusTarget): void {
+    state.focused.set(targetKey(target), { ...target })
   }
 
-  function trackBlur(fieldKey: string): void {
-    state.focused.set(fieldKey, false)
-    const cbs = state.blurOnceCallbacks.get(fieldKey)
+  function trackBlur(target: FieldFocusTarget): void {
+    const key = targetKey(target)
+    state.focused.delete(key)
+    const cbs = state.blurOnceCallbacks.get(key)
     if (cbs && cbs.length > 0) {
-      state.blurOnceCallbacks.delete(fieldKey)
+      state.blurOnceCallbacks.delete(key)
       for (const cb of cbs) {
         try {
           cb()
@@ -51,20 +60,22 @@ export function useFieldFocusTracker() {
     }
   }
 
-  function isAnyFocused(nodeId: string): boolean {
-    for (const [key, focused] of state.focused) {
-      if (focused && nodeIdOf(key) === nodeId) {
-        return true
-      }
-    }
-    return false
+  function focusedFields(canvasId: CanvasId, nodeId: string): FieldFocusTarget[] {
+    return [...state.focused.values()]
+      .filter(target => belongsToNode(target, canvasId, nodeId))
+      .map(target => ({ ...target }))
   }
 
-  function onBlurOnce(fieldKey: string, cb: () => void): void {
-    if (state.focused.get(fieldKey) === true) {
-      const existing = state.blurOnceCallbacks.get(fieldKey) ?? []
+  function isAnyFocused(canvasId: CanvasId, nodeId: string): boolean {
+    return focusedFields(canvasId, nodeId).length > 0
+  }
+
+  function onBlurOnce(target: FieldFocusTarget, cb: () => void): void {
+    const key = targetKey(target)
+    if (state.focused.has(key)) {
+      const existing = state.blurOnceCallbacks.get(key) ?? []
       existing.push(cb)
-      state.blurOnceCallbacks.set(fieldKey, existing)
+      state.blurOnceCallbacks.set(key, existing)
     } else {
       // Already unfocused — fire on the next microtask to keep callers'
       // ordering predictable (no synchronous side effects).
@@ -78,14 +89,10 @@ export function useFieldFocusTracker() {
     }
   }
 
-  function clearTracking(nodeId: string): void {
-    for (const key of [...state.focused.keys()]) {
-      if (nodeIdOf(key) === nodeId) {
+  function clearTracking(canvasId: CanvasId, nodeId: string): void {
+    for (const [key, target] of [...state.focused.entries()]) {
+      if (belongsToNode(target, canvasId, nodeId)) {
         state.focused.delete(key)
-      }
-    }
-    for (const key of [...state.blurOnceCallbacks.keys()]) {
-      if (nodeIdOf(key) === nodeId) {
         state.blurOnceCallbacks.delete(key)
       }
     }
@@ -94,6 +101,7 @@ export function useFieldFocusTracker() {
   return {
     trackFocus,
     trackBlur,
+    focusedFields,
     isAnyFocused,
     onBlurOnce,
     clearTracking,

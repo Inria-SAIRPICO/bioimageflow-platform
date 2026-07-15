@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch, type ComputedRef } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch, type ComputedRef } from 'vue'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import Checkbox from 'primevue/checkbox'
@@ -18,6 +18,11 @@ import {
   type CanvasPublicationCommandResult,
 } from '@/composables/useCanvasCommands'
 import { useValidationErrors } from '@/composables/useValidationErrors'
+import {
+  useFieldFocusTracker,
+  type FieldFocusTarget,
+} from '@/composables/useFieldFocusTracker'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
 import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
 import type {
@@ -62,7 +67,9 @@ const loggerStore = useLoggerStore()
 const { validationResult } = useGraphSync()
 const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
+const fieldFocusTracker = useFieldFocusTracker()
 const isNodeEditingDisabled = computed(() => executionStore.isMutationLocked)
+const focusedParameterRows = new Map<EventTarget, FieldFocusTarget>()
 
 const selectedNodeErrors = computed(() => {
   const nodeId = uiStore.selectedNodeIds[0]
@@ -149,6 +156,44 @@ function updateParameter(key: string, value: unknown) {
   if (!nodeId) return
   canvasCommands.updateParameter(nodeId, key, value)
 }
+
+function trackParameterFocus(fieldName: string, event: FocusEvent): void {
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  const nodeId = selectedNode.value?.id
+  if (canvasId === null || !nodeId || event.currentTarget === null) return
+  const target = { canvasId, nodeId, fieldName }
+  focusedParameterRows.set(event.currentTarget, target)
+  fieldFocusTracker.trackFocus(target)
+}
+
+function trackParameterBlur(event: FocusEvent): void {
+  const row = event.currentTarget
+  if (row instanceof HTMLElement && event.relatedTarget instanceof Node) {
+    if (row.contains(event.relatedTarget)) return
+  }
+  if (row === null) return
+  const target = focusedParameterRows.get(row)
+  if (target === undefined) return
+  focusedParameterRows.delete(row)
+  fieldFocusTracker.trackBlur(target)
+}
+
+function clearTrackedParameterFocus(): void {
+  for (const target of new Set(focusedParameterRows.values())) {
+    fieldFocusTracker.trackBlur(target)
+  }
+  focusedParameterRows.clear()
+}
+
+watch(
+  [
+    () => canvasSessionRegistry.activeCanvasId.value,
+    () => selectedNode.value?.id ?? null,
+  ],
+  clearTrackedParameterFocus,
+)
+
+onBeforeUnmount(clearTrackedParameterFocus)
 
 function toggleEnabled() {
   const nodeId = selectedNode.value?.id
@@ -411,6 +456,8 @@ async function pickFolder(key: string) {
           v-for="[key, field] in Object.entries(nodeData.tool.inputs)"
           :key="key"
           class="param-row"
+          @focusin="trackParameterFocus(key, $event)"
+          @focusout="trackParameterBlur($event)"
         >
           <div class="param-header">
             <Button

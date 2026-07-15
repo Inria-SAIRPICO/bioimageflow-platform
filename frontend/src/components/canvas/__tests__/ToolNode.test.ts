@@ -170,9 +170,17 @@ describe('ToolNode', () => {
     expect(emitted![0]).toEqual(['node-1'])
   })
 
-  it('renders tool-missing class when data.toolMissing is true', () => {
-    const w = factory(makeData({ toolMissing: true }))
-    expect(w.find('.tool-node').classes()).toContain('tool-missing')
+  it('renders missing state from the structured missingTool payload', () => {
+    const w = factory(makeData({
+      tool: null,
+      missingTool: {
+        node_id: 'node-1',
+        tool_name: 'gaussian_blur',
+        installed_versions: [],
+      },
+    }))
+    expect(w.find('.tool-node').classes()).toContain('missing-tool')
+    expect(w.find('.missing-tool-badge').text()).toBe('Missing')
   })
 
   it('renders sub-workflow pins from published inputs and outputs', () => {

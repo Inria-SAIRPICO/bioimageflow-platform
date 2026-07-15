@@ -31,7 +31,10 @@ import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import { useErrorReporting } from '@/composables/useErrorReporting'
-import { useHotReload } from '@/composables/useHotReload'
+import {
+  useFieldFocusTracker,
+  type FieldFocusTarget,
+} from '@/composables/useFieldFocusTracker'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
@@ -208,6 +211,7 @@ const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<CanvasHistoryState>()
 const { isLocked } = useExecutionLock()
 const executionStore = useExecutionStore()
+const fieldFocusTracker = useFieldFocusTracker()
 
 // Status reconciliation: mark nodes provisional during debounce; clear when
 // the authoritative validation response arrives.
@@ -288,7 +292,7 @@ const remoteDraftResolutionMessage = ref<string | null>(null)
 let isApplyingGraphState = false
 let isCanvasUnmounted = false
 let isAutoApplyingRemoteDraft = false
-let isRefreshingToolMetadata = false
+let hotReloadToast: ReturnType<typeof useToast> | null = null
 let clipboardToast: ReturnType<typeof useToast> | null = null
 
 const hasLocalRemoteDraftConflict = computed(() => (
@@ -590,6 +594,7 @@ async function applyGraphState(
     }
   } finally {
     isApplyingGraphState = false
+    requestToolReconciliation()
   }
 }
 
@@ -844,23 +849,225 @@ async function saveAgentDraftAsCopy(): Promise<void> {
   }
 }
 
+function toolSignature(tool: ToolMetadata): string {
+  return JSON.stringify(tool)
+}
+
+function registrySignatures(tools: ToolMetadata[]): Map<string, string> {
+  return new Map(tools.map(tool => [tool.name, toolSignature(tool)]))
+}
+
+let previousToolRegistry = registrySignatures(toolRegistryStore.tools)
+const pendingToolNames = new Set<string>()
+const pendingToolRenames = new Map<string, string>()
+const registeredFocusDeferrals = new Set<string>()
+const removedFocusedFields = new Set<string>()
+let toolReconciliationScheduled = false
+
+function fieldFocusKey(target: FieldFocusTarget): string {
+  return JSON.stringify([target.canvasId, target.nodeId, target.fieldName])
+}
+
+function resolveRenamedToolName(toolName: string): string {
+  let current = toolName
+  const visited = new Set<string>()
+  while (pendingToolRenames.has(current) && !visited.has(current)) {
+    visited.add(current)
+    current = pendingToolRenames.get(current)!
+  }
+  return current
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function missingToolFor(nodeId: string, toolName: string): MissingTool {
+  return {
+    node_id: nodeId,
+    tool_name: toolName,
+    installed_versions: [],
+  }
+}
+
+function warnRemovedFocusedField(fieldName: string): void {
+  hotReloadToast?.add({
+    severity: 'warn',
+    summary: 'Tool reloaded',
+    detail: `Field '${fieldName}' was removed by the tool update.`,
+    life: 5000,
+  })
+}
+
+function deferToolReconciliation(
+  freshTool: ToolMetadata | null,
+  focusedFields: FieldFocusTarget[],
+): void {
+  for (const target of focusedFields) {
+    const key = fieldFocusKey(target)
+    if (freshTool && Object.prototype.hasOwnProperty.call(
+      freshTool.inputs,
+      target.fieldName,
+    )) {
+      removedFocusedFields.delete(key)
+    } else {
+      removedFocusedFields.add(key)
+    }
+    if (registeredFocusDeferrals.has(key)) continue
+    registeredFocusDeferrals.add(key)
+    fieldFocusTracker.onBlurOnce(target, () => {
+      registeredFocusDeferrals.delete(key)
+      if (removedFocusedFields.delete(key)) {
+        warnRemovedFocusedField(target.fieldName)
+      }
+      requestToolReconciliation()
+    })
+  }
+}
+
+function requestToolReconciliation(): void {
+  if (
+    pendingToolNames.size === 0
+    || toolReconciliationScheduled
+    || isCanvasUnmounted
+  ) return
+  toolReconciliationScheduled = true
+  void Promise.resolve().then(() => {
+    toolReconciliationScheduled = false
+    reconcilePendingToolState()
+  })
+}
+
+function reconcilePendingToolState(): void {
+  if (pendingToolNames.size === 0 || isCanvasUnmounted) return
+  if (
+    executionStore.isMutationLocked
+    || toolRegistryStore.customToolBusy
+    || isApplyingGraphState
+  ) return
+
+  let serializedChanged = false
+  let runtimeChanged = false
+  const deferredNames = new Set<string>()
+
+  for (const node of getNodes.value as any[]) {
+    const originalName = node.data?.toolName
+    if (typeof originalName !== 'string' || originalName === '__sub_workflow__') continue
+    if (!pendingToolNames.has(originalName) && !pendingToolRenames.has(originalName)) continue
+
+    const resolvedName = resolveRenamedToolName(originalName)
+    const renameChanged = resolvedName !== originalName
+    const freshTool = toolRegistryStore.getToolByName(resolvedName) ?? null
+    if (renameChanged && freshTool === null) {
+      deferredNames.add(originalName)
+      continue
+    }
+
+    const currentParameters = node.data.parameters ?? {}
+    const nextParameters: Record<string, unknown> = {}
+    if (freshTool) {
+      for (const [key, value] of Object.entries(currentParameters)) {
+        if (Object.prototype.hasOwnProperty.call(freshTool.inputs, key)) {
+          nextParameters[key] = value
+        }
+      }
+    }
+    const nextTemplates = freshTool
+      ? reconcileOutputTemplates(freshTool, node.data.output_templates ?? {})
+      : node.data.output_templates ?? {}
+    const parametersChanged = freshTool !== null
+      && !sameJson(currentParameters, nextParameters)
+    const templatesChanged = freshTool !== null
+      && !sameJson(node.data.output_templates ?? {}, nextTemplates)
+    const metadataChanged = freshTool !== null
+      && !sameJson(node.data.tool ?? null, freshTool)
+    const missingTool = freshTool === null
+      ? missingToolFor(node.id, resolvedName)
+      : null
+    const missingStateChanged = freshTool === null
+      ? node.data.tool !== null || !sameJson(node.data.missingTool ?? null, missingTool)
+      : node.data.missingTool != null
+    const needsReconciliation = renameChanged
+      || metadataChanged
+      || missingStateChanged
+      || parametersChanged
+      || templatesChanged
+    if (!needsReconciliation) continue
+
+    const focusedFields = fieldFocusTracker.focusedFields(canvasId, node.id)
+    if (focusedFields.length > 0) {
+      deferToolReconciliation(freshTool, focusedFields)
+      deferredNames.add(originalName)
+      continue
+    }
+
+    if (freshTool === null) {
+      node.data.tool = null
+      node.data.missingTool = missingTool
+      node.data.updatedBadge = false
+      runtimeChanged = true
+      continue
+    }
+
+    if (renameChanged) {
+      node.data.toolName = resolvedName
+      serializedChanged = true
+    }
+    if (metadataChanged || missingStateChanged || renameChanged) {
+      node.data.tool = freshTool
+      node.data.missingTool = null
+      node.data.updatedBadge = true
+      runtimeChanged = true
+    }
+    if (parametersChanged) {
+      node.data.parameters = nextParameters
+      serializedChanged = true
+    }
+    if (templatesChanged) {
+      node.data.output_templates = nextTemplates
+      serializedChanged = true
+    }
+  }
+
+  for (const name of [...pendingToolNames]) {
+    if (!deferredNames.has(name)) pendingToolNames.delete(name)
+  }
+
+  // A focused A -> B -> C rename retains A as the pending node identity.
+  // Preserve every mapping reachable from that identity until it can apply.
+  const requiredRenameKeys = new Set<string>()
+  for (const pendingName of pendingToolNames) {
+    let current = pendingName
+    while (
+      pendingToolRenames.has(current)
+      && !requiredRenameKeys.has(current)
+    ) {
+      requiredRenameKeys.add(current)
+      current = pendingToolRenames.get(current)!
+    }
+  }
+  for (const oldName of [...pendingToolRenames.keys()]) {
+    if (!requiredRenameKeys.has(oldName)) pendingToolRenames.delete(oldName)
+  }
+
+  if (!serializedChanged && !runtimeChanged) return
+  const state = currentVueFlowState()
+  const graph = graphWithAuthoritativeEdges(state)
+  if (serializedChanged) {
+    emitGraphChanged({ authoritativeGraph: graph })
+    return
+  }
+  stageGraphValidation(state)
+  syncGraphState(rememberAuthoritativeGraph(graph))
+}
+
 function handleToolRenamedEvent(event: Event) {
   const detail = (event as CustomEvent<{ old_name: string; new_name: string }>).detail
   if (!detail?.old_name || !detail?.new_name) return
-  let changed = false
-  const fresh = toolRegistryStore.getToolByName(detail.new_name) ?? null
-  for (const node of getNodes.value as any[]) {
-    if (node.data?.toolName !== detail.old_name) continue
-    node.data.toolName = detail.new_name
-    node.data.tool = fresh
-    node.data.output_templates = reconcileOutputTemplates(
-      fresh,
-      node.data.output_templates ?? {},
-    )
-    node.data.missingTool = null
-    changed = true
-  }
-  if (changed) emitGraphChanged()
+  pendingToolRenames.set(detail.old_name, detail.new_name)
+  pendingToolNames.add(detail.old_name)
+  pendingToolNames.add(detail.new_name)
+  requestToolReconciliation()
 }
 
 async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
@@ -917,19 +1124,45 @@ watch(
 function handleToolDeletedEvent(event: Event) {
   const detail = (event as CustomEvent<{ tool_name: string }>).detail
   if (!detail?.tool_name) return
-  let changed = false
-  for (const node of getNodes.value as any[]) {
-    if (node.data?.toolName !== detail.tool_name) continue
-    node.data.tool = null
-    node.data.missingTool = {
-      node_id: node.id,
-      tool_name: detail.tool_name,
-      installed_versions: [],
-    }
-    changed = true
-  }
-  if (changed) emitGraphChanged()
+  pendingToolNames.add(detail.tool_name)
+  requestToolReconciliation()
 }
+
+watch(
+  () => toolRegistryStore.tools,
+  (tools) => {
+    const next = registrySignatures(tools)
+    for (const [name, signature] of next) {
+      if (previousToolRegistry.get(name) !== signature) pendingToolNames.add(name)
+    }
+    for (const name of previousToolRegistry.keys()) {
+      if (!next.has(name)) pendingToolNames.add(name)
+    }
+    previousToolRegistry = next
+    if (pendingToolNames.size > 0) requestToolReconciliation()
+  },
+  { deep: true },
+)
+
+watch(
+  () => executionStore.isMutationLocked,
+  (locked) => {
+    if (!locked) requestToolReconciliation()
+  },
+  { flush: 'sync' },
+)
+
+watch(
+  () => toolRegistryStore.customToolBusy,
+  (busy) => {
+    if (!busy) {
+      // renameTool/deleteTool refresh the registry before their caller emits
+      // the operation event. Give that continuation one task to add its
+      // rename/delete detail before interpreting a removed registry name.
+      setTimeout(requestToolReconciliation, 0)
+    }
+  },
+)
 
 function closeNodeContextMenu() {
   nodeContextMenu.value = null
@@ -989,18 +1222,12 @@ function deleteContextNode() {
   deleteSelected()
 }
 
-// Hot-reload watcher: subscribes to toolRegistryStore.tools mutations
-// driven by useWebSocket and updates affected canvas nodes (badge,
-// schema swap, optimistic out_of_date, flushNow). useToast throws when
-// no ToastService is provided (e.g. in unit tests that mount CanvasView
-// in isolation), so guard it. The toast surfaces "Field 'X' was removed
-// by the tool update." when a focused field vanishes from the new
-// schema.
-let hotReloadToast: ReturnType<typeof useToast> | null = null
+// Toast injection is optional in isolated component tests. Hot reload and
+// clipboard operations remain functional without a mounted ToastService.
 try {
   hotReloadToast = useToast()
 } catch {
-  /* no ToastService — useHotReload still runs without the toast surface */
+  /* no ToastService */
 }
 clipboardToast = hotReloadToast
 if (clipboardToast === null) {
@@ -1010,18 +1237,6 @@ if (clipboardToast === null) {
     /* no ToastService — clipboard operations still work without toasts */
   }
 }
-useHotReload({
-  toast: hotReloadToast === null
-    ? undefined
-    : (message: string) => {
-        hotReloadToast!.add({
-          severity: 'warn',
-          summary: 'Tool reloaded',
-          detail: message,
-          life: 5000,
-        })
-      },
-})
 
 async function loadSubWorkflowSessionDraft() {
   const sessionId = props.subWorkflowSessionId
@@ -1038,9 +1253,9 @@ onMounted(async () => {
       'bioimageflow:apply-sub-workflow-session',
       handleApplySubWorkflowSessionEvent as EventListener,
     )
-    window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
-    window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   }
+  window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
+  window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
   window.addEventListener(
     'bioimageflow:canvas-tab-activated',
@@ -1079,6 +1294,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   isCanvasUnmounted = true
+  for (const node of getNodes.value) fieldFocusTracker.clearTracking(canvasId, node.id)
+  registeredFocusDeferrals.clear()
+  removedFocusedFields.clear()
   dataTableStore.releaseCanvas(canvasId)
   resolvedOutputsStore.releaseCanvas(canvasId)
   disposeGraphSync()
@@ -1090,9 +1308,9 @@ onBeforeUnmount(() => {
       'bioimageflow:apply-sub-workflow-session',
       handleApplySubWorkflowSessionEvent as EventListener,
     )
-    window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
-    window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   }
+  window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
+  window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
   window.removeEventListener(
     'bioimageflow:canvas-tab-activated',
@@ -1242,99 +1460,6 @@ onNodesChange((changes) => {
 watch(getNodes, (nodes) => {
   uiStore.setCanvasGraphNodes(canvasId, nodes)
 }, { deep: true })
-
-function nodeEditStateSnapshot(nodes: any[] = getNodes.value): string {
-  return JSON.stringify(nodes.map((node: any) => [
-    node.id,
-    node.data?.parameters ?? {},
-    node.data?.name ?? null,
-    node.data?.enabled ?? true,
-    node.data?.pinnedInputs ?? {},
-    node.data?.output_templates ?? {},
-  ]))
-}
-
-let lastPublishedNodeEditSnapshot = nodeEditStateSnapshot()
-
-// Tool-schema reconciliation can replace parameter and template maps outside
-// NodePanel. Keep one canvas-local fallback without republishing command or
-// structural-handler edits on Vue's next tick.
-watch(
-  () => getNodes.value.map((node: any) => ({
-    id: node.id,
-    parameters: node.data?.parameters,
-    name: node.data?.name,
-    enabled: node.data?.enabled,
-    pinnedInputs: node.data?.pinnedInputs,
-    output_templates: node.data?.output_templates,
-  })),
-  () => {
-    const snapshot = nodeEditStateSnapshot()
-    if (isApplyingGraphState) {
-      lastPublishedNodeEditSnapshot = snapshot
-      return
-    }
-    if (snapshot === lastPublishedNodeEditSnapshot) return
-    emitGraphChanged()
-  },
-  { deep: true },
-)
-
-// Refresh the per-node tool metadata snapshot whenever the registry's
-// tools list changes (typically after a "Set current" version switch in
-// the Manage Tools dialog, or an install/uninstall). Each node was created
-// with a frozen ToolMetadata copy in `data.tool`, so without this watcher
-// the package version + schema in the GUI would stay pinned at creation
-// time even though the workflow actually executes against the new
-// version.
-//
-// Nodes whose package_version actually changed are flagged `out_of_date`
-// so the user knows they need to re-run — schema changes between versions
-// can invalidate cached results.
-watch(
-  () => toolRegistryStore.tools,
-  (tools) => {
-    if (isApplyingGraphState) return
-    if (!tools || tools.length === 0) return
-    const byName = new Map(tools.map((t) => [t.name, t]))
-    let changed = false
-    isRefreshingToolMetadata = true
-    try {
-      for (const n of getNodes.value as any[]) {
-        const toolName = n.data?.toolName
-        if (!toolName) continue
-        const fresh = byName.get(toolName)
-        if (!fresh) continue
-        const prev = n.data.tool
-        if (prev && prev.package_version === fresh.package_version) continue
-        n.data.tool = fresh
-        n.data.output_templates = reconcileOutputTemplates(
-          fresh,
-          n.data.output_templates ?? {},
-        )
-        // Only invalidate executed nodes — leave unexecuted/failed/disabled
-        // alone so the version switch doesn't visually thrash the canvas.
-        if (n.data.status === 'executed') {
-          n.data.status = 'out_of_date'
-        }
-        changed = true
-      }
-    } finally {
-      void nextTick().then(() => {
-        isRefreshingToolMetadata = false
-      })
-    }
-    if (changed) {
-      const graph = graphWithAuthoritativeEdges(currentVueFlowState())
-      if (nodeEditStateSnapshot() !== lastPublishedNodeEditSnapshot) {
-        emitGraphChanged({ authoritativeGraph: graph })
-      } else {
-        syncGraphState(rememberAuthoritativeGraph(graph))
-      }
-    }
-  },
-  { deep: false },
-)
 
 // Debounced refresh of resolved outputs when parameters change on
 // dynamic_outputs nodes. Edge connect/disconnect events refresh explicitly
@@ -2385,14 +2510,41 @@ function selectAll() {
   }
 }
 
+function historyNodesWithCurrentToolRuntime(nodes: any[]): any[] {
+  const currentById = new Map(getNodes.value.map((node: any) => [node.id, node]))
+  return nodes.map((node) => {
+    const toolName = node.data?.toolName
+    if (typeof toolName !== 'string' || toolName === '__sub_workflow__') return node
+
+    const tool = toolRegistryStore.getToolByName(toolName) ?? null
+    const current = currentById.get(node.id)
+    const data = {
+      ...node.data,
+      tool,
+      missingTool: tool === null ? missingToolFor(node.id, toolName) : null,
+    }
+    if (tool === null) {
+      data.updatedBadge = false
+    } else if (current?.data?.toolName === toolName) {
+      if (current.data.updatedBadge === undefined) {
+        delete data.updatedBadge
+      } else {
+        data.updatedBadge = current.data.updatedBadge
+      }
+    } else {
+      delete data.updatedBadge
+    }
+    return { ...node, data }
+  })
+}
+
 function applyHistoryState(state: CanvasHistoryState) {
   isApplyingGraphState = true
   try {
-    setNodes(state.nodes)
+    setNodes(historyNodesWithCurrentToolRuntime(state.nodes))
     setEdges(state.edges)
     if (!replacePublishedInterface(state.published_inputs, state.published_outputs)) return
     const currentState = currentVueFlowState()
-    lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(currentState.nodes)
     syncGraph(currentState)
     if (isSubWorkflowEditor && props.subWorkflowSessionId) {
       const graph = rememberAuthoritativeGraph(
@@ -2406,6 +2558,7 @@ function applyHistoryState(state: CanvasHistoryState) {
   } finally {
     void nextTick().then(() => {
       isApplyingGraphState = false
+      requestToolReconciliation()
     })
   }
 }
@@ -2520,7 +2673,6 @@ function markDirtyAndAutoSave(
   state: { nodes: any[]; edges: any[] },
   graphOverride?: GraphState,
 ) {
-  lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(state.nodes)
   const name = owningWorkflowId()
   if (!name) return
   const graph = graphOverride ?? rememberAuthoritativeGraph(
@@ -2781,9 +2933,32 @@ function updateNodeParameter(
   return true
 }
 
+function stageGraphValidation(state: CanvasVueFlowState): void {
+  reconciliationNodes.value = state.nodes.map((node: any) => ({
+    id: node.id,
+    name: node.data?.name ?? node.id,
+    tool_name: node.data?.toolName ?? '',
+    position: [node.position?.x ?? 0, node.position?.y ?? 0],
+    parameters: node.data?.parameters ?? {},
+    resources: node.data?.resources ?? {},
+    output_templates: node.data?.output_templates ?? {},
+    enabled: node.data?.enabled ?? true,
+    collapsed: node.data?.collapsed ?? false,
+    sub_workflow: node.data?.sub_workflow ?? null,
+    published_inputs: node.data?.published_inputs ?? [],
+    published_outputs: node.data?.published_outputs ?? [],
+    sub_workflow_readonly_reason: node.data?.sub_workflow_readonly_reason ?? null,
+    source_workflow_name: node.data?.source_workflow_name ?? null,
+  })) as NodeState[]
+  for (const node of state.nodes) {
+    const provisionalStatus = node.data?.status ?? 'unexecuted'
+    markProvisional(node.id, provisionalStatus)
+    if (node.data) node.data.provisional = true
+  }
+}
+
 function emitGraphChanged(options: GraphChangeOptions = {}) {
   const state = options.state ?? currentVueFlowState()
-  lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(state.nodes)
   const authoritativeGraph = options.authoritativeGraph
     ? rememberAuthoritativeGraph(options.authoritativeGraph)
     : null
@@ -2795,32 +2970,7 @@ function emitGraphChanged(options: GraphChangeOptions = {}) {
     : state
   const historyState = canvasHistoryState(publishedState)
   undoRedo.push(historyState)
-  // Update the reconciliation node list to match the current graph.
-  reconciliationNodes.value = state.nodes.map((n: any) => ({
-    id: n.id,
-    name: n.data?.name ?? n.id,
-    tool_name: n.data?.toolName ?? '',
-    position: [n.position?.x ?? 0, n.position?.y ?? 0],
-    parameters: n.data?.parameters ?? {},
-    resources: n.data?.resources ?? {},
-    output_templates: n.data?.output_templates ?? {},
-    enabled: n.data?.enabled ?? true,
-    collapsed: n.data?.collapsed ?? false,
-    sub_workflow: n.data?.sub_workflow ?? null,
-    published_inputs: n.data?.published_inputs ?? [],
-    published_outputs: n.data?.published_outputs ?? [],
-    sub_workflow_readonly_reason: n.data?.sub_workflow_readonly_reason ?? null,
-    source_workflow_name: n.data?.source_workflow_name ?? null,
-  })) as NodeState[]
-  // Mark all nodes provisional during the debounce window so the UI can
-  // render a desaturated status indicator until the server response lands.
-  for (const n of state.nodes) {
-    const provisionalStatus = n.data?.status ?? 'unexecuted'
-    markProvisional(n.id, provisionalStatus)
-    if (n.data) {
-      n.data.provisional = true
-    }
-  }
+  stageGraphValidation(state)
   if (isSubWorkflowEditor && props.subWorkflowSessionId) {
     if (authoritativeGraph) {
       syncGraphState(authoritativeGraph)
