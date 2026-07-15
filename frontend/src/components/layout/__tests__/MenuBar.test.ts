@@ -23,6 +23,14 @@ const workflowDraftMocks = vi.hoisted(() => ({
   flush: vi.fn().mockResolvedValue(undefined),
   loadDraft: vi.fn(),
 }))
+const persistenceMocks = vi.hoisted(() => ({
+  ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
+  queueDraft: vi.fn(),
+  flush: vi.fn().mockResolvedValue(undefined),
+}))
+const canvasCommandMocks = vi.hoisted(() => ({
+  routeSave: vi.fn().mockResolvedValue('root'),
+}))
 
 vi.mock('primevue/usetoast', () => ({
   useToast: () => ({ add: toastAdd }),
@@ -38,6 +46,14 @@ vi.mock('@/composables/useAutoSave', () => ({
 
 vi.mock('@/stores/workflowDraft', () => ({
   useWorkflowDraftStore: () => workflowDraftMocks,
+}))
+
+vi.mock('@/composables/useCanvasPersistence', () => ({
+  useCanvasPersistence: () => persistenceMocks,
+}))
+
+vi.mock('@/composables/useCanvasCommands', () => ({
+  useCanvasCommands: () => canvasCommandMocks,
 }))
 
 import MenuBar from '../MenuBar.vue'
@@ -115,6 +131,12 @@ describe('MenuBar', () => {
     workflowDraftMocks.scheduleSave.mockClear()
     workflowDraftMocks.flush.mockClear()
     workflowDraftMocks.loadDraft.mockReset()
+    persistenceMocks.ensureFreshForCriticalOperation.mockClear()
+    persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
+    persistenceMocks.queueDraft.mockClear()
+    persistenceMocks.flush.mockClear()
+    canvasCommandMocks.routeSave.mockClear()
+    canvasCommandMocks.routeSave.mockResolvedValue('root')
     if (typeof window.URL.createObjectURL !== 'function') {
       Object.defineProperty(window.URL, 'createObjectURL', {
         value: vi.fn(() => 'blob:workflow'),
@@ -311,7 +333,7 @@ describe('MenuBar', () => {
     })
 
     it('blocks save when unresolved remote draft changes need resolution', async () => {
-      workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
+      persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
       const workflow = useWorkflowStore()
       workflow.current = {
         name: 'new_workflow',
@@ -334,7 +356,7 @@ describe('MenuBar', () => {
     })
 
     it('blocks confirmed export when unresolved remote draft changes need resolution', async () => {
-      workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
+      persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
       const workflow = useWorkflowStore()
       workflow.current = {
         name: 'cell_segmentation',
@@ -537,6 +559,28 @@ describe('MenuBar', () => {
         summary: 'Workflow saved',
         detail: 'New workflow',
       }))
+      expect(persistenceMocks.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueDraft).toHaveBeenCalledOnce()
+      expect(persistenceMocks.flush).toHaveBeenCalledOnce()
+      expect(workflowDraftMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
+      expect(workflowDraftMocks.scheduleSave).not.toHaveBeenCalled()
+      expect(workflowDraftMocks.flush).not.toHaveBeenCalled()
+    })
+
+    it('routes Save to an active nested canvas without saving the root workflow', async () => {
+      setActiveWorkflow()
+      canvasCommandMocks.routeSave.mockResolvedValueOnce('nested')
+      const saveRoot = vi.spyOn(useWorkflowStore(), 'saveWorkflow')
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      await workflowMenu.items.find((item: any) => item.label === 'Save').command()
+      await flushPromises()
+
+      expect(canvasCommandMocks.routeSave).toHaveBeenCalledOnce()
+      expect(saveRoot).not.toHaveBeenCalled()
+      expect(persistenceMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
     })
   })
 

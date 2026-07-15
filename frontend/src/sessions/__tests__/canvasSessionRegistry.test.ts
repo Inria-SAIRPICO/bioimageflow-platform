@@ -72,4 +72,55 @@ describe('CanvasSessionRegistry', () => {
     expect(registry.sessionCount.value).toBe(1)
     expect(registry.activeCanvasId.value).toBeNull()
   })
+
+  it('owns multiple named resources and disposes each one exactly once', () => {
+    const graphDispose = vi.fn()
+    const draftDispose = vi.fn()
+    const registry = new CanvasSessionRegistry()
+    const descriptor = rootSession('workflow:a', 'a')
+
+    registry.register(descriptor)
+    const graph = registry.getOrCreateCoordinator(
+      descriptor.canvasId,
+      () => ({ dispose: graphDispose }),
+    )
+    const draft = registry.getOrCreateResource(
+      descriptor.canvasId,
+      'root-persistence',
+      () => ({ dispose: draftDispose }),
+    )
+
+    expect(registry.getResource(descriptor.canvasId, 'graph-sync')).toBe(graph)
+    expect(registry.getResource(descriptor.canvasId, 'root-persistence')).toBe(draft)
+    expect(registry.get(descriptor.canvasId)?.coordinator).toBe(graph)
+
+    registry.unregister(descriptor.canvasId)
+    registry.unregister(descriptor.canvasId)
+
+    expect(graphDispose).toHaveBeenCalledOnce()
+    expect(draftDispose).toHaveBeenCalledOnce()
+  })
+
+  it('does not dispose another canvas resource when one canvas is removed', () => {
+    const disposeA = vi.fn()
+    const disposeB = vi.fn()
+    const registry = new CanvasSessionRegistry()
+    const a = rootSession('workflow:a', 'a')
+    const b = rootSession('workflow:b', 'b')
+
+    registry.register(a)
+    registry.register(b)
+    registry.getOrCreateResource(a.canvasId, 'root-persistence', () => ({
+      dispose: disposeA,
+    }))
+    registry.getOrCreateResource(b.canvasId, 'root-persistence', () => ({
+      dispose: disposeB,
+    }))
+
+    registry.unregister(a.canvasId)
+
+    expect(disposeA).toHaveBeenCalledOnce()
+    expect(disposeB).not.toHaveBeenCalled()
+    expect(registry.getResource(b.canvasId, 'root-persistence')).not.toBeNull()
+  })
 })

@@ -167,6 +167,27 @@ const graphSyncMocks = vi.hoisted(() => ({
   })),
 }))
 
+const persistenceMocks = vi.hoisted(() => ({
+  queueGraph: vi.fn(),
+  queueDraft: vi.fn(),
+  initializeFromDraft: vi.fn(),
+  flush: vi.fn().mockResolvedValue(undefined),
+  ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
+  dispose: vi.fn(),
+  scopes: [] as any[],
+  isPending: { value: false },
+  hasConflict: { value: false },
+  currentGraph: { value: { nodes: [], edges: [] } },
+  workflowId: { value: null },
+  canvasId: null,
+}))
+
+const canvasCommandMocks = vi.hoisted(() => ({
+  registrations: [] as any[],
+  dispose: vi.fn(),
+  routeSave: vi.fn().mockResolvedValue('root'),
+}))
+
 const autoSaveMocks = vi.hoisted(() => ({
   scheduleAutoSave: vi.fn(),
   flushAutoSave: vi.fn().mockResolvedValue(undefined),
@@ -212,6 +233,20 @@ vi.mock('@/composables/useGraphSync', async () => {
     },
   }
 })
+
+vi.mock('@/composables/useCanvasPersistence', () => ({
+  useCanvasPersistence: (options?: unknown) => {
+    persistenceMocks.scopes.push(options)
+    return persistenceMocks
+  },
+}))
+
+vi.mock('@/composables/useCanvasCommands', () => ({
+  useCanvasCommands: (options?: unknown) => {
+    canvasCommandMocks.registrations.push(options)
+    return canvasCommandMocks
+  },
+}))
 
 vi.mock('@/stores/resolvedOutputs', () => {
   const { reactive } = require('vue')
@@ -339,6 +374,17 @@ describe('CanvasView', () => {
     graphSyncMocks.dispose.mockClear()
     graphSyncMocks.scopes.length = 0
     graphSyncMocks.serializeGraph.mockClear()
+    persistenceMocks.queueGraph.mockClear()
+    persistenceMocks.queueDraft.mockClear()
+    persistenceMocks.initializeFromDraft.mockClear()
+    persistenceMocks.flush.mockClear()
+    persistenceMocks.ensureFreshForCriticalOperation.mockClear()
+    persistenceMocks.dispose.mockClear()
+    persistenceMocks.scopes.length = 0
+    persistenceMocks.isPending.value = false
+    canvasCommandMocks.registrations.length = 0
+    canvasCommandMocks.dispose.mockClear()
+    canvasCommandMocks.routeSave.mockClear()
     autoSaveMocks.scheduleAutoSave.mockClear()
     autoSaveMocks.flushAutoSave.mockClear()
     autoSaveMocks.loadAutoSave.mockReset().mockResolvedValue(null)
@@ -380,6 +426,14 @@ describe('CanvasView', () => {
         },
         getWorkflowId: expect.any(Function),
       })
+      expect(persistenceMocks.scopes[0]).toMatchObject({
+        descriptor: {
+          kind: 'root',
+          canvasId: 'workflow:analysis',
+          workflowId: 'analysis',
+        },
+        getWorkflowId: expect.any(Function),
+      })
       useWorkflowStore().current = {
         name: 'other',
         display_name: 'Other',
@@ -388,6 +442,32 @@ describe('CanvasView', () => {
 
       w.unmount()
       expect(graphSyncMocks.dispose).toHaveBeenCalledOnce()
+      expect(persistenceMocks.dispose).toHaveBeenCalledOnce()
+    })
+
+    it('queues root edits through the fixed canvas persistence adapter only', () => {
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+      persistenceMocks.queueGraph.mockClear()
+      autoSaveMocks.scheduleAutoSave.mockClear()
+      const scheduleSave = vi.spyOn(useWorkflowDraftStore(), 'scheduleSave')
+
+      connectHandler!({
+        source: 'node_a',
+        target: 'node_b',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+      })
+
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
+      expect(scheduleSave).not.toHaveBeenCalled()
+      w.unmount()
     })
 
     it('registers a nested canvas with its parent canvas identity', () => {
@@ -1598,7 +1678,7 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('edits a sub-workflow session draft and applies it on Ctrl+S', async () => {
+    it('registers the existing sub-workflow save path as the canvas Save command', async () => {
       const sessions = useSubWorkflowSessionsStore()
       const session = sessions.openSession({
         parentWorkflowName: 'parent',
@@ -1645,7 +1725,14 @@ describe('CanvasView', () => {
       })
 
       expect(sessions.isDirty(session.id)).toBe(true)
-      await w.find('.canvas-view').trigger('keydown', { key: 's', ctrlKey: true })
+      expect(canvasCommandMocks.registrations[0]).toMatchObject({
+        descriptor: {
+          kind: 'nested',
+          sessionId: session.id,
+        },
+        save: expect.any(Function),
+      })
+      await canvasCommandMocks.registrations[0].save()
 
       expect(applied).toHaveBeenCalledTimes(1)
       expect((applied.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
@@ -2079,11 +2166,11 @@ describe('CanvasView', () => {
     it('does not auto-apply while a local draft save is pending', async () => {
       const initialGraph = { nodes: [graphNode('old')], edges: [] }
       const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      persistenceMocks.isPending.value = true
       const { w, draftStore } = await mountActiveCanvasWithDraft({ initialGraph })
       apiMocks.get.mockClear()
       apiMocks.get.mockResolvedValue({ data: draftResponse(2, remoteGraph) })
 
-      draftStore.scheduleSave('wf', { nodes: [graphNode('local')], edges: [] })
       draftStore.noteRemoteChange(draftChanged(2))
       await flushPromises()
       await nextTick()
@@ -2092,9 +2179,9 @@ describe('CanvasView', () => {
       expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
       expect(apiMocks.get).not.toHaveBeenCalled()
       expect(draftStore.remoteAvailableRevision).toBe(2)
-      expect(draftStore.hasPendingSave).toBe(true)
+      expect(persistenceMocks.isPending.value).toBe(true)
       expect(w.find('.workflow-draft-conflict').exists()).toBe(true)
-      draftStore.reset(null)
+      persistenceMocks.isPending.value = false
       w.unmount()
     })
 

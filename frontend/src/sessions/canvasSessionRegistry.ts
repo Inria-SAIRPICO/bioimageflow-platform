@@ -33,6 +33,8 @@ export interface DisposableCanvasResource {
   dispose(): void
 }
 
+export const GRAPH_SYNC_RESOURCE = 'graph-sync'
+
 export interface RegisteredCanvasSession {
   readonly descriptor: CanvasSessionDescriptor
   readonly coordinator: DisposableCanvasResource | null
@@ -40,7 +42,7 @@ export interface RegisteredCanvasSession {
 
 interface MutableCanvasSession {
   descriptor: CanvasSessionDescriptor
-  coordinator: DisposableCanvasResource | null
+  resources: Map<string, DisposableCanvasResource>
 }
 
 /**
@@ -70,7 +72,7 @@ export class CanvasSessionRegistry {
 
     const session: MutableCanvasSession = {
       descriptor: Object.freeze({ ...descriptor }) as CanvasSessionDescriptor,
-      coordinator: null,
+      resources: new Map(),
     }
     this.sessions.set(descriptor.canvasId, session)
     this.mutableSessionCount.value = this.sessions.size
@@ -86,14 +88,33 @@ export class CanvasSessionRegistry {
     canvasId: CanvasId,
     create: (descriptor: CanvasSessionDescriptor) => T,
   ): T {
+    return this.getOrCreateResource(canvasId, GRAPH_SYNC_RESOURCE, create)
+  }
+
+  getResource<T extends DisposableCanvasResource>(
+    canvasId: CanvasId,
+    name: string,
+  ): T | null {
+    return (this.sessions.get(canvasId)?.resources.get(name) as T | undefined)
+      ?? null
+  }
+
+  getOrCreateResource<T extends DisposableCanvasResource>(
+    canvasId: CanvasId,
+    name: string,
+    create: (descriptor: CanvasSessionDescriptor) => T,
+  ): T {
     const session = this.sessions.get(canvasId)
     if (!session) {
       throw new Error(`Canvas '${canvasId}' is not registered`)
     }
-    if (session.coordinator === null) {
-      session.coordinator = create(session.descriptor)
+    const existing = session.resources.get(name)
+    if (existing) {
+      return existing as T
     }
-    return session.coordinator as T
+    const resource = create(session.descriptor)
+    session.resources.set(name, resource)
+    return resource
   }
 
   activate(canvasId: CanvasId | null): void {
@@ -106,29 +127,36 @@ export class CanvasSessionRegistry {
   unregister(canvasId: CanvasId): void {
     const session = this.sessions.get(canvasId)
     if (!session) return
-    session.coordinator?.dispose()
     this.sessions.delete(canvasId)
     this.mutableSessionCount.value = this.sessions.size
     if (this.mutableActiveCanvasId.value === canvasId) {
-      this.activate(null)
+      this.mutableActiveCanvasId.value = null
     }
+    disposeSessionResources(session)
   }
 
   dispose(): void {
-    for (const session of this.sessions.values()) {
-      session.coordinator?.dispose()
-    }
+    const sessions = [...this.sessions.values()]
     this.sessions.clear()
     this.mutableSessionCount.value = 0
-    this.activate(null)
+    this.mutableActiveCanvasId.value = null
+    for (const session of sessions) disposeSessionResources(session)
   }
 }
 
 function sessionView(session: MutableCanvasSession): RegisteredCanvasSession {
   return {
     descriptor: session.descriptor,
-    coordinator: session.coordinator,
+    get coordinator() {
+      return session.resources.get(GRAPH_SYNC_RESOURCE) ?? null
+    },
   }
+}
+
+function disposeSessionResources(session: MutableCanvasSession): void {
+  const resources = new Set(session.resources.values())
+  session.resources.clear()
+  for (const resource of resources) resource.dispose()
 }
 
 function sameDescriptor(

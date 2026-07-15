@@ -20,6 +20,8 @@ import {
 } from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
 import { serializeGraph, useGraphSync } from '@/composables/useGraphSync'
+import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
+import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
@@ -40,7 +42,10 @@ import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
-import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import {
+  canvasIdFromPanelId,
+  type CanvasSessionDescriptor,
+} from '@/sessions/canvasSessionRegistry'
 
 const emit = defineEmits<{
   'graph-changed': [payload: { nodes: any[]; edges: any[] }]
@@ -134,8 +139,7 @@ const {
   fitView,
 } = useVueFlow(canvasPanelId)
 
-const graphSync = useGraphSync({
-  descriptor: isSubWorkflowEditor
+const canvasDescriptor: CanvasSessionDescriptor = isSubWorkflowEditor
     ? {
         kind: 'nested',
         canvasId,
@@ -150,8 +154,18 @@ const graphSync = useGraphSync({
         kind: 'root',
         canvasId,
         workflowId: initialCanvasParams?.workflowName ?? null,
-      },
+      }
+const graphSync = useGraphSync({
+  descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
+})
+const canvasPersistence = useCanvasPersistence({
+  descriptor: canvasDescriptor,
+  getWorkflowId: owningWorkflowId,
+})
+const canvasCommands = useCanvasCommands({
+  descriptor: canvasDescriptor,
+  save: isSubWorkflowEditor ? () => saveSubWorkflowSession() : undefined,
 })
 const {
   syncGraph,
@@ -161,6 +175,12 @@ const {
   syncState,
   dispose: disposeGraphSync,
 } = graphSync
+const {
+  queueGraph: queueCanvasPersistence,
+  initializeFromDraft: initializeCanvasPersistenceFromDraft,
+  isPending: isCanvasPersistencePending,
+  dispose: disposeCanvasPersistence,
+} = canvasPersistence
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
@@ -250,7 +270,7 @@ let isRefreshingToolMetadata = false
 let clipboardToast: ReturnType<typeof useToast> | null = null
 
 const hasLocalRemoteDraftConflict = computed(() => (
-  uiStore.hasUnsavedChanges || workflowDraftStore.hasPendingSave
+  uiStore.hasUnsavedChanges || isCanvasPersistencePending.value
 ))
 
 const shouldShowRemoteDraftConflict = computed(() => {
@@ -493,7 +513,8 @@ async function ensureDefaultWorkflow() {
   }
   const workflow = await workflowStore.createWorkflow({ name, display_name: name })
   const workflowName = workflowInfoId(workflow)
-  await workflowDraftStore.loadDraft(workflowName).catch(() => undefined)
+  const draft = await workflowDraftStore.loadDraft(workflowName).catch(() => null)
+  if (draft !== null) initializeCanvasPersistenceFromDraft(draft)
   return {
     graph: { nodes: [], edges: [] } as GraphState,
     workflowName,
@@ -532,6 +553,7 @@ async function recoverStartupWorkflow() {
       }
     }
     const draft = await workflowDraftStore.loadDraft(targetName).catch(() => null)
+    if (draft !== null) initializeCanvasPersistenceFromDraft(draft)
     const draftModified = Date.parse(draft?.updated_at ?? '')
     const serverModified = Date.parse(workflowStore.current?.last_modified ?? '')
     const latestPersistedModified = Math.max(
@@ -961,6 +983,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   isCanvasUnmounted = true
   disposeGraphSync()
+  disposeCanvasPersistence()
+  canvasCommands.dispose()
   if (!isSubWorkflowEditor) {
     window.removeEventListener(
       'bioimageflow:apply-sub-workflow-session',
@@ -2344,8 +2368,7 @@ function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
   if (!name) return
   const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
   workflowStore.markDirty()
-  autoSave.scheduleAutoSave(name, graph)
-  workflowDraftStore.scheduleSave(name, graph)
+  queueCanvasPersistence(graph)
 }
 
 function emitGraphChanged() {

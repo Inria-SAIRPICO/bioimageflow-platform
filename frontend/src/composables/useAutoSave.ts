@@ -67,7 +67,7 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   })
 }
 
-async function putAutoSave(entry: AutoSaveEntry): Promise<void> {
+export async function writeAutoSaveEntry(entry: AutoSaveEntry): Promise<void> {
   await withStore(WORKFLOW_STORE, 'readwrite', (store) => {
     store.put(JSON.parse(JSON.stringify(entry)))
   })
@@ -97,7 +97,7 @@ export function useAutoSave() {
     const entry = pendingEntry
     pendingEntry = null
     try {
-      await putAutoSave(entry)
+      await writeAutoSaveEntry(entry)
     } catch (err) {
       console.warn('[useAutoSave] Failed to save workflow:', err)
     }
@@ -146,7 +146,7 @@ export function useAutoSave() {
     let moved = entry === null
     if (entry !== null) {
       try {
-        await putAutoSave({ ...entry, name: newName })
+        await writeAutoSaveEntry({ ...entry, name: newName })
         moved = true
       } catch (err) {
         console.warn('[useAutoSave] Failed to move workflow auto-save:', err)

@@ -6,7 +6,7 @@ import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExec
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
-import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
 import {
   outOfDateNodeIdsForExecution,
   validationErrorsForExecution,
@@ -29,7 +29,7 @@ const emit = defineEmits<{
 const exec = useExecutionStore()
 const ui = useUIStore()
 const workflowStore = useWorkflowStore()
-const workflowDraftStore = useWorkflowDraftStore()
+const canvasPersistence = useCanvasPersistence()
 const { lockForExecution } = useExecutionLock()
 
 const confirmOpen = ref(false)
@@ -93,9 +93,7 @@ async function runCore(nodes?: string[]) {
   try {
     const workflowName = workflowStore.currentName
     if (!workflowName) return
-    const fresh = await workflowDraftStore.ensureFreshForCriticalOperation(
-      workflowName,
-    )
+    const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
     if (!fresh) {
       emit('toast', {
         severity: 'warn',

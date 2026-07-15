@@ -13,8 +13,16 @@ const workflowDraftMocks = vi.hoisted(() => ({
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
 }))
 
+const persistenceMocks = vi.hoisted(() => ({
+  ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
+}))
+
 vi.mock('@/stores/workflowDraft', () => ({
   useWorkflowDraftStore: () => workflowDraftMocks,
+}))
+
+vi.mock('@/composables/useCanvasPersistence', () => ({
+  useCanvasPersistence: () => persistenceMocks,
 }))
 
 import RunButton from '../RunButton.vue'
@@ -72,6 +80,8 @@ describe('RunButton', () => {
     }
     workflowDraftMocks.ensureFreshForCriticalOperation.mockClear()
     workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
+    persistenceMocks.ensureFreshForCriticalOperation.mockClear()
+    persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
   })
 
   it('Run button is enabled when idle and validation is not pending', () => {
@@ -198,10 +208,12 @@ describe('RunButton', () => {
     await nextTick()
 
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a')
+    expect(persistenceMocks.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
+    expect(workflowDraftMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
   })
 
   it('blocks run when the active workflow has unresolved remote draft changes', async () => {
-    workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
+    persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
     const { wrapper } = mountButton()
     const exec = useExecutionStore()
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
