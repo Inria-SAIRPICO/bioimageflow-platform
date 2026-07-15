@@ -54,15 +54,21 @@ let dragStartHandler: ((event: any) => void) | null = null
 let dragStopHandler: ((event: any) => void) | null = null
 let dropNextNonEmptySetEdges = false
 
+const vueFlowMocks = vi.hoisted(() => ({
+  instanceIds: [] as Array<string | undefined>,
+}))
+
 vi.mock('@vue-flow/core', () => {
   const VueFlow = defineComponent({
     name: 'VueFlow',
-    props: ['nodes', 'edges', 'nodeTypes', 'edgeTypes', 'isValidConnection', 'selectionKeyCode', 'fitViewOnInit'],
+    props: ['id', 'nodes', 'edges', 'nodeTypes', 'edgeTypes', 'isValidConnection', 'selectionKeyCode', 'fitViewOnInit'],
     template: '<div class="vue-flow-mock"><slot /></div>',
   })
   return {
     VueFlow,
-    useVueFlow: () => ({
+    useVueFlow: (id?: string) => {
+      vueFlowMocks.instanceIds.push(id)
+      return {
       project: (pos: { x: number; y: number }) => pos,
       addNodes: (nodes: any[]) => { mockNodes.push(...nodes) },
       addEdges: (edges: any[]) => { mockEdges.push(...edges) },
@@ -104,8 +110,9 @@ vi.mock('@vue-flow/core', () => {
       onEdgeUpdateEnd: vi.fn(),
       onNodeDragStart: (handler: any) => { dragStartHandler = handler },
       onNodeDragStop: (handler: any) => { dragStopHandler = handler },
-      fitView: vi.fn(),
-    }),
+        fitView: vi.fn(),
+      }
+    },
     Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   }
 })
@@ -122,6 +129,8 @@ const graphSyncMocks = vi.hoisted(() => ({
   syncGraph: vi.fn(),
   syncGraphState: vi.fn(),
   flushNow: vi.fn(),
+  dispose: vi.fn(),
+  scopes: [] as any[],
   serializeGraph: vi.fn((state: { nodes: any[]; edges: any[] }) => ({
     nodes: state.nodes.map((n: any) => ({
       id: n.id,
@@ -192,12 +201,15 @@ vi.mock('@/composables/useGraphSync', async () => {
   const { ref } = await import('vue')
   return {
     serializeGraph: graphSyncMocks.serializeGraph,
-    useGraphSync: () => ({
-      ...graphSyncMocks,
-      validationResult: ref(null),
-      isPending: ref(false),
-      syncState: ref('idle'),
-    }),
+    useGraphSync: (options?: unknown) => {
+      graphSyncMocks.scopes.push(options)
+      return {
+        ...graphSyncMocks,
+        validationResult: ref(null),
+        isPending: ref(false),
+        syncState: ref('idle'),
+      }
+    },
   }
 })
 
@@ -229,6 +241,7 @@ function mountCanvas(propsData: {
   nodes?: any[]
   edges?: any[]
   subWorkflowSessionId?: string
+  parentCanvasPanelId?: string
   params?: Record<string, unknown>
 } = {}) {
   return mount(CanvasView, {
@@ -236,6 +249,7 @@ function mountCanvas(propsData: {
       nodes: propsData.nodes ?? [],
       edges: propsData.edges ?? [],
       subWorkflowSessionId: propsData.subWorkflowSessionId,
+      parentCanvasPanelId: propsData.parentCanvasPanelId,
       params: propsData.params,
     },
     attachTo: document.body,
@@ -318,9 +332,12 @@ describe('CanvasView', () => {
     dragStartHandler = null
     dragStopHandler = null
     dropNextNonEmptySetEdges = false
+    vueFlowMocks.instanceIds.length = 0
     graphSyncMocks.syncGraph.mockClear()
     graphSyncMocks.syncGraphState.mockClear()
     graphSyncMocks.flushNow.mockClear()
+    graphSyncMocks.dispose.mockClear()
+    graphSyncMocks.scopes.length = 0
     graphSyncMocks.serializeGraph.mockClear()
     autoSaveMocks.scheduleAutoSave.mockClear()
     autoSaveMocks.flushAutoSave.mockClear()
@@ -345,6 +362,79 @@ describe('CanvasView', () => {
   // --- Task 6: Core Vue Flow Setup ---
 
   describe('core setup', () => {
+    it('registers graph sync and Vue Flow with the stable Dockview panel id', () => {
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+
+      expect(vueFlowMocks.instanceIds).toContain('workflow:analysis')
+      expect(graphSyncMocks.scopes[0]).toMatchObject({
+        descriptor: {
+          kind: 'root',
+          canvasId: 'workflow:analysis',
+          workflowId: 'analysis',
+        },
+        getWorkflowId: expect.any(Function),
+      })
+      useWorkflowStore().current = {
+        name: 'other',
+        display_name: 'Other',
+      } as any
+      expect(graphSyncMocks.scopes[0].getWorkflowId()).toBe('analysis')
+
+      w.unmount()
+      expect(graphSyncMocks.dispose).toHaveBeenCalledOnce()
+    })
+
+    it('registers a nested canvas with its parent canvas identity', () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'analysis',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: { nodes: [], edges: [] },
+      })
+
+      const w = mountCanvas({
+        subWorkflowSessionId: session.id,
+        parentCanvasPanelId: 'workflow:analysis',
+      })
+
+      const nestedPanelId = `sub-workflow:${encodeURIComponent(session.id)}`
+      expect(vueFlowMocks.instanceIds).toContain(nestedPanelId)
+      expect(graphSyncMocks.scopes[0]).toMatchObject({
+        descriptor: {
+          kind: 'nested',
+          canvasId: nestedPanelId,
+          sessionId: session.id,
+          parentCanvasId: 'workflow:analysis',
+        },
+      })
+      w.unmount()
+    })
+
+    it('does not resume graph application after the canvas unmounts', async () => {
+      useToolRegistryStore().tools = [makeTool()] as any
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:closing',
+          workflowName: 'closing',
+          graph: { nodes: [], edges: [] },
+        },
+      })
+
+      w.unmount()
+      await flushPromises()
+      await nextTick()
+
+      expect(graphSyncMocks.dispose).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
+    })
+
     it('renders a .canvas-view container', () => {
       const w = mountCanvas()
       expect(w.find('.canvas-view').exists()).toBe(true)

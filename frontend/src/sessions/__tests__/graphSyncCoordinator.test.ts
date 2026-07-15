@@ -87,6 +87,45 @@ describe('graph sync coordinator', () => {
     expect(b.validationResult.value?.valid).toBe(false)
   })
 
+  it('samples the owning workflow getter when each graph is queued', async () => {
+    const requests: GraphSyncRequest[] = []
+    let owningWorkflowId: string | null = 'workflow-a'
+    const coordinator = createGraphSyncCoordinator({
+      canvasId: canvasIdFromPanelId('canvas:a'),
+      workflowId: 'stale-initial-workflow',
+      getWorkflowId: () => owningWorkflowId,
+      transport: vi.fn(async (request: GraphSyncRequest) => {
+        requests.push(request)
+        return validation(true)
+      }),
+    })
+
+    coordinator.queue(graph('queued-for-a'))
+    owningWorkflowId = 'workflow-b'
+    await coordinator.flushLatest()
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({
+      canvasId: canvasIdFromPanelId('canvas:a'),
+      workflowId: 'workflow-a',
+      graph: expect.objectContaining({
+        nodes: [expect.objectContaining({ parameters: { value: 'queued-for-a' } })],
+      }),
+    })
+
+    owningWorkflowId = null
+    coordinator.queue(graph('queued-without-owner'))
+    owningWorkflowId = 'assigned-after-queue'
+    await coordinator.flushLatest()
+
+    expect(requests[1]).toMatchObject({
+      workflowId: null,
+      graph: expect.objectContaining({
+        nodes: [expect.objectContaining({ parameters: { value: 'queued-without-owner' } })],
+      }),
+    })
+  })
+
   it('is pending for the entire debounce interval', () => {
     const coordinator = createGraphSyncCoordinator({
       canvasId: canvasIdFromPanelId('workflow:a'),

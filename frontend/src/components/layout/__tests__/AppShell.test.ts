@@ -10,6 +10,12 @@ import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { useWorkflowStore } from '@/stores/workflow'
+import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import {
+  _resetGraphSyncForTest,
+  graphSyncCanvasSessions,
+  useGraphSync,
+} from '@/composables/useGraphSync'
 
 const { connectMock, disconnectMock } = vi.hoisted(() => ({
   connectMock: vi.fn(),
@@ -153,6 +159,7 @@ describe('AppShell', () => {
     document.documentElement.style.colorScheme = ''
     connectMock.mockClear()
     disconnectMock.mockClear()
+    _resetGraphSyncForTest()
   })
 
   it('renders #bioimageflow-app wrapper', () => {
@@ -570,7 +577,10 @@ describe('AppShell', () => {
     })
 
     window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
-      detail: { sessionId: session.id },
+      detail: {
+        sessionId: session.id,
+        parentCanvasPanelId: 'workflow:parent',
+      },
     }))
     await flushPromises()
 
@@ -580,7 +590,10 @@ describe('AppShell', () => {
     expect(lastCall).toMatchObject({
       component: 'subWorkflowEditor',
       title: 'Sub 1',
-      params: { sessionId: session.id },
+      params: {
+        sessionId: session.id,
+        parentCanvasPanelId: 'workflow:parent',
+      },
     })
     expect(lastCall.id).toContain('sub-workflow:')
     expect(panels.get(lastCall.id).api.setActive).toHaveBeenCalled()
@@ -655,6 +668,51 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(ui.selectedNodeIds).toEqual(['node_1'])
+  })
+
+  it('activates graph sync only for canvas panels and retains it for side panels', async () => {
+    mountApp()
+    await flushPromises()
+    const canvasId = canvasIdFromPanelId('canvas')
+
+    panels.get('canvas').api.setActive()
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: null },
+      getWorkflowId: () => 'analysis',
+    })
+    await flushPromises()
+
+    expect(graphSyncCanvasSessions.activeCanvasId.value).toBe(canvasId)
+
+    panels.get('tools').api.setActive()
+    expect(graphSyncCanvasSessions.activeCanvasId.value).toBe(canvasId)
+  })
+
+  it('removing a canvas unregisters only that canvas graph sync session', async () => {
+    mountApp()
+    await flushPromises()
+    const startupCanvasId = canvasIdFromPanelId('canvas')
+    const workflowCanvasId = canvasIdFromPanelId('workflow:analysis')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId: startupCanvasId, workflowId: null },
+      getWorkflowId: () => 'startup',
+    })
+    useGraphSync({
+      descriptor: {
+        kind: 'root',
+        canvasId: workflowCanvasId,
+        workflowId: 'analysis',
+      },
+      getWorkflowId: () => 'analysis',
+    })
+    graphSyncCanvasSessions.activate(workflowCanvasId)
+
+    mockDockviewApi.removePanel(panels.get('canvas'))
+    await flushPromises()
+
+    expect(graphSyncCanvasSessions.get(startupCanvasId)).toBeNull()
+    expect(graphSyncCanvasSessions.get(workflowCanvasId)).not.toBeNull()
+    expect(graphSyncCanvasSessions.activeCanvasId.value).toBe(workflowCanvasId)
   })
 
   it('renames the startup canvas tab when its workflow context is loaded', async () => {

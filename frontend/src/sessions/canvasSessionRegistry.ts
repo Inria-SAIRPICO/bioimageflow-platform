@@ -15,7 +15,7 @@ export function canvasIdFromPanelId(panelId: string): CanvasId {
 export interface RootCanvasSessionDescriptor {
   readonly kind: 'root'
   readonly canvasId: CanvasId
-  readonly workflowId: string
+  readonly workflowId: string | null
 }
 
 export interface NestedCanvasSessionDescriptor {
@@ -50,9 +50,13 @@ interface MutableCanvasSession {
 export class CanvasSessionRegistry {
   private readonly sessions = new Map<CanvasId, MutableCanvasSession>()
   private readonly mutableActiveCanvasId = ref<CanvasId | null>(null)
+  private readonly mutableSessionCount = ref(0)
 
   readonly activeCanvasId: DeepReadonly<Ref<CanvasId | null>> = readonly(
     this.mutableActiveCanvasId,
+  )
+  readonly sessionCount: DeepReadonly<Ref<number>> = readonly(
+    this.mutableSessionCount,
   )
 
   register(descriptor: CanvasSessionDescriptor): RegisteredCanvasSession {
@@ -69,6 +73,7 @@ export class CanvasSessionRegistry {
       coordinator: null,
     }
     this.sessions.set(descriptor.canvasId, session)
+    this.mutableSessionCount.value = this.sessions.size
     return sessionView(session)
   }
 
@@ -103,6 +108,7 @@ export class CanvasSessionRegistry {
     if (!session) return
     session.coordinator?.dispose()
     this.sessions.delete(canvasId)
+    this.mutableSessionCount.value = this.sessions.size
     if (this.mutableActiveCanvasId.value === canvasId) {
       this.activate(null)
     }
@@ -113,6 +119,7 @@ export class CanvasSessionRegistry {
       session.coordinator?.dispose()
     }
     this.sessions.clear()
+    this.mutableSessionCount.value = 0
     this.activate(null)
   }
 }

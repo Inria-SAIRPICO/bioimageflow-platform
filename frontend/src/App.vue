@@ -31,7 +31,7 @@ export default defineComponent({
 </script>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
 import { themeDark, themeLight, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
@@ -50,6 +50,11 @@ import { useWebSocket } from './composables/useWebSocket'
 import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
 import { useWorkflowStore } from './stores/workflow'
 import type { GraphState, MissingTool } from './api/types'
+import { canvasIdFromPanelId } from './sessions/canvasSessionRegistry'
+import {
+  activateGraphSyncCanvas,
+  unregisterGraphSyncCanvas,
+} from './composables/useGraphSync'
 
 function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
@@ -112,6 +117,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  canvasActivationRequest += 1
   dockviewDisposables.splice(0).forEach((disposable) => disposable.dispose())
   websocket.disconnect()
   window.removeEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
@@ -170,6 +176,8 @@ watchEffect(() => {
 const dockviewApi = shallowRef<DockviewApi | null>(null)
 const dockviewDisposables: DockviewIDisposable[] = []
 const confirmedSubWorkflowPanelCloses = new Set<string>()
+const subWorkflowParentCanvasIds = new Map<string, string>()
+let canvasActivationRequest = 0
 const canvasContexts = new Map<string, {
   workflowName: string
   workflowDisplayName: string
@@ -203,11 +211,31 @@ function sessionIdFromSubWorkflowPanelId(panelId: string): string | null {
   return decodeURIComponent(panelId.slice('sub-workflow:'.length))
 }
 
+function isCanvasPanelId(panelId: string): boolean {
+  return panelId === 'canvas'
+    || workflowNameFromPanelId(panelId) !== null
+    || sessionIdFromSubWorkflowPanelId(panelId) !== null
+}
+
+function requestGraphSyncActivation(panelId: string): void {
+  const request = ++canvasActivationRequest
+  const canvasId = canvasIdFromPanelId(panelId)
+  if (activateGraphSyncCanvas(canvasId)) return
+  void nextTick().then(() => {
+    if (request === canvasActivationRequest) {
+      activateGraphSyncCanvas(canvasId)
+    }
+  })
+}
+
 function onDockviewReady(event: DockviewReadyEvent) {
   const api = event.api
   dockviewApi.value = api
   dockviewDisposables.push(
     api.onDidRemovePanel((panel: IDockviewPanel) => {
+      if (isCanvasPanelId(panel.id)) {
+        unregisterGraphSyncCanvas(canvasIdFromPanelId(panel.id))
+      }
       if (isDockPanelKey(panel.id)) {
         const panelId = panel.id
         queueMicrotask(() => {
@@ -222,6 +250,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
         return
       }
       if (confirmedSubWorkflowPanelCloses.delete(panel.id)) {
+        subWorkflowParentCanvasIds.delete(sessionId)
         subWorkflowSessionsStore.closeSession(sessionId)
         return
       }
@@ -234,6 +263,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
         queueMicrotask(() => openSubWorkflowPanel(sessionId))
         return
       }
+      subWorkflowParentCanvasIds.delete(sessionId)
       subWorkflowSessionsStore.closeSession(sessionId)
     }),
   )
@@ -390,7 +420,11 @@ function openSubWorkflowPanel(sessionId: string): void {
     id: panelId,
     component: 'subWorkflowEditor',
     title: session.parentNodeName,
-    params: { sessionId, panelId },
+    params: {
+      sessionId,
+      panelId,
+      parentCanvasPanelId: subWorkflowParentCanvasIds.get(sessionId) ?? 'canvas',
+    },
     position: canvasPanel
       ? { referencePanel: 'canvas', direction: 'within' }
       : { direction: 'below' },
@@ -399,9 +433,15 @@ function openSubWorkflowPanel(sessionId: string): void {
   uiStore.setActiveWorkflow(session.parentNodeName)
 }
 
-function onSubWorkflowSessionOpened(event: CustomEvent<{ sessionId?: string }>) {
+function onSubWorkflowSessionOpened(event: CustomEvent<{
+  sessionId?: string
+  parentCanvasPanelId?: string
+}>) {
   const sessionId = event.detail?.sessionId
   if (!sessionId) return
+  if (event.detail.parentCanvasPanelId) {
+    subWorkflowParentCanvasIds.set(sessionId, event.detail.parentCanvasPanelId)
+  }
   openSubWorkflowPanel(sessionId)
 }
 
@@ -413,6 +453,7 @@ function onCloseSubWorkflowSession(event: CustomEvent<{
   if (!sessionId) return
   const panel = dockviewApi.value?.getPanel(subWorkflowPanelId(sessionId))
   if (!panel) {
+    subWorkflowParentCanvasIds.delete(sessionId)
     subWorkflowSessionsStore.closeSession(sessionId)
     return
   }
@@ -463,6 +504,7 @@ function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
   } else {
     return
   }
+  requestGraphSyncActivation(panel.id)
   window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
     detail: { panelId: panel.id },
   }))

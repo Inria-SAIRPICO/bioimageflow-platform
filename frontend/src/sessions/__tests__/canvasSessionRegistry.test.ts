@@ -28,6 +28,7 @@ describe('CanvasSessionRegistry', () => {
 
     registry.register(descriptor)
     expect(registry.activeCanvasId.value).toBeNull()
+    expect(registry.sessionCount.value).toBe(1)
 
     registry.get(descriptor.canvasId)
     expect(registry.activeCanvasId.value).toBeNull()
@@ -68,6 +69,7 @@ describe('CanvasSessionRegistry', () => {
     expect(disposeA).toHaveBeenCalledOnce()
     expect(disposeB).not.toHaveBeenCalled()
     expect(registry.get(b.canvasId)?.descriptor).toEqual(b)
+    expect(registry.sessionCount.value).toBe(1)
     expect(registry.activeCanvasId.value).toBeNull()
   })
 })

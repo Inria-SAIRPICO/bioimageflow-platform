@@ -47,6 +47,8 @@ export interface GraphSyncCoordinator extends DisposableCanvasResource {
 export interface CreateGraphSyncCoordinatorOptions {
   canvasId: CanvasId
   workflowId: string | null
+  /** Owning canvas identity sampled synchronously for every queued snapshot. */
+  getWorkflowId?: () => string | null
   transport: GraphSyncTransport
   debounceMs?: number
   initialGraph?: GraphState
@@ -133,7 +135,7 @@ export function createGraphSyncCoordinator(
     latest = {
       canvasId: options.canvasId,
       workflowId: queueOptions.workflowId === undefined
-        ? options.workflowId
+        ? (options.getWorkflowId ? options.getWorkflowId() : options.workflowId)
         : queueOptions.workflowId,
       semanticRevision: nextRevision,
       graph: graphSnapshot,
