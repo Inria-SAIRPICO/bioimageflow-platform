@@ -59,7 +59,7 @@ const loggerStore = useLoggerStore()
 const { validationResult } = useGraphSync()
 const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
-const isParameterEditingDisabled = computed(() => executionStore.isRunning)
+const isNodeEditingDisabled = computed(() => executionStore.isRunning)
 
 const selectedNodeErrors = computed(() => {
   const nodeId = uiStore.selectedNodeIds[0]
@@ -130,22 +130,14 @@ function formatLogTimestamp(seconds: number): string {
 }
 
 function startEditName() {
-  if (!nodeData.value) return
+  if (!nodeData.value || isNodeEditingDisabled.value) return
   nameInput.value = nodeData.value.name
   editingName.value = true
 }
 
 function finishEditName() {
-  if (!nodeData.value || !selectedNode.value) return
-  const newName = nameInput.value.trim()
-  if (newName && newName !== nodeData.value.name) {
-    const exists = uiStore.graphNodes.some(
-      (n: any) => n.id !== selectedNode.value!.id && n.data?.name === newName,
-    )
-    if (!exists) {
-      nodeData.value.name = newName
-    }
-  }
+  const nodeId = selectedNode.value?.id
+  if (nodeId) canvasCommands.renameNode(nodeId, nameInput.value)
   editingName.value = false
 }
 
@@ -156,8 +148,9 @@ function updateParameter(key: string, value: unknown) {
 }
 
 function toggleEnabled() {
-  if (!nodeData.value) return
-  nodeData.value.enabled = !nodeData.value.enabled
+  const nodeId = selectedNode.value?.id
+  if (!nodeId || !nodeData.value) return
+  canvasCommands.setNodeEnabled(nodeId, !nodeData.value.enabled)
 }
 
 function resetToDefault(key: string) {
@@ -198,16 +191,9 @@ function isFieldNulled(key: string): boolean {
 }
 
 function togglePinned(key: string) {
-  if (!nodeData.value) return
-  if (!nodeData.value.pinnedInputs) {
-    nodeData.value.pinnedInputs = {}
-  }
-  if (key in (nodeData.value.connectedInputs ?? {})) {
-    nodeData.value.pinnedInputs[key] = true
-    return
-  }
-  const current = nodeData.value.pinnedInputs[key] !== false
-  nodeData.value.pinnedInputs[key] = !current
+  const nodeId = selectedNode.value?.id
+  if (!nodeId) return
+  canvasCommands.setInputPinned(nodeId, key, !isPinned(key))
 }
 
 function isPinned(key: string): boolean {
@@ -217,11 +203,9 @@ function isPinned(key: string): boolean {
 }
 
 function updateOutputTemplate(key: string, value: string) {
-  if (!nodeData.value) return
-  if (!nodeData.value.output_templates) {
-    nodeData.value.output_templates = {}
-  }
-  nodeData.value.output_templates[key] = value
+  const nodeId = selectedNode.value?.id
+  if (!nodeId) return
+  canvasCommands.setOutputTemplate(nodeId, key, value)
 }
 
 function isPathType(type: string): boolean {
@@ -432,6 +416,7 @@ async function pickFolder(key: string) {
             v-if="editingName"
             v-model="nameInput"
             class="name-input"
+            :disabled="isNodeEditingDisabled"
             @blur="finishEditName"
             @keydown.enter="finishEditName"
             autofocus
@@ -447,6 +432,7 @@ async function pickFolder(key: string) {
           <!-- Fix 12: Enable/Disable toggle -->
           <ToggleSwitch
             :model-value="nodeData.enabled"
+            :disabled="isNodeEditingDisabled"
             @update:model-value="toggleEnabled"
             class="enabled-toggle"
             data-testid="node-enabled-toggle"
@@ -495,6 +481,7 @@ async function pickFolder(key: string) {
               v-if="canConnect(field as InputFieldSchema)"
               :icon="isPinned(key) ? 'pi pi-times' : 'pi pi-arrow-right-arrow-left'"
               class="p-button-text p-button-sm param-action-btn pin-toggle-btn"
+              :disabled="isNodeEditingDisabled"
               :title="isPinned(key) ? 'Remove input pin' : 'Add input pin'"
               :aria-pressed="isPinned(key)"
               @click="togglePinned(key)"
@@ -506,7 +493,7 @@ async function pickFolder(key: string) {
               <Button
                 icon="pi pi-undo"
                 class="p-button-text p-button-sm param-action-btn"
-                :disabled="isParameterEditingDisabled"
+                :disabled="isNodeEditingDisabled"
                 @click="resetToDefault(key)"
                 title="Reset to default"
                 data-testid="reset-default"
@@ -520,7 +507,7 @@ async function pickFolder(key: string) {
               <Button
                 :icon="isFieldNulled(key) ? 'pi pi-pencil' : 'pi pi-ban'"
                 class="p-button-text p-button-sm param-action-btn none-toggle-btn"
-                :disabled="isParameterEditingDisabled"
+                :disabled="isNodeEditingDisabled"
                 :title="isFieldNulled(key) ? 'Set value (currently null)' : 'Set to null'"
                 :aria-pressed="isFieldNulled(key)"
                 @click="toggleNull(key)"
@@ -566,7 +553,7 @@ async function pickFolder(key: string) {
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               :options="(field as InputFieldSchema).choices!"
               class="param-input"
-              :disabled="isParameterEditingDisabled"
+              :disabled="isNodeEditingDisabled"
               :data-testid="`choices-select-${key}`"
               @update:model-value="updateParameter(key, $event)"
             />
@@ -575,7 +562,7 @@ async function pickFolder(key: string) {
               v-else-if="(field as InputFieldSchema).type === 'bool'"
               :model-value="nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? false"
               binary
-              :disabled="isParameterEditingDisabled"
+              :disabled="isNodeEditingDisabled"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Gap 4: Slider + InputNumber for float fields with min, max, and step all defined -->
@@ -590,7 +577,7 @@ async function pickFolder(key: string) {
                 :max="(field as InputFieldSchema).max!"
                 :step="(field as InputFieldSchema).step!"
                 class="slider-input"
-                :disabled="isParameterEditingDisabled"
+                :disabled="isNodeEditingDisabled"
                 @update:model-value="updateParameter(key, $event)"
               />
               <InputNumber
@@ -600,7 +587,7 @@ async function pickFolder(key: string) {
                 :step="(field as InputFieldSchema).step ?? 1"
                 :min-fraction-digits="1"
                 class="slider-number"
-                :disabled="isParameterEditingDisabled"
+                :disabled="isNodeEditingDisabled"
                 @update:model-value="updateParameter(key, $event)"
               />
             </div>
@@ -614,7 +601,7 @@ async function pickFolder(key: string) {
               :min-fraction-digits="(field as InputFieldSchema).type === 'float' ? 1 : 0"
               show-buttons
               class="param-input param-number"
-              :disabled="isParameterEditingDisabled"
+              :disabled="isNodeEditingDisabled"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Path-typed input: text input + native file/folder picker buttons -->
@@ -626,14 +613,14 @@ async function pickFolder(key: string) {
               <InputText
                 :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
                 class="path-input"
-                :disabled="isParameterEditingDisabled"
+                :disabled="isNodeEditingDisabled"
                 @update:model-value="updateParameter(key, $event)"
               />
               <Button
                 icon="pi pi-file"
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select file"
-                :disabled="isParameterEditingDisabled"
+                :disabled="isNodeEditingDisabled"
                 :data-testid="`select-file-${key}`"
                 @click="pickFile(key, (field as InputFieldSchema).type)"
               />
@@ -642,7 +629,7 @@ async function pickFolder(key: string) {
                 icon="pi pi-folder-open"
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select folder"
-                :disabled="isParameterEditingDisabled"
+                :disabled="isNodeEditingDisabled"
                 :data-testid="`select-folder-${key}`"
                 @click="pickFolder(key)"
               />
@@ -652,7 +639,7 @@ async function pickFolder(key: string) {
               v-else-if="!canConnect(field as InputFieldSchema) || (field as InputFieldSchema).type === 'str'"
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               class="param-input"
-              :disabled="isParameterEditingDisabled"
+              :disabled="isNodeEditingDisabled"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Fallback: connectable-only field with no manual widget -->
@@ -701,6 +688,7 @@ async function pickFolder(key: string) {
           <InputText
             v-if="isOutputTemplateApplicable(field as OutputFieldSchema)"
             :model-value="nodeData.output_templates?.[key] ?? ''"
+            :disabled="isNodeEditingDisabled"
             @update:model-value="updateOutputTemplate(key, $event as string)"
             placeholder="Output path template..."
             class="output-template-input"

@@ -183,6 +183,10 @@ describe('parameter edit followed immediately by Run', () => {
     ui.setCanvasWorkflow(canvasId, 'parameter_edit', 'Parameter edit')
     const canvasCommands = useCanvasCommands({
       descriptor,
+      renameNode: () => false,
+      setNodeEnabled: () => false,
+      setInputPinned: () => false,
+      setOutputTemplate: () => false,
       updateParameter: (nodeId, key, value) => {
         const selected = canvasNodes.find(node => node.id === nodeId)
         if (!selected?.data) return false

@@ -302,6 +302,41 @@ function mountCanvas(propsData: {
   })
 }
 
+const canvasNodeEditCases = [
+  {
+    name: 'node rename',
+    command: 'renameNode',
+    args: ['shared', 'Renamed'],
+    expectedData: { name: 'Renamed' },
+    expectedSerialized: { name: 'Renamed' },
+    immutableMap: undefined,
+  },
+  {
+    name: 'enabled state',
+    command: 'setNodeEnabled',
+    args: ['shared', false],
+    expectedData: { enabled: false },
+    expectedSerialized: { enabled: false },
+    immutableMap: undefined,
+  },
+  {
+    name: 'input-pin visibility',
+    command: 'setInputPinned',
+    args: ['shared', 'image', false],
+    expectedData: { pinnedInputs: { image: false } },
+    expectedSerialized: undefined,
+    immutableMap: 'pinnedInputs',
+  },
+  {
+    name: 'output template',
+    command: 'setOutputTemplate',
+    args: ['shared', 'result', '/tmp/out.tif'],
+    expectedData: { output_templates: { result: '/tmp/out.tif' } },
+    expectedSerialized: { output_templates: { result: '/tmp/out.tif' } },
+    immutableMap: 'output_templates',
+  },
+] as const
+
 function mockSavedWorkflow(
   graph: { nodes: any[]; edges: any[] },
   name = 'saved',
@@ -575,6 +610,160 @@ describe('CanvasView', () => {
       await flushPromises()
     })
 
+    it.each(canvasNodeEditCases)(
+      'publishes one exact $name snapshot synchronously without rewriting statuses',
+      async ({ command, args, expectedData, expectedSerialized, immutableMap }) => {
+        const editedData = {
+          name: 'Edited',
+          toolName: 'gaussian_blur',
+          status: 'executed',
+          parameters: { sigma: 1 },
+          enabled: true,
+          connectedInputs: {},
+          pinnedInputs: { image: true },
+          output_templates: { result: '' },
+        }
+        mockNodes = reactive([
+          {
+            id: 'shared',
+            data: editedData,
+            position: { x: 0, y: 0 },
+          },
+          {
+            id: 'untouched',
+            data: {
+              name: 'Untouched',
+              toolName: 'gaussian_blur',
+              status: 'executed',
+              parameters: { sigma: 9 },
+            },
+            position: { x: 100, y: 0 },
+          },
+        ]) as any[]
+        const previousMap = immutableMap
+          ? mockNodes[0].data[immutableMap]
+          : undefined
+        const w = mountCanvas({
+          params: {
+            panelId: 'workflow:analysis',
+            workflowName: 'analysis',
+            workflowDisplayName: 'Analysis',
+          },
+        })
+        graphSyncMocks.syncGraph.mockClear()
+        persistenceMocks.queueGraph.mockClear()
+
+        const registration = canvasCommandMocks.registrations[0]
+        expect(registration[command](...args)).toBe(true)
+
+        expect(mockNodes[0].data).toEqual(expect.objectContaining(expectedData))
+        if (immutableMap) {
+          expect(mockNodes[0].data[immutableMap]).not.toBe(previousMap)
+        }
+        expect(mockNodes[0].data.status).toBe('executed')
+        expect(mockNodes[1].data.status).toBe('executed')
+        expect(mockNodes[0].data.provisional).toBe(true)
+        expect(mockNodes[1].data.provisional).toBe(true)
+        expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+        expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+          nodes: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'shared',
+              data: expect.objectContaining(expectedData),
+            }),
+          ]),
+        }))
+        expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+        if (expectedSerialized) {
+          expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+            nodes: expect.arrayContaining([
+              expect.objectContaining({ id: 'shared', ...expectedSerialized }),
+            ]),
+          }))
+        }
+
+        await nextTick()
+        expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+        expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+        w.unmount()
+        await flushPromises()
+      },
+    )
+
+    it('keeps node names trimmed, non-empty, and unique', async () => {
+      mockNodes = reactive([
+        {
+          id: 'shared',
+          data: { name: 'Edited', toolName: 'gaussian_blur', status: 'executed' },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'other',
+          data: { name: 'Existing', toolName: 'gaussian_blur', status: 'executed' },
+          position: { x: 100, y: 0 },
+        },
+      ]) as any[]
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+      const renameNode = canvasCommandMocks.registrations[0].renameNode
+
+      expect(renameNode('shared', '  Renamed  ')).toBe(true)
+      expect(mockNodes[0].data.name).toBe('Renamed')
+      expect(renameNode('shared', '   ')).toBe(false)
+      expect(renameNode('shared', 'Existing')).toBe(false)
+      expect(renameNode('shared', ' Renamed ')).toBe(false)
+      expect(mockNodes[0].data.name).toBe('Renamed')
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
+    it('forces connected input pins visible and replaces pin maps immutably', async () => {
+      const previousPinnedInputs = { image: false, optional: true }
+      mockNodes = reactive([{
+        id: 'shared',
+        data: {
+          name: 'Edited',
+          toolName: 'gaussian_blur',
+          status: 'executed',
+          connectedInputs: { image: 'source.result' },
+          pinnedInputs: previousPinnedInputs,
+        },
+        position: { x: 0, y: 0 },
+      }]) as any[]
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+      const setInputPinned = canvasCommandMocks.registrations[0].setInputPinned
+
+      expect(setInputPinned('shared', 'image', false)).toBe(true)
+      expect(mockNodes[0].data.pinnedInputs).not.toBe(previousPinnedInputs)
+      expect(mockNodes[0].data.pinnedInputs).toEqual({ image: true, optional: true })
+      expect(setInputPinned('shared', 'image', false)).toBe(false)
+      expect(setInputPinned('shared', 'optional', false)).toBe(true)
+      expect(mockNodes[0].data.pinnedInputs).toEqual({ image: true, optional: false })
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(2)
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledTimes(2)
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(2)
+      w.unmount()
+    })
+
     it('publishes one tool-reload-style parameter replacement outside the command path', async () => {
       mockNodes = reactive([{
         id: 'shared',
@@ -615,6 +804,47 @@ describe('CanvasView', () => {
       await flushPromises()
     })
 
+    it('publishes one tool-reload-style output-template replacement outside the command path', async () => {
+      mockNodes = reactive([{
+        id: 'shared',
+        data: {
+          name: 'Reloaded',
+          toolName: 'gaussian_blur',
+          status: 'executed',
+          parameters: { sigma: 1 },
+          output_templates: { result: 'old', removed: 'stale' },
+        },
+        position: { x: 0, y: 0 },
+      }]) as any[]
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+
+      mockNodes[0].data.output_templates = { result: 'new' }
+      await nextTick()
+
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: [expect.objectContaining({
+          id: 'shared',
+          output_templates: { result: 'new' },
+        })],
+      }))
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+      await flushPromises()
+    })
+
     it('rejects its parameter command while execution owns the canvas', async () => {
       mockNodes = reactive([{
         id: 'shared',
@@ -641,6 +871,45 @@ describe('CanvasView', () => {
       expect(updateParameter('shared', 'sigma', 2)).toBe(false)
       expect(mockNodes[0].data.parameters).toEqual({ sigma: 1 })
       expect(mockNodes[0].data.status).toBe('executed')
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+      w.unmount()
+    })
+
+    it('rejects every NodePanel edit command while execution owns the canvas', async () => {
+      const originalData = reactive({
+        name: 'Edited',
+        toolName: 'gaussian_blur',
+        status: 'executed',
+        parameters: { sigma: 1 },
+        enabled: true,
+        connectedInputs: {},
+        pinnedInputs: { image: true },
+        output_templates: { result: '' },
+      })
+      mockNodes = reactive([{
+        id: 'shared',
+        data: originalData,
+        position: { x: 0, y: 0 },
+      }]) as any[]
+      const w = mountCanvas()
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+      useExecutionStore().state = 'running'
+      await nextTick()
+      const registration = canvasCommandMocks.registrations[0]
+
+      for (const { command, args } of canvasNodeEditCases) {
+        expect(registration[command](...args)).toBe(false)
+      }
+      expect(mockNodes[0].data).toBe(originalData)
+      expect(mockNodes[0].data).toEqual(expect.objectContaining({
+        name: 'Edited',
+        enabled: true,
+        pinnedInputs: { image: true },
+        output_templates: { result: '' },
+        status: 'executed',
+      }))
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       w.unmount()
@@ -864,7 +1133,7 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('onConnect pins optional non-path body inputs that become connected', () => {
+    it('onConnect pins optional non-path body inputs without a next-tick republish', async () => {
       const tool = makeTool({
         inputs: {
           image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
@@ -875,7 +1144,7 @@ describe('CanvasView', () => {
           sigma: { type: 'float' },
         },
       })
-      mockNodes = [
+      mockNodes = reactive([
         { id: 'a', data: { toolName: 'gaussian_blur', name: 'a', tool, parameters: {}, connectedInputs: {} } },
         {
           id: 'b',
@@ -888,10 +1157,17 @@ describe('CanvasView', () => {
             pinnedInputs: { image: true, sigma: false },
           },
         },
-      ]
+      ]) as any[]
       mockEdges = []
 
-      const w = mountCanvas()
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
 
       connectHandler!({
         source: 'a',
@@ -903,6 +1179,12 @@ describe('CanvasView', () => {
       const targetNode = mockNodes.find((n: any) => n.id === 'b')!
       expect(targetNode.data.connectedInputs.sigma).toBe('a.sigma')
       expect(targetNode.data.pinnedInputs.sigma).toBe(true)
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
 
@@ -2006,6 +2288,58 @@ describe('CanvasView', () => {
 
       await nextTick()
       expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
+    it('publishes nested NodePanel edits synchronously through the same commands', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: {
+          nodes: [{
+            id: 'inner_1',
+            name: 'Inner 1',
+            tool_name: 'gaussian_blur',
+            position: [0, 0],
+            parameters: { sigma: 1 },
+            resources: {},
+            output_templates: { result: '' },
+            enabled: true,
+            collapsed: false,
+          }],
+          edges: [],
+        },
+      })
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+      const registration = canvasCommandMocks.registrations[0]
+
+      expect(registration.renameNode('inner_1', 'Renamed inner')).toBe(true)
+      expect(sessions.sessionById(session.id)?.draft.nodes[0]?.name).toBe('Renamed inner')
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(1)
+
+      expect(registration.setNodeEnabled('inner_1', false)).toBe(true)
+      expect(sessions.sessionById(session.id)?.draft.nodes[0]?.enabled).toBe(false)
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(2)
+
+      expect(registration.setInputPinned('inner_1', 'image', false)).toBe(true)
+      expect(mockNodes[0].data.pinnedInputs).toEqual({ image: false })
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(3)
+
+      expect(registration.setOutputTemplate('inner_1', 'result', 'nested.tif')).toBe(true)
+      expect(sessions.sessionById(session.id)?.draft.nodes[0]?.output_templates).toEqual({
+        result: 'nested.tif',
+      })
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(4)
+      expect(mockNodes[0].data.status).toBe('unexecuted')
+      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(4)
       w.unmount()
     })
 
