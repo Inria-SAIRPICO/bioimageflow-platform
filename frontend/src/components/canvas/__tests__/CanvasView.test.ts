@@ -160,6 +160,7 @@ vi.mock('@vue-flow/controls', () => ({
 const graphSyncMocks = vi.hoisted(() => ({
   syncGraph: vi.fn(),
   syncGraphState: vi.fn(),
+  revalidateGraphState: vi.fn(),
   flushNow: vi.fn(),
   dispose: vi.fn(),
   scopes: [] as any[],
@@ -276,6 +277,9 @@ vi.mock('@/composables/useGraphSync', async () => {
         ...graphSyncMocks,
         syncGraph: vi.fn((...args: any[]) => graphSyncMocks.syncGraph(...args)),
         syncGraphState: vi.fn((...args: any[]) => graphSyncMocks.syncGraphState(...args)),
+        revalidateGraphState: vi.fn((...args: any[]) => (
+          graphSyncMocks.revalidateGraphState(...args)
+        )),
         flushNow: vi.fn((...args: any[]) => graphSyncMocks.flushNow(...args)),
         validationResult: ref(null),
         isPending: ref(false),
@@ -483,6 +487,7 @@ describe('CanvasView', () => {
     toastMocks.add.mockClear()
     graphSyncMocks.syncGraph.mockClear()
     graphSyncMocks.syncGraphState.mockClear()
+    graphSyncMocks.revalidateGraphState.mockClear()
     graphSyncMocks.flushNow.mockClear()
     graphSyncMocks.dispose.mockClear()
     graphSyncMocks.scopes.length = 0
@@ -656,15 +661,7 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.provisional).toBe(true)
       expect(mockNodes[1].data.status).toBe('executed')
       expect(mockNodes[1].data.provisional).toBe(true)
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
-        nodes: expect.arrayContaining([
-          expect.objectContaining({
-            id: 'shared',
-            data: expect.objectContaining({ parameters: { sigma: 2 } }),
-          }),
-        ]),
-      }))
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
         nodes: expect.arrayContaining([
@@ -673,7 +670,7 @@ describe('CanvasView', () => {
       }))
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
       await flushPromises()
@@ -733,15 +730,7 @@ describe('CanvasView', () => {
         expect(mockNodes[1].data.status).toBe('executed')
         expect(mockNodes[0].data.provisional).toBe(true)
         expect(mockNodes[1].data.provisional).toBe(true)
-        expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-        expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
-          nodes: expect.arrayContaining([
-            expect.objectContaining({
-              id: 'shared',
-              data: expect.objectContaining(expectedData),
-            }),
-          ]),
-        }))
+        expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
         expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
         if (expectedSerialized) {
           expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
@@ -752,7 +741,7 @@ describe('CanvasView', () => {
         }
 
         await nextTick()
-        expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+        expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
         expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
         w.unmount()
         await flushPromises()
@@ -788,11 +777,11 @@ describe('CanvasView', () => {
       expect(renameNode('shared', 'Existing')).toBe(false)
       expect(renameNode('shared', ' Renamed ')).toBe(false)
       expect(mockNodes[0].data.name).toBe('Renamed')
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       w.unmount()
     })
 
@@ -825,11 +814,11 @@ describe('CanvasView', () => {
       expect(setInputPinned('shared', 'image', false)).toBe(false)
       expect(setInputPinned('shared', 'optional', false)).toBe(true)
       expect(mockNodes[0].data.pinnedInputs).toEqual({ image: true, optional: false })
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(2)
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledTimes(2)
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledTimes(2)
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       w.unmount()
     })
 
@@ -883,17 +872,14 @@ describe('CanvasView', () => {
       }])
       expect(mockNodes[1].data.publicationContext.published_inputs).toBe(publishedInputs)
       expect(mockNodes[0].data.status).toBe('executed')
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
-        published_inputs: publishedInputs,
-      }))
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
         published_inputs: publishedInputs,
       }))
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
@@ -909,7 +895,7 @@ describe('CanvasView', () => {
         schema: tool.outputs.result,
       }])
       expect(mockNodes[1].data.publicationContext.published_outputs).toBe(publishedOutputs)
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
         published_inputs: publishedInputs,
@@ -917,7 +903,7 @@ describe('CanvasView', () => {
       }))
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
@@ -927,11 +913,11 @@ describe('CanvasView', () => {
       })
       expect(mockNodes[0].data.publicationContext.published_inputs).toEqual([])
       expect(mockNodes[0].data.publicationContext.published_inputs).not.toBe(publishedInputs)
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       w.unmount()
     })
 
@@ -968,11 +954,11 @@ describe('CanvasView', () => {
         .toEqual({ status: 'changed' })
       expect(mockNodes[0].data.publicationContext.published_inputs[0].name)
         .toBe('source_image')
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
 
@@ -986,7 +972,7 @@ describe('CanvasView', () => {
       }))
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
@@ -1088,10 +1074,7 @@ describe('CanvasView', () => {
         const inputs = mockNodes[0].data.publicationContext.published_inputs
         expect(inputs.map((item: any) => item.name)).toEqual(expectedNames)
         expect(mockNodes[1].data.publicationContext.published_inputs).toBe(inputs)
-        expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
-        expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
-          published_inputs: inputs,
-        }))
+        expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
         expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
         expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
           published_inputs: expectedNames.map((name) => expect.objectContaining({ name })),
@@ -1104,9 +1087,7 @@ describe('CanvasView', () => {
       persistenceMocks.queueGraph.mockClear()
       expect(registration.togglePublishedInput('shared', 'image'))
         .toEqual({ status: 'changed' })
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
-        edges: [expect.objectContaining({ id: 'authoritative-edge' })],
-      }))
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
         edges: [expect.objectContaining({ id: 'authoritative-edge' })],
       }))
@@ -1556,11 +1537,11 @@ describe('CanvasView', () => {
       const targetNode = mockNodes.find((n: any) => n.id === 'b')!
       expect(targetNode.data.connectedInputs.sigma).toBe('a.sigma')
       expect(targetNode.data.pinnedInputs.sigma).toBe(true)
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
@@ -2337,6 +2318,7 @@ describe('CanvasView', () => {
       const sync = graphSyncMocks.apis[0]
       const persistence = persistenceMocks.apis[0]
       sync.syncGraphState.mockClear()
+      sync.revalidateGraphState.mockClear()
       persistence.queueGraph.mockClear()
 
       store.tools = [makeTool({
@@ -2349,7 +2331,8 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.tool.documentation).toBe('Reloaded in place')
       expect(mockNodes[0].data.updatedBadge).toBe(true)
       expect(mockNodes[0].data.status).toBe('unexecuted')
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).toHaveBeenCalledOnce()
       expect(persistence.queueGraph).not.toHaveBeenCalled()
       expect(useUIStore().canvasHasUnsavedChanges(
         canvasIdFromPanelId('workflow:analysis'),
@@ -2391,6 +2374,7 @@ describe('CanvasView', () => {
       const sync = graphSyncMocks.apis[0]
       const persistence = persistenceMocks.apis[0]
       sync.syncGraphState.mockClear()
+      sync.revalidateGraphState.mockClear()
       persistence.queueGraph.mockClear()
 
       store.tools = [makeTool({ documentation: 'first' })] as any
@@ -2408,10 +2392,8 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.tool.documentation).toBe('latest')
       expect(mockNodes[0].data.parameters).toEqual({})
       expect(mockNodes[0].data.output_templates).toEqual({})
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
-      expect(sync.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
-        edges: [edge],
-      }))
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).not.toHaveBeenCalled()
       expect(persistence.queueGraph).toHaveBeenCalledOnce()
       expect(persistence.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
         nodes: expect.arrayContaining([
@@ -2425,7 +2407,7 @@ describe('CanvasView', () => {
       }))
 
       await nextTick()
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
       expect(persistence.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
@@ -2448,6 +2430,7 @@ describe('CanvasView', () => {
       const sync = graphSyncMocks.apis[0]
       const persistence = persistenceMocks.apis[0]
       sync.syncGraphState.mockClear()
+      sync.revalidateGraphState.mockClear()
       persistence.queueGraph.mockClear()
 
       execution.state = 'starting'
@@ -2468,6 +2451,7 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.parameters).toEqual({ sigma: 1 })
       expect(mockNodes[0].data.updatedBadge).toBeUndefined()
       expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).not.toHaveBeenCalled()
       expect(persistence.queueGraph).not.toHaveBeenCalled()
 
       execution.state = 'idle'
@@ -2477,7 +2461,8 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.tool.documentation).toBe('stopping-latest')
       expect(mockNodes[0].data.parameters).toEqual({})
       expect(mockNodes[0].data.updatedBadge).toBe(true)
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).not.toHaveBeenCalled()
       expect(persistence.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
@@ -2515,6 +2500,7 @@ describe('CanvasView', () => {
       const focus = useFieldFocusTracker()
       focus.trackFocus({ canvasId: canvasA, nodeId: 'shared', fieldName: 'sigma' })
       for (const api of graphSyncMocks.apis) api.syncGraphState.mockClear()
+      for (const api of graphSyncMocks.apis) api.revalidateGraphState.mockClear()
       for (const api of persistenceMocks.apis) api.queueGraph.mockClear()
 
       store.tools = [makeTool({
@@ -2529,8 +2515,10 @@ describe('CanvasView', () => {
       expect(secondGraph.nodes[0].data.tool.documentation).toBe('scoped reload')
       expect(secondGraph.nodes[0].data.parameters).toEqual({})
       expect(graphSyncMocks.apis[0].syncGraphState).not.toHaveBeenCalled()
+      expect(graphSyncMocks.apis[0].revalidateGraphState).not.toHaveBeenCalled()
       expect(persistenceMocks.apis[0].queueGraph).not.toHaveBeenCalled()
-      expect(graphSyncMocks.apis[1].syncGraphState).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.apis[1].syncGraphState).not.toHaveBeenCalled()
+      expect(graphSyncMocks.apis[1].revalidateGraphState).not.toHaveBeenCalled()
       expect(persistenceMocks.apis[1].queueGraph).toHaveBeenCalledOnce()
 
       focus.trackBlur({ canvasId: canvasA, nodeId: 'shared', fieldName: 'sigma' })
@@ -2539,9 +2527,10 @@ describe('CanvasView', () => {
 
       expect(firstGraph.nodes[0].data.tool.documentation).toBe('scoped reload')
       expect(firstGraph.nodes[0].data.parameters).toEqual({})
-      expect(graphSyncMocks.apis[0].syncGraphState).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.apis[0].syncGraphState).not.toHaveBeenCalled()
+      expect(graphSyncMocks.apis[0].revalidateGraphState).not.toHaveBeenCalled()
       expect(persistenceMocks.apis[0].queueGraph).toHaveBeenCalledOnce()
-      expect(graphSyncMocks.apis[1].syncGraphState).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.apis[1].syncGraphState).not.toHaveBeenCalled()
       expect(persistenceMocks.apis[1].queueGraph).toHaveBeenCalledOnce()
       expect(toastMocks.add).toHaveBeenCalledWith(expect.objectContaining({
         detail: expect.stringContaining('sigma'),
@@ -2568,6 +2557,7 @@ describe('CanvasView', () => {
       const sync = graphSyncMocks.apis[0]
       const persistence = persistenceMocks.apis[0]
       sync.syncGraphState.mockClear()
+      sync.revalidateGraphState.mockClear()
       persistence.queueGraph.mockClear()
 
       execution.state = 'starting'
@@ -2594,7 +2584,8 @@ describe('CanvasView', () => {
         tool_name: 'gaussian_blur',
         installed_versions: [],
       })
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).toHaveBeenCalledOnce()
       expect(persistence.queueGraph).not.toHaveBeenCalled()
 
       store.tools = [makeTool({ documentation: 'available again' })] as any
@@ -2604,7 +2595,8 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.tool.documentation).toBe('available again')
       expect(mockNodes[0].data.missingTool).toBeNull()
       expect(mockNodes[0].data.updatedBadge).toBe(true)
-      expect(sync.syncGraphState).toHaveBeenCalledTimes(2)
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).toHaveBeenCalledTimes(2)
       expect(persistence.queueGraph).not.toHaveBeenCalled()
       w.unmount()
     })
@@ -2627,6 +2619,7 @@ describe('CanvasView', () => {
       const sync = graphSyncMocks.apis[0]
       const persistence = persistenceMocks.apis[0]
       sync.syncGraphState.mockClear()
+      sync.revalidateGraphState.mockClear()
       persistence.queueGraph.mockClear()
 
       execution.state = 'starting'
@@ -2646,7 +2639,8 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.toolName).toBe('gaussian_blur_v2')
       expect(mockNodes[0].data.tool.name).toBe('gaussian_blur_v2')
       expect(mockNodes[0].data.missingTool).toBeNull()
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).not.toHaveBeenCalled()
       expect(persistence.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
@@ -2685,6 +2679,7 @@ describe('CanvasView', () => {
       const sync = graphSyncMocks.apis[0]
       const persistence = persistenceMocks.apis[0]
       sync.syncGraphState.mockClear()
+      sync.revalidateGraphState.mockClear()
       persistence.queueGraph.mockClear()
 
       const rename = store.renameTool('gaussian_blur', 'gaussian_blur_v2')
@@ -2706,7 +2701,8 @@ describe('CanvasView', () => {
 
       expect(mockNodes[0].data.toolName).toBe('gaussian_blur_v2')
       expect(mockNodes[0].data.tool.name).toBe('gaussian_blur_v2')
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).not.toHaveBeenCalled()
       expect(persistence.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
@@ -2734,6 +2730,7 @@ describe('CanvasView', () => {
       focus.trackFocus(sigma)
       focus.trackFocus(image)
       sync.syncGraphState.mockClear()
+      sync.revalidateGraphState.mockClear()
       persistence.queueGraph.mockClear()
 
       store.tools = [makeTool({ name: 'gaussian_blur_mid' })] as any
@@ -2766,7 +2763,8 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.toolName).toBe('gaussian_blur_final')
       expect(mockNodes[0].data.tool.name).toBe('gaussian_blur_final')
       expect(mockNodes[0].data.parameters).toEqual({})
-      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(sync.revalidateGraphState).not.toHaveBeenCalled()
       expect(persistence.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
@@ -2920,6 +2918,7 @@ describe('CanvasView', () => {
       mockEdges.splice(0, mockEdges.length)
       graphSyncMocks.syncGraph.mockClear()
       graphSyncMocks.syncGraphState.mockClear()
+      graphSyncMocks.revalidateGraphState.mockClear()
       persistenceMocks.queueGraph.mockClear()
       const graphChangedCount = w.emitted('graph-changed')?.length ?? 0
 
@@ -2932,10 +2931,8 @@ describe('CanvasView', () => {
 
       expect(mockNodes[0].data.output_templates).toEqual({})
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
-      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledTimes(1)
-      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
-        edges: [edge],
-      }))
+      expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
+      expect(graphSyncMocks.revalidateGraphState).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledTimes(1)
       expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
         nodes: expect.arrayContaining([
@@ -2950,7 +2947,7 @@ describe('CanvasView', () => {
       }))
 
       await nextTick()
-      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledTimes(1)
+      expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledTimes(1)
 
       await w.find('.canvas-view').trigger('keydown', { key: 'z', ctrlKey: true })
@@ -3813,11 +3810,11 @@ describe('CanvasView', () => {
       expect(subNode.data.published_outputs[0].name).toBe('label_count')
       expect(subNode.data.status).toBe('out_of_date')
       expect(clearCanvasCache).toHaveBeenCalledWith('canvas', 'sub_1')
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
 
       await nextTick()
-      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
       w.unmount()
     })
@@ -3994,6 +3991,7 @@ describe('CanvasView', () => {
       await flushPromises()
       graphSyncMocks.syncGraph.mockClear()
       graphSyncMocks.syncGraphState.mockClear()
+      graphSyncMocks.revalidateGraphState.mockClear()
       autoSaveMocks.scheduleAutoSave.mockClear()
       return { w, draftStore }
     }
@@ -4401,6 +4399,81 @@ describe('CanvasView', () => {
       }
     }
 
+    it('projects accepted draft validation after installing the startup graph', async () => {
+      const name = 'saved'
+      const nodes = [savedNode('a', 100), savedNode('b', 400)]
+      const edges = [savedEdge('e1', 'a', 'b')]
+      const graph = { nodes, edges }
+      const edgeError = {
+        type: 'type_incompatible' as const,
+        detail: 'Incompatible edge types',
+        edge_id: 'e1',
+      }
+      const acceptedDraft = {
+        ...draftResponse(1, graph, false, name),
+        validation: {
+          valid: false,
+          node_statuses: {
+            a: { node_id: 'a', status: 'executed' as const, cached: true },
+            b: { node_id: 'b', status: 'out_of_date' as const, cached: false },
+          },
+          errors: [edgeError],
+        },
+      }
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/workflows/tree') {
+          return Promise.reject(new Error('Tree endpoint unavailable'))
+        }
+        if (url === '/api/v1/workflows') {
+          return Promise.resolve({
+            data: [{
+              name,
+              display_name: 'Saved workflow',
+              last_modified: '2026-05-21T11:00:00Z',
+            }],
+          })
+        }
+        if (url === `/api/v1/workflows/${name}`) {
+          return Promise.resolve({
+            data: {
+              info: {
+                name,
+                display_name: 'Saved workflow',
+                last_modified: '2026-05-21T11:00:00Z',
+              },
+              graph,
+              missing_packages: [],
+              missing_tools: [],
+            },
+          })
+        }
+        if (url === `/api/v1/workflow-drafts/${name}`) {
+          return Promise.resolve({ data: acceptedDraft })
+        }
+        if (url === '/api/v1/tools') {
+          return Promise.resolve({ data: [makeTool()] })
+        }
+        return Promise.resolve({ data: {} })
+      })
+      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(name)
+      persistenceMocks.initializeFromDraft.mockImplementationOnce((draft) => {
+        graphSyncMocks.apis[0].validationResult.value = draft.validation
+      })
+
+      const w = mountCanvas()
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.find(node => node.id === 'a')?.data.status).toBe('executed')
+      expect(mockNodes.find(node => node.id === 'b')?.data.status).toBe('out_of_date')
+      expect(mockEdges.find(edge => edge.id === 'e1')?.data.errors).toEqual([edgeError])
+      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+      expect(graphSyncMocks.revalidateGraphState).not.toHaveBeenCalled()
+
+      w.unmount()
+    })
+
     it('restores both nodes and edges from persisted state', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
@@ -4525,8 +4598,9 @@ describe('CanvasView', () => {
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount)
-      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledTimes(1)
-      expect(graphSyncMocks.syncGraphState).toHaveBeenCalledWith(expect.objectContaining({
+      expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
+      expect(graphSyncMocks.revalidateGraphState).toHaveBeenCalledTimes(1)
+      expect(graphSyncMocks.revalidateGraphState).toHaveBeenCalledWith(expect.objectContaining({
         edges,
       }))
 

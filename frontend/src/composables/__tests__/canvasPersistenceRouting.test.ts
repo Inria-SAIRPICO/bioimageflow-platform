@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GraphState, ValidationResult } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
+
+vi.mock('@/api/client', () => ({
+  api: {
+    get: vi.fn(),
+    put: vi.fn(),
+  },
+}))
+
+import { api } from '@/api/client'
 import {
   _resetCanvasPersistenceForTest,
   useCanvasPersistence,
@@ -10,7 +19,12 @@ import {
   canvasIdFromPanelId,
   type CanvasSessionDescriptor,
 } from '@/sessions/canvasSessionRegistry'
-import { graphSyncCanvasSessions } from '../useGraphSync'
+import {
+  graphSyncCanvasSessions,
+  useGraphSync,
+} from '../useGraphSync'
+
+const mockedApiPut = vi.mocked(api.put)
 
 function graph(value: string): GraphState {
   return {
@@ -88,12 +102,220 @@ function deferred<T>() {
 describe('canvas persistence routing', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    mockedApiPut.mockReset()
     _resetCanvasPersistenceForTest()
   })
 
   afterEach(() => {
     _resetCanvasPersistenceForTest()
     vi.useRealTimers()
+  })
+
+  it('uses one validating draft write as root persistence and graph-sync authority', async () => {
+    const io = transports({ 'workflow-a': 4 })
+    const acceptedValidation = {
+      valid: false,
+      node_statuses: {},
+      errors: [],
+    } satisfies ValidationResult
+    io.putDraft.mockImplementation(async (
+      workflowId: string,
+      body: {
+        graph: GraphState
+        expected_revision: number
+        validate?: boolean
+      },
+    ) => ({
+      ...draft(workflowId, body.expected_revision + 1),
+      graph: body.graph,
+      validation: acceptedValidation,
+    }))
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    const sync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+    })
+    const edited = graph('captured')
+
+    persistence.queueGraph(edited)
+    edited.nodes[0]!.parameters = { value: 'mutated-after-queue' }
+
+    expect(sync.currentGraph.value).toEqual(graph('captured'))
+    expect(sync.isPending.value).toBe(true)
+    await Promise.all([persistence.flush(), sync.flushNow()])
+
+    expect(io.putDraft).toHaveBeenCalledOnce()
+    expect(io.putDraft).toHaveBeenCalledWith('workflow-a', expect.objectContaining({
+      expected_revision: 4,
+      graph: graph('captured'),
+      validate: true,
+    }))
+    expect(io.writeRecovery).toHaveBeenCalledOnce()
+    expect(mockedApiPut).not.toHaveBeenCalled()
+    expect(sync.currentGraph.value).toEqual(graph('captured'))
+    expect(sync.validationResult.value).toEqual(acceptedValidation)
+    expect(sync.isPending.value).toBe(false)
+  })
+
+  it('joins an in-flight root write and waits for validation of an edit queued during it', async () => {
+    const first = deferred<WorkflowDraftResponse>()
+    const second = deferred<WorkflowDraftResponse>()
+    const io = transports({ 'workflow-a': 1 })
+    io.putDraft
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    const initial = draft('workflow-a', 1, 'initial')
+    persistence.initializeFromDraft(initial)
+    const sync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+    })
+
+    persistence.queueGraph(graph('old'))
+    const persistenceFlush = persistence.flush()
+    const graphFlush = sync.flushNow()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(io.putDraft).toHaveBeenCalledOnce()
+
+    persistence.queueGraph(graph('latest'))
+    expect(sync.isPending.value).toBe(true)
+    first.resolve({
+      ...draft('workflow-a', 2, 'old'),
+      graph: graph('old'),
+      validation: { valid: false, node_statuses: {}, errors: [] },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(io.putDraft).toHaveBeenCalledTimes(2)
+    expect(sync.validationResult.value).toEqual(initial.validation)
+    expect(sync.isPending.value).toBe(true)
+    expect(io.putDraft.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      graph: graph('latest'),
+      expected_revision: 2,
+      validate: true,
+    }))
+
+    const latestValidation = {
+      valid: false,
+      node_statuses: {},
+      errors: [],
+    } satisfies ValidationResult
+    second.resolve({
+      ...draft('workflow-a', 3, 'latest'),
+      graph: graph('latest'),
+      validation: latestValidation,
+    })
+    await Promise.all([persistenceFlush, graphFlush])
+
+    expect(sync.currentGraph.value).toEqual(graph('latest'))
+    expect(sync.validationResult.value).toEqual(latestValidation)
+    expect(sync.isPending.value).toBe(false)
+  })
+
+  it('seeds matching draft validation without writing and can force draft-only revalidation', async () => {
+    const io = transports({ 'workflow-a': 8 })
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    const seeded = draft('workflow-a', 8, 'seeded')
+    seeded.graph.nodes[0]!.parameters = { first: 1, second: 2 }
+    persistence.initializeFromDraft(seeded)
+    const sync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+    })
+
+    sync.syncGraphState({
+      ...seeded.graph,
+      nodes: [{
+        ...seeded.graph.nodes[0]!,
+        parameters: { second: 2, first: 1 },
+      }],
+    })
+    await sync.flushNow()
+
+    expect(sync.currentGraph.value).toEqual(seeded.graph)
+    expect(sync.validationResult.value).toEqual(seeded.validation)
+    expect(io.putDraft).not.toHaveBeenCalled()
+    expect(io.writeRecovery).not.toHaveBeenCalled()
+    expect(mockedApiPut).not.toHaveBeenCalled()
+
+    sync.revalidateGraphState(seeded.graph)
+    expect(sync.isPending.value).toBe(true)
+    await Promise.all([sync.flushNow(), persistence.flush()])
+
+    expect(io.putDraft).toHaveBeenCalledOnce()
+    expect(io.putDraft).toHaveBeenCalledWith('workflow-a', expect.objectContaining({
+      graph: seeded.graph,
+      expected_revision: 8,
+      validate: true,
+    }))
+    expect(io.writeRecovery).not.toHaveBeenCalled()
+    expect(mockedApiPut).not.toHaveBeenCalled()
+
+    persistence.queueDraft(seeded.graph)
+    await Promise.all([sync.flushNow(), persistence.flush()])
+    expect(io.putDraft).toHaveBeenCalledTimes(2)
+    expect(io.putDraft).toHaveBeenLastCalledWith(
+      'workflow-a',
+      expect.objectContaining({
+        graph: seeded.graph,
+        expected_revision: 9,
+        validate: true,
+      }),
+    )
+
+    await Promise.all([sync.flushNow(), persistence.flush(), persistence.flush()])
+    expect(io.putDraft).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports root validation errors without hiding unsaved persistence state', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const failure = new Error('draft write failed')
+    const io = transports({ 'workflow-a': 3 })
+    io.putDraft.mockRejectedValueOnce(failure)
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    const initial = draft('workflow-a', 3, 'initial')
+    persistence.initializeFromDraft(initial)
+    const sync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+    })
+
+    sync.revalidateGraphState(initial.graph)
+    expect(sync.isPending.value).toBe(true)
+    expect(sync.syncState.value).toBe('pending')
+    await expect(sync.flushNow()).rejects.toBe(failure)
+
+    expect(sync.isPending.value).toBe(false)
+    expect(sync.syncState.value).toBe('error')
+    expect(sync.validationResult.value).toEqual(initial.validation)
+    expect(persistence.isPending.value).toBe(true)
+    expect(io.writeRecovery).not.toHaveBeenCalled()
+    expect(warning).toHaveBeenCalledWith(
+      '[canvas-persistence] Failed to save workflow draft:',
+      failure,
+    )
+    warning.mockRestore()
   })
 
   it('keeps two root draft and recovery writes independently addressed in one debounce', async () => {

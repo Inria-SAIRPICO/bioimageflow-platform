@@ -1,5 +1,5 @@
 import { computed, ref, shallowRef, type Ref } from 'vue'
-import type { GraphState } from '@/api/types'
+import type { GraphState, ValidationResult } from '@/api/types'
 import {
   fetchWorkflowDraft,
   putWorkflowDraft,
@@ -18,6 +18,7 @@ import {
 } from '@/sessions/recoveryPersistenceCoordinator'
 import {
   createWorkflowDraftCoordinator,
+  type WorkflowDraftAcceptance,
   type WorkflowDraftCoordinator,
 } from '@/sessions/workflowDraftCoordinator'
 import type {
@@ -25,9 +26,10 @@ import type {
   CanvasSessionDescriptor,
   DisposableCanvasResource,
 } from '@/sessions/canvasSessionRegistry'
-import { graphSyncCanvasSessions } from './useGraphSync'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import type { SyncState } from '@/sessions/graphSyncCoordinator'
 
-const ROOT_PERSISTENCE_RESOURCE = 'root-persistence'
+export const ROOT_PERSISTENCE_RESOURCE = 'root-persistence'
 
 export interface CanvasPersistenceTransports {
   fetchDraft(workflowId: string): Promise<WorkflowDraftResponse>
@@ -65,14 +67,19 @@ export interface CanvasPersistenceApi {
   dispose(): void
 }
 
-interface RootCanvasPersistenceResource extends DisposableCanvasResource {
+export interface RootCanvasPersistenceResource extends DisposableCanvasResource {
   readonly canvasId: CanvasId
   readonly workflowId: Ref<string | null>
   readonly currentGraph: Ref<GraphState>
+  readonly validationResult: Ref<ValidationResult | null>
+  readonly isValidationPending: Ref<boolean>
+  readonly validationSyncState: Ref<SyncState>
   readonly isPending: Ref<boolean>
   readonly hasConflict: Ref<boolean>
   queueGraph(graph: GraphState): void
   queueDraft(graph: GraphState): void
+  queueValidation(graph: GraphState, options?: { force?: boolean }): void
+  flushValidation(): Promise<void>
   initializeFromDraft(response: WorkflowDraftResponse): void
   resolveFromDraft(response: WorkflowDraftResponse): void
   flush(): Promise<void>
@@ -101,7 +108,7 @@ export function useCanvasPersistence(
 }
 
 export function _resetCanvasPersistenceForTest(): void {
-  graphSyncCanvasSessions.dispose()
+  canvasSessionRegistry.dispose()
   activeFacade = null
   legacyFacade = null
 }
@@ -109,13 +116,25 @@ export function _resetCanvasPersistenceForTest(): void {
 function registerScopedPersistence(
   options: CanvasScopedPersistenceOptions,
 ): CanvasPersistenceApi {
-  graphSyncCanvasSessions.register(options.descriptor)
+  canvasSessionRegistry.register(options.descriptor)
   if (options.descriptor.kind === 'nested') {
     return createUnavailableBoundApi(options.descriptor.canvasId, () => {
-      graphSyncCanvasSessions.unregister(options.descriptor.canvasId)
+      canvasSessionRegistry.unregister(options.descriptor.canvasId)
     })
   }
-  const resource = graphSyncCanvasSessions.getOrCreateResource(
+  const resource = getOrCreateRootPersistenceResource(options)
+  return createBoundApi(resource, () => {
+    canvasSessionRegistry.unregister(options.descriptor.canvasId)
+  })
+}
+
+export function getOrCreateRootPersistenceResource(
+  options: CanvasScopedPersistenceOptions,
+): RootCanvasPersistenceResource {
+  if (options.descriptor.kind !== 'root') {
+    throw new Error('Root canvas persistence requires a root canvas descriptor')
+  }
+  return canvasSessionRegistry.getOrCreateResource(
     options.descriptor.canvasId,
     ROOT_PERSISTENCE_RESOURCE,
     descriptor => createRootPersistenceResource({
@@ -126,9 +145,6 @@ function registerScopedPersistence(
       debounceMs: options.debounceMs,
     }),
   ) as RootCanvasPersistenceResource
-  return createBoundApi(resource, () => {
-    graphSyncCanvasSessions.unregister(options.descriptor.canvasId)
-  })
 }
 
 function createRootPersistenceResource(options: {
@@ -140,12 +156,18 @@ function createRootPersistenceResource(options: {
 }): RootCanvasPersistenceResource {
   const workflowId = ref<string | null>(options.initialWorkflowId)
   const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
+  const validationResult = ref<ValidationResult | null>(null)
   const draftCoordinator = shallowRef<WorkflowDraftCoordinator | null>(null)
   const remoteDraftRevision = ref<number | null>(null)
   const isDisposed = ref(false)
+  let currentGraphHasAcceptedValidation = false
   let authoritativeDraft: WorkflowDraftResponse | null = null
   let initialization: Promise<WorkflowDraftCoordinator | null> | null = null
-  let pendingDraft: { revision: number; graph: GraphState } | null = null
+  let pendingDraft: {
+    revision: number
+    graph: GraphState
+    forceWrite: boolean
+  } | null = null
   const queuedDraftRevision = ref(0)
   const nextDraftRevision = ref(0)
 
@@ -165,11 +187,24 @@ function createRootPersistenceResource(options: {
       },
     })
 
-  const isPending = computed(() => (
+  const hasUnqueuedDraft = computed(() => (
     pendingDraft !== null
       && pendingDraft.revision > queuedDraftRevision.value
-  ) || draftCoordinator.value?.isPending.value === true
-    || recoveryCoordinator.isPending.value)
+  ))
+  const isValidationPending = computed(() => (
+    hasUnqueuedDraft.value
+    || draftCoordinator.value?.syncState.value === 'pending'
+  ))
+  const validationSyncState = computed<SyncState>(() => {
+    const state = draftCoordinator.value?.syncState.value
+    if (state === 'error' || state === 'conflict') return 'error'
+    return isValidationPending.value ? 'pending' : 'idle'
+  })
+  const isPending = computed(() => (
+    hasUnqueuedDraft.value
+    || draftCoordinator.value?.isPending.value === true
+    || recoveryCoordinator.isPending.value
+  ))
   const hasConflict = computed(() => (
     draftCoordinator.value?.conflictDraftRevision.value !== null
     && draftCoordinator.value?.conflictDraftRevision.value !== undefined
@@ -196,6 +231,23 @@ function createRootPersistenceResource(options: {
     return candidate
   }
 
+  function acceptDraftResponse(response: WorkflowDraftResponse): void {
+    const accepted = cloneJson(response)
+    authoritativeDraft = accepted
+    currentGraph.value = cloneGraph(accepted.graph)
+    validationResult.value = cloneJson(accepted.validation)
+    currentGraphHasAcceptedValidation = true
+    remoteDraftRevision.value = null
+  }
+
+  function acceptDraftWrite(acceptance: WorkflowDraftAcceptance): void {
+    authoritativeDraft = cloneJson(acceptance.response)
+    currentGraph.value = cloneGraph(acceptance.graph)
+    validationResult.value = cloneJson(acceptance.response.validation)
+    currentGraphHasAcceptedValidation = true
+    remoteDraftRevision.value = null
+  }
+
   function queuePendingDraft(coordinator: WorkflowDraftCoordinator): void {
     if (
       pendingDraft === null
@@ -218,6 +270,18 @@ function createRootPersistenceResource(options: {
       if (response.workflow_id !== capturedId) {
         throw new Error(`Draft response '${response.workflow_id}' does not match '${capturedId}'`)
       }
+      if (
+        pendingDraft === null
+        || (
+          !pendingDraft.forceWrite
+          && graphsEqual(pendingDraft.graph, response.graph)
+        )
+      ) {
+        if (pendingDraft !== null) {
+          queuedDraftRevision.value = pendingDraft.revision
+        }
+        acceptDraftResponse(response)
+      }
       const coordinator = createWorkflowDraftCoordinator({
         canvasId: options.canvasId,
         workflowId: capturedId,
@@ -227,7 +291,9 @@ function createRootPersistenceResource(options: {
           graph: cloneGraph(request.graph),
           expected_revision: request.expectedDraftRevision,
           updated_by: 'frontend',
+          validate: true,
         }),
+        onAccepted: acceptDraftWrite,
         onOperationalError: error => {
           console.warn('[canvas-persistence] Failed to save workflow draft:', error)
         },
@@ -242,25 +308,58 @@ function createRootPersistenceResource(options: {
     return initialization
   }
 
-  function queueDraft(graph: GraphState): void {
+  function queueCapturedGraph(
+    graph: GraphState,
+    forceWrite: boolean,
+  ): { capturedId: string; snapshot: GraphState } | null {
     const capturedId = captureWorkflowId()
-    if (capturedId === null) return
+    if (capturedId === null) return null
     const snapshot = cloneGraph(graph)
+    if (
+      !forceWrite
+      && graphsEqual(snapshot, currentGraph.value)
+      && (
+        currentGraphHasAcceptedValidation
+        || pendingDraft !== null
+      )
+    ) return null
+
     currentGraph.value = cloneGraph(snapshot)
+    currentGraphHasAcceptedValidation = false
     nextDraftRevision.value += 1
-    pendingDraft = { revision: nextDraftRevision.value, graph: snapshot }
+    pendingDraft = {
+      revision: nextDraftRevision.value,
+      graph: snapshot,
+      forceWrite,
+    }
+    const coordinator = draftCoordinator.value
+    if (coordinator !== null) {
+      queuePendingDraft(coordinator)
+      return { capturedId, snapshot }
+    }
     void ensureDraftCoordinator().then((coordinator) => {
       if (coordinator !== null && !isDisposed.value) queuePendingDraft(coordinator)
     }).catch(() => {
       // The retained snapshot is retried by flush or the next queue.
     })
+    return { capturedId, snapshot }
+  }
+
+  function queueDraft(graph: GraphState): void {
+    queueCapturedGraph(graph, true)
   }
 
   function queueGraph(graph: GraphState): void {
-    const capturedId = captureWorkflowId()
-    if (capturedId === null) return
-    queueDraft(graph)
-    recoveryCoordinator.queue(capturedId, graph)
+    const captured = queueCapturedGraph(graph, true)
+    if (captured === null) return
+    recoveryCoordinator.queue(captured.capturedId, captured.snapshot)
+  }
+
+  function queueValidation(
+    graph: GraphState,
+    queueOptions: { force?: boolean } = {},
+  ): void {
+    queueCapturedGraph(graph, queueOptions.force === true)
   }
 
   function initializeFromDraft(response: WorkflowDraftResponse): void {
@@ -273,6 +372,12 @@ function createRootPersistenceResource(options: {
       return
     }
     authoritativeDraft = cloneJson(response)
+    if (
+      pendingDraft === null
+      || graphsEqual(currentGraph.value, response.graph)
+    ) {
+      acceptDraftResponse(response)
+    }
   }
 
   function resolveFromDraft(response: WorkflowDraftResponse): void {
@@ -286,16 +391,21 @@ function createRootPersistenceResource(options: {
     pendingDraft = null
     queuedDraftRevision.value = 0
     nextDraftRevision.value = 0
-    currentGraph.value = cloneGraph(response.graph)
+    acceptDraftResponse(response)
     recoveryCoordinator.queue(capturedId, response.graph)
+  }
+
+  async function flushValidation(): Promise<void> {
+    assertUsable()
+    const coordinator = await ensureDraftCoordinator()
+    if (coordinator !== null) queuePendingDraft(coordinator)
+    await coordinator?.flushLatest()
   }
 
   async function flush(): Promise<void> {
     assertUsable()
-    const coordinator = await ensureDraftCoordinator()
-    if (coordinator !== null) queuePendingDraft(coordinator)
     await Promise.all([
-      coordinator?.flushLatest(),
+      flushValidation(),
       recoveryCoordinator.flushLatest(),
     ])
   }
@@ -331,10 +441,15 @@ function createRootPersistenceResource(options: {
     canvasId: options.canvasId,
     workflowId,
     currentGraph,
+    validationResult,
+    isValidationPending,
+    validationSyncState,
     isPending,
     hasConflict,
     queueGraph,
     queueDraft,
+    queueValidation,
+    flushValidation,
     initializeFromDraft,
     resolveFromDraft,
     flush,
@@ -389,19 +504,19 @@ function createUnavailableBoundApi(
 
 function createActiveFacade(): CanvasPersistenceApi {
   const selected = (): CanvasPersistenceApi | null => {
-    const activeCanvasId = graphSyncCanvasSessions.activeCanvasId.value
+    const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
     if (activeCanvasId !== null) {
-      const session = graphSyncCanvasSessions.get(activeCanvasId)
+      const session = canvasSessionRegistry.get(activeCanvasId)
       if (session?.descriptor.kind !== 'root') return null
-      const resource = graphSyncCanvasSessions.getResource<RootCanvasPersistenceResource>(
+      const resource = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
         activeCanvasId,
         ROOT_PERSISTENCE_RESOURCE,
       )
       return resource === null
         ? null
-        : createBoundApi(resource, () => graphSyncCanvasSessions.unregister(activeCanvasId))
+        : createBoundApi(resource, () => canvasSessionRegistry.unregister(activeCanvasId))
     }
-    if (graphSyncCanvasSessions.sessionCount.value === 0) return getLegacyFacade()
+    if (canvasSessionRegistry.sessionCount.value === 0) return getLegacyFacade()
     return null
   }
   const required = (): CanvasPersistenceApi => {
@@ -411,7 +526,7 @@ function createActiveFacade(): CanvasPersistenceApi {
   }
   return {
     get canvasId() {
-      return graphSyncCanvasSessions.activeCanvasId.value
+      return canvasSessionRegistry.activeCanvasId.value
     },
     workflowId: computed(() => selected()?.workflowId.value ?? null),
     currentGraph: computed(() => selected()?.currentGraph.value ?? { nodes: [], edges: [] }),
@@ -497,6 +612,34 @@ function isConflict(error: unknown): boolean {
 
 function cloneGraph(graph: GraphState): GraphState {
   return cloneJson(graph)
+}
+
+function graphsEqual(left: GraphState, right: GraphState): boolean {
+  return jsonValuesEqual(left, right)
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false
+    return left.length === right.length
+      && left.every((value, index) => jsonValuesEqual(value, right[index]))
+  }
+  if (
+    typeof left !== 'object'
+    || left === null
+    || typeof right !== 'object'
+    || right === null
+  ) return false
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const leftKeys = Object.keys(leftRecord)
+  const rightKeys = Object.keys(rightRecord)
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every(key => (
+      Object.prototype.hasOwnProperty.call(rightRecord, key)
+      && jsonValuesEqual(leftRecord[key], rightRecord[key])
+    ))
 }
 
 function cloneJson<T>(value: T): T {

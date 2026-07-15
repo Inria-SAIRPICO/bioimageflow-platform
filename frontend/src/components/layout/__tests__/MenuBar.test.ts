@@ -41,17 +41,29 @@ vi.mock('@/api/client', () => ({
   api: apiMocks,
 }))
 
-vi.mock('@/composables/useAutoSave', () => ({
-  useAutoSave: () => autoSaveMocks,
-}))
+vi.mock('@/composables/useAutoSave', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/composables/useAutoSave')
+  >()
+  return {
+    ...actual,
+    useAutoSave: () => autoSaveMocks,
+  }
+})
 
 vi.mock('@/stores/workflowDraft', () => ({
   useWorkflowDraftStore: () => workflowDraftMocks,
 }))
 
-vi.mock('@/composables/useCanvasPersistence', () => ({
-  useCanvasPersistence: () => persistenceMocks,
-}))
+vi.mock('@/composables/useCanvasPersistence', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/composables/useCanvasPersistence')
+  >()
+  return {
+    ...actual,
+    useCanvasPersistence: () => persistenceMocks,
+  }
+})
 
 vi.mock('@/composables/useCanvasCommands', () => ({
   useCanvasCommands: () => canvasCommandMocks,
@@ -365,8 +377,8 @@ describe('MenuBar', () => {
         descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
         getWorkflowId: () => 'b',
       })
-      syncA.syncGraphState(graphA)
-      syncB.syncGraphState(graphB)
+      syncA.currentGraph.value = graphA
+      syncB.currentGraph.value = graphB
       const store = useWorkflowStore()
       const ui = useUIStore()
       store.workflows = [
