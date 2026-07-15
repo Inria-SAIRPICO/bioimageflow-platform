@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { defineComponent, ref, computed, nextTick } from 'vue'
+import { defineComponent, ref, computed, nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import PrimeVue from 'primevue/config'
+import Aura from '@primevue/themes/aura'
+import InputText from 'primevue/inputtext'
 
 // --- Mock shared state that matches the pattern in CanvasView.test.ts ---
 
@@ -91,6 +94,7 @@ vi.mock('@/composables/useGraphSync', () => ({
   useGraphSync: () => ({
     syncGraph: vi.fn(),
     syncGraphState: vi.fn(),
+    syncNodeParameters: vi.fn(),
     flushNow: vi.fn(),
     loadWorkflow: vi.fn().mockResolvedValue(null),
     validationResult: ref(null),
@@ -103,8 +107,10 @@ vi.mock('@/api/client', () => ({
 }))
 
 import CanvasView from '../CanvasView.vue'
+import NodePanel from '@/components/panels/NodePanel.vue'
 import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
+import { useUIStore } from '@/stores/ui'
 import { _resetClipboardForTest, writeClipboardPayload } from '@/utils/clipboard'
 
 const mockedApi = api as unknown as {
@@ -279,6 +285,88 @@ describe('CanvasView execution lock', () => {
     expect(mockNodes[0].data.status).toBe('unexecuted')
     expect(mockNodes[0].data.provisional).toBe(true)
     w.unmount()
+  })
+
+  it('keeps parameter-edit status invalidation scoped to the edited node', async () => {
+    const tool = {
+      name: 'files',
+      display_name: 'Files',
+      package: 'bioimageflow-core',
+      package_version: '1.0.0',
+      tool_type: 'ProcessingTool',
+      accepts_upstream: false,
+      dynamic_outputs: false,
+      documentation: '',
+      tags: [],
+      categories: [],
+      inputs: {
+        path: {
+          type: 'Path',
+          required: true,
+          nullable: false,
+          connectable: 'never',
+        },
+      },
+      outputs: {},
+      environment: null,
+    }
+    mockNodes = reactive([
+      {
+        id: 'edited',
+        data: {
+          name: 'Edited',
+          toolName: 'files',
+          tool,
+          status: 'executed',
+          parameters: { path: '/data/old' },
+          resources: {},
+          output_templates: {},
+          collapsed: false,
+          enabled: true,
+          connectedInputs: {},
+          pinnedInputs: {},
+        },
+      },
+      {
+        id: 'untouched',
+        data: {
+          name: 'Untouched',
+          toolName: 'files',
+          tool,
+          status: 'executed',
+          parameters: { path: '/data/untouched' },
+          resources: {},
+          output_templates: {},
+          collapsed: false,
+          enabled: true,
+          connectedInputs: {},
+          pinnedInputs: {},
+        },
+      },
+    ]) as any[]
+    const canvas = mountCanvas()
+    const ui = useUIStore()
+    ui.setGraphNodes(mockNodes)
+    ui.setSelectedNodes(['edited'])
+    const panel = mount(NodePanel, {
+      global: {
+        plugins: [[PrimeVue, { theme: { preset: Aura } }]],
+      },
+    })
+
+    panel
+      .find('[data-testid="path-input-path"]')
+      .findComponent(InputText)
+      .vm.$emit('update:modelValue', '/data/new')
+    await nextTick()
+
+    expect(mockNodes[0].data.status).toBe('unexecuted')
+    expect(mockNodes[0].data.provisional).toBe(true)
+    expect(mockNodes[1].data.status).toBe('executed')
+    expect(mockNodes[1].data.provisional).toBe(true)
+
+    panel.unmount()
+    canvas.unmount()
   })
 
   it('applies terminal statuses on the running-to-idle transition', async () => {
