@@ -36,19 +36,11 @@ const confirmOpen = ref(false)
 const confirmResolve = ref<((value: boolean) => void) | null>(null)
 const pendingOutOfDateNodes = ref<string[]>([])
 
-const isPending = computed(() => {
-  const p = props.syncPending
-  if (typeof p === 'boolean') return p
-  if (p && typeof p === 'object' && 'value' in p) return Boolean(p.value)
-  return false
-})
-
 const runDisabled = computed(
-  () => exec.isRunning || isPending.value || !workflowStore.currentName,
+  () => exec.isRunning || !workflowStore.currentName,
 )
 const runTooltip = computed(() => {
   if (exec.isRunning) return 'Execution in progress'
-  if (isPending.value) return 'Waiting for validation…'
   if (!workflowStore.currentName) return 'Open or save a workflow before running'
   return ''
 })
@@ -112,6 +104,9 @@ async function runCore(nodes?: string[]) {
       })
       return
     }
+    // Pending validation is a command barrier, not a reason to disable Run.
+    // Refresh before deriving the confirmation set so that decision belongs
+    // to the exact graph the user is about to submit.
     await props.graphSync.flushNow()
     graph = currentExecutionGraph()
     const outOfDate = findOutOfDateNodes(graph, nodes)
