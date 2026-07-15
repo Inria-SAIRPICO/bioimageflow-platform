@@ -594,7 +594,7 @@ async function applyGraphState(
     }
   } finally {
     isApplyingGraphState = false
-    if (toolReconciliationPending) requestToolReconciliation()
+    requestToolReconciliation()
   }
 }
 
@@ -862,7 +862,6 @@ const pendingToolNames = new Set<string>()
 const pendingToolRenames = new Map<string, string>()
 const registeredFocusDeferrals = new Set<string>()
 const removedFocusedFields = new Set<string>()
-let toolReconciliationPending = false
 let toolReconciliationScheduled = false
 
 function fieldFocusKey(target: FieldFocusTarget): string {
@@ -927,8 +926,11 @@ function deferToolReconciliation(
 }
 
 function requestToolReconciliation(): void {
-  toolReconciliationPending = true
-  if (toolReconciliationScheduled || isCanvasUnmounted) return
+  if (
+    pendingToolNames.size === 0
+    || toolReconciliationScheduled
+    || isCanvasUnmounted
+  ) return
   toolReconciliationScheduled = true
   void Promise.resolve().then(() => {
     toolReconciliationScheduled = false
@@ -937,8 +939,12 @@ function requestToolReconciliation(): void {
 }
 
 function reconcilePendingToolState(): void {
-  if (!toolReconciliationPending || isCanvasUnmounted) return
-  if (executionStore.isMutationLocked || isApplyingGraphState) return
+  if (pendingToolNames.size === 0 || isCanvasUnmounted) return
+  if (
+    executionStore.isMutationLocked
+    || toolRegistryStore.customToolBusy
+    || isApplyingGraphState
+  ) return
 
   let serializedChanged = false
   let runtimeChanged = false
@@ -1026,12 +1032,23 @@ function reconcilePendingToolState(): void {
   for (const name of [...pendingToolNames]) {
     if (!deferredNames.has(name)) pendingToolNames.delete(name)
   }
-  for (const [oldName] of [...pendingToolRenames]) {
-    if (!getNodes.value.some((node: any) => node.data?.toolName === oldName)) {
-      pendingToolRenames.delete(oldName)
+
+  // A focused A -> B -> C rename retains A as the pending node identity.
+  // Preserve every mapping reachable from that identity until it can apply.
+  const requiredRenameKeys = new Set<string>()
+  for (const pendingName of pendingToolNames) {
+    let current = pendingName
+    while (
+      pendingToolRenames.has(current)
+      && !requiredRenameKeys.has(current)
+    ) {
+      requiredRenameKeys.add(current)
+      current = pendingToolRenames.get(current)!
     }
   }
-  toolReconciliationPending = pendingToolNames.size > 0
+  for (const oldName of [...pendingToolRenames.keys()]) {
+    if (!requiredRenameKeys.has(oldName)) pendingToolRenames.delete(oldName)
+  }
 
   if (!serializedChanged && !runtimeChanged) return
   const state = currentVueFlowState()
@@ -1130,9 +1147,21 @@ watch(
 watch(
   () => executionStore.isMutationLocked,
   (locked) => {
-    if (!locked && toolReconciliationPending) requestToolReconciliation()
+    if (!locked) requestToolReconciliation()
   },
   { flush: 'sync' },
+)
+
+watch(
+  () => toolRegistryStore.customToolBusy,
+  (busy) => {
+    if (!busy) {
+      // renameTool/deleteTool refresh the registry before their caller emits
+      // the operation event. Give that continuation one task to add its
+      // rename/delete detail before interpreting a removed registry name.
+      setTimeout(requestToolReconciliation, 0)
+    }
+  },
 )
 
 function closeNodeContextMenu() {
@@ -2481,10 +2510,38 @@ function selectAll() {
   }
 }
 
+function historyNodesWithCurrentToolRuntime(nodes: any[]): any[] {
+  const currentById = new Map(getNodes.value.map((node: any) => [node.id, node]))
+  return nodes.map((node) => {
+    const toolName = node.data?.toolName
+    if (typeof toolName !== 'string' || toolName === '__sub_workflow__') return node
+
+    const tool = toolRegistryStore.getToolByName(toolName) ?? null
+    const current = currentById.get(node.id)
+    const data = {
+      ...node.data,
+      tool,
+      missingTool: tool === null ? missingToolFor(node.id, toolName) : null,
+    }
+    if (tool === null) {
+      data.updatedBadge = false
+    } else if (current?.data?.toolName === toolName) {
+      if (current.data.updatedBadge === undefined) {
+        delete data.updatedBadge
+      } else {
+        data.updatedBadge = current.data.updatedBadge
+      }
+    } else {
+      delete data.updatedBadge
+    }
+    return { ...node, data }
+  })
+}
+
 function applyHistoryState(state: CanvasHistoryState) {
   isApplyingGraphState = true
   try {
-    setNodes(state.nodes)
+    setNodes(historyNodesWithCurrentToolRuntime(state.nodes))
     setEdges(state.edges)
     if (!replacePublishedInterface(state.published_inputs, state.published_outputs)) return
     const currentState = currentVueFlowState()
@@ -2501,6 +2558,7 @@ function applyHistoryState(state: CanvasHistoryState) {
   } finally {
     void nextTick().then(() => {
       isApplyingGraphState = false
+      requestToolReconciliation()
     })
   }
 }

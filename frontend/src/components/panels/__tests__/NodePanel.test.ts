@@ -314,6 +314,41 @@ describe('NodePanel', () => {
     w.unmount()
   })
 
+  it('does not let a stale focusout blur the newly selected node', async () => {
+    const w = mountPanel(makeNodeData())
+    const tracker = useFieldFocusTracker()
+    const ui = useUIStore()
+    const canvasId = canvasIdFromPanelId('node-panel:test-0')
+    const staleSigmaRow = w.findAll('.param-row').find(row => row.text().includes('sigma'))!
+
+    await staleSigmaRow.trigger('focusin')
+    ui.setCanvasGraphNodes(canvasId, [
+      { id: 'node-1', data: makeNodeData() },
+      { id: 'node-2', data: makeNodeData({ name: 'Blur 2' }) },
+    ])
+    ui.setCanvasSelectedNodes(canvasId, ['node-2'])
+    await w.vm.$nextTick()
+    const nextTarget = { canvasId, nodeId: 'node-2', fieldName: 'sigma' }
+    tracker.trackFocus(nextTarget)
+
+    await staleSigmaRow.trigger('focusout', { relatedTarget: null })
+
+    expect(tracker.focusedFields(canvasId, 'node-2')).toEqual([nextTarget])
+    w.unmount()
+  })
+
+  it('clears tracked parameter focus when the panel unmounts', async () => {
+    const w = mountPanel(makeNodeData())
+    const tracker = useFieldFocusTracker()
+    const canvasId = canvasIdFromPanelId('node-panel:test-0')
+    const sigmaRow = w.findAll('.param-row').find(row => row.text().includes('sigma'))!
+
+    await sigmaRow.trigger('focusin')
+    w.unmount()
+
+    expect(tracker.focusedFields(canvasId, 'node-1')).toEqual([])
+  })
+
   // --- Empty state ---
 
   it('shows empty state when no node selected', () => {

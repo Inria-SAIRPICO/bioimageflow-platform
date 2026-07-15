@@ -2260,6 +2260,42 @@ describe('CanvasView', () => {
   // --- Workflow-wide version switch refresh ---
 
   describe('tool snapshot refresh on registry change', () => {
+    it('loads the initial registry without a badge, dirty state, or history entry', async () => {
+      const store = useToolRegistryStore()
+      const canvasId = canvasIdFromPanelId('workflow:analysis')
+      store.tools = []
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
+        return Promise.resolve({ data: {} })
+      })
+      const w = mountCanvas({
+        params: {
+          panelId: canvasId,
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.tool).toEqual(makeTool())
+      expect(mockNodes[0].data.updatedBadge).toBeUndefined()
+      expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(false)
+      expect(persistenceMocks.apis[0].queueGraph).not.toHaveBeenCalled()
+
+      expect(canvasCommandMocks.registrations[0].setNodeEnabled('shared', false)).toBe(true)
+      persistenceMocks.apis[0].queueGraph.mockClear()
+      await w.find('.canvas-view').trigger('keydown', { key: 'z', ctrlKey: true })
+      expect(mockNodes[0].data.enabled).toBe(true)
+      expect(persistenceMocks.apis[0].queueGraph).toHaveBeenCalledOnce()
+      await w.find('.canvas-view').trigger('keydown', { key: 'z', ctrlKey: true })
+      expect(persistenceMocks.apis[0].queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
     it('updates each node\'s tool snapshot when the registry version changes', async () => {
       // Create a node at v1.0.0, then simulate a "Set current" version
       // switch by mutating the registry to v2.0.0. The watcher in
@@ -2615,6 +2651,193 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('waits for the rename event after the registry refresh before reconciling', async () => {
+      const store = useToolRegistryStore()
+      const renamedTool = makeTool({ name: 'gaussian_blur_v2' })
+      let resolvePackages!: (value: { data: unknown[] }) => void
+      const packages = new Promise<{ data: unknown[] }>((resolve) => {
+        resolvePackages = resolve
+      })
+      store.tools = [makeTool()] as any
+      apiMocks.patch.mockResolvedValueOnce({
+        data: {
+          old_name: 'gaussian_blur',
+          new_name: 'gaussian_blur_v2',
+          path: '/tmp/gaussian_blur_v2.py',
+        },
+      })
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [renamedTool] })
+        if (url === '/api/v1/tools/packages') return packages
+        return Promise.resolve({ data: {} })
+      })
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+
+      const rename = store.renameTool('gaussian_blur', 'gaussian_blur_v2')
+      await vi.waitFor(() => expect(store.tools).toEqual([renamedTool]))
+      await flushPromises()
+
+      expect(mockNodes[0].data.toolName).toBe('gaussian_blur')
+      expect(mockNodes[0].data.tool).toEqual(makeTool())
+      expect(mockNodes[0].data.missingTool).toBeNull()
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+
+      resolvePackages({ data: [] })
+      const result = await rename
+      window.dispatchEvent(new CustomEvent('bioimageflow:tool-renamed', {
+        detail: result,
+      }))
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.toolName).toBe('gaussian_blur_v2')
+      expect(mockNodes[0].data.tool.name).toBe('gaussian_blur_v2')
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
+    it('preserves a focused rename chain until every focused field blurs', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool()] as any
+      const canvasId = canvasIdFromPanelId('workflow:analysis')
+      const w = mountCanvas({
+        params: {
+          panelId: canvasId,
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      const focus = useFieldFocusTracker()
+      const sigma = { canvasId, nodeId: 'shared', fieldName: 'sigma' }
+      const image = { canvasId, nodeId: 'shared', fieldName: 'image' }
+      focus.trackFocus(sigma)
+      focus.trackFocus(image)
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+
+      store.tools = [makeTool({ name: 'gaussian_blur_mid' })] as any
+      window.dispatchEvent(new CustomEvent('bioimageflow:tool-renamed', {
+        detail: { old_name: 'gaussian_blur', new_name: 'gaussian_blur_mid' },
+      }))
+      store.tools = [makeTool({
+        name: 'gaussian_blur_final',
+        inputs: { image: makeTool().inputs.image },
+      })] as any
+      window.dispatchEvent(new CustomEvent('bioimageflow:tool-renamed', {
+        detail: { old_name: 'gaussian_blur_mid', new_name: 'gaussian_blur_final' },
+      }))
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.toolName).toBe('gaussian_blur')
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+
+      focus.trackBlur(sigma)
+      await nextTick()
+      await flushPromises()
+      expect(mockNodes[0].data.toolName).toBe('gaussian_blur')
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+
+      focus.trackBlur(image)
+      await nextTick()
+      await flushPromises()
+      expect(mockNodes[0].data.toolName).toBe('gaussian_blur_final')
+      expect(mockNodes[0].data.tool.name).toBe('gaussian_blur_final')
+      expect(mockNodes[0].data.parameters).toEqual({})
+      expect(sync.syncGraphState).toHaveBeenCalledOnce()
+      expect(persistence.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
+    it('drops deferred focus callbacks when the owning canvas unmounts', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool()] as any
+      const canvasId = canvasIdFromPanelId('workflow:analysis')
+      const w = mountCanvas({
+        params: {
+          panelId: canvasId,
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      const sync = graphSyncMocks.apis[0]
+      const persistence = persistenceMocks.apis[0]
+      const focus = useFieldFocusTracker()
+      const target = { canvasId, nodeId: 'shared', fieldName: 'sigma' }
+      focus.trackFocus(target)
+      sync.syncGraphState.mockClear()
+      persistence.queueGraph.mockClear()
+      toastMocks.add.mockClear()
+
+      store.tools = [makeTool({
+        inputs: { image: makeTool().inputs.image },
+      })] as any
+      await nextTick()
+      await flushPromises()
+      w.unmount()
+      focus.trackBlur(target)
+      await flushPromises()
+
+      expect(sync.syncGraphState).not.toHaveBeenCalled()
+      expect(persistence.queueGraph).not.toHaveBeenCalled()
+      expect(toastMocks.add).not.toHaveBeenCalled()
+    })
+
+    it('resumes registry reconciliation after an overlapping history application', async () => {
+      const store = useToolRegistryStore()
+      store.tools = [makeTool()] as any
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      expect(canvasCommandMocks.registrations[0].setNodeEnabled('shared', false)).toBe(true)
+
+      store.tools = [makeTool({
+        inputs: { image: makeTool().inputs.image },
+      })] as any
+      await w.find('.canvas-view').trigger('keydown', { key: 'z', ctrlKey: true })
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes[0].data.enabled).toBe(true)
+      expect(mockNodes[0].data.tool.inputs).toEqual({ image: makeTool().inputs.image })
+      expect(mockNodes[0].data.parameters).toEqual({})
+      w.unmount()
+    })
+
     it('reconciles output templates when registry outputs change', async () => {
       const store = useToolRegistryStore()
       store.tools = [makeTool({ package_version: '1.0.0' })] as any
@@ -2733,6 +2956,11 @@ describe('CanvasView', () => {
       await w.find('.canvas-view').trigger('keydown', { key: 'z', ctrlKey: true })
       expect(mockEdges).toEqual([expect.objectContaining({ id: edge.id })])
       expect(mockNodes[0].data.output_templates).toEqual({ result: 'root-old.tif' })
+      expect(mockNodes[0].data.tool).toEqual(expect.objectContaining({
+        package_version: '2.0.0',
+        outputs: { count: { type: 'int' } },
+      }))
+      expect(mockNodes[0].data.missingTool).toBeNull()
       await w.find('.canvas-view').trigger('keydown', {
         key: 'z',
         ctrlKey: true,
@@ -2740,6 +2968,10 @@ describe('CanvasView', () => {
       })
       expect(mockEdges).toEqual([expect.objectContaining({ id: edge.id })])
       expect(mockNodes[0].data.output_templates).toEqual({})
+      expect(mockNodes[0].data.tool).toEqual(expect.objectContaining({
+        package_version: '2.0.0',
+        outputs: { count: { type: 'int' } },
+      }))
       w.unmount()
     })
 

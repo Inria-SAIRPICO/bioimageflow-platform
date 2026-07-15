@@ -166,19 +166,15 @@ function trackParameterFocus(fieldName: string, event: FocusEvent): void {
   fieldFocusTracker.trackFocus(target)
 }
 
-function trackParameterBlur(fieldName: string, event: FocusEvent): void {
+function trackParameterBlur(event: FocusEvent): void {
   const row = event.currentTarget
   if (row instanceof HTMLElement && event.relatedTarget instanceof Node) {
     if (row.contains(event.relatedTarget)) return
   }
-  const tracked = row === null ? undefined : focusedParameterRows.get(row)
-  const canvasId = canvasSessionRegistry.activeCanvasId.value
-  const nodeId = selectedNode.value?.id
-  const target = tracked ?? (
-    canvasId !== null && nodeId ? { canvasId, nodeId, fieldName } : null
-  )
-  if (target === null) return
-  if (row !== null) focusedParameterRows.delete(row)
+  if (row === null) return
+  const target = focusedParameterRows.get(row)
+  if (target === undefined) return
+  focusedParameterRows.delete(row)
   fieldFocusTracker.trackBlur(target)
 }
 
@@ -461,7 +457,7 @@ async function pickFolder(key: string) {
           :key="key"
           class="param-row"
           @focusin="trackParameterFocus(key, $event)"
-          @focusout="trackParameterBlur(key, $event)"
+          @focusout="trackParameterBlur($event)"
         >
           <div class="param-header">
             <Button
