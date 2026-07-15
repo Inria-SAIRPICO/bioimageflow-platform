@@ -12,13 +12,18 @@ vi.mock('@/api/client', () => ({
 import { api } from '@/api/client'
 import { useWorkflowDraftStore, type WorkflowDraftChangedMessage } from '../workflowDraft'
 import type { GraphState } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 
 const emptyGraph: GraphState = {
   nodes: [],
   edges: [],
 }
 
-function draft(revision: number, graph: GraphState = emptyGraph, workflowId = 'wf') {
+function draft(
+  revision: number,
+  graph: GraphState = emptyGraph,
+  workflowId = 'wf',
+): WorkflowDraftResponse {
   return {
     draft_version: 1,
     workflow_id: workflowId,
@@ -250,6 +255,43 @@ describe('workflow draft store', () => {
     expect(store.remoteUpdatedBy).toBe('agent')
     expect(store.remoteUpdatedAt).toBe('2026-05-21T12:06:00Z')
     expect(store.remoteDirtyAgainstSaved).toBe(true)
+  })
+
+  it('acknowledges only an exact accepted write without suppressing other frontend writes', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1) })
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.noteRemoteChange(changed(2, { updated_by: 'frontend' }))
+
+    store.acknowledgeAcceptedDraft(draft(2))
+
+    expect(store.currentDraftRevision).toBe(2)
+    expect(store.appliedDraftRevision).toBe(2)
+    expect(store.remoteAvailableRevision).toBeNull()
+
+    store.noteRemoteChange(changed(2, { updated_by: 'frontend' }))
+    expect(store.remoteAvailableRevision).toBeNull()
+    store.noteRemoteChange(changed(3, { updated_by: 'frontend' }))
+    expect(store.remoteAvailableRevision).toBe(3)
+
+    store.trackWorkflow('other')
+    store.acknowledgeAcceptedDraft(draft(4, emptyGraph, 'wf'))
+    expect(store.workflowId).toBe('other')
+    expect(store.appliedDraftRevision).toBeNull()
+  })
+
+  it('preserves a newer remote revision observed before an accepted response', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1) })
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    store.noteRemoteChange(changed(3, { updated_by: 'agent' }))
+
+    store.acknowledgeAcceptedDraft(draft(2))
+
+    expect(store.currentDraftRevision).toBe(2)
+    expect(store.appliedDraftRevision).toBe(2)
+    expect(store.remoteAvailableRevision).toBe(3)
+    expect(store.remoteUpdatedBy).toBe('agent')
   })
 
   it('overwrites a newer remote draft with the current graph revision', async () => {

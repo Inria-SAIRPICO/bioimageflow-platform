@@ -11,6 +11,7 @@ vi.mock('@/api/client', () => ({
 
 const workflowDraftMocks = vi.hoisted(() => ({
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
+  acknowledgeAcceptedDraft: vi.fn(),
 }))
 
 vi.mock('@/stores/workflowDraft', () => ({

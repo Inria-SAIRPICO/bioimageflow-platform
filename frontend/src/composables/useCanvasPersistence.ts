@@ -241,11 +241,8 @@ function createRootPersistenceResource(options: {
   }
 
   function acceptDraftWrite(acceptance: WorkflowDraftAcceptance): void {
-    authoritativeDraft = cloneJson(acceptance.response)
-    currentGraph.value = cloneGraph(acceptance.graph)
-    validationResult.value = cloneJson(acceptance.response.validation)
-    currentGraphHasAcceptedValidation = true
-    remoteDraftRevision.value = null
+    acceptDraftResponse(acceptance.response)
+    useWorkflowDraftStore().acknowledgeAcceptedDraft(acceptance.response)
   }
 
   function queuePendingDraft(coordinator: WorkflowDraftCoordinator): void {

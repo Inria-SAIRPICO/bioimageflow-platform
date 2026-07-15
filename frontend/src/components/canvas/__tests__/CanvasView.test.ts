@@ -4399,6 +4399,29 @@ describe('CanvasView', () => {
       }
     }
 
+    it('initializes root authority from the exact draft used to open the canvas', async () => {
+      useToolRegistryStore().tools = [makeTool()] as any
+      const graph = { nodes: [savedNode('opened', 100)], edges: [] }
+      const openedDraft = draftResponse(6, graph, true, 'opened-workflow')
+
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:opened-workflow',
+          workflowName: 'opened-workflow',
+          workflowDisplayName: 'Opened workflow',
+          graph,
+          draft: openedDraft,
+          dirty: true,
+        },
+      })
+      await flushPromises()
+
+      expect(persistenceMocks.initializeFromDraft).toHaveBeenCalledWith(openedDraft)
+      expect(persistenceMocks.initializeFromDraft.mock.invocationCallOrder[0])
+        .toBeLessThan(graphSyncMocks.syncGraphState.mock.invocationCallOrder[0]!)
+      w.unmount()
+    })
+
     it('projects accepted draft validation after installing the startup graph', async () => {
       const name = 'saved'
       const nodes = [savedNode('a', 100), savedNode('b', 400)]

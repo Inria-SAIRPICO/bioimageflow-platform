@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import type { GraphState, ValidationResult } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 
@@ -23,8 +24,10 @@ import {
   graphSyncCanvasSessions,
   useGraphSync,
 } from '../useGraphSync'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 
 const mockedApiPut = vi.mocked(api.put)
+const mockedApiGet = vi.mocked(api.get)
 
 function graph(value: string): GraphState {
   return {
@@ -86,7 +89,10 @@ function transports(
   const putDraft = vi.fn(async (
     workflowId: string,
     body: { graph: GraphState; expected_revision: number },
-  ) => draft(workflowId, body.expected_revision + 1, 'accepted'))
+  ) => ({
+    ...draft(workflowId, body.expected_revision + 1),
+    graph: body.graph,
+  }))
   const writeRecovery = vi.fn(async () => {})
   return { fetchDraft, putDraft, writeRecovery }
 }
@@ -101,8 +107,10 @@ function deferred<T>() {
 
 describe('canvas persistence routing', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.useFakeTimers()
     mockedApiPut.mockReset()
+    mockedApiGet.mockReset()
     _resetCanvasPersistenceForTest()
   })
 
@@ -160,6 +168,90 @@ describe('canvas persistence routing', () => {
     expect(sync.currentGraph.value).toEqual(graph('captured'))
     expect(sync.validationResult.value).toEqual(acceptedValidation)
     expect(sync.isPending.value).toBe(false)
+  })
+
+  it('projects the accepted response graph and validation as one authority', async () => {
+    const io = transports({ 'workflow-a': 1 })
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    const initial = draft('workflow-a', 1, 'initial')
+    persistence.initializeFromDraft(initial)
+    const sync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+    })
+    const acceptedGraph = graph('server-normalized')
+    const acceptedValidation = {
+      valid: false,
+      node_statuses: {},
+      errors: [],
+    } satisfies ValidationResult
+    io.putDraft.mockResolvedValueOnce({
+      ...draft('workflow-a', 2),
+      graph: acceptedGraph,
+      validation: acceptedValidation,
+    })
+
+    persistence.queueGraph(graph('local-request'))
+    await persistence.flush()
+
+    expect(sync.currentGraph.value).toEqual(acceptedGraph)
+    expect(sync.validationResult.value).toEqual(acceptedValidation)
+  })
+
+  it('acknowledges its exact draft revision for websocket echoes in either ordering', async () => {
+    const initial = draft('workflow-a', 1, 'initial')
+    mockedApiGet.mockResolvedValueOnce({ data: initial })
+    const tracked = useWorkflowDraftStore()
+    await tracked.loadDraft('workflow-a')
+    const io = transports({ 'workflow-a': 1 })
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    persistence.initializeFromDraft(initial)
+    const first = deferred<WorkflowDraftResponse>()
+    io.putDraft.mockReturnValueOnce(first.promise)
+
+    persistence.queueGraph(graph('first'))
+    const firstFlush = persistence.flush()
+    await vi.advanceTimersByTimeAsync(0)
+    tracked.noteRemoteChange({
+      type: 'workflow_draft_changed',
+      workflow_id: 'workflow-a',
+      draft_revision: 2,
+      updated_by: 'frontend',
+      updated_at: '2026-07-16T01:00:00Z',
+      dirty_against_saved: true,
+    })
+    expect(tracked.remoteAvailableRevision).toBe(2)
+    first.resolve({
+      ...draft('workflow-a', 2, 'first'),
+      graph: graph('first'),
+    })
+    await firstFlush
+
+    expect(tracked.appliedDraftRevision).toBe(2)
+    expect(tracked.remoteAvailableRevision).toBeNull()
+
+    persistence.queueGraph(graph('second'))
+    await persistence.flush()
+    expect(tracked.appliedDraftRevision).toBe(3)
+    tracked.noteRemoteChange({
+      type: 'workflow_draft_changed',
+      workflow_id: 'workflow-a',
+      draft_revision: 3,
+      updated_by: 'frontend',
+      updated_at: '2026-07-16T01:01:00Z',
+      dirty_against_saved: true,
+    })
+    expect(tracked.remoteAvailableRevision).toBeNull()
   })
 
   it('joins an in-flight root write and waits for validation of an edit queued during it', async () => {
@@ -403,6 +495,33 @@ describe('canvas persistence routing', () => {
     expect(io.putDraft).toHaveBeenCalledWith('workflow-a', expect.objectContaining({
       expected_revision: 8,
     }))
+  })
+
+  it('does not overwrite a newer server draft from an older opened draft snapshot', async () => {
+    const io = transports({ 'workflow-a': 2 })
+    io.fetchDraft.mockResolvedValueOnce(draft('workflow-a', 2, 'remote-newer'))
+    const descriptor = root('workflow:a', 'workflow-a')
+    const persistence = useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    const opened = draft('workflow-a', 1, 'opened')
+    persistence.initializeFromDraft(opened)
+    const sync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'workflow-a',
+    })
+
+    sync.syncGraphState(opened.graph)
+    await sync.flushNow()
+
+    expect(io.fetchDraft).not.toHaveBeenCalled()
+    expect(io.putDraft).not.toHaveBeenCalled()
+    await expect(persistence.ensureFreshForCriticalOperation()).resolves.toBe(false)
+    expect(io.fetchDraft).toHaveBeenCalledOnce()
+    expect(io.putDraft).not.toHaveBeenCalled()
+    expect(persistence.hasConflict.value).toBe(true)
   })
 
   it('clears pending after edits coalesce while draft initialization is in flight', async () => {

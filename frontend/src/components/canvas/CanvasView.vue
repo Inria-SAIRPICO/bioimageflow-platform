@@ -44,6 +44,7 @@ import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
 import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput, WorkflowInfo } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
@@ -70,6 +71,7 @@ const props = defineProps<{
     graph?: GraphState
     missingTools?: MissingTool[]
     dirty?: boolean
+    draft?: WorkflowDraftResponse
     params?: {
       panelId?: string
       parentCanvasPanelId?: string
@@ -78,6 +80,7 @@ const props = defineProps<{
       graph?: GraphState
       missingTools?: MissingTool[]
       dirty?: boolean
+      draft?: WorkflowDraftResponse
     }
   }
 }>()
@@ -168,6 +171,9 @@ const canvasPersistence = useCanvasPersistence({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
 })
+if (!isSubWorkflowEditor && initialCanvasParams?.draft) {
+  canvasPersistence.initializeFromDraft(initialCanvasParams.draft)
+}
 const graphSync = useGraphSync({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,

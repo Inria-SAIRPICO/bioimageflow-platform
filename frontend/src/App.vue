@@ -50,6 +50,7 @@ import { useWebSocket } from './composables/useWebSocket'
 import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
 import { useWorkflowStore } from './stores/workflow'
 import type { GraphState, MissingTool } from './api/types'
+import type { WorkflowDraftResponse } from './api/workflowDrafts'
 import { canvasIdFromPanelId } from './sessions/canvasSessionRegistry'
 import {
   activateGraphSyncCanvas,
@@ -564,6 +565,7 @@ function openWorkflowCanvasPanel(detail: {
   workflowDisplayName?: string
   missingTools?: MissingTool[]
   dirty?: boolean
+  draft?: WorkflowDraftResponse
 }): void {
   const api = dockviewApi.value
   if (!api || !detail.graph) return
@@ -597,6 +599,7 @@ function openWorkflowCanvasPanel(detail: {
       graph: detail.graph,
       missingTools: detail.missingTools ?? [],
       dirty: detail.dirty ?? false,
+      draft: detail.draft,
     },
     position: canvasPanel
       ? { referencePanel: 'canvas', direction: 'within' }
@@ -613,6 +616,7 @@ function onApplyGraph(event: CustomEvent<{
   workflowDisplayName?: string
   missingTools?: MissingTool[]
   dirty?: boolean
+  draft?: WorkflowDraftResponse
 }>) {
   const detail = event.detail
   if (!detail?.graph) return
@@ -622,6 +626,7 @@ function onApplyGraph(event: CustomEvent<{
     workflowDisplayName: detail.workflowDisplayName,
     missingTools: detail.missingTools,
     dirty: detail.dirty,
+    draft: detail.draft,
   })
 }
 
