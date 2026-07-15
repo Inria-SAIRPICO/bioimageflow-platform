@@ -1,10 +1,17 @@
-import { nextTick } from 'vue'
+import { computed, nextTick, type Ref } from 'vue'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useWorkflowStore } from '@/stores/workflow'
-import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import {
+  CanvasSessionRegistry,
+  canvasIdFromPanelId,
+  type CanvasId,
+  type CanvasSessionDescriptor,
+} from '@/sessions/canvasSessionRegistry'
 import {
   createGraphSyncCoordinator,
+  type GraphSyncCoordinator,
+  type SyncState,
 } from '@/sessions/graphSyncCoordinator'
 import type {
   ColumnRefEdge,
@@ -19,6 +26,23 @@ import type {
 type Edge = ColumnRefEdge | PositionalEdge
 
 export type { SyncState } from '@/sessions/graphSyncCoordinator'
+
+export interface CanvasScopedGraphSyncOptions {
+  descriptor: CanvasSessionDescriptor
+  getWorkflowId: () => string | null
+}
+
+export interface GraphSyncApi {
+  syncGraph(graph: Parameters<typeof serializeGraph>[0]): void
+  syncGraphState(graph: GraphState): void
+  syncNodeParameters(nodeId: string, parameters: Record<string, unknown>): void
+  flushNow(): Promise<void>
+  validationResult: Ref<ValidationResult | null>
+  isPending: Ref<boolean>
+  syncState: Ref<SyncState>
+  currentGraph: Ref<GraphState>
+  dispose(): void
+}
 
 function deepCloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -117,44 +141,66 @@ export function serializeGraph(raw: {
   return graph
 }
 
-// Module-level singleton so multiple callers (CanvasView, MenuBar, run
-// button) observe the same validation result, debounce timer, and latest
-// graph ref. Tests reset via _resetGraphSyncForTest and mock the
-// useErrorReporting module to observe error reporting.
-let _instance: ReturnType<typeof _createGraphSync> | null = null
+export const graphSyncCanvasSessions = new CanvasSessionRegistry()
 
-export function useGraphSync() {
-  if (_instance !== null) return _instance
-  _instance = _createGraphSync()
-  return _instance
+let legacyInstance: GraphSyncApi | null = null
+let activeFacade: GraphSyncApi | null = null
+
+export function useGraphSync(options: CanvasScopedGraphSyncOptions): GraphSyncApi
+export function useGraphSync(): GraphSyncApi
+export function useGraphSync(options?: CanvasScopedGraphSyncOptions): GraphSyncApi {
+  if (options) return registerScopedGraphSync(options)
+  if (activeFacade === null) activeFacade = createActiveFacade()
+  return activeFacade
 }
 
-/** Test-only: reset the singleton so each test starts clean. */
+/** Activate only from an explicit Dockview canvas-panel activation event. */
+export function activateGraphSyncCanvas(canvasId: CanvasId): boolean {
+  if (graphSyncCanvasSessions.get(canvasId) === null) return false
+  graphSyncCanvasSessions.activate(canvasId)
+  return true
+}
+
+export function unregisterGraphSyncCanvas(canvasId: CanvasId): void {
+  graphSyncCanvasSessions.unregister(canvasId)
+}
+
+/** Test-only: reset all scoped and compatibility state. */
 export function _resetGraphSyncForTest(): void {
-  _instance?.dispose()
-  _instance = null
+  graphSyncCanvasSessions.dispose()
+  legacyInstance?.dispose()
+  legacyInstance = null
+  activeFacade = null
 }
 
-function _createGraphSync() {
-  function _reportError(status: number | undefined, detail: string): void {
-    // useErrorReporting requires an active Pinia. Tests that don't set one
-    // up never trigger this path (they don't reject the api mock); a real
-    // failure here would be a misconfiguration worth surfacing.
-    try {
-      const { reportError } = useErrorReporting()
-      reportError({ kind: 'graph_sync_error', status, detail })
-    } catch (e) {
-      console.warn('[graph-sync] failed to report error:', e)
-    }
-  }
+function registerScopedGraphSync(options: CanvasScopedGraphSyncOptions): GraphSyncApi {
+  graphSyncCanvasSessions.register(options.descriptor)
+  const coordinator = graphSyncCanvasSessions.getOrCreateCoordinator(
+    options.descriptor.canvasId,
+    descriptor => createCoordinator(
+      descriptor.canvasId,
+      descriptor.kind === 'root' ? descriptor.workflowId : options.getWorkflowId(),
+      options.getWorkflowId,
+    ),
+  )
+  return createBoundApi(coordinator, () => {
+    unregisterGraphSyncCanvas(options.descriptor.canvasId)
+  })
+}
 
-  const coordinator = createGraphSyncCoordinator({
-    canvasId: canvasIdFromPanelId('legacy:canvas'),
-    workflowId: null,
-    transport: async ({ graph, workflowId, signal }) => {
+function createCoordinator(
+  canvasId: CanvasId,
+  workflowId: string | null,
+  getWorkflowId?: () => string | null,
+): GraphSyncCoordinator {
+  return createGraphSyncCoordinator({
+    canvasId,
+    workflowId,
+    getWorkflowId,
+    transport: async ({ graph, workflowId: queuedWorkflowId, signal }) => {
       const response = await api.put<ValidationResult>(
         '/api/v1/graph',
-        { graph, workflow_name: workflowId },
+        { graph, workflow_name: queuedWorkflowId },
         { signal },
       )
       return response.data
@@ -164,29 +210,24 @@ function _createGraphSync() {
         message?: string
         response?: { status?: number }
       }
-      _reportError(
+      reportGraphSyncError(
         err.response?.status,
         err.message ?? 'PUT /graph failed',
       )
     },
   })
+}
 
-  function queuedWorkflowId(): string | null {
-    try {
-      return useWorkflowStore().currentName
-    } catch {
-      return null
-    }
-  }
-
-  function syncGraph(graph: { nodes: any[]; edges: any[] }): void {
-    coordinator.queue(serializeGraph(graph), {
-      workflowId: queuedWorkflowId(),
-    })
+function createBoundApi(
+  coordinator: GraphSyncCoordinator,
+  dispose: () => void,
+): GraphSyncApi {
+  function syncGraph(graph: Parameters<typeof serializeGraph>[0]): void {
+    coordinator.queue(serializeGraph(graph))
   }
 
   function syncGraphState(graph: GraphState): void {
-    coordinator.queue(graph, { workflowId: queuedWorkflowId() })
+    coordinator.queue(graph)
   }
 
   function syncNodeParameters(
@@ -194,7 +235,7 @@ function _createGraphSync() {
     parameters: Record<string, unknown>,
   ): void {
     const graph = deepCloneJson(coordinator.currentGraph.value)
-    const node = graph.nodes.find((candidate) => candidate.id === nodeId)
+    const node = graph.nodes.find(candidate => candidate.id === nodeId)
     if (!node) return
     node.parameters = deepCloneJson(parameters)
     syncGraphState(graph)
@@ -214,6 +255,82 @@ function _createGraphSync() {
     isPending: coordinator.isPending,
     syncState: coordinator.syncState,
     currentGraph: coordinator.currentGraph,
-    dispose: coordinator.dispose,
+    dispose,
+  }
+}
+
+function createActiveFacade(): GraphSyncApi {
+  const selected = (): GraphSyncApi | null => {
+    const canvasId = graphSyncCanvasSessions.activeCanvasId.value
+    if (canvasId !== null) {
+      const coordinator = graphSyncCanvasSessions.get(canvasId)?.coordinator
+      if (coordinator) {
+        return createBoundApi(coordinator as GraphSyncCoordinator, () => {
+          unregisterGraphSyncCanvas(canvasId)
+        })
+      }
+    }
+    if (graphSyncCanvasSessions.sessionCount.value === 0) {
+      return getLegacyInstance()
+    }
+    return null
+  }
+  const required = (): GraphSyncApi => {
+    const target = selected()
+    if (target === null) throw new Error('No active canvas graph sync session')
+    return target
+  }
+  const emptyGraph: GraphState = { nodes: [], edges: [] }
+
+  return {
+    syncGraph: graph => required().syncGraph(graph),
+    syncGraphState: graph => required().syncGraphState(graph),
+    syncNodeParameters: (nodeId, parameters) => {
+      required().syncNodeParameters(nodeId, parameters)
+    },
+    flushNow: () => required().flushNow(),
+    validationResult: computed({
+      get: () => selected()?.validationResult.value ?? null,
+      set: value => { required().validationResult.value = value },
+    }),
+    isPending: computed({
+      get: () => selected()?.isPending.value ?? false,
+      set: value => { required().isPending.value = value },
+    }),
+    syncState: computed({
+      get: () => selected()?.syncState.value ?? 'idle',
+      set: value => { required().syncState.value = value },
+    }),
+    currentGraph: computed({
+      get: () => selected()?.currentGraph.value ?? emptyGraph,
+      set: value => { required().currentGraph.value = value },
+    }),
+    dispose: () => required().dispose(),
+  }
+}
+
+function getLegacyInstance(): GraphSyncApi {
+  if (legacyInstance !== null) return legacyInstance
+  const coordinator = createCoordinator(
+    canvasIdFromPanelId('legacy:canvas'),
+    null,
+    () => {
+      try {
+        return useWorkflowStore().currentName
+      } catch {
+        return null
+      }
+    },
+  )
+  legacyInstance = createBoundApi(coordinator, coordinator.dispose)
+  return legacyInstance
+}
+
+function reportGraphSyncError(status: number | undefined, detail: string): void {
+  try {
+    const { reportError } = useErrorReporting()
+    reportError({ kind: 'graph_sync_error', status, detail })
+  } catch (error) {
+    console.warn('[graph-sync] failed to report error:', error)
   }
 }

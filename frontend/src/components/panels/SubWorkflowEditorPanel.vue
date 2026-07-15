@@ -6,9 +6,11 @@ const props = defineProps<{
   params?: {
     sessionId?: string
     panelId?: string
+    parentCanvasPanelId?: string
     params?: {
       sessionId?: string
       panelId?: string
+      parentCanvasPanelId?: string
     }
   }
 }>()
@@ -19,6 +21,11 @@ const sessionId = computed(() => (
 const panelId = computed(() => (
   props.params?.panelId ?? props.params?.params?.panelId ?? ''
 ))
+const parentCanvasPanelId = computed(() => (
+  props.params?.parentCanvasPanelId
+  ?? props.params?.params?.parentCanvasPanelId
+  ?? 'canvas'
+))
 </script>
 
 <template>
@@ -26,6 +33,7 @@ const panelId = computed(() => (
     <CanvasView
       v-if="sessionId"
       :sub-workflow-session-id="sessionId"
+      :parent-canvas-panel-id="parentCanvasPanelId"
       :params="{ panelId }"
     />
   </div>

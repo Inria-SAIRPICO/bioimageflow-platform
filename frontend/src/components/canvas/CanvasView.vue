@@ -40,6 +40,7 @@ import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
+import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 
 const emit = defineEmits<{
   'graph-changed': [payload: { nodes: any[]; edges: any[] }]
@@ -48,8 +49,10 @@ const emit = defineEmits<{
 
 const props = defineProps<{
   subWorkflowSessionId?: string
+  parentCanvasPanelId?: string
   params?: {
     panelId?: string
+    parentCanvasPanelId?: string
     workflowName?: string
     workflowDisplayName?: string
     graph?: GraphState
@@ -57,6 +60,7 @@ const props = defineProps<{
     dirty?: boolean
     params?: {
       panelId?: string
+      parentCanvasPanelId?: string
       workflowName?: string
       workflowDisplayName?: string
       graph?: GraphState
@@ -88,6 +92,24 @@ const autoSave = useAutoSave()
 const resolvedOutputsStore = useResolvedOutputsStore()
 const dataTableStore = useDataTableStore()
 const isSubWorkflowEditor = props.subWorkflowSessionId != null && props.subWorkflowSessionId !== ''
+const canvasPanelId = componentPanelId()
+const canvasId = canvasIdFromPanelId(canvasPanelId)
+const initialCanvasParams = dockviewParams()
+const initialNestedSession = props.subWorkflowSessionId
+  ? subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  : null
+const ownedWorkflowName = ref<string | null>(
+  isSubWorkflowEditor
+    ? initialNestedSession?.parentWorkflowName ?? null
+    : initialCanvasParams?.workflowName ?? workflowStore.currentName ?? null,
+)
+const ownedWorkflowDisplayName = ref<string | null>(
+  isSubWorkflowEditor
+    ? initialNestedSession?.parentNodeName ?? null
+    : initialCanvasParams?.workflowDisplayName
+      ?? workflowStore.current?.display_name
+      ?? null,
+)
 
 // Provide the resolved-outputs map so ToolNode can read it via inject.
 provide('bioimageflow:resolvedOutputs', resolvedOutputsStore.resolvedOutputsByNodeId)
@@ -110,9 +132,35 @@ const {
   onNodeDragStart,
   onNodeDragStop,
   fitView,
-} = useVueFlow()
+} = useVueFlow(canvasPanelId)
 
-const { syncGraph, syncGraphState, flushNow, validationResult, syncState } = useGraphSync()
+const graphSync = useGraphSync({
+  descriptor: isSubWorkflowEditor
+    ? {
+        kind: 'nested',
+        canvasId,
+        sessionId: props.subWorkflowSessionId!,
+        parentCanvasId: canvasIdFromPanelId(
+          props.parentCanvasPanelId
+          ?? initialCanvasParams?.parentCanvasPanelId
+          ?? 'canvas',
+        ),
+      }
+    : {
+        kind: 'root',
+        canvasId,
+        workflowId: initialCanvasParams?.workflowName ?? null,
+      },
+  getWorkflowId: owningWorkflowId,
+})
+const {
+  syncGraph,
+  syncGraphState,
+  flushNow,
+  validationResult,
+  syncState,
+  dispose: disposeGraphSync,
+} = graphSync
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
@@ -196,6 +244,7 @@ const remoteDraftAction = ref<'apply' | 'keep' | 'copy' | null>(null)
 const remoteDraftActionError = ref<string | null>(null)
 const remoteDraftResolutionMessage = ref<string | null>(null)
 let isApplyingGraphState = false
+let isCanvasUnmounted = false
 let isAutoApplyingRemoteDraft = false
 let isRefreshingToolMetadata = false
 let clipboardToast: ReturnType<typeof useToast> | null = null
@@ -272,11 +321,24 @@ function componentPanelId(): string {
 }
 
 function workflowIdentity() {
-  const params = dockviewParams()
   return {
-    workflowName: params?.workflowName ?? workflowStore.currentName,
-    workflowDisplayName: params?.workflowDisplayName ?? workflowStore.current?.display_name,
+    workflowName: ownedWorkflowName.value,
+    workflowDisplayName: ownedWorkflowDisplayName.value,
   }
+}
+
+function owningWorkflowId(): string | null {
+  if (!props.subWorkflowSessionId) return ownedWorkflowName.value
+  return subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+    ?.parentWorkflowName ?? ownedWorkflowName.value
+}
+
+function adoptRecoveredWorkflowIdentity(recovered: {
+  workflowName: string
+  workflowDisplayName: string
+}): void {
+  ownedWorkflowName.value = recovered.workflowName
+  ownedWorkflowDisplayName.value = recovered.workflowDisplayName
 }
 
 function workflowInfoId(workflow: WorkflowInfo): string {
@@ -373,6 +435,7 @@ async function applyGraphState(
   missingTools: MissingTool[] = [],
   dirty = false,
 ) {
+  if (isCanvasUnmounted) return
   if (!isSubWorkflowEditor) {
     rootPublishedInputs.value = deepClone(graph.published_inputs ?? []) as PublishedInput[]
     rootPublishedOutputs.value = deepClone(graph.published_outputs ?? []) as PublishedOutput[]
@@ -388,13 +451,16 @@ async function applyGraphState(
     setNodes([])
     setEdges([])
     await nextTick()
+    if (isCanvasUnmounted) return
     setNodes(vueFlowGraph.nodes)
     // Wait for node components (and their <Handle> DOM elements) to mount
     // before setting edges — Vue Flow resolves edge endpoints against live
     // handle elements, so edges added in the same tick as nodes render with
     // no visible path.
     await nextTick()
+    if (isCanvasUnmounted) return
     setEdges(vueFlowGraph.edges)
+    if (isCanvasUnmounted) return
     syncGraphState(rememberAuthoritativeGraph(graph))
     if (!isSubWorkflowEditor) {
       const identity = workflowIdentity()
@@ -416,7 +482,7 @@ async function applyGraphState(
   }
 }
 
-async function ensureDefaultWorkflow(): Promise<GraphState> {
+async function ensureDefaultWorkflow() {
   const base = 'Untitled'
   const names = new Set(workflowStore.workflows.map((workflow) => workflowInfoId(workflow)))
   let name = base
@@ -425,11 +491,14 @@ async function ensureDefaultWorkflow(): Promise<GraphState> {
     name = `${base}_${suffix}`
     suffix += 1
   }
-  await workflowStore.createWorkflow({ name, display_name: name })
-  if (workflowStore.currentName) {
-    await workflowDraftStore.loadDraft(workflowStore.currentName).catch(() => undefined)
+  const workflow = await workflowStore.createWorkflow({ name, display_name: name })
+  const workflowName = workflowInfoId(workflow)
+  await workflowDraftStore.loadDraft(workflowName).catch(() => undefined)
+  return {
+    graph: { nodes: [], edges: [] } as GraphState,
+    workflowName,
+    workflowDisplayName: workflow.display_name ?? workflowName,
   }
-  return { nodes: [], edges: [] }
 }
 
 async function recoverStartupWorkflow() {
@@ -456,8 +525,9 @@ async function recoverStartupWorkflow() {
     } catch {
       await autoSave.clearAutoSave(targetName)
       await autoSave.setLastOpenedWorkflow(null)
+      const fallback = await ensureDefaultWorkflow()
       return {
-        graph: await ensureDefaultWorkflow(),
+        ...fallback,
         dirty: false,
       }
     }
@@ -479,16 +549,22 @@ async function recoverStartupWorkflow() {
     ) {
       await autoSave.clearAutoSave(targetName)
     }
+    const workflow = workflowStore.workflows.find(
+      candidate => workflowInfoId(candidate) === targetName,
+    )
     return {
       graph: autoSaveIsFresh
         ? matchingAutoSave.graph
         : draft?.graph ?? serverGraph,
       dirty: autoSaveIsFresh || draft?.dirty_against_saved === true,
+      workflowName: targetName,
+      workflowDisplayName: workflow?.display_name ?? targetName,
     }
   }
 
+  const fallback = await ensureDefaultWorkflow()
   return {
-    graph: await ensureDefaultWorkflow(),
+    ...fallback,
     dirty: false,
   }
 }
@@ -833,6 +909,7 @@ async function loadSubWorkflowSessionDraft() {
   if (!sessionId) return
   const session = subWorkflowSessionsStore.sessionById(sessionId)
   await applyGraphState(session?.draft ?? { nodes: [], edges: [] })
+  if (isCanvasUnmounted) return
   hasLoadedGraphState.value = true
 }
 
@@ -853,6 +930,7 @@ onMounted(async () => {
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
+  if (isCanvasUnmounted) return
   if (isSubWorkflowEditor) {
     await loadSubWorkflowSessionDraft()
     return
@@ -864,19 +942,25 @@ onMounted(async () => {
       initialGraph.missingTools ?? [],
       initialGraph.dirty ?? false,
     )
+    if (isCanvasUnmounted) return
     hasLoadedGraphState.value = true
     return
   }
   const recovered = await recoverStartupWorkflow()
+  if (isCanvasUnmounted) return
+  adoptRecoveredWorkflowIdentity(recovered)
   await applyGraphState(
     recovered.graph,
     workflowStore.missingTools,
     recovered.dirty,
   )
+  if (isCanvasUnmounted) return
   hasLoadedGraphState.value = true
 })
 
 onBeforeUnmount(() => {
+  isCanvasUnmounted = true
+  disposeGraphSync()
   if (!isSubWorkflowEditor) {
     window.removeEventListener(
       'bioimageflow:apply-sub-workflow-session',
@@ -1702,7 +1786,7 @@ function copySelected() {
     graph,
     selectedIds,
     toolRegistryStore.getToolByName,
-    { sourceWorkflowName: workflowStore.currentName ?? undefined },
+    { sourceWorkflowName: owningWorkflowId() ?? undefined },
   )
   clipboardData.value = payload
   void writeClipboardPayload(payload)
@@ -1948,7 +2032,7 @@ function openSubWorkflow(nodeId: string) {
   const node = getNodes.value.find((n: any) => n.id === nodeId)
   if (!node?.data?.sub_workflow) return null
   const session = subWorkflowSessionsStore.openSession({
-    parentWorkflowName: workflowStore.currentName,
+    parentWorkflowName: owningWorkflowId(),
     parentSourceWorkflowName: node.data.source_workflow_name ?? null,
     parentNodeId: node.id,
     parentNodeName: node.data.name ?? node.id,
@@ -1958,7 +2042,11 @@ function openSubWorkflow(nodeId: string) {
     readonlyReason: node.data.sub_workflow_readonly_reason ?? null,
   })
   window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
-    detail: { sessionId: session.id, parentNodeId: node.id },
+    detail: {
+      sessionId: session.id,
+      parentNodeId: node.id,
+      parentCanvasPanelId: canvasPanelId,
+    },
   }))
   return session
 }
@@ -2252,7 +2340,7 @@ function handleKeydown(event: KeyboardEvent) {
 // --- Graph change emission ---
 
 function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
-  const name = workflowStore.currentName
+  const name = owningWorkflowId()
   if (!name) return
   const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
   workflowStore.markDirty()
@@ -2387,6 +2475,7 @@ defineExpose({
       {{ remoteDraftResolutionMessage }}
     </div>
     <VueFlow
+      :id="canvasPanelId"
       :node-types="nodeTypes"
       :edge-types="edgeTypes"
       :is-valid-connection="isValidConnection"

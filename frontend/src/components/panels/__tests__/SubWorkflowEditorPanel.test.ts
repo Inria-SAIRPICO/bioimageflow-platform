@@ -10,8 +10,12 @@ const CanvasStub = defineComponent({
       type: String,
       default: '',
     },
+    parentCanvasPanelId: {
+      type: String,
+      default: '',
+    },
   },
-  template: '<div data-testid="sub-workflow-canvas">{{ subWorkflowSessionId }}</div>',
+  template: '<div data-testid="sub-workflow-canvas">{{ subWorkflowSessionId }}|{{ parentCanvasPanelId }}</div>',
 })
 
 describe('SubWorkflowEditorPanel', () => {
@@ -21,6 +25,7 @@ describe('SubWorkflowEditorPanel', () => {
         params: {
           params: {
             sessionId: 'parent:sub_1',
+            parentCanvasPanelId: 'workflow:parent',
           },
         },
       },
@@ -31,7 +36,9 @@ describe('SubWorkflowEditorPanel', () => {
       },
     })
 
-    expect(wrapper.find('[data-testid="sub-workflow-canvas"]').text()).toBe('parent:sub_1')
+    expect(wrapper.find('[data-testid="sub-workflow-canvas"]').text()).toBe(
+      'parent:sub_1|workflow:parent',
+    )
   })
 
   it('does not render a separate apply/close toolbar', () => {
