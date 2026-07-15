@@ -118,7 +118,6 @@ describe('parameter edit followed immediately by Run', () => {
       descriptor,
       getWorkflowId: () => 'parameter_edit',
     })
-    graphSync.syncGraphState(graph)
     useCanvasPersistence({
       descriptor,
       getWorkflowId: () => 'parameter_edit',
@@ -171,28 +170,27 @@ describe('parameter edit followed immediately by Run', () => {
       status: 'executed',
       parameters: { path: '/data/untouched' },
     }
+    const canvasNodes = [
+      { id: 'files', data: nodeData, position: { x: 0, y: 0 } },
+      { id: 'untouched', data: untouchedNodeData, position: { x: 100, y: 0 } },
+    ]
+    graphSync.syncGraph({ nodes: canvasNodes, edges: [] })
     ui.setCanvasGraphNodes(canvasId, [
-      { id: 'files', data: nodeData },
-      { id: 'untouched', data: untouchedNodeData },
+      canvasNodes[0],
+      canvasNodes[1],
     ])
     ui.setCanvasSelectedNodes(canvasId, ['files'])
     ui.setCanvasWorkflow(canvasId, 'parameter_edit', 'Parameter edit')
     const canvasCommands = useCanvasCommands({
       descriptor,
       updateParameter: (nodeId, key, value) => {
-        const selected = ui.graphNodes.find((node: any) => node.id === nodeId)
-        const graphNode = graphSync.currentGraph.value.nodes.find(node => node.id === nodeId)
-        if (!selected?.data || !graphNode) return false
-        const parameters = { ...graphNode.parameters, [key]: value }
+        const selected = canvasNodes.find(node => node.id === nodeId)
+        if (!selected?.data) return false
+        const parameters = { ...selected.data.parameters, [key]: value }
         selected.data.parameters = parameters
         selected.data.status = 'unexecuted'
-        for (const node of ui.graphNodes) node.data.provisional = true
-        graphSync.syncGraphState({
-          ...graphSync.currentGraph.value,
-          nodes: graphSync.currentGraph.value.nodes.map(node => (
-            node.id === nodeId ? { ...node, parameters } : node
-          )),
-        })
+        for (const node of canvasNodes) node.data.provisional = true
+        graphSync.syncGraph({ nodes: canvasNodes, edges: [] })
         return true
       },
     })
@@ -236,7 +234,9 @@ describe('parameter edit followed immediately by Run', () => {
       '/api/v1/execution/run',
       expect.objectContaining({
         graph: expect.objectContaining({
-          nodes: [expect.objectContaining({ parameters: { path: '/data/new' } })],
+          nodes: expect.arrayContaining([
+            expect.objectContaining({ parameters: { path: '/data/new' } }),
+          ]),
         }),
       }),
     )

@@ -572,6 +572,47 @@ describe('CanvasView', () => {
       expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       w.unmount()
+      await flushPromises()
+    })
+
+    it('publishes one tool-reload-style parameter replacement outside the command path', async () => {
+      mockNodes = reactive([{
+        id: 'shared',
+        data: {
+          name: 'Reloaded',
+          toolName: 'gaussian_blur',
+          status: 'executed',
+          parameters: { sigma: 1, removed: true },
+        },
+        position: { x: 0, y: 0 },
+      }]) as any[]
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+
+      mockNodes[0].data.parameters = { sigma: 1 }
+      await nextTick()
+
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: [expect.objectContaining({
+          id: 'shared',
+          parameters: { sigma: 1 },
+        })],
+      }))
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+      await flushPromises()
     })
 
     it('rejects its parameter command while execution owns the canvas', async () => {

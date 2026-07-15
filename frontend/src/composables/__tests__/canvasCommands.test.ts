@@ -109,4 +109,24 @@ describe('active canvas commands', () => {
     expect(useCanvasCommands().updateParameter('node', 'sigma', 2)).toBe(false)
     expect(updateParameter).not.toHaveBeenCalled()
   })
+
+  it('rejects late calls through a disposed fixed-canvas resource', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const updateParameter = vi.fn(() => true)
+    const fixed = useCanvasCommands({
+      descriptor: {
+        kind: 'root',
+        canvasId: rootId,
+        workflowId: 'root',
+      },
+      updateParameter,
+    })
+
+    fixed.dispose()
+
+    expect(() => fixed.updateParameter('node', 'sigma', 2)).toThrow(
+      'Canvas commands have been disposed',
+    )
+    expect(updateParameter).not.toHaveBeenCalled()
+  })
 })

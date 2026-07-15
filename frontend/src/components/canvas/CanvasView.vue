@@ -1191,6 +1191,35 @@ watch(
   { deep: true },
 )
 
+function parameterStateSnapshot(nodes: any[] = getNodes.value): string {
+  return JSON.stringify(nodes.map((node: any) => [
+    node.id,
+    node.data?.parameters ?? {},
+  ]))
+}
+
+let lastPublishedParameterSnapshot = parameterStateSnapshot()
+
+// Tool-schema reconciliation can replace parameters outside NodePanel. Keep a
+// canvas-local fallback for those replacements without publishing command
+// edits twice on Vue's next tick.
+watch(
+  () => getNodes.value.map((node: any) => ({
+    id: node.id,
+    parameters: node.data?.parameters,
+  })),
+  () => {
+    const snapshot = parameterStateSnapshot()
+    if (isApplyingGraphState) {
+      lastPublishedParameterSnapshot = snapshot
+      return
+    }
+    if (snapshot === lastPublishedParameterSnapshot) return
+    emitGraphChanged()
+  },
+  { deep: true },
+)
+
 // Refresh the per-node tool metadata snapshot whenever the registry's
 // tools list changes (typically after a "Set current" version switch in
 // the Manage Tools dialog, or an install/uninstall). Each node was created
@@ -2393,6 +2422,7 @@ function handleKeydown(event: KeyboardEvent) {
 // --- Graph change emission ---
 
 function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
+  lastPublishedParameterSnapshot = parameterStateSnapshot(state.nodes)
   const name = owningWorkflowId()
   if (!name) return
   const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
@@ -2420,6 +2450,7 @@ function updateNodeParameter(
 
 function emitGraphChanged() {
   const state = currentVueFlowState()
+  lastPublishedParameterSnapshot = parameterStateSnapshot(state.nodes)
   undoRedo.push(state)
   // Update the reconciliation node list to match the current graph.
   reconciliationNodes.value = state.nodes.map((n: any) => ({
