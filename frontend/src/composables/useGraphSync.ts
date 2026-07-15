@@ -1,7 +1,11 @@
-import { nextTick, ref } from 'vue'
+import { nextTick } from 'vue'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useWorkflowStore } from '@/stores/workflow'
+import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import {
+  createGraphSyncCoordinator,
+} from '@/sessions/graphSyncCoordinator'
 import type {
   ColumnRefEdge,
   GraphState,
@@ -14,7 +18,7 @@ import type {
 
 type Edge = ColumnRefEdge | PositionalEdge
 
-export type SyncState = 'idle' | 'pending' | 'error'
+export type { SyncState } from '@/sessions/graphSyncCoordinator'
 
 function deepCloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -127,23 +131,11 @@ export function useGraphSync() {
 
 /** Test-only: reset the singleton so each test starts clean. */
 export function _resetGraphSyncForTest(): void {
+  _instance?.dispose()
   _instance = null
 }
 
 function _createGraphSync() {
-  const validationResult = ref<ValidationResult | null>(null)
-  const isPending = ref(false)
-  const syncState = ref<SyncState>('idle')
-  // Latest graph seen by syncGraph/flushNow. Read by consumers (e.g. the
-  // Run button) that need the current graph without owning a Vue Flow
-  // instance.
-  const currentGraph = ref<GraphState>({ nodes: [], edges: [] })
-
-  let timer: ReturnType<typeof setTimeout> | null = null
-  let pendingGraph: GraphState | null = null
-  let requestId = 0
-  let inflightController: AbortController | null = null
-
   function _reportError(status: number | undefined, detail: string): void {
     // useErrorReporting requires an active Pinia. Tests that don't set one
     // up never trigger this path (they don't reject the api mock); a real
@@ -156,105 +148,61 @@ function _createGraphSync() {
     }
   }
 
+  const coordinator = createGraphSyncCoordinator({
+    canvasId: canvasIdFromPanelId('legacy:canvas'),
+    workflowId: null,
+    transport: async ({ graph, workflowId, signal }) => {
+      const response = await api.put<ValidationResult>(
+        '/api/v1/graph',
+        { graph, workflow_name: workflowId },
+        { signal },
+      )
+      return response.data
+    },
+    onOperationalError: (error) => {
+      const err = error as {
+        message?: string
+        response?: { status?: number }
+      }
+      _reportError(
+        err.response?.status,
+        err.message ?? 'PUT /graph failed',
+      )
+    },
+  })
+
+  function queuedWorkflowId(): string | null {
+    try {
+      return useWorkflowStore().currentName
+    } catch {
+      return null
+    }
+  }
+
   function syncGraph(graph: { nodes: any[]; edges: any[] }): void {
-    const next = serializeGraph(graph)
-    pendingGraph = next
-    currentGraph.value = next
-    requestId += 1
-    if (inflightController !== null) {
-      inflightController.abort()
-      inflightController = null
-    }
-    if (timer !== null) {
-      clearTimeout(timer)
-    }
-    timer = setTimeout(() => {
-      sendNow()
-    }, 300)
+    coordinator.queue(serializeGraph(graph), {
+      workflowId: queuedWorkflowId(),
+    })
   }
 
   function syncGraphState(graph: GraphState): void {
-    const next = deepCloneJson(graph)
-    pendingGraph = next
-    currentGraph.value = next
-    requestId += 1
-    if (inflightController !== null) {
-      inflightController.abort()
-      inflightController = null
-    }
-    if (timer !== null) {
-      clearTimeout(timer)
-    }
-    timer = setTimeout(() => {
-      sendNow()
-    }, 300)
+    coordinator.queue(graph, { workflowId: queuedWorkflowId() })
   }
 
   function syncNodeParameters(
     nodeId: string,
     parameters: Record<string, unknown>,
   ): void {
-    const graph = deepCloneJson(currentGraph.value)
+    const graph = deepCloneJson(coordinator.currentGraph.value)
     const node = graph.nodes.find((candidate) => candidate.id === nodeId)
     if (!node) return
     node.parameters = deepCloneJson(parameters)
     syncGraphState(graph)
   }
 
-  async function sendNow(): Promise<void> {
-    if (pendingGraph === null) return
-    const graph = pendingGraph
-    pendingGraph = null
-    if (timer !== null) {
-      clearTimeout(timer)
-      timer = null
-    }
-
-    // Cancel any in-flight request.
-    if (inflightController !== null) {
-      inflightController.abort()
-    }
-    const controller = new AbortController()
-    inflightController = controller
-
-    const thisId = requestId
-    isPending.value = true
-    syncState.value = 'pending'
-
-    try {
-      const workflowName = useWorkflowStore().currentName
-      const response = await api.put(
-        '/api/v1/graph',
-        { graph, workflow_name: workflowName ?? null },
-        { signal: controller.signal },
-      )
-      // Only apply if this is still the latest request
-      if (thisId === requestId) {
-        validationResult.value = response.data
-        syncState.value = 'idle'
-      }
-    } catch (err: any) {
-      // Ignore aborts from a newer request.
-      if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') {
-        return
-      }
-      if (thisId === requestId) {
-        syncState.value = 'error'
-        _reportError(err?.response?.status, err?.message ?? 'PUT /graph failed')
-      }
-    } finally {
-      if (thisId === requestId) {
-        isPending.value = false
-        if (inflightController === controller) {
-          inflightController = null
-        }
-      }
-    }
-  }
-
   async function flushNow(): Promise<void> {
     await nextTick()
-    await sendNow()
+    await coordinator.flushLatest()
   }
 
   return {
@@ -262,9 +210,10 @@ function _createGraphSync() {
     syncGraphState,
     syncNodeParameters,
     flushNow,
-    validationResult,
-    isPending,
-    syncState,
-    currentGraph,
+    validationResult: coordinator.validationResult,
+    isPending: coordinator.isPending,
+    syncState: coordinator.syncState,
+    currentGraph: coordinator.currentGraph,
+    dispose: coordinator.dispose,
   }
 }

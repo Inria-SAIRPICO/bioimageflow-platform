@@ -10,6 +10,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { api } from '@/api/client'
+import { useWorkflowStore } from '@/stores/workflow'
 import { useGraphSync, serializeGraph, _resetGraphSyncForTest } from '../useGraphSync'
 
 const mockedPut = vi.mocked(api.put)
@@ -91,7 +92,7 @@ describe('useGraphSync', () => {
     )
   })
 
-  it('supersedes in-flight requests', async () => {
+  it('joins an in-flight request before sending the newer graph', async () => {
     let resolveFirst!: (v: unknown) => void
     let resolveSecond!: (v: unknown) => void
 
@@ -106,18 +107,18 @@ describe('useGraphSync', () => {
     await vi.advanceTimersByTimeAsync(300)
     expect(mockedPut).toHaveBeenCalledTimes(1)
 
-    // Second call while first is in-flight
+    // A newer graph queues while the first request is in flight.
     syncGraph(makeVueFlowGraph('2'))
     await vi.advanceTimersByTimeAsync(300)
-    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(mockedPut).toHaveBeenCalledTimes(1)
 
-    // Resolve first request (stale)
+    // Resolving the first request starts the queued newer request. Its stale
+    // validation is not published while the newer graph remains pending.
     resolveFirst({ data: makeValidation(false) })
     await vi.advanceTimersByTimeAsync(0)
-    // Stale result should be ignored
     expect(validationResult.value).toBeNull()
+    expect(mockedPut).toHaveBeenCalledTimes(2)
 
-    // Resolve second request (current)
     resolveSecond({ data: makeValidation(true) })
     await vi.advanceTimersByTimeAsync(0)
     expect(validationResult.value).toEqual(makeValidation(true))
@@ -299,7 +300,7 @@ describe('useGraphSync', () => {
     // Second call fails
     mockedPut.mockRejectedValueOnce({ message: 'network boom', response: { status: 500 } })
     syncGraph(makeVueFlowGraph('2'))
-    await flushNow()
+    await expect(flushNow()).rejects.toMatchObject({ message: 'network boom' })
 
     expect(syncState.value).toBe('error')
     // Previous result is kept visible
@@ -317,10 +318,27 @@ describe('useGraphSync', () => {
     })
     const { syncGraph, flushNow } = useGraphSync()
     syncGraph(makeVueFlowGraph())
-    await flushNow()
+    await expect(flushNow()).rejects.toMatchObject({ message: 'boom' })
     expect(errorStore.errors).toHaveLength(1)
     expect(errorStore.errors[0]!.kind).toBe('graph_sync_error')
     expect(errorStore.errors[0]!.status).toBe(500)
+  })
+
+  it('captures workflow identity when the graph is queued', async () => {
+    mockedPut.mockResolvedValue({ data: makeValidation(true) })
+    const workflowStore = useWorkflowStore()
+    workflowStore.$patch({ current: { name: 'queued-workflow' } as any })
+    const { syncGraph, flushNow } = useGraphSync()
+
+    syncGraph(makeVueFlowGraph())
+    workflowStore.$patch({ current: { name: 'later-workflow' } as any })
+    await flushNow()
+
+    expect(mockedPut).toHaveBeenCalledWith(
+      '/api/v1/graph',
+      expect.objectContaining({ workflow_name: 'queued-workflow' }),
+      expect.anything(),
+    )
   })
 
   it('serializeNode round-trips the resources field', () => {

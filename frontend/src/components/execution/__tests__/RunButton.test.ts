@@ -103,11 +103,63 @@ describe('RunButton', () => {
     )
   })
 
-  it('Run button is disabled while validation is pending', async () => {
-    const { wrapper } = mountButton({ syncPending: true })
+  it('Run remains clickable while validation is pending and flushes before execution', async () => {
+    const { wrapper, flushNow } = mountButton({ syncPending: true })
+    const exec = useExecutionStore()
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
     const btn = wrapper.find('[data-testid="run-workflow-button"]')
-    expect(btn.attributes('disabled')).toBeDefined()
-    expect(btn.attributes('title')).toMatch(/validation/i)
+    expect(btn.attributes('disabled')).toBeUndefined()
+
+    await btn.trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(flushNow).toHaveBeenCalledTimes(2)
+    expect(runSpy).toHaveBeenCalledOnce()
+    expect(flushNow.mock.invocationCallOrder[0]).toBeLessThan(
+      runSpy.mock.invocationCallOrder[0]!,
+    )
+    expect(flushNow.mock.invocationCallOrder[1]).toBeLessThan(
+      runSpy.mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('flushes pending validation before deciding which nodes need confirmation', async () => {
+    const { wrapper, flushNow, validationResult, currentGraph } = mountButton({
+      syncPending: true,
+    })
+    currentGraph.value = {
+      nodes: [{
+        id: 'changed',
+        name: 'Changed',
+        tool_name: 'tool',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    flushNow.mockImplementation(async () => {
+      validationResult.value = {
+        valid: true,
+        node_statuses: {
+          changed: { node_id: 'changed', status: 'out_of_date', cached: false },
+        },
+        errors: [],
+      }
+    })
+    const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(flushNow).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('confirm-required')).toEqual([[['changed']]])
+    expect(runSpy).not.toHaveBeenCalled()
   })
 
   it('Run Selected is disabled when no nodes selected', () => {

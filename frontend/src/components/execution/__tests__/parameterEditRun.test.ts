@@ -88,6 +88,14 @@ describe('parameter edit followed immediately by Run', () => {
     setActivePinia(pinia)
     const graphSync = useGraphSync()
     graphSync.syncGraphState(graph)
+    useWorkflowStore().current = {
+      name: 'parameter-edit-run',
+      display_name: 'Parameter Edit Run',
+      description: null,
+      storage_path: '/tmp/workflows/parameter-edit-run',
+      path: '/tmp/workflows/parameter-edit-run.json',
+      last_modified: '2026-01-01T00:00:00Z',
+    }
 
     useWorkflowStore().current = {
       name: 'parameter_edit',
