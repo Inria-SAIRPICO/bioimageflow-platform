@@ -161,7 +161,6 @@ export function createRecoveryPersistenceCoordinator(
   const isDisposed = ref(false)
 
   const latestByKey = new Map<string, QueuedRecovery>()
-  const acceptedRevisionByKey = new Map<string, number>()
   let lastAcceptance: RecoveryPersistenceAcceptance | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let inflight: InflightRecovery | null = null
@@ -225,8 +224,6 @@ export function createRecoveryPersistenceCoordinator(
   function nextTarget(): QueuedRecovery | null {
     let target: QueuedRecovery | null = null
     for (const snapshot of latestByKey.values()) {
-      const acceptedRevision = acceptedRevisionByKey.get(snapshot.recoveryKey) ?? 0
-      if (acceptedRevision >= snapshot.queueRevision) continue
       if (target === null || snapshot.queueRevision < target.queueRevision) {
         target = snapshot
       }
@@ -254,7 +251,15 @@ export function createRecoveryPersistenceCoordinator(
         completeOwnership(snapshot.recoveryKey, snapshot.ownershipToken, false)
         return false
       }
-      await options.transport(request)
+      try {
+        await options.transport(request)
+      } catch (error) {
+        if (!isLatestOwner(snapshot.recoveryKey, snapshot.ownershipToken)) {
+          completeOwnership(snapshot.recoveryKey, snapshot.ownershipToken, false)
+          return false
+        }
+        throw error
+      }
       completeOwnership(snapshot.recoveryKey, snapshot.ownershipToken, true)
       return true
     })
@@ -268,7 +273,6 @@ export function createRecoveryPersistenceCoordinator(
           graph: cloneJson(snapshot.graph),
           persisted,
         }
-        acceptedRevisionByKey.set(snapshot.recoveryKey, snapshot.queueRevision)
         if (
           latestByKey.get(snapshot.recoveryKey)?.queueRevision
           === snapshot.queueRevision
@@ -292,10 +296,10 @@ export function createRecoveryPersistenceCoordinator(
         }
         const current = latestByKey.get(snapshot.recoveryKey)
         const isCurrent = current?.queueRevision === snapshot.queueRevision
-        lastError.value = error
         isPending.value = true
-        syncState.value = isCurrent ? 'error' : 'pending'
         if (isCurrent) {
+          lastError.value = error
+          syncState.value = 'error'
           options.onOperationalError?.(error, {
             canvasId: request.canvasId,
             recoveryKey: request.recoveryKey,
@@ -303,6 +307,8 @@ export function createRecoveryPersistenceCoordinator(
             timestamp: request.timestamp,
             graph: request.graph,
           })
+        } else {
+          syncState.value = 'pending'
         }
         throw error
       })
@@ -352,6 +358,12 @@ export function createRecoveryPersistenceCoordinator(
     clearTimer()
     for (const snapshot of latestByKey.values()) {
       abandonOwnership(snapshot.recoveryKey, snapshot.ownershipToken)
+    }
+    if (inflight !== null) {
+      abandonOwnership(
+        inflight.snapshot.recoveryKey,
+        inflight.snapshot.ownershipToken,
+      )
     }
     latestByKey.clear()
     rejectDisposed(new RecoveryPersistenceCoordinatorDisposedError(options.canvasId))

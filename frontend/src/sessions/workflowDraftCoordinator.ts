@@ -130,6 +130,7 @@ export function createWorkflowDraftCoordinator(
 
   function queue(graph: GraphState): number {
     assertUsable()
+    const hasConflict = conflictDraftRevision.value !== null
     const nextRevision = queueRevision.value + 1
     const graphSnapshot = cloneJson(graph)
     latest = {
@@ -141,11 +142,14 @@ export function createWorkflowDraftCoordinator(
     queueRevision.value = nextRevision
     currentGraph.value = cloneJson(graphSnapshot)
     isPending.value = true
+    clearTimer()
+    if (hasConflict) {
+      syncState.value = 'conflict'
+      return nextRevision
+    }
+
     syncState.value = 'pending'
     lastError.value = null
-    conflictDraftRevision.value = null
-
-    clearTimer()
     timer = setTimeout(() => {
       timer = null
       void flushLatest().catch(() => {
@@ -201,12 +205,14 @@ export function createWorkflowDraftCoordinator(
         }
         const conflict = conflictRevision(error)
         const isCurrent = latest?.queueRevision === snapshot.queueRevision
-        lastError.value = error
         isPending.value = true
         if (conflict !== null) {
+          clearTimer()
+          lastError.value = error
           conflictDraftRevision.value = conflict
           syncState.value = 'conflict'
         } else if (isCurrent) {
+          lastError.value = error
           syncState.value = 'error'
           options.onOperationalError?.(error, {
             canvasId: request.canvasId,
@@ -234,6 +240,9 @@ export function createWorkflowDraftCoordinator(
   async function flushLatest(): Promise<WorkflowDraftAcceptance | null> {
     assertUsable()
     clearTimer()
+    if (conflictDraftRevision.value !== null && lastError.value !== null) {
+      throw lastError.value
+    }
 
     while (true) {
       assertUsable()

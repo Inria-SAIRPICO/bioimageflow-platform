@@ -173,6 +173,38 @@ describe('workflow draft coordinator', () => {
     })
   })
 
+  it('does not expose a superseded failure while the newer draft is pending', async () => {
+    const oldWrite = deferred<WorkflowDraftResponse>()
+    const newWrite = deferred<WorkflowDraftResponse>()
+    const onOperationalError = vi.fn()
+    const transport = vi.fn()
+      .mockReturnValueOnce(oldWrite.promise)
+      .mockReturnValueOnce(newWrite.promise)
+    const coordinator = createWorkflowDraftCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:a'),
+      workflowId: 'workflow-a',
+      initialDraftRevision: 1,
+      transport,
+      onOperationalError,
+    })
+
+    coordinator.queue(graph('old'))
+    const flushing = coordinator.flushLatest()
+    await vi.advanceTimersByTimeAsync(0)
+    coordinator.queue(graph('new'))
+
+    oldWrite.reject(new Error('superseded failure'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(transport).toHaveBeenCalledTimes(2)
+    expect(coordinator.syncState.value).toBe('pending')
+    expect(coordinator.lastError.value).toBeNull()
+    expect(onOperationalError).not.toHaveBeenCalled()
+
+    newWrite.resolve(response(2, 'new'))
+    await expect(flushing).resolves.toMatchObject({ queueRevision: 2 })
+  })
+
   it('surfaces same-workflow revision conflicts without dropping queued state', async () => {
     let backendRevision = 1
     const transport = vi.fn(async (request: WorkflowDraftWriteRequest) => {
@@ -213,6 +245,49 @@ describe('workflow draft coordinator', () => {
     expect(second.currentGraph.value.nodes[0]?.parameters).toEqual({
       value: 'second-latest',
     })
+  })
+
+  it('retains newer edits in conflict without automatically retrying them', async () => {
+    const held = deferred<WorkflowDraftResponse>()
+    const conflict = {
+      response: {
+        status: 409,
+        data: { current_revision: 7 },
+      },
+    }
+    const transport = vi.fn(() => held.promise)
+    const coordinator = createWorkflowDraftCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:conflict'),
+      workflowId: 'workflow-a',
+      initialDraftRevision: 1,
+      transport,
+    })
+
+    coordinator.queue(graph('inflight'))
+    const flushing = coordinator.flushLatest()
+    await vi.advanceTimersByTimeAsync(0)
+    coordinator.queue(graph('queued-during-write'))
+    held.reject(conflict)
+
+    await expect(flushing).rejects.toBe(conflict)
+    expect(coordinator.syncState.value).toBe('conflict')
+    expect(coordinator.conflictDraftRevision.value).toBe(7)
+    expect(coordinator.currentGraph.value.nodes[0]?.parameters).toEqual({
+      value: 'queued-during-write',
+    })
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(transport).toHaveBeenCalledOnce()
+    await expect(coordinator.flushLatest()).rejects.toBe(conflict)
+    expect(transport).toHaveBeenCalledOnce()
+
+    coordinator.queue(graph('edited-after-conflict'))
+    expect(coordinator.syncState.value).toBe('conflict')
+    expect(coordinator.currentGraph.value.nodes[0]?.parameters).toEqual({
+      value: 'edited-after-conflict',
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(transport).toHaveBeenCalledOnce()
   })
 
   it('disposing one canvas rejects its write without affecting another canvas', async () => {

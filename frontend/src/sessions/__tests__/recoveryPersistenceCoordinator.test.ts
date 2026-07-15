@@ -139,6 +139,34 @@ describe('recovery persistence coordinator', () => {
     expect(order).toEqual(['older', 'newer'])
   })
 
+  it('reports a failed older same-key write as skipped once a newer canvas owns it', async () => {
+    const olderWrite = deferred<void>()
+    const onOlderError = vi.fn()
+    const older = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:older-failure'),
+      transport: vi.fn(() => olderWrite.promise),
+      onOperationalError: onOlderError,
+    })
+    const newerTransport = vi.fn(async () => {})
+    const newer = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:newer-owner'),
+      transport: newerTransport,
+    })
+
+    older.queue('shared-workflow', graph('older'))
+    const flushingOlder = older.flushLatest()
+    await vi.advanceTimersByTimeAsync(0)
+    newer.queue('shared-workflow', graph('newer'))
+    const flushingNewer = newer.flushLatest()
+    olderWrite.reject(new Error('older storage failure'))
+
+    await expect(flushingOlder).resolves.toMatchObject({ persisted: false })
+    await expect(flushingNewer).resolves.toMatchObject({ persisted: true })
+    expect(newerTransport).toHaveBeenCalledOnce()
+    expect(onOlderError).not.toHaveBeenCalled()
+    expect(older.lastError.value).toBeNull()
+  })
+
   it('skips an older same-key snapshot flushed after a newer snapshot was accepted', async () => {
     const olderTransport = vi.fn(async () => {})
     const newerTransport = vi.fn(async () => {})
@@ -183,6 +211,36 @@ describe('recovery persistence coordinator', () => {
     expect(transport).toHaveBeenCalledTimes(2)
   })
 
+  it('does not expose a superseded failure while the newer recovery is pending', async () => {
+    const oldWrite = deferred<void>()
+    const newWrite = deferred<void>()
+    const onOperationalError = vi.fn()
+    const transport = vi.fn()
+      .mockReturnValueOnce(oldWrite.promise)
+      .mockReturnValueOnce(newWrite.promise)
+    const coordinator = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:retry-newer'),
+      transport,
+      onOperationalError,
+    })
+
+    coordinator.queue('workflow-a', graph('old'))
+    const flushing = coordinator.flushLatest()
+    await vi.advanceTimersByTimeAsync(0)
+    coordinator.queue('workflow-a', graph('new'))
+
+    oldWrite.reject(new Error('superseded failure'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(transport).toHaveBeenCalledTimes(2)
+    expect(coordinator.syncState.value).toBe('pending')
+    expect(coordinator.lastError.value).toBeNull()
+    expect(onOperationalError).not.toHaveBeenCalled()
+
+    newWrite.resolve()
+    await expect(flushing).resolves.toMatchObject({ queueRevision: 2 })
+  })
+
   it('disposing one canvas cancels its queue without affecting another canvas', async () => {
     const transportA = vi.fn(async () => {})
     const transportB = vi.fn(async () => {})
@@ -205,5 +263,34 @@ describe('recovery persistence coordinator', () => {
     await expect(a.flushLatest()).rejects.toBeInstanceOf(
       RecoveryPersistenceCoordinatorDisposedError,
     )
+  })
+
+  it('disposal releases both inflight and replacement ownership for the same key', async () => {
+    const waitingTransport = vi.fn(async () => {})
+    const waiting = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:waiting-owner'),
+      transport: waitingTransport,
+    })
+    const disposed = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:disposed-owner'),
+      transport: vi.fn(({ signal }) => new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')), {
+          once: true,
+        })
+      })),
+    })
+
+    waiting.queue('shared-key', graph('waiting'))
+    disposed.queue('shared-key', graph('inflight'))
+    const disposedFlush = disposed.flushLatest()
+    await vi.advanceTimersByTimeAsync(0)
+    disposed.queue('shared-key', graph('replacement'))
+    disposed.dispose()
+
+    await expect(disposedFlush).rejects.toBeInstanceOf(
+      RecoveryPersistenceCoordinatorDisposedError,
+    )
+    await expect(waiting.flushLatest()).resolves.toMatchObject({ persisted: true })
+    expect(waitingTransport).toHaveBeenCalledOnce()
   })
 })
