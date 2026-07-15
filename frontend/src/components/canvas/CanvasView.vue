@@ -167,6 +167,12 @@ const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
   save: isSubWorkflowEditor ? () => saveSubWorkflowSession() : undefined,
 })
+uiStore.setCanvasWorkflow(
+  canvasId,
+  ownedWorkflowName.value,
+  ownedWorkflowDisplayName.value,
+)
+uiStore.setCanvasGraphNodes(canvasId, getNodes.value)
 const {
   syncGraph,
   syncGraphState,
@@ -271,7 +277,7 @@ let isRefreshingToolMetadata = false
 let clipboardToast: ReturnType<typeof useToast> | null = null
 
 const hasLocalRemoteDraftConflict = computed(() => (
-  uiStore.hasUnsavedChanges || isCanvasPersistencePending.value
+  uiStore.canvasHasUnsavedChanges(canvasId) || isCanvasPersistencePending.value
 ))
 
 const shouldShowRemoteDraftConflict = computed(() => {
@@ -360,6 +366,11 @@ function adoptRecoveredWorkflowIdentity(recovered: {
 }): void {
   ownedWorkflowName.value = recovered.workflowName
   ownedWorkflowDisplayName.value = recovered.workflowDisplayName
+  uiStore.setCanvasWorkflow(
+    canvasId,
+    recovered.workflowName,
+    recovered.workflowDisplayName,
+  )
 }
 
 function workflowInfoId(workflow: WorkflowInfo): string {
@@ -485,6 +496,11 @@ async function applyGraphState(
     syncGraphState(rememberAuthoritativeGraph(graph))
     if (!isSubWorkflowEditor) {
       const identity = workflowIdentity()
+      uiStore.setCanvasWorkflow(
+        canvasId,
+        identity.workflowName,
+        identity.workflowDisplayName,
+      )
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
         detail: {
           panelId: componentPanelId(),
@@ -493,9 +509,9 @@ async function applyGraphState(
         },
       }))
       if (dirty) {
-        workflowStore.markDirty()
+        uiStore.markCanvasDirty(canvasId)
       } else {
-        workflowStore.markClean()
+        uiStore.markCanvasClean(canvasId)
       }
     }
   } finally {
@@ -512,7 +528,10 @@ async function ensureDefaultWorkflow() {
     name = `${base}_${suffix}`
     suffix += 1
   }
-  const workflow = await workflowStore.createWorkflow({ name, display_name: name })
+  const workflow = await workflowStore.createWorkflow(
+    { name, display_name: name },
+    canvasId,
+  )
   const workflowName = workflowInfoId(workflow)
   const draft = await workflowDraftStore.loadDraft(workflowName).catch(() => null)
   if (draft !== null) initializeCanvasPersistenceFromDraft(draft)
@@ -543,7 +562,7 @@ async function recoverStartupWorkflow() {
   if (targetName && exists) {
     let serverGraph: GraphState
     try {
-      serverGraph = await workflowStore.loadWorkflow(targetName)
+      serverGraph = await workflowStore.loadWorkflow(targetName, canvasId)
     } catch {
       await autoSave.clearAutoSave(targetName)
       await autoSave.setLastOpenedWorkflow(null)
@@ -611,7 +630,7 @@ function handleCanvasTabActivatedEvent(event: Event) {
   isActiveCanvasTab.value = detail?.panelId === componentPanelId()
   if (!isActiveCanvasTab.value) return
   trackDraftWorkflowForActiveRootCanvas()
-  uiStore.setGraphNodes(getNodes.value)
+  uiStore.setCanvasGraphNodes(canvasId, getNodes.value)
   if (lastAuthoritativeGraph.value !== null) {
     syncGraphState(lastAuthoritativeGraph.value)
   }
@@ -653,9 +672,9 @@ function showRemoteDraftActionError(summary: string, err: unknown): void {
 
 function markWorkflowDirtyFromDraft(dirty: boolean): void {
   if (dirty) {
-    workflowStore.markDirty()
+    uiStore.markCanvasDirty(canvasId)
   } else {
-    workflowStore.markClean()
+    uiStore.markCanvasClean(canvasId)
   }
 }
 
@@ -989,6 +1008,7 @@ onBeforeUnmount(() => {
   disposeGraphSync()
   disposeCanvasPersistence()
   canvasCommands.dispose()
+  uiStore.releaseCanvasPresentation(canvasId)
   if (!isSubWorkflowEditor) {
     window.removeEventListener(
       'bioimageflow:apply-sub-workflow-session',
@@ -1125,14 +1145,14 @@ onNodesChange((changes) => {
     const selectedIds = getNodes.value
       .filter((n: any) => n.selected)
       .map((n: any) => n.id)
-    uiStore.setSelectedNodes(selectedIds)
+    uiStore.setCanvasSelectedNodes(canvasId, selectedIds)
     emit('node-selected', selectedIds)
   }
 })
 
 // Sync graph nodes to UI store for NodePanel
 watch(getNodes, (nodes) => {
-  uiStore.setGraphNodes(nodes)
+  uiStore.setCanvasGraphNodes(canvasId, nodes)
 }, { deep: true })
 
 // Persist in-place node-data edits made from NodePanel (parameters, rename,
@@ -2052,7 +2072,7 @@ function createSelectedSubWorkflow() {
   attachPublicationContextToNodes(result.nodes as any[])
   setNodes(result.nodes as any)
   setEdges(result.edges)
-  uiStore.setSelectedNodes([id])
+  uiStore.setCanvasSelectedNodes(canvasId, [id])
   emitGraphChanged()
 }
 
@@ -2223,6 +2243,7 @@ function saveSubWorkflowSession() {
   const session = subWorkflowSessionsStore.sessionById(sessionId)
   if (!session) return
   const saved = subWorkflowSessionsStore.saveSession(sessionId)
+  uiStore.markCanvasClean(canvasId)
   window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
     detail: {
       sessionId,
@@ -2371,7 +2392,7 @@ function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
   const name = owningWorkflowId()
   if (!name) return
   const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
-  workflowStore.markDirty()
+  uiStore.markCanvasDirty(canvasId)
   queueCanvasPersistence(graph)
 }
 
@@ -2408,6 +2429,7 @@ function emitGraphChanged() {
     syncGraph(state as any)
     const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
     subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
+    uiStore.markCanvasDirty(canvasId)
     emit('graph-changed', state)
     return
   }

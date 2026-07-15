@@ -3,7 +3,7 @@ import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useWorkflowStore } from '@/stores/workflow'
 import {
-  CanvasSessionRegistry,
+  canvasSessionRegistry,
   canvasIdFromPanelId,
   type CanvasId,
   type CanvasSessionDescriptor,
@@ -141,7 +141,7 @@ export function serializeGraph(raw: {
   return graph
 }
 
-export const graphSyncCanvasSessions = new CanvasSessionRegistry()
+export const graphSyncCanvasSessions = canvasSessionRegistry
 
 let legacyInstance: GraphSyncApi | null = null
 let activeFacade: GraphSyncApi | null = null

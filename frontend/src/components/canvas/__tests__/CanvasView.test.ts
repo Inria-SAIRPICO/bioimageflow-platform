@@ -472,6 +472,47 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('writes presentation state through its fixed canvas identity', () => {
+      mockNodes = [
+        {
+          id: 'shared',
+          selected: true,
+          data: { name: 'Analysis node', toolName: 'gaussian_blur' },
+          position: { x: 0, y: 0 },
+        },
+      ]
+      const ui = useUIStore()
+      const setWorkflow = vi.spyOn(ui, 'setCanvasWorkflow')
+      const setNodes = vi.spyOn(ui, 'setCanvasGraphNodes')
+      const setSelection = vi.spyOn(ui, 'setCanvasSelectedNodes')
+      const markDirty = vi.spyOn(ui, 'markCanvasDirty')
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+
+      selectionHandler!([{ type: 'select' }])
+      connectHandler!({
+        source: 'shared',
+        target: 'missing',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+      })
+
+      expect(setWorkflow).toHaveBeenCalledWith(
+        'workflow:analysis',
+        'analysis',
+        'Analysis',
+      )
+      expect(setNodes).toHaveBeenCalledWith('workflow:analysis', mockNodes)
+      expect(setSelection).toHaveBeenCalledWith('workflow:analysis', ['shared'])
+      expect(markDirty).toHaveBeenCalledWith('workflow:analysis')
+      w.unmount()
+    })
+
     it('registers a nested canvas with its parent canvas identity', () => {
       const sessions = useSubWorkflowSessionsStore()
       const session = sessions.openSession({

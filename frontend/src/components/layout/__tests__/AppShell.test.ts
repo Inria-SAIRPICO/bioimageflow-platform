@@ -582,6 +582,18 @@ describe('AppShell', () => {
         parentCanvasPanelId: 'workflow:parent',
       },
     }))
+    const nestedPanelId = `sub-workflow:${encodeURIComponent(session.id)}`
+    const nestedCanvasId = canvasIdFromPanelId(nestedPanelId)
+    useGraphSync({
+      descriptor: {
+        kind: 'nested',
+        canvasId: nestedCanvasId,
+        sessionId: session.id,
+        parentCanvasId: canvasIdFromPanelId('workflow:parent'),
+      },
+      getWorkflowId: () => 'parent',
+    })
+    useUIStore().setCanvasSelectedNodes(nestedCanvasId, ['nested-node'])
     await flushPromises()
 
     const lastCall = mockDockviewApi.addPanel.mock.calls[
@@ -597,6 +609,9 @@ describe('AppShell', () => {
     })
     expect(lastCall.id).toContain('sub-workflow:')
     expect(panels.get(lastCall.id).api.setActive).toHaveBeenCalled()
+    expect(useUIStore().activeWorkflowId).toBe('parent')
+    expect(useUIStore().activeWorkflowName).toBe('Sub 1')
+    expect(useUIStore().selectedNodeIds).toEqual(['nested-node'])
   })
 
   it('opens and activates a named canvas tab for a root workflow graph', async () => {
@@ -612,6 +627,15 @@ describe('AppShell', () => {
         dirty: false,
       },
     }))
+    const analysisCanvasId = canvasIdFromPanelId('workflow:analysis')
+    useGraphSync({
+      descriptor: {
+        kind: 'root',
+        canvasId: analysisCanvasId,
+        workflowId: 'analysis',
+      },
+      getWorkflowId: () => 'analysis',
+    })
     await flushPromises()
 
     const lastCall = mockDockviewApi.addPanel.mock.calls[
@@ -749,11 +773,84 @@ describe('AppShell', () => {
         workflowDisplayName: 'Analysis',
       },
     }))
+    const startupCanvasId = canvasIdFromPanelId('canvas')
+    useGraphSync({
+      descriptor: {
+        kind: 'root',
+        canvasId: startupCanvasId,
+        workflowId: 'analysis',
+      },
+      getWorkflowId: () => 'analysis',
+    })
     panels.get('canvas').api.setActive()
     await flushPromises()
 
     expect(workflow.currentName).toBe('analysis')
     expect(useUIStore().activeWorkflowName).toBe('Analysis')
+  })
+
+  it('switches active presentation context and retains it on side panels', async () => {
+    mountApp()
+    await flushPromises()
+    const startupCanvasId = canvasIdFromPanelId('canvas')
+    const workflowCanvasId = canvasIdFromPanelId('workflow:analysis')
+    useGraphSync({
+      descriptor: {
+        kind: 'root',
+        canvasId: startupCanvasId,
+        workflowId: 'startup',
+      },
+      getWorkflowId: () => 'startup',
+    })
+    window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
+      detail: {
+        panelId: 'canvas',
+        workflowName: 'startup',
+        workflowDisplayName: 'Startup',
+      },
+    }))
+    const ui = useUIStore()
+    ui.setCanvasSelectedNodes(startupCanvasId, ['shared'])
+    ui.setCanvasGraphNodes(startupCanvasId, [{ id: 'shared', data: { name: 'Startup node' } }])
+    ui.markCanvasDirty(startupCanvasId)
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'analysis',
+        workflowDisplayName: 'Analysis',
+        graph: { nodes: [], edges: [] },
+        dirty: false,
+      },
+    }))
+    useGraphSync({
+      descriptor: {
+        kind: 'root',
+        canvasId: workflowCanvasId,
+        workflowId: 'analysis',
+      },
+      getWorkflowId: () => 'analysis',
+    })
+    ui.setCanvasSelectedNodes(workflowCanvasId, ['shared'])
+    ui.setCanvasGraphNodes(workflowCanvasId, [{ id: 'shared', data: { name: 'Analysis node' } }])
+    ui.markCanvasClean(workflowCanvasId)
+    await flushPromises()
+
+    expect(ui.activeWorkflowId).toBe('analysis')
+    expect(ui.graphNodes[0]?.data.name).toBe('Analysis node')
+    expect(ui.hasUnsavedChanges).toBe(false)
+    expect(document.title).toBe('BioImageFlow \u2014 Analysis')
+
+    panels.get('canvas').api.setActive()
+    await flushPromises()
+    expect(ui.activeWorkflowId).toBe('startup')
+    expect(ui.selectedNodeIds).toEqual(['shared'])
+    expect(ui.graphNodes[0]?.data.name).toBe('Startup node')
+    expect(ui.hasUnsavedChanges).toBe(true)
+    expect(document.title).toBe('BioImageFlow \u2014 Startup *')
+
+    panels.get('tools').api.setActive()
+    expect(ui.activeWorkflowId).toBe('startup')
+    expect(ui.selectedNodeIds).toEqual(['shared'])
   })
 
   it('reopening an already open workflow tab activates it without replacing it', async () => {

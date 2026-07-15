@@ -8,6 +8,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { NodeState, PublishedOutput } from '@/api/types'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -18,6 +19,12 @@ const { currentGraph } = useGraphSync()
 const showAll = ref(false)
 
 const graphNodes = computed(() => currentGraph.value.nodes)
+const activeWorkflowId = computed(() => {
+  if (uiStore.activeWorkflowId !== null) return uiStore.activeWorkflowId
+  return canvasSessionRegistry.sessionCount.value === 0
+    ? workflowStore.currentName
+    : null
+})
 
 const nodeById = computed<Record<string, NodeState>>(() => {
   const out: Record<string, NodeState> = {}
@@ -157,7 +164,7 @@ function fetchIfMissing(entry: DataTableEntry) {
   if (!dataTableStore.getNodeData(entry.dataNodeId) && !dataTableStore.isLoading(entry.dataNodeId)) {
     void dataTableStore.fetchNodeData(entry.dataNodeId, {
       toolName: entry.toolName,
-      workflowName: workflowStore.currentName,
+      workflowName: activeWorkflowId.value,
     })
   }
 }
@@ -165,7 +172,7 @@ function fetchIfMissing(entry: DataTableEntry) {
 function refreshEntry(entry: DataTableEntry) {
   void dataTableStore.fetchNodeData(entry.dataNodeId, {
     toolName: entry.toolName,
-    workflowName: workflowStore.currentName,
+    workflowName: activeWorkflowId.value,
   })
 }
 
@@ -275,7 +282,7 @@ onBeforeUnmount(() => scope?.stop())
         <NodeDataTable
           :node-id="entry.dataNodeId"
           :tool-name="entry.toolName"
-          :workflow-name="workflowStore.currentName"
+          :workflow-name="activeWorkflowId"
           :disabled="entry.disabled"
           :column-aliases="entry.columnAliases"
           :column-filter="entry.columnFilter"

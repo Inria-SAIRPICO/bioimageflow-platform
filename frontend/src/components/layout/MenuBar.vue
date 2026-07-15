@@ -24,6 +24,10 @@ import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState, WorkflowInfo } from '@/api/types'
+import {
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -57,6 +61,19 @@ const workflowTitle = computed(() => {
   const label = uiStore.activeWorkflowName ?? 'No workflow'
   return uiStore.hasUnsavedChanges ? `${label} *` : label
 })
+const activeWorkflowId = computed(() => {
+  if (uiStore.activeWorkflowId !== null) return uiStore.activeWorkflowId
+  return canvasSessionRegistry.sessionCount.value === 0
+    ? workflowStore.currentName
+    : null
+})
+const activeWorkflow = computed(() => {
+  const id = activeWorkflowId.value
+  if (!id) return null
+  return workflowStore.workflows.find((workflow) => workflowId(workflow) === id) ?? (
+    workflowStore.currentName === id ? workflowStore.current : null
+  )
+})
 const workflowDialogVisible = ref(false)
 const workflowDialogMode = ref<'new' | 'save-as'>('new')
 const workflowDialogInitialName = ref('')
@@ -69,7 +86,7 @@ const openDialogVisible = ref(false)
 const deleteDialogVisible = ref(false)
 const deleteTargetName = ref<string | null>(null)
 const deleteDialogWorkflow = computed(() => {
-  const name = deleteTargetName.value ?? workflowStore.currentName
+  const name = deleteTargetName.value ?? activeWorkflowId.value
   if (!name) return null
   return workflowStore.workflows.find((workflow) => workflowId(workflow) === name) ?? (
     workflowStore.currentName === name ? workflowStore.current : null
@@ -135,7 +152,7 @@ function toggleThemeMenu(event: Event): void {
 function runDisabledReason(): string | null {
   if (executionStore.isRunning) return 'Execution in progress'
   if (isPending.value) return 'Waiting for validation…'
-  if (!workflowStore.currentName) return 'Open or save a workflow before running'
+  if (!activeWorkflowId.value) return 'Open or save a workflow before running'
   return null
 }
 
@@ -237,8 +254,9 @@ async function onWorkflowDialogSubmit(payload: {
       return
     }
 
-    if (workflowStore.currentName) {
-      await workflowStore.patchWorkflow(workflowStore.currentName, {
+    const sourceWorkflowId = activeWorkflowId.value
+    if (sourceWorkflowId) {
+      await workflowStore.patchWorkflow(sourceWorkflowId, {
         action: 'duplicate',
         new_name: payload.name,
         display_name: payload.display_name,
@@ -287,22 +305,45 @@ async function onOpenWorkflow(name: string): Promise<void> {
   }
 }
 
+interface WorkflowSaveTarget {
+  canvasId: CanvasId | null
+  workflowName: string | null
+}
+
+function currentSaveTarget(): WorkflowSaveTarget {
+  return {
+    canvasId: canvasPersistence.canvasId,
+    workflowName: activeWorkflowId.value,
+  }
+}
+
+function isSaveTargetActive(target: WorkflowSaveTarget): boolean {
+  return canvasPersistence.canvasId === target.canvasId
+    && activeWorkflowId.value === target.workflowName
+}
+
 async function saveCurrentWorkflowGraph(options: {
   showSuccessToast?: boolean
   conflictAction?: 'saving' | 'exporting'
-} = {}, targetCanvasId = canvasPersistence.canvasId): Promise<WorkflowInfo | null> {
+} = {}, target = currentSaveTarget()): Promise<WorkflowInfo | null> {
   const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
-  if (canvasPersistence.canvasId !== targetCanvasId) return null
+  if (!isSaveTargetActive(target)) return null
   if (!fresh) {
     showDraftConflictWarning(options.conflictAction ?? 'saving')
     return null
   }
+  if (!target.workflowName) return null
   const graph = currentGraph.value
-  const info = await workflowStore.saveWorkflow(graph)
-  if (canvasPersistence.canvasId !== targetCanvasId) return null
+  const info = target.canvasId === null
+    ? await workflowStore.saveWorkflow(graph)
+    : await workflowStore.saveWorkflow(graph, {
+        canvasId: target.canvasId,
+        workflowName: target.workflowName,
+      })
+  if (!isSaveTargetActive(target)) return null
   canvasPersistence.queueDraft(graph)
   await canvasPersistence.flush()
-  if (canvasPersistence.canvasId !== targetCanvasId) return null
+  if (!isSaveTargetActive(target)) return null
   if (options.showSuccessToast !== false) {
     toast?.add({
       severity: 'success',
@@ -315,11 +356,11 @@ async function saveCurrentWorkflowGraph(options: {
 }
 
 async function saveWorkflow(): Promise<void> {
-  const targetCanvasId = canvasPersistence.canvasId
+  const target = currentSaveTarget()
   const route = await canvasCommands.routeSave()
-  if (canvasPersistence.canvasId !== targetCanvasId) return
+  if (!isSaveTargetActive(target)) return
   if (route === 'nested' || route === 'unavailable') return
-  if (!workflowStore.currentName) {
+  if (!target.workflowName) {
     createIntent.value = 'save-current'
     workflowDialogFolderId.value = null
     workflowDialogMode.value = 'new'
@@ -331,14 +372,14 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
-    await saveCurrentWorkflowGraph({ showSuccessToast: true }, targetCanvasId)
+    await saveCurrentWorkflowGraph({ showSuccessToast: true }, target)
   } catch (err: unknown) {
     showError('Save workflow failed', err)
   }
 }
 
 function exportCurrentWorkflow(): void {
-  const name = workflowStore.currentName
+  const name = activeWorkflowId.value
   if (!name) return
   exportSaveDialogVisible.value = true
 }
@@ -439,10 +480,10 @@ async function rebindImportedDependencies(): Promise<void> {
 function saveWorkflowAs(): void {
   workflowDialogFolderId.value = null
   workflowDialogMode.value = 'save-as'
-  const baseName = workflowStore.currentName ?? 'Untitled'
+  const baseName = activeWorkflowId.value ?? 'Untitled'
   workflowDialogInitialName.value = `${baseName}_copy`
   workflowDialogInitialDisplayName.value = `${uiStore.activeWorkflowName ?? baseName} copy`
-  workflowDialogInitialDescription.value = workflowStore.current?.description ?? null
+  workflowDialogInitialDescription.value = activeWorkflow.value?.description ?? null
   workflowDialogSuggestedName.value = null
   workflowDialogVisible.value = true
 }
@@ -466,7 +507,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
 
 async function exportWorkflowByName(name: string): Promise<void> {
   try {
-    if (workflowStore.currentName === name) {
+    if (activeWorkflowId.value === name) {
       exportCurrentWorkflow()
       return
     }
@@ -482,21 +523,21 @@ function deleteWorkflowByName(name: string): void {
 }
 
 function deleteWorkflow(): void {
-  const name = workflowStore.currentName
+  const name = activeWorkflowId.value
   if (!name) return
   deleteTargetName.value = name
   deleteDialogVisible.value = true
 }
 
 async function confirmDeleteWorkflow(): Promise<void> {
-  const name = deleteTargetName.value ?? workflowStore.currentName
+  const name = deleteTargetName.value ?? activeWorkflowId.value
   if (!name) return
-  const wasCurrent = workflowStore.currentName === name
+  const wasActive = activeWorkflowId.value === name
   try {
     await workflowStore.deleteWorkflow(name)
     deleteDialogVisible.value = false
     deleteTargetName.value = null
-    if (wasCurrent) {
+    if (wasActive) {
       applyGraph({ nodes: [], edges: [] })
     }
   } catch (err: unknown) {
@@ -539,17 +580,18 @@ function editCommandDisabled(command: 'cut' | 'copy' | 'paste' | 'select-all' | 
 }
 
 function openRenameDialog(): void {
-  if (!workflowStore.currentName) return
-  renameDisplayName.value = uiStore.activeWorkflowName || workflowStore.currentName
+  if (!activeWorkflowId.value) return
+  renameDisplayName.value = uiStore.activeWorkflowName || activeWorkflowId.value
   renameDialogVisible.value = true
 }
 
 async function submitRename(): Promise<void> {
-  if (!workflowStore.currentName) return
+  const workflowName = activeWorkflowId.value
+  if (!workflowName) return
   const displayName = renameDisplayName.value.trim()
   if (!displayName) return
   try {
-    await workflowStore.patchWorkflow(workflowStore.currentName, {
+    await workflowStore.patchWorkflow(workflowName, {
       action: 'update',
       display_name: displayName,
     })
@@ -605,8 +647,8 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'Save', icon: 'pi pi-save', disabled: executionStore.isRunning, command: saveWorkflow },
       { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isRunning, command: saveWorkflowAs },
       { label: 'Import', icon: 'pi pi-upload', disabled: executionStore.isRunning, command: chooseImportFile },
-      { label: 'Export', icon: 'pi pi-download', disabled: executionStore.isRunning || !workflowStore.currentName, command: exportCurrentWorkflow },
-      { label: 'Delete', icon: 'pi pi-trash', disabled: executionStore.isRunning || !workflowStore.currentName, command: deleteWorkflow },
+      { label: 'Export', icon: 'pi pi-download', disabled: executionStore.isRunning || !activeWorkflowId.value, command: exportCurrentWorkflow },
+      { label: 'Delete', icon: 'pi pi-trash', disabled: executionStore.isRunning || !activeWorkflowId.value, command: deleteWorkflow },
     ],
   },
   {
@@ -729,7 +771,7 @@ defineExpose({
           {{ workflowTitle }}
         </span>
         <Button
-          v-if="workflowStore.currentName"
+          v-if="activeWorkflowId"
           icon="pi pi-pencil"
           text
           rounded
@@ -785,7 +827,7 @@ defineExpose({
   <OpenWorkflowDialog
     v-model:visible="openDialogVisible"
     :workflows="workflowStore.workflows"
-    :current-name="workflowStore.currentName"
+    :current-name="activeWorkflowId"
     @open="onOpenWorkflow"
   />
 

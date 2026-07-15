@@ -234,7 +234,9 @@ function onDockviewReady(event: DockviewReadyEvent) {
   dockviewDisposables.push(
     api.onDidRemovePanel((panel: IDockviewPanel) => {
       if (isCanvasPanelId(panel.id)) {
-        unregisterGraphSyncCanvas(canvasIdFromPanelId(panel.id))
+        const canvasId = canvasIdFromPanelId(panel.id)
+        unregisterGraphSyncCanvas(canvasId)
+        uiStore.releaseCanvasPresentation(canvasId)
       }
       if (isDockPanelKey(panel.id)) {
         const panelId = panel.id
@@ -416,6 +418,11 @@ function openSubWorkflowPanel(sessionId: string): void {
     return
   }
   const canvasPanel = api.getPanel('canvas')
+  uiStore.setCanvasWorkflow(
+    canvasIdFromPanelId(panelId),
+    session.parentWorkflowName,
+    session.parentNodeName,
+  )
   const panel = api.addPanel({
     id: panelId,
     component: 'subWorkflowEditor',
@@ -430,7 +437,6 @@ function openSubWorkflowPanel(sessionId: string): void {
       : { direction: 'below' },
   })
   panel.api.setActive()
-  uiStore.setActiveWorkflow(session.parentNodeName)
 }
 
 function onSubWorkflowSessionOpened(event: CustomEvent<{
@@ -473,33 +479,46 @@ function dockviewParams(panel: IDockviewPanel): Record<string, unknown> {
 }
 
 function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
+  const canvasId = canvasIdFromPanelId(panel.id)
   const workflowNameFromId = workflowNameFromPanelId(panel.id)
   const sessionId = sessionIdFromSubWorkflowPanelId(panel.id)
   if (sessionId) {
-    uiStore.clearSelection()
     const session = subWorkflowSessionsStore.sessionById(sessionId)
-    uiStore.setActiveWorkflow(session?.parentNodeName ?? null)
+    if (session?.parentWorkflowName) {
+      workflowStore.activateWorkflow(session.parentWorkflowName, canvasId)
+    }
+    uiStore.setCanvasWorkflow(
+      canvasId,
+      session?.parentWorkflowName ?? null,
+      session?.parentNodeName ?? null,
+    )
   } else if (workflowNameFromId) {
-    uiStore.clearSelection()
     const params = dockviewParams(panel)
     const workflowName = typeof params.workflowName === 'string'
       ? params.workflowName
       : workflowNameFromId
     if (typeof workflowName === 'string') {
-      workflowStore.activateWorkflow(workflowName)
+      workflowStore.activateWorkflow(workflowName, canvasId)
     }
     const label = params.workflowDisplayName ?? workflowName
     if (typeof label === 'string') {
-      uiStore.setActiveWorkflow(label)
+      uiStore.setCanvasWorkflow(canvasId, workflowName, label)
     }
   } else if (panel.id === 'canvas') {
-    uiStore.clearSelection()
     const context = canvasContexts.get(panel.id)
     if (context) {
-      workflowStore.activateWorkflow(context.workflowName)
-      uiStore.setActiveWorkflow(context.workflowDisplayName)
+      workflowStore.activateWorkflow(context.workflowName, canvasId)
+      uiStore.setCanvasWorkflow(
+        canvasId,
+        context.workflowName,
+        context.workflowDisplayName,
+      )
     } else {
-      uiStore.setActiveWorkflow(workflowStore.current?.display_name ?? null)
+      uiStore.setCanvasWorkflow(
+        canvasId,
+        workflowStore.currentName,
+        workflowStore.current?.display_name ?? null,
+      )
     }
   } else {
     return
@@ -522,6 +541,11 @@ function onCanvasContextUpdated(event: CustomEvent<{
     workflowName: detail.workflowName,
     workflowDisplayName: title,
   })
+  uiStore.setCanvasWorkflow(
+    canvasIdFromPanelId(detail.panelId),
+    detail.workflowName,
+    title,
+  )
   dockviewApi.value?.getPanel(detail.panelId)?.api.setTitle(title)
 }
 
@@ -546,6 +570,11 @@ function openWorkflowCanvasPanel(detail: {
     return
   }
   canvasContexts.set(panelId, { workflowName, workflowDisplayName })
+  uiStore.setCanvasWorkflow(
+    canvasIdFromPanelId(panelId),
+    workflowName,
+    workflowDisplayName,
+  )
   const canvasPanel = api.getPanel('canvas')
   const bottomPanel = api.getPanel('dataTable') ?? api.getPanel('logger')
   const panel = api.addPanel({
@@ -567,7 +596,6 @@ function openWorkflowCanvasPanel(detail: {
         : { direction: 'below' },
   })
   panel.api.setActive()
-  uiStore.setActiveWorkflow(workflowDisplayName)
 }
 
 function onApplyGraph(event: CustomEvent<{

@@ -9,8 +9,14 @@ import PathCell from '../PathCell.vue'
 import { useUIStore } from '@/stores/ui'
 import { useDataTableStore } from '@/stores/dataTable'
 import { useExecutionStore } from '@/stores/execution'
-import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
+import {
+  graphSyncCanvasSessions,
+  useGraphSync,
+  _resetGraphSyncForTest,
+} from '@/composables/useGraphSync'
 import { api } from '@/api/client'
+import { useWorkflowStore } from '@/stores/workflow'
+import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -107,6 +113,58 @@ describe('DataTablePanel', () => {
 
     expect(wrapper.text().toLowerCase()).toContain('no node selected')
     expect(wrapper.find('[data-testid="node-data-table-node-1"]').exists()).toBe(false)
+  })
+
+  it('requests node data with the active canvas workflow identity', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    const graphA = useGraphSync({
+      descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+      getWorkflowId: () => 'a',
+    })
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
+      getWorkflowId: () => 'b',
+    })
+    graphA.syncGraphState({
+      nodes: [{
+        id: 'shared',
+        name: 'Node A',
+        tool_name: 'files',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+    ui.setCanvasSelectedNodes(canvasA, ['shared'])
+    ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+    graphSyncCanvasSessions.activate(canvasA)
+    useWorkflowStore().current = { name: 'b', display_name: 'Workflow B' } as any
+    const fetchNodeData = vi
+      .spyOn(useDataTableStore(), 'fetchNodeData')
+      .mockResolvedValue(undefined)
+
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: { Button: true, NodeDataTable: true },
+      },
+    })
+    await flushPromises()
+
+    expect(fetchNodeData).toHaveBeenCalledWith('shared', {
+      toolName: 'files',
+      workflowName: 'a',
+    })
+    wrapper.unmount()
   })
 
   it('renders image path rows as thumbnail, path, Napari, reveal, copy only', async () => {

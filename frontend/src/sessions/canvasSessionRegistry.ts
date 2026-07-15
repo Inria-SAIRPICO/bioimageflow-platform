@@ -144,6 +144,9 @@ export class CanvasSessionRegistry {
   }
 }
 
+/** Shared registry used by canvas-scoped frontend resources and active-canvas facades. */
+export const canvasSessionRegistry = new CanvasSessionRegistry()
+
 function sessionView(session: MutableCanvasSession): RegisteredCanvasSession {
   return {
     descriptor: session.descriptor,
