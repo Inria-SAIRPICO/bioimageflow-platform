@@ -290,15 +290,19 @@ async function onOpenWorkflow(name: string): Promise<void> {
 async function saveCurrentWorkflowGraph(options: {
   showSuccessToast?: boolean
   conflictAction?: 'saving' | 'exporting'
-} = {}): Promise<WorkflowInfo | null> {
+} = {}, targetCanvasId = canvasPersistence.canvasId): Promise<WorkflowInfo | null> {
   const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
+  if (canvasPersistence.canvasId !== targetCanvasId) return null
   if (!fresh) {
     showDraftConflictWarning(options.conflictAction ?? 'saving')
     return null
   }
-  const info = await workflowStore.saveWorkflow(currentGraph.value)
-  canvasPersistence.queueDraft(currentGraph.value)
+  const graph = currentGraph.value
+  const info = await workflowStore.saveWorkflow(graph)
+  if (canvasPersistence.canvasId !== targetCanvasId) return null
+  canvasPersistence.queueDraft(graph)
   await canvasPersistence.flush()
+  if (canvasPersistence.canvasId !== targetCanvasId) return null
   if (options.showSuccessToast !== false) {
     toast?.add({
       severity: 'success',
@@ -311,7 +315,9 @@ async function saveCurrentWorkflowGraph(options: {
 }
 
 async function saveWorkflow(): Promise<void> {
+  const targetCanvasId = canvasPersistence.canvasId
   const route = await canvasCommands.routeSave()
+  if (canvasPersistence.canvasId !== targetCanvasId) return
   if (route === 'nested' || route === 'unavailable') return
   if (!workflowStore.currentName) {
     createIntent.value = 'save-current'
@@ -325,7 +331,7 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
-    await saveCurrentWorkflowGraph({ showSuccessToast: true })
+    await saveCurrentWorkflowGraph({ showSuccessToast: true }, targetCanvasId)
   } catch (err: unknown) {
     showError('Save workflow failed', err)
   }

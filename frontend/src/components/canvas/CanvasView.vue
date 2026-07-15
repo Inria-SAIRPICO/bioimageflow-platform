@@ -178,6 +178,7 @@ const {
 const {
   queueGraph: queueCanvasPersistence,
   initializeFromDraft: initializeCanvasPersistenceFromDraft,
+  resolveFromDraft: resolveCanvasPersistenceFromDraft,
   isPending: isCanvasPersistencePending,
   dispose: disposeCanvasPersistence,
 } = canvasPersistence
@@ -672,6 +673,7 @@ async function applyAgentDraftChanges(): Promise<void> {
       workflowStore.missingTools,
       draft.dirty_against_saved,
     )
+    resolveCanvasPersistenceFromDraft(draft)
   } catch (err) {
     showRemoteDraftActionError('Could not apply agent changes', err)
   } finally {
@@ -690,6 +692,7 @@ async function keepCurrentCanvasDraft(): Promise<void> {
       workflowName,
       currentSerializedGraph(),
     )
+    resolveCanvasPersistenceFromDraft(response)
     markWorkflowDirtyFromDraft(response.dirty_against_saved)
   } catch (err) {
     showRemoteDraftActionError('Could not keep your canvas', err)
@@ -788,6 +791,7 @@ async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
       workflowStore.missingTools,
       draft.dirty_against_saved,
     )
+    resolveCanvasPersistenceFromDraft(draft)
   } catch (err) {
     console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
   } finally {

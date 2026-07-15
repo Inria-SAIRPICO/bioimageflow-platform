@@ -68,6 +68,34 @@ describe('useExecutionLock', () => {
     expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a')
   })
 
+  it('lockForExecution aborts if its canvas target changes while graph sync flushes', async () => {
+    const { lockForExecution } = useExecutionLock()
+    const exec = useExecutionStore()
+    let resolveFlush!: () => void
+    const flushNow = vi.fn(() => new Promise<void>((resolve) => {
+      resolveFlush = resolve
+    }))
+    const validationResult = ref<ValidationResult | null>({
+      valid: true,
+      node_statuses: {},
+      errors: [],
+    })
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+    let targetActive = true
+
+    const result = lockForExecution({
+      graph: { nodes: [], edges: [] },
+      graphSync: { flushNow, validationResult },
+      workflowName: 'wf_a',
+      isTargetActive: () => targetActive,
+    })
+    targetActive = false
+    resolveFlush()
+
+    await expect(result).resolves.toBe(false)
+    expect(runSpy).not.toHaveBeenCalled()
+  })
+
   it('lockForExecution aborts if validation fails after flush', async () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()

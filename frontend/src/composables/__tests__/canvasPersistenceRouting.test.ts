@@ -251,6 +251,42 @@ describe('canvas persistence routing', () => {
     expect(b.hasConflict.value).toBe(true)
   })
 
+  it('clears a sticky CAS conflict only after explicit authoritative resolution', async () => {
+    const conflict = {
+      response: {
+        status: 409,
+        data: { current_revision: 2 },
+      },
+    }
+    const io = transports({ 'workflow-a': 1 })
+    io.fetchDraft.mockResolvedValueOnce(draft('workflow-a', 1))
+    io.putDraft.mockRejectedValueOnce(conflict)
+    const fixed = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    fixed.queueGraph(graph('local'))
+
+    await expect(fixed.ensureFreshForCriticalOperation()).resolves.toBe(false)
+    expect(fixed.hasConflict.value).toBe(true)
+
+    const resolved = draft('workflow-a', 3, 'resolved')
+    io.fetchDraft.mockResolvedValue(resolved)
+    fixed.resolveFromDraft(resolved)
+
+    expect(fixed.hasConflict.value).toBe(false)
+    fixed.queueGraph(graph('after-resolution'))
+    await expect(fixed.ensureFreshForCriticalOperation()).resolves.toBe(true)
+    expect(fixed.currentGraph.value.nodes[0]?.parameters).toEqual({
+      value: 'after-resolution',
+    })
+    expect(io.putDraft).toHaveBeenCalledTimes(2)
+    expect(io.putDraft).toHaveBeenLastCalledWith('workflow-a', expect.objectContaining({
+      expected_revision: 3,
+    }))
+  })
+
   it('blocks on a fetched newer revision without replacing the local graph', async () => {
     const io = transports({ 'workflow-a': 1 })
     io.fetchDraft
@@ -316,6 +352,7 @@ describe('canvas persistence routing', () => {
       parentCanvasId: descriptor.canvasId,
     })
     graphSyncCanvasSessions.activate(nestedId)
+    expect(active.canvasId).toBe(nestedId)
     await expect(active.ensureFreshForCriticalOperation()).resolves.toBe(false)
 
     expect(io.putDraft).not.toHaveBeenCalled()

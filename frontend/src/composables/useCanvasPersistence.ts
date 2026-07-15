@@ -59,6 +59,7 @@ export interface CanvasPersistenceApi {
   queueGraph(graph: GraphState): void
   queueDraft(graph: GraphState): void
   initializeFromDraft(response: WorkflowDraftResponse): void
+  resolveFromDraft(response: WorkflowDraftResponse): void
   flush(): Promise<void>
   ensureFreshForCriticalOperation(): Promise<boolean>
   dispose(): void
@@ -73,6 +74,7 @@ interface RootCanvasPersistenceResource extends DisposableCanvasResource {
   queueGraph(graph: GraphState): void
   queueDraft(graph: GraphState): void
   initializeFromDraft(response: WorkflowDraftResponse): void
+  resolveFromDraft(response: WorkflowDraftResponse): void
   flush(): Promise<void>
   ensureFreshForCriticalOperation(): Promise<boolean>
 }
@@ -273,6 +275,21 @@ function createRootPersistenceResource(options: {
     authoritativeDraft = cloneJson(response)
   }
 
+  function resolveFromDraft(response: WorkflowDraftResponse): void {
+    const capturedId = captureWorkflowId(response.workflow_id)
+    if (capturedId === null) return
+    draftCoordinator.value?.dispose()
+    draftCoordinator.value = null
+    initialization = null
+    authoritativeDraft = cloneJson(response)
+    remoteDraftRevision.value = null
+    pendingDraft = null
+    queuedDraftRevision.value = 0
+    nextDraftRevision.value = 0
+    currentGraph.value = cloneGraph(response.graph)
+    recoveryCoordinator.queue(capturedId, response.graph)
+  }
+
   async function flush(): Promise<void> {
     assertUsable()
     const coordinator = await ensureDraftCoordinator()
@@ -319,6 +336,7 @@ function createRootPersistenceResource(options: {
     queueGraph,
     queueDraft,
     initializeFromDraft,
+    resolveFromDraft,
     flush,
     ensureFreshForCriticalOperation,
     dispose,
@@ -338,6 +356,7 @@ function createBoundApi(
     queueGraph: graph => resource.queueGraph(graph),
     queueDraft: graph => resource.queueDraft(graph),
     initializeFromDraft: response => resource.initializeFromDraft(response),
+    resolveFromDraft: response => resource.resolveFromDraft(response),
     flush: () => resource.flush(),
     ensureFreshForCriticalOperation: () => (
       resource.ensureFreshForCriticalOperation()
@@ -361,6 +380,7 @@ function createUnavailableBoundApi(
     queueGraph: () => {},
     queueDraft: () => {},
     initializeFromDraft: () => {},
+    resolveFromDraft: () => {},
     flush: async () => {},
     ensureFreshForCriticalOperation: async () => false,
     dispose,
@@ -391,7 +411,7 @@ function createActiveFacade(): CanvasPersistenceApi {
   }
   return {
     get canvasId() {
-      return selected()?.canvasId ?? null
+      return graphSyncCanvasSessions.activeCanvasId.value
     },
     workflowId: computed(() => selected()?.workflowId.value ?? null),
     currentGraph: computed(() => selected()?.currentGraph.value ?? { nodes: [], edges: [] }),
@@ -400,6 +420,7 @@ function createActiveFacade(): CanvasPersistenceApi {
     queueGraph: graph => required().queueGraph(graph),
     queueDraft: graph => required().queueDraft(graph),
     initializeFromDraft: response => required().initializeFromDraft(response),
+    resolveFromDraft: response => required().resolveFromDraft(response),
     flush: () => required().flush(),
     ensureFreshForCriticalOperation: async () => (
       selected()?.ensureFreshForCriticalOperation() ?? false
@@ -452,6 +473,7 @@ function getLegacyFacade(): CanvasPersistenceApi {
     },
     queueDraft,
     initializeFromDraft: () => {},
+    resolveFromDraft: () => {},
     flush: async () => {
       await Promise.all([
         useWorkflowDraftStore().flush(),

@@ -24,6 +24,7 @@ const workflowDraftMocks = vi.hoisted(() => ({
   loadDraft: vi.fn(),
 }))
 const persistenceMocks = vi.hoisted(() => ({
+  canvasId: 'workflow:a' as string | null,
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
   queueDraft: vi.fn(),
   flush: vi.fn().mockResolvedValue(undefined),
@@ -133,6 +134,7 @@ describe('MenuBar', () => {
     workflowDraftMocks.loadDraft.mockReset()
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
+    persistenceMocks.canvasId = 'workflow:a'
     persistenceMocks.queueDraft.mockClear()
     persistenceMocks.flush.mockClear()
     canvasCommandMocks.routeSave.mockClear()
@@ -565,6 +567,31 @@ describe('MenuBar', () => {
       expect(workflowDraftMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
       expect(workflowDraftMocks.scheduleSave).not.toHaveBeenCalled()
       expect(workflowDraftMocks.flush).not.toHaveBeenCalled()
+    })
+
+    it('aborts Save when another canvas becomes active during the freshness barrier', async () => {
+      setActiveWorkflow()
+      let resolveFresh!: (fresh: boolean) => void
+      persistenceMocks.ensureFreshForCriticalOperation.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          resolveFresh = resolve
+        }),
+      )
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      const save = workflowMenu.items.find((item: any) => item.label === 'Save').command()
+      await flushPromises()
+      expect(persistenceMocks.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
+
+      persistenceMocks.canvasId = 'workflow:b'
+      resolveFresh(true)
+      await save
+
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(persistenceMocks.queueDraft).not.toHaveBeenCalled()
+      expect(persistenceMocks.flush).not.toHaveBeenCalled()
     })
 
     it('routes Save to an active nested canvas without saving the root workflow', async () => {

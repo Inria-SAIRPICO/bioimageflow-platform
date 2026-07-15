@@ -171,6 +171,7 @@ const persistenceMocks = vi.hoisted(() => ({
   queueGraph: vi.fn(),
   queueDraft: vi.fn(),
   initializeFromDraft: vi.fn(),
+  resolveFromDraft: vi.fn(),
   flush: vi.fn().mockResolvedValue(undefined),
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
   dispose: vi.fn(),
@@ -377,6 +378,7 @@ describe('CanvasView', () => {
     persistenceMocks.queueGraph.mockClear()
     persistenceMocks.queueDraft.mockClear()
     persistenceMocks.initializeFromDraft.mockClear()
+    persistenceMocks.resolveFromDraft.mockClear()
     persistenceMocks.flush.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.dispose.mockClear()
@@ -2124,6 +2126,9 @@ describe('CanvasView', () => {
       expect(draftStore.currentDraftRevision).toBe(2)
       expect(draftStore.appliedDraftRevision).toBe(2)
       expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(persistenceMocks.resolveFromDraft).toHaveBeenCalledWith(
+        draftResponse(2, remoteGraph, false),
+      )
       expect(useUIStore().hasUnsavedChanges).toBe(false)
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(graphSyncMocks.syncGraphState).toHaveBeenCalledTimes(1)
@@ -2207,6 +2212,9 @@ describe('CanvasView', () => {
       expect(mockNodes.map((node: any) => node.id)).toEqual(['remote'])
       expect(draftStore.currentDraftRevision).toBe(2)
       expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(persistenceMocks.resolveFromDraft).toHaveBeenCalledWith(
+        draftResponse(2, remoteGraph, false),
+      )
       expect(useUIStore().hasUnsavedChanges).toBe(false)
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
       expect(scheduleSaveSpy).not.toHaveBeenCalled()
@@ -2247,6 +2255,9 @@ describe('CanvasView', () => {
       expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
       expect(draftStore.currentDraftRevision).toBe(3)
       expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(persistenceMocks.resolveFromDraft).toHaveBeenCalledWith(
+        draftResponse(3, initialGraph, true),
+      )
       expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
       w.unmount()
     })
