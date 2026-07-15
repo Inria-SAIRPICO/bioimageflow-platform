@@ -13,6 +13,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
 import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
@@ -55,8 +56,10 @@ function fileTypesForField(type: string): string[] {
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const loggerStore = useLoggerStore()
-const { validationResult, syncNodeParameters } = useGraphSync()
+const { validationResult } = useGraphSync()
+const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
+const isParameterEditingDisabled = computed(() => executionStore.isRunning)
 
 const selectedNodeErrors = computed(() => {
   const nodeId = uiStore.selectedNodeIds[0]
@@ -148,15 +151,8 @@ function finishEditName() {
 
 function updateParameter(key: string, value: unknown) {
   const nodeId = selectedNode.value?.id
-  if (!nodeData.value || !nodeId) return
-  const parameters = {
-    ...nodeData.value.parameters,
-    [key]: value,
-  }
-  nodeData.value.parameters = parameters
-  nodeData.value.status = 'unexecuted'
-  nodeData.value.provisional = true
-  syncNodeParameters(nodeId, parameters)
+  if (!nodeId) return
+  canvasCommands.updateParameter(nodeId, key, value)
 }
 
 function toggleEnabled() {
@@ -510,6 +506,7 @@ async function pickFolder(key: string) {
               <Button
                 icon="pi pi-undo"
                 class="p-button-text p-button-sm param-action-btn"
+                :disabled="isParameterEditingDisabled"
                 @click="resetToDefault(key)"
                 title="Reset to default"
                 data-testid="reset-default"
@@ -523,6 +520,7 @@ async function pickFolder(key: string) {
               <Button
                 :icon="isFieldNulled(key) ? 'pi pi-pencil' : 'pi pi-ban'"
                 class="p-button-text p-button-sm param-action-btn none-toggle-btn"
+                :disabled="isParameterEditingDisabled"
                 :title="isFieldNulled(key) ? 'Set value (currently null)' : 'Set to null'"
                 :aria-pressed="isFieldNulled(key)"
                 @click="toggleNull(key)"
@@ -568,6 +566,7 @@ async function pickFolder(key: string) {
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               :options="(field as InputFieldSchema).choices!"
               class="param-input"
+              :disabled="isParameterEditingDisabled"
               :data-testid="`choices-select-${key}`"
               @update:model-value="updateParameter(key, $event)"
             />
@@ -576,6 +575,7 @@ async function pickFolder(key: string) {
               v-else-if="(field as InputFieldSchema).type === 'bool'"
               :model-value="nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? false"
               binary
+              :disabled="isParameterEditingDisabled"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Gap 4: Slider + InputNumber for float fields with min, max, and step all defined -->
@@ -590,6 +590,7 @@ async function pickFolder(key: string) {
                 :max="(field as InputFieldSchema).max!"
                 :step="(field as InputFieldSchema).step!"
                 class="slider-input"
+                :disabled="isParameterEditingDisabled"
                 @update:model-value="updateParameter(key, $event)"
               />
               <InputNumber
@@ -599,6 +600,7 @@ async function pickFolder(key: string) {
                 :step="(field as InputFieldSchema).step ?? 1"
                 :min-fraction-digits="1"
                 class="slider-number"
+                :disabled="isParameterEditingDisabled"
                 @update:model-value="updateParameter(key, $event)"
               />
             </div>
@@ -612,6 +614,7 @@ async function pickFolder(key: string) {
               :min-fraction-digits="(field as InputFieldSchema).type === 'float' ? 1 : 0"
               show-buttons
               class="param-input param-number"
+              :disabled="isParameterEditingDisabled"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Path-typed input: text input + native file/folder picker buttons -->
@@ -623,12 +626,14 @@ async function pickFolder(key: string) {
               <InputText
                 :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
                 class="path-input"
+                :disabled="isParameterEditingDisabled"
                 @update:model-value="updateParameter(key, $event)"
               />
               <Button
                 icon="pi pi-file"
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select file"
+                :disabled="isParameterEditingDisabled"
                 :data-testid="`select-file-${key}`"
                 @click="pickFile(key, (field as InputFieldSchema).type)"
               />
@@ -637,6 +642,7 @@ async function pickFolder(key: string) {
                 icon="pi pi-folder-open"
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select folder"
+                :disabled="isParameterEditingDisabled"
                 :data-testid="`select-folder-${key}`"
                 @click="pickFolder(key)"
               />
@@ -646,6 +652,7 @@ async function pickFolder(key: string) {
               v-else-if="!canConnect(field as InputFieldSchema) || (field as InputFieldSchema).type === 'str'"
               :model-value="String(nodeData.parameters[key] ?? (field as InputFieldSchema).default ?? '')"
               class="param-input"
+              :disabled="isParameterEditingDisabled"
               @update:model-value="updateParameter(key, $event)"
             />
             <!-- Fallback: connectable-only field with no manual widget -->

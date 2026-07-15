@@ -168,6 +168,7 @@ const canvasPersistence = useCanvasPersistence({
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
   save: isSubWorkflowEditor ? () => saveSubWorkflowSession() : undefined,
+  updateParameter: updateNodeParameter,
 })
 uiStore.setCanvasWorkflow(
   canvasId,
@@ -1159,18 +1160,13 @@ watch(getNodes, (nodes) => {
   uiStore.setCanvasGraphNodes(canvasId, nodes)
 }, { deep: true })
 
-// Persist in-place node-data edits made from NodePanel (parameters, rename,
-// enable/disable, pin toggles, output templates). Vue Flow's structural
-// events (drag, connect, add, delete) already call emitGraphChanged
-// themselves — but parameter edits mutate node.data directly with no
-// corresponding event, so without this watcher they never reach IndexedDB
-// or the backend. Watching only NodePanel-owned fields keeps drag/selection/
-// status/connectedInputs mutations from re-triggering a full sync.
+// Persist the NodePanel fields that have not yet moved to canvas commands.
+// Parameter edits publish synchronously through updateNodeParameter, while
+// structural Vue Flow events publish from their own handlers.
 watch(
   () => getNodes.value.map((n: any) => ({
     id: n.id,
     name: n.data?.name,
-    parameters: n.data?.parameters,
     enabled: n.data?.enabled,
     pinnedInputs: n.data?.pinnedInputs,
     output_templates: n.data?.output_templates,
@@ -1180,7 +1176,6 @@ watch(
   })).concat([{
     id: '__root_publication_context__',
     name: null,
-    parameters: null,
     enabled: true,
     pinnedInputs: null,
     output_templates: null,
@@ -1191,6 +1186,35 @@ watch(
   () => {
     if (isApplyingGraphState) return
     if (isRefreshingToolMetadata) return
+    emitGraphChanged()
+  },
+  { deep: true },
+)
+
+function parameterStateSnapshot(nodes: any[] = getNodes.value): string {
+  return JSON.stringify(nodes.map((node: any) => [
+    node.id,
+    node.data?.parameters ?? {},
+  ]))
+}
+
+let lastPublishedParameterSnapshot = parameterStateSnapshot()
+
+// Tool-schema reconciliation can replace parameters outside NodePanel. Keep a
+// canvas-local fallback for those replacements without publishing command
+// edits twice on Vue's next tick.
+watch(
+  () => getNodes.value.map((node: any) => ({
+    id: node.id,
+    parameters: node.data?.parameters,
+  })),
+  () => {
+    const snapshot = parameterStateSnapshot()
+    if (isApplyingGraphState) {
+      lastPublishedParameterSnapshot = snapshot
+      return
+    }
+    if (snapshot === lastPublishedParameterSnapshot) return
     emitGraphChanged()
   },
   { deep: true },
@@ -2398,6 +2422,7 @@ function handleKeydown(event: KeyboardEvent) {
 // --- Graph change emission ---
 
 function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
+  lastPublishedParameterSnapshot = parameterStateSnapshot(state.nodes)
   const name = owningWorkflowId()
   if (!name) return
   const graph = rememberAuthoritativeGraph(serializeGraph(state) as GraphState)
@@ -2405,8 +2430,27 @@ function markDirtyAndAutoSave(state: { nodes: any[]; edges: any[] }) {
   queueCanvasPersistence(graph)
 }
 
+function updateNodeParameter(
+  nodeId: string,
+  key: string,
+  value: unknown,
+): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data) return false
+  node.data.parameters = {
+    ...(node.data.parameters ?? {}),
+    [key]: value,
+  }
+  node.data.status = 'unexecuted'
+  node.data.provisional = true
+  emitGraphChanged()
+  return true
+}
+
 function emitGraphChanged() {
   const state = currentVueFlowState()
+  lastPublishedParameterSnapshot = parameterStateSnapshot(state.nodes)
   undoRedo.push(state)
   // Update the reconciliation node list to match the current graph.
   reconciliationNodes.value = state.nodes.map((n: any) => ({

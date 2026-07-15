@@ -281,6 +281,7 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore, type WorkflowDraftChangedMessage } from '@/stores/workflowDraft'
 import { useUIStore } from '@/stores/ui'
 import { useDataTableStore } from '@/stores/dataTable'
+import { useExecutionStore } from '@/stores/execution'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -505,6 +506,143 @@ describe('CanvasView', () => {
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
       expect(scheduleSave).not.toHaveBeenCalled()
+      w.unmount()
+    })
+
+    it('publishes one exact parameter snapshot synchronously from its fixed Vue Flow instance', async () => {
+      const previousParameters = { sigma: 1 }
+      mockNodes = reactive([
+        {
+          id: 'shared',
+          data: {
+            name: 'Edited',
+            toolName: 'gaussian_blur',
+            status: 'executed',
+            parameters: previousParameters,
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'untouched',
+          data: {
+            name: 'Untouched',
+            toolName: 'gaussian_blur',
+            status: 'executed',
+            parameters: { sigma: 9 },
+          },
+          position: { x: 100, y: 0 },
+        },
+      ]) as any[]
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+
+      const updateParameter = canvasCommandMocks.registrations[0].updateParameter
+      expect(updateParameter('shared', 'sigma', 2)).toBe(true)
+
+      expect(mockNodes[0].data.parameters).not.toBe(previousParameters)
+      expect(mockNodes[0].data.parameters).toEqual({ sigma: 2 })
+      expect(mockNodes[0].data.status).toBe('unexecuted')
+      expect(mockNodes[0].data.provisional).toBe(true)
+      expect(mockNodes[1].data.status).toBe('executed')
+      expect(mockNodes[1].data.provisional).toBe(true)
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'shared',
+            data: expect.objectContaining({ parameters: { sigma: 2 } }),
+          }),
+        ]),
+      }))
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ id: 'shared', parameters: { sigma: 2 } }),
+        ]),
+      }))
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+      await flushPromises()
+    })
+
+    it('publishes one tool-reload-style parameter replacement outside the command path', async () => {
+      mockNodes = reactive([{
+        id: 'shared',
+        data: {
+          name: 'Reloaded',
+          toolName: 'gaussian_blur',
+          status: 'executed',
+          parameters: { sigma: 1, removed: true },
+        },
+        position: { x: 0, y: 0 },
+      }]) as any[]
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+
+      mockNodes[0].data.parameters = { sigma: 1 }
+      await nextTick()
+
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: [expect.objectContaining({
+          id: 'shared',
+          parameters: { sigma: 1 },
+        })],
+      }))
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      w.unmount()
+      await flushPromises()
+    })
+
+    it('rejects its parameter command while execution owns the canvas', async () => {
+      mockNodes = reactive([{
+        id: 'shared',
+        data: {
+          name: 'Edited',
+          toolName: 'gaussian_blur',
+          status: 'executed',
+          parameters: { sigma: 1 },
+        },
+        position: { x: 0, y: 0 },
+      }]) as any[]
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+      useExecutionStore().state = 'running'
+      await nextTick()
+
+      const updateParameter = canvasCommandMocks.registrations[0].updateParameter
+      expect(updateParameter('shared', 'sigma', 2)).toBe(false)
+      expect(mockNodes[0].data.parameters).toEqual({ sigma: 1 })
+      expect(mockNodes[0].data.status).toBe('executed')
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       w.unmount()
     })
 
@@ -1826,6 +1964,48 @@ describe('CanvasView', () => {
       expect(sessions.isDirty(session.id)).toBe(false)
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       window.removeEventListener('bioimageflow:apply-sub-workflow-session', applied)
+      w.unmount()
+    })
+
+    it('publishes nested parameter edits through the same synchronous canvas command', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: {
+          nodes: [{
+            id: 'inner_1',
+            name: 'Inner 1',
+            tool_name: 'gaussian_blur',
+            position: [0, 0],
+            parameters: { sigma: 1 },
+            resources: {},
+            output_templates: {},
+            enabled: true,
+            collapsed: false,
+          }],
+          edges: [],
+        },
+      })
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+
+      const updateParameter = canvasCommandMocks.registrations[0].updateParameter
+      expect(updateParameter('inner_1', 'sigma', 4)).toBe(true)
+
+      expect(mockNodes[0].data.parameters).toEqual({ sigma: 4 })
+      expect(mockNodes[0].data.status).toBe('unexecuted')
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(sessions.sessionById(session.id)?.draft.nodes[0]?.parameters).toEqual({
+        sigma: 4,
+      })
+      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
       w.unmount()
     })
 
