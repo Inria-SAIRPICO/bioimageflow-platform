@@ -6,7 +6,7 @@ import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExec
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
-import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
 import {
   outOfDateNodeIdsForExecution,
   validationErrorsForExecution,
@@ -29,7 +29,7 @@ const emit = defineEmits<{
 const exec = useExecutionStore()
 const ui = useUIStore()
 const workflowStore = useWorkflowStore()
-const workflowDraftStore = useWorkflowDraftStore()
+const canvasPersistence = useCanvasPersistence()
 const { lockForExecution } = useExecutionLock()
 
 const confirmOpen = ref(false)
@@ -89,13 +89,14 @@ function findOutOfDateNodes(graph: GraphState, nodes?: string[]): string[] {
 }
 
 async function runCore(nodes?: string[]) {
+  const targetCanvasId = canvasPersistence.canvasId
+  const isTargetActive = () => canvasPersistence.canvasId === targetCanvasId
   let graph = currentExecutionGraph()
   try {
     const workflowName = workflowStore.currentName
     if (!workflowName) return
-    const fresh = await workflowDraftStore.ensureFreshForCriticalOperation(
-      workflowName,
-    )
+    const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
+    if (!isTargetActive()) return
     if (!fresh) {
       emit('toast', {
         severity: 'warn',
@@ -108,18 +109,22 @@ async function runCore(nodes?: string[]) {
     // Refresh before deriving the confirmation set so that decision belongs
     // to the exact graph the user is about to submit.
     await props.graphSync.flushNow()
+    if (!isTargetActive()) return
     graph = currentExecutionGraph()
     const outOfDate = findOutOfDateNodes(graph, nodes)
     if (outOfDate.length > 0) {
       const ok = await confirmOutOfDate(outOfDate)
       if (!ok) return
+      if (!isTargetActive()) return
     }
-    await lockForExecution({
+    const started = await lockForExecution({
       graph,
       nodes,
       graphSync: props.graphSync,
       workflowName,
+      isTargetActive,
     })
+    if (!started || !isTargetActive()) return
     emit('run-started')
   } catch (e: unknown) {
     const err = e as { response?: { status?: number }; message?: string }

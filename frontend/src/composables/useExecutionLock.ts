@@ -17,6 +17,7 @@ export interface LockForExecutionOptions {
   nodes?: string[]
   graphSync: ExecutionGraphSync
   workflowName: string
+  isTargetActive?: () => boolean
 }
 
 export function useExecutionLock() {
@@ -36,11 +37,12 @@ export function useExecutionLock() {
 
   async function lockForExecution(
     options: LockForExecutionOptions,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const { nodes, graphSync, workflowName } = options
     // 1. Flush any pending debounced PUT /graph so the server has the
     //    latest state and its validation result is fresh.
     await graphSync.flushNow()
+    if (options.isTargetActive?.() === false) return false
     const graph = graphSync.currentGraph?.value ?? options.graph
 
     // 2. If validation failed, abort the run. The caller (F5 Run button)
@@ -61,6 +63,7 @@ export function useExecutionLock() {
 
     // 3. Kick off the run.
     await exec.run(graph, nodes, workflowName)
+    return true
   }
 
   async function unlockAfterExecution(

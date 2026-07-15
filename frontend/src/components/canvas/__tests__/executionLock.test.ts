@@ -103,6 +103,22 @@ vi.mock('@/composables/useGraphSync', () => ({
   }),
 }))
 
+vi.mock('@/composables/useCanvasPersistence', () => ({
+  useCanvasPersistence: () => ({
+    queueGraph: vi.fn(),
+    initializeFromDraft: vi.fn(),
+    isPending: ref(false),
+    dispose: vi.fn(),
+  }),
+}))
+
+vi.mock('@/composables/useCanvasCommands', () => ({
+  useCanvasCommands: () => ({
+    routeSave: vi.fn().mockResolvedValue('root'),
+    dispose: vi.fn(),
+  }),
+}))
+
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
 }))

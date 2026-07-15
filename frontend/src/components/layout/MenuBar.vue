@@ -10,6 +10,8 @@ import type { MenuItem } from 'primevue/menuitem'
 import { useUIStore, type ThemePreference } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
+import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
@@ -29,6 +31,8 @@ const workflowStore = useWorkflowStore()
 const workflowDraftStore = useWorkflowDraftStore()
 const autoSave = useAutoSave()
 const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
+const canvasPersistence = useCanvasPersistence()
+const canvasCommands = useCanvasCommands()
 
 // useToast throws when no ToastService is provided (e.g. in unit tests
 // that mount MenuBar in isolation). The toasts are a nice-to-have here.
@@ -286,17 +290,19 @@ async function onOpenWorkflow(name: string): Promise<void> {
 async function saveCurrentWorkflowGraph(options: {
   showSuccessToast?: boolean
   conflictAction?: 'saving' | 'exporting'
-} = {}): Promise<WorkflowInfo | null> {
-  const fresh = await workflowDraftStore.ensureFreshForCriticalOperation(
-    workflowStore.currentName,
-  )
+} = {}, targetCanvasId = canvasPersistence.canvasId): Promise<WorkflowInfo | null> {
+  const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
+  if (canvasPersistence.canvasId !== targetCanvasId) return null
   if (!fresh) {
     showDraftConflictWarning(options.conflictAction ?? 'saving')
     return null
   }
-  const info = await workflowStore.saveWorkflow(currentGraph.value)
-  workflowDraftStore.scheduleSave(workflowId(info), currentGraph.value)
-  await workflowDraftStore.flush()
+  const graph = currentGraph.value
+  const info = await workflowStore.saveWorkflow(graph)
+  if (canvasPersistence.canvasId !== targetCanvasId) return null
+  canvasPersistence.queueDraft(graph)
+  await canvasPersistence.flush()
+  if (canvasPersistence.canvasId !== targetCanvasId) return null
   if (options.showSuccessToast !== false) {
     toast?.add({
       severity: 'success',
@@ -309,6 +315,10 @@ async function saveCurrentWorkflowGraph(options: {
 }
 
 async function saveWorkflow(): Promise<void> {
+  const targetCanvasId = canvasPersistence.canvasId
+  const route = await canvasCommands.routeSave()
+  if (canvasPersistence.canvasId !== targetCanvasId) return
+  if (route === 'nested' || route === 'unavailable') return
   if (!workflowStore.currentName) {
     createIntent.value = 'save-current'
     workflowDialogFolderId.value = null
@@ -321,7 +331,7 @@ async function saveWorkflow(): Promise<void> {
     return
   }
   try {
-    await saveCurrentWorkflowGraph({ showSuccessToast: true })
+    await saveCurrentWorkflowGraph({ showSuccessToast: true }, targetCanvasId)
   } catch (err: unknown) {
     showError('Save workflow failed', err)
   }
