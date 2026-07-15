@@ -7,6 +7,10 @@ import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore } from '@/stores/logger'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
+import {
+  _resetCanvasCommandsForTest,
+  useCanvasCommands,
+} from '@/composables/useCanvasCommands'
 import type { ToolMetadata, InputFieldSchema } from '@/api/types'
 import {
   canvasIdFromPanelId,
@@ -55,29 +59,61 @@ function makeNodeData(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function mountPanel(nodeData: ReturnType<typeof makeNodeData> | null = null) {
+let mountedCanvasIndex = 0
+
+function mountPanel(
+  nodeData: ReturnType<typeof makeNodeData> | null = null,
+  executionRunning = false,
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
 
   const uiStore = useUIStore()
+  const canvasId = canvasIdFromPanelId(`node-panel:test-${mountedCanvasIndex++}`)
+  const descriptor = {
+    kind: 'root' as const,
+    canvasId,
+    workflowId: null,
+  }
+  useGraphSync({ descriptor, getWorkflowId: () => null })
+  useCanvasCommands({
+    descriptor,
+    updateParameter: (nodeId, key, value) => {
+      const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
+      if (!node?.data) return false
+      node.data.parameters = {
+        ...node.data.parameters,
+        [key]: value,
+      }
+      node.data.status = 'unexecuted'
+      node.data.provisional = true
+      return true
+    },
+  })
+  canvasSessionRegistry.activate(canvasId)
 
   if (nodeData) {
     const nodeId = 'node-1'
-    uiStore.setSelectedNodes([nodeId])
-    uiStore.setGraphNodes([{ id: nodeId, data: nodeData }])
+    uiStore.setCanvasSelectedNodes(canvasId, [nodeId])
+    uiStore.setCanvasGraphNodes(canvasId, [{ id: nodeId, data: nodeData }])
   }
+  if (executionRunning) useExecutionStore(pinia).state = 'running'
 
-  return mount(NodePanel, {
+  const wrapper = mount(NodePanel, {
     global: {
       plugins: [pinia, PrimeVue],
     },
   })
+  setActivePinia(pinia)
+  return wrapper
 }
 
 describe('NodePanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     _resetGraphSyncForTest()
+    _resetCanvasCommandsForTest()
+    mountedCanvasIndex = 0
   })
 
   // --- Empty state ---
@@ -179,6 +215,17 @@ describe('NodePanel', () => {
       const sigmaReset = resetButtons[1]
       await sigmaReset.trigger('click')
       expect(data.parameters.sigma).toBe(1.0)
+    })
+
+    it('makes parameter controls read-only while execution is running', async () => {
+      const w = mountPanel(makeNodeData(), true)
+      await w.vm.$nextTick()
+
+      expect((w.vm as any).isParameterEditingDisabled).toBe(true)
+      for (const reset of w.findAll('[data-testid="reset-default"]')) {
+        expect(reset.attributes('disabled')).toBeDefined()
+      }
+      expect(w.find('.param-number input').attributes('disabled')).toBeDefined()
     })
   })
 

@@ -24,9 +24,21 @@ import {
   _resetGraphSyncForTest,
   useGraphSync,
 } from '@/composables/useGraphSync'
+import {
+  _resetCanvasCommandsForTest,
+  useCanvasCommands,
+} from '@/composables/useCanvasCommands'
+import {
+  _resetCanvasPersistenceForTest,
+  useCanvasPersistence,
+} from '@/composables/useCanvasPersistence'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import type { GraphState, ToolMetadata } from '@/api/types'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 
 const mockedApi = api as unknown as {
   post: ReturnType<typeof vi.fn>
@@ -75,6 +87,8 @@ describe('parameter edit followed immediately by Run', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     _resetGraphSyncForTest()
+    _resetCanvasPersistenceForTest()
+    _resetCanvasCommandsForTest()
     vi.clearAllMocks()
     workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
     mockedApi.put.mockResolvedValue({
@@ -86,17 +100,6 @@ describe('parameter edit followed immediately by Run', () => {
   it('submits the parameter emitted by the real NodePanel field', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const graphSync = useGraphSync()
-    graphSync.syncGraphState(graph)
-    useWorkflowStore().current = {
-      name: 'parameter-edit-run',
-      display_name: 'Parameter Edit Run',
-      description: null,
-      storage_path: '/tmp/workflows/parameter-edit-run',
-      path: '/tmp/workflows/parameter-edit-run.json',
-      last_modified: '2026-01-01T00:00:00Z',
-    }
-
     useWorkflowStore().current = {
       name: 'parameter_edit',
       display_name: 'Parameter edit',
@@ -105,6 +108,47 @@ describe('parameter edit followed immediately by Run', () => {
       path: '/tmp/workflows/parameter_edit.json',
       last_modified: '2026-01-01T00:00:00Z',
     }
+    const canvasId = canvasIdFromPanelId('workflow:parameter_edit')
+    const descriptor = {
+      kind: 'root' as const,
+      canvasId,
+      workflowId: 'parameter_edit',
+    }
+    const graphSync = useGraphSync({
+      descriptor,
+      getWorkflowId: () => 'parameter_edit',
+    })
+    graphSync.syncGraphState(graph)
+    useCanvasPersistence({
+      descriptor,
+      getWorkflowId: () => 'parameter_edit',
+      transports: {
+        fetchDraft: async () => ({
+          draft_version: 1,
+          workflow_id: 'parameter_edit',
+          base_saved_revision: 'sha256:test',
+          draft_revision: 1,
+          updated_at: '2026-01-01T00:00:00Z',
+          updated_by: 'frontend',
+          dirty_against_saved: false,
+          graph,
+          validation: { valid: true, node_statuses: {}, errors: [] },
+        }),
+        putDraft: async () => ({
+          draft_version: 1,
+          workflow_id: 'parameter_edit',
+          base_saved_revision: 'sha256:test',
+          draft_revision: 1,
+          updated_at: '2026-01-01T00:00:00Z',
+          updated_by: 'frontend',
+          dirty_against_saved: false,
+          graph,
+          validation: { valid: true, node_statuses: {}, errors: [] },
+        }),
+        writeRecovery: async () => {},
+      },
+    })
+    canvasSessionRegistry.activate(canvasId)
 
     const nodeData = {
       name: 'Files',
@@ -127,12 +171,31 @@ describe('parameter edit followed immediately by Run', () => {
       status: 'executed',
       parameters: { path: '/data/untouched' },
     }
-    ui.setGraphNodes([
+    ui.setCanvasGraphNodes(canvasId, [
       { id: 'files', data: nodeData },
       { id: 'untouched', data: untouchedNodeData },
     ])
-    ui.setSelectedNodes(['files'])
-
+    ui.setCanvasSelectedNodes(canvasId, ['files'])
+    ui.setCanvasWorkflow(canvasId, 'parameter_edit', 'Parameter edit')
+    const canvasCommands = useCanvasCommands({
+      descriptor,
+      updateParameter: (nodeId, key, value) => {
+        const selected = ui.graphNodes.find((node: any) => node.id === nodeId)
+        const graphNode = graphSync.currentGraph.value.nodes.find(node => node.id === nodeId)
+        if (!selected?.data || !graphNode) return false
+        const parameters = { ...graphNode.parameters, [key]: value }
+        selected.data.parameters = parameters
+        selected.data.status = 'unexecuted'
+        for (const node of ui.graphNodes) node.data.provisional = true
+        graphSync.syncGraphState({
+          ...graphSync.currentGraph.value,
+          nodes: graphSync.currentGraph.value.nodes.map(node => (
+            node.id === nodeId ? { ...node, parameters } : node
+          )),
+        })
+        return true
+      },
+    })
     const panel = mount(NodePanel, {
       global: { plugins: [[PrimeVue, { theme: { preset: Aura } }], pinia] },
     })
@@ -161,7 +224,7 @@ describe('parameter edit followed immediately by Run', () => {
     expect(nodeData.status).toBe('unexecuted')
     expect(nodeData.provisional).toBe(true)
     expect(untouchedNodeData.status).toBe('executed')
-    expect(untouchedNodeData.provisional).toBeUndefined()
+    expect(untouchedNodeData.provisional).toBe(true)
     expect(graphSync.currentGraph.value.nodes[0]?.parameters).toEqual({
       path: '/data/new',
     })
@@ -180,5 +243,6 @@ describe('parameter edit followed immediately by Run', () => {
 
     panel.unmount()
     runButton.unmount()
+    canvasCommands.dispose()
   })
 })

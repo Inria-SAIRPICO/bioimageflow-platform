@@ -112,11 +112,25 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
   }),
 }))
 
+const canvasCommandMocks = vi.hoisted(() => ({
+  updateParameter: null as null | ((nodeId: string, key: string, value: unknown) => boolean),
+}))
+
 vi.mock('@/composables/useCanvasCommands', () => ({
-  useCanvasCommands: () => ({
-    routeSave: vi.fn().mockResolvedValue('root'),
-    dispose: vi.fn(),
-  }),
+  useCanvasCommands: (options?: {
+    updateParameter?: (nodeId: string, key: string, value: unknown) => boolean
+  }) => {
+    if (options?.updateParameter) {
+      canvasCommandMocks.updateParameter = options.updateParameter
+    }
+    return {
+      routeSave: vi.fn().mockResolvedValue('root'),
+      updateParameter: (nodeId: string, key: string, value: unknown) => (
+        canvasCommandMocks.updateParameter?.(nodeId, key, value) ?? false
+      ),
+      dispose: vi.fn(),
+    }
+  },
 }))
 
 vi.mock('@/api/client', () => ({
@@ -160,6 +174,7 @@ describe('CanvasView execution lock', () => {
     mockNodes = []
     mockEdges = []
     connectHandler = null
+    canvasCommandMocks.updateParameter = null
   })
 
   it('onConnect is blocked when execution is running', async () => {
