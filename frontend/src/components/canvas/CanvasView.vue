@@ -205,7 +205,7 @@ const {
 } = canvasPersistence
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
-const undoRedo = useUndoRedo<{ nodes: any[]; edges: any[] }>()
+const undoRedo = useUndoRedo<CanvasHistoryState>()
 const { isLocked } = useExecutionLock()
 const executionStore = useExecutionStore()
 
@@ -325,6 +325,23 @@ interface PublicationContext {
   parentNodeId?: string
   published_inputs: PublishedInput[]
   published_outputs: PublishedOutput[]
+}
+
+interface CanvasVueFlowState {
+  nodes: any[]
+  edges: any[]
+  published_inputs?: PublishedInput[]
+  published_outputs?: PublishedOutput[]
+}
+
+interface CanvasHistoryState extends CanvasVueFlowState {
+  published_inputs: PublishedInput[]
+  published_outputs: PublishedOutput[]
+}
+
+interface GraphChangeOptions {
+  state?: CanvasVueFlowState
+  authoritativeGraph?: GraphState
 }
 
 function deepClone<T>(value: T): T {
@@ -483,22 +500,12 @@ function refreshPublicationContextOnNodes(): void {
   for (const node of getNodes.value) attachPublicationContext(node)
 }
 
-function replacePublishedInputs(inputs: PublishedInput[]): boolean {
+function replacePublishedInterface(
+  inputs: PublishedInput[],
+  outputs: PublishedOutput[],
+): boolean {
   if (!isSubWorkflowEditor) {
     rootPublishedInputs.value = inputs
-    refreshPublicationContextOnNodes()
-    return true
-  }
-  if (!props.subWorkflowSessionId) return false
-  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
-  if (!session) return false
-  session.published_inputs = inputs
-  refreshPublicationContextOnNodes()
-  return true
-}
-
-function replacePublishedOutputs(outputs: PublishedOutput[]): boolean {
-  if (!isSubWorkflowEditor) {
     rootPublishedOutputs.value = outputs
     refreshPublicationContextOnNodes()
     return true
@@ -506,9 +513,22 @@ function replacePublishedOutputs(outputs: PublishedOutput[]): boolean {
   if (!props.subWorkflowSessionId) return false
   const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
   if (!session) return false
+  session.published_inputs = inputs
   session.published_outputs = outputs
   refreshPublicationContextOnNodes()
   return true
+}
+
+function replacePublishedInputs(inputs: PublishedInput[]): boolean {
+  const context = currentPublicationContext()
+  if (!context) return false
+  return replacePublishedInterface(inputs, context.published_outputs)
+}
+
+function replacePublishedOutputs(outputs: PublishedOutput[]): boolean {
+  const context = currentPublicationContext()
+  if (!context) return false
+  return replacePublishedInterface(context.published_inputs, outputs)
 }
 
 // --- Workflow startup / graph application ---
@@ -544,7 +564,10 @@ async function applyGraphState(
     if (isCanvasUnmounted) return
     setEdges(vueFlowGraph.edges)
     if (isCanvasUnmounted) return
-    syncGraphState(rememberAuthoritativeGraph(graph))
+    const authoritativeGraph = rememberAuthoritativeGraph(graph)
+    syncGraphState(authoritativeGraph)
+    undoRedo.clear()
+    undoRedo.push(canvasHistoryState(currentVueFlowState(), authoritativeGraph))
     if (!isSubWorkflowEditor) {
       const identity = workflowIdentity()
       uiStore.setCanvasWorkflow(
@@ -1208,21 +1231,6 @@ watch(getNodes, (nodes) => {
   uiStore.setCanvasGraphNodes(canvasId, nodes)
 }, { deep: true })
 
-// Sub-workflow payload replacements retain a compatibility watcher. Published
-// interface edits and structural Vue Flow events have explicit owners.
-watch(
-  () => getNodes.value.map((n: any) => ({
-    id: n.id,
-    sub_workflow: n.data?.sub_workflow,
-  })),
-  () => {
-    if (isApplyingGraphState) return
-    if (isRefreshingToolMetadata) return
-    emitGraphChanged()
-  },
-  { deep: true },
-)
-
 function nodeEditStateSnapshot(nodes: any[] = getNodes.value): string {
   return JSON.stringify(nodes.map((node: any) => [
     node.id,
@@ -1307,7 +1315,7 @@ watch(
     if (changed) {
       const graph = graphWithAuthoritativeEdges(currentVueFlowState())
       if (nodeEditStateSnapshot() !== lastPublishedNodeEditSnapshot) {
-        emitGraphChanged(graph)
+        emitGraphChanged({ authoritativeGraph: graph })
       } else {
         syncGraphState(rememberAuthoritativeGraph(graph))
       }
@@ -2031,17 +2039,27 @@ function vueFlowEdgeFromGraphEdge(e: GraphState['edges'][number]) {
   }
 }
 
-function currentVueFlowState(): {
-  nodes: any[]
-  edges: any[]
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
-} {
+function currentVueFlowState(): CanvasVueFlowState {
   return {
     nodes: getNodes.value.map((n: any) => ({ ...n })),
     edges: getEdges.value.map((e: any) => ({ ...e })),
     published_inputs: rootPublishedInputs.value,
     published_outputs: rootPublishedOutputs.value,
+  }
+}
+
+function canvasHistoryState(
+  state: CanvasVueFlowState = currentVueFlowState(),
+  authoritativeGraph?: GraphState,
+): CanvasHistoryState {
+  const context = currentPublicationContext()
+  return {
+    nodes: state.nodes,
+    edges: authoritativeGraph
+      ? authoritativeGraph.edges.map(vueFlowEdgeFromGraphEdge)
+      : state.edges,
+    published_inputs: context?.published_inputs ?? state.published_inputs ?? [],
+    published_outputs: context?.published_outputs ?? state.published_outputs ?? [],
   }
 }
 
@@ -2117,7 +2135,6 @@ async function pasteFromClipboard() {
   const newEdges = prepared.edges.map(vueFlowEdgeFromGraphEdge)
   populateConnectedInputsForPastedNodes(newNodes, newEdges)
 
-  undoRedo.push(currentVueFlowState())
   addNodes(newNodes)
   addEdges(newEdges)
   showPasteSummary(prepared.summary)
@@ -2347,13 +2364,24 @@ function selectAll() {
   }
 }
 
-function applyHistoryState(state: { nodes: any[]; edges: any[] }) {
+function applyHistoryState(state: CanvasHistoryState) {
   isApplyingGraphState = true
   try {
     setNodes(state.nodes)
     setEdges(state.edges)
-    syncGraph(state as any)
-    markDirtyAndAutoSave(state)
+    if (!replacePublishedInterface(state.published_inputs, state.published_outputs)) return
+    const currentState = currentVueFlowState()
+    lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(currentState.nodes)
+    syncGraph(currentState)
+    if (isSubWorkflowEditor && props.subWorkflowSessionId) {
+      const graph = rememberAuthoritativeGraph(
+        serializeGraph(currentState) as GraphState,
+      )
+      subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
+      uiStore.markCanvasDirty(canvasId)
+    } else {
+      markDirtyAndAutoSave(currentState)
+    }
   } finally {
     void nextTick().then(() => {
       isApplyingGraphState = false
@@ -2547,6 +2575,17 @@ function publicationRejected(
     : { status: 'rejected', reason, name }
 }
 
+function emitPublicationChanged(): void {
+  const state = currentVueFlowState()
+  const graph = graphWithAuthoritativeEdges(state)
+  emitGraphChanged({
+    state: {
+      ...state,
+      edges: graph.edges.map(vueFlowEdgeFromGraphEdge),
+    },
+  })
+}
+
 function publishedInputIndex(
   context: PublicationContext,
   nodeId: string,
@@ -2594,7 +2633,7 @@ function togglePublishedInput(
       (_item, index) => index !== existingIndex,
     )
     if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
-    emitGraphChanged()
+    emitPublicationChanged()
     return { status: 'changed' }
   }
 
@@ -2614,7 +2653,7 @@ function togglePublishedInput(
     default: node.data.parameters?.[input] ?? field.default ?? null,
   }]
   if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
-  emitGraphChanged()
+  emitPublicationChanged()
   return { status: 'changed' }
 }
 
@@ -2633,7 +2672,7 @@ function togglePublishedOutput(
       (_item, index) => index !== existingIndex,
     )
     if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
-    emitGraphChanged()
+    emitPublicationChanged()
     return { status: 'changed' }
   }
 
@@ -2651,7 +2690,7 @@ function togglePublishedOutput(
     schema,
   }]
   if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
-  emitGraphChanged()
+  emitPublicationChanged()
   return { status: 'changed' }
 }
 
@@ -2675,7 +2714,7 @@ function renamePublishedInput(
     itemIndex === index ? { ...item, name: nextName } : item
   ))
   if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
-  emitGraphChanged()
+  emitPublicationChanged()
   return { status: 'changed' }
 }
 
@@ -2699,7 +2738,7 @@ function renamePublishedOutput(
     itemIndex === index ? { ...item, name: nextName } : item
   ))
   if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
-  emitGraphChanged()
+  emitPublicationChanged()
   return { status: 'changed' }
 }
 
@@ -2721,11 +2760,11 @@ function updateNodeParameter(
   return true
 }
 
-function emitGraphChanged(graphOverride?: GraphState) {
-  const state = currentVueFlowState()
+function emitGraphChanged(options: GraphChangeOptions = {}) {
+  const state = options.state ?? currentVueFlowState()
   lastPublishedNodeEditSnapshot = nodeEditStateSnapshot(state.nodes)
-  const authoritativeGraph = graphOverride
-    ? rememberAuthoritativeGraph(graphOverride)
+  const authoritativeGraph = options.authoritativeGraph
+    ? rememberAuthoritativeGraph(options.authoritativeGraph)
     : null
   const publishedState = authoritativeGraph
     ? {
@@ -2733,7 +2772,8 @@ function emitGraphChanged(graphOverride?: GraphState) {
         edges: authoritativeGraph.edges.map(vueFlowEdgeFromGraphEdge),
       }
     : state
-  undoRedo.push(publishedState)
+  const historyState = canvasHistoryState(publishedState)
+  undoRedo.push(historyState)
   // Update the reconciliation node list to match the current graph.
   reconciliationNodes.value = state.nodes.map((n: any) => ({
     id: n.id,

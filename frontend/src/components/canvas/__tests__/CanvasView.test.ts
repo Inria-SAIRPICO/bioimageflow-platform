@@ -956,6 +956,116 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('restores root publication history with one persisted snapshot per step', async () => {
+      const tool = makeTool()
+      useToolRegistryStore().tools = [tool] as any
+      mockNodes = reactive([]) as any[]
+      const graph = {
+        nodes: [
+          {
+            id: 'shared',
+            name: 'Shared',
+            tool_name: tool.name,
+            position: [0, 0],
+            parameters: {},
+            resources: {},
+            output_templates: { result: '' },
+            enabled: true,
+            collapsed: false,
+          },
+          {
+            id: 'other',
+            name: 'Other',
+            tool_name: tool.name,
+            position: [120, 0],
+            parameters: {},
+            resources: {},
+            output_templates: { result: '' },
+            enabled: true,
+            collapsed: false,
+          },
+        ],
+        edges: [{
+          type: 'column_ref' as const,
+          id: 'authoritative-edge',
+          source_node: 'shared',
+          target_node: 'other',
+          source_output: 'result',
+          target_input: 'image',
+        }],
+        published_inputs: [],
+        published_outputs: [],
+      }
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph,
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      const registration = canvasCommandMocks.registrations[0]
+
+      async function applyHistory(
+        redo: boolean,
+        expectedNames: string[],
+      ): Promise<void> {
+        graphSyncMocks.syncGraph.mockClear()
+        persistenceMocks.queueGraph.mockClear()
+        await w.find('.canvas-view').trigger('keydown', {
+          key: 'z',
+          ctrlKey: true,
+          shiftKey: redo,
+        })
+        await nextTick()
+
+        const inputs = mockNodes[0].data.publicationContext.published_inputs
+        expect(inputs.map((item: any) => item.name)).toEqual(expectedNames)
+        expect(mockNodes[1].data.publicationContext.published_inputs).toBe(inputs)
+        expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+        expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+          published_inputs: inputs,
+        }))
+        expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+        expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+          published_inputs: expectedNames.map((name) => expect.objectContaining({ name })),
+          edges: [expect.objectContaining({ id: 'authoritative-edge' })],
+        }))
+      }
+
+      mockEdges.splice(0)
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+      expect(registration.togglePublishedInput('shared', 'image'))
+        .toEqual({ status: 'changed' })
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledWith(expect.objectContaining({
+        edges: [expect.objectContaining({ id: 'authoritative-edge' })],
+      }))
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+        edges: [expect.objectContaining({ id: 'authoritative-edge' })],
+      }))
+      await nextTick()
+      await applyHistory(false, [])
+      await applyHistory(true, ['shared.image'])
+
+      expect(registration.renamePublishedInput('shared', 'image', 'source_image'))
+        .toEqual({ status: 'changed' })
+      await nextTick()
+      await applyHistory(false, ['shared.image'])
+      await applyHistory(true, ['source_image'])
+
+      expect(registration.togglePublishedInput('shared', 'image'))
+        .toEqual({ status: 'changed' })
+      await nextTick()
+      await applyHistory(false, ['source_image'])
+      await applyHistory(true, [])
+      w.unmount()
+    })
+
     it('rejects every publication command while execution owns the canvas', async () => {
       const tool = makeTool()
       mockNodes = reactive([{
@@ -2897,6 +3007,86 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('restores nested publication history through the owning session only', async () => {
+      const tool = makeTool()
+      useToolRegistryStore().tools = [tool] as any
+      mockNodes = reactive([]) as any[]
+      const sessions = useSubWorkflowSessionsStore()
+      const session = sessions.openSession({
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: {
+          nodes: [{
+            id: 'inner_1',
+            name: 'Inner 1',
+            tool_name: tool.name,
+            position: [0, 0],
+            parameters: {},
+            resources: {},
+            output_templates: { result: '' },
+            enabled: true,
+            collapsed: false,
+          }],
+          edges: [],
+        },
+      })
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      const registration = canvasCommandMocks.registrations[0]
+      const updateDraft = vi.spyOn(sessions, 'updateDraft')
+
+      async function applyHistory(
+        redo: boolean,
+        expectedNames: string[],
+      ): Promise<void> {
+        graphSyncMocks.syncGraph.mockClear()
+        persistenceMocks.queueGraph.mockClear()
+        updateDraft.mockClear()
+        await w.find('.canvas-view').trigger('keydown', {
+          key: 'z',
+          ctrlKey: true,
+          shiftKey: redo,
+        })
+        await nextTick()
+
+        const current = sessions.sessionById(session.id)!
+        expect(current.published_outputs.map((item) => item.name)).toEqual(expectedNames)
+        expect(mockNodes[0].data.publicationContext.published_outputs)
+          .toBe(current.published_outputs)
+        expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+        expect(updateDraft).toHaveBeenCalledOnce()
+        expect(updateDraft).toHaveBeenCalledWith(
+          session.id,
+          expect.objectContaining({
+            nodes: [expect.objectContaining({ id: 'inner_1' })],
+          }),
+        )
+        expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+      }
+
+      expect(registration.togglePublishedOutput('inner_1', 'result'))
+        .toEqual({ status: 'changed' })
+      await nextTick()
+      await applyHistory(false, [])
+      await applyHistory(true, ['inner_1.result'])
+
+      expect(registration.renamePublishedOutput('inner_1', 'result', 'nested_result'))
+        .toEqual({ status: 'changed' })
+      await nextTick()
+      await applyHistory(false, ['inner_1.result'])
+      await applyHistory(true, ['nested_result'])
+
+      expect(registration.togglePublishedOutput('inner_1', 'result'))
+        .toEqual({ status: 'changed' })
+      await nextTick()
+      await applyHistory(false, ['nested_result'])
+      await applyHistory(true, [])
+      w.unmount()
+    })
+
     it('loads sub-workflow editor nodes with a shared publishing context', async () => {
       const toolStore = useToolRegistryStore()
       toolStore.tools = [makeTool()] as any
@@ -2981,7 +3171,7 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('reconciles parent pins, parameters, and edges when applying a published interface', () => {
+    it('reconciles and publishes an applied sub-workflow draft exactly once', async () => {
       const clearCanvasCache = vi.spyOn(useDataTableStore(), 'clearCanvasCache')
       const w = mountCanvas()
       mockNodes.splice(0, mockNodes.length, {
@@ -3040,6 +3230,8 @@ describe('CanvasView', () => {
       )
 
       const vm = w.vm as any
+      graphSyncMocks.syncGraph.mockClear()
+      const graphChangedCount = w.emitted('graph-changed')?.length ?? 0
       vm.applySubWorkflowDraft('sub_1', { nodes: [], edges: [] }, {
         published_inputs: [{
           name: 'input_folder',
@@ -3068,7 +3260,12 @@ describe('CanvasView', () => {
       expect(subNode.data.published_outputs[0].name).toBe('label_count')
       expect(subNode.data.status).toBe('out_of_date')
       expect(clearCanvasCache).toHaveBeenCalledWith('canvas', 'sub_1')
-      expect(w.emitted('graph-changed')).toBeTruthy()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
+
+      await nextTick()
+      expect(graphSyncMocks.syncGraph).toHaveBeenCalledOnce()
+      expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
       w.unmount()
     })
 
