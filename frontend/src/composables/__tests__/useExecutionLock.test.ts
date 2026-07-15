@@ -61,10 +61,11 @@ describe('useExecutionLock', () => {
     await lockForExecution({
       graph,
       graphSync: { flushNow, validationResult },
+      workflowName: 'wf_a',
     })
 
     expect(flushNow).toHaveBeenCalled()
-    expect(runSpy).toHaveBeenCalledWith(graph, undefined, undefined)
+    expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a')
   })
 
   it('lockForExecution aborts if validation fails after flush', async () => {
@@ -91,6 +92,7 @@ describe('useExecutionLock', () => {
       lockForExecution({
         graph: { nodes: [], edges: [] },
         graphSync: { flushNow, validationResult },
+        workflowName: 'wf_a',
       }),
     ).rejects.toThrow(/validation/i)
 
@@ -115,9 +117,10 @@ describe('useExecutionLock', () => {
       graph,
       nodes: ['n1', 'n2'],
       graphSync: { flushNow, validationResult },
+      workflowName: 'wf_a',
     })
 
-    expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'], undefined)
+    expect(runSpy).toHaveBeenCalledWith(graph, ['n1', 'n2'], 'wf_a')
   })
 
   it('lockForExecution ignores validation errors outside the selected execution set', async () => {
@@ -155,9 +158,10 @@ describe('useExecutionLock', () => {
       graph: graph as never,
       nodes: ['selected'],
       graphSync: { flushNow, validationResult },
+      workflowName: 'wf_a',
     })
 
-    expect(runSpy).toHaveBeenCalledWith(graph, ['selected'], undefined)
+    expect(runSpy).toHaveBeenCalledWith(graph, ['selected'], 'wf_a')
   })
 
   it('unlockAfterExecution triggers a graph re-validation via PUT /graph', async () => {

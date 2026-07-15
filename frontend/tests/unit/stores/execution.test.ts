@@ -84,12 +84,12 @@ describe('execution store', () => {
       timestamp: 1,
     })
 
-    await store.run(graph)
+    await store.run(graph, undefined, 'wf_a')
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/run', {
       graph,
       nodes: undefined,
-      workflow_name: null,
+      workflow_name: 'wf_a',
     })
     expect(store.state).toBe('running')
     expect(store.lastResult).toBeNull()
@@ -104,18 +104,35 @@ describe('execution store', () => {
     ])
   })
 
+  it('run rejects a missing workflow identity before changing execution state', async () => {
+    const graph = { nodes: [], edges: [] }
+    const store = useExecutionStore()
+    const priorStatus = {
+      node_id: 'n1',
+      status: 'executed' as const,
+      cached: true,
+    }
+    store.nodeStatuses = { n1: priorStatus }
+
+    await expect(store.run(graph, undefined, '')).rejects.toThrow(/workflow/i)
+
+    expect(mockedApi.post).not.toHaveBeenCalled()
+    expect(store.state).toBe('idle')
+    expect(store.nodeStatuses).toEqual({ n1: priorStatus })
+  })
+
   it('run with nodes passes node list', async () => {
     const graph = { nodes: [], edges: [] }
     const nodes = ['n1', 'n2']
     mockedApi.post.mockResolvedValueOnce({ data: {} })
 
     const store = useExecutionStore()
-    await store.run(graph, nodes)
+    await store.run(graph, nodes, 'wf_a')
 
     expect(mockedApi.post).toHaveBeenCalledWith('/api/v1/execution/run', {
       graph,
       nodes,
-      workflow_name: null,
+      workflow_name: 'wf_a',
     })
   })
 
@@ -124,7 +141,7 @@ describe('execution store', () => {
     mockedApi.post.mockRejectedValueOnce({ response: { status: 409 } })
 
     const store = useExecutionStore()
-    await expect(store.run(graph)).rejects.toBeTruthy()
+    await expect(store.run(graph, undefined, 'wf_a')).rejects.toBeTruthy()
     expect(store.isConflict).toBe(true)
     expect(store.state).toBe('idle')
   })
@@ -143,7 +160,7 @@ describe('execution store', () => {
     })
 
     const store = useExecutionStore()
-    await expect(store.run(graph)).rejects.toBeTruthy()
+    await expect(store.run(graph, undefined, 'wf_a')).rejects.toBeTruthy()
     expect(store.validationErrors).toHaveLength(1)
     expect(store.validationErrors[0].type).toBe('cycle_detected')
   })
@@ -202,6 +219,17 @@ describe('execution store', () => {
         nodeId: null,
       }),
     ])
+  })
+
+  it('clear rejects a missing workflow identity before making a request', async () => {
+    const store = useExecutionStore()
+
+    await expect(store.clear({ nodes: [], edges: [] }, ['n1'], '')).rejects.toThrow(
+      /workflow/i,
+    )
+
+    expect(mockedApi.post).not.toHaveBeenCalled()
+    expect(store.nodeStatuses).toEqual({})
   })
 
   it('applyProgress updates progress', () => {
@@ -314,9 +342,9 @@ describe('execution store', () => {
     const store = useExecutionStore()
     store.state = 'running'
 
-    await expect(store.run({ nodes: [], edges: [] })).rejects.toThrow(
-      'already running',
-    )
+    await expect(
+      store.run({ nodes: [], edges: [] }, undefined, 'wf_a'),
+    ).rejects.toThrow('already running')
     expect(mockedApi.post).not.toHaveBeenCalled()
   })
 
@@ -333,9 +361,9 @@ describe('execution store', () => {
     mockedApi.post.mockRejectedValueOnce(new Error('Server error'))
 
     const store = useExecutionStore()
-    await expect(store.run({ nodes: [], edges: [] })).rejects.toThrow(
-      'Server error',
-    )
+    await expect(
+      store.run({ nodes: [], edges: [] }, undefined, 'wf_a'),
+    ).rejects.toThrow('Server error')
     expect(store.state).toBe('idle')
     expect(store.error).toBe('Server error')
   })

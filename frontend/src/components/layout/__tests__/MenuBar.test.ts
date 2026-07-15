@@ -86,6 +86,17 @@ function mountMenuBar() {
   })
 }
 
+function setActiveWorkflow(): void {
+  useWorkflowStore().current = {
+    name: 'wf_a',
+    display_name: 'Workflow A',
+    description: null,
+    storage_path: '/tmp/workflows/wf_a',
+    path: '/tmp/workflows/wf_a.json',
+    last_modified: '2026-01-01T00:00:00Z',
+  }
+}
+
 describe('MenuBar', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -585,6 +596,7 @@ describe('MenuBar', () => {
     })
 
     it('Run Workflow is enabled when idle', () => {
+      setActiveWorkflow()
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const exec = vm.menuItems.find((item: any) => item.label === 'Execution')
@@ -603,6 +615,7 @@ describe('MenuBar', () => {
     })
 
     it('Run Selected is enabled when nodes are selected', async () => {
+      setActiveWorkflow()
       const store = useUIStore()
       store.setSelectedNodes(['n1'])
       const wrapper = mountMenuBar()

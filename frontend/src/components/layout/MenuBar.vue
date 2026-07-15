@@ -131,6 +131,7 @@ function toggleThemeMenu(event: Event): void {
 function runDisabledReason(): string | null {
   if (executionStore.isRunning) return 'Execution in progress'
   if (isPending.value) return 'Waiting for validation…'
+  if (!workflowStore.currentName) return 'Open or save a workflow before running'
   return null
 }
 

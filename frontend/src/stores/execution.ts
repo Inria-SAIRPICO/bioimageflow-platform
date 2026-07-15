@@ -190,9 +190,12 @@ export const useExecutionStore = defineStore('execution', () => {
 
   async function run(
     graph: GraphState,
-    nodes?: string[],
-    workflowName?: string | null,
+    nodes: string[] | undefined,
+    workflowName: string,
   ) {
+    if (workflowName.trim().length === 0) {
+      throw new Error('Workflow identity is required for execution')
+    }
     if (state.value === 'running') {
       throw new Error('already running')
     }
@@ -207,7 +210,7 @@ export const useExecutionStore = defineStore('execution', () => {
       await api.post('/api/v1/execution/run', {
         graph,
         nodes,
-        workflow_name: workflowName ?? null,
+        workflow_name: workflowName,
       })
       state.value = 'running'
     } catch (e: unknown) {
@@ -239,6 +242,9 @@ export const useExecutionStore = defineStore('execution', () => {
     nodeIds: string[],
     workflowName: string,
   ) {
+    if (workflowName.trim().length === 0) {
+      throw new Error('Workflow identity is required for cache clearing')
+    }
     const { data } = await api.post<ClearResponse>(
       '/api/v1/execution/clear',
       { graph, nodes: nodeIds, workflow_name: workflowName },

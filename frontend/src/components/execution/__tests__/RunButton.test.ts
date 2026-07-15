@@ -62,6 +62,14 @@ function mountButton(opts: {
 describe('RunButton', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useWorkflowStore().current = {
+      name: 'wf_a',
+      display_name: 'Workflow A',
+      description: null,
+      storage_path: '/tmp/workflows/wf_a',
+      path: '/tmp/workflows/wf_a.json',
+      last_modified: '2026-01-01T00:00:00Z',
+    }
     workflowDraftMocks.ensureFreshForCriticalOperation.mockClear()
     workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
   })
@@ -71,6 +79,14 @@ describe('RunButton', () => {
     const btn = wrapper.find('[data-testid="run-workflow-button"]')
     expect(btn.exists()).toBe(true)
     expect(btn.attributes('disabled')).toBeUndefined()
+  })
+
+  it('Run button is disabled when no workflow identity is active', () => {
+    useWorkflowStore().current = null
+    const { wrapper } = mountButton()
+    const btn = wrapper.find('[data-testid="run-workflow-button"]')
+    expect(btn.attributes('disabled')).toBeDefined()
+    expect(btn.attributes('title')).toMatch(/workflow/i)
   })
 
   it('Run button disabled during execution with matching tooltip', async () => {
@@ -109,7 +125,7 @@ describe('RunButton', () => {
     await nextTick()
     await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
     await nextTick()
-    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], null)
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], 'wf_a')
   })
 
   it('passes the active workflow name to run', async () => {
@@ -188,7 +204,7 @@ describe('RunButton', () => {
     await nextTick()
     await nextTick()
 
-    expect(runSpy).toHaveBeenCalledWith(freshGraph, undefined, null)
+    expect(runSpy).toHaveBeenCalledWith(freshGraph, undefined, 'wf_a')
   })
 
   it('Stop button is only visible while running', async () => {
@@ -257,7 +273,7 @@ describe('RunButton', () => {
     await nextTick()
 
     expect(wrapper.find('[data-testid="out-of-date-confirm"]').exists()).toBe(false)
-    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['selected'], null)
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['selected'], 'wf_a')
   })
 
   it('run proceeds after confirm', async () => {

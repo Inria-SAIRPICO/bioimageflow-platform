@@ -109,7 +109,7 @@ describe('execution store', () => {
     execution.dismissEnvironmentRecovery()
     expect(execution.isEnvironmentRecoveryDialogVisible).toBe(false)
 
-    await execution.run({ nodes: [], edges: [] })
+    await execution.run({ nodes: [], edges: [] }, undefined, 'wf_a')
 
     expect(execution.environmentRecoveryAction).toBeNull()
     expect(execution.isEnvironmentRecoveryDialogVisible).toBe(false)

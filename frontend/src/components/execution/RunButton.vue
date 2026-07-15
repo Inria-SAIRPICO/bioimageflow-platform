@@ -43,10 +43,13 @@ const isPending = computed(() => {
   return false
 })
 
-const runDisabled = computed(() => exec.isRunning || isPending.value)
+const runDisabled = computed(
+  () => exec.isRunning || isPending.value || !workflowStore.currentName,
+)
 const runTooltip = computed(() => {
   if (exec.isRunning) return 'Execution in progress'
   if (isPending.value) return 'Waiting for validation…'
+  if (!workflowStore.currentName) return 'Open or save a workflow before running'
   return ''
 })
 
@@ -96,8 +99,10 @@ function findOutOfDateNodes(graph: GraphState, nodes?: string[]): string[] {
 async function runCore(nodes?: string[]) {
   let graph = currentExecutionGraph()
   try {
+    const workflowName = workflowStore.currentName
+    if (!workflowName) return
     const fresh = await workflowDraftStore.ensureFreshForCriticalOperation(
-      workflowStore.currentName,
+      workflowName,
     )
     if (!fresh) {
       emit('toast', {
@@ -117,7 +122,7 @@ async function runCore(nodes?: string[]) {
       graph,
       nodes,
       graphSync: props.graphSync,
-      workflowName: workflowStore.currentName,
+      workflowName,
     })
     emit('run-started')
   } catch (e: unknown) {

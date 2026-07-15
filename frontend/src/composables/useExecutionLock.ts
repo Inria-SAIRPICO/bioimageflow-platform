@@ -16,7 +16,7 @@ export interface LockForExecutionOptions {
   graph: GraphState
   nodes?: string[]
   graphSync: ExecutionGraphSync
-  workflowName?: string | null
+  workflowName: string
 }
 
 export function useExecutionLock() {
