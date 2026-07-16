@@ -10,6 +10,7 @@ import type {
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 import { CANVAS_STATUS_PROJECTION_KEY } from '@/composables/useCanvasStatusProjection'
+import { fieldDisplayName } from '@/utils/displayNames'
 
 export interface NodeData {
   name: string
@@ -146,7 +147,11 @@ const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
     const concreteEntries: Array<[string, { type: string }, boolean]> = []
     for (const [key, spec] of Object.entries(columns)) {
       if (key === '_passthrough') continue
-      concreteEntries.push([key, { type: (spec as any)?.type ?? 'any' }, false])
+      concreteEntries.push([
+        key,
+        { ...(spec as any), type: (spec as any)?.type ?? 'any' },
+        false,
+      ])
     }
     // Add a single placeholder for inherited columns.
     concreteEntries.push(['(+ inherited columns)', { type: 'DataFrame' }, true])
@@ -156,7 +161,7 @@ const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
   // Normal resolved: one pin per column.
   return Object.entries(columns).map(([name, spec]) => [
     name,
-    { type: (spec as any)?.type ?? 'any' },
+    { ...(spec as any), type: (spec as any)?.type ?? 'any' },
     false,
   ])
 })
@@ -256,6 +261,7 @@ function onDismissBadge(event: MouseEvent) {
         <OutputPin
           v-if="showsHeaderOutputPin"
           field-name="__dataframe_out"
+          display-name="DataFrame"
           field-type="DataFrame"
           variant="header"
         />
@@ -269,6 +275,7 @@ function onDismissBadge(event: MouseEvent) {
           :key="name"
           :node-id="id"
           :field-name="name"
+          :display-name="fieldDisplayName(name, field)"
           :field-type="field.type"
           :connected="name in data.connectedInputs"
           :source-label="data.connectedInputs[name]"
@@ -281,6 +288,7 @@ function onDismissBadge(event: MouseEvent) {
           v-for="[name, field, isPlaceholder] in outputs"
           :key="name"
           :field-name="name"
+          :display-name="fieldDisplayName(name, field)"
           :field-type="field.type"
           :placeholder="isPlaceholder"
           variant="body"

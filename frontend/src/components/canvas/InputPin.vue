@@ -6,6 +6,7 @@ import { getTypeColor } from '@/utils/typeColors'
 const props = withDefaults(defineProps<{
   nodeId: string
   fieldName: string
+  displayName?: string
   fieldType: string
   connected: boolean
   sourceLabel?: string
@@ -31,7 +32,7 @@ const label = computed(() => {
   if (props.connected && props.sourceLabel) {
     return props.sourceLabel
   }
-  return props.fieldName
+  return props.displayName ?? props.fieldName
 })
 
 /**

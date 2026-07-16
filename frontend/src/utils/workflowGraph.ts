@@ -1,5 +1,6 @@
 import type { GraphState, MissingTool, ToolMetadata } from '@/api/types'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
+import { connectionSourceLabel } from '@/utils/displayNames'
 
 export interface VueFlowGraph {
   nodes: any[]
@@ -16,12 +17,6 @@ function hasSubWorkflowFields(node: Record<string, any>): boolean {
       node.sub_workflow_readonly_reason !== undefined
       && node.sub_workflow_readonly_reason !== null
     )
-}
-
-function sourceLabel(edge: any): string {
-  const source = edge.source
-  const sourceHandle = edge.sourceHandle ?? 'output'
-  return `${source}.${sourceHandle}`
 }
 
 export function graphStateToVueFlow(
@@ -53,11 +48,22 @@ export function graphStateToVueFlow(
 
   const connectedInputsByNode = new Map<string, Record<string, string>>()
   const connectedBodyInputsByNode = new Map<string, Set<string>>()
+  const graphNodesById = new Map(graph.nodes.map((node) => [node.id, node]))
   for (const edge of edges) {
     const targetHandle = edge.targetHandle ?? ''
     if (!targetHandle) continue
     const connected = connectedInputsByNode.get(edge.target) ?? {}
-    connected[targetHandle] = sourceLabel(edge)
+    const source = graphNodesById.get(edge.source)
+    connected[targetHandle] = connectionSourceLabel(source
+      ? {
+          id: source.id,
+          data: {
+            name: source.name,
+            tool: getToolByName(source.tool_name) ?? null,
+            published_outputs: source.published_outputs ?? [],
+          },
+        }
+      : { id: edge.source }, edge.sourceHandle)
     connectedInputsByNode.set(edge.target, connected)
     if (edge.type === 'column_ref') {
       const bodyInputs = connectedBodyInputsByNode.get(edge.target) ?? new Set<string>()

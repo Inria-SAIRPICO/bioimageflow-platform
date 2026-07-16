@@ -32,6 +32,7 @@ import type {
   PublishedInput,
   PublishedOutput,
 } from '@/api/types'
+import { fieldDisplayName } from '@/utils/displayNames'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
 // `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
@@ -41,6 +42,7 @@ interface OutputFieldSchema {
   type: string
   default: unknown
   image_spec: Record<string, string[]> | null
+  display_name?: string | null
 }
 
 // Connectable is a three-state string: `"never" | "not_by_default" | "by_default"`.
@@ -490,7 +492,7 @@ async function pickFolder(key: string) {
               @click="togglePinned(key)"
               data-testid="pin-toggle"
             />
-            <label>{{ key }}</label>
+            <label>{{ fieldDisplayName(key, field as InputFieldSchema) }}</label>
             <span class="param-actions">
               <!-- Fix 15: Reset to default button -->
               <Button
@@ -678,7 +680,7 @@ async function pickFolder(key: string) {
               :data-testid="`publish-output-toggle-${key}`"
               @click="togglePublishOutput(key)"
             />
-            <span class="output-name">{{ key }}</span>
+            <span class="output-name">{{ fieldDisplayName(key, field as OutputFieldSchema) }}</span>
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
           </div>
           <InputText

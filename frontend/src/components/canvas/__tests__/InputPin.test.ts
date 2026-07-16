@@ -38,6 +38,16 @@ describe('InputPin', () => {
     expect(w.find('.pin-label').text()).toBe('image')
   })
 
+  it('renders the display name without changing the handle field name', () => {
+    const w = factory({
+      fieldName: 'input_image',
+      displayName: 'Input image',
+      fieldType: 'ImageFile',
+      connected: false,
+    })
+    expect(w.find('.pin-label').text()).toBe('Input image')
+  })
+
   it('shows field type in tooltip (title attribute)', () => {
     const w = factory({ fieldName: 'image', fieldType: 'ImageFile', connected: false })
     expect(w.find('.input-pin').attributes('title')).toBe('ImageFile')
@@ -58,9 +68,9 @@ describe('InputPin', () => {
       fieldName: 'image',
       fieldType: 'ImageFile',
       connected: true,
-      sourceLabel: 'Loader.output',
+      sourceLabel: 'Output image of Loader',
     })
-    expect(w.find('.pin-label').text()).toBe('Loader.output')
+    expect(w.find('.pin-label').text()).toBe('Output image of Loader')
   })
 
   it('applies correct border-color from getTypeColor', () => {

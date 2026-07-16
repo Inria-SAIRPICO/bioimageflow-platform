@@ -31,11 +31,11 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tags: [],
     categories: [],
     inputs: {
-      image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default' },
+      image: { type: 'ImageFile', required: true, nullable: false, connectable: 'by_default', display_name: 'Input image' },
       sigma: { type: 'float', required: false, nullable: false, connectable: 'never', default: 1.0 },
     },
     outputs: {
-      result: { type: 'ImageFile' },
+      result: { type: 'ImageFile', display_name: 'Blurred image' },
     },
     environment: null,
     ...overrides,
@@ -101,6 +101,7 @@ describe('ToolNode', () => {
     const pins = w.findAllComponents({ name: 'InputPin' })
     expect(pins).toHaveLength(1)
     expect(pins[0].props('fieldName')).toBe('image')
+    expect(pins[0].props('displayName')).toBe('Input image')
     expect(pins[0].props('nodeId')).toBe('node-1')
   })
 
@@ -129,6 +130,7 @@ describe('ToolNode', () => {
     const pins = w.find('.body-outputs').findAllComponents({ name: 'OutputPin' })
     expect(pins).toHaveLength(1)
     expect(pins[0].props('fieldName')).toBe('result')
+    expect(pins[0].props('displayName')).toBe('Blurred image')
   })
 
   it('applies correct status CSS class', () => {
@@ -485,7 +487,12 @@ describe('ToolNode', () => {
       'node-1': {
         resolved: true,
         columns: {
-          sensitivity: { type: 'any', default: null, image_spec: null },
+          sensitivity: {
+            type: 'any',
+            default: null,
+            image_spec: null,
+            display_name: 'Sensitivity value',
+          },
         },
       },
     }
@@ -502,6 +509,7 @@ describe('ToolNode', () => {
     const outputPins = bodyOutputs.findAllComponents({ name: 'OutputPin' })
     expect(outputPins).toHaveLength(1)
     expect(outputPins[0].props('fieldName')).toBe('sensitivity')
+    expect(outputPins[0].props('displayName')).toBe('Sensitivity value')
     expect(outputPins[0].props('fieldType')).toBe('any')
     expect(outputPins[0].props('placeholder')).toBe(false)
   })
@@ -533,6 +541,7 @@ describe('ToolNode', () => {
       const headerOutPins = headerOutputs.findAllComponents({ name: 'OutputPin' })
       expect(headerOutPins).toHaveLength(1)
       expect(headerOutPins[0].props('fieldName')).toBe('__dataframe_out')
+      expect(headerOutPins[0].props('displayName')).toBe('DataFrame')
       expect(headerOutPins[0].props('variant')).toBe('header')
 
       // No header input pins

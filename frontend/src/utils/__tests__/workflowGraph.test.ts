@@ -20,7 +20,7 @@ function makeProcessingTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata
     },
     outputs: {
       result: { type: 'ImageFile' },
-      sigma: { type: 'float' },
+      sigma: { type: 'float', display_name: 'Blur strength' },
     },
     environment: null,
     ...overrides,
@@ -128,7 +128,7 @@ describe('graphStateToVueFlow', () => {
     const result = graphStateToVueFlow(graph, () => tool)
     const target = result.nodes.find((node) => node.id === 'target')
 
-    expect(target?.data.connectedInputs.sigma).toBe('source.sigma')
+    expect(target?.data.connectedInputs.sigma).toBe('Blur strength of Source')
     expect(target?.data.pinnedInputs.sigma).toBe(true)
   })
 })

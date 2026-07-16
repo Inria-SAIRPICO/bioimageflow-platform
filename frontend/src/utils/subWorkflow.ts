@@ -1,4 +1,5 @@
 import type { GraphState, PublishedInput, PublishedOutput } from '@/api/types'
+import { connectionSourceLabel } from '@/utils/displayNames'
 
 type VueFlowNode = {
   id: string
@@ -186,8 +187,10 @@ export function createSubWorkflowFromSelection(
   incomingEdges.forEach((edge, index) => {
     const published = publishedInputs[index]
     const source = options.nodes.find((node) => node.id === edge.source)
-    const sourceName = source?.data?.name ?? edge.source
-    connectedInputs[published.name] = `${sourceName}.${edge.sourceHandle ?? 'output'}`
+    connectedInputs[published.name] = connectionSourceLabel(
+      source ?? { id: edge.source },
+      edge.sourceHandle,
+    )
   })
 
   const subWorkflowNode: VueFlowNode = {

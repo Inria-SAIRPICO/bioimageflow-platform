@@ -22,6 +22,15 @@ describe('OutputPin', () => {
     expect(w.find('.pin-label').text()).toBe('result')
   })
 
+  it('renders the display name without changing the handle field name', () => {
+    const w = factory({
+      fieldName: 'output_image',
+      displayName: 'Output image',
+      fieldType: 'ImageFile',
+    })
+    expect(w.find('.pin-label').text()).toBe('Output image')
+  })
+
   it('renders type badge', () => {
     const w = factory({ fieldName: 'result', fieldType: 'ImageFile' })
     expect(w.find('.type-badge').text()).toBe('ImageFile')

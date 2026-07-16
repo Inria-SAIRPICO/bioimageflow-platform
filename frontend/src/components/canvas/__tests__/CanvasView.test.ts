@@ -586,6 +586,9 @@ describe('CanvasView', () => {
     apiMocks.patch.mockReset().mockResolvedValue({ data: {} })
     apiMocks.delete.mockReset().mockResolvedValue({ data: {} })
     const resolvedOutputsStore = useResolvedOutputsStore()
+    for (const nodeId of Object.keys(resolvedOutputsStore.resolvedOutputsByNodeId)) {
+      delete resolvedOutputsStore.resolvedOutputsByNodeId[nodeId]
+    }
     ;(resolvedOutputsStore.resolvedOutputsForCanvas as any).mockClear()
     ;(resolvedOutputsStore.getCanvasResolvedOutput as any).mockClear()
     ;(resolvedOutputsStore.refreshCanvasResolvedOutputs as any).mockClear()
@@ -872,6 +875,102 @@ describe('CanvasView', () => {
 
       await nextTick()
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      w.unmount()
+    })
+
+    it('refreshes human-friendly downstream input labels when a source node is renamed', async () => {
+      const sourceTool = makeTool({
+        dynamic_outputs: true,
+        outputs: {},
+      })
+      useResolvedOutputsStore().resolvedOutputsByNodeId.dynamic_source = {
+        resolved: true,
+        columns: {
+          result: { type: 'ImageFile', display_name: 'Dynamic result' },
+        },
+      }
+      mockNodes = reactive([
+        {
+          id: 'dynamic_source',
+          data: {
+            name: 'Original source',
+            toolName: 'gaussian_blur',
+            tool: sourceTool,
+            connectedInputs: {},
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'target',
+          data: {
+            name: 'Target',
+            toolName: 'gaussian_blur',
+            tool: sourceTool,
+            connectedInputs: { image: 'Dynamic result of Original source' },
+          },
+          position: { x: 100, y: 0 },
+        },
+      ]) as any[]
+      mockEdges = [{
+        id: 'edge',
+        source: 'dynamic_source',
+        target: 'target',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+        type: 'column_ref',
+      }]
+      const w = mountCanvas()
+
+      expect(canvasCommandMocks.registrations[0].renameNode('dynamic_source', 'Renamed source')).toBe(true)
+      expect(mockNodes[1].data.connectedInputs.image).toBe('Dynamic result of Renamed source')
+
+      await nextTick()
+      w.unmount()
+    })
+
+    it('refreshes downstream labels when dynamic output metadata resolves after mount', async () => {
+      const sourceTool = makeTool({ dynamic_outputs: true, outputs: {} })
+      mockNodes = reactive([
+        {
+          id: 'late_dynamic_source',
+          data: {
+            name: 'Dynamic source',
+            toolName: 'gaussian_blur',
+            tool: sourceTool,
+            connectedInputs: {},
+          },
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: 'target',
+          data: {
+            name: 'Target',
+            toolName: 'gaussian_blur',
+            tool: sourceTool,
+            connectedInputs: { image: 'result of Dynamic source' },
+          },
+          position: { x: 100, y: 0 },
+        },
+      ]) as any[]
+      mockEdges = [{
+        id: 'edge',
+        source: 'late_dynamic_source',
+        target: 'target',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+        type: 'column_ref',
+      }]
+      const w = mountCanvas()
+
+      useResolvedOutputsStore().resolvedOutputsByNodeId.late_dynamic_source = {
+        resolved: true,
+        columns: {
+          result: { type: 'ImageFile', display_name: 'Resolved result' },
+        },
+      }
+      await nextTick()
+
+      expect(mockNodes[1].data.connectedInputs.image).toBe('Resolved result of Dynamic source')
       w.unmount()
     })
 
@@ -1577,7 +1676,7 @@ describe('CanvasView', () => {
       const targetNode = mockNodes.find((n: any) => n.id === 'b')!
       expect('image' in targetNode.data.parameters).toBe(false)
       expect(targetNode.data.parameters.sigma).toBe(1.0)
-      expect(targetNode.data.connectedInputs.image).toBe('a.result')
+      expect(targetNode.data.connectedInputs.image).toBe('result of a')
       w.unmount()
     })
 
@@ -1625,7 +1724,7 @@ describe('CanvasView', () => {
       })
 
       const targetNode = mockNodes.find((n: any) => n.id === 'b')!
-      expect(targetNode.data.connectedInputs.sigma).toBe('a.sigma')
+      expect(targetNode.data.connectedInputs.sigma).toBe('sigma of a')
       expect(targetNode.data.pinnedInputs.sigma).toBe(true)
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
@@ -4508,7 +4607,7 @@ describe('CanvasView', () => {
       expect(mockEdges[1].sourceHandle).toBe('label_count')
       expect(subNode.data.parameters).toEqual({ input_folder: '/data', keep: 42 })
       expect(subNode.data.pinnedInputs).toEqual({ input_folder: false })
-      expect(subNode.data.connectedInputs).toEqual({ input_folder: 'files_1.path' })
+      expect(subNode.data.connectedInputs).toEqual({ input_folder: 'path of files_1' })
       expect(subNode.data.published_inputs[0].name).toBe('input_folder')
       expect(subNode.data.published_outputs[0].name).toBe('label_count')
       expect(projectedStatusesOf(w).sub_1).toMatchObject({

@@ -61,6 +61,7 @@ import {
   type CanvasSessionDescriptor,
 } from '@/sessions/canvasSessionRegistry'
 import { graphDocumentsEqual } from '@/sessions/graphDocument'
+import { connectionSourceLabel } from '@/utils/displayNames'
 
 const emit = defineEmits<{
   'graph-changed': [payload: { nodes: any[]; edges: any[] }]
@@ -157,6 +158,34 @@ const {
   onNodeDragStop,
   fitView,
 } = useVueFlow(canvasPanelId)
+
+function canvasConnectionSourceLabel(
+  sourceNode: any,
+  sourceHandle: string | null | undefined,
+): string {
+  const resolvedOutput = sourceNode?.id && sourceHandle
+    ? canvasResolvedOutputs[sourceNode.id]?.columns?.[sourceHandle]
+    : undefined
+  return connectionSourceLabel(sourceNode, sourceHandle, resolvedOutput)
+}
+
+function refreshConnectedInputLabels(): void {
+  for (const edge of getEdges.value) {
+    if (!edge.targetHandle) continue
+    const sourceNode = getNodes.value.find((node: any) => node.id === edge.source)
+    const targetNode = getNodes.value.find((node: any) => node.id === edge.target)
+    if (!targetNode?.data) continue
+    targetNode.data.connectedInputs = {
+      ...(targetNode.data.connectedInputs ?? {}),
+      [edge.targetHandle]: canvasConnectionSourceLabel(
+        sourceNode ?? { id: edge.source },
+        edge.sourceHandle,
+      ),
+    }
+  }
+}
+
+watch(canvasResolvedOutputs, refreshConnectedInputLabels, { deep: true })
 
 const canvasDescriptor: CanvasSessionDescriptor = isSubWorkflowEditor
     ? {
@@ -568,6 +597,7 @@ async function applyGraphState(
     await nextTick()
     if (isCanvasUnmounted) return
     setEdges(vueFlowGraph.edges)
+    refreshConnectedInputLabels()
     applyValidationEdgeErrors()
     if (isCanvasUnmounted) return
     const authoritativeGraph = rememberAuthoritativeGraph(graph)
@@ -1415,9 +1445,10 @@ onConnect((connection) => {
   const targetNode = getNodes.value.find((n: any) => n.id === connection.target)
   if (targetNode) {
     const sourceNode = getNodes.value.find((n: any) => n.id === connection.source)
-    const sourceLabel = sourceNode
-      ? `${sourceNode.data?.name ?? sourceNode.id}.${connection.sourceHandle ?? 'output'}`
-      : ''
+    const sourceLabel = canvasConnectionSourceLabel(
+      sourceNode ?? { id: connection.source },
+      connection.sourceHandle,
+    )
     targetNode.data.connectedInputs = {
       ...targetNode.data.connectedInputs,
       [targetHandle]: sourceLabel,
@@ -1567,9 +1598,10 @@ onEdgeUpdate(({ edge, connection }) => {
   const targetNode = getNodes.value.find((n: any) => n.id === newTarget)
   if (targetNode) {
     const sourceNode = getNodes.value.find((n: any) => n.id === newSource)
-    const sourceLabel = sourceNode
-      ? `${sourceNode.data?.name ?? sourceNode.id}.${newSourceHandle || 'output'}`
-      : ''
+    const sourceLabel = canvasConnectionSourceLabel(
+      sourceNode ?? { id: newSource },
+      newSourceHandle,
+    )
     targetNode.data.connectedInputs = {
       ...targetNode.data.connectedInputs,
       [newTargetHandle]: sourceLabel,
@@ -2219,7 +2251,10 @@ function populateConnectedInputsForPastedNodes(nodes: any[], edges: any[]) {
     const sourceHandle = edge.sourceHandle ?? 'output'
     targetNode.data.connectedInputs = {
       ...(targetNode.data.connectedInputs ?? {}),
-      [targetHandle]: `${edge.source}.${sourceHandle}`,
+      [targetHandle]: canvasConnectionSourceLabel(
+        byId.get(edge.source) ?? { id: edge.source },
+        sourceHandle,
+      ),
     }
     pinConnectedBodyInput(targetNode, targetHandle, edge.sourceHandle)
   }
@@ -2310,6 +2345,7 @@ function createSelectedSubWorkflow() {
   attachPublicationContextToNodes(result.nodes as any[])
   setNodes(result.nodes as any)
   setEdges(result.edges)
+  refreshConnectedInputLabels()
   uiStore.setCanvasSelectedNodes(canvasId, [id])
   emitGraphChanged()
 }
@@ -2455,7 +2491,11 @@ function reconcilePublishedParentState(
   const connectedInputs: Record<string, string> = {}
   for (const edge of nextEdges) {
     if (edge.target !== parentNodeId || !edge.targetHandle) continue
-    connectedInputs[edge.targetHandle] = `${edge.source}.${edge.sourceHandle ?? 'output'}`
+    const sourceNode = getNodes.value.find((node: any) => node.id === edge.source)
+    connectedInputs[edge.targetHandle] = canvasConnectionSourceLabel(
+      sourceNode ?? { id: edge.source },
+      edge.sourceHandle,
+    )
   }
   parentNode.data.connectedInputs = connectedInputs
 }
@@ -2682,6 +2722,7 @@ function applyHistoryState(state: CanvasHistoryState) {
   try {
     setNodes(historyNodesWithCurrentToolRuntime(state.nodes))
     setEdges(state.edges)
+    refreshConnectedInputLabels()
     if (!replacePublishedInterface(state.published_inputs, state.published_outputs)) return
     const currentState = currentVueFlowState()
     if (isSubWorkflowEditor && props.subWorkflowSessionId) {
@@ -2832,6 +2873,15 @@ function renameNode(nodeId: string, name: string): boolean {
     candidate.id !== nodeId && candidate.data?.name === trimmedName
   ))) return false
   node.data.name = trimmedName
+  for (const edge of getEdges.value) {
+    if (edge.source !== nodeId || !edge.targetHandle) continue
+    const targetNode = getNodes.value.find((candidate: any) => candidate.id === edge.target)
+    if (!targetNode?.data) continue
+    targetNode.data.connectedInputs = {
+      ...(targetNode.data.connectedInputs ?? {}),
+      [edge.targetHandle]: canvasConnectionSourceLabel(node, edge.sourceHandle),
+    }
+  }
   emitGraphChanged()
   return true
 }

@@ -5,6 +5,7 @@ import { getTypeColor } from '@/utils/typeColors'
 
 const props = withDefaults(defineProps<{
   fieldName: string
+  displayName?: string
   fieldType: string
   placeholder?: boolean
   variant?: 'header' | 'body'
@@ -27,7 +28,7 @@ const tooltip = computed(() => {
     :class="{ 'output-pin--placeholder': placeholder, 'output-pin--any': fieldType === 'any', 'output-pin--header': variant === 'header' }"
     :title="tooltip"
   >
-    <span class="pin-label">{{ fieldName }}</span>
+    <span class="pin-label">{{ displayName ?? fieldName }}</span>
     <span v-if="variant !== 'header'" class="type-badge">{{ fieldType === 'any' ? '?' : fieldType }}</span>
     <Handle
       type="source"

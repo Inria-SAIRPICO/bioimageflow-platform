@@ -656,7 +656,7 @@ describe('NodePanel', () => {
   })
 
   describe('new wire-format fields', () => {
-    it('accepts image_spec and new field shape', () => {
+    it('uses the parameter display name while preserving the wire key', () => {
       const tool = makeTool({
         inputs: {
           mask: {
@@ -679,6 +679,18 @@ describe('NodePanel', () => {
       const w = mountPanel(data)
       // Field renders with a pin toggle (connectable !== 'never').
       expect(w.findAll('[data-testid="pin-toggle"]').length).toBe(1)
+      expect(w.find('.param-header label').text()).toBe('Input mask')
+    })
+
+    it('uses output display names when they are available', () => {
+      const tool = makeTool({
+        outputs: {
+          output_image: { type: 'ImageFile', display_name: 'Output image' },
+        },
+      })
+      const w = mountPanel(makeNodeData({ tool }))
+
+      expect(w.find('.output-name').text()).toBe('Output image')
     })
   })
 
