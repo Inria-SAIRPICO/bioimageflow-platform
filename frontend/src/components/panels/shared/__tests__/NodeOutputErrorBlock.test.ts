@@ -13,6 +13,13 @@ import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
+import { useUIStore } from '@/stores/ui'
+
+const EXECUTION_CONTEXT = {
+  execution_id: 'exec-node-output',
+  workflow_id: 'node-output-workflow',
+  draft_revision: 1,
+} as const
 
 function mountBlock(nodeId: string) {
   return mount(NodeOutputErrorBlock, {
@@ -28,6 +35,7 @@ function setFailed(
 ) {
   const store = useExecutionStore()
   store.applyNodeState({
+    ...EXECUTION_CONTEXT,
     node_id: nodeId,
     status: 'failed',
     cached: false,
@@ -41,6 +49,26 @@ describe('NodeOutputErrorBlock', () => {
     canvasSessionRegistry.dispose()
     _resetCanvasStatusProjectionForTest()
     setActivePinia(createPinia())
+    const canvasId = canvasIdFromPanelId('workflow:node-output-workflow')
+    useCanvasStatusProjection({
+      descriptor: {
+        kind: 'root',
+        canvasId,
+        workflowId: EXECUTION_CONTEXT.workflow_id,
+      },
+      nodes: ref([
+        { id: 'n1', enabled: true },
+        { id: 'other', enabled: true },
+      ]),
+      validationResult: ref(null),
+      acceptedDraftRevision: ref(EXECUTION_CONTEXT.draft_revision),
+    })
+    useUIStore().setCanvasWorkflow(
+      canvasId,
+      EXECUTION_CONTEXT.workflow_id,
+      'Node Output Workflow',
+    )
+    canvasSessionRegistry.activate(canvasId)
   })
 
   afterEach(() => {
@@ -55,6 +83,7 @@ describe('NodeOutputErrorBlock', () => {
   it('renders nothing when the node status is not failed', () => {
     const store = useExecutionStore()
     store.applyNodeState({
+      ...EXECUTION_CONTEXT,
       node_id: 'n1',
       status: 'executed',
       cached: false,
@@ -73,14 +102,7 @@ describe('NodeOutputErrorBlock', () => {
   })
 
   it('hides a stale failure after the canvas projects an unexecuted edit', () => {
-    const canvasId = canvasIdFromPanelId('workflow:a')
-    const projection = useCanvasStatusProjection({
-      descriptor: { kind: 'root', canvasId, workflowId: 'a' },
-      nodes: ref([{ id: 'n1', enabled: true }]),
-      validationResult: ref(null),
-      acceptedDraftRevision: ref(null),
-    })
-    canvasSessionRegistry.activate(canvasId)
+    const projection = useCanvasStatusProjection()
     setFailed('n1', 'Stale failure')
     projection.markProvisional('n1', {
       node_id: 'n1',
@@ -134,7 +156,12 @@ describe('NodeOutputErrorBlock', () => {
   it('renders the "Node failed on row N of M" line when progress matches', () => {
     setFailed('n1', 'Boom')
     const store = useExecutionStore()
-    store.applyProgress({ node_id: 'n1', row: 3, total_rows: 10 })
+    store.applyProgress({
+      ...EXECUTION_CONTEXT,
+      node_id: 'n1',
+      row: 3,
+      total_rows: 10,
+    })
     const w = mountBlock('n1')
     const text = w.text()
     expect(text).toMatch(/row\s*3.*10/i)
@@ -143,7 +170,12 @@ describe('NodeOutputErrorBlock', () => {
   it('does NOT render the row line when progress is for a different node', () => {
     setFailed('n1', 'Boom')
     const store = useExecutionStore()
-    store.applyProgress({ node_id: 'other', row: 3, total_rows: 10 })
+    store.applyProgress({
+      ...EXECUTION_CONTEXT,
+      node_id: 'other',
+      row: 3,
+      total_rows: 10,
+    })
     const w = mountBlock('n1')
     expect(w.find('[data-testid="failed-row-line"]').exists()).toBe(false)
   })
@@ -160,6 +192,7 @@ describe('NodeOutputErrorBlock', () => {
     expect(w.find('.error-block').exists()).toBe(true)
     const store = useExecutionStore()
     store.applyNodeState({
+      ...EXECUTION_CONTEXT,
       node_id: 'n1',
       status: 'unexecuted',
       cached: false,

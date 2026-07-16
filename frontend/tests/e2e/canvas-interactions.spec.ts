@@ -37,6 +37,27 @@ async function waitForToolsRequest(page: Page) {
   await expect(page.locator('#bioimageflow-app')).toBeVisible()
 }
 
+function deriveWorkflowId(value: string): string {
+  return value
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
+    .toLowerCase()
+}
+
+async function createEditableWorkflow(page: Page): Promise<string> {
+  const displayName = `Canvas Interactions ${Date.now()} ${Math.floor(Math.random() * 10000)}`
+  await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'New', exact: true }).click()
+  await page.getByTestId('workflow-display-name-input').fill(displayName)
+  await page.getByTestId('workflow-dialog-submit').click()
+  await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+  return deriveWorkflowId(displayName)
+}
+
 async function addSeedNumbersNode(page: Page) {
   const source = await panelTool(page)
   await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
@@ -60,10 +81,16 @@ async function addSeedNumbersNode(page: Page) {
 
 test.describe('Canvas interactions', () => {
   test.describe.configure({ mode: 'serial' })
+  let workflowName: string
 
   test.beforeEach(async ({ page }) => {
     await seedTools(page)
     await waitForToolsRequest(page)
+    workflowName = await createEditableWorkflow(page)
+  })
+
+  test.afterEach(async ({ page }) => {
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })
 
   test('seeded tools are loaded in the panel', async ({ page }) => {

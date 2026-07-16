@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { AxiosError } from 'axios'
@@ -15,6 +15,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 const autoSaveMocks = vi.hoisted(() => ({
   clearAutoSave: vi.fn().mockResolvedValue(undefined),
+  clearAutoSaveStrict: vi.fn().mockResolvedValue(undefined),
   setLastOpenedWorkflow: vi.fn().mockResolvedValue(undefined),
 }))
 const workflowDraftMocks = vi.hoisted(() => ({
@@ -88,6 +89,10 @@ import {
 } from '@/composables/useCanvasPersistence'
 import type { GraphState, WorkflowInfo } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
+import {
+  WorkflowDeletionCommittedCleanupError,
+  type WorkflowDeletionEventDetail,
+} from '@/services/workflowDeletion'
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -131,24 +136,69 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
 })
 
 let pinia: ReturnType<typeof createPinia>
+let mountedWrappers: ReturnType<typeof mount>[] = []
 
 function mountMenuBar() {
-  return mount(MenuBar, {
+  const wrapper = mount(MenuBar, {
     global: {
       plugins: [pinia, [PrimeVue, { theme: { preset: Aura } }]],
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
-function setActiveWorkflow(): void {
-  useWorkflowStore().current = {
-    name: 'wf_a',
-    display_name: 'Workflow A',
-    description: null,
-    storage_path: '/tmp/workflows/wf_a',
-    path: '/tmp/workflows/wf_a.json',
+function registerActiveRootWorkflow(options: {
+  name?: string
+  displayName?: string
+  description?: string | null
+  graph?: GraphState
+} = {}) {
+  const name = options.name ?? 'wf_a'
+  const displayName = options.displayName ?? 'Workflow A'
+  const canvasId = canvasIdFromPanelId(`workflow:${name}`)
+  const workflow = {
+    name,
+    display_name: displayName,
+    description: options.description ?? null,
+    storage_path: `/tmp/workflows/${name}`,
+    path: `/tmp/workflows/${name}.json`,
     last_modified: '2026-01-01T00:00:00Z',
+  } as WorkflowInfo
+  const sync = useGraphSync({
+    descriptor: { kind: 'root', canvasId, workflowId: name },
+    getWorkflowId: () => name,
+  })
+  sync.currentGraph.value = options.graph ?? { nodes: [], edges: [] }
+  const persistence = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+    canvasId,
+    ROOT_PERSISTENCE_RESOURCE,
+  )!
+  vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+  vi.spyOn(persistence, 'queueDraft').mockImplementation(() => {})
+  vi.spyOn(persistence, 'queueGraph').mockImplementation((graph) => {
+    persistence.currentGraph.value = graph
+  })
+  vi.spyOn(persistence, 'flush').mockResolvedValue(undefined)
+  const store = useWorkflowStore()
+  if (!store.workflows.some(item => (item.id ?? item.name) === name)) {
+    store.workflows = [...store.workflows, workflow]
   }
+  store.current = workflow
+  useUIStore().setCanvasWorkflow(canvasId, name, displayName)
+  canvasSessionRegistry.activate(canvasId)
+  persistenceMocks.canvasId = canvasId
+  return { canvasId, workflow, sync, persistence }
+}
+
+function observeWorkflowDeletion(
+  callback: (detail: WorkflowDeletionEventDetail) => void,
+): () => void {
+  const listener = (event: Event) => {
+    callback((event as CustomEvent<WorkflowDeletionEventDetail>).detail)
+  }
+  window.addEventListener('bioimageflow:request-delete-workflow', listener)
+  return () => window.removeEventListener('bioimageflow:request-delete-workflow', listener)
 }
 
 describe('MenuBar', () => {
@@ -164,6 +214,7 @@ describe('MenuBar', () => {
     apiMocks.patch.mockReset()
     apiMocks.delete.mockReset()
     autoSaveMocks.clearAutoSave.mockClear()
+    autoSaveMocks.clearAutoSaveStrict.mockReset().mockResolvedValue(undefined)
     autoSaveMocks.setLastOpenedWorkflow.mockClear()
     workflowDraftMocks.ensureFreshForCriticalOperation.mockClear()
     workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
@@ -196,6 +247,12 @@ describe('MenuBar', () => {
       vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
     }
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    for (const wrapper of mountedWrappers) wrapper.unmount()
+    mountedWrappers = []
+    document.body.innerHTML = ''
   })
 
   it('renders a menubar element', () => {
@@ -279,7 +336,12 @@ describe('MenuBar', () => {
 
   describe('Workflow menu', () => {
     it('does not expose the global workflow when no registered canvas is active', () => {
-      setActiveWorkflow()
+      useWorkflowStore().current = {
+        name: 'wf_a',
+        display_name: 'Workflow A',
+        path: '/tmp/workflows/wf_a.json',
+        last_modified: '2026-01-01T00:00:00Z',
+      }
       const canvasId = canvasIdFromPanelId('workflow:registered')
       canvasSessionRegistry.register({
         kind: 'root',
@@ -298,19 +360,19 @@ describe('MenuBar', () => {
     })
 
     it('uses the active canvas workflow for action metadata and branching', async () => {
-      const canvasA = canvasIdFromPanelId('workflow:a')
-      const canvasB = canvasIdFromPanelId('workflow:b')
-      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
-      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
-      const ui = useUIStore()
-      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
-      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      const { canvasId: canvasA } = registerActiveRootWorkflow({
+        name: 'a',
+        displayName: 'Workflow A',
+        description: 'Description A',
+      })
+      registerActiveRootWorkflow({
+        name: 'b',
+        displayName: 'Workflow B',
+        description: 'Description B',
+      })
       canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
       const store = useWorkflowStore()
-      store.workflows = [
-        { name: 'a', display_name: 'Workflow A', description: 'Description A' },
-        { name: 'b', display_name: 'Workflow B', description: 'Description B' },
-      ] as any
       store.current = store.workflows[1]
       const exportWorkflow = vi.spyOn(store, 'exportWorkflow').mockResolvedValue(undefined)
       const wrapper = mountMenuBar()
@@ -440,86 +502,73 @@ describe('MenuBar', () => {
         graph: graphA,
         workflowName: 'a_copy',
         workflowDisplayName: 'Workflow A copy',
+        identityGeneration: 1,
       })
       window.removeEventListener('bioimageflow:apply-graph', onApply)
       wrapper.unmount()
     })
 
-    it('closes only the canvas that requested a delayed workflow deletion', async () => {
-      const canvasA = canvasIdFromPanelId('workflow:a')
-      const canvasB = canvasIdFromPanelId('workflow:b')
-      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
-      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
-      const workflowA = { name: 'a', display_name: 'Workflow A' } as any
-      const workflowB = { name: 'b', display_name: 'Workflow B' } as any
+    it('keeps a delayed workflow deletion bound to the canvas that requested it', async () => {
+      const { canvasId: canvasA, workflow: workflowA } = registerActiveRootWorkflow({
+        name: 'a',
+        displayName: 'Workflow A',
+      })
+      const { canvasId: canvasB, workflow: workflowB } = registerActiveRootWorkflow({
+        name: 'b',
+        displayName: 'Workflow B',
+      })
       const store = useWorkflowStore()
-      const ui = useUIStore()
-      store.workflows = [workflowA, workflowB]
       store.current = workflowA
-      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
-      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
       canvasSessionRegistry.activate(canvasA)
       persistenceMocks.canvasId = canvasA
-      let resolveDelete!: (value: { data: { deleted: boolean } }) => void
-      apiMocks.delete.mockImplementationOnce(() => {
-        expect(canvasSessionRegistry.get(canvasA)).not.toBeNull()
-        return new Promise((resolve) => {
-          resolveDelete = resolve
-        })
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        deletionRequest = detail
       })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
       workflow.items.find((item: any) => item.label === 'Delete').command()
-      const closed: string[] = []
       const applied: any[] = []
-      const onClose = (event: Event) => {
-        const canvasId = (event as CustomEvent).detail.canvasId
-        closed.push(canvasId)
-        canvasSessionRegistry.unregister(canvasId)
-      }
       const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
-      window.addEventListener('bioimageflow:close-canvas', onClose)
       window.addEventListener('bioimageflow:apply-graph', onApply)
 
       const deletion = vm.confirmDeleteWorkflow()
+      expect(deletionRequest).toMatchObject({ workflowName: 'a', canvasId: canvasA })
       canvasSessionRegistry.activate(canvasB)
       persistenceMocks.canvasId = canvasB
       store.current = workflowB
-      resolveDelete({ data: { deleted: true } })
+      deletionRequest!.resolve()
       await deletion
 
-      expect(closed).toEqual([canvasA])
       expect(applied).toEqual([])
       expect(store.currentName).toBe('b')
-      window.removeEventListener('bioimageflow:close-canvas', onClose)
+      expect(vm.deleteDialogVisible).toBe(false)
+      expect(vm.deleteCanvasTarget).toBeNull()
+      stopObserving()
       window.removeEventListener('bioimageflow:apply-graph', onApply)
       wrapper.unmount()
     })
 
     it('keeps the confirmed canvas mounted when workflow deletion fails', async () => {
-      const canvasId = canvasIdFromPanelId('workflow:a')
-      canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'a' })
-      const workflow = { name: 'a', display_name: 'Workflow A' } as any
+      const { canvasId, workflow } = registerActiveRootWorkflow({
+        name: 'a',
+        displayName: 'Workflow A',
+      })
       const store = useWorkflowStore()
-      store.workflows = [workflow]
-      store.current = workflow
-      useUIStore().setCanvasWorkflow(canvasId, 'a', 'Workflow A')
-      canvasSessionRegistry.activate(canvasId)
-      persistenceMocks.canvasId = canvasId
-      apiMocks.delete.mockRejectedValueOnce(new Error('delete failed'))
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
       workflowMenu.items.find((item: any) => item.label === 'Delete').command()
-      const closed: string[] = []
-      const onClose = (event: Event) => closed.push((event as CustomEvent).detail.canvasId)
-      window.addEventListener('bioimageflow:close-canvas', onClose)
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        deletionRequest = detail
+        detail.reject(new Error('delete failed'))
+      })
 
       await vm.confirmDeleteWorkflow()
 
-      expect(apiMocks.delete).toHaveBeenCalledWith('/api/v1/workflows/a')
-      expect(closed).toEqual([])
+      expect(deletionRequest).toMatchObject({ workflowName: 'a', canvasId })
       expect(canvasSessionRegistry.get(canvasId)).not.toBeNull()
       expect(store.workflows).toEqual([workflow])
       expect(vm.deleteDialogVisible).toBe(true)
@@ -529,7 +578,116 @@ describe('MenuBar', () => {
         severity: 'error',
         summary: 'Delete workflow failed',
       }))
-      window.removeEventListener('bioimageflow:close-canvas', onClose)
+      stopObserving()
+      wrapper.unmount()
+    })
+
+    it('rejects a delete confirmation after the same workflow id is recreated', async () => {
+      const { canvasId } = registerActiveRootWorkflow({
+        name: 'a',
+        displayName: 'Old A',
+      })
+      const store = useWorkflowStore()
+      store.observeWorkflowServerIdentityGeneration('a', 4)
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+      const capturedToken = vm.deleteCanvasTarget.sessionRegistrationToken
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        deletionRequest = detail
+      })
+
+      canvasSessionRegistry.unregister(canvasId)
+      await store.forgetDeletedWorkflow('a')
+      store.observeWorkflowServerIdentityGeneration('a', 5)
+      registerActiveRootWorkflow({ name: 'a', displayName: 'Fresh A' })
+      const freshToken = canvasSessionRegistry.get(canvasId)?.registrationToken
+
+      await vm.confirmDeleteWorkflow()
+
+      expect(freshToken).not.toBe(capturedToken)
+      expect(deletionRequest).toBeNull()
+      expect(canvasSessionRegistry.get(canvasId)?.registrationToken).toBe(freshToken)
+      expect(vm.deleteDialogVisible).toBe(false)
+      expect(vm.deleteCanvasTarget).toBeNull()
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'error',
+        summary: 'Delete workflow failed',
+        detail: expect.stringContaining('replaced after this delete confirmation opened'),
+      }))
+      stopObserving()
+      wrapper.unmount()
+    })
+
+    it('rejects a workflow-browser delete after an unmounted identity is recreated', async () => {
+      registerActiveRootWorkflow({ name: 'b', displayName: 'Workflow B' })
+      const store = useWorkflowStore()
+      store.workflows = [
+        { name: 'a', display_name: 'Old A' } as WorkflowInfo,
+        ...store.workflows,
+      ]
+      store.observeWorkflowServerIdentityGeneration('a', 4)
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        deletionRequest = detail
+      })
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'delete', name: 'a' },
+      }))
+      expect(vm.deleteCanvasTarget).toMatchObject({
+        workflowName: 'a',
+        canvasId: null,
+        serverIdentityGeneration: 4,
+        sessionRegistrationToken: null,
+      })
+
+      store.observeWorkflowServerIdentityGeneration('a', 5)
+      store.workflows = [
+        { name: 'a', display_name: 'Fresh A' } as WorkflowInfo,
+        ...store.workflows.filter((workflow: WorkflowInfo) => workflow.name !== 'a'),
+      ]
+      await vm.confirmDeleteWorkflow()
+
+      expect(deletionRequest).toBeNull()
+      expect(vm.deleteDialogVisible).toBe(false)
+      expect(vm.deleteCanvasTarget).toBeNull()
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'error',
+        detail: expect.stringContaining('replaced after this delete confirmation opened'),
+      }))
+      stopObserving()
+      wrapper.unmount()
+    })
+
+    it('closes a committed delete dialog and warns when local cleanup fails', async () => {
+      registerActiveRootWorkflow({ name: 'a', displayName: 'Workflow A' })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        detail.reject(new WorkflowDeletionCommittedCleanupError(
+          'a',
+          new Error('IndexedDB unavailable'),
+        ))
+      })
+
+      await vm.confirmDeleteWorkflow()
+
+      expect(vm.deleteDialogVisible).toBe(false)
+      expect(vm.deleteTargetName).toBeNull()
+      expect(vm.deleteCanvasTarget).toBeNull()
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'warn',
+        summary: 'Workflow deleted with cleanup warning',
+        detail: expect.stringContaining('IndexedDB unavailable'),
+      }))
+      stopObserving()
       wrapper.unmount()
     })
 
@@ -576,6 +734,7 @@ describe('MenuBar', () => {
         workflowName: 'a',
         workflowDisplayName: 'Workflow A',
         draft: openedDraft,
+        identityGeneration: 0,
       })
       window.removeEventListener('bioimageflow:apply-graph', onApply)
       wrapper.unmount()
@@ -604,17 +763,15 @@ describe('MenuBar', () => {
     })
 
     it('calls the workflow export action for the current workflow', async () => {
-      const workflow = useWorkflowStore()
-      workflow.current = {
+      registerActiveRootWorkflow({
         name: 'cell_segmentation',
-        display_name: 'Cell segmentation',
-        path: '/tmp/cell_segmentation.json',
-        last_modified: '2026-04-29T00:00:00Z',
-      }
+        displayName: 'Cell segmentation',
+      })
+      const workflow = useWorkflowStore()
       const exportWorkflow = vi
         .spyOn(workflow, 'exportWorkflow')
         .mockResolvedValue(undefined)
-      vi.spyOn(workflow, 'saveWorkflow').mockResolvedValue(workflow.current)
+      apiMocks.put.mockResolvedValueOnce({ data: workflow.current })
 
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
@@ -629,13 +786,10 @@ describe('MenuBar', () => {
     })
 
     it('confirms that export saves the current workflow before downloading', async () => {
-      const workflow = useWorkflowStore()
-      workflow.current = {
+      registerActiveRootWorkflow({
         name: 'cell_segmentation',
-        display_name: 'Cell segmentation',
-        path: '/tmp/cell_segmentation.json',
-        last_modified: '2026-04-29T00:00:00Z',
-      }
+        displayName: 'Cell segmentation',
+      })
       apiMocks.put.mockResolvedValueOnce({
         data: {
           name: 'cell_segmentation',
@@ -678,14 +832,11 @@ describe('MenuBar', () => {
     })
 
     it('releases the captured export target when the dialog is cancelled', async () => {
-      const workflow = useWorkflowStore()
-      workflow.current = {
+      const { workflow } = registerActiveRootWorkflow({
         name: 'cell_segmentation',
-        display_name: 'Cell segmentation',
-        path: '/tmp/cell_segmentation.json',
-        last_modified: '2026-04-29T00:00:00Z',
-      }
-      apiMocks.put.mockResolvedValueOnce({ data: workflow.current })
+        displayName: 'Cell segmentation',
+      })
+      apiMocks.put.mockResolvedValueOnce({ data: workflow })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
@@ -955,14 +1106,11 @@ describe('MenuBar', () => {
     })
 
     it('blocks save when unresolved remote draft changes need resolution', async () => {
-      persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
-      const workflow = useWorkflowStore()
-      workflow.current = {
+      const { persistence } = registerActiveRootWorkflow({
         name: 'new_workflow',
-        display_name: 'New workflow',
-        path: '/tmp/new_workflow.json',
-        last_modified: '2026-04-29T00:00:00Z',
-      }
+        displayName: 'New workflow',
+      })
+      vi.mocked(persistence.ensureFreshForCriticalOperation).mockResolvedValueOnce(false)
 
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
@@ -978,14 +1126,11 @@ describe('MenuBar', () => {
     })
 
     it('blocks confirmed export when unresolved remote draft changes need resolution', async () => {
-      persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValueOnce(false)
-      const workflow = useWorkflowStore()
-      workflow.current = {
+      const { persistence } = registerActiveRootWorkflow({
         name: 'cell_segmentation',
-        display_name: 'Cell segmentation',
-        path: '/tmp/cell_segmentation.json',
-        last_modified: '2026-04-29T00:00:00Z',
-      }
+        displayName: 'Cell segmentation',
+      })
+      vi.mocked(persistence.ensureFreshForCriticalOperation).mockResolvedValueOnce(false)
 
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
@@ -1013,9 +1158,13 @@ describe('MenuBar', () => {
           display_name: 'Nuclei',
           path: '/tmp/Analysis Results/nuclei/workflow.json',
           last_modified: '2026-05-21T10:00:00Z',
+          identity_generation: 8,
         },
       })
       const wrapper = mountMenuBar()
+      const applied: any[] = []
+      const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:apply-graph', onApply)
 
       window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
         detail: { action: 'new', folderId: 'Analysis Results' },
@@ -1037,6 +1186,12 @@ describe('MenuBar', () => {
         display_name: 'Nuclei',
         description: null,
       })
+      expect(applied[applied.length - 1]).toMatchObject({
+        workflowName: 'Analysis Results/nuclei',
+        identityGeneration: 1,
+        serverIdentityGeneration: 8,
+      })
+      window.removeEventListener('bioimageflow:apply-graph', onApply)
     })
 
     it('does not apply a workflow whose delayed creation finishes after execution starts', async () => {
@@ -1074,46 +1229,61 @@ describe('MenuBar', () => {
       wrapper.unmount()
     })
 
-    it('closes the captured root and clears delete state when execution locks after success', async () => {
-      const canvasId = canvasIdFromPanelId('workflow:wf_a')
-      const workflowInfo = {
-        name: 'wf_a',
-        display_name: 'Workflow A',
-        description: null,
-        storage_path: '/tmp/workflows/wf_a',
-        path: '/tmp/workflows/wf_a.json',
-        last_modified: '2026-01-01T00:00:00Z',
-      }
-      const workflowStore = useWorkflowStore()
-      workflowStore.workflows = [workflowInfo]
-      workflowStore.current = workflowInfo
-      useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
-      canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
-      canvasSessionRegistry.activate(canvasId)
-      persistenceMocks.canvasId = canvasId
-      let resolveDelete!: (value: { data: { deleted: boolean } }) => void
-      apiMocks.delete.mockReturnValueOnce(new Promise((resolve) => {
-        resolveDelete = resolve
+    it('does not apply a delayed dependency rebind after remote workflow deletion', async () => {
+      const { workflow } = registerActiveRootWorkflow()
+      const response = deferred<any>()
+      apiMocks.post.mockReturnValueOnce(response.promise)
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      vm.dependencyDialogVisible = true
+      const applied: unknown[] = []
+      const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
+      window.addEventListener('bioimageflow:apply-graph', onApply)
+
+      const rebinding = vm.rebindImportedDependencies()
+      await vi.waitFor(() => expect(apiMocks.post).toHaveBeenCalledWith(
+        '/api/v1/workflows/wf_a/rebind-versions',
+      ))
+      await useWorkflowStore().forgetDeletedWorkflow('wf_a')
+      response.resolve({
+        data: {
+          info: { ...workflow, display_name: 'Stale rebind' },
+          graph: { nodes: [{ id: 'stale' }], edges: [] },
+          missing_packages: [],
+          missing_tools: [],
+        },
+      })
+      await rebinding
+
+      expect(applied).toEqual([])
+      expect(vm.dependencyDialogVisible).toBe(true)
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'error',
+        summary: 'Dependency rebind failed',
       }))
+      window.removeEventListener('bioimageflow:apply-graph', onApply)
+    })
+
+    it('clears captured delete state when the lifecycle request succeeds after execution locks', async () => {
+      const { canvasId } = registerActiveRootWorkflow()
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        deletionRequest = detail
+      })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
       workflow.items.find((item: any) => item.label === 'Delete').command()
-      const closed: unknown[] = []
-      const onClose = (event: Event) => closed.push((event as CustomEvent).detail)
-      window.addEventListener('bioimageflow:close-canvas', onClose)
-
       const deletion = vm.confirmDeleteWorkflow()
-      await vi.waitFor(() => expect(apiMocks.delete).toHaveBeenCalledOnce())
+      expect(deletionRequest).toMatchObject({ workflowName: 'wf_a', canvasId })
       useExecutionStore().state = 'starting'
-      resolveDelete({ data: { deleted: true } })
+      deletionRequest!.resolve()
       await deletion
 
-      expect(closed).toEqual([{ canvasId }])
       expect(vm.deleteDialogVisible).toBe(false)
       expect(vm.deleteTargetName).toBeNull()
       expect(vm.deleteCanvasTarget).toBeNull()
-      window.removeEventListener('bioimageflow:close-canvas', onClose)
+      stopObserving()
       wrapper.unmount()
     })
 
@@ -1151,17 +1321,14 @@ describe('MenuBar', () => {
 
     it('uses the platform dialog for workflow delete without creating a replacement workflow', async () => {
       const confirmSpy = vi.spyOn(window, 'confirm')
+      registerActiveRootWorkflow({ name: 'Untitled', displayName: 'Untitled' })
       const workflow = useWorkflowStore()
-      const current = {
-        name: 'Untitled',
-        display_name: 'Untitled',
-        path: '/tmp/Untitled/workflow.json',
-        last_modified: '2026-05-22T08:00:00Z',
-      }
-      workflow.workflows = [current]
-      workflow.current = current
-      apiMocks.delete.mockResolvedValueOnce({ data: { deleted: true } })
       const createWorkflow = vi.spyOn(workflow, 'createWorkflow')
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        deletionRequest = detail
+        detail.resolve()
+      })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
@@ -1174,9 +1341,12 @@ describe('MenuBar', () => {
       await vm.confirmDeleteWorkflow()
       await flushPromises()
 
-      expect(apiMocks.delete).toHaveBeenCalledWith('/api/v1/workflows/Untitled')
+      expect(deletionRequest).toMatchObject({
+        workflowName: 'Untitled',
+        canvasId: canvasIdFromPanelId('workflow:Untitled'),
+      })
       expect(createWorkflow).not.toHaveBeenCalled()
-      expect(workflow.current).toBeNull()
+      stopObserving()
       confirmSpy.mockRestore()
     })
 
@@ -1191,7 +1361,11 @@ describe('MenuBar', () => {
         path: '/tmp/Analysis/beta/workflow.json',
         last_modified: '2026-05-22T08:00:00Z',
       }]
-      apiMocks.delete.mockResolvedValueOnce({ data: { deleted: true } })
+      let deletionRequest: WorkflowDeletionEventDetail | null = null
+      const stopObserving = observeWorkflowDeletion((detail) => {
+        deletionRequest = detail
+        detail.resolve()
+      })
       const wrapper = mountMenuBar()
 
       window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
@@ -1206,19 +1380,19 @@ describe('MenuBar', () => {
       await vm.confirmDeleteWorkflow()
       await flushPromises()
 
-      expect(apiMocks.delete).toHaveBeenCalledWith('/api/v1/workflows/Analysis/beta')
+      expect(deletionRequest).toMatchObject({
+        workflowName: 'Analysis/beta',
+        canvasId: null,
+      })
+      stopObserving()
       confirmSpy.mockRestore()
     })
 
     it('labels workflow display-name editing accurately', async () => {
-      const workflow = useWorkflowStore()
-      workflow.current = {
+      registerActiveRootWorkflow({
         name: 'cell_segmentation',
-        display_name: 'Cell segmentation',
-        path: '/tmp/cell_segmentation.json',
-        last_modified: '2026-04-29T00:00:00Z',
-      }
-      useUIStore().setActiveWorkflow('Cell segmentation')
+        displayName: 'Cell segmentation',
+      })
 
       const wrapper = mountMenuBar()
       await wrapper.vm.$nextTick()
@@ -1236,14 +1410,10 @@ describe('MenuBar', () => {
     })
 
     it('save success toast uses the workflow display name', async () => {
-      const workflow = useWorkflowStore()
-      workflow.current = {
+      const { persistence } = registerActiveRootWorkflow({
         name: 'new_workflow',
-        display_name: 'New workflow',
-        path: '/tmp/new_workflow.json',
-        last_modified: '2026-04-29T00:00:00Z',
-      }
-      useUIStore().setActiveWorkflow('New workflow')
+        displayName: 'New workflow',
+      })
       apiMocks.put.mockResolvedValue({
         data: {
           name: 'new_workflow',
@@ -1266,9 +1436,9 @@ describe('MenuBar', () => {
         summary: 'Workflow saved',
         detail: 'New workflow',
       }))
-      expect(persistenceMocks.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
-      expect(persistenceMocks.queueDraft).toHaveBeenCalledOnce()
-      expect(persistenceMocks.flush).toHaveBeenCalledOnce()
+      expect(persistence.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
+      expect(persistence.queueDraft).toHaveBeenCalledOnce()
+      expect(persistence.flush).toHaveBeenCalledOnce()
       expect(workflowDraftMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
       expect(workflowDraftMocks.scheduleSave).not.toHaveBeenCalled()
       expect(workflowDraftMocks.flush).not.toHaveBeenCalled()
@@ -1374,7 +1544,7 @@ describe('MenuBar', () => {
       wrapper.unmount()
     })
 
-    it('marks the canvas clean when a newer edit converges back to graph A during preservation', async () => {
+    it('keeps preservation conservative when a newer edit converges back to graph A', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
       const graphA: GraphState = { nodes: [], edges: [] }
       const graphB: GraphState = {
@@ -1434,10 +1604,10 @@ describe('MenuBar', () => {
       pendingPreservation.resolve()
       await saving
 
-      expect(queueDraft).toHaveBeenCalledWith(graphA)
-      expect(flush).toHaveBeenCalledTimes(2)
+      expect(queueDraft).not.toHaveBeenCalled()
+      expect(flush).toHaveBeenCalledOnce()
       expect(syncA.currentGraph.value).toEqual(graphA)
-      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(false)
+      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
       wrapper.unmount()
     })
 
@@ -1489,6 +1659,9 @@ describe('MenuBar', () => {
       const queueDraft = vi.spyOn(persistenceA, 'queueDraft').mockImplementation((graph) => {
         liveGraph = graph
       })
+      const queueGraph = vi.spyOn(persistenceA, 'queueGraph').mockImplementation((graph) => {
+        liveGraph = graph
+      })
       vi.spyOn(persistenceA, 'flush').mockResolvedValue(undefined)
       const store = useWorkflowStore()
       const ui = useUIStore()
@@ -1508,7 +1681,8 @@ describe('MenuBar', () => {
 
       await workflowMenu.items.find((item: any) => item.label === 'Save').command()
 
-      expect(queueDraft).not.toHaveBeenCalled()
+      expect(queueDraft).toHaveBeenCalledWith(graphA)
+      expect(queueGraph).toHaveBeenCalledWith(graphB)
       expect(liveGraph).toEqual(graphB)
       expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
       syncA.dispose()
@@ -1706,33 +1880,61 @@ describe('MenuBar', () => {
       wrapper.unmount()
     })
 
-    it('aborts Save when another canvas becomes active during the freshness barrier', async () => {
-      setActiveWorkflow()
-      let resolveFresh!: (fresh: boolean) => void
-      persistenceMocks.ensureFreshForCriticalOperation.mockReturnValueOnce(
-        new Promise<boolean>((resolve) => {
-          resolveFresh = resolve
-        }),
-      )
+    it('keeps Save bound to its root when another canvas activates during freshness', async () => {
+      const { workflow: workflowA, persistence: persistenceA } = registerActiveRootWorkflow({
+        name: 'a',
+        displayName: 'Workflow A',
+      })
+      const { canvasId: canvasB, persistence: persistenceB } = registerActiveRootWorkflow({
+        name: 'b',
+        displayName: 'Workflow B',
+      })
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      const pendingFreshness = deferred<boolean>()
+      vi.mocked(persistenceA.ensureFreshForCriticalOperation)
+        .mockReturnValueOnce(pendingFreshness.promise)
+      apiMocks.put.mockResolvedValueOnce({ data: workflowA })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
 
       const save = workflowMenu.items.find((item: any) => item.label === 'Save').command()
       await flushPromises()
-      expect(persistenceMocks.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
+      expect(persistenceA.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
 
-      persistenceMocks.canvasId = 'workflow:b'
-      resolveFresh(true)
+      canvasSessionRegistry.activate(canvasB)
+      persistenceMocks.canvasId = canvasB
+      pendingFreshness.resolve(true)
       await save
 
-      expect(apiMocks.put).not.toHaveBeenCalled()
-      expect(persistenceMocks.queueDraft).not.toHaveBeenCalled()
-      expect(persistenceMocks.flush).not.toHaveBeenCalled()
+      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
+        graph: { nodes: [], edges: [] },
+      })
+      expect(persistenceA.queueDraft).toHaveBeenCalledWith({ nodes: [], edges: [] })
+      expect(persistenceA.flush).toHaveBeenCalledOnce()
+      expect(persistenceB.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
+      expect(persistenceB.queueDraft).not.toHaveBeenCalled()
     })
 
     it('routes Save to an active nested canvas without saving the root workflow', async () => {
-      setActiveWorkflow()
+      const parentCanvasId = canvasIdFromPanelId('workflow:wf_a')
+      const nestedCanvasId = canvasIdFromPanelId('sub-workflow:nested-a')
+      canvasSessionRegistry.register({
+        kind: 'root',
+        canvasId: parentCanvasId,
+        workflowId: 'wf_a',
+      })
+      canvasSessionRegistry.register({
+        kind: 'nested',
+        canvasId: nestedCanvasId,
+        sessionId: 'nested-a',
+        parentCanvasId,
+      })
+      useUIStore().setCanvasWorkflow(nestedCanvasId, 'wf_a', 'Nested A')
+      canvasSessionRegistry.activate(nestedCanvasId)
+      persistenceMocks.canvasId = nestedCanvasId
       canvasCommandMocks.routeSave.mockResolvedValueOnce('nested')
       const saveRoot = vi.spyOn(useWorkflowStore(), 'saveWorkflow')
       const wrapper = mountMenuBar()
@@ -1750,6 +1952,7 @@ describe('MenuBar', () => {
 
   describe('Edit menu', () => {
     it('enables commands that are implemented by the canvas', () => {
+      registerActiveRootWorkflow()
       const store = useUIStore()
       store.setSelectedNodes(['n1'])
       const wrapper = mountMenuBar()
@@ -1804,7 +2007,7 @@ describe('MenuBar', () => {
     })
 
     it('Run Workflow is enabled when idle', () => {
-      setActiveWorkflow()
+      registerActiveRootWorkflow()
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const exec = vm.menuItems.find((item: any) => item.label === 'Execution')
@@ -1823,7 +2026,7 @@ describe('MenuBar', () => {
     })
 
     it('Run Selected is enabled when nodes are selected', async () => {
-      setActiveWorkflow()
+      registerActiveRootWorkflow()
       const store = useUIStore()
       store.setSelectedNodes(['n1'])
       const wrapper = mountMenuBar()
@@ -1866,7 +2069,7 @@ describe('MenuBar', () => {
     it.each(['starting', 'stopping'] as const)(
       'locks workflow and edit actions while execution is %s',
       async (phase) => {
-        setActiveWorkflow()
+        registerActiveRootWorkflow()
         useUIStore().setSelectedNodes(['n1'])
         useExecutionStore().state = phase
         const wrapper = mountMenuBar()
@@ -1890,7 +2093,7 @@ describe('MenuBar', () => {
     it.each(['starting', 'stopping'] as const)(
       'ignores workflow mutation commands while execution is %s',
       async (phase) => {
-        setActiveWorkflow()
+        registerActiveRootWorkflow()
         useExecutionStore().state = phase
         const wrapper = mountMenuBar()
         const vm = wrapper.vm as any

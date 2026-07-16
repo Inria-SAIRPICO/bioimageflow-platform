@@ -1,19 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref, watch } from 'vue'
-import type { ValidationResult } from '@/api/types'
-
-vi.mock('@/api/client', () => ({
-  api: {
-    put: vi.fn(),
-  },
-}))
-
-import { api } from '@/api/client'
+import type { GraphState, ValidationResult } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { useWorkflowStore } from '@/stores/workflow'
-import { useGraphSync, serializeGraph, _resetGraphSyncForTest } from '../useGraphSync'
+import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import {
+  _resetCanvasPersistenceForTest,
+  useCanvasPersistence,
+  type CanvasPersistenceTransports,
+} from '../useCanvasPersistence'
+import {
+  activateGraphSyncCanvas,
+  useGraphSync,
+  serializeGraph,
+  _resetGraphSyncForTest,
+} from '../useGraphSync'
 
-const mockedPut = vi.mocked(api.put)
+const fetchDraft = vi.fn<CanvasPersistenceTransports['fetchDraft']>()
+const putDraft = vi.fn<CanvasPersistenceTransports['putDraft']>()
+const writeRecovery = vi.fn<CanvasPersistenceTransports['writeRecovery']>()
+const transports: CanvasPersistenceTransports = {
+  fetchDraft,
+  putDraft,
+  writeRecovery,
+}
 
 /**
  * Build a Vue Flow-shaped graph (the format emitGraphChanged produces).
@@ -38,7 +49,7 @@ const makeVueFlowGraph = (id = '1') => ({
 /**
  * The backend-format graph that the serializer should produce from makeVueFlowGraph.
  */
-const expectedBackendGraph = (id = '1') => ({
+const expectedBackendGraph = (id = '1'): GraphState => ({
   nodes: [{
     id,
     name: 'n',
@@ -53,17 +64,66 @@ const expectedBackendGraph = (id = '1') => ({
   edges: [],
 })
 
+type ResolveDraft = (
+  value: WorkflowDraftResponse | PromiseLike<WorkflowDraftResponse>
+) => void
+
 const makeValidation = (valid = true): ValidationResult => ({
   valid,
   node_statuses: {},
   errors: [],
 })
 
+function draftResponse(
+  workflowId: string,
+  revision: number,
+  graph: GraphState,
+  validation = makeValidation(),
+): WorkflowDraftResponse {
+  return {
+    draft_version: 1,
+    workflow_id: workflowId,
+    base_saved_revision: 'sha256:test',
+    draft_revision: revision,
+    updated_at: `2026-07-16T00:00:0${revision}Z`,
+    updated_by: 'frontend',
+    dirty_against_saved: true,
+    graph,
+    validation,
+  }
+}
+
+function canonicalGraphSync(workflowId = 'test-workflow') {
+  const canvasId = canvasIdFromPanelId(`workflow:${workflowId}`)
+  const descriptor = { kind: 'root' as const, canvasId, workflowId }
+  const getWorkflowId = () => workflowId
+  useCanvasPersistence({
+    descriptor,
+    getWorkflowId,
+    transports,
+    debounceMs: 250,
+  })
+  const sync = useGraphSync({ descriptor, getWorkflowId })
+  activateGraphSyncCanvas(canvasId)
+  return sync
+}
+
 describe('useGraphSync', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
-    mockedPut.mockReset()
+    fetchDraft.mockReset().mockImplementation(async workflowId => (
+      draftResponse(workflowId, 0, { nodes: [], edges: [] })
+    ))
+    putDraft.mockReset().mockImplementation(async (workflowId, body) => (
+      draftResponse(
+        workflowId,
+        body.expected_revision + 1,
+        body.graph,
+      )
+    ))
+    writeRecovery.mockReset().mockResolvedValue(undefined)
+    _resetCanvasPersistenceForTest()
     _resetGraphSyncForTest()
   })
 
@@ -71,62 +131,72 @@ describe('useGraphSync', () => {
     vi.useRealTimers()
   })
 
-  it('debounces multiple rapid syncGraph calls into one PUT', async () => {
-    mockedPut.mockResolvedValue({ data: makeValidation() })
-    const { syncGraph } = useGraphSync()
+  it('debounces multiple rapid syncGraph calls into one draft PUT', async () => {
+    const { syncGraph } = canonicalGraphSync()
 
     syncGraph(makeVueFlowGraph('1'))
     syncGraph(makeVueFlowGraph('2'))
     syncGraph(makeVueFlowGraph('3'))
 
-    expect(mockedPut).not.toHaveBeenCalled()
+    expect(putDraft).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(300)
 
-    expect(mockedPut).toHaveBeenCalledTimes(1)
-    // Should serialize the last graph to backend format
-    expect(mockedPut).toHaveBeenCalledWith(
-      '/api/v1/graph',
-      { graph: expectedBackendGraph('3'), workflow_name: null },
-      expect.objectContaining({ signal: expect.anything() }),
+    expect(putDraft).toHaveBeenCalledTimes(1)
+    expect(putDraft).toHaveBeenCalledWith(
+      'test-workflow',
+      expect.objectContaining({
+        graph: expectedBackendGraph('3'),
+        expected_revision: 0,
+        validate: true,
+      }),
     )
   })
 
   it('joins an in-flight request before sending the newer graph', async () => {
-    let resolveFirst!: (v: unknown) => void
-    let resolveSecond!: (v: unknown) => void
+    let resolveFirst!: ResolveDraft
+    let resolveSecond!: ResolveDraft
 
-    mockedPut
+    putDraft
       .mockReturnValueOnce(new Promise(r => { resolveFirst = r }))
       .mockReturnValueOnce(new Promise(r => { resolveSecond = r }))
 
-    const { syncGraph, validationResult } = useGraphSync()
+    const { syncGraph, validationResult } = canonicalGraphSync()
 
     // First call
     syncGraph(makeVueFlowGraph('1'))
     await vi.advanceTimersByTimeAsync(300)
-    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(putDraft).toHaveBeenCalledTimes(1)
 
     // A newer graph queues while the first request is in flight.
     syncGraph(makeVueFlowGraph('2'))
     await vi.advanceTimersByTimeAsync(300)
-    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(putDraft).toHaveBeenCalledTimes(1)
 
     // Resolving the first request starts the queued newer request. Its stale
     // validation is not published while the newer graph remains pending.
-    resolveFirst({ data: makeValidation(false) })
+    resolveFirst(draftResponse(
+      'test-workflow',
+      1,
+      expectedBackendGraph('1'),
+      makeValidation(false),
+    ))
     await vi.advanceTimersByTimeAsync(0)
     expect(validationResult.value).toBeNull()
-    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(putDraft).toHaveBeenCalledTimes(2)
 
-    resolveSecond({ data: makeValidation(true) })
+    resolveSecond(draftResponse(
+      'test-workflow',
+      2,
+      expectedBackendGraph('2'),
+      makeValidation(true),
+    ))
     await vi.advanceTimersByTimeAsync(0)
     expect(validationResult.value).toEqual(makeValidation(true))
   })
 
   it('returns validation result', async () => {
-    mockedPut.mockResolvedValue({ data: makeValidation(true) })
-    const { syncGraph, validationResult } = useGraphSync()
+    const { syncGraph, validationResult } = canonicalGraphSync()
 
     syncGraph(makeVueFlowGraph())
     await vi.advanceTimersByTimeAsync(300)
@@ -135,54 +205,60 @@ describe('useGraphSync', () => {
   })
 
   it('ignores an in-flight response after a newer graph is queued', async () => {
-    let resolveFirst!: (v: unknown) => void
-    let resolveSecond!: (v: unknown) => void
+    let resolveFirst!: ResolveDraft
+    let resolveSecond!: ResolveDraft
 
-    mockedPut
+    putDraft
       .mockReturnValueOnce(new Promise(r => { resolveFirst = r }))
       .mockReturnValueOnce(new Promise(r => { resolveSecond = r }))
 
-    const { syncGraph, validationResult } = useGraphSync()
+    const { syncGraph, validationResult } = canonicalGraphSync()
 
     syncGraph(makeVueFlowGraph('old'))
     await vi.advanceTimersByTimeAsync(300)
-    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(putDraft).toHaveBeenCalledTimes(1)
 
     syncGraph(makeVueFlowGraph('new'))
-    resolveFirst({
-      data: {
+    resolveFirst(draftResponse(
+      'test-workflow',
+      1,
+      expectedBackendGraph('old'),
+      {
         valid: true,
         node_statuses: {
           old: { node_id: 'old', status: 'executed', cached: true },
         },
         errors: [],
       },
-    })
+    ))
     await vi.advanceTimersByTimeAsync(0)
 
     expect(validationResult.value).toBeNull()
     await vi.advanceTimersByTimeAsync(300)
-    expect(mockedPut).toHaveBeenCalledTimes(2)
+    expect(putDraft).toHaveBeenCalledTimes(2)
 
-    resolveSecond({ data: makeValidation(true) })
+    resolveSecond(draftResponse(
+      'test-workflow',
+      2,
+      expectedBackendGraph('new'),
+      makeValidation(true),
+    ))
     await vi.advanceTimersByTimeAsync(0)
     expect(validationResult.value).toEqual(makeValidation(true))
   })
 
   it('flushNow sends immediately', async () => {
-    mockedPut.mockResolvedValue({ data: makeValidation() })
-    const { syncGraph, flushNow } = useGraphSync()
+    const { syncGraph, flushNow } = canonicalGraphSync()
 
     syncGraph(makeVueFlowGraph())
-    expect(mockedPut).not.toHaveBeenCalled()
+    expect(putDraft).not.toHaveBeenCalled()
 
     await flushNow()
-    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(putDraft).toHaveBeenCalledTimes(1)
   })
 
   it('flushNow waits for pending Vue watchers before sending', async () => {
-    mockedPut.mockResolvedValue({ data: makeValidation() })
-    const { syncGraph, flushNow } = useGraphSync()
+    const { syncGraph, flushNow } = canonicalGraphSync()
     const parameter = ref('old')
 
     watch(parameter, (value) => {
@@ -194,9 +270,9 @@ describe('useGraphSync', () => {
     parameter.value = 'new'
     await flushNow()
 
-    expect(mockedPut).toHaveBeenCalledWith(
-      '/api/v1/graph',
-      {
+    expect(putDraft).toHaveBeenCalledWith(
+      'test-workflow',
+      expect.objectContaining({
         graph: expect.objectContaining({
           nodes: [
             expect.objectContaining({
@@ -204,14 +280,11 @@ describe('useGraphSync', () => {
             }),
           ],
         }),
-        workflow_name: null,
-      },
-      expect.objectContaining({ signal: expect.anything() }),
+      }),
     )
   })
 
   it('syncGraphState keeps backend graph state authoritative', async () => {
-    mockedPut.mockResolvedValue({ data: makeValidation() })
     const graph = {
       nodes: [{
         id: 'a',
@@ -233,7 +306,7 @@ describe('useGraphSync', () => {
         target_input: 'image',
       }],
     } as any
-    const { syncGraphState, currentGraph, flushNow } = useGraphSync()
+    const { syncGraphState, currentGraph, flushNow } = canonicalGraphSync()
 
     syncGraphState(graph)
     graph.edges = []
@@ -241,64 +314,59 @@ describe('useGraphSync', () => {
     expect(currentGraph.value.edges).toEqual([expect.objectContaining({ id: 'e1' })])
     await flushNow()
 
-    expect(mockedPut).toHaveBeenCalledWith(
-      '/api/v1/graph',
-      {
+    expect(putDraft).toHaveBeenCalledWith(
+      'test-workflow',
+      expect.objectContaining({
         graph: expect.objectContaining({
           edges: [expect.objectContaining({ id: 'e1' })],
         }),
-        workflow_name: null,
-      },
-      expect.objectContaining({ signal: expect.anything() }),
+      }),
     )
   })
 
   it('isPending is true while request is in-flight', async () => {
-    let resolve!: (v: unknown) => void
-    mockedPut.mockReturnValue(new Promise(r => { resolve = r }))
+    let resolve!: ResolveDraft
+    putDraft.mockReturnValue(new Promise(r => { resolve = r }))
 
-    const { syncGraph, isPending, flushNow } = useGraphSync()
+    const { syncGraph, isPending, flushNow } = canonicalGraphSync()
 
     expect(isPending.value).toBe(false)
 
     syncGraph(makeVueFlowGraph())
-    flushNow() // fire immediately, don't await
+    const flushing = flushNow()
 
     await vi.advanceTimersByTimeAsync(0)
     expect(isPending.value).toBe(true)
 
-    resolve({ data: makeValidation() })
-    await vi.advanceTimersByTimeAsync(0)
+    resolve(draftResponse('test-workflow', 1, expectedBackendGraph()))
+    await flushing
     expect(isPending.value).toBe(false)
   })
 
   it('syncState is "pending" while PUT in flight and "idle" on success', async () => {
-    let resolve!: (v: unknown) => void
-    mockedPut.mockReturnValue(new Promise(r => { resolve = r }))
+    let resolve!: ResolveDraft
+    putDraft.mockReturnValue(new Promise(r => { resolve = r }))
 
-    const { syncGraph, syncState, flushNow } = useGraphSync()
+    const { syncGraph, syncState, flushNow } = canonicalGraphSync()
     expect(syncState.value).toBe('idle')
 
     syncGraph(makeVueFlowGraph())
-    flushNow() // fire immediately
+    const flushing = flushNow()
     await vi.advanceTimersByTimeAsync(0)
     expect(syncState.value).toBe('pending')
 
-    resolve({ data: makeValidation() })
-    await vi.advanceTimersByTimeAsync(0)
+    resolve(draftResponse('test-workflow', 1, expectedBackendGraph()))
+    await flushing
     expect(syncState.value).toBe('idle')
   })
 
   it('syncState transitions to "error" on PUT failure; validationResult is preserved', async () => {
-    // First successful result
-    mockedPut.mockResolvedValueOnce({ data: makeValidation(true) })
-    const { syncGraph, flushNow, syncState, validationResult } = useGraphSync()
+    const { syncGraph, flushNow, syncState, validationResult } = canonicalGraphSync()
     syncGraph(makeVueFlowGraph())
     await vi.advanceTimersByTimeAsync(300)
     const previous = validationResult.value
 
-    // Second call fails
-    mockedPut.mockRejectedValueOnce({ message: 'network boom', response: { status: 500 } })
+    putDraft.mockRejectedValueOnce({ message: 'network boom', response: { status: 500 } })
     syncGraph(makeVueFlowGraph('2'))
     await expect(flushNow()).rejects.toMatchObject({ message: 'network boom' })
 
@@ -307,37 +375,18 @@ describe('useGraphSync', () => {
     expect(validationResult.value).toEqual(previous)
   })
 
-  it('reports a graph_sync_error to the canonical error store on network failure', async () => {
-    const { setActivePinia, createPinia } = await import('pinia')
-    setActivePinia(createPinia())
-    const errorsModule = await import('@/stores/errors')
-    const errorStore = errorsModule.useErrorStore()
-    mockedPut.mockRejectedValueOnce({
-      message: 'boom',
-      response: { status: 500 },
-    })
-    const { syncGraph, flushNow } = useGraphSync()
-    syncGraph(makeVueFlowGraph())
-    await expect(flushNow()).rejects.toMatchObject({ message: 'boom' })
-    expect(errorStore.errors).toHaveLength(1)
-    expect(errorStore.errors[0]!.kind).toBe('graph_sync_error')
-    expect(errorStore.errors[0]!.status).toBe(500)
-  })
-
-  it('captures workflow identity when the graph is queued', async () => {
-    mockedPut.mockResolvedValue({ data: makeValidation(true) })
+  it('keeps the canonical canvas workflow identity when global selection changes', async () => {
     const workflowStore = useWorkflowStore()
     workflowStore.$patch({ current: { name: 'queued-workflow' } as any })
-    const { syncGraph, flushNow } = useGraphSync()
+    const { syncGraph, flushNow } = canonicalGraphSync('queued-workflow')
 
     syncGraph(makeVueFlowGraph())
     workflowStore.$patch({ current: { name: 'later-workflow' } as any })
     await flushNow()
 
-    expect(mockedPut).toHaveBeenCalledWith(
-      '/api/v1/graph',
-      expect.objectContaining({ workflow_name: 'queued-workflow' }),
-      expect.anything(),
+    expect(putDraft).toHaveBeenCalledWith(
+      'queued-workflow',
+      expect.objectContaining({ graph: expectedBackendGraph() }),
     )
   })
 

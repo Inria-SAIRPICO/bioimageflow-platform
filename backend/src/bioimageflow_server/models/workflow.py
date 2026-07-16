@@ -17,9 +17,7 @@ _WORKFLOW_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9 _-]*$")
 def validate_workflow_id(value: str) -> str:
     """Validate a workspace-relative workflow or folder path."""
     if value != value.strip():
-        raise ValueError(
-            "Workflow path must not have leading or trailing whitespace"
-        )
+        raise ValueError("Workflow path must not have leading or trailing whitespace")
     normalized = value.replace("\\", "/").strip("/")
     raw_segments = normalized.split("/")
     segments = [segment for segment in raw_segments if segment]
@@ -29,14 +27,10 @@ def validate_workflow_id(value: str) -> str:
         or value.strip().startswith(("/", "\\"))
         or ".." in segments
     ):
-        raise ValueError(
-            "Workflow path must be a workspace-relative path of safe names"
-        )
+        raise ValueError("Workflow path must be a workspace-relative path of safe names")
     for segment in segments:
         if segment != segment.strip():
-            raise ValueError(
-                "Workflow path segments must not have leading or trailing whitespace"
-            )
+            raise ValueError("Workflow path segments must not have leading or trailing whitespace")
         if not _WORKFLOW_NAME_RE.fullmatch(segment):
             raise ValueError(
                 "Workflow name must start with an alphanumeric character "
@@ -82,6 +76,14 @@ class WorkflowInfo(BaseModel):
     storage_path: str | None = None
     workspace_path: str | None = None
     output_path: str | None = None
+    identity_generation: int = Field(default=0, ge=0)
+
+
+class WorkflowDeleteResponse(BaseModel):
+    """Confirmation that a workflow identity was deleted."""
+
+    deleted: Literal[True] = True
+    identity_generation: int = Field(ge=0)
 
 
 class WorkflowUpdate(BaseModel):

@@ -7,7 +7,8 @@ import os
 import tempfile
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -69,12 +70,17 @@ class NestedWorkflowSnapshotService:
         settings_provider: Callable[[], Settings | None] | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
-        self._fallback_storage_path_provider = (
-            fallback_storage_path_provider or (lambda: None)
-        )
+        self._fallback_storage_path_provider = fallback_storage_path_provider or (lambda: None)
         self._dev_mode_provider = dev_mode_provider or (lambda: True)
         self._settings_provider = settings_provider or (lambda: None)
         self._lock = threading.RLock()
+
+    @contextmanager
+    def snapshot_mutation(self) -> Iterator[None]:
+        """Hold the snapshot boundary before acquiring workflow identity locks."""
+
+        with self._lock:
+            yield
 
     def open_snapshot(
         self,
@@ -84,9 +90,20 @@ class NestedWorkflowSnapshotService:
     ) -> NestedWorkflowSnapshotResponse:
         """Return the existing hierarchical session or create it atomically."""
 
+        store = self._store()
+        root_generation = (
+            store.workflow_generation(owner.workflow_id)
+            if owner.kind == "root" and owner.workflow_id is not None
+            else None
+        )
         with self._lock:
-            store = self._store()
-            root_workflow_id = self._root_workflow_id(owner)
+            if root_generation is not None:
+                assert owner.workflow_id is not None
+                store.ensure_workflow_generation(
+                    owner.workflow_id,
+                    root_generation,
+                )
+            root_workflow_id = self._root_workflow_id(store, owner)
             for path in self._snapshot_dir(store).glob("*.json"):
                 candidate = self._read_path(path)
                 if candidate.owner == owner and candidate.parent_node_id == parent_node_id:
@@ -120,7 +137,7 @@ class NestedWorkflowSnapshotService:
             store = self._store()
             current = self._read(store, session_id)
             self._ensure_revision(current, expected_revision)
-            root_workflow_id = self._root_workflow_id(current.owner)
+            root_workflow_id = self._root_workflow_id(store, current.owner)
             accepted = NestedWorkflowSnapshotResponse(
                 session_id=current.session_id,
                 owner=current.owner,
@@ -143,6 +160,55 @@ class NestedWorkflowSnapshotService:
                 raise NestedSnapshotHasDependents(session_id, dependents)
             self._path(store, session_id).unlink()
 
+    def delete_for_root_workflow(self, workflow_id: str) -> list[UUID]:
+        """Delete every retained snapshot owned by one root workflow."""
+
+        return self.delete_for_root_workflows([workflow_id])
+
+    def delete_for_root_workflows(self, workflow_ids: list[str]) -> list[UUID]:
+        """Delete retained snapshot trees for a set of removed root workflows."""
+
+        target_ids = set(workflow_ids)
+        if not target_ids:
+            return []
+        with self._lock:
+            store = self._store()
+            snapshots: dict[UUID, NestedWorkflowSnapshotResponse] = {}
+            for path in self._snapshot_dir(store).glob("*.json"):
+                try:
+                    snapshot = self._read_path(path)
+                except (OSError, ValueError):
+                    # A malformed unrelated retained snapshot must not prevent
+                    # cleanup for a workflow that has already been deleted.
+                    continue
+                snapshots[snapshot.session_id] = snapshot
+
+            def root_id(snapshot: NestedWorkflowSnapshotResponse) -> str | None:
+                visited: set[UUID] = set()
+                current = snapshot
+                while current.owner.kind == "nested":
+                    parent_id = current.owner.session_id
+                    if parent_id is None or parent_id in visited:
+                        return None
+                    visited.add(parent_id)
+                    parent = snapshots.get(parent_id)
+                    if parent is None:
+                        return None
+                    current = parent
+                return current.owner.workflow_id
+
+            removed = [
+                session_id
+                for session_id, snapshot in snapshots.items()
+                if root_id(snapshot) in target_ids
+            ]
+            for session_id in removed:
+                try:
+                    self._path(store, session_id).unlink()
+                except FileNotFoundError:
+                    pass
+            return removed
+
     def _dependent_session_ids(
         self,
         store: WorkflowStoreService,
@@ -151,17 +217,18 @@ class NestedWorkflowSnapshotService:
         dependents: list[UUID] = []
         for path in self._snapshot_dir(store).glob("*.json"):
             candidate = self._read_path(path)
-            if (
-                candidate.owner.kind == "nested"
-                and candidate.owner.session_id == session_id
-            ):
+            if candidate.owner.kind == "nested" and candidate.owner.session_id == session_id:
                 dependents.append(candidate.session_id)
         return dependents
 
-    def _root_workflow_id(self, owner: NestedSnapshotOwner) -> str | None:
+    def _root_workflow_id(
+        self,
+        store: WorkflowStoreService,
+        owner: NestedSnapshotOwner,
+    ) -> str | None:
         if owner.kind == "root":
             if owner.workflow_id is not None:
-                self._store().get_workflow(owner.workflow_id)
+                store.get_workflow(owner.workflow_id)
             return owner.workflow_id
 
         assert owner.session_id is not None
@@ -171,10 +238,10 @@ class NestedWorkflowSnapshotService:
             if current_session_id in visited:
                 raise ValueError("Nested snapshot ownership cycle")
             visited.add(current_session_id)
-            parent = self._read(self._store(), current_session_id)
+            parent = self._read(store, current_session_id)
             if parent.owner.kind == "root":
                 if parent.owner.workflow_id is not None:
-                    self._store().get_workflow(parent.owner.workflow_id)
+                    store.get_workflow(parent.owner.workflow_id)
                 return parent.owner.workflow_id
             assert parent.owner.session_id is not None
             current_session_id = parent.owner.session_id
@@ -231,9 +298,7 @@ class NestedWorkflowSnapshotService:
 
     @staticmethod
     def _read_path(path: Path) -> NestedWorkflowSnapshotResponse:
-        return NestedWorkflowSnapshotResponse.model_validate_json(
-            path.read_text(encoding="utf-8")
-        )
+        return NestedWorkflowSnapshotResponse.model_validate_json(path.read_text(encoding="utf-8"))
 
     def _write(
         self,

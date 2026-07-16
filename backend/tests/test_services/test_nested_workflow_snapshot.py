@@ -69,12 +69,8 @@ def service(store: WorkflowStoreService) -> NestedWorkflowSnapshotService:
 def test_open_is_idempotent_and_hierarchical_owners_do_not_collide(
     service: NestedWorkflowSnapshotService,
 ) -> None:
-    root_a = NestedSnapshotOwner(
-        kind="root", canvas_id="workflow:root-a", workflow_id="root-a"
-    )
-    root_b = NestedSnapshotOwner(
-        kind="root", canvas_id="workflow:root-b", workflow_id="root-b"
-    )
+    root_a = NestedSnapshotOwner(kind="root", canvas_id="workflow:root-a", workflow_id="root-a")
+    root_b = NestedSnapshotOwner(kind="root", canvas_id="workflow:root-b", workflow_id="root-b")
 
     first = service.open_snapshot(root_a, "sub_1", _graph("inner_a"))
     reopened = service.open_snapshot(root_a, "sub_1", _graph("ignored"))
@@ -95,9 +91,7 @@ def test_complete_graph_and_interface_survive_service_restart(
 ) -> None:
     service = NestedWorkflowSnapshotService(lambda: store)
     opened = service.open_snapshot(
-        NestedSnapshotOwner(
-            kind="root", canvas_id="workflow:root-a", workflow_id="root-a"
-        ),
+        NestedSnapshotOwner(kind="root", canvas_id="workflow:root-a", workflow_id="root-a"),
         "sub_1",
         _graph("inner", "source"),
     )
@@ -121,9 +115,7 @@ def test_stale_replace_and_delete_do_not_change_the_accepted_file(
     store: WorkflowStoreService,
 ) -> None:
     opened = service.open_snapshot(
-        NestedSnapshotOwner(
-            kind="root", canvas_id="workflow:root-a", workflow_id="root-a"
-        ),
+        NestedSnapshotOwner(kind="root", canvas_id="workflow:root-a", workflow_id="root-a"),
         "sub_1",
         _graph("inner"),
     )
@@ -161,9 +153,7 @@ def test_parent_delete_is_rejected_while_nested_snapshots_depend_on_it(
     service: NestedWorkflowSnapshotService,
 ) -> None:
     parent = service.open_snapshot(
-        NestedSnapshotOwner(
-            kind="root", canvas_id="workflow:root-a", workflow_id="root-a"
-        ),
+        NestedSnapshotOwner(kind="root", canvas_id="workflow:root-a", workflow_id="root-a"),
         "sub_1",
         _graph("inner"),
     )
@@ -186,6 +176,40 @@ def test_parent_delete_is_rejected_while_nested_snapshots_depend_on_it(
         expected_revision=accepted_child.snapshot_revision,
     )
     service.delete_snapshot(parent.session_id, expected_revision=0)
+
+
+def test_root_cleanup_removes_full_snapshot_tree_and_ignores_unrelated_corruption(
+    service: NestedWorkflowSnapshotService,
+    store: WorkflowStoreService,
+) -> None:
+    parent = service.open_snapshot(
+        NestedSnapshotOwner(kind="root", canvas_id="workflow:root-a", workflow_id="root-a"),
+        "sub_1",
+        _graph("inner"),
+    )
+    child = service.open_snapshot(
+        NestedSnapshotOwner(kind="nested", session_id=parent.session_id),
+        "sub_2",
+        _graph("deep_inner"),
+    )
+    retained = service.open_snapshot(
+        NestedSnapshotOwner(kind="root", canvas_id="workflow:root-b", workflow_id="root-b"),
+        "sub_1",
+        _graph("other"),
+    )
+    snapshot_dir = store.workspace_dir / ".bioimageflow" / "nested-workflow-snapshots"
+    malformed = snapshot_dir / "malformed.json"
+    malformed.write_text("not json", encoding="utf-8")
+
+    removed = service.delete_for_root_workflow("root-a")
+
+    assert set(removed) == {parent.session_id, child.session_id}
+    with pytest.raises(FileNotFoundError):
+        service.get_snapshot(parent.session_id)
+    with pytest.raises(FileNotFoundError):
+        service.get_snapshot(child.session_id)
+    assert service.get_snapshot(retained.session_id) == retained
+    assert malformed.read_text(encoding="utf-8") == "not json"
 
 
 def test_unsaved_root_canvas_is_a_valid_stable_owner(

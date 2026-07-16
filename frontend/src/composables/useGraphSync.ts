@@ -1,7 +1,4 @@
 import { computed, nextTick, type Ref } from 'vue'
-import { api } from '@/api/client'
-import { useErrorReporting } from '@/composables/useErrorReporting'
-import { useWorkflowStore } from '@/stores/workflow'
 import {
   getOrCreateRootPersistenceResource,
   ROOT_PERSISTENCE_RESOURCE,
@@ -9,13 +6,10 @@ import {
 } from '@/composables/useCanvasPersistence'
 import {
   canvasSessionRegistry,
-  canvasIdFromPanelId,
   type CanvasId,
   type CanvasSessionDescriptor,
 } from '@/sessions/canvasSessionRegistry'
 import {
-  createGraphSyncCoordinator,
-  type GraphSyncCoordinator,
   type SyncState,
 } from '@/sessions/graphSyncCoordinator'
 import {
@@ -58,7 +52,6 @@ export interface GraphSyncApi {
   syncGraph(graph: Parameters<typeof serializeGraph>[0]): void
   syncGraphState(graph: GraphState): void
   revalidateGraphState(graph: GraphState): void
-  syncNodeParameters(nodeId: string, parameters: Record<string, unknown>): void
   flushNow(): Promise<AcceptedGraphSnapshot | null>
   validationResult: Ref<ValidationResult | null>
   isPending: Ref<boolean>
@@ -174,7 +167,8 @@ interface NestedSnapshotPersistenceLease {
 
 const retainedNestedSnapshotResources = new Map<string, NestedSnapshotPersistence>()
 
-let legacyInstance: GraphSyncApi | null = null
+// Shell panels use this state-free adapter to follow Dockview activation.
+// It delegates exclusively to a registered canvas resource.
 let activeFacade: GraphSyncApi | null = null
 
 export function useGraphSync(options: CanvasScopedGraphSyncOptions): GraphSyncApi
@@ -196,15 +190,13 @@ export function unregisterGraphSyncCanvas(canvasId: CanvasId): void {
   graphSyncCanvasSessions.unregister(canvasId)
 }
 
-/** Test-only: reset all scoped and compatibility state. */
+/** Test-only: reset scoped resources and the state-free active adapter. */
 export function _resetGraphSyncForTest(): void {
   graphSyncCanvasSessions.dispose()
   for (const resource of retainedNestedSnapshotResources.values()) {
     resource.dispose()
   }
   retainedNestedSnapshotResources.clear()
-  legacyInstance?.dispose()
-  legacyInstance = null
   activeFacade = null
 }
 
@@ -247,17 +239,7 @@ function registerScopedGraphSync(options: CanvasScopedGraphSyncOptions): GraphSy
       unregisterGraphSyncCanvas(options.descriptor.canvasId)
     })
   }
-  const coordinator = graphSyncCanvasSessions.getOrCreateCoordinator(
-    options.descriptor.canvasId,
-    descriptor => createCoordinator(
-      descriptor.canvasId,
-      descriptor.kind === 'root' ? descriptor.workflowId : options.getWorkflowId(),
-      options.getWorkflowId,
-    ),
-  )
-  return createBoundApi(coordinator, () => {
-    unregisterGraphSyncCanvas(options.descriptor.canvasId)
-  })
+  throw new Error('Nested graph sync requires an accepted durable snapshot')
 }
 
 export async function deleteRetainedNestedSnapshot(
@@ -266,91 +248,24 @@ export async function deleteRetainedNestedSnapshot(
   const resource = retainedNestedSnapshotResources.get(sessionId)
   if (!resource) return false
   await resource.deleteLatest()
+  forgetRetainedNestedSnapshot(sessionId)
+  return true
+}
+
+/** Forget a server-deleted snapshot without issuing another DELETE request. */
+export function forgetRetainedNestedSnapshot(sessionId: string): boolean {
+  const resource = retainedNestedSnapshotResources.get(sessionId)
+  if (!resource) return false
   resource.dispose()
   retainedNestedSnapshotResources.delete(sessionId)
   return true
 }
 
-function createCoordinator(
-  canvasId: CanvasId,
-  workflowId: string | null,
-  getWorkflowId?: () => string | null,
-): GraphSyncCoordinator {
-  return createGraphSyncCoordinator({
-    canvasId,
-    workflowId,
-    getWorkflowId,
-    transport: async ({ graph, workflowId: queuedWorkflowId, signal }) => {
-      const response = await api.put<ValidationResult>(
-        '/api/v1/graph',
-        { graph, workflow_name: queuedWorkflowId },
-        { signal },
-      )
-      return response.data
-    },
-    onOperationalError: (error) => {
-      const err = error as {
-        message?: string
-        response?: { status?: number }
-      }
-      reportGraphSyncError(
-        err.response?.status,
-        err.message ?? 'PUT /graph failed',
-      )
-    },
-  })
-}
-
-function createBoundApi(
-  coordinator: GraphSyncCoordinator,
-  dispose: () => void,
-): GraphSyncApi {
-  function syncGraph(graph: Parameters<typeof serializeGraph>[0]): void {
-    coordinator.queue(serializeGraph(graph))
-  }
-
-  function syncGraphState(graph: GraphState): void {
-    coordinator.queue(graph)
-  }
-
-  function revalidateGraphState(graph: GraphState): void {
-    coordinator.queue(graph)
-  }
-
-  function syncNodeParameters(
-    nodeId: string,
-    parameters: Record<string, unknown>,
-  ): void {
-    const graph = deepCloneJson(coordinator.currentGraph.value)
-    const node = graph.nodes.find(candidate => candidate.id === nodeId)
-    if (!node) return
-    node.parameters = deepCloneJson(parameters)
-    syncGraphState(graph)
-  }
-
-  async function flushNow(): Promise<AcceptedGraphSnapshot | null> {
-    await nextTick()
-    const acceptance = await coordinator.flushLatest()
-    if (!acceptance) return null
-    return {
-      graph: deepCloneJson(acceptance.graph),
-      validation: deepCloneJson(acceptance.validation),
-      snapshotRevision: null,
-    }
-  }
-
-  return {
-    syncGraph,
-    syncGraphState,
-    revalidateGraphState,
-    syncNodeParameters,
-    flushNow,
-    validationResult: coordinator.validationResult,
-    isPending: coordinator.isPending,
-    syncState: coordinator.syncState,
-    currentGraph: coordinator.currentGraph,
-    dispose,
-  }
+/** Flush the durable retained writer before a parent workflow mutation. */
+export async function flushRetainedNestedSnapshot(sessionId: string): Promise<void> {
+  const resource = retainedNestedSnapshotResources.get(sessionId)
+  if (!resource) return
+  await resource.flushLatest()
 }
 
 function createNestedBoundApi(
@@ -372,13 +287,6 @@ function createNestedBoundApi(
     syncGraph: graph => queueGraph(serializeGraph(graph)),
     syncGraphState: graph => queueGraph(graph),
     revalidateGraphState: graph => queueGraph(graph, true),
-    syncNodeParameters: (nodeId, parameters) => {
-      const graph = deepCloneJson(resource.currentGraph.value)
-      const node = graph.nodes.find(candidate => candidate.id === nodeId)
-      if (!node) return
-      node.parameters = deepCloneJson(parameters)
-      queueGraph(graph)
-    },
     flushNow: async () => {
       await nextTick()
       return resource.flushLatest()
@@ -403,13 +311,6 @@ function createRootBoundApi(
     syncGraph: graph => resource.queueValidation(serializeGraph(graph)),
     syncGraphState,
     revalidateGraphState: graph => resource.queueValidation(graph, { force: true }),
-    syncNodeParameters: (nodeId, parameters) => {
-      const graph = deepCloneJson(resource.currentGraph.value)
-      const node = graph.nodes.find(candidate => candidate.id === nodeId)
-      if (!node) return
-      node.parameters = deepCloneJson(parameters)
-      syncGraphState(graph)
-    },
     flushNow: async () => {
       await nextTick()
       await resource.flushValidation()
@@ -454,15 +355,6 @@ function createActiveFacade(): GraphSyncApi {
           unregisterGraphSyncCanvas(canvasId)
         })
       }
-      const coordinator = session?.coordinator
-      if (coordinator) {
-        return createBoundApi(coordinator as GraphSyncCoordinator, () => {
-          unregisterGraphSyncCanvas(canvasId)
-        })
-      }
-    }
-    if (graphSyncCanvasSessions.sessionCount.value === 0) {
-      return getLegacyInstance()
     }
     return null
   }
@@ -477,9 +369,6 @@ function createActiveFacade(): GraphSyncApi {
     syncGraph: graph => required().syncGraph(graph),
     syncGraphState: graph => required().syncGraphState(graph),
     revalidateGraphState: graph => required().revalidateGraphState(graph),
-    syncNodeParameters: (nodeId, parameters) => {
-      required().syncNodeParameters(nodeId, parameters)
-    },
     flushNow: () => required().flushNow(),
     validationResult: computed({
       get: () => selected()?.validationResult.value ?? null,
@@ -498,31 +387,5 @@ function createActiveFacade(): GraphSyncApi {
       set: value => { required().currentGraph.value = value },
     }),
     dispose: () => required().dispose(),
-  }
-}
-
-function getLegacyInstance(): GraphSyncApi {
-  if (legacyInstance !== null) return legacyInstance
-  const coordinator = createCoordinator(
-    canvasIdFromPanelId('legacy:canvas'),
-    null,
-    () => {
-      try {
-        return useWorkflowStore().currentName
-      } catch {
-        return null
-      }
-    },
-  )
-  legacyInstance = createBoundApi(coordinator, coordinator.dispose)
-  return legacyInstance
-}
-
-function reportGraphSyncError(status: number | undefined, detail: string): void {
-  try {
-    const { reportError } = useErrorReporting()
-    reportError({ kind: 'graph_sync_error', status, detail })
-  } catch (error) {
-    console.warn('[graph-sync] failed to report error:', error)
   }
 }

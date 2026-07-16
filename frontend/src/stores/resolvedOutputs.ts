@@ -37,7 +37,6 @@ function createContext(): ResolvedOutputContext {
 }
 
 export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
-  const legacyContext = createContext()
   const canvasContexts = shallowReactive(new Map<CanvasId, ResolvedOutputContext>())
   const releasedCanvasIds = new Set<CanvasId>()
 
@@ -61,9 +60,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
         ? contextForCanvas(canvasId)
         : existingCanvasContext(canvasId)
     }
-    return canvasSessionRegistry.sessionCount.value === 0
-      ? legacyContext
-      : null
+    return null
   }
 
   const resolvedOutputsByNodeId = computed(() => (

@@ -3,18 +3,18 @@ import { createPinia, setActivePinia } from 'pinia'
 import { api } from '@/api/client'
 import { getEditorStatus, openPathWithEditor, openToolWithEditor } from '@/api/editor'
 import { useUIStore } from '@/stores/ui'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import {
-  canvasIdFromPanelId,
-  canvasSessionRegistry,
-} from '@/sessions/canvasSessionRegistry'
+  registerNestedCanvas,
+  registerRootCanvas,
+  rootCanvasId,
+} from '@/test-utils/canvasFixtures'
 
 const barrierMocks = vi.hoisted(() => ({
   ensureRootFresh: vi.fn(),
   flushNested: vi.fn(),
-  flushLegacy: vi.fn(),
   useCanvasPersistence: vi.fn(),
   useGraphSync: vi.fn(),
-  useWorkflowDraftStore: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
@@ -27,10 +27,6 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
 
 vi.mock('@/composables/useGraphSync', () => ({
   useGraphSync: barrierMocks.useGraphSync,
-}))
-
-vi.mock('@/stores/workflowDraft', () => ({
-  useWorkflowDraftStore: barrierMocks.useWorkflowDraftStore,
 }))
 
 const mockedGet = vi.mocked(api.get as any)
@@ -53,16 +49,13 @@ describe('editor api helpers', () => {
     vi.clearAllMocks()
     barrierMocks.ensureRootFresh.mockReset().mockResolvedValue(true)
     barrierMocks.flushNested.mockReset().mockResolvedValue(null)
-    barrierMocks.flushLegacy.mockReset().mockResolvedValue(undefined)
     barrierMocks.useCanvasPersistence.mockReset().mockImplementation(() => ({
       ensureFreshForCriticalOperation: barrierMocks.ensureRootFresh,
     }))
     barrierMocks.useGraphSync.mockReset().mockImplementation(() => ({
       flushNow: barrierMocks.flushNested,
     }))
-    barrierMocks.useWorkflowDraftStore.mockReset().mockImplementation(() => ({
-      flush: barrierMocks.flushLegacy,
-    }))
+    registerRootCanvas('root')
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -149,9 +142,6 @@ describe('editor api helpers', () => {
   })
 
   it('waits for the active root freshness barrier before opening a path', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:root')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'root' })
-    canvasSessionRegistry.activate(canvasId)
     const barrier = deferred<boolean>()
     barrierMocks.ensureRootFresh.mockReturnValueOnce(barrier.promise)
     mockedPost.mockResolvedValueOnce({
@@ -167,19 +157,15 @@ describe('editor api helpers', () => {
 
     expect(barrierMocks.ensureRootFresh).toHaveBeenCalledOnce()
     expect(barrierMocks.flushNested).not.toHaveBeenCalled()
-    expect(barrierMocks.flushLegacy).not.toHaveBeenCalled()
     expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open', { path: '/tmp/tool.py' })
   })
 
   it('waits for the active nested snapshot flush before opening tool source', async () => {
-    const canvasId = canvasIdFromPanelId('sub-workflow:nested')
-    canvasSessionRegistry.register({
-      kind: 'nested',
-      canvasId,
+    registerNestedCanvas({
       sessionId: 'nested',
-      parentCanvasId: canvasIdFromPanelId('workflow:root'),
+      parentCanvasId: rootCanvasId('root'),
+      workflowId: 'root',
     })
-    canvasSessionRegistry.activate(canvasId)
     const barrier = deferred<null>()
     barrierMocks.flushNested.mockReturnValueOnce(barrier.promise)
     mockedPost.mockResolvedValueOnce({
@@ -201,7 +187,6 @@ describe('editor api helpers', () => {
 
     expect(barrierMocks.flushNested).toHaveBeenCalledOnce()
     expect(barrierMocks.ensureRootFresh).not.toHaveBeenCalled()
-    expect(barrierMocks.flushLegacy).not.toHaveBeenCalled()
     expect(mockedPost).toHaveBeenCalledWith('/api/v1/editor/open-tool', {
       tool_name: 'MyTool',
       workflow_id: 'root',
@@ -209,9 +194,6 @@ describe('editor api helpers', () => {
   })
 
   it('blocks editor HTTP when the root freshness barrier reports a conflict', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:root')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'root' })
-    canvasSessionRegistry.activate(canvasId)
     barrierMocks.ensureRootFresh.mockResolvedValueOnce(false)
 
     await expect(openPathWithEditor('/tmp/tool.py')).rejects.toThrow(
@@ -222,14 +204,11 @@ describe('editor api helpers', () => {
   })
 
   it('propagates scoped barrier failures and blocks editor HTTP', async () => {
-    const canvasId = canvasIdFromPanelId('sub-workflow:nested')
-    canvasSessionRegistry.register({
-      kind: 'nested',
-      canvasId,
+    registerNestedCanvas({
       sessionId: 'nested',
-      parentCanvasId: canvasIdFromPanelId('workflow:root'),
+      parentCanvasId: rootCanvasId('root'),
+      workflowId: 'root',
     })
-    canvasSessionRegistry.activate(canvasId)
     const failure = new Error('snapshot flush failed')
     barrierMocks.flushNested.mockRejectedValueOnce(failure)
 
@@ -239,8 +218,7 @@ describe('editor api helpers', () => {
   })
 
   it('fails closed when sessions exist without an active canvas', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:root')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'root' })
+    canvasSessionRegistry.activate(null)
 
     await expect(openPathWithEditor('/tmp/tool.py')).rejects.toThrow(
       /active workflow or sub-workflow canvas/i,
@@ -248,14 +226,10 @@ describe('editor api helpers', () => {
 
     expect(barrierMocks.useCanvasPersistence).not.toHaveBeenCalled()
     expect(barrierMocks.useGraphSync).not.toHaveBeenCalled()
-    expect(barrierMocks.flushLegacy).not.toHaveBeenCalled()
     expect(mockedPost).not.toHaveBeenCalled()
   })
 
   it('fails closed when the active scoped canvas resource is unavailable', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:root')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'root' })
-    canvasSessionRegistry.activate(canvasId)
     barrierMocks.useCanvasPersistence.mockImplementationOnce(() => {
       throw new Error('No active root canvas persistence session')
     })
@@ -264,53 +238,22 @@ describe('editor api helpers', () => {
       /No active root canvas persistence session/,
     )
 
-    expect(barrierMocks.flushLegacy).not.toHaveBeenCalled()
     expect(mockedPost).not.toHaveBeenCalled()
   })
 
-  it('waits for the zero-session legacy draft flush', async () => {
-    const barrier = deferred<void>()
-    barrierMocks.flushLegacy.mockReturnValueOnce(barrier.promise)
-    mockedPost.mockResolvedValueOnce({
-      data: { opened: true, method: 'external', url: null, path: '/tmp/tool.py', message: null },
-    })
-
-    const opening = openPathWithEditor('/tmp/tool.py')
-    await Promise.resolve()
-
-    expect(mockedPost).not.toHaveBeenCalled()
-    barrier.resolve()
-    await opening
-
-    expect(barrierMocks.flushLegacy).toHaveBeenCalledOnce()
-    expect(mockedPost).toHaveBeenCalledOnce()
-  })
-
-  it('propagates a real zero-session legacy flush failure', async () => {
-    const failure = new Error('legacy flush failed')
-    barrierMocks.flushLegacy.mockRejectedValueOnce(failure)
-
-    await expect(openPathWithEditor('/tmp/tool.py')).rejects.toBe(failure)
-
-    expect(mockedPost).not.toHaveBeenCalled()
-  })
-
-  it('allows a non-app caller to open without Pinia', async () => {
+  it('fails closed for a non-app caller without an active canvas', async () => {
+    canvasSessionRegistry.dispose()
     setActivePinia(undefined as never)
-    mockedPost.mockResolvedValueOnce({
-      data: { opened: true, method: 'external', url: null, path: '/tmp/tool.py', message: null },
-    })
 
-    await openPathWithEditor('/tmp/tool.py')
+    await expect(openPathWithEditor('/tmp/tool.py')).rejects.toThrow(
+      /active workflow or sub-workflow canvas/i,
+    )
 
-    expect(barrierMocks.useWorkflowDraftStore).not.toHaveBeenCalled()
-    expect(mockedPost).toHaveBeenCalledOnce()
+    expect(barrierMocks.useCanvasPersistence).not.toHaveBeenCalled()
+    expect(mockedPost).not.toHaveBeenCalled()
   })
 
   it('keeps latest-request routing after independent root barriers', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:root')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'root' })
-    canvasSessionRegistry.activate(canvasId)
     const firstBarrier = deferred<boolean>()
     const secondBarrier = deferred<boolean>()
     barrierMocks.ensureRootFresh

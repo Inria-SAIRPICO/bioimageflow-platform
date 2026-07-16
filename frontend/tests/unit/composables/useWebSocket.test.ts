@@ -30,6 +30,13 @@ const errorStoreMock = {
   report: vi.fn(),
 }
 
+const workflowStoreMock = {
+  workflows: [],
+  fetchWorkflowTree: vi.fn(async () => []),
+  workflowServerIdentityGeneration: vi.fn(() => null),
+  observeWorkflowServerIdentityGeneration: vi.fn(() => true),
+}
+
 vi.mock('@/stores/execution', () => ({
   useExecutionStore: () => executionStoreMock,
 }))
@@ -41,6 +48,9 @@ vi.mock('@/stores/logger', () => ({
 }))
 vi.mock('@/stores/errors', () => ({
   useErrorStore: () => errorStoreMock,
+}))
+vi.mock('@/stores/workflow', () => ({
+  useWorkflowStore: () => workflowStoreMock,
 }))
 
 // ---- Mock WebSocket ----------------------------------------------------------
@@ -560,6 +570,7 @@ describe('useWebSocket', () => {
       expect.objectContaining({ state: 'running' }),
     )
     expect(toolRegistryStoreMock.fetchTools).toHaveBeenCalled()
+    expect(workflowStoreMock.fetchWorkflowTree).toHaveBeenCalledOnce()
     expect(subscribeMessages(latestSocket())).toHaveLength(1)
   })
 
@@ -578,6 +589,7 @@ describe('useWebSocket', () => {
     latestSocket().open()
     await flushMicrotasks()
 
+    expect(workflowStoreMock.fetchWorkflowTree).toHaveBeenCalledOnce()
     const sub = subscribeMessages().at(-1)!
     expect(sub.node_id).toBeNull()
     expect(sub.level).toBeNull()

@@ -93,6 +93,7 @@ from bioimageflow_server.routers.workflows import (
     get_connection_manager as workflows_get_connection_manager,
     get_execution_manager as workflows_get_execution_manager,
     get_workflow_store as workflows_get_workflow_store,
+    get_nested_workflow_snapshot_service as workflows_get_nested_snapshot_service,
     router as workflows_router,
 )
 from bioimageflow_server.routers.workflow_drafts import (
@@ -583,6 +584,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[execution_get_settings] = _live_settings
     app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[workflows_get_nested_snapshot_service] = (
+        lambda: nested_workflow_snapshot_service
+    )
     app.dependency_overrides[get_workspace_service] = _current_workspace_service
     app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager

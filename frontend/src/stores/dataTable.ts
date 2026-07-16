@@ -94,7 +94,6 @@ function isCanceled(exc: unknown): boolean {
 const NOT_READY_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000]
 
 export const useDataTableStore = defineStore('dataTable', () => {
-  const legacyContext = createContext()
   const canvasContexts = shallowReactive(new Map<CanvasId, DataTableContext>())
   const releasedCanvasIds = new Set<CanvasId>()
 
@@ -125,9 +124,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
         ? contextForCanvas(canvasId)
         : existingCanvasContext(canvasId)
     }
-    return canvasSessionRegistry.sessionCount.value === 0
-      ? legacyContext
-      : null
+    return null
   }
 
   const nodeDataCache = computed(() => (

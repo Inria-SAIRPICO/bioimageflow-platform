@@ -90,10 +90,54 @@ function cancelAllPending(reason: Error) {
 
 async function refreshWorkflowTree(): Promise<void> {
   try {
-    await useWorkflowStore().fetchWorkflowTree()
+    const workflowStore = useWorkflowStore()
+    await workflowStore.fetchWorkflowTree()
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
+      detail: {
+        workflows: workflowStore.workflows.map((workflow) => {
+          const workflowName = (
+            workflow as typeof workflow & { id?: string | null }
+          ).id || workflow.name
+          return {
+            workflowName,
+            identityGeneration:
+              workflowStore.workflowServerIdentityGeneration(workflowName),
+          }
+        }),
+      },
+    }))
   } catch (err) {
     console.warn('[useWebSocket] fetchWorkflowTree failed:', err)
   }
+}
+
+function notifyWorkflowRemoved(msg: Record<string, unknown>): void {
+  if (msg.action !== 'workflow_deleted') return
+  const workflowName = msg.workflow_id
+  if (typeof workflowName !== 'string' || workflowName.length === 0) return
+  const identityGeneration = msg.identity_generation
+  window.dispatchEvent(new CustomEvent('bioimageflow:workflow-removed', {
+    detail: typeof identityGeneration === 'number'
+      ? { workflowName, identityGeneration }
+      : { workflowName },
+  }))
+}
+
+function acceptWorkflowTreeGeneration(msg: Record<string, unknown>): boolean {
+  const workflowStore = useWorkflowStore()
+  const workflowName = msg.workflow_id
+  const identityGeneration = msg.identity_generation
+  if (
+    typeof workflowName === 'string'
+    && workflowName.length > 0
+    && typeof identityGeneration === 'number'
+    && !workflowStore.observeWorkflowServerIdentityGeneration(
+      workflowName,
+      identityGeneration,
+    )
+  ) return false
+  workflowStore.noteWorkflowStructuralEvent()
+  return true
 }
 
 function requestOpenWorkflow(workflowId: string): void {
@@ -199,6 +243,8 @@ function dispatch(raw: unknown) {
       )
       break
     case 'workflow_tree_changed':
+      if (!acceptWorkflowTreeGeneration(msg)) break
+      notifyWorkflowRemoved(msg)
       void refreshWorkflowTree()
       break
     case 'active_workflow_changed':
@@ -304,6 +350,8 @@ async function runReconnectRecovery() {
   } catch (err) {
     console.warn('[useWebSocket] fetchTools on reconnect failed:', err)
   }
+
+  await refreshWorkflowTree()
 
   sendUnfilteredLogSubscription()
 }

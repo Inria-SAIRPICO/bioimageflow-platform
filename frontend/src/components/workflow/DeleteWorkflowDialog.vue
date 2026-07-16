@@ -6,6 +6,7 @@ import type { WorkflowInfo } from '@/api/types'
 defineProps<{
   visible: boolean
   workflow: WorkflowInfo | null
+  dirty?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -31,8 +32,13 @@ const emit = defineEmits<{
           <strong>{{ workflow?.display_name ?? workflow?.name }}</strong>?
         </p>
         <small>
-          The workflow file and server-managed output cache will be removed.
-          Browser auto-save for this workflow is cleared after the server confirms deletion.
+          <template v-if="dirty">
+            Both the saved workflow and its unsaved changes will be removed.
+          </template>
+          <template v-else>
+            The workflow file and server-managed output cache will be removed.
+          </template>
+          Browser recovery data is cleared only after the server confirms deletion.
         </small>
       </div>
     </div>

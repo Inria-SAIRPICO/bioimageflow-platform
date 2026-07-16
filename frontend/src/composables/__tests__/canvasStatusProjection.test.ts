@@ -199,7 +199,7 @@ describe('canvas status projection resource', () => {
     })
   })
 
-  it('allows one explicitly owned contextless overlay without fan-out', () => {
+  it('rejects a contextless overlay instead of assigning it to an active canvas', () => {
     const canvasA = canvasIdFromPanelId('workflow:a')
     const canvasB = canvasIdFromPanelId('workflow:b')
     const projectionA = useCanvasStatusProjection({
@@ -216,13 +216,15 @@ describe('canvas status projection resource', () => {
     })
     canvasSessionRegistry.activate(canvasA)
 
-    useExecutionStore().applyNodeState({
+    const execution = useExecutionStore()
+    execution.applyNodeState({
       node_id: 'same',
       status: 'running',
       cached: false,
-    })
+    } as never)
 
-    expect(projectionA.statusForNode('same')).toMatchObject({ status: 'running' })
+    expect(execution.nodeStatuses.same).toBeUndefined()
+    expect(projectionA.statusForNode('same')).toMatchObject({ status: 'unexecuted' })
     expect(projectionB.statusForNode('same')).toMatchObject({ status: 'unexecuted' })
   })
 
@@ -283,7 +285,7 @@ describe('canvas status projection resource', () => {
       node_id: 'same',
       status: 'running',
       cached: false,
-    })
+    } as never)
 
     expect(nested.statusForNode('same')).toMatchObject({
       status: 'out_of_date',

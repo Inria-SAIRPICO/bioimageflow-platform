@@ -1,6 +1,5 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { AxiosError } from 'axios'
 import {
   fetchWorkflowDraft,
   putWorkflowDraft,
@@ -9,19 +8,8 @@ import {
 } from '@/api/workflowDrafts'
 import type { GraphState } from '@/api/types'
 
-const DEBOUNCE_MS = 500
-
-let timer: ReturnType<typeof setTimeout> | null = null
-let pending: { workflowId: string; graph: GraphState } | null = null
-
 function cloneGraph(graph: GraphState): GraphState {
   return JSON.parse(JSON.stringify(graph)) as GraphState
-}
-
-function conflictRevision(err: unknown): number | null {
-  if (!(err instanceof AxiosError) || err.response?.status !== 409) return null
-  const data = err.response.data as { current_revision?: unknown }
-  return typeof data.current_revision === 'number' ? data.current_revision : null
 }
 
 export interface WorkflowDraftChangedMessage {
@@ -65,9 +53,6 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
   const remoteUpdatedAt = ref<string | null>(null)
   const remoteDirtyAgainstSaved = ref<boolean | null>(null)
   const lastWriter = ref<string | null>(null)
-  const isSaving = ref(false)
-  const hasQueuedSave = ref(false)
-  const hasPendingSave = computed(() => hasQueuedSave.value || isSaving.value)
   const isStale = computed(() => (
     remoteAvailableRevision.value !== null &&
     appliedDraftRevision.value !== null &&
@@ -145,15 +130,6 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     projectState(state)
   }
 
-  function cancelPendingSave(): void {
-    if (timer !== null) {
-      clearTimeout(timer)
-      timer = null
-    }
-    pending = null
-    hasQueuedSave.value = false
-  }
-
   async function loadDraft(id: string): Promise<WorkflowDraftResponse> {
     trackWorkflow(id)
     const response = await fetchWorkflowDraft(id)
@@ -168,12 +144,8 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
   async function overwriteDraftWithGraph(
     id: string,
     graph: GraphState,
-    options: { updateTrackedDraft?: boolean } = {},
+    _options: { updateTrackedDraft?: boolean } = {},
   ): Promise<WorkflowDraftResponse> {
-    const updateTrackedDraft = options.updateTrackedDraft !== false
-    if (updateTrackedDraft && workflowId.value === id) {
-      cancelPendingSave()
-    }
     const latest = await fetchWorkflowDraft(id)
     const response = await putWorkflowDraft(id, {
       graph: cloneGraph(graph),
@@ -185,11 +157,6 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
   }
 
   function reset(id: string | null = null): void {
-    if (timer !== null) {
-      clearTimeout(timer)
-      timer = null
-    }
-    pending = null
     retainedByWorkflowId.clear()
     if (id === null) {
       workflowId.value = null
@@ -197,8 +164,6 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     } else {
       projectTrackedWorkflow(id)
     }
-    hasQueuedSave.value = false
-    isSaving.value = false
   }
 
   function trackWorkflow(id: string): void {
@@ -207,7 +172,6 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
   }
 
   function forgetWorkflow(id: string): void {
-    if (pending?.workflowId === id) cancelPendingSave()
     retainedByWorkflowId.delete(id)
     if (workflowId.value !== id) return
     workflowId.value = null
@@ -250,108 +214,12 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     projectIfTracked(response.workflow_id, state)
   }
 
-  function scheduleSave(id: string, graph: GraphState): void {
-    if (hasUnresolvedRemoteChange(id)) return
-    trackWorkflow(id)
-    pending = { workflowId: id, graph: cloneGraph(graph) }
-    hasQueuedSave.value = true
-    if (timer !== null) {
-      clearTimeout(timer)
-    }
-    timer = setTimeout(() => {
-      void flush()
-    }, DEBOUNCE_MS)
-  }
-
   function hasUnresolvedRemoteChange(id: string | null = workflowId.value): boolean {
     if (!id) return false
     const state = retainedByWorkflowId.get(id)
     if (state === undefined || state.remoteAvailableRevision === null) return false
     return state.appliedDraftRevision === null ||
       state.remoteAvailableRevision > state.appliedDraftRevision
-  }
-
-  async function flush(): Promise<void> {
-    if (timer !== null) {
-      clearTimeout(timer)
-      timer = null
-    }
-    if (pending === null) {
-      hasQueuedSave.value = false
-      return
-    }
-    const entry = pending
-    pending = null
-    if (hasUnresolvedRemoteChange(entry.workflowId)) {
-      hasQueuedSave.value = pending !== null || timer !== null
-      return
-    }
-    const state = retainedState(entry.workflowId)
-    if (state.currentDraftRevision === null) {
-      const latest = await fetchLatestDraft(entry.workflowId)
-      acknowledgeAcceptedDraft(latest)
-      if (hasUnresolvedRemoteChange(entry.workflowId)) {
-        hasQueuedSave.value = pending !== null || timer !== null
-        return
-      }
-    }
-    const expected = state.currentDraftRevision ?? 0
-    isSaving.value = true
-    try {
-      const response = await putWorkflowDraft(entry.workflowId, {
-        graph: entry.graph,
-        expected_revision: expected,
-        updated_by: 'frontend',
-      })
-      acknowledgeAcceptedDraft(response)
-    } catch (err) {
-      const remote = conflictRevision(err)
-      if (remote !== null) {
-        const conflictState = retainedState(entry.workflowId)
-        if (remote > knownRevision(conflictState)) {
-          conflictState.remoteAvailableRevision = remote
-        }
-        projectIfTracked(entry.workflowId, conflictState)
-      }
-      console.warn('[workflow-draft] Failed to save draft:', err)
-    } finally {
-      isSaving.value = false
-      hasQueuedSave.value = pending !== null || timer !== null
-    }
-  }
-
-  async function ensureFreshForCriticalOperation(
-    id: string | null = workflowId.value,
-  ): Promise<boolean> {
-    await flush()
-    if (!id) return true
-    if (hasUnresolvedRemoteChange(id)) {
-      return false
-    }
-    const latest = await fetchWorkflowDraft(id)
-    const state = retainedState(id)
-    if (hasUnresolvedRemoteChange(id)) {
-      retainRemoteResponse(state, latest)
-      projectIfTracked(id, state)
-      return false
-    }
-    if (
-      state.appliedDraftRevision !== null &&
-      latest.draft_revision > state.appliedDraftRevision
-    ) {
-      retainRemoteResponse(state, latest)
-      projectIfTracked(id, state)
-      return false
-    }
-    acknowledgeAcceptedDraft(latest)
-    return true
-  }
-
-  async function assertFreshForSaveOrRun(): Promise<void> {
-    const fresh = await ensureFreshForCriticalOperation()
-    if (!fresh) {
-      throw new Error('Workflow draft changed outside the canvas. Apply or reload it before continuing.')
-    }
   }
 
   return {
@@ -363,8 +231,6 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     remoteUpdatedAt,
     remoteDirtyAgainstSaved,
     lastWriter,
-    isSaving,
-    hasPendingSave,
     isStale,
     loadDraft,
     fetchLatestDraft,
@@ -375,11 +241,6 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     noteRemoteChange,
     acknowledgeAcceptedDraft,
     clearRemoteChange,
-    cancelPendingSave,
-    scheduleSave,
     hasUnresolvedRemoteChange,
-    flush,
-    ensureFreshForCriticalOperation,
-    assertFreshForSaveOrRun,
   }
 })

@@ -5,6 +5,15 @@ import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
+import {
+  _resetCanvasPersistenceForTest,
+  useCanvasPersistence,
+} from '@/composables/useCanvasPersistence'
+import { registerRootCanvas } from '@/test-utils/canvasFixtures'
+import {
+  createInMemoryCanvasPersistence,
+  makeWorkflowDraft,
+} from '@/test-utils/persistenceFixtures'
 import type { ToolMetadata, ValidationResult } from '@/api/types'
 
 function makeTool(): ToolMetadata {
@@ -63,14 +72,29 @@ function mountWithErrors(validationResult: ValidationResult | null) {
   const pinia = createPinia()
   setActivePinia(pinia)
   _resetGraphSyncForTest()
+  _resetCanvasPersistenceForTest()
+
+  const workflowId = 'node-panel-errors'
+  const canvas = registerRootCanvas(workflowId)
+  const draft = makeWorkflowDraft({ workflow_id: workflowId })
+  const persistence = createInMemoryCanvasPersistence(draft)
+  const canvasPersistence = useCanvasPersistence({
+    descriptor: canvas.descriptor,
+    getWorkflowId: () => workflowId,
+    transports: persistence.transports,
+  })
+  canvasPersistence.initializeFromDraft(draft)
+  const sync = useGraphSync({
+    descriptor: canvas.descriptor,
+    getWorkflowId: () => workflowId,
+  })
 
   const uiStore = useUIStore()
   const nodeId = 'node-1'
   uiStore.setSelectedNodes([nodeId])
   uiStore.setGraphNodes([{ id: nodeId, data: makeNodeData() }])
 
-  // Set the singleton graphSync's validationResult before NodePanel mounts.
-  const sync = useGraphSync()
+  // Seed the active canvas graph-sync validation before NodePanel mounts.
   sync.validationResult.value = validationResult
 
   return mount(NodePanel, {
@@ -82,6 +106,7 @@ describe('NodePanel — parameter error wiring', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     _resetGraphSyncForTest()
+    _resetCanvasPersistenceForTest()
   })
 
   it('parameter row gets has-error class when a parameter_invalid error matches', () => {

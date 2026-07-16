@@ -23,13 +23,19 @@ interface ExecutionContextFields {
   draft_revision?: number | null
 }
 
+interface RequiredExecutionContextFields {
+  execution_id: string
+  workflow_id: string
+  draft_revision: number | null
+}
+
 interface ExecutionWireContext {
   execution_id: string
   workflow_id: string
   draft_revision: number | null
 }
 
-interface NodeStateMessage extends ExecutionContextFields {
+interface NodeStateMessage extends RequiredExecutionContextFields {
   type?: 'node_state'
   node_id: string
   status: NodeStatus['status']
@@ -52,11 +58,11 @@ interface ExecutionStatusSnapshot extends ExecutionStatus, ExecutionContextField
   node_statuses?: Record<string, NodeStatus>
 }
 
-interface ExecutionCompletePayload extends ExecutionResult, ExecutionContextFields {
+interface ExecutionCompletePayload extends ExecutionResult, RequiredExecutionContextFields {
   type?: 'execution_complete'
 }
 
-interface ProgressPayload extends ProgressInfo, ExecutionContextFields {
+interface ProgressPayload extends ProgressInfo, RequiredExecutionContextFields {
   type?: 'progress'
 }
 
@@ -252,7 +258,6 @@ export const useExecutionStore = defineStore('execution', () => {
   let activeStopRequest: number | null = null
   let terminalFence = false
   let pendingRun: PendingRun | null = null
-  let anonymousOriginCanvasId: CanvasId | null = null
   const terminalExecutionIds: string[] = []
 
   const isStarting = computed(() => state.value === 'starting')
@@ -346,7 +351,6 @@ export const useExecutionStore = defineStore('execution', () => {
     }
     if (changed) clearRuntimeResult()
     if (changed) terminalFence = false
-    anonymousOriginCanvasId = null
     executionId.value = context.execution_id
     executionWorkflowId.value = context.workflow_id
     executionDraftRevision.value = context.draft_revision
@@ -360,15 +364,10 @@ export const useExecutionStore = defineStore('execution', () => {
   ): boolean {
     const incoming = executionContextFrom(payload)
     if (incoming === undefined) {
-      const accepted = executionId.value === null
-        && (pendingRun === null || pendingRun.draftRevision === undefined)
-      if (!accepted) return false
-      if (canvasSessionRegistry.sessionCount.value > 1) {
-        const nextOrigin = canvasSessionRegistry.activeCanvasId.value
-        if (anonymousOriginCanvasId !== nextOrigin) clearRuntimeResult()
-        anonymousOriginCanvasId = nextOrigin
-      }
-      return true
+      return source === 'snapshot'
+        && executionId.value === null
+        && pendingRun === null
+        && state.value === 'idle'
     }
     if (incoming === null) return false
 
@@ -423,10 +422,7 @@ export const useExecutionStore = defineStore('execution', () => {
 
   function appliesToCanvas(canvasId: CanvasId): boolean {
     if (executionId.value === null) {
-      const sessionCount = canvasSessionRegistry.sessionCount.value
-      if (sessionCount === 0) return true
-      if (sessionCount === 1) return canvasSessionRegistry.get(canvasId) !== null
-      return anonymousOriginCanvasId === canvasId
+      return originCanvasId.value === canvasId
     }
     const session = canvasSessionRegistry.get(canvasId)
     if (
@@ -596,6 +592,7 @@ export const useExecutionStore = defineStore('execution', () => {
       { graph, nodes: nodeIds, workflow_name: workflowName },
     )
     if (data?.node_statuses) {
+      originCanvasId.value = resolveOriginCanvas(workflowName)
       nodeStatuses.value = { ...nodeStatuses.value, ...data.node_statuses }
     }
     useLoggerStore().addEntry({
@@ -635,6 +632,10 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyStatusSnapshot(snapshot: ExecutionStatusSnapshot) {
+    if (
+      executionContextFrom(snapshot) === undefined
+      && snapshot.state !== 'idle'
+    ) return
     if (!acceptPayloadContext(snapshot, 'snapshot')) return
     const incoming = executionContextFrom(snapshot)
     const ownsPendingRun = incoming !== undefined

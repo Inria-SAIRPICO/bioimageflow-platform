@@ -1,9 +1,7 @@
-import { getActivePinia } from 'pinia'
 import { api } from '@/api/client'
 import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
-import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useUIStore } from '@/stores/ui'
 
 export type EditorOpenMethod = 'external' | 'embedded' | 'clipboard'
@@ -184,12 +182,6 @@ export async function openToolWithEditor(
 }
 
 async function flushDraftIfAvailable(): Promise<void> {
-  if (canvasSessionRegistry.sessionCount.value === 0) {
-    if (getActivePinia() === undefined) return
-    await useWorkflowDraftStore().flush()
-    return
-  }
-
   const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
   if (activeCanvasId === null) {
     throw new Error(

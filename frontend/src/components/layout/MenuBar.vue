@@ -17,16 +17,14 @@ import { useToast } from 'primevue/usetoast'
 import type { MenuItem } from 'primevue/menuitem'
 import { useUIStore, type ThemePreference } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
+import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import { useGraphSync } from '@/composables/useGraphSync'
 import {
   getRootCanvasPersistenceResource,
   useCanvasPersistence,
-  type RootCanvasPersistenceResource,
 } from '@/composables/useCanvasPersistence'
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
-import { useAutoSave } from '@/composables/useAutoSave'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
-import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
@@ -36,18 +34,28 @@ import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
-import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
-import { graphDocumentsEqual } from '@/sessions/graphDocument'
 import {
+  loadRootWorkflowPresentation,
+  type RootWorkflowPresentation,
+} from '@/services/rootWorkflowPresentation'
+import { saveRootWorkflowTarget } from '@/services/rootWorkflowSave'
+import {
+  requestWorkflowDeletion,
+  WorkflowDeletionCommittedCleanupError,
+  WorkflowDeletionTargetChangedError,
+  type WorkflowDeletionRequest,
+} from '@/services/workflowDeletion'
+import { workflowPanelId } from '@/utils/canvasPanels'
+import {
+  canvasIdFromPanelId,
   canvasSessionRegistry,
   type CanvasId,
 } from '@/sessions/canvasSessionRegistry'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
+const canvasLifecycleStore = useCanvasLifecycleStore()
 const workflowStore = useWorkflowStore()
-const workflowDraftStore = useWorkflowDraftStore()
-const autoSave = useAutoSave()
 const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
 const canvasPersistence = useCanvasPersistence()
 const canvasCommands = useCanvasCommands()
@@ -75,18 +83,15 @@ const workflowTitle = computed(() => {
   const label = uiStore.activeWorkflowName ?? 'No workflow'
   return uiStore.hasUnsavedChanges ? `${label} *` : label
 })
-const activeWorkflowId = computed(() => {
-  if (uiStore.activeWorkflowId !== null) return uiStore.activeWorkflowId
-  return canvasSessionRegistry.sessionCount.value === 0
-    ? workflowStore.currentName
-    : null
+const activeWorkflowId = computed(() => uiStore.activeWorkflowId)
+const activeCanvasLifecycleBusy = computed(() => {
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  return canvasId !== null && canvasLifecycleStore.isBusy(canvasId)
 })
 const activeWorkflow = computed(() => {
   const id = activeWorkflowId.value
   if (!id) return null
-  return workflowStore.workflows.find((workflow) => workflowId(workflow) === id) ?? (
-    workflowStore.currentName === id ? workflowStore.current : null
-  )
+  return workflowStore.workflows.find((workflow) => workflowId(workflow) === id) ?? null
 })
 const workflowDialogVisible = ref(false)
 const workflowDialogMode = ref<'new' | 'save-as'>('new')
@@ -94,7 +99,6 @@ const workflowDialogInitialName = ref('')
 const workflowDialogInitialDisplayName = ref('')
 const workflowDialogInitialDescription = ref<string | null>(null)
 const workflowDialogSuggestedName = ref<string | null>(null)
-const createIntent = ref<'new-empty' | 'save-current'>('new-empty')
 const workflowDialogFolderId = ref<string | null>(null)
 const openDialogVisible = ref(false)
 const deleteDialogVisible = ref(false)
@@ -106,7 +110,6 @@ const deleteDialogWorkflow = computed(() => {
     workflowStore.currentName === name ? workflowStore.current : null
   )
 })
-const discardDialogVisible = ref(false)
 const exportSaveDialogVisible = ref(false)
 const exportDialogTarget = shallowRef<WorkflowExportTarget | null>(null)
 watch(exportSaveDialogVisible, (visible) => {
@@ -120,7 +123,6 @@ const renameDisplayName = ref('')
 const importFileInput = ref<HTMLInputElement | null>(null)
 const pendingImportFile = ref<File | null>(null)
 const dependencyDialogVisible = ref(false)
-const pendingDiscardAction = ref<(() => void | Promise<void>) | null>(null)
 const themeMenu = ref<{ toggle: (event: Event) => void } | null>(null)
 const workflowDialogTarget = ref<{
   canvasId: CanvasId | null
@@ -129,7 +131,12 @@ const workflowDialogTarget = ref<{
   missingTools: MissingTool[]
 } | null>(null)
 const renameTarget = ref<WorkflowSaveTarget | null>(null)
-const deleteCanvasTarget = ref<WorkflowSaveTarget | null>(null)
+const deleteCanvasTarget = ref<WorkflowDeletionRequest | null>(null)
+const deleteTargetDirty = computed(() => (
+  deleteCanvasTarget.value?.canvasId !== null
+  && deleteCanvasTarget.value?.canvasId !== undefined
+  && uiStore.canvasHasUnsavedChanges(deleteCanvasTarget.value.canvasId)
+))
 
 const themePreferenceLabels: Record<ThemePreference, string> = {
   light: 'Light',
@@ -176,6 +183,7 @@ function toggleThemeMenu(event: Event): void {
 }
 
 function runDisabledReason(): string | null {
+  if (activeCanvasLifecycleBusy.value) return 'A workflow lifecycle action is in progress'
   if (executionStore.isStarting) return 'Execution is starting'
   if (executionStore.isStopping) return 'Execution is stopping'
   if (executionStore.isRunning) return 'Execution in progress'
@@ -193,55 +201,22 @@ function runDisabledReason(): string | null {
 
 function applyGraph(
   graph: GraphState,
-  dirty = false,
-  presentation?: {
-    workflowName: string
-    workflowDisplayName: string
-    missingTools: MissingTool[]
-    draft?: WorkflowDraftResponse
-  },
+  dirty: boolean,
+  presentation: Omit<RootWorkflowPresentation, 'graph' | 'dirty'>,
 ): void {
-  if (executionStore.isMutationLocked) return
+  if (executionStore.isMutationLocked || activeCanvasLifecycleBusy.value) return
   window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
     detail: {
       graph,
-      workflowName: presentation?.workflowName ?? workflowStore.currentName,
-      workflowDisplayName: presentation?.workflowDisplayName
-        ?? workflowStore.current?.display_name
-        ?? workflowStore.currentName,
-      missingTools: presentation?.missingTools ?? workflowStore.missingTools,
+      workflowName: presentation.workflowName,
+      workflowDisplayName: presentation.workflowDisplayName,
+      missingTools: presentation.missingTools,
       dirty,
-      draft: presentation?.draft,
+      draft: presentation.draft,
+      identityGeneration: presentation.identityGeneration,
+      serverIdentityGeneration: presentation.serverIdentityGeneration,
     },
   }))
-}
-
-async function loadWorkflowGraph(name: string): Promise<{
-  graph: GraphState
-  dirty: boolean
-  workflowName: string
-  workflowDisplayName: string
-  missingTools: MissingTool[]
-  draft?: WorkflowDraftResponse
-}> {
-  const savedGraph = await workflowStore.loadWorkflow(name)
-  const info = workflowStore.workflows.find((workflow) => workflowId(workflow) === name)
-  const presentation = {
-    workflowName: info ? workflowId(info) : name,
-    workflowDisplayName: info?.display_name ?? name,
-    missingTools: [...workflowStore.missingTools],
-  }
-  try {
-    const draft = await workflowDraftStore.loadDraft(name)
-    return {
-      graph: draft.graph,
-      dirty: draft.dirty_against_saved,
-      draft,
-      ...presentation,
-    }
-  } catch {
-    return { graph: savedGraph, dirty: false, ...presentation }
-  }
 }
 
 function showError(summary: string, err: unknown): void {
@@ -262,42 +237,20 @@ function hasMissingImportDependencies(): boolean {
   return workflowStore.missingPackages.length > 0 || workflowStore.missingTools.length > 0
 }
 
-function runAfterDiscard(action: () => void | Promise<void>): void {
-  if (executionStore.isMutationLocked) return
-  if (!uiStore.hasUnsavedChanges) {
-    void action()
-    return
-  }
-  pendingDiscardAction.value = action
-  discardDialogVisible.value = true
-}
-
-async function confirmDiscard(): Promise<void> {
-  const action = pendingDiscardAction.value
-  pendingDiscardAction.value = null
-  discardDialogVisible.value = false
-  if (executionStore.isMutationLocked) return
-  if (action) {
-    await action()
-  }
-}
-
 function workflowNameInDialogFolder(name: string): string {
   if (!workflowDialogFolderId.value || name.includes('/')) return name
   return `${workflowDialogFolderId.value}/${name}`
 }
 
 function createNewWorkflow(folderId: string | null = null): void {
-  runAfterDiscard(() => {
-    createIntent.value = 'new-empty'
-    workflowDialogFolderId.value = folderId
-    workflowDialogMode.value = 'new'
-    workflowDialogInitialName.value = 'Untitled'
-    workflowDialogInitialDisplayName.value = 'Untitled'
-    workflowDialogInitialDescription.value = null
-    workflowDialogSuggestedName.value = null
-    workflowDialogVisible.value = true
-  })
+  if (executionStore.isMutationLocked) return
+  workflowDialogFolderId.value = folderId
+  workflowDialogMode.value = 'new'
+  workflowDialogInitialName.value = 'Untitled'
+  workflowDialogInitialDisplayName.value = 'Untitled'
+  workflowDialogInitialDescription.value = null
+  workflowDialogSuggestedName.value = null
+  workflowDialogVisible.value = true
 }
 
 async function onWorkflowDialogSubmit(payload: {
@@ -315,20 +268,18 @@ async function onWorkflowDialogSubmit(payload: {
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
       workflowDialogFolderId.value = null
-      if (createIntent.value === 'save-current') {
-        await workflowStore.saveWorkflow(currentGraph.value)
-      } else {
-        applyGraph({ nodes: [], edges: [] }, false, {
-          workflowName: workflowId(info),
-          workflowDisplayName: info.display_name,
-          missingTools: [],
-        })
-      }
+      applyGraph({ nodes: [], edges: [] }, false, {
+        workflowName: workflowId(info),
+        workflowDisplayName: info.display_name,
+        missingTools: [],
+        identityGeneration: workflowStore.workflowIdentityGeneration(workflowId(info)),
+        serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowId(info)),
+      })
       return
     }
 
     const target = workflowDialogTarget.value
-    if (!target) return
+    if (!target || target.canvasId === null) return
     const info = await workflowStore.patchWorkflow(target.workflowName, {
       action: 'duplicate',
       new_name: payload.name,
@@ -336,22 +287,17 @@ async function onWorkflowDialogSubmit(payload: {
       description: payload.description,
     })
     const copiedWorkflowName = workflowId(info)
-    if (target.canvasId === null) {
-      await workflowStore.saveWorkflow(target.graph)
-      if (graphDocumentsEqual(currentGraph.value, target.graph)) {
-        workflowStore.markClean()
-      }
-    } else {
-      await workflowStore.saveWorkflow(target.graph, {
-        canvasId: target.canvasId,
-        workflowName: copiedWorkflowName,
-      })
-      applyGraph(target.graph, false, {
-        workflowName: copiedWorkflowName,
-        workflowDisplayName: info.display_name,
-        missingTools: target.missingTools,
-      })
-    }
+    await workflowStore.saveWorkflow(target.graph, {
+      canvasId: target.canvasId,
+      workflowName: copiedWorkflowName,
+    })
+    applyGraph(target.graph, false, {
+      workflowName: copiedWorkflowName,
+      workflowDisplayName: info.display_name,
+      missingTools: target.missingTools,
+      identityGeneration: workflowStore.workflowIdentityGeneration(copiedWorkflowName),
+      serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(copiedWorkflowName),
+    })
     workflowDialogVisible.value = false
     workflowDialogTarget.value = null
     workflowDialogSuggestedName.value = null
@@ -373,20 +319,18 @@ async function onWorkflowDialogSubmit(payload: {
 
 async function openWorkflow(): Promise<void> {
   if (executionStore.isMutationLocked) return
-  runAfterDiscard(async () => {
-    try {
-      await workflowStore.fetchWorkflows()
-      openDialogVisible.value = true
-    } catch (err: unknown) {
-      showError('Open workflow failed', err)
-    }
-  })
+  try {
+    await workflowStore.fetchWorkflows()
+    openDialogVisible.value = true
+  } catch (err: unknown) {
+    showError('Open workflow failed', err)
+  }
 }
 
 async function onOpenWorkflow(name: string): Promise<void> {
   if (executionStore.isMutationLocked) return
   try {
-    const loaded = await loadWorkflowGraph(name)
+    const loaded = await loadRootWorkflowPresentation(name)
     if (executionStore.isMutationLocked) return
     openDialogVisible.value = false
     applyGraph(loaded.graph, loaded.dirty, loaded)
@@ -402,7 +346,6 @@ interface WorkflowSaveTarget {
 
 interface WorkflowExportTarget extends WorkflowSaveTarget {
   workflowName: string
-  persistence: RootCanvasPersistenceResource | null
 }
 
 function currentSaveTarget(): WorkflowSaveTarget {
@@ -410,32 +353,6 @@ function currentSaveTarget(): WorkflowSaveTarget {
     canvasId: canvasPersistence.canvasId,
     workflowName: activeWorkflowId.value,
   }
-}
-
-function isSaveTargetActive(target: WorkflowSaveTarget): boolean {
-  return canvasPersistence.canvasId === target.canvasId
-    && activeWorkflowId.value === target.workflowName
-}
-
-function isFixedRootSaveTargetAvailable(
-  target: WorkflowSaveTarget,
-  persistence: RootCanvasPersistenceResource,
-): boolean {
-  return target.canvasId !== null
-    && getRootCanvasPersistenceResource(target.canvasId) === persistence
-    && persistence.workflowId.value === target.workflowName
-}
-
-async function preserveNewerFixedTargetGraph(
-  target: WorkflowSaveTarget,
-  persistence: RootCanvasPersistenceResource,
-  capturedGraph: GraphState,
-): Promise<void> {
-  if (graphDocumentsEqual(persistence.currentGraph.value, capturedGraph)) return
-  const latestGraph = cloneGraph(persistence.currentGraph.value)
-  persistence.queueGraph(latestGraph)
-  if (target.canvasId !== null) uiStore.markCanvasDirty(target.canvasId)
-  await persistence.flush()
 }
 
 function cloneGraph(graph: GraphState): GraphState {
@@ -448,93 +365,43 @@ async function saveCurrentWorkflowGraph(
     conflictAction?: 'saving' | 'exporting'
   } = {},
   target = currentSaveTarget(),
-  fixedPersistence?: RootCanvasPersistenceResource,
   initiatingGraph?: GraphState,
 ): Promise<WorkflowInfo | null> {
-  const persistence = fixedPersistence ?? canvasPersistence
-  const isTargetAvailable = fixedPersistence === undefined
-    ? () => isSaveTargetActive(target)
-    : () => isFixedRootSaveTargetAvailable(target, fixedPersistence)
-  if (!isTargetAvailable()) return null
-  const capturedGraph = initiatingGraph === undefined
-    ? null
-    : cloneGraph(initiatingGraph)
-  const fresh = await persistence.ensureFreshForCriticalOperation()
-  if (!isTargetAvailable()) return null
-  if (!fresh) {
+  if (target.canvasId === null || target.workflowName === null) return null
+  const result = await saveRootWorkflowTarget(
+    { canvasId: target.canvasId, workflowName: target.workflowName },
+    initiatingGraph,
+  )
+  if (result.status === 'conflict') {
     showDraftConflictWarning(options.conflictAction ?? 'saving')
     return null
   }
-  if (!target.workflowName) return null
-  const graph = capturedGraph ?? cloneGraph(
-    fixedPersistence?.currentGraph.value ?? currentGraph.value,
-  )
-  const info = target.canvasId === null
-    ? await workflowStore.saveWorkflow(graph)
-    : await workflowStore.saveWorkflow(graph, {
-        canvasId: target.canvasId,
-        workflowName: target.workflowName,
-      })
-  if (!isTargetAvailable()) return null
-  if (fixedPersistence) {
-    await preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
-    if (
-      !isTargetAvailable()
-      || !graphDocumentsEqual(fixedPersistence.currentGraph.value, graph)
-    ) return null
-  }
-  persistence.queueDraft(graph)
-  await persistence.flush()
-  if (!isTargetAvailable()) return null
-  if (fixedPersistence) {
-    await preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
-    if (
-      !isTargetAvailable()
-      || !graphDocumentsEqual(fixedPersistence.currentGraph.value, graph)
-    ) return null
-  }
-  workflowStore.markClean(target.canvasId ?? undefined)
+  if (result.status !== 'saved') return null
   if (options.showSuccessToast !== false) {
     toast?.add({
       severity: 'success',
       summary: 'Workflow saved',
-      detail: info.display_name,
+      detail: result.info.display_name,
       life: 2500,
     })
   }
-  return info
+  return result.info
 }
 
 async function saveWorkflow(): Promise<void> {
-  if (executionStore.isMutationLocked) return
+  if (executionStore.isMutationLocked || activeCanvasLifecycleBusy.value) return
   const target = currentSaveTarget()
   const route = await canvasCommands.routeSave()
   if (executionStore.isMutationLocked) return
-  if (!isSaveTargetActive(target)) return
   if (route === 'nested' || route === 'unavailable') return
-  if (!target.workflowName) {
-    createIntent.value = 'save-current'
-    workflowDialogFolderId.value = null
-    workflowDialogMode.value = 'new'
-    workflowDialogInitialName.value = 'Untitled'
-    workflowDialogInitialDisplayName.value = 'Untitled'
-    workflowDialogInitialDescription.value = null
-    workflowDialogSuggestedName.value = null
-    workflowDialogVisible.value = true
-    return
-  }
-  const fixedPersistence = target.canvasId === null
-    ? undefined
-    : getRootCanvasPersistenceResource(target.canvasId) ?? undefined
-  if (target.canvasId !== null && fixedPersistence === undefined) return
-  const initiatingGraph = cloneGraph(
-    fixedPersistence?.currentGraph.value ?? currentGraph.value,
-  )
+  if (!target.workflowName || target.canvasId === null) return
+  const persistence = getRootCanvasPersistenceResource(target.canvasId)
+  if (!persistence || persistence.workflowId.value !== target.workflowName) return
+  const initiatingGraph = cloneGraph(persistence.currentGraph.value)
   try {
     await saveCurrentWorkflowGraph(
       { showSuccessToast: true },
       target,
-      fixedPersistence,
       initiatingGraph,
     )
   } catch (err: unknown) {
@@ -549,9 +416,6 @@ function exportCurrentWorkflow(): void {
   exportDialogTarget.value = {
     ...target,
     workflowName: target.workflowName,
-    persistence: target.canvasId === null
-      ? null
-      : getRootCanvasPersistenceResource(target.canvasId),
   }
   exportSaveDialogVisible.value = true
 }
@@ -563,11 +427,10 @@ async function confirmExportCurrentWorkflow(): Promise<void> {
   exportSaveDialogVisible.value = false
   if (!target) return
   try {
-    if (target.canvasId !== null && target.persistence === null) return
     const info = await saveCurrentWorkflowGraph({
       showSuccessToast: false,
       conflictAction: 'exporting',
-    }, target, target.persistence ?? undefined)
+    }, target)
     if (!info) return
     await workflowStore.exportWorkflow(workflowId(info))
   } catch (err: unknown) {
@@ -577,13 +440,11 @@ async function confirmExportCurrentWorkflow(): Promise<void> {
 
 function chooseImportFile(): void {
   if (executionStore.isMutationLocked) return
-  runAfterDiscard(() => {
-    importFileInput.value?.click()
-  })
+  importFileInput.value?.click()
 }
 
 async function openImportedWorkflow(name: string): Promise<void> {
-  const loaded = await loadWorkflowGraph(name)
+  const loaded = await loadRootWorkflowPresentation(name)
   applyGraph(loaded.graph, loaded.dirty, loaded)
   if (hasMissingImportDependencies()) {
     dependencyDialogVisible.value = true
@@ -649,10 +510,27 @@ async function confirmImportRename(): Promise<void> {
 
 async function rebindImportedDependencies(): Promise<void> {
   if (executionStore.isMutationLocked) return
+  const target = currentSaveTarget()
+  if (!target.workflowName || target.canvasId === null) return
+  const workflowName = target.workflowName
   try {
-    const graph = await workflowStore.rebindVersions()
+    const graph = await workflowStore.rebindVersions({
+      canvasId: target.canvasId,
+      workflowName,
+    })
+    if (
+      canvasSessionRegistry.activeCanvasId.value !== target.canvasId
+      || uiStore.canvasWorkflowId(target.canvasId) !== workflowName
+    ) return
     dependencyDialogVisible.value = false
-    applyGraph(graph)
+    const workflow = workflowStore.workflows.find(item => workflowId(item) === workflowName)
+    applyGraph(graph, false, {
+      workflowName,
+      workflowDisplayName: workflow?.display_name ?? workflowName,
+      missingTools: [...workflowStore.missingTools],
+      identityGeneration: workflowStore.workflowIdentityGeneration(workflowName),
+      serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowName),
+    })
   } catch (err: unknown) {
     showError('Dependency rebind failed', err)
   }
@@ -661,7 +539,7 @@ async function rebindImportedDependencies(): Promise<void> {
 function saveWorkflowAs(): void {
   if (executionStore.isMutationLocked) return
   const target = currentSaveTarget()
-  if (!target.workflowName) return
+  if (!target.workflowName || target.canvasId === null) return
   workflowDialogFolderId.value = null
   workflowDialogMode.value = 'save-as'
   const baseName = target.workflowName
@@ -689,7 +567,7 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
       display_name: displayName,
       description: source?.description ?? null,
     })
-    const loaded = await loadWorkflowGraph(workflowId(info))
+    const loaded = await loadRootWorkflowPresentation(workflowId(info))
     applyGraph(loaded.graph, loaded.dirty, loaded)
   } catch (err: unknown) {
     showError('Duplicate workflow failed', err)
@@ -710,45 +588,87 @@ async function exportWorkflowByName(name: string): Promise<void> {
 }
 
 function deleteWorkflowByName(name: string): void {
-  if (executionStore.isMutationLocked) return
+  if (executionStore.isMutationLocked || activeCanvasLifecycleBusy.value) return
   deleteTargetName.value = name
-  deleteCanvasTarget.value = activeWorkflowId.value === name
-    ? currentSaveTarget()
-    : null
+  deleteCanvasTarget.value = captureWorkflowDeletionTarget(name)
   deleteDialogVisible.value = true
 }
 
+function captureWorkflowDeletionTarget(name: string): WorkflowDeletionRequest {
+  const canvasId = canvasIdFromPanelId(workflowPanelId(name))
+  const session = canvasSessionRegistry.get(canvasId)
+  const mountedRoot = session?.descriptor.kind === 'root'
+    && session.descriptor.workflowId === name
+    ? session
+    : null
+  return {
+    canvasId: mountedRoot ? canvasId : null,
+    workflowName: name,
+    localIdentityGeneration: workflowStore.workflowIdentityGeneration(name),
+    serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(name),
+    sessionRegistrationToken: mountedRoot?.registrationToken ?? null,
+  }
+}
+
+function workflowDeletionTargetIsCurrent(
+  target: WorkflowDeletionRequest,
+): boolean {
+  if (!workflowStore.isWorkflowIdentityCurrent(
+    target.workflowName,
+    target.localIdentityGeneration,
+  )) return false
+  if (
+    workflowStore.workflowServerIdentityGeneration(target.workflowName)
+    !== target.serverIdentityGeneration
+  ) return false
+  if (target.canvasId === null) {
+    return target.sessionRegistrationToken === null
+  }
+  const session = canvasSessionRegistry.get(target.canvasId)
+  return session?.descriptor.kind === 'root'
+    && session.descriptor.workflowId === target.workflowName
+    && session.registrationToken === target.sessionRegistrationToken
+}
+
 function deleteWorkflow(): void {
-  if (executionStore.isMutationLocked) return
+  if (executionStore.isMutationLocked || activeCanvasLifecycleBusy.value) return
   const name = activeWorkflowId.value
   if (!name) return
   deleteTargetName.value = name
-  deleteCanvasTarget.value = currentSaveTarget()
+  deleteCanvasTarget.value = captureWorkflowDeletionTarget(name)
   deleteDialogVisible.value = true
 }
 
 async function confirmDeleteWorkflow(): Promise<void> {
-  if (executionStore.isMutationLocked) return
-  const name = deleteTargetName.value ?? activeWorkflowId.value
-  if (!name) return
+  if (executionStore.isMutationLocked || activeCanvasLifecycleBusy.value) return
   const target = deleteCanvasTarget.value
+  if (!target) return
+  const name = target.workflowName
+  if (!workflowDeletionTargetIsCurrent(target)) {
+    const error = new WorkflowDeletionTargetChangedError(name)
+    onDeleteWorkflowDialogVisible(false)
+    showError('Delete workflow failed', error)
+    return
+  }
   try {
-    await workflowStore.deleteWorkflow(name, target?.canvasId
-      ? { closingCanvasId: target.canvasId }
-      : undefined)
-    if (target?.canvasId !== null && target?.canvasId !== undefined) {
-      window.dispatchEvent(new CustomEvent('bioimageflow:close-canvas', {
-        detail: { canvasId: target.canvasId },
-      }))
-    }
+    await requestWorkflowDeletion(target)
     deleteDialogVisible.value = false
     deleteTargetName.value = null
     deleteCanvasTarget.value = null
-    if (executionStore.isMutationLocked) return
-    if (target?.canvasId === null && target.workflowName === name) {
-      applyGraph({ nodes: [], edges: [] })
-    }
   } catch (err: unknown) {
+    if (err instanceof WorkflowDeletionCommittedCleanupError) {
+      onDeleteWorkflowDialogVisible(false)
+      toast?.add({
+        severity: 'warn',
+        summary: 'Workflow deleted with cleanup warning',
+        detail: err.message,
+        life: 8000,
+      })
+      return
+    }
+    if (err instanceof WorkflowDeletionTargetChangedError) {
+      onDeleteWorkflowDialogVisible(false)
+    }
     showError('Delete workflow failed', err)
   }
 }
@@ -830,10 +750,6 @@ async function submitRename(): Promise<void> {
   }
 }
 
-function onBeforeUnload(): void {
-  void autoSave.flushAutoSave()
-}
-
 function onWorkflowPanelCommand(event: Event): void {
   if (executionStore.isMutationLocked) return
   const detail = (event as CustomEvent<WorkflowPanelCommand>).detail
@@ -846,7 +762,7 @@ function onWorkflowPanelCommand(event: Event): void {
   } else if (action === 'import') {
     chooseImportFile()
   } else if (action === 'open' && detail.name) {
-    runAfterDiscard(() => onOpenWorkflow(detail.name as string))
+    void onOpenWorkflow(detail.name)
   } else if (action === 'duplicate' && detail.name) {
     void duplicateWorkflowByName(detail.name)
   } else if (action === 'export' && detail.name) {
@@ -858,13 +774,11 @@ function onWorkflowPanelCommand(event: Event): void {
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown)
-  window.addEventListener('beforeunload', onBeforeUnload)
   window.addEventListener('bioimageflow:workflow-command', onWorkflowPanelCommand)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
-  window.removeEventListener('beforeunload', onBeforeUnload)
   window.removeEventListener('bioimageflow:workflow-command', onWorkflowPanelCommand)
 })
 
@@ -1064,6 +978,7 @@ defineExpose({
   <DeleteWorkflowDialog
     v-model:visible="deleteDialogVisible"
     :workflow="deleteDialogWorkflow"
+    :dirty="deleteTargetDirty"
     @confirm="confirmDeleteWorkflow"
     @update:visible="onDeleteWorkflowDialogVisible"
   />
@@ -1074,28 +989,6 @@ defineExpose({
     :tools="workflowStore.missingTools"
     @rebind="rebindImportedDependencies"
   />
-
-  <Dialog
-    v-model:visible="discardDialogVisible"
-    modal
-    header="Discard unsaved changes?"
-    :style="{ width: '420px' }"
-    data-testid="discard-workflow-dialog"
-  >
-    <p>
-      This workflow has unsaved edits. Opening another workflow or creating a
-      new one will leave those edits only in browser auto-save.
-    </p>
-    <template #footer>
-      <Button label="Cancel" text @click="discardDialogVisible = false" />
-      <Button
-        label="Discard and continue"
-        severity="danger"
-        data-testid="discard-workflow-confirm"
-        @click="confirmDiscard"
-      />
-    </template>
-  </Dialog>
 
   <Dialog
     v-model:visible="exportSaveDialogVisible"

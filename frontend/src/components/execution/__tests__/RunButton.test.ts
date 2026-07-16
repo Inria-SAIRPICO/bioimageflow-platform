@@ -29,6 +29,7 @@ import RunButton from '../RunButton.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import type { ValidationResult } from '@/api/types'
 import {
   canvasIdFromPanelId,
@@ -87,6 +88,11 @@ describe('RunButton', () => {
     persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
     persistenceMocks.acceptedDraftRevision.value = null
     persistenceMocks.canvasId = null
+    const { canvasId } = registerRootCanvas('wf_a', {
+      displayName: 'Workflow A',
+    })
+    persistenceMocks.canvasId = canvasId
+    persistenceMocks.acceptedDraftRevision.value = 1
   })
 
   it('Run button is enabled when idle and validation is not pending', () => {
@@ -96,7 +102,25 @@ describe('RunButton', () => {
     expect(btn.attributes('disabled')).toBeUndefined()
   })
 
+  it('does not block the active workflow for another canvas lifecycle action', async () => {
+    const inactive = registerRootCanvas('wf_b', { activate: false })
+    const lifecycle = useCanvasLifecycleStore()
+    lifecycle.begin(inactive.canvasId, 'deleting')
+    const { wrapper } = mountButton()
+
+    expect(
+      wrapper.find('[data-testid="run-workflow-button"]').attributes('disabled'),
+    ).toBeUndefined()
+
+    lifecycle.begin(persistenceMocks.canvasId!, 'saving')
+    await nextTick()
+    expect(
+      wrapper.find('[data-testid="run-workflow-button"]').attributes('disabled'),
+    ).toBeDefined()
+  })
+
   it('Run button is disabled when no workflow identity is active', () => {
+    canvasSessionRegistry.dispose()
     useWorkflowStore().current = null
     const { wrapper } = mountButton()
     const btn = wrapper.find('[data-testid="run-workflow-button"]')
@@ -105,6 +129,7 @@ describe('RunButton', () => {
   })
 
   it('does not fall back to the global workflow when no registered canvas is active', () => {
+    canvasSessionRegistry.dispose()
     registerRootCanvas('registered', {
       activate: false,
       present: false,
@@ -228,7 +253,10 @@ describe('RunButton', () => {
     await nextTick()
     await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
     await nextTick()
-    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], 'wf_a', {
+      canvasId: persistenceMocks.canvasId,
+      draftRevision: 1,
+    })
   })
 
   it('runs the active canvas selection and workflow identity', async () => {
@@ -246,6 +274,8 @@ describe('RunButton', () => {
     ui.setCanvasSelectedNodes(canvasA, ['node-a'])
     ui.setCanvasSelectedNodes(canvasB, ['node-b'])
     canvasSessionRegistry.activate(canvasA)
+    persistenceMocks.canvasId = canvasA
+    persistenceMocks.acceptedDraftRevision.value = 3
     useWorkflowStore().current = {
       name: 'wf_b',
       display_name: 'Workflow B',
@@ -258,7 +288,10 @@ describe('RunButton', () => {
     await nextTick()
     await nextTick()
 
-    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['node-a'], 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['node-a'], 'wf_a', {
+      canvasId: canvasA,
+      draftRevision: 3,
+    })
   })
 
   it('captures the active root canvas and accepted draft revision', async () => {
@@ -287,6 +320,7 @@ describe('RunButton', () => {
       displayName: 'Workflow A',
     })
     persistenceMocks.canvasId = canvasId
+    persistenceMocks.acceptedDraftRevision.value = null
     const { wrapper } = mountButton()
     const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
 
@@ -356,7 +390,10 @@ describe('RunButton', () => {
     await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
     await nextTick()
 
-    expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a', {
+      canvasId: persistenceMocks.canvasId,
+      draftRevision: 1,
+    })
     expect(persistenceMocks.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
     expect(workflowDraftMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
   })
@@ -403,7 +440,10 @@ describe('RunButton', () => {
     await nextTick()
     await nextTick()
 
-    expect(runSpy).toHaveBeenCalledWith(freshGraph, undefined, 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(freshGraph, undefined, 'wf_a', {
+      canvasId: persistenceMocks.canvasId,
+      draftRevision: 1,
+    })
   })
 
   it('Stop button is only visible while running', async () => {
@@ -502,7 +542,10 @@ describe('RunButton', () => {
     await nextTick()
 
     expect(wrapper.find('[data-testid="out-of-date-confirm"]').exists()).toBe(false)
-    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['selected'], 'wf_a')
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['selected'], 'wf_a', {
+      canvasId: persistenceMocks.canvasId,
+      draftRevision: 1,
+    })
   })
 
   it('run proceeds after confirm', async () => {

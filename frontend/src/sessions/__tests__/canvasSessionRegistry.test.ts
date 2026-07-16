@@ -51,6 +51,22 @@ describe('CanvasSessionRegistry', () => {
     expect(registry.get(descriptor.canvasId)?.descriptor).toEqual(descriptor)
   })
 
+  it('keeps one registration token across views and changes it after remount', () => {
+    const registry = new CanvasSessionRegistry()
+    const descriptor = rootSession('workflow:a', 'a')
+    const registered = registry.register(descriptor)
+
+    expect(registry.register(descriptor).registrationToken)
+      .toBe(registered.registrationToken)
+    expect(registry.get(descriptor.canvasId)?.registrationToken)
+      .toBe(registered.registrationToken)
+
+    registry.unregister(descriptor.canvasId)
+    const remounted = registry.register(descriptor)
+
+    expect(remounted.registrationToken).not.toBe(registered.registrationToken)
+  })
+
   it('disposes resources belonging only to the unregistered canvas', () => {
     const disposeA = vi.fn()
     const disposeB = vi.fn()

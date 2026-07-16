@@ -11,6 +11,10 @@ import pytest
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.services import workflow_store as workflow_store_module
+from bioimageflow_server.services.nested_workflow_snapshot import (
+    NestedWorkflowSnapshotService,
+)
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
@@ -48,7 +52,7 @@ class _FakeArchiveAdapter:
 
 class _ConnectionManager:
     def __init__(self) -> None:
-        self.workflow_tree_events: list[dict[str, str | None]] = []
+        self.workflow_tree_events: list[dict[str, str | int | None]] = []
         self.active_workflow_events: list[dict[str, str]] = []
 
     def publish_workflow_tree_changed(
@@ -56,9 +60,14 @@ class _ConnectionManager:
         *,
         action: str,
         workflow_id: str | None = None,
+        identity_generation: int | None = None,
     ) -> None:
         self.workflow_tree_events.append(
-            {"action": action, "workflow_id": workflow_id}
+            {
+                "action": action,
+                "workflow_id": workflow_id,
+                "identity_generation": identity_generation,
+            }
         )
 
     def publish_active_workflow_changed(
@@ -67,9 +76,7 @@ class _ConnectionManager:
         workflow_id: str,
         updated_by: str,
     ) -> None:
-        self.active_workflow_events.append(
-            {"workflow_id": workflow_id, "updated_by": updated_by}
-        )
+        self.active_workflow_events.append({"workflow_id": workflow_id, "updated_by": updated_by})
 
 
 async def _client(
@@ -120,10 +127,12 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert create.status_code == 201
     assert create.json()["name"] == "wf"
     assert create.json()["storage_path"] is not None
+    assert create.json()["identity_generation"] == 1
 
     listing = await client.get("/api/v1/workflows")
     assert listing.status_code == 200
     assert [item["name"] for item in listing.json()] == ["wf"]
+    assert listing.json()[0]["identity_generation"] == 1
 
     graph: dict[str, Any] = {
         "nodes": [
@@ -152,7 +161,86 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
 
     deleted = await client.delete("/api/v1/workflows/wf")
     assert deleted.status_code == 200
-    assert deleted.json() == {"deleted": True}
+    assert deleted.json() == {"deleted": True, "identity_generation": 2}
+
+
+async def test_delete_workflow_removes_its_retained_nested_snapshot_tree(
+    client: httpx.AsyncClient,
+) -> None:
+    created = await client.post(
+        "/api/v1/workflows",
+        json={"name": "wf", "display_name": "Workflow"},
+    )
+    assert created.status_code == 201
+    parent = await client.post(
+        "/api/v1/nested-workflow-snapshots/open",
+        json={
+            "owner": {
+                "kind": "root",
+                "canvas_id": "workflow:wf",
+                "workflow_id": "wf",
+            },
+            "parent_node_id": "sub_1",
+            "graph": {"nodes": [], "edges": []},
+        },
+    )
+    assert parent.status_code == 201
+    child = await client.post(
+        "/api/v1/nested-workflow-snapshots/open",
+        json={
+            "owner": {
+                "kind": "nested",
+                "session_id": parent.json()["session_id"],
+            },
+            "parent_node_id": "sub_2",
+            "graph": {"nodes": [], "edges": []},
+        },
+    )
+    assert child.status_code == 201
+
+    deleted = await client.delete("/api/v1/workflows/wf")
+
+    assert deleted.status_code == 200
+    for session_id in (parent.json()["session_id"], child.json()["session_id"]):
+        response = await client.get(f"/api/v1/nested-workflow-snapshots/{session_id}")
+        assert response.status_code == 404
+
+
+async def test_delete_folder_children_removes_each_retained_snapshot_tree(
+    client: httpx.AsyncClient,
+) -> None:
+    session_ids: list[str] = []
+    for workflow_id in ("project/a", "project/sub/b"):
+        created = await client.post(
+            "/api/v1/workflows",
+            json={"name": workflow_id, "display_name": workflow_id.split("/")[-1]},
+        )
+        assert created.status_code == 201
+        opened = await client.post(
+            "/api/v1/nested-workflow-snapshots/open",
+            json={
+                "owner": {
+                    "kind": "root",
+                    "canvas_id": f"workflow:{workflow_id}",
+                    "workflow_id": workflow_id,
+                },
+                "parent_node_id": "sub_1",
+                "graph": {"nodes": [], "edges": []},
+            },
+        )
+        assert opened.status_code == 201
+        session_ids.append(opened.json()["session_id"])
+
+    deleted = await client.request(
+        "DELETE",
+        "/api/v1/workflows/folders/project",
+        json={"policy": "delete_children"},
+    )
+
+    assert deleted.status_code == 200
+    for session_id in session_ids:
+        response = await client.get(f"/api/v1/nested-workflow-snapshots/{session_id}")
+        assert response.status_code == 404
 
 
 async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> None:
@@ -174,11 +262,192 @@ async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> 
         delete = await client.delete(f"/api/v1/workflows/{patched_id}")
         assert delete.status_code == 200
 
+        recreate = await client.post(
+            "/api/v1/workflows",
+            json={"name": patched_id, "display_name": "Recreated"},
+        )
+        assert recreate.status_code == 201
+
     assert connection_manager.workflow_tree_events == [
-        {"action": "workflow_created", "workflow_id": "wf"},
-        {"action": "workflow_updated", "workflow_id": patched_id},
-        {"action": "workflow_deleted", "workflow_id": patched_id},
+        {
+            "action": "workflow_created",
+            "workflow_id": "wf",
+            "identity_generation": 1,
+        },
+        {
+            "action": "workflow_updated",
+            "workflow_id": patched_id,
+            "identity_generation": 1,
+        },
+        {
+            "action": "workflow_deleted",
+            "workflow_id": patched_id,
+            "identity_generation": 2,
+        },
+        {
+            "action": "workflow_created",
+            "workflow_id": patched_id,
+            "identity_generation": 3,
+        },
     ]
+
+
+async def test_delete_rejects_stale_expected_identity_generation_without_event(
+    tmp_path: Path,
+) -> None:
+    connection_manager = _ConnectionManager()
+    async for client in _client(tmp_path, connection_manager=connection_manager):
+        create = await client.post("/api/v1/workflows", json={"name": "wf"})
+        assert create.status_code == 201
+        generation = create.json()["identity_generation"]
+
+        stale = await client.delete(
+            "/api/v1/workflows/wf",
+            params={"expected_identity_generation": generation - 1},
+        )
+        assert stale.status_code == 409
+        assert stale.json() == {
+            "error": "workflow_identity_generation_conflict",
+            "detail": f"Workflow 'wf' generation is {generation}, not expected {generation - 1}",
+            "field": None,
+        }
+        assert (await client.get("/api/v1/workflows/wf")).status_code == 200
+        assert connection_manager.workflow_tree_events == [
+            {
+                "action": "workflow_created",
+                "workflow_id": "wf",
+                "identity_generation": generation,
+            }
+        ]
+
+        deleted = await client.delete(
+            "/api/v1/workflows/wf",
+            params={"expected_identity_generation": generation},
+        )
+        assert deleted.status_code == 200
+        assert deleted.json()["identity_generation"] > generation
+
+
+async def test_committed_delete_ignores_managed_output_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    connection_manager = _ConnectionManager()
+    original_rmtree = workflow_store_module.shutil.rmtree
+    async for client in _client(tmp_path, connection_manager=connection_manager):
+        create = await client.post("/api/v1/workflows", json={"name": "wf"})
+        assert create.status_code == 201
+        managed_path = Path(create.json()["storage_path"])
+        managed_path.mkdir(parents=True)
+
+        def fail_managed_cleanup(path: str | Path, *args: Any, **kwargs: Any) -> None:
+            if Path(path) == managed_path:
+                raise OSError("managed cleanup failed")
+            original_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(workflow_store_module.shutil, "rmtree", fail_managed_cleanup)
+        with caplog.at_level(
+            "ERROR",
+            logger="bioimageflow_server.services.workflow_store",
+        ):
+            deleted = await client.delete("/api/v1/workflows/wf")
+
+        assert deleted.status_code == 200
+        assert (await client.get("/api/v1/workflows/wf")).status_code == 404
+        assert managed_path.exists()
+
+    assert connection_manager.workflow_tree_events[-1] == {
+        "action": "workflow_deleted",
+        "workflow_id": "wf",
+        "identity_generation": 2,
+    }
+    assert "managed output cleanup failed" in caplog.text
+
+
+async def test_committed_delete_ignores_nested_snapshot_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    connection_manager = _ConnectionManager()
+
+    def fail_snapshot_cleanup(
+        _service: NestedWorkflowSnapshotService,
+        _workflow_id: str,
+    ) -> list[Any]:
+        raise OSError("snapshot cleanup failed")
+
+    monkeypatch.setattr(
+        NestedWorkflowSnapshotService,
+        "delete_for_root_workflow",
+        fail_snapshot_cleanup,
+    )
+    async for client in _client(tmp_path, connection_manager=connection_manager):
+        create = await client.post("/api/v1/workflows", json={"name": "wf"})
+        assert create.status_code == 201
+
+        with caplog.at_level(
+            "ERROR",
+            logger="bioimageflow_server.routers.workflows",
+        ):
+            deleted = await client.delete("/api/v1/workflows/wf")
+
+        assert deleted.status_code == 200
+        assert (await client.get("/api/v1/workflows/wf")).status_code == 404
+
+    assert connection_manager.workflow_tree_events[-1] == {
+        "action": "workflow_deleted",
+        "workflow_id": "wf",
+        "identity_generation": 2,
+    }
+    assert "retained nested snapshot cleanup failed" in caplog.text
+
+
+async def test_committed_folder_delete_ignores_nested_snapshot_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    connection_manager = _ConnectionManager()
+
+    def fail_snapshot_cleanup(
+        _service: NestedWorkflowSnapshotService,
+        _workflow_ids: list[str],
+    ) -> list[Any]:
+        raise OSError("folder snapshot cleanup failed")
+
+    monkeypatch.setattr(
+        NestedWorkflowSnapshotService,
+        "delete_for_root_workflows",
+        fail_snapshot_cleanup,
+    )
+    async for client in _client(tmp_path, connection_manager=connection_manager):
+        create = await client.post(
+            "/api/v1/workflows",
+            json={"name": "project/wf"},
+        )
+        assert create.status_code == 201
+
+        with caplog.at_level(
+            "ERROR",
+            logger="bioimageflow_server.routers.workflows",
+        ):
+            deleted = await client.request(
+                "DELETE",
+                "/api/v1/workflows/folders/project",
+                json={"policy": "delete_children"},
+            )
+
+        assert deleted.status_code == 200
+        assert (await client.get("/api/v1/workflows/project/wf")).status_code == 404
+
+    assert connection_manager.workflow_tree_events[-1] == {
+        "action": "folder_deleted",
+        "workflow_id": None,
+        "identity_generation": None,
+    }
+    assert "retained nested snapshot cleanup failed" in caplog.text
 
 
 async def test_activate_workflow_publishes_active_workflow_event(tmp_path: Path) -> None:

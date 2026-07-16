@@ -11,6 +11,7 @@ from bioimageflow_server.models.workflow_draft import (
     WorkflowDraftConflictResponse,
     WorkflowDraftLockedResponse,
     WorkflowDraftPutRequest,
+    WorkflowDraftResetRequest,
     WorkflowDraftResponse,
 )
 from bioimageflow_server.services.workflow_draft import (
@@ -114,6 +115,42 @@ async def put_workflow_draft(
             expected_revision=body.expected_revision,
             updated_by=body.updated_by,
             should_validate=body.validate_,
+            api_base_url=_api_base_url(request),
+        )
+        _publish_workflow_draft_changed(connection_manager, draft)
+        return draft
+    except WorkflowDraftRevisionConflict as exc:
+        return _conflict_response(exc)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{workflow_id:path}/reset-to-saved",
+    response_model=WorkflowDraftResponse,
+    responses={
+        409: {"model": WorkflowDraftConflictResponse},
+        423: {"model": WorkflowDraftLockedResponse},
+    },
+)
+async def reset_workflow_draft_to_saved(
+    workflow_id: str,
+    body: WorkflowDraftResetRequest,
+    request: Request,
+    service: WorkflowDraftService = Depends(get_workflow_draft_service),
+    execution_manager: Any | None = Depends(get_execution_manager),
+    connection_manager: Any | None = Depends(get_connection_manager),
+) -> WorkflowDraftResponse | JSONResponse:
+    locked = _ensure_unlocked(execution_manager)
+    if locked is not None:
+        return locked
+    try:
+        draft = service.reset_draft_to_saved(
+            workflow_id,
+            expected_revision=body.expected_revision,
+            updated_by=body.updated_by,
             api_base_url=_api_base_url(request),
         )
         _publish_workflow_draft_changed(connection_manager, draft)

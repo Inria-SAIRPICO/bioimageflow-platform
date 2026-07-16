@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import ConfirmationService from 'primevue/confirmationservice'
@@ -21,6 +21,15 @@ import { api } from '@/api/client'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import { useExecutionStore } from '@/stores/execution'
+import {
+  _resetCanvasPersistenceForTest,
+  useCanvasPersistence,
+} from '@/composables/useCanvasPersistence'
+import { registerRootCanvas } from '@/test-utils/canvasFixtures'
+import {
+  createInMemoryCanvasPersistence,
+  makeWorkflowDraft,
+} from '@/test-utils/persistenceFixtures'
 import ToolsPanel from '../ToolsPanel.vue'
 import type { ToolMetadata, PackageInfo, Settings } from '@/api/types'
 
@@ -172,6 +181,16 @@ function mountPanel(options: { settings?: Settings | null } = {}) {
 
   const pinia = createPinia()
   setActivePinia(pinia)
+  const workflowId = 'tools-panel-workflow'
+  const canvas = registerRootCanvas(workflowId)
+  const draft = makeWorkflowDraft({ workflow_id: workflowId })
+  const persistence = createInMemoryCanvasPersistence(draft)
+  const canvasPersistence = useCanvasPersistence({
+    descriptor: canvas.descriptor,
+    getWorkflowId: () => workflowId,
+    transports: persistence.transports,
+  })
+  canvasPersistence.initializeFromDraft(draft)
   const settingsStore = useSettingsStore()
   settingsStore.settings = options.settings === undefined
     ? makeSettings({ deployment_mode: 'desktop' })
@@ -195,10 +214,15 @@ function mountPanel(options: { settings?: Settings | null } = {}) {
 
 describe('ToolsPanel', () => {
   beforeEach(() => {
+    _resetCanvasPersistenceForTest()
     setActivePinia(createPinia())
     vi.clearAllMocks()
     requireMock.mockReset()
     setPywebviewDesktop(false)
+  })
+
+  afterEach(() => {
+    _resetCanvasPersistenceForTest()
   })
 
   // --- Task 12: Basic component tests ---

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 vi.mock('@/api/client', () => ({
@@ -8,11 +8,19 @@ vi.mock('@/api/client', () => ({
 import { useExecutionStore } from '@/stores/execution'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIStore } from '@/stores/ui'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import { registerRootCanvas } from '@/test-utils/canvasFixtures'
 
 describe('stores integration', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
+    registerRootCanvas('store-integration', { present: false })
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    canvasSessionRegistry.dispose()
   })
 
   it('all stores coexist in same Pinia instance', () => {

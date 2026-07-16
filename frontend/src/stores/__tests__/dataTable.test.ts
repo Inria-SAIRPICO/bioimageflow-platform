@@ -180,10 +180,10 @@ describe('dataTable store canvas ownership', () => {
 
   it('keeps delayed fixed-canvas responses out of another active canvas and never falls back with no active canvas', async () => {
     const store = useDataTableStore()
-    store.nodeDataCache.shared = response('/legacy.csv', 0)
     const [canvasA, canvasB] = registerCanvases()
 
     expect(store.getNodeData('shared')).toBeUndefined()
+    expect(store.nodeDataCache).toEqual({})
     expect(store.getPageState('shared')).toEqual({
       page: 0,
       pageSize: 50,

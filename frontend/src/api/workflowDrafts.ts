@@ -50,3 +50,14 @@ export async function putWorkflowDraft(
   )
   return data
 }
+
+export async function resetWorkflowDraftToSaved(
+  workflowId: string,
+  expectedRevision: number,
+): Promise<WorkflowDraftResponse> {
+  const { data } = await api.post<WorkflowDraftResponse>(
+    `/api/v1/workflow-drafts/${workflowUrl(workflowId)}/reset-to-saved`,
+    { expected_revision: expectedRevision, updated_by: 'frontend' },
+  )
+  return data
+}

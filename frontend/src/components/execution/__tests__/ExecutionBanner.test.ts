@@ -12,6 +12,28 @@ vi.mock('@/api/client', () => ({
 import ExecutionBanner from '../ExecutionBanner.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import { registerRootCanvas } from '@/test-utils/canvasFixtures'
+
+const EXECUTION_CONTEXT = {
+  execution_id: 'exec-banner',
+  workflow_id: 'banner-workflow',
+  draft_revision: 1,
+} as const
+
+function establishExecution(
+  execution: ReturnType<typeof useExecutionStore>,
+  phase: 'starting' | 'running' = 'running',
+) {
+  execution.applyStatusSnapshot({
+    ...EXECUTION_CONTEXT,
+    state: 'running',
+    last_result: null,
+    progress: null,
+    node_statuses: {},
+  })
+  execution.state = phase
+}
 
 function mountBanner() {
   return mount(ExecutionBanner, {
@@ -23,11 +45,16 @@ function mountBanner() {
 
 describe('ExecutionBanner', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
+    registerRootCanvas(EXECUTION_CONTEXT.workflow_id, {
+      displayName: 'Banner workflow',
+    })
     vi.useFakeTimers()
   })
 
   afterEach(() => {
+    canvasSessionRegistry.dispose()
     vi.useRealTimers()
   })
 
@@ -62,7 +89,7 @@ describe('ExecutionBanner', () => {
   it('shows a non-terminal stopping message until idle is accepted', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'running'
+    establishExecution(exec)
     await nextTick()
     exec.state = 'stopping'
     await nextTick()
@@ -73,7 +100,13 @@ describe('ExecutionBanner', () => {
     expect(wrapper.find('[data-testid="execution-banner-overall-progress"]').exists())
       .toBe(false)
 
-    exec.applyStatusSnapshot({ state: 'idle', last_result: null, progress: null })
+    exec.applyStatusSnapshot({
+      ...EXECUTION_CONTEXT,
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
     await nextTick()
     expect(wrapper.find('[data-testid="execution-banner-headline"]').text())
       .toContain('stopped')
@@ -127,9 +160,10 @@ describe('ExecutionBanner', () => {
   it('shows "Execution complete" on success result', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'running'
+    establishExecution(exec)
     await nextTick()
     exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: true,
       errors: [],
       node_statuses: {},
@@ -144,9 +178,10 @@ describe('ExecutionBanner', () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
     const ui = useUIStore()
-    exec.state = 'running'
+    establishExecution(exec)
     await nextTick()
     exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: false,
       errors: [{ type: 'X', detail: 'kaboom' }],
       node_statuses: {
@@ -163,9 +198,10 @@ describe('ExecutionBanner', () => {
   it('auto-dismisses after 5s on completion', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'running'
+    establishExecution(exec)
     await nextTick()
     exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: true,
       errors: [],
       node_statuses: {},
@@ -181,9 +217,10 @@ describe('ExecutionBanner', () => {
   it('auto-dismisses when completion arrives before the start request resolves', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'starting'
+    establishExecution(exec, 'starting')
     await nextTick()
     exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: true,
       errors: [],
       node_statuses: {},
@@ -215,9 +252,10 @@ describe('ExecutionBanner', () => {
   it('click on terminal banner dismisses immediately', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'running'
+    establishExecution(exec)
     await nextTick()
     exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: true,
       errors: [],
       node_statuses: {},
@@ -232,9 +270,10 @@ describe('ExecutionBanner', () => {
   it('new execution clears pending dismiss timer', async () => {
     const wrapper = mountBanner()
     const exec = useExecutionStore()
-    exec.state = 'running'
+    establishExecution(exec)
     await nextTick()
     exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: true,
       errors: [],
       node_statuses: {},

@@ -217,18 +217,4 @@ describe('useExecutionLock', () => {
     expect(runSpy).toHaveBeenCalledWith(graph, ['selected'], 'wf_a')
   })
 
-  it('unlockAfterExecution triggers a graph re-validation via PUT /graph', async () => {
-    const { unlockAfterExecution } = useExecutionLock()
-
-    const { api } = await import('@/api/client')
-    const mockedApi = api as unknown as { put: ReturnType<typeof vi.fn> }
-    mockedApi.put.mockResolvedValueOnce({ data: { valid: true } })
-
-    await unlockAfterExecution({ nodes: [], edges: [] })
-
-    expect(mockedApi.put).toHaveBeenCalledWith('/api/v1/graph', {
-      graph: { nodes: [], edges: [] },
-      workflow_name: null,
-    })
-  })
 })

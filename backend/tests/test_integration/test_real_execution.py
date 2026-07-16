@@ -105,9 +105,9 @@ class RecordingEventBus:
         self.progress_events: list[tuple[str, str, int, int, float]] = []
         self.node_state_events: list[tuple[str, str, bool, str | None, str | None]] = []
         self.complete_events: list[tuple[bool, list, dict]] = []
-        self.progress_contexts: list[ExecutionContext | None] = []
-        self.node_state_contexts: list[ExecutionContext | None] = []
-        self.complete_contexts: list[ExecutionContext | None] = []
+        self.progress_contexts: list[ExecutionContext] = []
+        self.node_state_contexts: list[ExecutionContext] = []
+        self.complete_contexts: list[ExecutionContext] = []
         self.log_events: list[tuple[str, str, str | None, float]] = []
         self.environment_events: list[tuple[str, str]] = []
 
@@ -120,7 +120,8 @@ class RecordingEventBus:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         self.progress_events.append((node_id, status, row, total_rows, timestamp))
         self.progress_contexts.append(context)
@@ -134,7 +135,8 @@ class RecordingEventBus:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         self.node_state_events.append((node_id, status, cached, error, traceback))
         self.node_state_contexts.append(context)
@@ -144,7 +146,8 @@ class RecordingEventBus:
         success: bool,
         errors: list,
         node_statuses: dict,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         self.complete_events.append((success, errors, node_statuses))
         self.complete_contexts.append(context)
@@ -258,12 +261,7 @@ async def _poll_idle(client: httpx.AsyncClient, timeout: float = 5.0) -> dict[st
 
 
 def _cached_dataframe(storage_path: Path, node_id: str) -> pd.DataFrame:
-    latest_link = (
-        storage_path
-        / "views"
-        / "latest"
-        / f"{node_id}.bioimageflow-link.json"
-    )
+    latest_link = storage_path / "views" / "latest" / f"{node_id}.bioimageflow-link.json"
     assert latest_link.exists(), f"no latest cache link for {node_id}"
     latest_payload = json.loads(latest_link.read_text())
     run_node_dir = (latest_link.parent / latest_payload["target"]).resolve()
@@ -382,13 +380,13 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
     )
     assert validation.valid is True
 
-    await manager.start(original)
+    await manager.start(original, workflow_id="integration-workflow")
     await _drain_manager(manager)
     assert manager.last_result is not None
     assert manager.last_result.node_statuses["source"].cached is False
     assert _cached_dataframe(tmp_path, "source")["value"].tolist() == [2, 3, 4]
 
-    await manager.start(modified)
+    await manager.start(modified, workflow_id="integration-workflow")
     await _drain_manager(manager)
 
     assert manager.last_result is not None
@@ -396,9 +394,7 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
     assert manager.last_result.node_statuses["source"].cached is False
     assert manager.last_result.node_statuses["offset"].cached is False
     assert _cached_dataframe(tmp_path, "source")["value"].tolist() == [10, 11, 12]
-    assert _cached_dataframe(tmp_path, "offset")[["value", "shifted"]].to_dict(
-        orient="list"
-    ) == {
+    assert _cached_dataframe(tmp_path, "offset")[["value", "shifted"]].to_dict(orient="list") == {
         "value": [10, 11, 12],
         "shifted": [15, 16, 17],
     }

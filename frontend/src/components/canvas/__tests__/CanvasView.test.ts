@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, ref, reactive, computed, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import type { GraphState, ToolMetadata } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 
 // --- Mock data ---
 
@@ -119,6 +120,14 @@ let selectionHandler: ((params: any) => void) | null = null
 let dragStartHandler: ((event: any) => void) | null = null
 let dragStopHandler: ((event: any) => void) | null = null
 let dropNextNonEmptySetEdges = false
+let preservedInitialNodeIds: string[] | null = null
+let preservedInitialEdgeIds: string[] | null = null
+let preserveInitialNodeClear = false
+let preserveInitialEdgeClear = false
+
+function hasExactIds(items: any[], ids: string[]): boolean {
+  return items.length === ids.length && items.every((item, index) => item.id === ids[index])
+}
 
 const vueFlowMocks = vi.hoisted(() => ({
   instanceIds: [] as Array<string | undefined>,
@@ -162,10 +171,26 @@ vi.mock('@vue-flow/core', () => {
       // above keeps the same array identity and downstream consumers see
       // the new contents.
       setNodes: (nodes: any[]) => {
+        if (preserveInitialNodeClear && nodes.length === 0) {
+          preserveInitialNodeClear = false
+          return
+        }
+        if (preservedInitialNodeIds !== null && hasExactIds(nodes, preservedInitialNodeIds)) {
+          preservedInitialNodeIds = null
+          return
+        }
         const current = graph?.nodes ?? mockNodes
         current.splice(0, current.length, ...nodes)
       },
       setEdges: (edges: any[]) => {
+        if (preserveInitialEdgeClear && edges.length === 0) {
+          preserveInitialEdgeClear = false
+          return
+        }
+        if (preservedInitialEdgeIds !== null && hasExactIds(edges, preservedInitialEdgeIds)) {
+          preservedInitialEdgeIds = null
+          return
+        }
         if (dropNextNonEmptySetEdges && edges.length > 0) {
           dropNextNonEmptySetEdges = false
           const current = graph?.edges ?? mockEdges
@@ -302,6 +327,13 @@ const apiMocks = vi.hoisted(() => ({
   delete: vi.fn(() => Promise.resolve({ data: {} })),
 }))
 
+const nestedSnapshotMocks = vi.hoisted(() => ({
+  open: vi.fn(),
+  get: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+}))
+
 const toastMocks = vi.hoisted(() => ({ add: vi.fn() }))
 
 vi.mock('primevue/usetoast', () => ({
@@ -310,6 +342,13 @@ vi.mock('primevue/usetoast', () => ({
 
 vi.mock('@/api/client', () => ({
   api: apiMocks,
+}))
+
+vi.mock('@/api/nestedWorkflowSnapshots', () => ({
+  openNestedWorkflowSnapshot: nestedSnapshotMocks.open,
+  getNestedWorkflowSnapshot: nestedSnapshotMocks.get,
+  putNestedWorkflowSnapshot: nestedSnapshotMocks.put,
+  deleteNestedWorkflowSnapshot: nestedSnapshotMocks.delete,
 }))
 
 vi.mock('@/composables/useAutoSave', () => ({
@@ -402,6 +441,10 @@ import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
+import {
+  makeAcceptedNestedSnapshot,
+  openAcceptedNestedSession,
+} from '@/test-utils/nestedSessionFixtures'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -410,13 +453,37 @@ function mountCanvas(propsData: {
   parentCanvasPanelId?: string
   params?: Record<string, unknown>
 } = {}) {
+  const explicitGraph = propsData.params !== undefined
+    && Object.prototype.hasOwnProperty.call(propsData.params, 'graph')
+  const fixtureGraph = explicitGraph
+    ? propsData.params!.graph
+    : graphSyncMocks.serializeGraph({ nodes: mockNodes, edges: mockEdges })
+  if (!propsData.subWorkflowSessionId && !explicitGraph) {
+    // Most focused CanvasView tests seed the Vue Flow mock directly. Model
+    // that state as the canonical root panel's initial graph, while avoiding
+    // an asynchronous clear/reinstall cycle that would race the assertion the
+    // test is actually exercising.
+    preservedInitialNodeIds = mockNodes.map(node => node.id)
+    preservedInitialEdgeIds = mockEdges.map(edge => edge.id)
+    preserveInitialNodeClear = true
+    preserveInitialEdgeClear = true
+  }
+  const params = propsData.subWorkflowSessionId
+    ? propsData.params
+    : {
+        panelId: 'workflow:analysis',
+        workflowName: 'analysis',
+        workflowDisplayName: 'Analysis',
+        graph: fixtureGraph,
+        ...propsData.params,
+      }
   return mount(CanvasView, {
     props: {
       nodes: propsData.nodes ?? [],
       edges: propsData.edges ?? [],
       subWorkflowSessionId: propsData.subWorkflowSessionId,
       parentCanvasPanelId: propsData.parentCanvasPanelId,
-      params: propsData.params,
+      params,
     },
     attachTo: document.body,
   })
@@ -498,7 +565,7 @@ function draftResponse(
   graph: { nodes: any[]; edges: any[] },
   dirtyAgainstSaved = true,
   workflowId = 'wf',
-) {
+): WorkflowDraftResponse {
   return {
     draft_version: 1,
     workflow_id: workflowId,
@@ -540,6 +607,10 @@ describe('CanvasView', () => {
     dragStartHandler = null
     dragStopHandler = null
     dropNextNonEmptySetEdges = false
+    preservedInitialNodeIds = null
+    preservedInitialEdgeIds = null
+    preserveInitialNodeClear = false
+    preserveInitialEdgeClear = false
     vueFlowMocks.instanceIds.length = 0
     vueFlowMocks.isolateByInstance = false
     vueFlowMocks.graphs.clear()
@@ -585,6 +656,10 @@ describe('CanvasView', () => {
     apiMocks.put.mockReset().mockResolvedValue({ data: {} })
     apiMocks.patch.mockReset().mockResolvedValue({ data: {} })
     apiMocks.delete.mockReset().mockResolvedValue({ data: {} })
+    nestedSnapshotMocks.open.mockReset()
+    nestedSnapshotMocks.get.mockReset()
+    nestedSnapshotMocks.put.mockReset()
+    nestedSnapshotMocks.delete.mockReset()
     const resolvedOutputsStore = useResolvedOutputsStore()
     for (const nodeId of Object.keys(resolvedOutputsStore.resolvedOutputsByNodeId)) {
       delete resolvedOutputsStore.resolvedOutputsByNodeId[nodeId]
@@ -667,7 +742,6 @@ describe('CanvasView', () => {
       })
       persistenceMocks.queueGraph.mockClear()
       autoSaveMocks.scheduleAutoSave.mockClear()
-      const scheduleSave = vi.spyOn(useWorkflowDraftStore(), 'scheduleSave')
 
       connectHandler!({
         source: 'node_a',
@@ -678,7 +752,6 @@ describe('CanvasView', () => {
 
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
-      expect(scheduleSave).not.toHaveBeenCalled()
       w.unmount()
     })
 
@@ -1503,9 +1576,10 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('registers a nested canvas with its parent canvas identity', () => {
+    it('registers a nested canvas with its parent canvas identity', async () => {
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+        parentCanvasId: 'workflow:analysis',
         parentWorkflowName: 'analysis',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -1528,6 +1602,78 @@ describe('CanvasView', () => {
         },
       })
       w.unmount()
+    })
+
+    it('does not open a nested tab when its durable snapshot resolves after unmount', async () => {
+      const nestedGraph = { nodes: [], edges: [] }
+      mockNodes = [makeParentSubWorkflowNode(nestedGraph)]
+      const openedSnapshot = deferred<any>()
+      nestedSnapshotMocks.open.mockReturnValueOnce(openedSnapshot.promise)
+      const opened = vi.fn()
+      window.addEventListener('bioimageflow:sub-workflow-session-opened', opened)
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:closing',
+          workflowName: 'closing',
+        },
+      })
+
+      const opening = (w.vm as any).openSubWorkflow('sub_1')
+      await vi.waitFor(() => expect(nestedSnapshotMocks.open).toHaveBeenCalledOnce())
+      w.unmount()
+      openedSnapshot.resolve(makeAcceptedNestedSnapshot({
+        owner: {
+          kind: 'root',
+          canvas_id: 'workflow:closing',
+          workflow_id: 'closing',
+        },
+        parentNodeId: 'sub_1',
+        graph: nestedGraph,
+      }))
+
+      await expect(opening).resolves.toBeNull()
+      expect(opened).not.toHaveBeenCalled()
+      expect(useSubWorkflowSessionsStore().sessions).toEqual([])
+      window.removeEventListener('bioimageflow:sub-workflow-session-opened', opened)
+    })
+
+    it('does not close a reused nested session when its second opener unmounts', async () => {
+      const nestedGraph = { nodes: [], edges: [] }
+      const sessions = useSubWorkflowSessionsStore()
+      const existing = await openAcceptedNestedSession(
+        sessions,
+        nestedSnapshotMocks.open,
+        {
+          owner: {
+            kind: 'root',
+            canvas_id: 'workflow:closing',
+            workflow_id: 'closing',
+          },
+          parentCanvasId: 'workflow:closing',
+          parentWorkflowName: 'closing',
+          parentNodeId: 'sub_1',
+          graph: nestedGraph,
+        },
+      )
+      nestedSnapshotMocks.open.mockClear()
+      mockNodes = [makeParentSubWorkflowNode(nestedGraph)]
+      const opened = vi.fn()
+      window.addEventListener('bioimageflow:sub-workflow-session-opened', opened)
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:closing',
+          workflowName: 'closing',
+        },
+      })
+
+      const opening = (w.vm as any).openSubWorkflow('sub_1')
+      w.unmount()
+
+      await expect(opening).resolves.toBeNull()
+      expect(nestedSnapshotMocks.open).not.toHaveBeenCalled()
+      expect(opened).not.toHaveBeenCalled()
+      expect(sessions.sessionById(existing.id)).toBe(existing)
+      window.removeEventListener('bioimageflow:sub-workflow-session-opened', opened)
     })
 
     it('does not resume graph application after the canvas unmounts', async () => {
@@ -2368,7 +2514,8 @@ describe('CanvasView', () => {
       const workflowStore = useWorkflowStore()
       workflowStore.current = { name: 'analysis', display_name: 'Analysis' } as any
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+        parentCanvasId: 'workflow:analysis',
         parentWorkflowName: 'analysis',
         parentSourceWorkflowName: 'library',
         parentNodeId: 'sub_1',
@@ -2402,16 +2549,18 @@ describe('CanvasView', () => {
         }],
         edges: [],
       }
-      mockSavedWorkflow(graph, 'analysis')
+      mockSavedWorkflow(graph, 'library')
       const w = mountCanvas()
       const vm = w.vm as any
+      await flushPromises()
+      await nextTick()
 
       await vm.onAddWorkflowNode({
-        workflowName: 'analysis',
+        workflowName: 'library',
         position: { x: 125, y: 225 },
       })
 
-      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/analysis')
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/library')
       expect(mockNodes).toHaveLength(1)
       expect(mockNodes[0]).toMatchObject({
         type: 'sub_workflow',
@@ -2419,7 +2568,7 @@ describe('CanvasView', () => {
         data: {
           toolName: '__sub_workflow__',
           sub_workflow: graph,
-          source_workflow_name: 'analysis',
+          source_workflow_name: 'library',
         },
       })
       expect(w.emitted('graph-changed')).toBeTruthy()
@@ -2485,6 +2634,7 @@ describe('CanvasView', () => {
       // newer version.
       store.tools = [makeTool({ package_version: '2.0.0' })] as any
       await nextTick()
+      await flushPromises()
 
       expect(mockNodes[0].data.tool.package_version).toBe('2.0.0')
       w.unmount()
@@ -3142,6 +3292,7 @@ describe('CanvasView', () => {
         }),
       ] as any
       await nextTick()
+      await flushPromises()
 
       expect(mockNodes[0].data.output_templates).toEqual({})
       w.unmount()
@@ -3270,7 +3421,7 @@ describe('CanvasView', () => {
         target_input: 'image',
       }
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -3586,7 +3737,7 @@ describe('CanvasView', () => {
 
     it('flushes and applies only the exact accepted nested snapshot before marking clean', async () => {
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:parent',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -3687,7 +3838,7 @@ describe('CanvasView', () => {
 
     it('keeps the durable accepted snapshot dirty when its parent canvas is missing', async () => {
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:missing',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -3747,7 +3898,7 @@ describe('CanvasView', () => {
     it('marks a clean no-response save dirty and reports every failed attempt', async () => {
       const sessions = useSubWorkflowSessionsStore()
       const baseline = makeNestedGraph(1)
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:missing',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -3780,7 +3931,7 @@ describe('CanvasView', () => {
 
     it('does not apply an accepted nested snapshot after its canvas unmounts', async () => {
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:parent',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -3832,7 +3983,7 @@ describe('CanvasView', () => {
 
     it('applies a nested snapshot event only for its exact session and parent canvas', async () => {
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:parent-a',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -3916,7 +4067,7 @@ describe('CanvasView', () => {
       const sessions = useSubWorkflowSessionsStore()
       const baseline = makeNestedGraph(1)
       const accepted = makeNestedGraph(2)
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:parent',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -3974,7 +4125,7 @@ describe('CanvasView', () => {
     it('returns a locked rejection without creating a parent conflict or transition', async () => {
       const sessions = useSubWorkflowSessionsStore()
       const baseline = makeNestedGraph(1)
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:parent',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -4009,7 +4160,7 @@ describe('CanvasView', () => {
       const sessions = useSubWorkflowSessionsStore()
       const baseline = makeNestedGraph(1)
       const accepted = makeNestedGraph(2)
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:parent',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -4089,7 +4240,7 @@ describe('CanvasView', () => {
         type: 'column_ref',
       })
 
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentCanvasId: 'workflow:parent',
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
@@ -4168,7 +4319,7 @@ describe('CanvasView', () => {
 
     it('publishes nested parameter edits through the same synchronous canvas command', async () => {
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -4210,7 +4361,7 @@ describe('CanvasView', () => {
 
     it('publishes nested NodePanel edits synchronously through the same commands', async () => {
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -4264,7 +4415,7 @@ describe('CanvasView', () => {
       const tool = makeTool()
       useToolRegistryStore().tools = [tool] as any
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -4357,7 +4508,7 @@ describe('CanvasView', () => {
       useToolRegistryStore().tools = [tool] as any
       mockNodes = reactive([]) as any[]
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -4436,7 +4587,7 @@ describe('CanvasView', () => {
       const toolStore = useToolRegistryStore()
       toolStore.tools = [makeTool()] as any
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentWorkflowName: 'parent',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -4501,9 +4652,15 @@ describe('CanvasView', () => {
         }],
         published_outputs: [],
       }
-      mockSavedWorkflow(graph as any, 'analysis')
-
-      const w = mountCanvas()
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+          workflowDisplayName: 'Analysis',
+          graph: graph as any,
+          dirty: false,
+        },
+      })
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -4615,7 +4772,7 @@ describe('CanvasView', () => {
         provisional: true,
       })
       expect(subNode.data.status).toBe('executed')
-      expect(clearCanvasCache).toHaveBeenCalledWith('canvas', 'sub_1')
+      expect(clearCanvasCache).toHaveBeenCalledWith('workflow:analysis', 'sub_1')
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
 
@@ -4814,7 +4971,7 @@ describe('CanvasView', () => {
 
       const w = mountCanvas({
         params: {
-          panelId: 'canvas:wf',
+          panelId: 'workflow:wf',
           workflowName: 'wf',
           workflowDisplayName: 'WF',
           graph: options.initialGraph,
@@ -4840,8 +4997,6 @@ describe('CanvasView', () => {
         remoteGraph,
         remoteDirty: false,
       })
-      const scheduleSaveSpy = vi.spyOn(draftStore, 'scheduleSave')
-
       draftStore.noteRemoteChange(draftChanged(2, { dirty_against_saved: false }))
       await flushPromises()
       await nextTick()
@@ -4861,7 +5016,6 @@ describe('CanvasView', () => {
         nodes: [expect.objectContaining({ id: 'remote' })],
       }))
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
-      expect(scheduleSaveSpy).not.toHaveBeenCalled()
       expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
       w.unmount()
     })
@@ -4922,7 +5076,6 @@ describe('CanvasView', () => {
         initialGraph,
         initialDirty: true,
       })
-      const scheduleSaveSpy = vi.spyOn(draftStore, 'scheduleSave')
       apiMocks.get.mockClear()
       apiMocks.get.mockResolvedValueOnce({ data: draftResponse(2, remoteGraph, false) })
 
@@ -4942,7 +5095,6 @@ describe('CanvasView', () => {
       )
       expect(useUIStore().hasUnsavedChanges).toBe(false)
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
-      expect(scheduleSaveSpy).not.toHaveBeenCalled()
       expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
       w.unmount()
     })
@@ -5072,7 +5224,7 @@ describe('CanvasView', () => {
       apiMocks.get.mockClear()
 
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
-        detail: { panelId: 'canvas:other' },
+        detail: { panelId: 'workflow:other' },
       }))
       await nextTick()
       draftStore.noteRemoteChange(draftChanged(2))
@@ -5109,7 +5261,7 @@ describe('CanvasView', () => {
       })
       const w = mountCanvas({
         params: {
-          panelId: 'canvas:b',
+          panelId: 'workflow:b',
           workflowName: 'b',
           workflowDisplayName: 'B',
           graph: initialGraph,
@@ -5121,7 +5273,7 @@ describe('CanvasView', () => {
       expect(mockNodes.map((node: any) => node.id)).toEqual(['old-b'])
 
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
-        detail: { panelId: 'canvas:b' },
+        detail: { panelId: 'workflow:b' },
       }))
       await flushPromises()
       await nextTick()
@@ -5150,7 +5302,7 @@ describe('CanvasView', () => {
 
       const w = mountCanvas({
         params: {
-          panelId: 'canvas:wf',
+          panelId: 'workflow:wf',
           workflowName: 'wf',
           workflowDisplayName: 'WF',
           graph: { nodes: [graphNode('old')], edges: [] },
@@ -5161,7 +5313,7 @@ describe('CanvasView', () => {
       await nextTick()
       await flushPromises()
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
-        detail: { panelId: 'canvas:other' },
+        detail: { panelId: 'workflow:other' },
       }))
       await nextTick()
       graphSyncMocks.syncGraph.mockClear()
@@ -5169,7 +5321,7 @@ describe('CanvasView', () => {
       apiMocks.get.mockClear()
 
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
-        detail: { panelId: 'canvas:wf' },
+        detail: { panelId: 'workflow:wf' },
       }))
       await nextTick()
       expect(draftStore.workflowId).toBe('wf')
@@ -5202,7 +5354,7 @@ describe('CanvasView', () => {
       }
       const w = mountCanvas({
         params: {
-          panelId: 'canvas:wf',
+          panelId: 'workflow:wf',
           workflowName: 'wf',
           workflowDisplayName: 'WF',
           graph,
@@ -5217,7 +5369,7 @@ describe('CanvasView', () => {
       graphSyncMocks.syncGraphState.mockClear()
 
       window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
-        detail: { panelId: 'canvas:wf' },
+        detail: { panelId: 'workflow:wf' },
       }))
       await nextTick()
 
@@ -5235,7 +5387,7 @@ describe('CanvasView', () => {
       apiMocks.get.mockResolvedValueOnce({ data: draftResponse(1, rootGraph) })
       await draftStore.loadDraft('wf')
       const sessions = useSubWorkflowSessionsStore()
-      const session = sessions.openSession({
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
         parentWorkflowName: 'wf',
         parentNodeId: 'sub_1',
         parentNodeName: 'Sub 1',
@@ -5259,10 +5411,8 @@ describe('CanvasView', () => {
     })
   })
 
-  // --- Reload from IndexedDB ---
-
-  describe('restore persisted workflow on mount', () => {
-    function savedNode(id: string, x: number) {
+  describe('canonical initial graph installation', () => {
+    function savedNode(id: string, x: number): GraphState['nodes'][number] {
       return {
         id,
         name: id,
@@ -5276,7 +5426,11 @@ describe('CanvasView', () => {
       }
     }
 
-    function savedEdge(id: string, source: string, target: string) {
+    function savedEdge(
+      id: string,
+      source: string,
+      target: string,
+    ): GraphState['edges'][number] {
       return {
         type: 'column_ref',
         id,
@@ -5285,6 +5439,27 @@ describe('CanvasView', () => {
         source_output: 'result',
         target_input: 'image',
       }
+    }
+
+    function mountInitialGraph(
+      graph: GraphState,
+      options: {
+        draft?: ReturnType<typeof draftResponse>
+        dirty?: boolean
+        tools?: ToolMetadata[]
+      } = {},
+    ) {
+      useToolRegistryStore().tools = options.tools ?? [makeTool()]
+      return mountCanvas({
+        params: {
+          panelId: 'workflow:saved',
+          workflowName: 'saved',
+          workflowDisplayName: 'Saved workflow',
+          graph,
+          draft: options.draft,
+          dirty: options.dirty ?? false,
+        },
+      })
     }
 
     it('initializes root authority from the exact draft used to open the canvas', async () => {
@@ -5310,18 +5485,17 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('projects accepted draft validation after installing the startup graph', async () => {
-      const name = 'saved'
+    it('projects accepted draft validation after installing the canonical graph', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      const graph = { nodes, edges }
+      const graph: GraphState = { nodes, edges }
       const edgeError = {
         type: 'type_incompatible' as const,
         detail: 'Incompatible edge types',
         edge_id: 'e1',
       }
       const acceptedDraft = {
-        ...draftResponse(1, graph, false, name),
+        ...draftResponse(1, graph, false, 'saved'),
         validation: {
           valid: false,
           node_statuses: {
@@ -5331,47 +5505,8 @@ describe('CanvasView', () => {
           errors: [edgeError],
         },
       }
-      apiMocks.get.mockImplementation((url: string) => {
-        if (url === '/api/v1/workflows/tree') {
-          return Promise.reject(new Error('Tree endpoint unavailable'))
-        }
-        if (url === '/api/v1/workflows') {
-          return Promise.resolve({
-            data: [{
-              name,
-              display_name: 'Saved workflow',
-              last_modified: '2026-05-21T11:00:00Z',
-            }],
-          })
-        }
-        if (url === `/api/v1/workflows/${name}`) {
-          return Promise.resolve({
-            data: {
-              info: {
-                name,
-                display_name: 'Saved workflow',
-                last_modified: '2026-05-21T11:00:00Z',
-              },
-              graph,
-              missing_packages: [],
-              missing_tools: [],
-            },
-          })
-        }
-        if (url === `/api/v1/workflow-drafts/${name}`) {
-          return Promise.resolve({ data: acceptedDraft })
-        }
-        if (url === '/api/v1/tools') {
-          return Promise.resolve({ data: [makeTool()] })
-        }
-        return Promise.resolve({ data: {} })
-      })
-      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(name)
-      persistenceMocks.initializeFromDraft.mockImplementationOnce((draft) => {
-        graphSyncMocks.apis[0].validationResult.value = draft.validation
-      })
-
-      const w = mountCanvas()
+      const w = mountInitialGraph(graph, { draft: acceptedDraft })
+      graphSyncMocks.apis[0].validationResult.value = acceptedDraft.validation
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -5385,13 +5520,10 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('restores both nodes and edges from persisted state', async () => {
+    it('installs both nodes and edges from panel parameters', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      mockSavedWorkflow({ nodes, edges })
-
-      const w = mountCanvas()
-      // Allow onMounted's async chain (await loadWorkflow + await nextTick) to settle.
+      const w = mountInitialGraph({ nodes, edges })
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -5413,34 +5545,11 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('does not autosave or sync a partial graph while restoring a clean workflow', async () => {
-      const name = 'saved'
+    it('does not autosave or sync a partial graph while installing a clean canvas', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      const graph = { nodes, edges }
-
-      apiMocks.get.mockImplementation((url: string) => {
-        if (url === '/api/v1/workflows') {
-          return Promise.resolve({
-            data: [{ name, display_name: 'Saved workflow' }],
-          })
-        }
-        if (url === `/api/v1/workflows/${name}`) {
-          return Promise.resolve({
-            data: {
-              info: { name, display_name: 'Saved workflow' },
-              graph,
-              missing_packages: [],
-              missing_tools: [],
-            },
-          })
-        }
-        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
-        return Promise.resolve({ data: {} })
-      })
-      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(name)
-
-      const w = mountCanvas()
+      const graph: GraphState = { nodes, edges }
+      const w = mountInitialGraph(graph)
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -5453,15 +5562,12 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('keeps the loaded graph authoritative if Vue Flow drops restored edges', async () => {
-      const name = 'saved'
+    it('keeps the panel graph authoritative if Vue Flow drops installed edges', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      const graph = { nodes, edges }
-      mockSavedWorkflow(graph, name)
+      const graph: GraphState = { nodes, edges }
       dropNextNonEmptySetEdges = true
-
-      const w = mountCanvas()
+      const w = mountInitialGraph(graph)
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -5474,16 +5580,13 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('does not let late tool metadata refresh overwrite authoritative edges', async () => {
+    it('preserves authoritative edges when persisting a late tool metadata refresh', async () => {
       mockNodes = reactive([]) as any[]
-      const name = 'saved'
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      const graph = { nodes, edges }
-      mockSavedWorkflow(graph, name, [])
+      const graph: GraphState = { nodes, edges }
       dropNextNonEmptySetEdges = true
-
-      const w = mountCanvas()
+      const w = mountInitialGraph(graph, { tools: [makeTool()] })
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -5494,6 +5597,7 @@ describe('CanvasView', () => {
       graphSyncMocks.syncGraph.mockClear()
       graphSyncMocks.syncGraphState.mockClear()
       autoSaveMocks.scheduleAutoSave.mockClear()
+      persistenceMocks.queueGraph.mockClear()
       const graphChangedCount = w.emitted('graph-changed')?.length ?? 0
 
       const store = useToolRegistryStore()
@@ -5507,196 +5611,11 @@ describe('CanvasView', () => {
       expect(mockEdges).toEqual([])
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
-      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
-      expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount)
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({ edges }))
+      expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
       expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
-      expect(graphSyncMocks.revalidateGraphState).toHaveBeenCalledTimes(1)
-      expect(graphSyncMocks.revalidateGraphState).toHaveBeenCalledWith(expect.objectContaining({
-        edges,
-      }))
-
-      w.unmount()
-    })
-
-    it('ignores stale autosave entries older than the server workflow', async () => {
-      const name = 'saved'
-      const serverGraph = {
-        nodes: [savedNode('a', 100), savedNode('b', 400)],
-        edges: [savedEdge('e1', 'a', 'b')],
-      }
-      const staleGraph = {
-        nodes: [savedNode('stale', 100)],
-        edges: [],
-      }
-      const lastModified = '2026-04-30T12:00:00.000Z'
-      let rejectDraft!: (reason: Error) => void
-
-      apiMocks.get.mockImplementation((url: string) => {
-        if (url === '/api/v1/workflows') {
-          return Promise.resolve({
-            data: [{
-              name,
-              display_name: 'Saved workflow',
-              path: '/tmp/saved.bioflow',
-              last_modified: lastModified,
-            }],
-          })
-        }
-        if (url === `/api/v1/workflows/${name}`) {
-          return Promise.resolve({
-            data: {
-              info: {
-                name,
-                display_name: 'Saved workflow',
-                path: '/tmp/saved.bioflow',
-                last_modified: lastModified,
-              },
-              graph: serverGraph,
-              missing_packages: [],
-              missing_tools: [],
-            },
-          })
-        }
-        if (url === `/api/v1/workflow-drafts/${name}`) {
-          return new Promise((_resolve, reject) => {
-            rejectDraft = reject
-          })
-        }
-        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
-        return Promise.resolve({ data: {} })
-      })
-      autoSaveMocks.loadMostRecentAutoSave.mockResolvedValueOnce({
-        name,
-        graph: staleGraph,
-        timestamp: Date.parse(lastModified) - 1000,
-      })
-
-      const w = mountCanvas()
-      await flushPromises()
-      useWorkflowStore().current = {
-        name: 'other',
-        display_name: 'Other workflow',
-        last_modified: '2026-04-30T10:00:00.000Z',
-      } as any
-      rejectDraft(new Error('No workflow draft'))
-      await flushPromises()
-      await nextTick()
-      await flushPromises()
-
-      expect(mockNodes.map((node: any) => node.id)).toEqual(['a', 'b'])
-      expect(mockEdges).toHaveLength(1)
-      expect(mockEdges[0].id).toBe('e1')
-      expect(autoSaveMocks.clearAutoSave).toHaveBeenCalledWith(name)
-
-      w.unmount()
-    })
-
-    it('loads last-opened renamed workflow when a stale autosave uses the old name', async () => {
-      const oldName = 'Untitled'
-      const newName = 'new_workflow'
-      const serverGraph = {
-        nodes: [savedNode('a', 100), savedNode('b', 400)],
-        edges: [savedEdge('e1', 'a', 'b')],
-      }
-      const staleGraph = {
-        nodes: [savedNode('stale', 100)],
-        edges: [],
-      }
-
-      apiMocks.get.mockImplementation((url: string) => {
-        if (url === '/api/v1/workflows') {
-          return Promise.resolve({
-            data: [{
-              name: newName,
-              display_name: 'New workflow',
-              path: '/tmp/new_workflow.json',
-              last_modified: '2026-04-30T12:00:00.000Z',
-            }],
-          })
-        }
-        if (url === `/api/v1/workflows/${newName}`) {
-          return Promise.resolve({
-            data: {
-              info: {
-                name: newName,
-                display_name: 'New workflow',
-                path: '/tmp/new_workflow.json',
-                last_modified: '2026-04-30T12:00:00.000Z',
-              },
-              graph: serverGraph,
-              missing_packages: [],
-              missing_tools: [],
-            },
-          })
-        }
-        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
-        return Promise.resolve({ data: {} })
-      })
-      autoSaveMocks.loadMostRecentAutoSave.mockResolvedValueOnce({
-        name: oldName,
-        graph: staleGraph,
-        timestamp: Date.parse('2026-04-30T12:00:01.000Z'),
-      })
-      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(newName)
-
-      const w = mountCanvas()
-      await flushPromises()
-      await nextTick()
-      await flushPromises()
-
-      expect(mockNodes.map((node: any) => node.id)).toEqual(['a', 'b'])
-      expect(mockEdges).toHaveLength(1)
-      expect(mockEdges[0].id).toBe('e1')
-      expect(autoSaveMocks.clearAutoSave).toHaveBeenCalledWith(oldName)
-
-      w.unmount()
-    })
-
-    it('clears stale startup workflow state when server load returns 404', async () => {
-      const targetName = 'missing'
-      apiMocks.get.mockImplementation((url: string) => {
-        if (url === '/api/v1/workflows/tree') {
-          return Promise.resolve({
-            data: {
-              path: '',
-              display_name: 'workspace',
-              folders: [],
-              workflows: [{
-                id: targetName,
-                name: targetName,
-                folder: '',
-                display_name: 'Missing',
-                path: '/tmp/missing/workflow.json',
-                last_modified: '2026-04-30T12:00:00.000Z',
-              }],
-            },
-          })
-        }
-        if (url === `/api/v1/workflows/${targetName}`) {
-          return Promise.reject(new Error('404'))
-        }
-        if (url === '/api/v1/tools') return Promise.resolve({ data: [makeTool()] })
-        return Promise.resolve({ data: {} })
-      })
-      apiMocks.post.mockResolvedValueOnce({
-        data: {
-          name: 'Untitled',
-          display_name: 'Untitled',
-        },
-      })
-      autoSaveMocks.getLastOpenedWorkflow.mockResolvedValueOnce(targetName)
-
-      const w = mountCanvas()
-      await flushPromises()
-      await nextTick()
-      await flushPromises()
-
-      expect(autoSaveMocks.clearAutoSave).toHaveBeenCalledWith(targetName)
-      expect(autoSaveMocks.setLastOpenedWorkflow).toHaveBeenCalledWith(null)
-      expect(apiMocks.post).toHaveBeenCalledWith(
-        '/api/v1/workflows',
-        { name: 'Untitled', display_name: 'Untitled' },
-      )
+      expect(graphSyncMocks.revalidateGraphState).not.toHaveBeenCalled()
 
       w.unmount()
     })
@@ -5704,9 +5623,7 @@ describe('CanvasView', () => {
     it('sets nodes before edges so Vue Flow handles exist when edges attach', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
       const edges = [savedEdge('e1', 'a', 'b')]
-      mockSavedWorkflow({ nodes, edges })
-
-      // Track call order: the restore path must populate nodes into Vue Flow's
+      // Track call order: the install path must populate nodes into Vue Flow's
       // internal state before edges, otherwise edges reference nodes/handles
       // that don't exist yet and Vue Flow drops them from the rendered graph.
       const callOrder: string[] = []
@@ -5728,7 +5645,7 @@ describe('CanvasView', () => {
       void setNodesCalls
       void setEdgesCalls
 
-      const w = mountCanvas()
+      const w = mountInitialGraph({ nodes, edges })
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -5743,8 +5660,8 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('no-op when storage is empty', async () => {
-      const w = mountCanvas()
+    it('installs an empty graph without creating nodes or edges', async () => {
+      const w = mountInitialGraph({ nodes: [], edges: [] })
       await flushPromises()
       await nextTick()
 
@@ -5754,58 +5671,9 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
-    it('no-op when storage has zero nodes', async () => {
-      mockSavedWorkflow({ nodes: [], edges: [] })
-
-      const w = mountCanvas()
-      await flushPromises()
-      await nextTick()
-
-      expect(mockNodes).toHaveLength(0)
-      expect(mockEdges).toHaveLength(0)
-
-      w.unmount()
-    })
-
-    it('restores edges even when the tool registry is empty (restore-race)', async () => {
-      // Regression for a Firefox-specific bug where tool fetch was still in
-      // flight while CanvasView's onMounted restored edges. Startup now awaits
-      // tool fetch before applying the saved graph, so the registry can be
-      // empty at mount time without rejecting restored connections.
-      const store = useToolRegistryStore()
-      store.tools = [] as any // registry empty — as if fetchTools hasn't resolved
-
+    it('preserves positional edges from the canonical graph', async () => {
       const nodes = [savedNode('a', 100), savedNode('b', 400)]
-      const edges = [savedEdge('e1', 'a', 'b')]
-      mockSavedWorkflow({ nodes, edges })
-
-      const w = mountCanvas()
-      await flushPromises()
-      await nextTick()
-      await flushPromises()
-
-      // Even though the registry is empty, isValidConnection should accept
-      // the connection using node.data.tool.
-      const vm = w.vm as any
-      const ok = vm.isValidConnection({
-        source: 'a',
-        target: 'b',
-        sourceHandle: 'result',
-        targetHandle: 'image',
-      })
-      expect(ok).toBe(true)
-
-      // And the restored edges must all be present in the Vue Flow state.
-      expect(mockEdges).toHaveLength(1)
-      expect(mockEdges[0].source).toBe('a')
-      expect(mockEdges[0].target).toBe('b')
-
-      w.unmount()
-    })
-
-    it('preserves positional edges (separate edge type)', async () => {
-      const nodes = [savedNode('a', 100), savedNode('b', 400)]
-      const edges = [
+      const edges: GraphState['edges'] = [
         {
           type: 'positional',
           id: 'e_pos',
@@ -5814,9 +5682,7 @@ describe('CanvasView', () => {
           positional_index: 0,
         },
       ]
-      mockSavedWorkflow({ nodes, edges })
-
-      const w = mountCanvas()
+      const w = mountInitialGraph({ nodes, edges })
       await flushPromises()
       await nextTick()
       await flushPromises()
@@ -6173,7 +6039,7 @@ describe('CanvasView', () => {
 
       const calls = (resolvedStore.refreshCanvasResolvedOutputs as any).mock.calls
       const calledForJoin = calls.some(
-        (c: any[]) => c[0] === 'canvas' && c[1] === 'join_1',
+        (c: any[]) => c[0] === 'workflow:analysis' && c[1] === 'join_1',
       )
       expect(calledForJoin).toBe(true)
       w.unmount()
@@ -6246,7 +6112,7 @@ describe('CanvasView', () => {
 
       const calls = (resolvedStore.refreshCanvasResolvedOutputs as any).mock.calls
       const calledForJoin = calls.some(
-        (c: any[]) => c[0] === 'canvas' && c[1] === 'join_1',
+        (c: any[]) => c[0] === 'workflow:analysis' && c[1] === 'join_1',
       )
       expect(calledForJoin).toBe(true)
       w.unmount()
@@ -6298,7 +6164,7 @@ describe('CanvasView', () => {
 
       const calls = (resolvedStore.refreshCanvasResolvedOutputs as any).mock.calls
       const calledForFilter = calls.some(
-        (c: any[]) => c[0] === 'canvas' && c[1] === 'filter_1',
+        (c: any[]) => c[0] === 'workflow:analysis' && c[1] === 'filter_1',
       )
       expect(calledForFilter).toBe(false)
       w.unmount()

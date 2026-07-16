@@ -184,9 +184,7 @@ def test_create_list_and_get_empty_workflow(store: WorkflowStoreService) -> None
 
 
 def test_create_nested_workflow_and_tree(store: WorkflowStoreService) -> None:
-    info = store.create_workflow(
-        WorkflowCreate(name="segmentation/nuclei", display_name="Nuclei")
-    )
+    info = store.create_workflow(WorkflowCreate(name="segmentation/nuclei", display_name="Nuclei"))
 
     assert info.id == "segmentation/nuclei"
     assert info.name == "nuclei"
@@ -374,6 +372,8 @@ def test_move_workflow_between_folders(store: WorkflowStoreService) -> None:
     )
 
     assert moved.id == "analysis/nuclei"
+    assert moved.identity_generation == 1
+    assert store.workflow_generation("segmentation/nuclei") == 2
     assert (store.root_dir / "analysis" / "nuclei" / "workflow.json").exists()
     assert not (store.root_dir / "segmentation" / "nuclei").exists()
 
@@ -501,9 +501,10 @@ def test_folder_move_preflights_all_child_drafts_before_renaming(
 
     for workflow_id in workflow_ids:
         assert store.get_workflow(workflow_id).info.id == workflow_id
-    assert json.loads(_draft_json(store, "project/one").read_text(encoding="utf-8"))[
-        "workflow_id"
-    ] == "project/one"
+    assert (
+        json.loads(_draft_json(store, "project/one").read_text(encoding="utf-8"))["workflow_id"]
+        == "project/one"
+    )
     assert invalid_path.read_text(encoding="utf-8") == "[]"
     assert not (store.root_dir / "archive" / "moved").exists()
 
@@ -554,9 +555,7 @@ def test_get_storage_path_reads_metadata_directly(store: WorkflowStoreService) -
 def test_create_workflow_anchors_relative_storage_path_once(
     store: WorkflowStoreService,
 ) -> None:
-    info = store.create_workflow(
-        WorkflowCreate(name="wf", storage_path="relative-results")
-    )
+    info = store.create_workflow(WorkflowCreate(name="wf", storage_path="relative-results"))
 
     expected = Path.cwd() / "relative-results"
     assert info.storage_path == str(expected)
@@ -1143,6 +1142,7 @@ def test_import_workflow_saves_with_managed_storage_path(
     response = store.import_workflow(document)
 
     assert response.info.name == "imported"
+    assert response.info.identity_generation == 1
     assert response.info.display_name == "Imported"
     assert response.info.storage_path == str(store.storage_base_dir / "imported")
     assert [item.name for item in store.list_workflows()] == ["imported"]
@@ -1181,6 +1181,7 @@ def test_import_workflow_archive_delegates_to_adapter_and_saves_layout(
     )
 
     assert response.info.name == "imported"
+    assert response.info.identity_generation == 1
     assert archive_adapter.import_payload == b"fake zip"
     assert archive_adapter.extract_calls == [store.root_dir / "imported"]
     assert _workflow_json(store, "imported").exists()

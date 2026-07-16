@@ -73,6 +73,17 @@ class TestWorkflowInfo:
         )
         assert info.name == "my_wf"
         assert info.description is None
+        assert info.identity_generation == 0
+
+    def test_with_identity_generation(self):
+        info = WorkflowInfo(
+            name="my_wf",
+            display_name="My Workflow",
+            path="/workflows/my_wf.json",
+            last_modified="2026-04-01T12:00:00Z",
+            identity_generation=7,
+        )
+        assert info.identity_generation == 7
 
     def test_with_description(self):
         info = WorkflowInfo(

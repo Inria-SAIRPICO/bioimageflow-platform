@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+from contextlib import nullcontext
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse, Response
+
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
+    WorkflowDeleteResponse,
     WorkflowFile,
     WorkflowFolderDelete,
     WorkflowFolderCreate,
@@ -18,12 +22,18 @@ from bioimageflow_server.models.workflow import (
     WorkflowSaveBody,
     WorkflowUpdate,
 )
+from bioimageflow_server.services.nested_workflow_snapshot import (
+    NestedWorkflowSnapshotService,
+)
 from bioimageflow_server.services.workflow_store import (
     WorkflowArchiveError,
+    WorkflowGenerationChangedError,
+    WorkflowIdentityGenerationConflictError,
     WorkflowStoreService,
 )
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
+logger = logging.getLogger(__name__)
 
 
 def get_workflow_store() -> WorkflowStoreService:  # pragma: no cover
@@ -35,6 +45,10 @@ def get_execution_manager() -> Any | None:
 
 
 def get_connection_manager() -> Any | None:
+    return None
+
+
+def get_nested_workflow_snapshot_service() -> NestedWorkflowSnapshotService | None:
     return None
 
 
@@ -53,12 +67,14 @@ def _publish_workflow_tree_changed(
     *,
     action: str,
     workflow_id: str | None = None,
+    identity_generation: int | None = None,
 ) -> None:
     if connection_manager is None:
         return
     connection_manager.publish_workflow_tree_changed(
         action=action,
         workflow_id=workflow_id,
+        identity_generation=identity_generation,
     )
 
 
@@ -74,6 +90,35 @@ def _publish_active_workflow_changed(
         workflow_id=workflow_id,
         updated_by=updated_by,
     )
+
+
+def _delete_workflow_with_snapshots(
+    store: WorkflowStoreService,
+    nested_snapshot_service: NestedWorkflowSnapshotService | None,
+    workflow_id: str,
+    expected_identity_generation: int | None = None,
+) -> int:
+    """Delete one identity using the shared snapshot-before-workflow lock order."""
+
+    snapshot_mutation = (
+        nested_snapshot_service.snapshot_mutation()
+        if nested_snapshot_service is not None
+        else nullcontext()
+    )
+    with snapshot_mutation:
+        identity_generation = store.delete_workflow(
+            workflow_id,
+            expected_identity_generation=expected_identity_generation,
+        )
+        if nested_snapshot_service is not None:
+            try:
+                nested_snapshot_service.delete_for_root_workflow(workflow_id)
+            except Exception:
+                logger.exception(
+                    "Workflow '%s' was deleted but retained nested snapshot cleanup failed",
+                    workflow_id,
+                )
+    return identity_generation
 
 
 @router.get("", response_model=list[WorkflowInfo])
@@ -150,10 +195,32 @@ async def delete_folder(
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
+    nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
+        get_nested_workflow_snapshot_service
+    ),
 ) -> Any:
     _ensure_unlocked(execution_manager)
     try:
-        store.delete_folder(path, body)
+        snapshot_mutation = (
+            nested_snapshot_service.snapshot_mutation()
+            if nested_snapshot_service is not None
+            else nullcontext()
+        )
+        with snapshot_mutation:
+            with store.workflow_structure_mutation():
+                removed_workflow_ids = (
+                    store.workflow_names_in_folder(path) if body.policy == "delete_children" else []
+                )
+                with store.workflow_mutations(removed_workflow_ids):
+                    store.delete_folder(path, body)
+                    if nested_snapshot_service is not None:
+                        try:
+                            nested_snapshot_service.delete_for_root_workflows(removed_workflow_ids)
+                        except Exception:
+                            logger.exception(
+                                "Folder '%s' was deleted but retained nested snapshot cleanup failed",
+                                path,
+                            )
         _publish_workflow_tree_changed(
             connection_manager,
             action="folder_deleted",
@@ -185,6 +252,7 @@ async def create_workflow(
             connection_manager,
             action="workflow_created",
             workflow_id=info.id,
+            identity_generation=info.identity_generation,
         )
         return info
     except FileExistsError:
@@ -258,6 +326,7 @@ async def import_workflow(
             connection_manager,
             action="workflow_imported",
             workflow_id=response.info.id,
+            identity_generation=response.info.identity_generation,
         )
         return response
     except WorkflowArchiveError as exc:
@@ -288,24 +357,58 @@ async def save_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
 
 
-@router.delete("/{name:path}")
+@router.delete("/{name:path}", response_model=WorkflowDeleteResponse)
 async def delete_workflow(
     name: str,
+    expected_identity_generation: int | None = Query(default=None, ge=0),
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
-) -> dict[str, bool]:
+    nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
+        get_nested_workflow_snapshot_service
+    ),
+) -> WorkflowDeleteResponse:
     _ensure_unlocked(execution_manager)
     try:
-        store.delete_workflow(name)
+        identity_generation = _delete_workflow_with_snapshots(
+            store,
+            nested_snapshot_service,
+            name,
+            expected_identity_generation,
+        )
         _publish_workflow_tree_changed(
             connection_manager,
             action="workflow_deleted",
             workflow_id=name,
+            identity_generation=identity_generation,
         )
+    except WorkflowIdentityGenerationConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "workflow_identity_generation_conflict",
+                "detail": str(exc),
+            },
+        ) from exc
+    except WorkflowGenerationChangedError as exc:
+        if expected_identity_generation is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "workflow_identity_generation_conflict",
+                    "detail": (
+                        f"Workflow '{name}' generation is "
+                        f"{store.workflow_generation(name)}, not expected "
+                        f"{expected_identity_generation}"
+                    ),
+                },
+            ) from exc
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
-    return {"deleted": True}
+    return WorkflowDeleteResponse(
+        identity_generation=identity_generation,
+    )
 
 
 @router.patch("/{name:path}", response_model=WorkflowInfo)
@@ -323,6 +426,7 @@ async def patch_workflow(
             connection_manager,
             action="workflow_updated",
             workflow_id=info.id,
+            identity_generation=info.identity_generation,
         )
         return info
     except FileNotFoundError as exc:

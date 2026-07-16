@@ -24,6 +24,11 @@ from bioimageflow_server.models.ws import (
     WorkflowDraftChangedMessage,
 )
 
+EXECUTION_CONTEXT = {
+    "execution_id": "exec-test",
+    "workflow_id": "wf-test",
+}
+
 
 class TestProgressMessage:
     def test_construction(self) -> None:
@@ -33,6 +38,7 @@ class TestProgressMessage:
             row=5,
             total_rows=10,
             timestamp=123.456,
+            **EXECUTION_CONTEXT,
         )
         assert msg.type == "progress"
         assert msg.node_id == "n1"
@@ -50,6 +56,17 @@ class TestProgressMessage:
                 total_rows=10,
                 timestamp=0.0,
                 bogus="x",
+                **EXECUTION_CONTEXT,
+            )
+
+    def test_requires_execution_context(self) -> None:
+        with pytest.raises(ValidationError):
+            ProgressMessage(
+                node_id="n1",
+                status="running",
+                row=1,
+                total_rows=10,
+                timestamp=0.0,
             )
 
     def test_carries_execution_context(self) -> None:
@@ -79,15 +96,30 @@ class TestNodeStateMessage:
             "running",
             "failed",
         ):
-            msg = NodeStateMessage(node_id="n1", status=status, cached=False)
+            msg = NodeStateMessage(
+                node_id="n1",
+                status=status,
+                cached=False,
+                **EXECUTION_CONTEXT,
+            )
             assert msg.status == status
 
     def test_invalid_status(self) -> None:
         with pytest.raises(ValidationError):
-            NodeStateMessage(node_id="n1", status="bogus", cached=False)
+            NodeStateMessage(
+                node_id="n1",
+                status="bogus",
+                cached=False,
+                **EXECUTION_CONTEXT,
+            )
 
     def test_defaults(self) -> None:
-        msg = NodeStateMessage(node_id="n1", status="running", cached=False)
+        msg = NodeStateMessage(
+            node_id="n1",
+            status="running",
+            cached=False,
+            **EXECUTION_CONTEXT,
+        )
         assert msg.error is None
         assert msg.traceback is None
         assert msg.type == "node_state"
@@ -99,6 +131,7 @@ class TestNodeStateMessage:
             cached=False,
             error="bad",
             traceback="tb",
+            **EXECUTION_CONTEXT,
         )
         assert msg.error == "bad"
         assert msg.traceback == "tb"
@@ -134,7 +167,11 @@ class TestLogMessage:
 
 class TestExecutionCompleteMessage:
     def test_success(self) -> None:
-        msg = ExecutionCompleteMessage(success=True, node_statuses={})
+        msg = ExecutionCompleteMessage(
+            success=True,
+            node_statuses={},
+            **EXECUTION_CONTEXT,
+        )
         assert msg.type == "execution_complete"
         assert msg.success is True
         assert msg.errors == []
@@ -144,6 +181,7 @@ class TestExecutionCompleteMessage:
             success=False,
             errors=[{"node_id": "n1", "error": "boom"}],
             node_statuses={"n1": {"status": "failed", "cached": False}},
+            **EXECUTION_CONTEXT,
         )
         assert msg.success is False
         assert len(msg.errors) == 1
@@ -167,9 +205,7 @@ class TestStatusSnapshotMessage:
             state="running",
             last_result=None,
             progress={"node_id": "n1", "row": 2, "total_rows": 5},
-            node_statuses={
-                "n1": {"node_id": "n1", "status": "running", "cached": False}
-            },
+            node_statuses={"n1": {"node_id": "n1", "status": "running", "cached": False}},
         )
         assert msg.type == "status_snapshot"
         assert msg.state == "running"
@@ -223,9 +259,7 @@ class TestSystemErrorMessage:
 
     def test_rejects_extra_fields(self) -> None:
         with pytest.raises(ValidationError):
-            SystemErrorMessage(
-                code="c", detail="d", timestamp=0.0, bogus="x"
-            )
+            SystemErrorMessage(code="c", detail="d", timestamp=0.0, bogus="x")
 
 
 class TestPackageInstallMessage:
@@ -239,9 +273,7 @@ class TestPackageInstallMessage:
             PackageInstallMessage(package_name="pkg", status="bogus")
 
     def test_with_detail(self) -> None:
-        msg = PackageInstallMessage(
-            package_name="pkg", status="failed", detail="network"
-        )
+        msg = PackageInstallMessage(package_name="pkg", status="failed", detail="network")
         assert msg.detail == "network"
 
 
@@ -312,9 +344,7 @@ class TestSubscribeLogsMessage:
         assert msg.level is None
 
     def test_full(self) -> None:
-        msg = SubscribeLogsMessage(
-            message_id="m1", node_id="n1", level="WARNING"
-        )
+        msg = SubscribeLogsMessage(message_id="m1", node_id="n1", level="WARNING")
         assert msg.message_id == "m1"
         assert msg.node_id == "n1"
         assert msg.level == "WARNING"
@@ -332,6 +362,7 @@ class TestServerMessageUnion:
                 "row": 1,
                 "total_rows": 10,
                 "timestamp": 0.0,
+                **EXECUTION_CONTEXT,
             }
         )
         assert isinstance(parsed, ProgressMessage)
@@ -343,6 +374,7 @@ class TestServerMessageUnion:
                 "node_id": "n1",
                 "status": "executed",
                 "cached": True,
+                **EXECUTION_CONTEXT,
             }
         )
         assert isinstance(parsed, NodeStateMessage)
@@ -359,6 +391,7 @@ class TestServerMessageUnion:
                 "type": "execution_complete",
                 "success": True,
                 "node_statuses": {},
+                **EXECUTION_CONTEXT,
             }
         )
         assert isinstance(parsed, ExecutionCompleteMessage)
@@ -386,9 +419,7 @@ class TestServerMessageUnion:
         assert isinstance(parsed, ToolReloadMessage)
 
     def test_dispatch_tool_removed(self) -> None:
-        parsed = self._adapter.validate_python(
-            {"type": "tool_removed", "tool_name": "x"}
-        )
+        parsed = self._adapter.validate_python({"type": "tool_removed", "tool_name": "x"})
         assert isinstance(parsed, ToolRemovedMessage)
 
     def test_dispatch_system_error(self) -> None:
@@ -440,9 +471,7 @@ class TestServerMessageUnion:
         assert isinstance(parsed, AckMessage)
 
     def test_dispatch_error(self) -> None:
-        parsed = self._adapter.validate_python(
-            {"type": "error", "code": "c", "detail": "d"}
-        )
+        parsed = self._adapter.validate_python({"type": "error", "code": "c", "detail": "d"})
         assert isinstance(parsed, ErrorMessage)
 
     def test_rejects_unknown_type(self) -> None:
@@ -467,12 +496,24 @@ class TestJsonRoundTrip:
         "message",
         [
             ProgressMessage(
-                node_id="n", status="running", row=1, total_rows=5, timestamp=0.0
+                node_id="n",
+                status="running",
+                row=1,
+                total_rows=5,
+                timestamp=0.0,
+                **EXECUTION_CONTEXT,
             ),
-            NodeStateMessage(node_id="n", status="executed", cached=True),
+            NodeStateMessage(
+                node_id="n",
+                status="executed",
+                cached=True,
+                **EXECUTION_CONTEXT,
+            ),
             LogMessage(level="INFO", message="m", timestamp=1.0),
             ExecutionCompleteMessage(
-                success=True, node_statuses={"n": {"status": "executed"}}
+                success=True,
+                node_statuses={"n": {"status": "executed"}},
+                **EXECUTION_CONTEXT,
             ),
             StatusSnapshotMessage(
                 state="idle",

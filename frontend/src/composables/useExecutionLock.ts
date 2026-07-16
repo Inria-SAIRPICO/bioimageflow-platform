@@ -1,6 +1,5 @@
 import { computed, watch, type Ref } from 'vue'
 
-import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { validationErrorsForExecution } from '@/utils/executionSelection'
@@ -79,21 +78,8 @@ export function useExecutionLock() {
     return true
   }
 
-  async function unlockAfterExecution(
-    graph: GraphState,
-    workflowName?: string | null,
-  ): Promise<void> {
-    // After execution completes, re-validate the full graph so node
-    // statuses reflect the cached/executed outputs authoritatively.
-    await api.put('/api/v1/graph', {
-      graph,
-      workflow_name: workflowName ?? null,
-    })
-  }
-
   return {
     isLocked,
     lockForExecution,
-    unlockAfterExecution,
   }
 }

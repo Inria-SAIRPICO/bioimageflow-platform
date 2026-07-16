@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import tempfile
+import threading
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -45,6 +50,55 @@ class WorkflowArchiveError(ValueError):
     """Raised when a workflow archive cannot be imported or exported."""
 
 
+class WorkflowGenerationChangedError(FileNotFoundError):
+    """Raised when a request targets an identity generation that was deleted."""
+
+    def __init__(self, workflow_id: str) -> None:
+        self.workflow_id = workflow_id
+        super().__init__(
+            f"Workflow '{workflow_id}' was deleted or replaced while the request waited"
+        )
+
+
+class WorkflowIdentityGenerationConflictError(ValueError):
+    """Raised when a caller targets a stale durable workflow identity."""
+
+    def __init__(self, workflow_id: str, expected: int, current: int) -> None:
+        self.workflow_id = workflow_id
+        self.expected = expected
+        self.current = current
+        super().__init__(
+            f"Workflow '{workflow_id}' generation is {current}, not expected {expected}"
+        )
+
+
+class WorkflowGenerationLedgerError(RuntimeError):
+    """Raised when durable workflow identity generations cannot be trusted."""
+
+
+_WORKFLOW_GENERATION_LEDGER_VERSION = 1
+_WORKFLOW_GENERATION_LEDGER_NAME = "workflow-identity-generations.json"
+logger = logging.getLogger(__name__)
+
+
+class _WorkflowWorkspaceCoordination:
+    """Process-level locks and generations shared by one canonical workspace."""
+
+    def __init__(self, generations: dict[str, int]) -> None:
+        self.workflow_locks: dict[str, threading.RLock] = {}
+        self.workflow_locks_guard = threading.Lock()
+        self.structure_lock = threading.RLock()
+        self.generations = generations
+        self.generations_guard = threading.Lock()
+
+
+_WORKFLOW_COORDINATIONS: dict[
+    tuple[Path, Path],
+    _WorkflowWorkspaceCoordination,
+] = {}
+_WORKFLOW_COORDINATIONS_GUARD = threading.Lock()
+
+
 class WorkflowArchiveAdapter(Protocol):
     """Small boundary around BioImageFlow archive APIs."""
 
@@ -56,6 +110,17 @@ class WorkflowArchiveAdapter(Protocol):
         *,
         extract_to: Path | None = None,
     ) -> dict[str, Any]: ...
+
+
+def _identity_locked(method: Any) -> Any:
+    """Serialize one workflow identity across saved and draft mutations."""
+
+    @wraps(method)
+    def wrapped(self: "WorkflowStoreService", name: str, *args: Any, **kwargs: Any) -> Any:
+        with self.workflow_mutation(name):
+            return method(self, name, *args, **kwargs)
+
+    return wrapped
 
 
 def _prepared_workflow_draft_identity(
@@ -166,12 +231,213 @@ class WorkflowStoreService:
         archive_adapter: WorkflowArchiveAdapter | None = None,
     ) -> None:
         self.root_dir = self._normalize_storage_path(root_dir)
-        self.workspace_dir = self.root_dir.parent if self.root_dir.name == "workflows" else self.root_dir
+        self.workspace_dir = (
+            self.root_dir.parent if self.root_dir.name == "workflows" else self.root_dir
+        )
         self.tool_registry = tool_registry
         self.storage_base_dir = self._normalize_storage_path(
             storage_base_dir or self.root_dir / "outputs"
         )
         self.archive_adapter = archive_adapter or BioImageFlowWorkflowArchiveAdapter()
+        self._workflow_generation_ledger_path = (
+            self.workspace_dir / ".bioimageflow" / _WORKFLOW_GENERATION_LEDGER_NAME
+        )
+        coordination_key = (
+            self.root_dir.resolve(strict=False),
+            self._workflow_generation_ledger_path.resolve(strict=False),
+        )
+        with _WORKFLOW_COORDINATIONS_GUARD:
+            coordination = _WORKFLOW_COORDINATIONS.get(coordination_key)
+            if coordination is None:
+                coordination = _WorkflowWorkspaceCoordination(
+                    self._load_workflow_generation_ledger()
+                )
+                _WORKFLOW_COORDINATIONS[coordination_key] = coordination
+        self._workflow_coordination = coordination
+        self._workflow_locks = coordination.workflow_locks
+        self._workflow_locks_guard = coordination.workflow_locks_guard
+        self._workflow_structure_lock = coordination.structure_lock
+        self._workflow_generations = coordination.generations
+        self._workflow_generations_guard = coordination.generations_guard
+        with self._workflow_generations_guard:
+            persisted = self._load_workflow_generation_ledger()
+            for name, generation in persisted.items():
+                if generation > self._workflow_generations.get(name, 0):
+                    self._workflow_generations[name] = generation
+
+    @contextmanager
+    def workflow_mutation(self, name: str) -> Iterator[None]:
+        """Hold the shared mutation lock for a normalized workflow identity."""
+
+        with self.workflow_mutations([name]):
+            yield
+
+    @contextmanager
+    def workflow_mutations(self, names: list[str]) -> Iterator[None]:
+        """Fence and lock identities in a stable order to avoid stale writes."""
+
+        safe_names = sorted({self._validate_name(name) for name in names})
+        expected_generations = self._capture_workflow_generations(safe_names)
+        with self._workflow_identity_locks(safe_names):
+            self._ensure_workflow_generations_current(expected_generations)
+            yield
+
+    @contextmanager
+    def workflow_structural_mutations(self, names: list[str]) -> Iterator[None]:
+        """Capture generations before waiting on the workspace structure lock."""
+
+        safe_names = sorted({self._validate_name(name) for name in names})
+        expected_generations = self._capture_workflow_generations(safe_names)
+        with self._workflow_structure_lock, self._workflow_identity_locks(safe_names):
+            self._ensure_workflow_generations_current(expected_generations)
+            yield
+
+    @contextmanager
+    def _workflow_identity_locks(self, safe_names: list[str]) -> Iterator[None]:
+        with self._workflow_locks_guard:
+            locks: list[threading.RLock] = []
+            for safe_name in safe_names:
+                lock = self._workflow_locks.get(safe_name)
+                if lock is None:
+                    lock = threading.RLock()
+                    self._workflow_locks[safe_name] = lock
+                locks.append(lock)
+        with ExitStack() as stack:
+            for lock in locks:
+                stack.enter_context(lock)
+            yield
+
+    def _capture_workflow_generations(self, names: list[str]) -> dict[str, int]:
+        with self._workflow_generations_guard:
+            return {name: self._workflow_generations.get(name, 0) for name in names}
+
+    def _ensure_workflow_generations_current(
+        self,
+        expected: dict[str, int],
+    ) -> None:
+        with self._workflow_generations_guard:
+            for name, generation in expected.items():
+                if self._workflow_generations.get(name, 0) != generation:
+                    raise WorkflowGenerationChangedError(name)
+
+    def _load_workflow_generation_ledger(self) -> dict[str, int]:
+        path = self._workflow_generation_ledger_path
+        if not path.exists():
+            return {}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise WorkflowGenerationLedgerError(
+                f"Cannot read workflow identity generation ledger: {path}"
+            ) from exc
+        if (
+            not isinstance(raw, dict)
+            or set(raw) != {"version", "generations"}
+            or isinstance(raw.get("version"), bool)
+            or raw.get("version") != _WORKFLOW_GENERATION_LEDGER_VERSION
+        ):
+            raise WorkflowGenerationLedgerError(
+                f"Invalid workflow identity generation ledger: {path}"
+            )
+        raw_generations = raw.get("generations")
+        if not isinstance(raw_generations, dict):
+            raise WorkflowGenerationLedgerError(
+                f"Invalid workflow identity generation ledger: {path}"
+            )
+        generations: dict[str, int] = {}
+        for raw_name, raw_generation in raw_generations.items():
+            if not isinstance(raw_name, str):
+                raise WorkflowGenerationLedgerError(
+                    f"Invalid workflow identity in generation ledger: {path}"
+                )
+            try:
+                name = validate_workflow_id(raw_name)
+            except ValueError as exc:
+                raise WorkflowGenerationLedgerError(
+                    f"Invalid workflow identity in generation ledger: {path}"
+                ) from exc
+            if name != raw_name:
+                raise WorkflowGenerationLedgerError(
+                    f"Non-canonical workflow identity in generation ledger: {path}"
+                )
+            if (
+                isinstance(raw_generation, bool)
+                or not isinstance(raw_generation, int)
+                or raw_generation < 0
+            ):
+                raise WorkflowGenerationLedgerError(
+                    f"Invalid workflow generation for '{name}' in ledger: {path}"
+                )
+            generations[name] = raw_generation
+        return generations
+
+    def _write_workflow_generation_ledger(self, generations: dict[str, int]) -> None:
+        path = self._workflow_generation_ledger_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent),
+            prefix=f".{path.stem}.",
+            suffix=".tmp.json",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "version": _WORKFLOW_GENERATION_LEDGER_VERSION,
+                        "generations": dict(sorted(generations.items())),
+                    },
+                    handle,
+                    indent=2,
+                    sort_keys=True,
+                )
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, path)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except FileNotFoundError:
+                pass
+            raise
+
+    def _reserve_workflow_generations(self, names: list[str]) -> dict[str, int]:
+        """Persist the next generations before mutating workflow identities."""
+
+        safe_names = sorted({self._validate_name(name) for name in names})
+        if not safe_names:
+            return {}
+        with self._workflow_generations_guard:
+            persisted = self._load_workflow_generation_ledger()
+            updated = dict(self._workflow_generations)
+            for name, generation in persisted.items():
+                if generation > updated.get(name, 0):
+                    updated[name] = generation
+            for name in safe_names:
+                updated[name] = updated.get(name, 0) + 1
+            self._write_workflow_generation_ledger(updated)
+            self._workflow_generations.clear()
+            self._workflow_generations.update(updated)
+            return {name: updated[name] for name in safe_names}
+
+    def workflow_generation(self, name: str) -> int:
+        """Capture the durable generation for a workflow identity."""
+
+        safe_name = self._validate_name(name)
+        return self._capture_workflow_generations([safe_name])[safe_name]
+
+    def ensure_workflow_generation(self, name: str, expected: int) -> None:
+        """Reject work that began before the identity's latest replacement."""
+
+        safe_name = self._validate_name(name)
+        self._ensure_workflow_generations_current({safe_name: expected})
+
+    @contextmanager
+    def workflow_structure_mutation(self) -> Iterator[None]:
+        """Serialize operations that change the workspace workflow tree."""
+
+        with self._workflow_structure_lock:
+            yield
 
     @staticmethod
     def _normalize_storage_path(path: str | Path) -> Path:
@@ -244,6 +510,19 @@ class WorkflowStoreService:
             new_storage.parent.mkdir(parents=True, exist_ok=True)
             old_storage.rename(new_storage)
         return str(new_storage)
+
+    def _delete_managed_storage_best_effort(self, name: str) -> None:
+        managed_path = self._managed_storage_path(name)
+        if not managed_path.exists() or not managed_path.is_relative_to(self.storage_base_dir):
+            return
+        try:
+            shutil.rmtree(managed_path)
+        except Exception:
+            logger.exception(
+                "Workflow '%s' was deleted but managed output cleanup failed at %s",
+                name,
+                managed_path,
+            )
 
     def _set_workflow_storage_path(self, raw: dict[str, Any], storage_path: str) -> None:
         workflow_data = raw.get("workflow", {})
@@ -336,12 +615,12 @@ class WorkflowStoreService:
 
     @staticmethod
     def _renamed_child_path(old_name: str, old_prefix: str, new_prefix: str) -> str:
-        suffix = old_name[len(old_prefix):]
+        suffix = old_name[len(old_prefix) :]
         return f"{new_prefix}{suffix}" if new_prefix else suffix.lstrip("/")
 
     @staticmethod
     def _promoted_child_path(old_name: str, removed_prefix: str, parent_prefix: str) -> str:
-        suffix = old_name[len(removed_prefix):].lstrip("/")
+        suffix = old_name[len(removed_prefix) :].lstrip("/")
         return f"{parent_prefix}/{suffix}" if parent_prefix else suffix
 
     def _metadata_from_raw(
@@ -368,6 +647,7 @@ class WorkflowStoreService:
             workspace_path=str(self.workspace_dir),
             path=str(path),
             last_modified=last_modified,
+            identity_generation=self.workflow_generation(name),
         )
 
     def _read_raw(self, name: str) -> dict[str, Any]:
@@ -440,6 +720,7 @@ class WorkflowStoreService:
             suffix += 1
         return candidate
 
+    @_identity_locked
     def export_workflow(self, name: str) -> WorkflowExportDocument:
         path = self._existing_path_for(name)
         raw = self._read_raw(name)
@@ -506,9 +787,26 @@ class WorkflowStoreService:
         filename: str | None = None,
         name_override: str | None = None,
     ) -> WorkflowImportResponse:
-        imported_name = self._validate_name(name_override or self._archive_name_from_filename(filename))
-        if self._has_name_collision(imported_name):
-            raise FileExistsError(imported_name)
+        imported_name = self._validate_name(
+            name_override or self._archive_name_from_filename(filename)
+        )
+        with self.workflow_structure_mutation(), self.workflow_mutation(imported_name):
+            if self._has_name_collision(imported_name):
+                raise FileExistsError(imported_name)
+            self._reserve_workflow_generations([imported_name])
+            return self._import_workflow_archive_locked(
+                raw_archive,
+                filename=filename,
+                imported_name=imported_name,
+            )
+
+    def _import_workflow_archive_locked(
+        self,
+        raw_archive: bytes,
+        *,
+        filename: str | None,
+        imported_name: str,
+    ) -> WorkflowImportResponse:
         with tempfile.TemporaryDirectory() as tmp_dir:
             archive_path = Path(tmp_dir) / (filename or f"{imported_name}.bioimageflow.zip")
             archive_path.write_bytes(raw_archive)
@@ -558,9 +856,12 @@ class WorkflowStoreService:
         name_override: str | None = None,
     ) -> WorkflowImportResponse:
         imported_name = self._validate_name(name_override or document.workflow.name)
-        if self._has_name_collision(imported_name):
-            raise FileExistsError(imported_name)
-        return self._persist_import_workflow(document, imported_name)
+        with self.workflow_structure_mutation(), self.workflow_mutation(imported_name):
+            if self._has_name_collision(imported_name):
+                raise FileExistsError(imported_name)
+            GraphState.model_validate(document.workflow.graph)
+            self._reserve_workflow_generations([imported_name])
+            return self._persist_import_workflow(document, imported_name)
 
     def _persist_import_workflow(
         self,
@@ -611,9 +912,10 @@ class WorkflowStoreService:
             if name.startswith("."):
                 continue
             try:
-                path = self._existing_path_for(name)
-                raw = self._read_raw(name)
-                workflows.append(self._metadata_from_raw(name, raw, path))
+                with self.workflow_mutation(name):
+                    path = self._existing_path_for(name)
+                    raw = self._read_raw(name)
+                    workflows.append(self._metadata_from_raw(name, raw, path))
             except (OSError, json.JSONDecodeError, ValidationError, ValueError):
                 continue
         return workflows
@@ -654,21 +956,39 @@ class WorkflowStoreService:
         return self.root_dir.joinpath(*safe.split("/"))
 
     def create_folder(self, path: str) -> WorkflowFolderInfo:
-        folder = self._folder_path(path)
-        if self._is_inside_workflow_dir(folder):
-            raise ValueError(
-                "Folders must be created under the workflows root, not inside a workflow"
-            )
-        if folder.exists():
-            raise FileExistsError(path)
-        folder.mkdir(parents=True)
-        safe = validate_workflow_id(path)
-        return WorkflowFolderInfo(path=safe, display_name=safe.split("/")[-1])
+        with self.workflow_structure_mutation():
+            folder = self._folder_path(path)
+            if self._is_inside_workflow_dir(folder):
+                raise ValueError(
+                    "Folders must be created under the workflows root, not inside a workflow"
+                )
+            if folder.exists():
+                raise FileExistsError(path)
+            folder.mkdir(parents=True)
+            safe = validate_workflow_id(path)
+            return WorkflowFolderInfo(path=safe, display_name=safe.split("/")[-1])
+
+    def workflow_names_in_folder(self, path: str) -> list[str]:
+        """Return path-derived identities beneath a folder as one tree snapshot."""
+
+        with self.workflow_structure_mutation():
+            folder = self._folder_path(path)
+            if not folder.exists() or not folder.is_dir():
+                raise FileNotFoundError(path)
+            return self._workflow_names_under_folder(folder)
 
     def delete_folder(
         self,
         path: str,
         policy: WorkflowFolderDelete | str = "empty",
+    ) -> None:
+        with self.workflow_structure_mutation():
+            self._delete_folder_locked(path, policy)
+
+    def _delete_folder_locked(
+        self,
+        path: str,
+        policy: WorkflowFolderDelete | str,
     ) -> None:
         if isinstance(policy, WorkflowFolderDelete):
             policy_name = policy.policy
@@ -686,11 +1006,12 @@ class WorkflowStoreService:
         if children and policy_name == "empty":
             raise FileExistsError(path)
         if children and policy_name == "delete_children":
-            for workflow_name in self._workflow_names_under_folder(folder):
-                managed_path = self._managed_storage_path(workflow_name)
-                if managed_path.exists() and managed_path.is_relative_to(self.storage_base_dir):
-                    shutil.rmtree(managed_path)
-            shutil.rmtree(folder)
+            workflow_names = self._workflow_names_under_folder(folder)
+            with self.workflow_mutations(workflow_names):
+                self._reserve_workflow_generations(workflow_names)
+                shutil.rmtree(folder)
+                for workflow_name in workflow_names:
+                    self._delete_managed_storage_best_effort(workflow_name)
             return
         if children and policy_name == "move_children_up":
             safe_path = validate_workflow_id(path)
@@ -699,18 +1020,29 @@ class WorkflowStoreService:
                 (name, self._promoted_child_path(name, safe_path, parent_prefix))
                 for name in self._workflow_names_under_folder(folder)
             ]
-            children = list(folder.iterdir())
-            self._ensure_moved_workflow_storage_available(moves)
-            for child in children:
-                destination = folder.parent / child.name
-                if destination.exists():
-                    raise FileExistsError(destination.name)
-            for child in children:
-                child.rename(folder.parent / child.name)
-            self._rewrite_moved_workflows(moves)
+            identities = [identity for move in moves for identity in move]
+            with self.workflow_mutations(identities):
+                children = list(folder.iterdir())
+                self._ensure_moved_workflow_storage_available(moves)
+                for child in children:
+                    destination = folder.parent / child.name
+                    if destination.exists():
+                        raise FileExistsError(destination.name)
+                self._reserve_workflow_generations(identities)
+                for child in children:
+                    child.rename(folder.parent / child.name)
+                self._rewrite_moved_workflows(moves)
         folder.rmdir()
 
     def rename_folder(self, path: str, new_path: str) -> WorkflowFolderInfo:
+        with self.workflow_structure_mutation():
+            return self._rename_folder_locked(path, new_path)
+
+    def _rename_folder_locked(
+        self,
+        path: str,
+        new_path: str,
+    ) -> WorkflowFolderInfo:
         old_folder = self._folder_path(path)
         new_folder = self._folder_path(new_path)
         if (
@@ -737,21 +1069,28 @@ class WorkflowStoreService:
             (name, self._renamed_child_path(name, safe_old, safe_new))
             for name in self._workflow_names_under_folder(old_folder)
         ]
-        self._ensure_moved_workflow_storage_available(moves)
-        new_folder.parent.mkdir(parents=True, exist_ok=True)
-        old_folder.rename(new_folder)
-        self._rewrite_moved_workflows(moves)
+        identities = [identity for move in moves for identity in move]
+        with self.workflow_mutations(identities):
+            self._ensure_moved_workflow_storage_available(moves)
+            self._reserve_workflow_generations(identities)
+            new_folder.parent.mkdir(parents=True, exist_ok=True)
+            old_folder.rename(new_folder)
+            self._rewrite_moved_workflows(moves)
         return WorkflowFolderInfo(path=safe_new, display_name=safe_new.split("/")[-1])
 
     def create_workflow(self, data: WorkflowCreate) -> WorkflowInfo:
-        path = self._path_for(data.name)
-        if path.exists() or self._workflow_dir(data.name).exists():
-            raise FileExistsError(data.name)
-        if data.storage_path is None and self._managed_storage_path(data.name).exists():
-            raise FileExistsError(data.name)
-        self._write_raw(data.name, self._empty_raw(data))
-        return self._metadata_from_raw(data.name, self._read_raw(data.name), path)
+        with self.workflow_structure_mutation(), self.workflow_mutation(data.name):
+            path = self._path_for(data.name)
+            if path.exists() or self._workflow_dir(data.name).exists():
+                raise FileExistsError(data.name)
+            if data.storage_path is None and self._managed_storage_path(data.name).exists():
+                raise FileExistsError(data.name)
+            raw = self._empty_raw(data)
+            self._reserve_workflow_generations([data.name])
+            self._write_raw(data.name, raw)
+            return self._metadata_from_raw(data.name, self._read_raw(data.name), path)
 
+    @_identity_locked
     def get_workflow(self, name: str) -> WorkflowFile:
         path = self._existing_path_for(name)
         raw = self._read_raw(name)
@@ -778,6 +1117,7 @@ class WorkflowStoreService:
             missing_tools=_detect_missing_tools(workflow_data, self.tool_registry),
         )
 
+    @_identity_locked
     def save_workflow(self, name: str, data: WorkflowSaveBody) -> WorkflowInfo:
         path = self._existing_path_for(name)
         raw = self._read_raw(name)
@@ -804,17 +1144,71 @@ class WorkflowStoreService:
         )
         return self._metadata_from_raw(name, self._read_raw(name), path)
 
-    def delete_workflow(self, name: str) -> None:
-        path = self._path_for(name)
-        if path.exists():
-            shutil.rmtree(path.parent)
-        else:
-            raise FileNotFoundError(name)
-        managed_path = self._managed_storage_path(name)
-        if managed_path.exists() and managed_path.is_relative_to(self.storage_base_dir):
-            shutil.rmtree(managed_path)
+    def delete_workflow(
+        self,
+        name: str,
+        *,
+        expected_identity_generation: int | None = None,
+    ) -> int:
+        with self.workflow_structural_mutations([name]):
+            path = self._path_for(name)
+            if not path.exists():
+                raise FileNotFoundError(name)
+            current_generation = self.workflow_generation(name)
+            if (
+                expected_identity_generation is not None
+                and current_generation != expected_identity_generation
+            ):
+                raise WorkflowIdentityGenerationConflictError(
+                    name,
+                    expected_identity_generation,
+                    current_generation,
+                )
+            generation = self._reserve_workflow_generations([name])[name]
+            try:
+                shutil.rmtree(path.parent)
+            except Exception:
+                if path.exists():
+                    raise
+                logger.exception(
+                    "Workflow '%s' was removed but directory cleanup reported failure at %s",
+                    name,
+                    path.parent,
+                )
+            self._delete_managed_storage_best_effort(name)
+            return generation
 
     def patch_workflow(self, name: str, patch: WorkflowUpdate) -> WorkflowInfo:
+        new_name = self._updated_workflow_name(name, patch)
+        with self.workflow_structural_mutations([name, new_name]):
+            return self._patch_workflow_locked(name, patch, new_name)
+
+    def _updated_workflow_name(self, name: str, patch: WorkflowUpdate) -> str:
+        if patch.action == "duplicate":
+            if patch.new_name is None:
+                raise ValueError("new_name is required for duplicate")
+            return self._validate_name(patch.new_name)
+
+        old_folder = self._folder_name(name)
+        if patch.new_id is not None:
+            return self._validate_name(patch.new_id)
+        if patch.new_name is not None:
+            new_leaf = self._leaf_name(patch.new_name)
+            target_folder = patch.folder if patch.folder is not None else old_folder
+            new_name = f"{target_folder}/{new_leaf}" if target_folder else new_leaf
+            return self._validate_name(new_name)
+        if patch.folder is not None:
+            new_leaf = self._leaf_name(name)
+            new_name = f"{patch.folder}/{new_leaf}" if patch.folder else new_leaf
+            return self._validate_name(new_name)
+        return self._validate_name(name)
+
+    def _patch_workflow_locked(
+        self,
+        name: str,
+        patch: WorkflowUpdate,
+        new_name: str,
+    ) -> WorkflowInfo:
         path = self._existing_path_for(name)
         raw = self._read_raw(name)
         metadata = raw.get("metadata", {})
@@ -822,9 +1216,6 @@ class WorkflowStoreService:
             metadata = {}
 
         if patch.action == "duplicate":
-            if patch.new_name is None:
-                raise ValueError("new_name is required for duplicate")
-            new_name = self._validate_name(patch.new_name)
             new_path = self._path_for(new_name)
             if new_path.exists() or self._workflow_dir(new_name).exists():
                 raise FileExistsError(new_name)
@@ -843,6 +1234,7 @@ class WorkflowStoreService:
                     duplicate,
                     duplicate_metadata["storage_path"],
                 )
+            self._reserve_workflow_generations([new_name])
             self._write_raw(new_name, duplicate)
             old_tools = self._workflow_tools_dir(name)
             new_tools = self._workflow_tools_dir(new_name)
@@ -852,23 +1244,11 @@ class WorkflowStoreService:
                 shutil.copytree(old_tools, new_tools)
             return self._metadata_from_raw(new_name, self._read_raw(new_name), new_path)
 
-        old_folder = self._folder_name(name)
-        new_name = name
-        if patch.new_id is not None:
-            new_name = self._validate_name(patch.new_id)
-        elif patch.new_name is not None:
-            new_leaf = self._leaf_name(patch.new_name)
-            target_folder = patch.folder if patch.folder is not None else old_folder
-            new_name = f"{target_folder}/{new_leaf}" if target_folder else new_leaf
-            new_name = self._validate_name(new_name)
-        elif patch.folder is not None:
-            new_leaf = self._leaf_name(name)
-            new_name = f"{patch.folder}/{new_leaf}" if patch.folder else new_leaf
-            new_name = self._validate_name(new_name)
         if new_name != name and self._has_name_collision(new_name):
             raise FileExistsError(new_name)
         if new_name != name:
             self._validate_moved_workflow_drafts([(name, new_name)])
+            self._reserve_workflow_generations([name, new_name])
 
         if patch.display_name is not None:
             metadata["display_name"] = patch.display_name
@@ -897,6 +1277,7 @@ class WorkflowStoreService:
             self._path_for(new_name),
         )
 
+    @_identity_locked
     def rebind_versions(self, name: str) -> WorkflowFile:
         raw = self._read_raw(name)
         workflow_data = raw.get("workflow", {})

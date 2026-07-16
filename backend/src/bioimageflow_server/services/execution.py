@@ -73,7 +73,8 @@ class ExecutionEventBus(Protocol):
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None: ...
 
     def publish_node_state(
@@ -85,7 +86,8 @@ class ExecutionEventBus(Protocol):
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None: ...
 
     def publish_execution_complete(
@@ -93,7 +95,8 @@ class ExecutionEventBus(Protocol):
         success: bool,
         errors: list,
         node_statuses: dict,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None: ...
 
     def publish_log(
@@ -119,7 +122,8 @@ class NullEventBus:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         return None
 
@@ -132,7 +136,8 @@ class NullEventBus:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         return None
 
@@ -141,7 +146,8 @@ class NullEventBus:
         success: bool,
         errors: list,
         node_statuses: dict,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         return None
 
@@ -237,7 +243,8 @@ class ExecutionManager:
         graph: GraphState,
         nodes: list[str] | None = None,
         storage_path: Path | None = None,
-        workflow_id: str = "legacy",
+        *,
+        workflow_id: str,
         draft_revision: int | None = None,
     ) -> ExecutionContext:
         """Kick off a background execution.
@@ -262,12 +269,8 @@ class ExecutionManager:
         # Execution compiles the graph submitted with this run request; no
         # validation or editor session can alter its meaning.
         try:
-            live_settings = (
-                self._settings_provider() if self._settings_provider else self.settings
-            )
-            run_storage_path = (
-                storage_path if storage_path is not None else self.storage_path
-            )
+            live_settings = self._settings_provider() if self._settings_provider else self.settings
+            run_storage_path = storage_path if storage_path is not None else self.storage_path
             build_graph = _execution_subgraph(graph, nodes) if nodes else graph
             on_progress = self._make_progress_callback(context)
             validation_output = GraphValidationService(
@@ -346,9 +349,7 @@ class ExecutionManager:
         task = loop.create_task(asyncio.to_thread(_run_sync))
         self._run_task = task
         task.add_done_callback(
-            lambda completed, run_context=context: self._on_run_done(
-                completed, run_context
-            )
+            lambda completed, run_context=context: self._on_run_done(completed, run_context)
         )
         return context
 
@@ -363,9 +364,7 @@ class ExecutionManager:
 
     # ---- Internals ---------------------------------------------------------
 
-    def _make_progress_callback(
-        self, context: ExecutionContext
-    ) -> Callable[[Any], None]:
+    def _make_progress_callback(self, context: ExecutionContext) -> Callable[[Any], None]:
         """Return the ``on_progress`` callback for this run.
 
         Closes over ``self`` so it can update the manager's state from
@@ -631,6 +630,7 @@ class ExecutionManager:
         setattr(manager, "get_or_create", _get_or_create_with_status)
         shutdown_all = getattr(manager, "shutdown_all", None)
         if callable(shutdown_all):
+
             def _shutdown_all_with_status() -> Any:
                 envs = getattr(manager, "_envs", None)
                 env_names = list(envs) if isinstance(envs, dict) else []
@@ -648,9 +648,7 @@ class ExecutionManager:
         if callable(publish):
             publish(env_name, status)
 
-    def _on_run_done(
-        self, task: asyncio.Task, context: ExecutionContext
-    ) -> None:
+    def _on_run_done(self, task: asyncio.Task, context: ExecutionContext) -> None:
         """Called on the event loop when the background task finishes."""
         try:
             exc = task.exception()
@@ -680,10 +678,8 @@ class ExecutionManager:
                 # mark it as unexecuted.
                 if (
                     self._current_node_id is not None
-                    and self._node_statuses.get(self._current_node_id)
-                    is not None
-                    and self._node_statuses[self._current_node_id].status
-                    == "running"
+                    and self._node_statuses.get(self._current_node_id) is not None
+                    and self._node_statuses[self._current_node_id].status == "running"
                 ):
                     self._node_statuses[self._current_node_id] = NodeStatus(
                         node_id=self._current_node_id,
@@ -692,9 +688,7 @@ class ExecutionManager:
                     )
             else:
                 success = False
-                local_tb = "".join(
-                    traceback.format_exception(type(exc), exc, exc.__traceback__)
-                )
+                local_tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
                 detail, tb = _format_exception_for_client(exc, local_tb)
                 errors.append(
                     {
@@ -715,9 +709,7 @@ class ExecutionManager:
                 # no explicit "failed" event was seen.
                 target_id = self._current_node_id
                 if target_id is None:
-                    target_id = _single_failed_node_without_error(
-                        self._node_statuses
-                    )
+                    target_id = _single_failed_node_without_error(self._node_statuses)
                 should_publish_error_log = True
                 if target_id is not None and target_id in self._node_statuses:
                     current = self._node_statuses[target_id]
@@ -934,8 +926,7 @@ def _summarize_command_failure(message: str) -> str | None:
 
     if match.group(2):
         detail = (
-            f"External command {executable!r} crashed with signal "
-            f"{match.group(2)}{input_clause}."
+            f"External command {executable!r} crashed with signal {match.group(2)}{input_clause}."
         )
     else:
         detail = (
@@ -1008,9 +999,7 @@ def clear_node_cache(
     ``"out_of_date"``. Unknown node IDs are silently skipped.
     """
     try:
-        validation_output = GraphValidationService(
-            registry
-        ).validate_with_compilation(
+        validation_output = GraphValidationService(registry).validate_with_compilation(
             graph,
             storage_path=storage_path,
             dev_mode=dev_mode,

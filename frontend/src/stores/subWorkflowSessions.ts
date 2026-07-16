@@ -32,16 +32,14 @@ export interface SubWorkflowSession {
   snapshotRevision: number
   updatedAt: string
   validation: ValidationResult
-  durable: boolean
   /** Compatibility views backed directly by draft, not separate state. */
   published_inputs: PublishedInput[]
   published_outputs: PublishedOutput[]
 }
 
-export interface OpenSubWorkflowSessionOptions {
-  id?: string
-  owner?: NestedSnapshotOwner
-  parentCanvasId?: string
+export interface OpenDurableSubWorkflowSessionOptions {
+  owner: NestedSnapshotOwner
+  parentCanvasId: string
   parentWorkflowName: string | null
   parentSourceWorkflowName?: string | null
   parentNodeId: string
@@ -49,22 +47,12 @@ export interface OpenSubWorkflowSessionOptions {
   graph: GraphState
   published_inputs?: PublishedInput[]
   published_outputs?: PublishedOutput[]
-  snapshotRevision?: number
-  validation?: ValidationResult
-  durable?: boolean
   readonlyReason?: string | null
 }
 
-export interface OpenDurableSubWorkflowSessionOptions
-  extends Omit<OpenSubWorkflowSessionOptions, 'id' | 'durable' | 'owner'> {
-  owner: NestedSnapshotOwner
-  parentCanvasId: string
-}
-
-export interface SavedSubWorkflowSession {
-  graph: GraphState
-  published_inputs: PublishedInput[]
-  published_outputs: PublishedOutput[]
+export interface OpenDurableSubWorkflowSessionResult {
+  session: SubWorkflowSession
+  created: boolean
 }
 
 function deepClone<T>(value: T): T {
@@ -83,20 +71,6 @@ function completeGraph(
   }
 }
 
-function defaultValidation(): ValidationResult {
-  return { valid: true, node_statuses: {}, errors: [] }
-}
-
-let fallbackSessionSequence = 0
-
-function newSessionId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  fallbackSessionSequence += 1
-  return `local-nested-session-${fallbackSessionSequence}`
-}
-
 function sameOwner(left: NestedSnapshotOwner, right: NestedSnapshotOwner): boolean {
   if (left.kind !== right.kind) return false
   if (left.kind === 'root' && right.kind === 'root') {
@@ -109,20 +83,15 @@ function sameOwner(left: NestedSnapshotOwner, right: NestedSnapshotOwner): boole
 }
 
 function createSession(
-  options: OpenSubWorkflowSessionOptions,
+  options: OpenDurableSubWorkflowSessionOptions,
+  snapshot: NestedWorkflowSnapshotResponse,
   draft: GraphState,
   savedSnapshot: GraphState,
 ): SubWorkflowSession {
-  const parentCanvasId = options.parentCanvasId
-    ?? (options.parentWorkflowName ? `workflow:${options.parentWorkflowName}` : 'canvas')
   const session = {
-    id: options.id ?? newSessionId(),
-    owner: options.owner ?? {
-      kind: 'root',
-      canvas_id: parentCanvasId,
-      workflow_id: options.parentWorkflowName,
-    },
-    parentCanvasId,
+    id: snapshot.session_id,
+    owner: snapshot.owner,
+    parentCanvasId: options.parentCanvasId,
     parentWorkflowName: options.parentWorkflowName,
     parentSourceWorkflowName: options.parentSourceWorkflowName ?? null,
     parentNodeId: options.parentNodeId,
@@ -131,10 +100,9 @@ function createSession(
     savedSnapshot,
     acceptedSnapshot: deepClone(draft),
     parentApplyConflict: null,
-    snapshotRevision: options.snapshotRevision ?? 0,
-    updatedAt: new Date().toISOString(),
-    validation: deepClone(options.validation ?? defaultValidation()),
-    durable: options.durable ?? false,
+    snapshotRevision: snapshot.snapshot_revision,
+    updatedAt: snapshot.updated_at,
+    validation: deepClone(snapshot.validation),
   } as SubWorkflowSession
 
   Object.defineProperties(session, {
@@ -172,37 +140,23 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     return sessions.value.find((session) => session.id === id)
   }
 
-  function openSession(options: OpenSubWorkflowSessionOptions): SubWorkflowSession {
-    if (options.readonlyReason) {
-      throw new Error(options.readonlyReason)
-    }
-    if (options.id) {
-      const existing = sessionById(options.id)
-      if (existing) return existing
-    }
-
-    const graph = completeGraph(
-      options.graph,
-      options.published_inputs,
-      options.published_outputs,
-    )
-    const session = createSession(options, graph, deepClone(graph))
-    sessions.value = [...sessions.value, session]
-    return sessionById(session.id)!
-  }
-
   async function openDurableSession(
     options: OpenDurableSubWorkflowSessionOptions,
   ): Promise<SubWorkflowSession> {
+    return (await openDurableSessionResult(options)).session
+  }
+
+  async function openDurableSessionResult(
+    options: OpenDurableSubWorkflowSessionOptions,
+  ): Promise<OpenDurableSubWorkflowSessionResult> {
     if (options.readonlyReason) {
       throw new Error(options.readonlyReason)
     }
     const existing = sessions.value.find(session => (
-      session.durable
-      && session.parentNodeId === options.parentNodeId
+      session.parentNodeId === options.parentNodeId
       && sameOwner(session.owner, options.owner)
     ))
-    if (existing) return existing
+    if (existing) return { session: existing, created: false }
 
     const parentBaseline = completeGraph(
       options.graph,
@@ -215,19 +169,17 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
       graph: parentBaseline,
     })
     const concurrentlyOpened = sessionById(snapshot.session_id)
-    if (concurrentlyOpened) return concurrentlyOpened
-    const session = createSession({
-      ...options,
-      id: snapshot.session_id,
-      owner: snapshot.owner,
-      graph: snapshot.graph,
-      snapshotRevision: snapshot.snapshot_revision,
-      validation: snapshot.validation,
-      durable: true,
-    }, completeGraph(snapshot.graph), parentBaseline)
-    session.updatedAt = snapshot.updated_at
+    if (concurrentlyOpened) {
+      return { session: concurrentlyOpened, created: false }
+    }
+    const session = createSession(
+      options,
+      snapshot,
+      completeGraph(snapshot.graph),
+      parentBaseline,
+    )
     sessions.value = [...sessions.value, session]
-    return sessionById(session.id)!
+    return { session: sessionById(session.id)!, created: true }
   }
 
   function isDirty(id: string): boolean {
@@ -252,17 +204,6 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     }
     if (validation) session.validation = deepClone(validation)
     session.acceptedSnapshot = deepClone(accepted)
-  }
-
-  function saveSession(id: string): SavedSubWorkflowSession {
-    const session = sessionById(id)
-    if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
-    markSaved(id, session.draft)
-    return {
-      graph: deepClone(session.draft),
-      published_inputs: deepClone(session.draft.published_inputs ?? []),
-      published_outputs: deepClone(session.draft.published_outputs ?? []),
-    }
   }
 
   function updateDraft(id: string, graph: GraphState): void {
@@ -314,9 +255,7 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
   async function deleteDurableSession(id: string): Promise<void> {
     const session = sessionById(id)
     if (!session) return
-    if (session.durable) {
-      await deleteNestedWorkflowSnapshot(id, session.snapshotRevision)
-    }
+    await deleteNestedWorkflowSnapshot(id, session.snapshotRevision)
     closeSession(id)
   }
 
@@ -324,9 +263,8 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     sessions,
     dirtySessionIds,
     sessionById,
-    openSession,
     openDurableSession,
-    saveSession,
+    openDurableSessionResult,
     markSaved,
     updateDraft,
     markParentApplyConflict,

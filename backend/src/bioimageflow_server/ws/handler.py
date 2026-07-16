@@ -173,7 +173,8 @@ class ConnectionManager:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         payload = {
             "type": "progress",
@@ -197,7 +198,8 @@ class ConnectionManager:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         payload = {
             "type": "node_state",
@@ -236,7 +238,8 @@ class ConnectionManager:
         success: bool,
         errors: list,
         node_statuses: dict,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         # ExecutionManager passes a dict[str, NodeStatus] (Pydantic models).
         # ``send_json`` uses plain ``json.dumps``, which can't serialize models —
@@ -260,9 +263,7 @@ class ConnectionManager:
         payload = _status_snapshot_payload(status)
         self._enqueue_one(state, payload)
 
-    async def broadcast_tool_reload(
-        self, tool_name: str, tool_metadata: dict
-    ) -> None:
+    async def broadcast_tool_reload(self, tool_name: str, tool_metadata: dict) -> None:
         payload = {
             "type": "tool_reload",
             "tool_name": tool_name,
@@ -277,9 +278,7 @@ class ConnectionManager:
         }
         self._enqueue_all(payload)
 
-    async def broadcast_system_error(
-        self, code: str, detail: str
-    ) -> None:
+    async def broadcast_system_error(self, code: str, detail: str) -> None:
         payload = {
             "type": "system_error",
             "code": code,
@@ -302,9 +301,7 @@ class ConnectionManager:
         }
         self._enqueue_all(payload)
 
-    async def broadcast_environment_status(
-        self, env_name: str, status: str
-    ) -> None:
+    async def broadcast_environment_status(self, env_name: str, status: str) -> None:
         payload = {
             "type": "environment_status",
             "env_name": env_name,
@@ -334,12 +331,15 @@ class ConnectionManager:
         self,
         action: str,
         workflow_id: str | None = None,
+        identity_generation: int | None = None,
     ) -> None:
-        payload = {
+        payload: dict[str, Any] = {
             "type": "workflow_tree_changed",
             "action": action,
             "workflow_id": workflow_id,
         }
+        if identity_generation is not None:
+            payload["identity_generation"] = identity_generation
         self._enqueue_all(payload)
 
     async def broadcast_active_workflow_changed(
@@ -386,7 +386,8 @@ class ConnectionManager:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         self._schedule(
             self.broadcast_progress(
@@ -397,7 +398,7 @@ class ConnectionManager:
                 timestamp,
                 result_key,
                 record_id,
-                context,
+                context=context,
             ),
             "progress",
         )
@@ -411,7 +412,8 @@ class ConnectionManager:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         self._schedule(
             self.broadcast_node_state(
@@ -422,7 +424,7 @@ class ConnectionManager:
                 traceback,
                 result_key,
                 record_id,
-                context,
+                context=context,
             ),
             "node_state",
         )
@@ -444,10 +446,16 @@ class ConnectionManager:
         success: bool,
         errors: list,
         node_statuses: dict,
-        context: ExecutionContext | None = None,
+        *,
+        context: ExecutionContext,
     ) -> None:
         self._schedule(
-            self.broadcast_execution_complete(success, errors, node_statuses, context),
+            self.broadcast_execution_complete(
+                success,
+                errors,
+                node_statuses,
+                context=context,
+            ),
             "execution_complete",
         )
 
@@ -491,11 +499,13 @@ class ConnectionManager:
         self,
         action: str,
         workflow_id: str | None = None,
+        identity_generation: int | None = None,
     ) -> None:
         self._schedule(
             self.broadcast_workflow_tree_changed(
                 action=action,
                 workflow_id=workflow_id,
+                identity_generation=identity_generation,
             ),
             "workflow_tree_changed",
         )
@@ -520,9 +530,7 @@ class ConnectionManager:
             # Loop-not-ready guard: startup hasn't run or shutdown already fired.
             # Route the diagnostic through bioimageflow_server.ws so the WebSocket
             # logging bridge doesn't recurse on it.
-            _logger.debug(
-                "Dropped scheduled %s broadcast: event loop not yet bound", kind
-            )
+            _logger.debug("Dropped scheduled %s broadcast: event loop not yet bound", kind)
             coro.close()
             return
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
@@ -535,9 +543,7 @@ class ConnectionManager:
         except (concurrent.futures.CancelledError, asyncio.CancelledError):
             return
         if exc is not None:
-            _logger.warning(
-                "Scheduled WebSocket broadcast failed: %r", exc, exc_info=exc
-            )
+            _logger.warning("Scheduled WebSocket broadcast failed: %r", exc, exc_info=exc)
 
     def _enqueue_all(self, payload: dict[str, Any]) -> None:
         for state in list(self._states.values()):
@@ -566,9 +572,7 @@ class ConnectionManager:
                 state.drop_warning_emitted = True
 
     @staticmethod
-    def _matches_subscription(
-        state: _ConnectionState, *, level: str, node_id: str | None
-    ) -> bool:
+    def _matches_subscription(state: _ConnectionState, *, level: str, node_id: str | None) -> bool:
         sub_node = state.subscription_node_id
         if sub_node is not None and sub_node != node_id:
             return False
@@ -595,9 +599,7 @@ class ConnectionManager:
             try:
                 await ws.send_json(msg)
             except Exception as exc:  # noqa: BLE001 - broad by design
-                _logger.debug(
-                    "WebSocket send failed, removing connection: %r", exc
-                )
+                _logger.debug("WebSocket send failed, removing connection: %r", exc)
                 # Drop this connection from the active set without recursing
                 # into ``disconnect`` (which would try to wait for us).
                 self._states.pop(ws, None)
@@ -626,8 +628,8 @@ def _dump_plain(value: Any) -> Any:
     return value
 
 
-def _context_payload(context: ExecutionContext | None) -> dict[str, Any]:
-    return context.model_dump() if context is not None else {}
+def _context_payload(context: ExecutionContext) -> dict[str, Any]:
+    return context.model_dump()
 
 
 def _status_snapshot_payload(status: Any) -> dict[str, Any]:
@@ -700,9 +702,7 @@ def register_ws(
                     return
                 except Exception as exc:  # invalid JSON / framing
                     _logger.debug("WebSocket receive failed: %r", exc)
-                    await manager.send_error(
-                        websocket, "invalid_payload", str(exc)
-                    )
+                    await manager.send_error(websocket, "invalid_payload", str(exc))
                     continue
 
                 ref = raw.get("message_id") if isinstance(raw, dict) else None
@@ -718,9 +718,7 @@ def register_ws(
                     continue
 
                 if isinstance(msg, SubscribeLogsMessage):
-                    manager.set_log_subscription(
-                        websocket, node_id=msg.node_id, level=msg.level
-                    )
+                    manager.set_log_subscription(websocket, node_id=msg.node_id, level=msg.level)
                     if msg.message_id is not None:
                         await manager.send_ack(websocket, msg.message_id)
         except WebSocketDisconnect:

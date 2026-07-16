@@ -17,6 +17,24 @@ import {
 import { deferred } from '@/test-utils/asyncFixtures'
 import { makeGraph } from '@/test-utils/graphFixtures'
 
+const EXECUTION_CONTEXT = {
+  execution_id: 'exec-test',
+  workflow_id: 'wf_a',
+  draft_revision: 7,
+} as const
+
+function establishRunningExecution(
+  execution: ReturnType<typeof useExecutionStore>,
+): void {
+  execution.applyStatusSnapshot({
+    ...EXECUTION_CONTEXT,
+    state: 'running',
+    last_result: null,
+    progress: null,
+    node_statuses: {},
+  })
+}
+
 describe('execution store', () => {
   beforeEach(() => {
     canvasSessionRegistry.dispose()
@@ -35,8 +53,9 @@ describe('execution store', () => {
       timestamp: 1,
     })
 
-    execution.state = 'running'
+    establishRunningExecution(execution)
     execution.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: false,
       errors: [{ type: 'RuntimeError', detail: 'top-level failure' }],
       node_statuses: {
@@ -63,8 +82,9 @@ describe('execution store', () => {
   it('captures environment delete recovery actions from execution failures', () => {
     const execution = useExecutionStore()
 
-    execution.state = 'running'
+    establishRunningExecution(execution)
     execution.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: false,
       errors: [{
         type: 'EnvironmentReuseError',
@@ -99,10 +119,18 @@ describe('execution store', () => {
   })
 
   it('dismisses and clears environment recovery actions when a new run starts', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'started' } })
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        status: 'started',
+        execution_id: 'exec-new',
+        workflow_id: 'wf_a',
+        draft_revision: null,
+      },
+    })
     const execution = useExecutionStore()
-    execution.state = 'running'
+    establishRunningExecution(execution)
     execution.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: false,
       errors: [{
         detail: 'Environment recipe mismatch',
@@ -124,7 +152,14 @@ describe('execution store', () => {
   })
 
   it('posts workflow_name when starting execution', async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'started' } })
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        status: 'started',
+        execution_id: 'exec-post',
+        workflow_id: 'wf_a',
+        draft_revision: null,
+      },
+    })
     const execution = useExecutionStore()
     const graph = makeGraph()
 
@@ -269,7 +304,7 @@ describe('execution store', () => {
     expect(execution.isMutationLocked).toBe(true)
   })
 
-  it('ignores legacy execution messages for a context-aware root run', async () => {
+  it('ignores contextless execution messages for a context-aware root run', async () => {
     const canvasId = canvasIdFromPanelId('workflow:a')
     const response = deferred<{ data: Record<string, unknown> }>()
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
@@ -284,7 +319,7 @@ describe('execution store', () => {
       status: 'failed',
       cached: false,
       error: 'unscoped',
-    })
+    } as never)
     response.resolve({
       data: {
         status: 'started',
@@ -298,11 +333,35 @@ describe('execution store', () => {
       success: true,
       errors: [],
       node_statuses: {},
-    })
+    } as never)
 
     expect(execution.nodeStatuses.legacy).toBeUndefined()
     expect(execution.executionId).toBe('exec-accepted')
     expect(execution.state).toBe('running')
+  })
+
+  it('accepts contextless idle startup snapshots but rejects contextless running snapshots', () => {
+    const execution = useExecutionStore()
+
+    execution.applyStatusSnapshot({
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+    execution.applyStatusSnapshot({
+      state: 'running',
+      last_result: null,
+      progress: { node_id: 'legacy', row: 1, total_rows: 2 },
+      node_statuses: {
+        legacy: { node_id: 'legacy', status: 'running', cached: false },
+      },
+    })
+
+    expect(execution.state).toBe('idle')
+    expect(execution.progress).toBeNull()
+    expect(execution.nodeStatuses).toEqual({})
+    expect(execution.executionId).toBeNull()
   })
 
   it('keeps a matching completion that arrives before the Run response', async () => {
@@ -595,7 +654,7 @@ describe('execution store', () => {
     expect(execution.appliesToCanvas(canvasId)).toBe(true)
   })
 
-  it('never fans anonymous execution state across multiple canvases', () => {
+  it('rejects anonymous execution state without assigning it to any canvas', () => {
     const canvasA = canvasIdFromPanelId('workflow:a')
     const canvasB = canvasIdFromPanelId('workflow:b')
     canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
@@ -603,25 +662,38 @@ describe('execution store', () => {
     const execution = useExecutionStore()
 
     canvasSessionRegistry.activate(canvasA)
-    execution.applyNodeState({ node_id: 'same', status: 'running', cached: false })
-    expect(execution.appliesToCanvas(canvasA)).toBe(true)
+    execution.applyNodeState({
+      node_id: 'same',
+      status: 'running',
+      cached: false,
+    } as never)
+    expect(execution.nodeStatuses.same).toBeUndefined()
+    expect(execution.appliesToCanvas(canvasA)).toBe(false)
     expect(execution.appliesToCanvas(canvasB)).toBe(false)
 
     canvasSessionRegistry.activate(canvasB)
-    expect(execution.appliesToCanvas(canvasA)).toBe(true)
+    expect(execution.appliesToCanvas(canvasA)).toBe(false)
     expect(execution.appliesToCanvas(canvasB)).toBe(false)
 
-    execution.applyNodeState({ node_id: 'same', status: 'executed', cached: false })
+    execution.applyNodeState({
+      node_id: 'same',
+      status: 'executed',
+      cached: false,
+    } as never)
     expect(execution.appliesToCanvas(canvasA)).toBe(false)
-    expect(execution.appliesToCanvas(canvasB)).toBe(true)
+    expect(execution.appliesToCanvas(canvasB)).toBe(false)
 
     canvasSessionRegistry.activate(null)
-    execution.applyNodeState({ node_id: 'same', status: 'unexecuted', cached: false })
+    execution.applyNodeState({
+      node_id: 'same',
+      status: 'unexecuted',
+      cached: false,
+    } as never)
     expect(execution.appliesToCanvas(canvasA)).toBe(false)
     expect(execution.appliesToCanvas(canvasB)).toBe(false)
 
     canvasSessionRegistry.unregister(canvasB)
-    expect(execution.appliesToCanvas(canvasA)).toBe(true)
+    expect(execution.appliesToCanvas(canvasA)).toBe(false)
   })
 
   it('lets a newer running reconnect snapshot replace a terminal context', () => {

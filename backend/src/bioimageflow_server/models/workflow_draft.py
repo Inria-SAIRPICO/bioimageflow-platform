@@ -24,6 +24,13 @@ class WorkflowDraftPutRequest(BaseModel):
     validate_: bool = Field(default=True, alias="validate")
 
 
+class WorkflowDraftResetRequest(BaseModel):
+    """Request an atomic reset of the accepted draft to the saved artifact."""
+
+    expected_revision: int
+    updated_by: DraftWriter = "frontend"
+
+
 class WorkflowDraftResponse(BaseModel):
     """Live workflow draft returned by the draft API."""
 

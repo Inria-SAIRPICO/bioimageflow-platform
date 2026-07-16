@@ -20,6 +20,12 @@ const mockedApi = api as unknown as {
   delete: ReturnType<typeof vi.fn>
 }
 
+const EXECUTION_CONTEXT = {
+  execution_id: 'exec-recovery',
+  workflow_id: 'recovery-workflow',
+  draft_revision: 1,
+} as const
+
 function mountDialog() {
   return mount(EnvironmentRecoveryDialog, {
     global: {
@@ -41,8 +47,15 @@ function mountDialog() {
 
 function failWithRecovery() {
   const execution = useExecutionStore()
-  execution.state = 'running'
+  execution.applyStatusSnapshot({
+    ...EXECUTION_CONTEXT,
+    state: 'running',
+    last_result: null,
+    progress: null,
+    node_statuses: {},
+  })
   execution.applyExecutionComplete({
+    ...EXECUTION_CONTEXT,
     success: false,
     errors: [{
       type: 'EnvironmentReuseError',

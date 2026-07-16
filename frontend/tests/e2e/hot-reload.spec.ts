@@ -23,6 +23,8 @@
 import { test, expect } from '@playwright/test'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
+const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
+
 test.describe('hot-reload', () => {
   test('file edit broadcasts tool_reload and surfaces updated badge', async ({ page }) => {
     const fixturePath = process.env.BIOIMAGEFLOW_HOT_RELOAD_FIXTURE
@@ -35,6 +37,12 @@ test.describe('hot-reload', () => {
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    const workflowName = `hot_reload_${Date.now()}`
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'New', exact: true }).click()
+    await page.getByTestId('workflow-display-name-input').fill(workflowName)
+    await page.getByTestId('workflow-dialog-submit').click()
+    await expect(page.getByTestId('workflow-title')).toContainText(workflowName)
 
     // Add a Files node so the canvas has at least one node from the fixture.
     await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
@@ -100,6 +108,7 @@ test.describe('hot-reload', () => {
     } finally {
       // Restore the fixture file even if assertions failed.
       writeFileSync(filePath, original, 'utf-8')
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
     }
   })
 })

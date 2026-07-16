@@ -3,6 +3,7 @@ import type { GraphState, ValidationResult } from '@/api/types'
 import {
   fetchWorkflowDraft,
   putWorkflowDraft,
+  resetWorkflowDraftToSaved,
   type WorkflowDraftResponse,
 } from '@/api/workflowDrafts'
 import {
@@ -10,9 +11,9 @@ import {
   writeAutoSaveEntry,
   type AutoSaveEntry,
 } from '@/composables/useAutoSave'
-import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import {
+  clearRecoveryPersistenceKeyStrict,
   createRecoveryPersistenceCoordinator,
   type RecoveryPersistenceCoordinator,
 } from '@/sessions/recoveryPersistenceCoordinator'
@@ -31,6 +32,19 @@ import type { SyncState } from '@/sessions/graphSyncCoordinator'
 
 export const ROOT_PERSISTENCE_RESOURCE = 'root-persistence'
 
+export class CanvasDiscardRecoveryCleanupError extends Error {
+  readonly draft: WorkflowDraftResponse
+  readonly cause: unknown
+
+  constructor(draft: WorkflowDraftResponse, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    super(`The saved workflow was restored, but its local recovery snapshot could not be cleared: ${detail}`)
+    this.name = 'CanvasDiscardRecoveryCleanupError'
+    this.draft = cloneJson(draft)
+    this.cause = cause
+  }
+}
+
 export interface CanvasPersistenceTransports {
   fetchDraft(workflowId: string): Promise<WorkflowDraftResponse>
   putDraft(
@@ -43,6 +57,11 @@ export interface CanvasPersistenceTransports {
     },
   ): Promise<WorkflowDraftResponse>
   writeRecovery(entry: AutoSaveEntry): Promise<void>
+  resetDraftToSaved?(
+    workflowId: string,
+    expectedRevision: number,
+  ): Promise<WorkflowDraftResponse>
+  clearRecovery?(workflowId: string): Promise<void>
 }
 
 export interface CanvasScopedPersistenceOptions {
@@ -65,6 +84,7 @@ export interface CanvasPersistenceApi {
   resolveFromDraft(response: WorkflowDraftResponse): void
   flush(): Promise<void>
   ensureFreshForCriticalOperation(): Promise<boolean>
+  discardToSaved(): Promise<WorkflowDraftResponse>
   dispose(): void
 }
 
@@ -86,16 +106,23 @@ export interface RootCanvasPersistenceResource extends DisposableCanvasResource 
   resolveFromDraft(response: WorkflowDraftResponse): void
   flush(): Promise<void>
   ensureFreshForCriticalOperation(): Promise<boolean>
+  discardToSaved(): Promise<WorkflowDraftResponse>
 }
 
 const productionTransports: CanvasPersistenceTransports = {
   fetchDraft: fetchWorkflowDraft,
   putDraft: putWorkflowDraft,
   writeRecovery: writeAutoSaveEntry,
+  resetDraftToSaved: resetWorkflowDraftToSaved,
+  clearRecovery: workflowId => clearRecoveryPersistenceKeyStrict(
+    workflowId,
+    () => useAutoSave().clearAutoSaveStrict(workflowId),
+  ),
 }
 
+// Shell commands use this state-free adapter to follow Dockview activation.
+// It delegates exclusively to a registered canvas resource.
 let activeFacade: CanvasPersistenceApi | null = null
-let legacyFacade: CanvasPersistenceApi | null = null
 
 export function useCanvasPersistence(
   options: CanvasScopedPersistenceOptions,
@@ -112,7 +139,6 @@ export function useCanvasPersistence(
 export function _resetCanvasPersistenceForTest(): void {
   canvasSessionRegistry.dispose()
   activeFacade = null
-  legacyFacade = null
 }
 
 function registerScopedPersistence(
@@ -442,6 +468,56 @@ function createRootPersistenceResource(options: {
     return true
   }
 
+  async function discardToSaved(): Promise<WorkflowDraftResponse> {
+    assertUsable()
+    await flush()
+    const capturedId = workflowId.value
+    const expectedRevision = acceptedDraftRevision.value
+    if (capturedId === null || expectedRevision === null) {
+      throw new Error('Canvas draft is not initialized')
+    }
+    if (!options.transports.resetDraftToSaved || !options.transports.clearRecovery) {
+      throw new Error('Canvas persistence does not support discarding to saved state')
+    }
+    let response: WorkflowDraftResponse
+    try {
+      response = await options.transports.resetDraftToSaved(
+        capturedId,
+        expectedRevision,
+      )
+    } catch (error) {
+      if (isConflict(error)) {
+        const latest = await options.transports.fetchDraft(capturedId)
+        remoteDraftRevision.value = latest.draft_revision
+        useWorkflowDraftStore().noteRemoteChange({
+          type: 'workflow_draft_changed',
+          workflow_id: latest.workflow_id,
+          draft_revision: latest.draft_revision,
+          updated_by: latest.updated_by,
+          updated_at: latest.updated_at,
+          dirty_against_saved: latest.dirty_against_saved,
+        })
+      }
+      throw error
+    }
+    draftCoordinator.value?.dispose()
+    draftCoordinator.value = null
+    initialization = null
+    authoritativeDraft = cloneJson(response)
+    remoteDraftRevision.value = null
+    pendingDraft = null
+    queuedDraftRevision.value = 0
+    nextDraftRevision.value = 0
+    acceptDraftResponse(response)
+    useWorkflowDraftStore().acknowledgeAcceptedDraft(response)
+    try {
+      await options.transports.clearRecovery(capturedId)
+    } catch (error) {
+      throw new CanvasDiscardRecoveryCleanupError(response, error)
+    }
+    return cloneJson(response)
+  }
+
   function dispose(): void {
     if (isDisposed.value) return
     isDisposed.value = true
@@ -467,6 +543,7 @@ function createRootPersistenceResource(options: {
     resolveFromDraft,
     flush,
     ensureFreshForCriticalOperation,
+    discardToSaved,
     dispose,
   }
 }
@@ -490,6 +567,7 @@ function createBoundApi(
     ensureFreshForCriticalOperation: () => (
       resource.ensureFreshForCriticalOperation()
     ),
+    discardToSaved: () => resource.discardToSaved(),
     dispose,
   }
 }
@@ -514,6 +592,9 @@ function createUnavailableBoundApi(
     resolveFromDraft: () => {},
     flush: async () => {},
     ensureFreshForCriticalOperation: async () => false,
+    discardToSaved: async () => {
+      throw new Error('Nested canvases do not own root workflow drafts')
+    },
     dispose,
   }
 }
@@ -532,7 +613,6 @@ function createActiveFacade(): CanvasPersistenceApi {
         ? null
         : createBoundApi(resource, () => canvasSessionRegistry.unregister(activeCanvasId))
     }
-    if (canvasSessionRegistry.sessionCount.value === 0) return getLegacyFacade()
     return null
   }
   const required = (): CanvasPersistenceApi => {
@@ -559,75 +639,9 @@ function createActiveFacade(): CanvasPersistenceApi {
     ensureFreshForCriticalOperation: async () => (
       selected()?.ensureFreshForCriticalOperation() ?? false
     ),
+    discardToSaved: () => required().discardToSaved(),
     dispose: () => required().dispose(),
   }
-}
-
-function getLegacyFacade(): CanvasPersistenceApi {
-  if (legacyFacade !== null) return legacyFacade
-  const workflowId = computed(() => {
-    try {
-      return useWorkflowStore().currentName
-    } catch {
-      return null
-    }
-  })
-  const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
-  const acceptedDraftRevision = computed(() => {
-    try {
-      return useWorkflowDraftStore().appliedDraftRevision
-    } catch {
-      return null
-    }
-  })
-  const isPending = computed(() => {
-    try {
-      return useWorkflowDraftStore().hasPendingSave
-    } catch {
-      return false
-    }
-  })
-  const hasConflict = computed(() => {
-    try {
-      return useWorkflowDraftStore().isStale
-    } catch {
-      return false
-    }
-  })
-  function queueDraft(graph: GraphState): void {
-    const id = workflowId.value
-    if (!id) return
-    currentGraph.value = cloneGraph(graph)
-    useWorkflowDraftStore().scheduleSave(id, graph)
-  }
-  legacyFacade = {
-    canvasId: null,
-    workflowId,
-    acceptedDraftRevision,
-    currentGraph,
-    isPending,
-    hasConflict,
-    queueGraph: graph => {
-      const id = workflowId.value
-      if (!id) return
-      queueDraft(graph)
-      useAutoSave().scheduleAutoSave(id, graph)
-    },
-    queueDraft,
-    initializeFromDraft: () => {},
-    resolveFromDraft: () => {},
-    flush: async () => {
-      await Promise.all([
-        useWorkflowDraftStore().flush(),
-        useAutoSave().flushAutoSave(),
-      ])
-    },
-    ensureFreshForCriticalOperation: () => (
-      useWorkflowDraftStore().ensureFreshForCriticalOperation(workflowId.value)
-    ),
-    dispose: () => {},
-  }
-  return legacyFacade
 }
 
 function isConflict(error: unknown): boolean {

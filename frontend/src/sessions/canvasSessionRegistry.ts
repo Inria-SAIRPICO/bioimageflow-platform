@@ -1,9 +1,13 @@
 import { readonly, ref, type DeepReadonly, type Ref } from 'vue'
 
 declare const canvasIdBrand: unique symbol
+declare const canvasSessionRegistrationTokenBrand: unique symbol
 
 /** Stable canvas identity derived directly from the owning Dockview panel id. */
 export type CanvasId = string & { readonly [canvasIdBrand]: 'CanvasId' }
+export type CanvasSessionRegistrationToken = number & {
+  readonly [canvasSessionRegistrationTokenBrand]: 'CanvasSessionRegistrationToken'
+}
 
 export function canvasIdFromPanelId(panelId: string): CanvasId {
   if (panelId.trim().length === 0) {
@@ -37,13 +41,17 @@ export const GRAPH_SYNC_RESOURCE = 'graph-sync'
 
 export interface RegisteredCanvasSession {
   readonly descriptor: CanvasSessionDescriptor
+  readonly registrationToken: CanvasSessionRegistrationToken
   readonly coordinator: DisposableCanvasResource | null
 }
 
 interface MutableCanvasSession {
   descriptor: CanvasSessionDescriptor
+  registrationToken: CanvasSessionRegistrationToken
   resources: Map<string, DisposableCanvasResource>
 }
+
+let nextCanvasSessionRegistrationToken = 0
 
 /**
  * Owns canvas-scoped resources without inferring activation from access.
@@ -72,6 +80,9 @@ export class CanvasSessionRegistry {
 
     const session: MutableCanvasSession = {
       descriptor: Object.freeze({ ...descriptor }) as CanvasSessionDescriptor,
+      registrationToken: (
+        ++nextCanvasSessionRegistrationToken
+      ) as CanvasSessionRegistrationToken,
       resources: new Map(),
     }
     this.sessions.set(descriptor.canvasId, session)
@@ -150,6 +161,7 @@ export const canvasSessionRegistry = new CanvasSessionRegistry()
 function sessionView(session: MutableCanvasSession): RegisteredCanvasSession {
   return {
     descriptor: session.descriptor,
+    registrationToken: session.registrationToken,
     get coordinator() {
       return session.resources.get(GRAPH_SYNC_RESOURCE) ?? null
     },

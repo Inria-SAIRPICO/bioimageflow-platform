@@ -12,6 +12,7 @@ vi.mock('@/api/client', () => ({
 
 import { api } from '@/api/client'
 import {
+  CanvasDiscardRecoveryCleanupError,
   _resetCanvasPersistenceForTest,
   useCanvasPersistence,
   type CanvasPersistenceTransports,
@@ -496,6 +497,128 @@ describe('canvas persistence routing', () => {
     expect(io.putDraft).toHaveBeenCalledWith('workflow-a', expect.objectContaining({
       expected_revision: 8,
     }))
+  })
+
+  it('fences draft and recovery writes before resetting a discarded graph to saved', async () => {
+    const draftWrite = deferred<WorkflowDraftResponse>()
+    const recoveryWrite = deferred<void>()
+    const clearRecovery = deferred<void>()
+    const io = {
+      ...transports({ 'workflow-a': 1 }),
+      resetDraftToSaved: vi.fn(async (workflowId: string, expectedRevision: number) => ({
+        ...draft(workflowId, expectedRevision + 1, 'saved'),
+        dirty_against_saved: false,
+      })),
+      clearRecovery: vi.fn(() => clearRecovery.promise),
+    }
+    io.putDraft.mockReturnValueOnce(draftWrite.promise)
+    io.writeRecovery.mockReturnValueOnce(recoveryWrite.promise)
+    const fixed = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    useWorkflowDraftStore().trackWorkflow('workflow-a')
+    fixed.initializeFromDraft(draft('workflow-a', 1, 'saved'))
+    fixed.queueGraph(graph('discard-me'))
+
+    const discard = fixed.discardToSaved()
+    await vi.waitFor(() => {
+      expect(io.putDraft).toHaveBeenCalledOnce()
+      expect(io.writeRecovery).toHaveBeenCalledOnce()
+    })
+    expect(io.resetDraftToSaved).not.toHaveBeenCalled()
+
+    draftWrite.resolve(draft('workflow-a', 2, 'discard-me'))
+    recoveryWrite.resolve()
+    await vi.waitFor(() => expect(io.resetDraftToSaved).toHaveBeenCalledWith(
+      'workflow-a',
+      2,
+    ))
+    expect(io.clearRecovery).toHaveBeenCalledWith('workflow-a')
+    let settled = false
+    void discard.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    clearRecovery.resolve()
+    const accepted = await discard
+    expect(accepted.graph).toEqual(graph('saved'))
+    expect(accepted.dirty_against_saved).toBe(false)
+    expect(fixed.currentGraph.value).toEqual(graph('saved'))
+    expect(fixed.acceptedDraftRevision.value).toBe(3)
+  })
+
+  it('rejects discard when strict recovery cleanup fails', async () => {
+    const cleanupFailure = new Error('IndexedDB clear failed')
+    let clearAttempt = 0
+    const io = {
+      ...transports({ 'workflow-a': 1 }),
+      resetDraftToSaved: vi.fn(async (workflowId: string, expectedRevision: number) => ({
+        ...draft(workflowId, expectedRevision + 1, 'saved'),
+        dirty_against_saved: false,
+      })),
+      clearRecovery: vi.fn(async () => {
+        clearAttempt += 1
+        if (clearAttempt === 1) throw cleanupFailure
+      }),
+    }
+    const fixed = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    fixed.initializeFromDraft(draft('workflow-a', 1, 'saved'))
+    fixed.queueGraph(graph('discard-me'))
+
+    let failedDiscard: unknown
+    try {
+      await fixed.discardToSaved()
+    } catch (error) {
+      failedDiscard = error
+    }
+
+    expect(failedDiscard).toBeInstanceOf(CanvasDiscardRecoveryCleanupError)
+    expect((failedDiscard as CanvasDiscardRecoveryCleanupError).draft.graph)
+      .toEqual(graph('saved'))
+    expect(io.clearRecovery).toHaveBeenCalledWith('workflow-a')
+    expect(fixed.currentGraph.value).toEqual(graph('saved'))
+    expect(fixed.acceptedDraftRevision.value).toBe(3)
+
+    await expect(fixed.discardToSaved()).resolves.toMatchObject({
+      draft_revision: 4,
+      graph: graph('saved'),
+    })
+    expect(io.resetDraftToSaved.mock.calls.map(call => call[1])).toEqual([2, 3])
+  })
+
+  it('keeps the local graph and records a newer authority when discard loses CAS', async () => {
+    const conflict = { response: { status: 409, data: { current_revision: 4 } } }
+    const io = {
+      ...transports({ 'workflow-a': 1 }),
+      resetDraftToSaved: vi.fn().mockRejectedValue(conflict),
+      clearRecovery: vi.fn(async () => {}),
+    }
+    const fixed = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    useWorkflowDraftStore().trackWorkflow('workflow-a')
+    fixed.initializeFromDraft(draft('workflow-a', 1, 'saved'))
+    fixed.queueGraph(graph('local'))
+    await fixed.flush()
+    io.fetchDraft.mockResolvedValueOnce({
+      ...draft('workflow-a', 4, 'remote'),
+      updated_by: 'agent',
+    })
+
+    await expect(fixed.discardToSaved()).rejects.toBe(conflict)
+
+    expect(fixed.currentGraph.value).toEqual(graph('local'))
+    expect(fixed.hasConflict.value).toBe(true)
+    expect(io.clearRecovery).not.toHaveBeenCalled()
+    expect(useWorkflowDraftStore().remoteAvailableRevision).toBe(4)
   })
 
   it('does not overwrite a newer server draft from an older opened draft snapshot', async () => {

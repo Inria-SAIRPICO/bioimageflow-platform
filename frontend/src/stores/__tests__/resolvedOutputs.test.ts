@@ -40,6 +40,13 @@ function registerCanvases(): [CanvasId, CanvasId] {
   return [canvasA, canvasB]
 }
 
+function registerActiveCanvas(workflowId = 'a'): CanvasId {
+  const canvasId = canvasIdFromPanelId(`workflow:${workflowId}`)
+  canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId })
+  canvasSessionRegistry.activate(canvasId)
+  return canvasId
+}
+
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
     name: 'test',
@@ -107,6 +114,7 @@ describe('resolvedOutputs store', () => {
   })
 
   it('refreshResolvedOutputs debounces and fetches', async () => {
+    registerActiveCanvas()
     const store = useResolvedOutputsStore()
     mockFetchNodeOutputSchema.mockResolvedValue({
       resolved: true,
@@ -135,6 +143,7 @@ describe('resolvedOutputs store', () => {
   })
 
   it('propagates downstream to dynamic_outputs nodes along positional edges', async () => {
+    registerActiveCanvas()
     const store = useResolvedOutputsStore()
     mockFetchNodeOutputSchema
       .mockResolvedValueOnce({
@@ -167,6 +176,7 @@ describe('resolvedOutputs store', () => {
   })
 
   it('propagation uses dynamic_outputs flag, not class names — fictional tool is refreshed', async () => {
+    registerActiveCanvas()
     const store = useResolvedOutputsStore()
     mockFetchNodeOutputSchema.mockResolvedValue({
       resolved: true,
@@ -223,6 +233,7 @@ describe('resolvedOutputs store', () => {
   })
 
   it('does not propagate to nodes without dynamic_outputs', async () => {
+    registerActiveCanvas()
     const store = useResolvedOutputsStore()
     mockFetchNodeOutputSchema.mockResolvedValue({
       resolved: true,
@@ -278,8 +289,9 @@ describe('resolvedOutputs store', () => {
   })
 
   it('removeNode clears the entry and any pending timer', () => {
+    const canvasId = registerActiveCanvas()
     const store = useResolvedOutputsStore()
-    store.resolvedOutputsByNodeId['gen_1'] = { resolved: true, columns: {} }
+    store.resolvedOutputsForCanvas(canvasId)['gen_1'] = { resolved: true, columns: {} }
     store.removeNode('gen_1')
     expect(store.resolvedOutputsByNodeId['gen_1']).toBeUndefined()
   })
@@ -483,13 +495,13 @@ describe('resolvedOutputs store', () => {
     })
   })
 
-  it('does not expose or mutate legacy output state while registered canvases have no active canvas', async () => {
+  it('does not expose or mutate a registered canvas while no canvas is active', async () => {
     const store = useResolvedOutputsStore()
-    store.resolvedOutputsByNodeId.gen_1 = {
+    const [canvasA] = registerCanvases()
+    store.resolvedOutputsForCanvas(canvasA).gen_1 = {
       resolved: true,
-      columns: { legacy: { type: 'str' } },
+      columns: { from_a: { type: 'str' } },
     }
-    registerCanvases()
     const graph = makeGraph()
 
     expect(store.resolvedOutputsByNodeId.gen_1).toBeUndefined()
@@ -497,5 +509,9 @@ describe('resolvedOutputs store', () => {
     await vi.advanceTimersByTimeAsync(200)
 
     expect(mockFetchNodeOutputSchema).not.toHaveBeenCalled()
+    expect(store.getCanvasResolvedOutput(canvasA, 'gen_1')).toEqual({
+      resolved: true,
+      columns: { from_a: { type: 'str' } },
+    })
   })
 })

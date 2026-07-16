@@ -12,7 +12,6 @@ import {
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
-import { useWorkflowStore } from '@/stores/workflow'
 import type { NodeState, PublishedOutput } from '@/api/types'
 import {
   canvasSessionRegistry,
@@ -29,18 +28,12 @@ const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const activeStatusProjection = useCanvasStatusProjection()
 const dataTableStore = useDataTableStore()
-const workflowStore = useWorkflowStore()
 const { currentGraph } = useGraphSync()
 
 const showAll = ref(false)
 
 const graphNodes = computed(() => currentGraph.value.nodes)
-const activeWorkflowId = computed(() => {
-  if (uiStore.activeWorkflowId !== null) return uiStore.activeWorkflowId
-  return canvasSessionRegistry.sessionCount.value === 0
-    ? workflowStore.currentName
-    : null
-})
+const activeWorkflowId = computed(() => uiStore.activeWorkflowId)
 
 const nodeById = computed<Record<string, NodeState>>(() => {
   const out: Record<string, NodeState> = {}

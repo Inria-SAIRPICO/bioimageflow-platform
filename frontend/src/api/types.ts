@@ -1725,6 +1725,20 @@ export interface components {
             storage_path?: string | null;
         };
         /**
+         * WorkflowDeleteResponse
+         * @description Confirmation that a workflow identity was deleted.
+         */
+        WorkflowDeleteResponse: {
+            /**
+             * Deleted
+             * @default true
+             * @constant
+             */
+            deleted: true;
+            /** Identity Generation */
+            identity_generation: number;
+        };
+        /**
          * WorkflowDraftConflictResponse
          * @description Machine-readable optimistic concurrency conflict.
          */
@@ -1843,6 +1857,11 @@ export interface components {
             workspace_path?: string | null;
             /** Output Path */
             output_path?: string | null;
+            /**
+             * Identity Generation
+             * @default 0
+             */
+            identity_generation?: number;
         };
         /**
          * WorkflowSaveBody
@@ -1932,6 +1951,7 @@ export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
+export type WorkflowDeleteResponse = components['schemas']['WorkflowDeleteResponse'];
 export type WorkflowDraftConflictResponse = components['schemas']['WorkflowDraftConflictResponse'];
 export type WorkflowFile = components['schemas']['WorkflowFile'];
 export type WorkflowFolderCreate = components['schemas']['WorkflowFolderCreate'];
@@ -3014,9 +3034,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": components["schemas"]["WorkflowDeleteResponse"];
                 };
             };
             /** @description Validation Error */

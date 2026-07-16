@@ -9,6 +9,8 @@ import ToggleButton from 'primevue/togglebutton'
 import LoggerPanel from '../LoggerPanel.vue'
 import { useLoggerStore } from '@/stores/logger'
 import { useUIStore } from '@/stores/ui'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import { registerRootCanvas } from '@/test-utils/canvasFixtures'
 
 const require = createRequire(import.meta.url)
 const primeIconsCss = readFileSync(require.resolve('primeicons/primeicons.css'), 'utf8')
@@ -16,6 +18,7 @@ const primeIconsCss = readFileSync(require.resolve('primeicons/primeicons.css'),
 function mountPanel() {
   const pinia = createPinia()
   setActivePinia(pinia)
+  registerRootCanvas('logger-workflow')
   return mount(LoggerPanel, {
     global: {
       plugins: [pinia, PrimeVue],
@@ -25,6 +28,7 @@ function mountPanel() {
 
 describe('LoggerPanel', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -42,6 +46,7 @@ describe('LoggerPanel', () => {
   })
 
   afterEach(() => {
+    canvasSessionRegistry.dispose()
     vi.useRealTimers()
   })
 

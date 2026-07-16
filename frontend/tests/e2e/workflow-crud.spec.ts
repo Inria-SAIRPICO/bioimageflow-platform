@@ -32,6 +32,23 @@ async function deleteWorkflowIfExists(page: Page, name: string) {
   await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`).catch(() => undefined)
 }
 
+async function createWorkflow(page: Page, name: string, displayName: string) {
+  await deleteWorkflowIfExists(page, name)
+  const response = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+    data: { name, display_name: displayName },
+  })
+  expect(response.status()).toBe(201)
+}
+
+async function openWorkflowFromPanel(page: Page, name: string, displayName: string) {
+  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+  await page.getByTestId('workflow-search').fill(displayName)
+  const row = page.getByTestId(`workflow-row-${name}`)
+  await expect(row).toBeVisible()
+  await row.dblclick()
+  await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+}
+
 test.describe('workflow CRUD dialogs', () => {
   test.describe.configure({ mode: 'serial' })
 
@@ -115,5 +132,78 @@ test.describe('workflow CRUD dialogs', () => {
 
     const deleted = await page.request.get(`${API_BASE}/api/v1/workflows/${name}`)
     expect(deleted.status()).toBe(404)
+  })
+
+  test('deleting A closes its exact tab, activates B, and cannot recreate A on reload', async ({ page }) => {
+    const firstDisplay = uniqueName('Delete Tab A', page)
+    const secondDisplay = uniqueName('Delete Tab B', page)
+    const firstName = deriveWorkflowId(firstDisplay)
+    const secondName = deriveWorkflowId(secondDisplay)
+    await createWorkflow(page, firstName, firstDisplay)
+    await createWorkflow(page, secondName, secondDisplay)
+    await page.reload()
+    await openWorkflowFromPanel(page, firstName, firstDisplay)
+    await openWorkflowFromPanel(page, secondName, secondDisplay)
+
+    const firstTab = page.getByTestId('canvas-tab').filter({ hasText: firstDisplay })
+    const secondTab = page.getByTestId('canvas-tab').filter({ hasText: secondDisplay })
+    await firstTab.click()
+    await expect(page.getByTestId('workflow-title')).toContainText(firstDisplay)
+    const implicitCreates: string[] = []
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST'
+        && new URL(request.url()).pathname === '/api/v1/workflows'
+      ) implicitCreates.push(request.url())
+    })
+
+    await chooseWorkflowItem(page, 'Delete')
+    await page.getByTestId('delete-workflow-confirm').click()
+
+    await expect(firstTab).not.toBeVisible()
+    await expect(secondTab).toBeVisible()
+    await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)
+    expect(implicitCreates).toEqual([])
+
+    await page.reload()
+    await expect(page.getByTestId('canvas-tab').filter({ hasText: firstDisplay })).toHaveCount(0)
+    await expect(page.getByTestId('canvas-tab').filter({ hasText: secondDisplay })).toBeVisible()
+    await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)
+    expect((await page.request.get(`${API_BASE}/api/v1/workflows/${firstName}`)).status()).toBe(404)
+    expect(implicitCreates).toEqual([])
+
+    await deleteWorkflowIfExists(page, secondName)
+  })
+
+  test('deleting the last workflow leaves a non-persistent empty state across reload', async ({ page }) => {
+    const existing = await page.request.get(`${API_BASE}/api/v1/workflows`)
+    for (const workflow of await existing.json() as Array<{ name: string }>) {
+      await deleteWorkflowIfExists(page, workflow.name)
+    }
+    const displayName = uniqueName('Delete Last', page)
+    const name = deriveWorkflowId(displayName)
+    await createWorkflow(page, name, displayName)
+    await page.reload()
+    await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
+    const implicitCreates: string[] = []
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST'
+        && new URL(request.url()).pathname === '/api/v1/workflows'
+      ) implicitCreates.push(request.url())
+    })
+
+    await chooseWorkflowItem(page, 'Delete')
+    await page.getByTestId('delete-workflow-confirm').click()
+
+    await expect(page.getByTestId('canvas-placeholder')).toContainText('No workflow is open')
+    await expect(page.getByTestId('canvas-tab')).toHaveCount(0)
+    expect(implicitCreates).toEqual([])
+
+    await page.reload()
+    await expect(page.getByTestId('canvas-placeholder')).toContainText('No workflow is open')
+    await expect(page.getByTestId('canvas-tab')).toHaveCount(0)
+    expect((await page.request.get(`${API_BASE}/api/v1/workflows/${name}`)).status()).toBe(404)
+    expect(implicitCreates).toEqual([])
   })
 })

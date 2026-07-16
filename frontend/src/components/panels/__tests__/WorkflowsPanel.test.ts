@@ -387,7 +387,7 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'beta_api',
-        id: 'beta_api',
+        id: 'Analysis/beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -545,7 +545,7 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'beta_api',
-        id: 'beta_api',
+        id: 'Analysis/beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -597,7 +597,7 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'beta_api',
-        id: 'beta_api',
+        id: 'Analysis/beta_api',
         folder: 'Analysis',
         display_name: 'Beta Workflow',
         description: null,
@@ -616,14 +616,14 @@ describe('WorkflowsPanel', () => {
     })
     await flushPromises()
 
-    expect(store.workflowFolderIds.beta_api).toBe(folder.id)
+    expect(store.workflowFolderIds['Analysis/beta_api']).toBe(folder.id)
     expect(store.flattenedWorkflows.map((workflow) => workflow.name)).toEqual([
       'alpha_api',
       'beta_api',
     ])
-    await wrapper.find('[data-testid="workflow-row-beta_api"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-row-Analysis_beta_api"]').trigger('click')
     const emitted = wrapper.emitted('select-workflow') ?? []
-    expect(emitted[emitted.length - 1]).toEqual(['beta_api'])
+    expect(emitted[emitted.length - 1]).toEqual(['Analysis/beta_api'])
   })
 
   it('moves a dragged folder into another folder', async () => {

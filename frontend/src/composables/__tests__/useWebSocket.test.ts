@@ -5,6 +5,22 @@ import { useWebSocket, __resetForTests } from '@/composables/useWebSocket'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useExecutionStore } from '@/stores/execution'
+import { api } from '@/api/client'
+
+const EXECUTION_CONTEXT = {
+  execution_id: 'exec-websocket',
+  workflow_id: 'websocket-workflow',
+  draft_revision: 8,
+} as const
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 class FakeWebSocket {
   static readonly CONNECTING = 0
@@ -38,6 +54,7 @@ describe('useWebSocket workflow draft dispatch', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     __resetForTests()
     globalThis.WebSocket = realWebSocket
     vi.restoreAllMocks()
@@ -89,6 +106,96 @@ describe('useWebSocket workflow draft dispatch', () => {
     expect(draft.remoteUpdatedBy).toBe('agent')
     expect(draft.remoteUpdatedAt).toBe('2026-05-21T12:09:00Z')
     expect(draft.remoteDirtyAgainstSaved).toBe(false)
+  })
+
+  it('dispatches progress, node state, and completion with one execution context', () => {
+    const execution = useExecutionStore()
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    for (const message of [
+      {
+        type: 'node_state',
+        ...EXECUTION_CONTEXT,
+        node_id: 'node-1',
+        status: 'running',
+        cached: false,
+      },
+      {
+        type: 'progress',
+        ...EXECUTION_CONTEXT,
+        node_id: 'node-1',
+        status: 'row_progress',
+        row: 2,
+        total_rows: 5,
+        timestamp: 1,
+      },
+      {
+        type: 'execution_complete',
+        ...EXECUTION_CONTEXT,
+        success: true,
+        errors: [],
+        node_statuses: {
+          'node-1': { node_id: 'node-1', status: 'executed', cached: false },
+        },
+      },
+    ]) {
+      FakeWebSocket.instances[0]!.onmessage?.({
+        data: JSON.stringify(message),
+      } as MessageEvent)
+    }
+
+    expect(execution.executionId).toBe(EXECUTION_CONTEXT.execution_id)
+    expect(execution.executionWorkflowId).toBe(EXECUTION_CONTEXT.workflow_id)
+    expect(execution.executionDraftRevision).toBe(EXECUTION_CONTEXT.draft_revision)
+    expect(execution.state).toBe('idle')
+    expect(execution.lastResult?.success).toBe(true)
+    expect(execution.nodeStatuses['node-1']?.status).toBe('executed')
+  })
+
+  it('rejects contextless execution events while a contextual run is active', () => {
+    const execution = useExecutionStore()
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+    const receive = (message: Record<string, unknown>) => {
+      FakeWebSocket.instances[0]!.onmessage?.({
+        data: JSON.stringify(message),
+      } as MessageEvent)
+    }
+
+    receive({
+      type: 'node_state',
+      ...EXECUTION_CONTEXT,
+      node_id: 'node-1',
+      status: 'running',
+      cached: false,
+    })
+    receive({
+      type: 'node_state',
+      node_id: 'unscoped',
+      status: 'failed',
+      cached: false,
+    })
+    receive({
+      type: 'progress',
+      node_id: 'unscoped',
+      status: 'row_progress',
+      row: 1,
+      total_rows: 2,
+      timestamp: 1,
+    })
+    receive({
+      type: 'execution_complete',
+      success: true,
+      errors: [],
+      node_statuses: {},
+    })
+
+    expect(execution.executionId).toBe(EXECUTION_CONTEXT.execution_id)
+    expect(execution.state).toBe('running')
+    expect(execution.nodeStatuses.unscoped).toBeUndefined()
+    expect(execution.progress).toBeNull()
+    expect(execution.lastResult).toBeNull()
   })
 
   it('dispatches tool_reload and tool_removed messages to the tool registry store', () => {
@@ -145,6 +252,155 @@ describe('useWebSocket workflow draft dispatch', () => {
     await Promise.resolve()
 
     expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+  })
+
+  it('invalidates an older list response for an unversioned folder structural event', async () => {
+    const staleResponse = deferred<any>()
+    const get = vi.spyOn(api, 'get')
+      .mockReturnValueOnce(staleResponse.promise)
+      .mockResolvedValueOnce({
+        data: [{
+          id: 'kept',
+          name: 'kept',
+          folder: '',
+          display_name: 'Kept',
+          path: '/tmp/kept/workflow.json',
+          last_modified: '2026-07-16T10:00:00Z',
+        }],
+      })
+    const workflow = useWorkflowStore()
+    const fetchWorkflowTree = vi.spyOn(workflow, 'fetchWorkflowTree')
+      .mockResolvedValue([])
+    const refresh = workflow.fetchWorkflows()
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'workflow_tree_changed',
+        action: 'folder_moved',
+      }),
+    } as MessageEvent)
+    staleResponse.resolve({
+      data: [{
+        id: 'stale',
+        name: 'stale',
+        folder: 'Deleted folder',
+        display_name: 'Stale',
+        path: '/tmp/stale/workflow.json',
+        last_modified: '2026-07-16T09:00:00Z',
+      }],
+    })
+    await refresh
+
+    expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(workflow.workflows.map(item => item.id ?? item.name)).toEqual(['kept'])
+  })
+
+  it('routes remote workflow deletion through the canonical removal lifecycle', async () => {
+    vi.spyOn(useWorkflowStore(), 'fetchWorkflowTree').mockResolvedValue([])
+    const removed = vi.fn()
+    window.addEventListener('bioimageflow:workflow-removed', removed)
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'workflow_tree_changed',
+        action: 'workflow_deleted',
+        workflow_id: 'folder/wf',
+        identity_generation: 7,
+      }),
+    } as MessageEvent)
+    await Promise.resolve()
+
+    expect(removed).toHaveBeenCalledOnce()
+    expect((removed.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+      workflowName: 'folder/wf',
+      identityGeneration: 7,
+    })
+    window.removeEventListener('bioimageflow:workflow-removed', removed)
+  })
+
+  it('ignores a delayed deletion event older than a recreated identity', async () => {
+    const workflow = useWorkflowStore()
+    const fetchWorkflowTree = vi.spyOn(workflow, 'fetchWorkflowTree')
+      .mockResolvedValue([])
+    const removed = vi.fn()
+    window.addEventListener('bioimageflow:workflow-removed', removed)
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'workflow_tree_changed',
+        action: 'workflow_created',
+        workflow_id: 'wf',
+        identity_generation: 12,
+      }),
+    } as MessageEvent)
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'workflow_tree_changed',
+        action: 'workflow_deleted',
+        workflow_id: 'wf',
+        identity_generation: 11,
+      }),
+    } as MessageEvent)
+    await Promise.resolve()
+
+    expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect(removed).not.toHaveBeenCalled()
+    window.removeEventListener('bioimageflow:workflow-removed', removed)
+  })
+
+  it('preserves the durable server generation across WebSocket reconnects', () => {
+    const workflow = useWorkflowStore()
+    workflow.observeWorkflowServerIdentityGeneration('wf', 12)
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onopen?.(new Event('open'))
+
+    expect(workflow.workflowServerIdentityGeneration('wf')).toBe(12)
+    expect(workflow.observeWorkflowServerIdentityGeneration('wf', 0)).toBe(false)
+    expect(workflow.workflowServerIdentityGeneration('wf')).toBe(12)
+  })
+
+  it('refreshes and publishes workflow identities after reconnect', async () => {
+    vi.useFakeTimers()
+    const workflow = useWorkflowStore()
+    workflow.observeWorkflowServerIdentityGeneration('wf', 12)
+    const fetchWorkflowTree = vi.spyOn(workflow, 'fetchWorkflowTree')
+      .mockImplementation(async () => {
+        workflow.observeWorkflowServerIdentityGeneration('wf', 12)
+        workflow.workflows = [{
+          id: 'wf',
+          name: 'wf',
+          display_name: 'Workflow',
+          identity_generation: 12,
+        }] as any
+        return []
+      })
+    vi.spyOn(useToolRegistryStore(), 'fetchTools').mockResolvedValue(undefined)
+    const refreshed = vi.fn()
+    window.addEventListener('bioimageflow:workflow-identities-refreshed', refreshed)
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+    FakeWebSocket.instances[0]!.onclose?.(new CloseEvent('close'))
+
+    await vi.advanceTimersByTimeAsync(1000)
+    FakeWebSocket.instances[1]!.onopen?.(new Event('open'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(fetchWorkflowTree).toHaveBeenCalledOnce()
+    expect((refreshed.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+      workflows: [{ workflowName: 'wf', identityGeneration: 12 }],
+    })
+    window.removeEventListener('bioimageflow:workflow-identities-refreshed', refreshed)
+    vi.useRealTimers()
   })
 
   it('refreshes workflows and requests existing open behavior for active workflow changes', async () => {

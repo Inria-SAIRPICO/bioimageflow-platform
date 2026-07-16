@@ -9,7 +9,6 @@ import {
 
 import type { NodeStatus, ProgressInfo, ValidationResult } from '@/api/types'
 import {
-  canvasIdFromPanelId,
   canvasSessionRegistry,
   type CanvasId,
   type CanvasSessionDescriptor,
@@ -20,11 +19,8 @@ import {
   type ProjectedNodeStatus,
 } from '@/sessions/nodeStatusProjection'
 import { useExecutionStore } from '@/stores/execution'
-import { useCanvasPersistence } from './useCanvasPersistence'
-import { useGraphSync } from './useGraphSync'
 
 const CANVAS_STATUS_RESOURCE = 'canvas-status-projection'
-const LEGACY_CANVAS_ID = canvasIdFromPanelId('__legacy_status_projection__')
 
 export interface CanvasStatusNode {
   readonly id: string
@@ -60,6 +56,8 @@ interface CanvasStatusProjectionResource
 export const CANVAS_STATUS_PROJECTION_KEY:
 InjectionKey<CanvasStatusProjectionReader> = Symbol('bioimageflow:canvas-status')
 
+// Shell panels use this state-free adapter to follow Dockview activation.
+// It delegates exclusively to a registered canvas resource.
 let activeFacade: CanvasStatusProjectionApi | null = null
 
 export function useCanvasStatusProjection(
@@ -83,7 +81,7 @@ export function useCanvasStatusProjection(
   return fixedFacade(options.descriptor.canvasId, resource)
 }
 
-/** Test-only reset for the compatibility facade. */
+/** Test-only reset for the state-free active adapter. */
 export function _resetCanvasStatusProjectionForTest(): void {
   activeFacade = null
 }
@@ -239,42 +237,8 @@ function fixedFacade(
 }
 
 function createActiveFacade(): CanvasStatusProjectionApi {
-  const execution = useExecutionStore()
-  const graphSync = useGraphSync()
-  const persistence = useCanvasPersistence()
-  function legacyStatusForNode(
-    nodeId: string,
-    enabled?: boolean,
-  ): ProjectedNodeStatus | null {
-    if (canvasSessionRegistry.sessionCount.value !== 0) return null
-    const originMatches = execution.appliesToCanvas(LEGACY_CANVAS_ID)
-    const projected = projectNodeStatus({
-      nodeId,
-      enabled: enabled ?? true,
-      provisionalOverride: null,
-      executionStatus: execution.nodeStatuses[nodeId] ?? null,
-      validationStatus: graphSync.validationResult.value?.node_statuses?.[nodeId] ?? null,
-      executionOriginMatches: originMatches,
-      executionIsContextless: execution.executionId === null,
-      allowContextlessLegacyExecution:
-        execution.executionId === null && originMatches,
-      executionDraftRevision: execution.executionDraftRevision,
-      acceptedDraftRevision: persistence.acceptedDraftRevision.value,
-    })
-    return enabled === undefined && projected.source !== 'execution' ? null : projected
-  }
-
   const statuses = computed<Record<string, ProjectedNodeStatus>>(() => {
-    const resource = activeResource()
-    if (resource !== null) return resource.statuses.value
-    if (canvasSessionRegistry.sessionCount.value !== 0) return {}
-
-    const result: Record<string, ProjectedNodeStatus> = {}
-    for (const node of graphSync.currentGraph.value.nodes) {
-      const status = legacyStatusForNode(node.id, node.enabled !== false)
-      if (status !== null) result[node.id] = status
-    }
-    return result
+    return activeResource()?.statuses.value ?? {}
   })
 
   return {
@@ -285,14 +249,9 @@ function createActiveFacade(): CanvasStatusProjectionApi {
     statusForNode: nodeId => (
       statuses.value[nodeId]
       ?? activeResource()?.statusForNode(nodeId)
-      ?? legacyStatusForNode(nodeId)
+      ?? null
     ),
-    progressForNode: (nodeId) => {
-      const resource = activeResource()
-      if (resource !== null) return resource.progressForNode(nodeId)
-      if (legacyStatusForNode(nodeId)?.source !== 'execution') return null
-      return execution.progress?.node_id === nodeId ? execution.progress : null
-    },
+    progressForNode: nodeId => activeResource()?.progressForNode(nodeId) ?? null,
     markProvisional: (nodeId, value) => {
       activeResource()?.markProvisional(nodeId, value)
     },

@@ -1,4 +1,14 @@
 import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
+
+async function deleteAllWorkflows(page: Page) {
+  const response = await page.request.get(`${API_BASE}/api/v1/workflows`)
+  for (const workflow of await response.json() as Array<{ name: string }>) {
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflow.name}`)
+  }
+}
 
 test.describe('workflow creation', () => {
   test.beforeEach(async ({ page }) => {
@@ -66,8 +76,14 @@ test.describe('workflow creation', () => {
   })
 
   test('Canvas panel has dot grid background and no minimap', async ({ page }) => {
-    // Canvas tab visible
-    await expect(page.locator('.dv-tab').filter({ hasText: 'Canvas' })).toBeVisible()
+    const name = `canvas_grid_${Date.now()}`
+    const displayName = `Canvas Grid ${name}`
+    const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+      data: { name, display_name: displayName },
+    })
+    expect(created.status()).toBe(201)
+    await page.reload()
+    await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
 
     // Vue Flow container rendered
     await expect(page.locator('.vue-flow')).toBeVisible()
@@ -84,12 +100,16 @@ test.describe('workflow creation', () => {
       document.querySelector('.vue-flow__minimap') !== null,
     )
     expect(minimapExists).toBe(false)
+    await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`)
   })
 
-  test('canvas starts empty with no nodes', async ({ page }) => {
-    await expect(page.locator('.vue-flow')).toBeVisible()
-    const nodes = page.locator('.vue-flow__node')
-    await expect(nodes).toHaveCount(0)
+  test('shows a non-persistent chooser when no workflow exists', async ({ page }) => {
+    await deleteAllWorkflows(page)
+    await page.reload()
+
+    await expect(page.getByTestId('canvas-placeholder')).toContainText('No workflow is open')
+    await expect(page.getByTestId('canvas-tab')).toHaveCount(0)
+    await expect(page.locator('.vue-flow')).toHaveCount(0)
   })
 
   test('Create Tool dialog opens and closes', async ({ page }) => {

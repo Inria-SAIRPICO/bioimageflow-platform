@@ -3,6 +3,7 @@ import type { GraphState } from '@/api/types'
 import { canvasIdFromPanelId } from '../canvasSessionRegistry'
 import {
   RecoveryPersistenceCoordinatorDisposedError,
+  clearRecoveryPersistenceKeyStrict,
   createRecoveryPersistenceCoordinator,
   type RecoveryPersistenceRequest,
 } from '../recoveryPersistenceCoordinator'
@@ -292,5 +293,48 @@ describe('recovery persistence coordinator', () => {
     )
     await expect(waiting.flushLatest()).resolves.toMatchObject({ persisted: true })
     expect(waitingTransport).toHaveBeenCalledOnce()
+  })
+
+  it('serializes a strict clear after an in-flight write and fences its queued replacement', async () => {
+    const writeGate = deferred<void>()
+    const persisted = new Map<string, GraphState>()
+    const order: string[] = []
+    const transport = vi.fn(async (request: RecoveryPersistenceRequest) => {
+      await writeGate.promise
+      persisted.set(request.recoveryKey, request.graph)
+      order.push('write')
+    })
+    const coordinator = createRecoveryPersistenceCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:remote-delete'),
+      transport,
+    })
+
+    coordinator.queue('remote-delete', graph('in-flight'))
+    const flushing = coordinator.flushLatest()
+    const flushingOutcome = flushing.then(
+      value => ({ value, error: null }),
+      error => ({ value: null, error }),
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    coordinator.queue('remote-delete', graph('queued-after-write'))
+    coordinator.dispose()
+
+    const clearing = clearRecoveryPersistenceKeyStrict('remote-delete', async () => {
+      persisted.delete('remote-delete')
+      order.push('clear')
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(order).toEqual([])
+
+    writeGate.resolve()
+    expect((await flushingOutcome).error).toBeInstanceOf(
+      RecoveryPersistenceCoordinatorDisposedError,
+    )
+    await clearing
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(order).toEqual(['write', 'clear'])
+    expect(transport).toHaveBeenCalledOnce()
+    expect(persisted.has('remote-delete')).toBe(false)
   })
 })

@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import tempfile
-import threading
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -269,8 +268,6 @@ class WorkflowDraftService:
         self._dev_mode_provider = dev_mode_provider or (lambda: True)
         self._settings_provider = settings_provider or (lambda: None)
         self.server_boot_id = server_boot_id or uuid.uuid4().hex
-        self._locks: dict[str, threading.Lock] = {}
-        self._locks_guard = threading.Lock()
 
     def get_draft(
         self,
@@ -279,7 +276,10 @@ class WorkflowDraftService:
         api_base_url: str | None = None,
     ) -> WorkflowDraftResponse:
         store = self._store()
-        draft = self._read_or_synthesize(store, workflow_id)
+        # Reading can repair a legacy draft identity in place, so it belongs to
+        # the same serialization domain as PUT, reset, move, and delete.
+        with store.workflow_mutation(workflow_id):
+            draft = self._read_or_synthesize(store, workflow_id)
         self.write_agent_context(
             store,
             workflow_id=workflow_id,
@@ -292,7 +292,8 @@ class WorkflowDraftService:
         """Return the latest draft without updating agent workspace context."""
 
         store = self._store()
-        return self._read_or_synthesize(store, workflow_id)
+        with store.workflow_mutation(workflow_id):
+            return self._read_or_synthesize(store, workflow_id)
 
     def put_draft(
         self,
@@ -304,8 +305,8 @@ class WorkflowDraftService:
         should_validate: bool = True,
         api_base_url: str | None = None,
     ) -> WorkflowDraftResponse:
-        with self._lock_for(workflow_id):
-            store = self._store()
+        store = self._store()
+        with store.workflow_mutation(workflow_id):
             current = self._read_or_synthesize(store, workflow_id)
             if expected_revision != current.draft_revision:
                 raise WorkflowDraftRevisionConflict(
@@ -341,13 +342,47 @@ class WorkflowDraftService:
             )
             return draft
 
-    def _lock_for(self, workflow_id: str) -> threading.Lock:
-        with self._locks_guard:
-            lock = self._locks.get(workflow_id)
-            if lock is None:
-                lock = threading.Lock()
-                self._locks[workflow_id] = lock
-            return lock
+    def reset_draft_to_saved(
+        self,
+        workflow_id: str,
+        *,
+        expected_revision: int,
+        updated_by: DraftWriter = "frontend",
+        api_base_url: str | None = None,
+    ) -> WorkflowDraftResponse:
+        """CAS-replace the accepted draft with the current saved graph."""
+
+        store = self._store()
+        with store.workflow_mutation(workflow_id):
+            current = self._read_or_synthesize(store, workflow_id)
+            if expected_revision != current.draft_revision:
+                raise WorkflowDraftRevisionConflict(
+                    expected_revision=expected_revision,
+                    current=current,
+                )
+            saved = store.get_workflow(workflow_id).graph
+            saved_revision = self._saved_revision(store, workflow_id)
+            draft = WorkflowDraftResponse(
+                workflow_id=workflow_id,
+                base_saved_revision=saved_revision,
+                draft_revision=current.draft_revision + 1,
+                updated_at=_utc_now(),
+                updated_by=updated_by,
+                dirty_against_saved=False,
+                graph=saved,
+                validation=self._validate(store, workflow_id, saved),
+            )
+            _json_dump_atomic(
+                self._draft_path(store, workflow_id),
+                draft.model_dump(mode="json"),
+            )
+            self.write_agent_context(
+                store,
+                workflow_id=workflow_id,
+                draft=draft,
+                api_base_url=api_base_url,
+            )
+            return draft
 
     def write_agent_context(
         self,

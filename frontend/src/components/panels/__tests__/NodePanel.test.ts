@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { enableAutoUnmount, mount, flushPromises } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
@@ -25,6 +25,8 @@ import {
   __resetForTests as resetFieldFocusForTests,
   useFieldFocusTracker,
 } from '@/composables/useFieldFocusTracker'
+
+enableAutoUnmount(afterEach)
 
 function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
   return {
@@ -81,9 +83,16 @@ const nodeEditCommandCalls = {
   renamePublishedOutput: vi.fn(),
 }
 
+const EXECUTION_CONTEXT = {
+  execution_id: 'exec-node-panel',
+  workflow_id: 'node-panel-workflow',
+  draft_revision: 7,
+} as const
+
 function mountPanel(
   nodeData: ReturnType<typeof makeNodeData> | null = null,
   executionPhase: 'idle' | 'starting' | 'running' | 'stopping' = 'idle',
+  acceptedDraftRevision: number | null = null,
 ) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -103,7 +112,7 @@ function mountPanel(
       enabled: node.data?.enabled !== false,
     }))),
     validationResult: graphSync.validationResult,
-    acceptedDraftRevision: ref(null),
+    acceptedDraftRevision: ref(acceptedDraftRevision),
   })
   useCanvasCommands({
     descriptor,
@@ -1179,20 +1188,20 @@ describe('NodePanel', () => {
 
   // --- Multi-selection ---
 
-  it('shows multi-select message when multiple nodes are selected', () => {
-    const pinia = createPinia()
-    setActivePinia(pinia)
+  it('shows multi-select message when multiple nodes are selected', async () => {
+    const w = mountPanel()
     const uiStore = useUIStore()
-    uiStore.setSelectedNodes(['node-1', 'node-2'])
-    uiStore.setGraphNodes([
+    const canvasId = canvasSessionRegistry.activeCanvasId.value!
+    uiStore.setCanvasSelectedNodes(canvasId, ['node-1', 'node-2'])
+    uiStore.setCanvasGraphNodes(canvasId, [
       { id: 'node-1', data: makeNodeData() },
       { id: 'node-2', data: makeNodeData({ name: 'Blur 2' }) },
     ])
-    const w = mount(NodePanel, {
-      global: { plugins: [pinia, PrimeVue] },
-    })
+    await w.vm.$nextTick()
+
     expect(w.find('.multi-select').exists()).toBe(true)
     expect(w.find('.multi-select').text()).toContain('2 nodes selected')
+    w.unmount()
   })
 
   describe('validation errors', () => {
@@ -1268,8 +1277,15 @@ describe('NodePanel', () => {
 
   describe('execution output', () => {
     it('renders failed-node error and traceback from execution state', async () => {
-      const w = mountPanel(makeNodeData())
+      const w = mountPanel(makeNodeData(), 'idle', EXECUTION_CONTEXT.draft_revision)
+      const canvasId = canvasSessionRegistry.activeCanvasId.value!
+      useUIStore().setCanvasWorkflow(
+        canvasId,
+        EXECUTION_CONTEXT.workflow_id,
+        'Node Panel Workflow',
+      )
       useExecutionStore().applyNodeState({
+        ...EXECUTION_CONTEXT,
         node_id: 'node-1',
         status: 'failed',
         cached: false,

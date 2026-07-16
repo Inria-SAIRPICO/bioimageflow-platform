@@ -32,8 +32,8 @@ class ProgressMessage(_MessageBase):
     timestamp: float
     result_key: str | None = None
     record_id: str | None = None
-    execution_id: str | None = None
-    workflow_id: str | None = None
+    execution_id: str
+    workflow_id: str
     draft_revision: int | None = None
 
 
@@ -50,8 +50,8 @@ class NodeStateMessage(_MessageBase):
     traceback: str | None = None
     result_key: str | None = None
     record_id: str | None = None
-    execution_id: str | None = None
-    workflow_id: str | None = None
+    execution_id: str
+    workflow_id: str
     draft_revision: int | None = None
 
 
@@ -68,8 +68,8 @@ class ExecutionCompleteMessage(_MessageBase):
     success: bool
     errors: list[dict[str, Any]] = []
     node_statuses: dict[str, Any]
-    execution_id: str | None = None
-    workflow_id: str | None = None
+    execution_id: str
+    workflow_id: str
     draft_revision: int | None = None
 
 

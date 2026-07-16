@@ -5,16 +5,12 @@ const DB_VERSION = 1
 const WORKFLOW_STORE = 'workflows'
 const PREFERENCES_STORE = 'preferences'
 const LAST_OPENED_KEY = 'last_opened_workflow'
-const DEBOUNCE_MS = 500
 
 export interface AutoSaveEntry {
   name: string
   graph: GraphState
   timestamp: number
 }
-
-let timer: ReturnType<typeof setTimeout> | null = null
-let pendingEntry: AutoSaveEntry | null = null
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -73,36 +69,13 @@ export async function writeAutoSaveEntry(entry: AutoSaveEntry): Promise<void> {
   })
 }
 
+async function deleteAutoSaveEntry(name: string): Promise<void> {
+  await withStore(WORKFLOW_STORE, 'readwrite', (store) => {
+    store.delete(name)
+  })
+}
+
 export function useAutoSave() {
-  function scheduleAutoSave(name: string, graph: GraphState): void {
-    pendingEntry = {
-      name,
-      graph,
-      timestamp: Date.now(),
-    }
-    if (timer !== null) {
-      clearTimeout(timer)
-    }
-    timer = setTimeout(() => {
-      void flushAutoSave()
-    }, DEBOUNCE_MS)
-  }
-
-  async function flushAutoSave(): Promise<void> {
-    if (timer !== null) {
-      clearTimeout(timer)
-      timer = null
-    }
-    if (pendingEntry === null) return
-    const entry = pendingEntry
-    pendingEntry = null
-    try {
-      await writeAutoSaveEntry(entry)
-    } catch (err) {
-      console.warn('[useAutoSave] Failed to save workflow:', err)
-    }
-  }
-
   async function loadAutoSave(name: string): Promise<AutoSaveEntry | null> {
     try {
       return await withStore(WORKFLOW_STORE, 'readonly', (store) => (
@@ -128,20 +101,18 @@ export function useAutoSave() {
 
   async function clearAutoSave(name: string): Promise<void> {
     try {
-      await withStore(WORKFLOW_STORE, 'readwrite', (store) => {
-        store.delete(name)
-      })
+      await deleteAutoSaveEntry(name)
     } catch (err) {
       console.warn('[useAutoSave] Failed to clear workflow auto-save:', err)
     }
   }
 
+  async function clearAutoSaveStrict(name: string): Promise<void> {
+    await deleteAutoSaveEntry(name)
+  }
+
   async function renameWorkflow(oldName: string, newName: string): Promise<void> {
     if (oldName === newName) return
-    if (pendingEntry?.name === oldName) {
-      pendingEntry = { ...pendingEntry, name: newName }
-    }
-    await flushAutoSave()
     const entry = await loadAutoSave(oldName)
     let moved = entry === null
     if (entry !== null) {
@@ -186,11 +157,10 @@ export function useAutoSave() {
   }
 
   return {
-    scheduleAutoSave,
-    flushAutoSave,
     loadAutoSave,
     loadMostRecentAutoSave,
     clearAutoSave,
+    clearAutoSaveStrict,
     renameWorkflow,
     setLastOpenedWorkflow,
     getLastOpenedWorkflow,

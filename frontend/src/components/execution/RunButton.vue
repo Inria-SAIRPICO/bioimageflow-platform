@@ -5,7 +5,7 @@ import Dialog from 'primevue/dialog'
 import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExecutionLock'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
-import { useWorkflowStore } from '@/stores/workflow'
+import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
 import {
   outOfDateNodeIdsForExecution,
@@ -30,18 +30,17 @@ const emit = defineEmits<{
 
 const exec = useExecutionStore()
 const ui = useUIStore()
-const workflowStore = useWorkflowStore()
 const canvasPersistence = useCanvasPersistence()
+const canvasLifecycleStore = useCanvasLifecycleStore()
 const { lockForExecution } = useExecutionLock()
 
 const confirmOpen = ref(false)
 const confirmResolve = ref<((value: boolean) => void) | null>(null)
 const pendingOutOfDateNodes = ref<string[]>([])
-const activeWorkflowId = computed(() => {
-  if (ui.activeWorkflowId !== null) return ui.activeWorkflowId
-  return canvasSessionRegistry.sessionCount.value === 0
-    ? workflowStore.currentName
-    : null
+const activeWorkflowId = computed(() => ui.activeWorkflowId)
+const activeCanvasLifecycleBusy = computed(() => {
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  return canvasId !== null && canvasLifecycleStore.isBusy(canvasId)
 })
 const isNestedCanvasActive = computed(() => {
   const canvasId = canvasSessionRegistry.activeCanvasId.value
@@ -50,7 +49,10 @@ const isNestedCanvasActive = computed(() => {
 })
 
 const runDisabled = computed(
-  () => exec.isMutationLocked || !activeWorkflowId.value || isNestedCanvasActive.value,
+  () => exec.isMutationLocked
+    || activeCanvasLifecycleBusy.value
+    || !activeWorkflowId.value
+    || isNestedCanvasActive.value,
 )
 const runTooltip = computed(() => {
   if (exec.isStarting) return 'Execution is starting'
@@ -118,7 +120,7 @@ function cloneJson<T>(value: T): T {
 
 async function runCore(nodes?: string[]) {
   if (isNestedCanvasActive.value) return
-  if (exec.isMutationLocked) return
+  if (exec.isMutationLocked || activeCanvasLifecycleBusy.value) return
   const targetCanvasId = canvasPersistence.canvasId
   const workflowName = activeWorkflowId.value
   if (!workflowName) return

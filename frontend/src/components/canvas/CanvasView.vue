@@ -26,7 +26,6 @@ import {
   type CanvasPublicationCommandResult,
   type CanvasPublicationRejectionReason,
 } from '@/composables/useCanvasCommands'
-import { useAutoSave } from '@/composables/useAutoSave'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import {
   CANVAS_STATUS_PROJECTION_KEY,
@@ -43,6 +42,7 @@ import { useDataTableStore } from '@/stores/dataTable'
 import { useResolvedOutputsStore } from '@/stores/resolvedOutputs'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
@@ -111,7 +111,6 @@ const uiStore = useUIStore()
 const workflowStore = useWorkflowStore()
 const workflowDraftStore = useWorkflowDraftStore()
 const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
-const autoSave = useAutoSave()
 const resolvedOutputsStore = useResolvedOutputsStore()
 const dataTableStore = useDataTableStore()
 const isSubWorkflowEditor = props.subWorkflowSessionId != null && props.subWorkflowSessionId !== ''
@@ -121,6 +120,10 @@ const initialCanvasParams = dockviewParams()
 const initialNestedSession = props.subWorkflowSessionId
   ? subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
   : null
+if (isSubWorkflowEditor && !initialNestedSession) {
+  throw new Error('Nested CanvasView requires an accepted durable snapshot session')
+}
+const nestedParentCanvasPanelId = initialNestedSession?.parentCanvasId
 const ownedWorkflowName = ref<string | null>(
   isSubWorkflowEditor
     ? initialNestedSession?.parentWorkflowName ?? null
@@ -192,12 +195,7 @@ const canvasDescriptor: CanvasSessionDescriptor = isSubWorkflowEditor
         kind: 'nested',
         canvasId,
         sessionId: props.subWorkflowSessionId!,
-        parentCanvasId: canvasIdFromPanelId(
-          initialNestedSession?.parentCanvasId
-          ?? props.parentCanvasPanelId
-          ?? initialCanvasParams?.parentCanvasPanelId
-          ?? 'canvas',
-        ),
+        parentCanvasId: canvasIdFromPanelId(nestedParentCanvasPanelId!),
       }
     : {
         kind: 'root',
@@ -214,7 +212,7 @@ if (!isSubWorkflowEditor && initialCanvasParams?.draft) {
 const graphSync = useGraphSync({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
-  nestedSnapshot: initialNestedSession?.durable && props.subWorkflowSessionId
+  nestedSnapshot: initialNestedSession && props.subWorkflowSessionId
     ? {
         initialSnapshot: subWorkflowSessionsStore.snapshotForSession(
           props.subWorkflowSessionId,
@@ -264,7 +262,12 @@ const {
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<CanvasHistoryState>()
-const { isLocked } = useExecutionLock()
+const executionLock = useExecutionLock()
+const canvasLifecycleStore = useCanvasLifecycleStore()
+const lifecycleOperation = computed(() => canvasLifecycleStore.operationFor(canvasId))
+const isLocked = computed(() => (
+  executionLock.isLocked.value || lifecycleOperation.value !== null
+))
 const executionStore = useExecutionStore()
 const fieldFocusTracker = useFieldFocusTracker()
 const statusNodes = computed(() => getNodes.value.map(node => ({
@@ -411,7 +414,11 @@ function componentPanelId(): string {
   if (props.subWorkflowSessionId) {
     return `sub-workflow:${encodeURIComponent(props.subWorkflowSessionId)}`
   }
-  return dockviewParams()?.panelId ?? 'canvas'
+  const panelId = dockviewParams()?.panelId
+  if (!panelId) {
+    throw new Error('Root CanvasView requires a canonical workflow panel id')
+  }
+  return panelId
 }
 
 function workflowIdentity() {
@@ -425,19 +432,6 @@ function owningWorkflowId(): string | null {
   if (!props.subWorkflowSessionId) return ownedWorkflowName.value
   return subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
     ?.parentWorkflowName ?? ownedWorkflowName.value
-}
-
-function adoptRecoveredWorkflowIdentity(recovered: {
-  workflowName: string
-  workflowDisplayName: string
-}): void {
-  ownedWorkflowName.value = recovered.workflowName
-  ownedWorkflowDisplayName.value = recovered.workflowDisplayName
-  uiStore.setCanvasWorkflow(
-    canvasId,
-    recovered.workflowName,
-    recovered.workflowDisplayName,
-  )
 }
 
 function workflowInfoId(workflow: WorkflowInfo): string {
@@ -630,98 +624,6 @@ async function applyGraphState(
   }
 }
 
-async function ensureDefaultWorkflow() {
-  const base = 'Untitled'
-  const names = new Set(workflowStore.workflows.map((workflow) => workflowInfoId(workflow)))
-  let name = base
-  let suffix = 2
-  while (names.has(name)) {
-    name = `${base}_${suffix}`
-    suffix += 1
-  }
-  const workflow = await workflowStore.createWorkflow(
-    { name, display_name: name },
-    canvasId,
-  )
-  const workflowName = workflowInfoId(workflow)
-  const draft = await workflowDraftStore.loadDraft(workflowName).catch(() => null)
-  if (draft !== null) initializeCanvasPersistenceFromDraft(draft)
-  return {
-    graph: { nodes: [], edges: [] } as GraphState,
-    workflowName,
-    workflowDisplayName: workflow.display_name ?? workflowName,
-  }
-}
-
-async function recoverStartupWorkflow() {
-  await workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
-  let autoSaved = await autoSave.loadMostRecentAutoSave()
-  const lastOpened = await autoSave.getLastOpenedWorkflow()
-  const workflowNames = new Set(workflowStore.flattenedWorkflows.map((workflow) => workflowInfoId(workflow)))
-  if (autoSaved !== null && !workflowNames.has(autoSaved.name)) {
-    await autoSave.clearAutoSave(autoSaved.name)
-    autoSaved = null
-  }
-  if (lastOpened !== null && !workflowNames.has(lastOpened)) {
-    await autoSave.setLastOpenedWorkflow(null)
-  }
-  const targetName = autoSaved?.name ?? lastOpened
-  const exists = targetName
-    ? workflowNames.has(targetName)
-    : false
-
-  if (targetName && exists) {
-    let serverGraph: GraphState
-    try {
-      serverGraph = await workflowStore.loadWorkflow(targetName, canvasId)
-    } catch {
-      await autoSave.clearAutoSave(targetName)
-      await autoSave.setLastOpenedWorkflow(null)
-      const fallback = await ensureDefaultWorkflow()
-      return {
-        ...fallback,
-        dirty: false,
-      }
-    }
-    const workflow = workflowStore.workflows.find(
-      candidate => workflowInfoId(candidate) === targetName,
-    )
-    const serverModified = Date.parse(workflow?.last_modified ?? '')
-    const draft = await workflowDraftStore.loadDraft(targetName).catch(() => null)
-    if (draft !== null) initializeCanvasPersistenceFromDraft(draft)
-    const draftModified = Date.parse(draft?.updated_at ?? '')
-    const latestPersistedModified = Math.max(
-      Number.isFinite(serverModified) ? serverModified : 0,
-      Number.isFinite(draftModified) ? draftModified : 0,
-    )
-    const matchingAutoSave = autoSaved?.name === targetName ? autoSaved : null
-    const autoSaveIsFresh =
-      matchingAutoSave !== null &&
-      (latestPersistedModified === 0 || matchingAutoSave.timestamp > latestPersistedModified)
-    if (
-      matchingAutoSave !== null &&
-      Number.isFinite(serverModified) &&
-      !autoSaveIsFresh
-    ) {
-      await autoSave.clearAutoSave(targetName)
-    }
-    return {
-      graph: autoSaveIsFresh
-        ? matchingAutoSave.graph
-        : draft?.graph ?? serverGraph,
-      dirty: autoSaveIsFresh || draft?.dirty_against_saved === true,
-      workflowName: targetName,
-      workflowDisplayName: workflow?.display_name ?? targetName,
-    }
-  }
-
-  const fallback = await ensureDefaultWorkflow()
-  return {
-    ...fallback,
-    dirty: false,
-  }
-}
-
 function initialGraphFromDockviewParams(): {
   graph: GraphState
   missingTools?: MissingTool[]
@@ -746,6 +648,24 @@ function handleCanvasTabActivatedEvent(event: Event) {
     syncGraphState(lastAuthoritativeGraph.value)
   }
   void maybeApplyRemoteDraftToActiveCanvas()
+}
+
+async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
+  const detail = (event as CustomEvent<{
+    canvasId?: string
+    draft?: WorkflowDraftResponse
+    handled?: boolean
+    resolve?: () => void
+    reject?: (error: unknown) => void
+  }>).detail
+  if (detail?.canvasId !== canvasId || !detail.draft) return
+  detail.handled = true
+  try {
+    await applyGraphState(detail.draft.graph, workflowStore.missingTools, false)
+    detail.resolve?.()
+  } catch (error) {
+    detail.reject?.(error)
+  }
 }
 
 function trackDraftWorkflowForActiveRootCanvas(): void {
@@ -795,7 +715,6 @@ async function applyAgentDraftChanges(): Promise<void> {
   remoteDraftAction.value = 'apply'
   remoteDraftActionError.value = null
   remoteDraftResolutionMessage.value = null
-  workflowDraftStore.cancelPendingSave()
   try {
     const draft = await workflowDraftStore.loadDraft(workflowName)
     resolveCanvasPersistenceFromDraft(draft)
@@ -962,6 +881,7 @@ function requestToolReconciliation(): void {
     pendingToolNames.size === 0
     || toolReconciliationScheduled
     || isCanvasUnmounted
+    || isLocked.value
   ) return
   toolReconciliationScheduled = true
   void Promise.resolve().then(() => {
@@ -973,7 +893,7 @@ function requestToolReconciliation(): void {
 function reconcilePendingToolState(): void {
   if (pendingToolNames.size === 0 || isCanvasUnmounted) return
   if (
-    executionStore.isMutationLocked
+    isLocked.value
     || toolRegistryStore.customToolBusy
     || isApplyingGraphState
   ) return
@@ -1108,6 +1028,7 @@ async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
   if (!hasLoadedGraphState.value) return
   if (isSubWorkflowEditor) return
   if (!isActiveCanvasTab.value) return
+  if (lifecycleOperation.value !== null) return
   if (hasLocalRemoteDraftConflict.value) return
   if (isAutoApplyingRemoteDraft) return
 
@@ -1137,6 +1058,7 @@ watch(
     hasLoadedGraphState.value,
     isActiveCanvasTab.value,
     hasLocalRemoteDraftConflict.value,
+    lifecycleOperation.value,
   ] as const,
   () => {
     void maybeApplyRemoteDraftToActiveCanvas()
@@ -1180,6 +1102,14 @@ watch(
   () => executionStore.isMutationLocked,
   (locked) => {
     if (!locked) requestToolReconciliation()
+  },
+  { flush: 'sync' },
+)
+
+watch(
+  lifecycleOperation,
+  (operation) => {
+    if (operation === null) requestToolReconciliation()
   },
   { flush: 'sync' },
 )
@@ -1291,6 +1221,10 @@ onMounted(async () => {
     'bioimageflow:canvas-tab-activated',
     handleCanvasTabActivatedEvent as EventListener,
   )
+  window.addEventListener(
+    'bioimageflow:restore-saved-canvas',
+    handleRestoreSavedCanvasEvent as EventListener,
+  )
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
@@ -1310,16 +1244,7 @@ onMounted(async () => {
     hasLoadedGraphState.value = true
     return
   }
-  const recovered = await recoverStartupWorkflow()
-  if (isCanvasUnmounted) return
-  adoptRecoveredWorkflowIdentity(recovered)
-  await applyGraphState(
-    recovered.graph,
-    workflowStore.missingTools,
-    recovered.dirty,
-  )
-  if (isCanvasUnmounted) return
-  hasLoadedGraphState.value = true
+  throw new Error(`Canvas '${canvasPanelId}' was mounted without an initial graph`)
 })
 
 onBeforeUnmount(() => {
@@ -1344,6 +1269,10 @@ onBeforeUnmount(() => {
   window.removeEventListener(
     'bioimageflow:canvas-tab-activated',
     handleCanvasTabActivatedEvent as EventListener,
+  )
+  window.removeEventListener(
+    'bioimageflow:restore-saved-canvas',
+    handleRestoreSavedCanvasEvent as EventListener,
   )
 })
 
@@ -2362,7 +2291,7 @@ async function openSubWorkflow(nodeId: string) {
           canvas_id: canvasId,
           workflow_id: owningWorkflowId(),
         }
-    const session = await subWorkflowSessionsStore.openDurableSession({
+    const { session, created } = await subWorkflowSessionsStore.openDurableSessionResult({
       owner,
       parentCanvasId: canvasId,
       parentWorkflowName: owningWorkflowId(),
@@ -2374,6 +2303,14 @@ async function openSubWorkflow(nodeId: string) {
       published_outputs: node.data.published_outputs ?? [],
       readonlyReason: node.data.sub_workflow_readonly_reason ?? null,
     })
+    if (
+      isCanvasUnmounted
+      || isLocked.value
+      || getNodes.value.find(candidate => candidate.id === nodeId) !== node
+    ) {
+      if (created) subWorkflowSessionsStore.closeSession(session.id)
+      return null
+    }
     window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
       detail: {
         sessionId: session.id,
@@ -3192,7 +3129,21 @@ defineExpose({
     @dragover="onDragOver"
     @keydown="handleKeydown"
     tabindex="0"
+    :aria-busy="lifecycleOperation !== null"
   >
+    <div
+      v-if="lifecycleOperation"
+      class="canvas-lifecycle-busy"
+      role="status"
+      aria-live="polite"
+    >
+      <i class="pi pi-spin pi-spinner" aria-hidden="true" />
+      {{ lifecycleOperation === 'saving'
+        ? 'Saving workflow…'
+        : lifecycleOperation === 'discarding'
+          ? 'Restoring saved workflow…'
+          : 'Deleting workflow…' }}
+    </div>
     <CanvasErrorBanner :validation-result="validationResult" />
     <div
       v-if="shouldShowRemoteDraftConflict"
@@ -3285,6 +3236,21 @@ defineExpose({
   height: 100%;
   outline: none;
   position: relative;
+}
+
+.canvas-lifecycle-busy {
+  align-items: center;
+  background: color-mix(in srgb, var(--bif-surface) 92%, transparent);
+  border: 1px solid var(--bif-border-muted);
+  border-radius: 0.375rem;
+  display: flex;
+  gap: 0.5rem;
+  left: 50%;
+  padding: 0.5rem 0.75rem;
+  position: absolute;
+  top: 0.75rem;
+  transform: translateX(-50%);
+  z-index: 20;
 }
 
 .workflow-draft-conflict,

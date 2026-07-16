@@ -265,6 +265,102 @@ async def test_put_writes_atomic_draft_and_conflicts_on_stale_revision(
     assert stale.json()["current_revision"] == 1
 
 
+async def test_reset_to_saved_is_revision_checked_and_publishes_only_on_success(
+    tmp_path: Path,
+) -> None:
+    manager = ConnectionManager()
+    published: list[dict[str, Any]] = []
+
+    def _publish(**payload: Any) -> None:
+        published.append(payload)
+
+    manager.publish_workflow_draft_changed = _publish  # type: ignore[method-assign]
+
+    async for client in _client(tmp_path, connection_manager=manager):
+        await _create_workflow(client, "wf")
+        saved_graph = _graph("saved")
+        saved = await client.put(
+            "/api/v1/workflows/wf",
+            json={"graph": saved_graph},
+        )
+        assert saved.status_code == 200
+
+        dirty = await client.put(
+            "/api/v1/workflow-drafts/wf",
+            json={
+                "graph": _graph("discarded"),
+                "expected_revision": 0,
+                "updated_by": "frontend",
+            },
+        )
+        assert dirty.status_code == 200
+        assert dirty.json()["draft_revision"] == 1
+        published.clear()
+
+        reset = await client.post(
+            "/api/v1/workflow-drafts/wf/reset-to-saved",
+            json={"expected_revision": 1, "updated_by": "frontend"},
+        )
+
+        assert reset.status_code == 200
+        accepted = reset.json()
+        assert accepted["draft_revision"] == 2
+        assert accepted["dirty_against_saved"] is False
+        assert accepted["graph"]["nodes"][0]["id"] == "saved"
+        assert published == [
+            {
+                "workflow_id": "wf",
+                "draft_revision": 2,
+                "updated_by": "frontend",
+                "updated_at": accepted["updated_at"],
+                "dirty_against_saved": False,
+            }
+        ]
+
+        draft_path = (
+            tmp_path
+            / "workspace"
+            / "workflows"
+            / "wf"
+            / ".bioimageflow"
+            / "draft.json"
+        )
+        accepted_bytes = draft_path.read_bytes()
+        stale = await client.post(
+            "/api/v1/workflow-drafts/wf/reset-to-saved",
+            json={"expected_revision": 1, "updated_by": "frontend"},
+        )
+
+        assert stale.status_code == 409
+        assert stale.json()["error"] == "draft_revision_conflict"
+        assert stale.json()["current_revision"] == 2
+        assert draft_path.read_bytes() == accepted_bytes
+        assert len(published) == 1
+
+
+async def test_reset_to_saved_rejects_locked_and_missing_workflows(
+    tmp_path: Path,
+) -> None:
+    async for client in _client(tmp_path, is_running=True):
+        await _create_workflow(client, "wf")
+
+        locked = await client.post(
+            "/api/v1/workflow-drafts/wf/reset-to-saved",
+            json={"expected_revision": 0},
+        )
+
+        assert locked.status_code == 423
+        assert locked.json()["error"] == "workflow_locked"
+
+    async for client in _client(tmp_path):
+        missing = await client.post(
+            "/api/v1/workflow-drafts/missing/reset-to-saved",
+            json={"expected_revision": 0},
+        )
+
+        assert missing.status_code == 404
+
+
 async def test_put_publishes_one_workflow_draft_changed_event_per_success(
     tmp_path: Path,
 ) -> None:

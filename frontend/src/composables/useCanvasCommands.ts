@@ -7,7 +7,7 @@ import { graphSyncCanvasSessions } from './useGraphSync'
 
 const CANVAS_COMMAND_RESOURCE = 'canvas-commands'
 
-export type CanvasSaveRoute = 'root' | 'nested' | 'legacy' | 'unavailable'
+export type CanvasSaveRoute = 'root' | 'nested' | 'unavailable'
 
 export type CanvasPublicationRejectionReason =
   | 'duplicate_name'
@@ -97,6 +97,8 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   updateParameter(nodeId: string, key: string, value: unknown): boolean
 }
 
+// Shell panels use this state-free adapter to follow Dockview activation.
+// It delegates exclusively to a registered canvas resource.
 let activeFacade: CanvasCommandsApi | null = null
 
 export function useCanvasCommands(
@@ -218,11 +220,7 @@ function createActiveFacade(): CanvasCommandsApi {
   return {
     routeSave: async () => {
       const activeCanvasId = graphSyncCanvasSessions.activeCanvasId.value
-      if (activeCanvasId === null) {
-        return graphSyncCanvasSessions.sessionCount.value === 0
-          ? 'legacy'
-          : 'unavailable'
-      }
+      if (activeCanvasId === null) return 'unavailable'
       const session = graphSyncCanvasSessions.get(activeCanvasId)
       if (session?.descriptor.kind === 'root') return 'root'
       if (session?.descriptor.kind !== 'nested') return 'unavailable'

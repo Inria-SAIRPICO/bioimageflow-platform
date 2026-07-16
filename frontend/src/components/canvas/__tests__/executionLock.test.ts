@@ -103,7 +103,6 @@ vi.mock('@/composables/useGraphSync', () => ({
   useGraphSync: () => ({
     syncGraph: vi.fn(),
     syncGraphState: vi.fn(),
-    syncNodeParameters: vi.fn(),
     flushNow: vi.fn(),
     dispose: vi.fn(),
     loadWorkflow: vi.fn().mockResolvedValue(null),
@@ -160,13 +159,19 @@ import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { rootCanvasId, rootCanvasParams } from '@/test-utils/canvasFixtures'
 import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 
+const EXECUTION_CONTEXT = {
+  execution_id: 'exec-lock',
+  workflow_id: 'execution-lock',
+  draft_revision: 7,
+} as const
+
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
 }
 
 function mountCanvas() {
-  return mount(CanvasView, {
+  const wrapper = mount(CanvasView, {
     props: {
       nodes: [],
       edges: [],
@@ -174,6 +179,8 @@ function mountCanvas() {
     },
     attachTo: document.body,
   })
+  canvasSessionRegistry.activate(rootCanvasId('execution-lock'))
+  return wrapper
 }
 
 function projectedStatusesOf(wrapper: ReturnType<typeof mountCanvas>) {
@@ -383,12 +390,22 @@ describe('CanvasView execution lock', () => {
     ]
     const w = mountCanvas()
     const exec = useExecutionStore()
-    exec.applyNodeState({ node_id: 'n1', status: 'running', cached: false })
+    exec.applyNodeState({
+      ...EXECUTION_CONTEXT,
+      node_id: 'n1',
+      status: 'running',
+      cached: false,
+    })
     await nextTick()
     expect(projectedStatusesOf(w).n1.status).toBe('running')
     expect(mockNodes[0].data.status).toBe('unexecuted')
 
-    exec.applyNodeState({ node_id: 'n1', status: 'executed', cached: false })
+    exec.applyNodeState({
+      ...EXECUTION_CONTEXT,
+      node_id: 'n1',
+      status: 'executed',
+      cached: false,
+    })
     await nextTick()
     expect(projectedStatusesOf(w).n1.status).toBe('executed')
     expect(mockNodes[0].data.status).toBe('unexecuted')
@@ -404,10 +421,15 @@ describe('CanvasView execution lock', () => {
     ]
     const w = mountCanvas()
     const exec = useExecutionStore()
-    exec.state = 'idle'
-    exec.nodeStatuses = {
-      n1: { node_id: 'n1', status: 'executed', cached: true },
-    }
+    exec.applyStatusSnapshot({
+      ...EXECUTION_CONTEXT,
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        n1: { node_id: 'n1', status: 'executed', cached: true },
+      },
+    })
     expect(canvasCommandMocks.updateParameter?.('n1', 'value', 2)).toBe(true)
     await nextTick()
 
@@ -480,10 +502,16 @@ describe('CanvasView execution lock', () => {
     const canvas = mountCanvas()
     const canvasId = rootCanvasId('execution-lock')
     canvasSessionRegistry.activate(canvasId)
-    useExecutionStore().nodeStatuses = {
-      edited: { node_id: 'edited', status: 'executed', cached: false },
-      untouched: { node_id: 'untouched', status: 'executed', cached: false },
-    }
+    useExecutionStore().applyStatusSnapshot({
+      ...EXECUTION_CONTEXT,
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        edited: { node_id: 'edited', status: 'executed', cached: false },
+        untouched: { node_id: 'untouched', status: 'executed', cached: false },
+      },
+    })
     const ui = useUIStore()
     ui.setCanvasGraphNodes(canvasId, mockNodes)
     ui.setCanvasSelectedNodes(canvasId, ['edited'])
@@ -520,10 +548,16 @@ describe('CanvasView execution lock', () => {
     ]
     const w = mountCanvas()
     const exec = useExecutionStore()
-    exec.state = 'running'
+    exec.applyNodeState({
+      ...EXECUTION_CONTEXT,
+      node_id: 'n1',
+      status: 'running',
+      cached: false,
+    })
     await nextTick()
 
     exec.applyExecutionComplete({
+      ...EXECUTION_CONTEXT,
       success: true,
       errors: [],
       node_statuses: {
@@ -561,10 +595,16 @@ describe('CanvasView execution lock', () => {
       },
     ]
     const w = mountCanvas()
-    useExecutionStore().nodeStatuses = {
-      source: { node_id: 'source', status: 'executed', cached: false },
-      target: { node_id: 'target', status: 'executed', cached: false },
-    }
+    useExecutionStore().applyStatusSnapshot({
+      ...EXECUTION_CONTEXT,
+      state: 'idle',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        source: { node_id: 'source', status: 'executed', cached: false },
+        target: { node_id: 'target', status: 'executed', cached: false },
+      },
+    })
     expect(connectHandler).not.toBeNull()
 
     connectHandler!({

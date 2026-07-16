@@ -10,7 +10,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bioimageflow_server.models.execution import ExecutionContext
+
 pytestmark = pytest.mark.anyio
+
+_TEST_CONTEXT = ExecutionContext(
+    execution_id="exec-test",
+    workflow_id="wf-test",
+)
 
 
 @pytest.fixture
@@ -96,7 +103,14 @@ async def test_broadcast_progress_sends_to_all() -> None:
     await mgr.connect(ws1)
     await mgr.connect(ws2)
 
-    await mgr.broadcast_progress("n1", "running", 3, 10, 1.0)
+    await mgr.broadcast_progress(
+        "n1",
+        "running",
+        3,
+        10,
+        1.0,
+        context=_TEST_CONTEXT,
+    )
     await _drain(mgr)
 
     for ws in (ws1, ws2):
@@ -110,6 +124,8 @@ async def test_broadcast_progress_sends_to_all() -> None:
         assert payload["timestamp"] == 1.0
         assert payload["result_key"] is None
         assert payload["record_id"] is None
+        assert payload["execution_id"] == "exec-test"
+        assert payload["workflow_id"] == "wf-test"
 
 
 async def test_broadcast_progress_no_connections() -> None:
@@ -117,7 +133,14 @@ async def test_broadcast_progress_no_connections() -> None:
 
     mgr = ConnectionManager(loop=asyncio.get_running_loop())
     # Should not raise
-    await mgr.broadcast_progress("n1", "running", 0, 1, 0.0)
+    await mgr.broadcast_progress(
+        "n1",
+        "running",
+        0,
+        1,
+        0.0,
+        context=_TEST_CONTEXT,
+    )
 
 
 async def test_broadcast_removes_failing_connection() -> None:
@@ -129,7 +152,14 @@ async def test_broadcast_removes_failing_connection() -> None:
     await mgr.connect(ws_ok)
     await mgr.connect(ws_bad)
 
-    await mgr.broadcast_progress("n1", "running", 0, 1, 0.0)
+    await mgr.broadcast_progress(
+        "n1",
+        "running",
+        0,
+        1,
+        0.0,
+        context=_TEST_CONTEXT,
+    )
     await _drain(mgr)
 
     assert ws_bad not in mgr.connections
@@ -148,7 +178,12 @@ async def test_broadcast_node_state_shape() -> None:
     await mgr.connect(ws)
 
     await mgr.broadcast_node_state(
-        "n1", "failed", False, error="boom", traceback="tb"
+        "n1",
+        "failed",
+        False,
+        error="boom",
+        traceback="tb",
+        context=_TEST_CONTEXT,
     )
     await _drain(mgr)
 
@@ -161,6 +196,9 @@ async def test_broadcast_node_state_shape() -> None:
         "traceback": "tb",
         "result_key": None,
         "record_id": None,
+        "execution_id": "exec-test",
+        "workflow_id": "wf-test",
+        "draft_revision": None,
     }
 
 
@@ -177,6 +215,7 @@ async def test_broadcast_node_state_includes_cache_identity() -> None:
         True,
         result_key="rk_123",
         record_id="rec_456",
+        context=_TEST_CONTEXT,
     )
     await _drain(mgr)
 
@@ -273,7 +312,10 @@ async def test_broadcast_execution_complete() -> None:
     await mgr.connect(ws)
 
     await mgr.broadcast_execution_complete(
-        success=True, errors=[], node_statuses={"n1": {"status": "executed"}}
+        success=True,
+        errors=[],
+        node_statuses={"n1": {"status": "executed"}},
+        context=_TEST_CONTEXT,
     )
     await _drain(mgr)
 
@@ -282,7 +324,7 @@ async def test_broadcast_execution_complete() -> None:
 
 
 async def test_execution_messages_and_snapshot_share_one_context() -> None:
-    from bioimageflow_server.models.execution import ExecutionContext, ExecutionStatus
+    from bioimageflow_server.models.execution import ExecutionStatus
     from bioimageflow_server.ws.handler import ConnectionManager
 
     context = ExecutionContext(
@@ -347,7 +389,10 @@ async def test_broadcast_execution_complete_serializes_pydantic_node_statuses() 
         ),
     }
     await mgr.broadcast_execution_complete(
-        success=False, errors=[{"type": "X", "detail": "y"}], node_statuses=statuses
+        success=False,
+        errors=[{"type": "X", "detail": "y"}],
+        node_statuses=statuses,
+        context=_TEST_CONTEXT,
     )
     await _drain(mgr)
 
@@ -551,6 +596,7 @@ async def test_broadcast_workflow_tree_changed() -> None:
     await mgr.broadcast_workflow_tree_changed(
         action="workflow_created",
         workflow_id="folder/wf",
+        identity_generation=4,
     )
     await _drain(mgr)
 
@@ -559,6 +605,26 @@ async def test_broadcast_workflow_tree_changed() -> None:
             "type": "workflow_tree_changed",
             "action": "workflow_created",
             "workflow_id": "folder/wf",
+            "identity_generation": 4,
+        }
+    ]
+
+
+async def test_broadcast_folder_tree_change_omits_identity_generation() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_workflow_tree_changed(action="folder_created")
+    await _drain(mgr)
+
+    assert ws.sent == [
+        {
+            "type": "workflow_tree_changed",
+            "action": "folder_created",
+            "workflow_id": None,
         }
     ]
 
@@ -626,7 +692,14 @@ async def test_multiple_connections_independent() -> None:
     for ws in clients:
         await mgr.connect(ws)
 
-    await mgr.broadcast_progress("n1", "running", 0, 1, 0.0)
+    await mgr.broadcast_progress(
+        "n1",
+        "running",
+        0,
+        1,
+        0.0,
+        context=_TEST_CONTEXT,
+    )
     await _drain(mgr)
 
     for ws in clients:
@@ -643,6 +716,7 @@ async def test_publish_progress_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_progress") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -655,7 +729,14 @@ async def test_publish_progress_schedules_broadcast() -> None:
             fut.add_done_callback = MagicMock()
             mock_schedule.return_value = fut
 
-            mgr.publish_progress("n1", "running", 1, 2, 3.0)
+            mgr.publish_progress(
+                "n1",
+                "running",
+                1,
+                2,
+                3.0,
+                context=_TEST_CONTEXT,
+            )
 
             mock_schedule.assert_called_once()
             scheduled_coro, scheduled_loop = mock_schedule.call_args.args
@@ -670,6 +751,7 @@ async def test_publish_node_state_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_node_state") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -680,7 +762,14 @@ async def test_publish_node_state_schedules_broadcast() -> None:
         ) as mock_schedule:
             fut = MagicMock()
             mock_schedule.return_value = fut
-            mgr.publish_node_state("n1", "failed", False, error="e", traceback="tb")
+            mgr.publish_node_state(
+                "n1",
+                "failed",
+                False,
+                error="e",
+                traceback="tb",
+                context=_TEST_CONTEXT,
+            )
             mock_schedule.assert_called_once()
             scheduled_coro, scheduled_loop = mock_schedule.call_args.args
             assert scheduled_loop is loop
@@ -694,6 +783,7 @@ async def test_publish_log_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_log") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -718,6 +808,7 @@ async def test_publish_execution_complete_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_execution_complete") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -728,7 +819,12 @@ async def test_publish_execution_complete_schedules_broadcast() -> None:
         ) as mock_schedule:
             fut = MagicMock()
             mock_schedule.return_value = fut
-            mgr.publish_execution_complete(True, [], {})
+            mgr.publish_execution_complete(
+                True,
+                [],
+                {},
+                context=_TEST_CONTEXT,
+            )
             mock_schedule.assert_called_once()
             scheduled_coro, scheduled_loop = mock_schedule.call_args.args
             assert scheduled_loop is loop
@@ -742,6 +838,7 @@ async def test_publish_environment_status_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_environment_status") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -766,6 +863,7 @@ async def test_publish_package_install_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_package_install") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -790,6 +888,7 @@ async def test_publish_workflow_draft_changed_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_workflow_draft_changed") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -820,6 +919,7 @@ async def test_publish_workflow_tree_changed_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_workflow_tree_changed") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -833,6 +933,7 @@ async def test_publish_workflow_tree_changed_schedules_broadcast() -> None:
             mgr.publish_workflow_tree_changed(
                 action="workflow_created",
                 workflow_id="wf",
+                identity_generation=3,
             )
             mock_schedule.assert_called_once()
             scheduled_coro, scheduled_loop = mock_schedule.call_args.args
@@ -847,6 +948,7 @@ async def test_publish_active_workflow_changed_schedules_broadcast() -> None:
     mgr = ConnectionManager(loop=loop)
 
     with patch.object(mgr, "broadcast_active_workflow_changed") as mock_broadcast:
+
         async def _fake(*args, **kwargs):
             return None
 
@@ -879,7 +981,14 @@ async def test_publish_from_background_thread() -> None:
     done = threading.Event()
 
     def _worker() -> None:
-        mgr.publish_progress("n1", "running", 1, 2, 3.0)
+        mgr.publish_progress(
+            "n1",
+            "running",
+            1,
+            2,
+            3.0,
+            context=_TEST_CONTEXT,
+        )
         done.set()
 
     thread = threading.Thread(target=_worker)
@@ -905,15 +1014,31 @@ async def test_publish_without_loop_drops_silently(caplog: pytest.LogCaptureFixt
     mgr = ConnectionManager(loop=None)
     with caplog.at_level(logging.DEBUG, logger="bioimageflow_server.ws"):
         # Should not raise AttributeError
-        mgr.publish_progress("n1", "running", 1, 2, 3.0)
-        mgr.publish_node_state("n1", "running", False)
+        mgr.publish_progress(
+            "n1",
+            "running",
+            1,
+            2,
+            3.0,
+            context=_TEST_CONTEXT,
+        )
+        mgr.publish_node_state(
+            "n1",
+            "running",
+            False,
+            context=_TEST_CONTEXT,
+        )
         mgr.publish_log("ERROR", "failed", "n1", 3.0)
-        mgr.publish_execution_complete(True, [], {})
+        mgr.publish_execution_complete(
+            True,
+            [],
+            {},
+            context=_TEST_CONTEXT,
+        )
 
     # At least one DEBUG log about dropping
     assert any(
-        "dropped" in r.message.lower() or "loop" in r.message.lower()
-        for r in caplog.records
+        "dropped" in r.message.lower() or "loop" in r.message.lower() for r in caplog.records
     )
 
 
@@ -928,14 +1053,20 @@ async def test_publish_logs_future_exceptions(caplog: pytest.LogCaptureFixture) 
 
     with patch.object(mgr, "broadcast_progress", side_effect=_boom):
         with caplog.at_level(logging.WARNING, logger="bioimageflow_server.ws"):
-            mgr.publish_progress("n1", "running", 1, 2, 3.0)
+            mgr.publish_progress(
+                "n1",
+                "running",
+                1,
+                2,
+                3.0,
+                context=_TEST_CONTEXT,
+            )
             # Wait for the coroutine to run and the callback to fire
             for _ in range(20):
                 await asyncio.sleep(0.01)
 
     assert any(
-        "scheduled broadcast failed" in r.message
-        or "broadcast" in r.message.lower()
+        "scheduled broadcast failed" in r.message or "broadcast" in r.message.lower()
         for r in caplog.records
     )
 
@@ -957,7 +1088,14 @@ async def test_queue_backpressure_drops_oldest() -> None:
     # The first message goes to the sender (dequeued immediately). After that,
     # the queue fills up: 3 stay, plus extras drop the oldest.
     for i in range(10):
-        await mgr.broadcast_progress(f"n{i}", "running", 0, 1, float(i))
+        await mgr.broadcast_progress(
+            f"n{i}",
+            "running",
+            0,
+            1,
+            float(i),
+            context=_TEST_CONTEXT,
+        )
 
     assert mgr.get_dropped_count(ws) > 0
     # Remove slow consumer for cleanup
@@ -976,7 +1114,14 @@ async def test_slow_consumer_does_not_block_fast_consumer() -> None:
     await mgr.connect(ws_fast)
 
     for i in range(5):
-        await mgr.broadcast_progress(f"n{i}", "running", 0, 1, float(i))
+        await mgr.broadcast_progress(
+            f"n{i}",
+            "running",
+            0,
+            1,
+            float(i),
+            context=_TEST_CONTEXT,
+        )
 
     # Fast consumer should get messages even though slow consumer is still blocked
     for _ in range(20):
@@ -1058,9 +1203,7 @@ def test_endpoint_sends_initial_status_snapshot_when_provider_configured() -> No
             "state": "running",
             "last_result": None,
             "progress": {"node_id": "n1", "row": 2, "total_rows": 5},
-            "node_statuses": {
-                "n1": {"node_id": "n1", "status": "running", "cached": False}
-            },
+            "node_statuses": {"n1": {"node_id": "n1", "status": "running", "cached": False}},
         }
     )
     with TestClient(app) as client:
@@ -1078,9 +1221,7 @@ def test_endpoint_subscribe_logs_without_message_id_no_ack() -> None:
     app, manager = _make_app_with_ws()
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
-            ws.send_json(
-                {"type": "subscribe_logs", "node_id": "n1", "level": "INFO"}
-            )
+            ws.send_json({"type": "subscribe_logs", "node_id": "n1", "level": "INFO"})
             # To assert no ack is sent, trigger a broadcast and verify it is
             # the first thing we receive (not an ack).
             # Drive the broadcast via the manager's public API on the server loop.
@@ -1190,7 +1331,15 @@ def test_endpoint_multiple_concurrent_clients_all_receive_broadcast() -> None:
 
             loop = manager._loop  # type: ignore[attr-defined]
             fut = asyncio.run_coroutine_threadsafe(
-                manager.broadcast_progress("n1", "running", 1, 5, 0.0), loop
+                manager.broadcast_progress(
+                    "n1",
+                    "running",
+                    1,
+                    5,
+                    0.0,
+                    context=_TEST_CONTEXT,
+                ),
+                loop,
             )
             fut.result(timeout=1.0)
 

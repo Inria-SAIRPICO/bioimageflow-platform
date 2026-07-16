@@ -1,25 +1,110 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ConfirmationService from 'primevue/confirmationservice'
 import Aura from '@primevue/themes/aura'
 import App from '@/App.vue'
+import { api } from '@/api/client'
 import MenuBar from '@/components/layout/MenuBar.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { useWorkflowStore } from '@/stores/workflow'
-import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
+import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 import {
   _resetGraphSyncForTest,
+  forgetRetainedNestedSnapshot,
   graphSyncCanvasSessions,
   useGraphSync,
 } from '@/composables/useGraphSync'
+import {
+  CanvasDiscardRecoveryCleanupError,
+  getRootCanvasPersistenceResource,
+  useCanvasPersistence,
+} from '@/composables/useCanvasPersistence'
+import {
+  useAutoSave,
+  writeAutoSaveEntry,
+} from '@/composables/useAutoSave'
+import { openAcceptedNestedSession } from '@/test-utils/nestedSessionFixtures'
+import { loadRootWorkflowPresentation } from '@/services/rootWorkflowPresentation'
+import {
+  WorkflowDeletionCommittedCleanupError,
+  WorkflowDeletionTargetChangedError,
+} from '@/services/workflowDeletion'
 
-const { connectMock, disconnectMock } = vi.hoisted(() => ({
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
+async function clickLatestTestId(testId: string): Promise<void> {
+  await flushPromises()
+  const matches = document.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`)
+  const target = matches.item(matches.length - 1)
+  expect(target).toBeTruthy()
+  target.click()
+  await flushPromises()
+}
+
+function capturedWorkflowDeletionTarget(
+  workflowName: string,
+  canvasId: ReturnType<typeof canvasIdFromPanelId> | null,
+) {
+  const workflow = useWorkflowStore()
+  const session = canvasId === null ? null : canvasSessionRegistry.get(canvasId)
+  return {
+    workflowName,
+    canvasId,
+    localIdentityGeneration: workflow.workflowIdentityGeneration(workflowName),
+    serverIdentityGeneration: workflow.workflowServerIdentityGeneration(workflowName),
+    sessionRegistrationToken: session?.registrationToken ?? null,
+  }
+}
+
+const {
+  connectMock,
+  disconnectMock,
+  resolveStartupWorkflowMock,
+  saveRootWorkflowTargetMock,
+} = vi.hoisted(() => ({
   connectMock: vi.fn(),
   disconnectMock: vi.fn(),
+  resolveStartupWorkflowMock: vi.fn(),
+  saveRootWorkflowTargetMock: vi.fn(),
+}))
+
+const nestedSnapshotMocks = vi.hoisted(() => ({
+  open: vi.fn(),
+  get: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+}))
+
+vi.mock('@/services/startupWorkflow', () => ({
+  resolveStartupWorkflow: resolveStartupWorkflowMock,
+}))
+
+vi.mock('@/services/rootWorkflowSave', () => ({
+  saveRootWorkflowTarget: saveRootWorkflowTargetMock,
+}))
+
+vi.mock('@/api/nestedWorkflowSnapshots', () => ({
+  openNestedWorkflowSnapshot: nestedSnapshotMocks.open,
+  getNestedWorkflowSnapshot: nestedSnapshotMocks.get,
+  putNestedWorkflowSnapshot: nestedSnapshotMocks.put,
+  deleteNestedWorkflowSnapshot: nestedSnapshotMocks.delete,
 }))
 
 // Vue Flow uses ResizeObserver
@@ -77,6 +162,7 @@ let pinia: ReturnType<typeof createPinia>
 const panels = new Map<string, any>()
 const removePanelListeners = new Set<(panel: any) => void>()
 const activePanelListeners = new Set<(event: any) => void>()
+const mountedWrappers: Array<{ unmount(): void }> = []
 
 function emitDockviewPanelRemoved(panel: any) {
   panels.delete(panel.id)
@@ -138,7 +224,7 @@ function mountApp() {
     }
   })
 
-  return mount(App, {
+  const wrapper = mount(App, {
     global: {
       plugins: [pinia, [PrimeVue, { theme: { preset: Aura } }], ConfirmationService],
       stubs: {
@@ -148,6 +234,8 @@ function mountApp() {
       },
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('AppShell', () => {
@@ -159,7 +247,42 @@ describe('AppShell', () => {
     document.documentElement.style.colorScheme = ''
     connectMock.mockClear()
     disconnectMock.mockClear()
+    resolveStartupWorkflowMock.mockReset()
+    resolveStartupWorkflowMock.mockResolvedValue({
+      workflowName: 'startup',
+      workflowDisplayName: 'Startup',
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+      missingTools: [],
+      dirty: false,
+      identityGeneration: 0,
+    })
+    saveRootWorkflowTargetMock.mockReset()
+    saveRootWorkflowTargetMock.mockResolvedValue({
+      status: 'saved',
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+      info: {
+        id: 'startup',
+        name: 'startup',
+        display_name: 'Startup',
+      },
+    })
+    useWorkflowStore().workflows = [{
+      id: 'startup',
+      name: 'startup',
+      display_name: 'Startup',
+    }] as any
+    nestedSnapshotMocks.open.mockReset()
+    nestedSnapshotMocks.get.mockReset()
+    nestedSnapshotMocks.put.mockReset()
+    nestedSnapshotMocks.delete.mockReset()
     _resetGraphSyncForTest()
+  })
+
+  afterEach(async () => {
+    await flushPromises()
+    for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
+    await flushPromises()
+    await flushPromises()
   })
 
   it('renders #bioimageflow-app wrapper', () => {
@@ -196,12 +319,14 @@ describe('AppShell', () => {
   it('registers the default panels on ready', async () => {
     const wrapper = mountApp()
     await flushPromises()
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(6)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
 
     const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
     expect(panelIds).toContain('tools')
     expect(panelIds).toContain('workflows')
-    expect(panelIds).toContain('canvas')
+    expect(panelIds).toContain('workflow:startup')
+    expect(panelIds).toContain('canvas-loading')
+    expect(panelIds).not.toContain('canvas')
     expect(panelIds).toContain('nodePanel')
     expect(panelIds).toContain('dataTable')
     expect(panelIds).toContain('logger')
@@ -271,7 +396,9 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(mockDockviewApi.removePanel).toHaveBeenCalled()
-    const removedPanel = mockDockviewApi.removePanel.mock.calls[0][0]
+    const removedPanel = mockDockviewApi.removePanel.mock.calls
+      .map((call: any) => call[0])
+      .find((panel: any) => panel.id === 'tools')
     expect(removedPanel.id).toBe('tools')
   })
 
@@ -285,9 +412,9 @@ describe('AppShell', () => {
     store.togglePanel('tools') // show again
     await flushPromises()
 
-    // addPanel called 6 times initially + 1 re-add = 7
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    const lastCall = mockDockviewApi.addPanel.mock.calls[6][0]
+    // Loading placeholder + five fixed panels + canonical startup + one re-add.
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    const lastCall = mockDockviewApi.addPanel.mock.calls[7][0]
     expect(lastCall.id).toBe('tools')
     expect(lastCall.initialWidth).toBe(320)
   })
@@ -312,8 +439,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(store.panels.tools).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('tools')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('tools')
   })
 
   it('syncs the Workflows panel with the View menu', async () => {
@@ -357,8 +484,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344')
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[6][0]
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[7][0]
     expect(codeEditorCall.id).toBe('codeEditor')
     expect(codeEditorCall.tabComponent).toBe('codeEditorTab')
     expect(codeEditorCall.initialWidth).toBe(520)
@@ -395,7 +522,7 @@ describe('AppShell', () => {
     expect(store.codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace')
     expect(store.codeEditorPath).toBe('/workspace/tools/new.py')
     expect(store.codeEditorProjectPath).toBe('/workspace')
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
     expect(panels.get('codeEditor').api.setActive).not.toHaveBeenCalled()
   })
 
@@ -437,9 +564,9 @@ describe('AppShell', () => {
     const store = useUIStore()
     expect(store.codeEditorPath).toBe('/tmp/tool.py')
     expect(store.codeEditorOpening).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
-    expect(mockDockviewApi.addPanel.mock.calls[6][0].id).toBe('codeEditor')
-    expect(mockDockviewApi.addPanel.mock.calls[6][0].tabComponent).toBe('codeEditorTab')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('codeEditor')
+    expect(mockDockviewApi.addPanel.mock.calls[7][0].tabComponent).toBe('codeEditorTab')
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
 
     window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished'))
@@ -469,7 +596,7 @@ describe('AppShell', () => {
     expect(store.codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace')
     expect(store.codeEditorPath).toBe('/workspace/tools/tool.py')
     expect(store.codeEditorOpening).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
     expect(panels.get('codeEditor').api.setActive).not.toHaveBeenCalled()
   })
 
@@ -569,7 +696,8 @@ describe('AppShell', () => {
     mountApp()
     await flushPromises()
     const sessions = useSubWorkflowSessionsStore()
-    const session = sessions.openSession({
+    const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+      parentCanvasId: 'workflow:parent',
       parentWorkflowName: 'parent',
       parentNodeId: 'sub_1',
       parentNodeName: 'Sub 1',
@@ -592,6 +720,10 @@ describe('AppShell', () => {
         parentCanvasId: canvasIdFromPanelId('workflow:parent'),
       },
       getWorkflowId: () => 'parent',
+      nestedSnapshot: {
+        initialSnapshot: sessions.snapshotForSession(session.id),
+        onAccepted: snapshot => sessions.acceptSnapshot(session.id, snapshot),
+      },
     })
     useUIStore().setCanvasSelectedNodes(nestedCanvasId, ['nested-node'])
     await flushPromises()
@@ -637,6 +769,7 @@ describe('AppShell', () => {
         draft: openedDraft,
         missingTools: [],
         dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('analysis'),
       },
     }))
     const analysisCanvasId = canvasIdFromPanelId('workflow:analysis')
@@ -667,10 +800,10 @@ describe('AppShell', () => {
     expect(useUIStore().activeWorkflowName).toBe('Analysis')
   })
 
-  it('opens a workflow tab above bottom panels when no canvas tab remains', async () => {
+  it('opens the first workflow in the explicit empty canvas group', async () => {
+    resolveStartupWorkflowMock.mockResolvedValueOnce(null)
     mountApp()
     await flushPromises()
-    panels.delete('canvas')
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
       detail: {
@@ -679,6 +812,7 @@ describe('AppShell', () => {
         graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
         missingTools: [],
         dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('analysis'),
       },
     }))
     await flushPromises()
@@ -689,9 +823,96 @@ describe('AppShell', () => {
     expect(lastCall).toMatchObject({
       id: 'workflow:analysis',
       position: {
-        referencePanel: 'dataTable',
-        direction: 'above',
+        referencePanel: 'canvas-empty',
+        direction: 'within',
       },
+    })
+  })
+
+  it('rejects a root apply event that has no identity generation token', async () => {
+    mountApp()
+    await flushPromises()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'unversioned',
+        workflowDisplayName: 'Unversioned',
+        graph: { nodes: [], edges: [] },
+        missingTools: [],
+        dirty: false,
+      },
+    }))
+    await flushPromises()
+
+    expect(panels.has('workflow:unversioned')).toBe(false)
+  })
+
+  it('does not let a rejected stale open cancel fresh startup resolution', async () => {
+    const workflow = useWorkflowStore()
+    const drafts = useWorkflowDraftStore()
+    const staleGraph = { nodes: [], edges: [] }
+    vi.spyOn(workflow, 'loadWorkflow').mockResolvedValueOnce(staleGraph)
+    vi.spyOn(drafts, 'loadDraft').mockRejectedValueOnce(new Error('no draft'))
+    const stalePresentation = await loadRootWorkflowPresentation('startup')
+    await workflow.forgetDeletedWorkflow('startup')
+    const startupResolution = deferred<any>()
+    resolveStartupWorkflowMock.mockReturnValueOnce(startupResolution.promise)
+
+    mountApp()
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: stalePresentation,
+    }))
+    startupResolution.resolve({
+      workflowName: 'startup',
+      workflowDisplayName: 'Fresh startup',
+      graph: { nodes: [], edges: [] },
+      missingTools: [],
+      dirty: false,
+      identityGeneration: workflow.workflowIdentityGeneration('startup'),
+    })
+    await flushPromises()
+
+    expect(panels.has('workflow:startup')).toBe(true)
+    expect(panels.get('workflow:startup').title).toBe('Fresh startup')
+    expect(panels.has('canvas-empty')).toBe(false)
+  })
+
+  it('places B beside A after every root canvas was closed', async () => {
+    mountApp()
+    await flushPromises()
+    mockDockviewApi.removePanel(panels.get('workflow:startup'))
+    await flushPromises()
+
+    const graph = { nodes: [], edges: [], published_inputs: [], published_outputs: [] }
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'a',
+        workflowDisplayName: 'A',
+        graph,
+        missingTools: [],
+        dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('a'),
+      },
+    }))
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'b',
+        workflowDisplayName: 'B',
+        graph,
+        missingTools: [],
+        dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('b'),
+      },
+    }))
+    await flushPromises()
+
+    const bCall = mockDockviewApi.addPanel.mock.calls
+      .map((call: any) => call[0])
+      .find((options: any) => options.id === 'workflow:b')
+    expect(bCall.position).toEqual({
+      referencePanel: 'workflow:a',
+      direction: 'within',
     })
   })
 
@@ -699,6 +920,16 @@ describe('AppShell', () => {
     mountApp()
     await flushPromises()
     const ui = useUIStore()
+    const startupCanvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: {
+        kind: 'root',
+        canvasId: startupCanvasId,
+        workflowId: 'startup',
+      },
+      getWorkflowId: () => 'startup',
+    })
+    panels.get('workflow:startup').api.setActive()
     ui.setSelectedNodes(['node_1'])
 
     panels.get('tools').api.setActive()
@@ -710,12 +941,12 @@ describe('AppShell', () => {
   it('activates graph sync only for canvas panels and retains it for side panels', async () => {
     mountApp()
     await flushPromises()
-    const canvasId = canvasIdFromPanelId('canvas')
+    const canvasId = canvasIdFromPanelId('workflow:startup')
 
-    panels.get('canvas').api.setActive()
+    panels.get('workflow:startup').api.setActive()
     useGraphSync({
-      descriptor: { kind: 'root', canvasId, workflowId: null },
-      getWorkflowId: () => 'analysis',
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
     })
     await flushPromises()
 
@@ -728,10 +959,10 @@ describe('AppShell', () => {
   it('removing a canvas unregisters only that canvas graph sync session', async () => {
     mountApp()
     await flushPromises()
-    const startupCanvasId = canvasIdFromPanelId('canvas')
+    const startupCanvasId = canvasIdFromPanelId('workflow:startup')
     const workflowCanvasId = canvasIdFromPanelId('workflow:analysis')
     useGraphSync({
-      descriptor: { kind: 'root', canvasId: startupCanvasId, workflowId: null },
+      descriptor: { kind: 'root', canvasId: startupCanvasId, workflowId: 'startup' },
       getWorkflowId: () => 'startup',
     })
     useGraphSync({
@@ -744,7 +975,7 @@ describe('AppShell', () => {
     })
     graphSyncCanvasSessions.activate(workflowCanvasId)
 
-    mockDockviewApi.removePanel(panels.get('canvas'))
+    mockDockviewApi.removePanel(panels.get('workflow:startup'))
     await flushPromises()
 
     expect(graphSyncCanvasSessions.get(startupCanvasId)).toBeNull()
@@ -752,72 +983,60 @@ describe('AppShell', () => {
     expect(graphSyncCanvasSessions.activeCanvasId.value).toBe(workflowCanvasId)
   })
 
-  it('closes the canvas identified by a targeted close event', async () => {
-    mountApp()
-    await flushPromises()
-    const panel = panels.get('canvas')
-
-    window.dispatchEvent(new CustomEvent('bioimageflow:close-canvas', {
-      detail: { canvasId: 'canvas' },
-    }))
-
-    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(panel)
-  })
-
-  it('renames the startup canvas tab when its workflow context is loaded', async () => {
+  it('updates the canonical startup tab title from its workflow context', async () => {
     mountApp()
     await flushPromises()
 
     window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
       detail: {
-        panelId: 'canvas',
-        workflowName: 'analysis',
-        workflowDisplayName: 'Analysis',
+        panelId: 'workflow:startup',
+        workflowName: 'startup',
+        workflowDisplayName: 'Startup renamed',
       },
     }))
     await flushPromises()
 
-    expect(panels.get('canvas').api.setTitle).toHaveBeenCalledWith('Analysis')
-    expect(panels.get('canvas').title).toBe('Analysis')
+    expect(panels.get('workflow:startup').api.setTitle).toHaveBeenCalledWith('Startup renamed')
+    expect(panels.get('workflow:startup').title).toBe('Startup renamed')
   })
 
-  it('reactivating the startup canvas restores that canvas workflow context', async () => {
+  it('reactivating the canonical startup canvas restores its workflow context', async () => {
     mountApp()
     await flushPromises()
     const workflow = useWorkflowStore()
     workflow.workflows = [
-      { name: 'analysis', display_name: 'Analysis' },
+      { name: 'startup', display_name: 'Startup' },
       { name: 'other', display_name: 'Other' },
     ] as any
     workflow.activateWorkflow('other')
 
     window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
       detail: {
-        panelId: 'canvas',
-        workflowName: 'analysis',
-        workflowDisplayName: 'Analysis',
+        panelId: 'workflow:startup',
+        workflowName: 'startup',
+        workflowDisplayName: 'Startup',
       },
     }))
-    const startupCanvasId = canvasIdFromPanelId('canvas')
+    const startupCanvasId = canvasIdFromPanelId('workflow:startup')
     useGraphSync({
       descriptor: {
         kind: 'root',
         canvasId: startupCanvasId,
-        workflowId: 'analysis',
+        workflowId: 'startup',
       },
-      getWorkflowId: () => 'analysis',
+      getWorkflowId: () => 'startup',
     })
-    panels.get('canvas').api.setActive()
+    panels.get('workflow:startup').api.setActive()
     await flushPromises()
 
-    expect(workflow.currentName).toBe('analysis')
-    expect(useUIStore().activeWorkflowName).toBe('Analysis')
+    expect(workflow.currentName).toBe('startup')
+    expect(useUIStore().activeWorkflowName).toBe('Startup')
   })
 
   it('switches active presentation context and retains it on side panels', async () => {
     mountApp()
     await flushPromises()
-    const startupCanvasId = canvasIdFromPanelId('canvas')
+    const startupCanvasId = canvasIdFromPanelId('workflow:startup')
     const workflowCanvasId = canvasIdFromPanelId('workflow:analysis')
     useGraphSync({
       descriptor: {
@@ -829,7 +1048,7 @@ describe('AppShell', () => {
     })
     window.dispatchEvent(new CustomEvent('bioimageflow:canvas-context-updated', {
       detail: {
-        panelId: 'canvas',
+        panelId: 'workflow:startup',
         workflowName: 'startup',
         workflowDisplayName: 'Startup',
       },
@@ -845,6 +1064,7 @@ describe('AppShell', () => {
         workflowDisplayName: 'Analysis',
         graph: { nodes: [], edges: [] },
         dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('analysis'),
       },
     }))
     useGraphSync({
@@ -865,7 +1085,7 @@ describe('AppShell', () => {
     expect(ui.hasUnsavedChanges).toBe(false)
     expect(document.title).toBe('BioImageFlow \u2014 Analysis')
 
-    panels.get('canvas').api.setActive()
+    panels.get('workflow:startup').api.setActive()
     await flushPromises()
     expect(ui.activeWorkflowId).toBe('startup')
     expect(ui.selectedNodeIds).toEqual(['shared'])
@@ -878,30 +1098,990 @@ describe('AppShell', () => {
     expect(ui.selectedNodeIds).toEqual(['shared'])
   })
 
-  it('reopening an already open workflow tab activates it without replacing it', async () => {
+  it('reopening the startup workflow activates its canonical tab without replacing it', async () => {
     mountApp()
     await flushPromises()
     const detail = {
-      workflowName: 'analysis',
-      workflowDisplayName: 'Analysis',
+      workflowName: 'startup',
+      workflowDisplayName: 'Startup',
       graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
       missingTools: [],
       dirty: false,
+      identityGeneration: useWorkflowStore().workflowIdentityGeneration('startup'),
     }
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
     await flushPromises()
     const addCount = mockDockviewApi.addPanel.mock.calls.length
     const removeCount = mockDockviewApi.removePanel.mock.calls.length
-    const activeCount = panels.get('workflow:analysis').api.setActive.mock.calls.length
+    const activeCount = panels.get('workflow:startup').api.setActive.mock.calls.length
 
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', { detail }))
     await flushPromises()
 
     expect(mockDockviewApi.addPanel.mock.calls.length).toBe(addCount)
     expect(mockDockviewApi.removePanel.mock.calls.length).toBe(removeCount)
-    expect(panels.get('workflow:analysis').api.setActive.mock.calls.length)
+    expect(panels.get('workflow:startup').api.setActive.mock.calls.length)
       .toBeGreaterThan(activeCount)
+  })
+
+  it('closes a clean canonical root immediately through the shared close request', async () => {
+    mountApp()
+    await flushPromises()
+    const panel = panels.get('workflow:startup')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: 'workflow:startup' },
+    }))
+    await flushPromises()
+
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(panel)
+  })
+
+  it('keeps a dirty root open when its close decision is cancelled', async () => {
+    mountApp()
+    await flushPromises()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useUIStore().markCanvasDirty(canvasId)
+    const panel = panels.get('workflow:startup')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: 'workflow:startup' },
+    }))
+    await flushPromises()
+
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(panel)
+    await clickLatestTestId('root-workflow-close-cancel')
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(panel)
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(true)
+  })
+
+  it('binds delayed Save-and-close to the root that opened the dialog', async () => {
+    mountApp()
+    await flushPromises()
+    const graph = { nodes: [], edges: [], published_inputs: [], published_outputs: [] }
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'other',
+        workflowDisplayName: 'Other',
+        graph,
+        missingTools: [],
+        dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('other'),
+      },
+    }))
+    await flushPromises()
+    const startupCanvasId = canvasIdFromPanelId('workflow:startup')
+    useUIStore().markCanvasDirty(startupCanvasId)
+    const startupPanel = panels.get('workflow:startup')
+    const otherPanel = panels.get('workflow:other')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: 'workflow:startup' },
+    }))
+    otherPanel.api.setActive()
+    await clickLatestTestId('root-workflow-close-save')
+
+    expect(saveRootWorkflowTargetMock).toHaveBeenCalledWith({
+      canvasId: startupCanvasId,
+      workflowName: 'startup',
+    })
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(startupPanel)
+    expect(panels.get('workflow:other')).toBe(otherPanel)
+  })
+
+  it('defers a generation replacement until a pending Save-and-close releases its gate', async () => {
+    const saving = deferred<any>()
+    saveRootWorkflowTargetMock.mockReturnValueOnce(saving.promise)
+    const workflow = useWorkflowStore()
+    const drafts = useWorkflowDraftStore()
+    workflow.observeWorkflowServerIdentityGeneration('startup', 2)
+    workflow.workflows = [{
+      id: 'startup',
+      name: 'startup',
+      display_name: 'Fresh startup',
+      identity_generation: 2,
+    }] as any
+    const resetPresentation = vi.spyOn(
+      workflow,
+      'resetWorkflowPresentationGeneration',
+    ).mockResolvedValueOnce()
+    vi.spyOn(workflow, 'loadWorkflow').mockResolvedValueOnce({ nodes: [], edges: [] })
+    vi.spyOn(drafts, 'loadDraft').mockRejectedValueOnce(new Error('no retained draft'))
+    mountApp()
+    await flushPromises()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useUIStore().markCanvasDirty(canvasId)
+    const panel = panels.get('workflow:startup')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: 'workflow:startup' },
+    }))
+    void clickLatestTestId('root-workflow-close-save')
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
+      detail: {
+        workflows: [{ workflowName: 'startup', identityGeneration: 2 }],
+      },
+    }))
+    await flushPromises()
+
+    expect(panels.get('workflow:startup')).toBe(panel)
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(panel)
+    expect(resetPresentation).not.toHaveBeenCalled()
+
+    saving.resolve({ status: 'newer-edit' })
+    await vi.waitFor(() => {
+      expect(resetPresentation).toHaveBeenCalledOnce()
+      expect(panels.get('workflow:startup')).not.toBe(panel)
+    })
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(panel)
+  })
+
+  it('keeps a root open when Save detects a newer edit', async () => {
+    saveRootWorkflowTargetMock.mockResolvedValueOnce({ status: 'newer-edit' })
+    mountApp()
+    await flushPromises()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useUIStore().markCanvasDirty(canvasId)
+    const panel = panels.get('workflow:startup')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: 'workflow:startup' },
+    }))
+    await clickLatestTestId('root-workflow-close-save')
+
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(panel)
+    expect(document.body.textContent).toContain('changed while it was being saved')
+  })
+
+  it('keeps a dirty root open and reports an ordinary Save failure', async () => {
+    saveRootWorkflowTargetMock.mockRejectedValueOnce(new Error('disk is unavailable'))
+    mountApp()
+    await flushPromises()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useUIStore().markCanvasDirty(canvasId)
+    const panel = panels.get('workflow:startup')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: 'workflow:startup' },
+    }))
+    await clickLatestTestId('root-workflow-close-save')
+
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(panel)
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(true)
+    expect(document.body.textContent).toContain('disk is unavailable')
+  })
+
+  it('restores the accepted saved draft before discarding and closing', async () => {
+    mountApp()
+    await flushPromises()
+    const panelId = 'workflow:startup'
+    const canvasId = canvasIdFromPanelId(panelId)
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    const savedDraft = {
+      draft_version: 1 as const,
+      workflow_id: 'startup',
+      base_saved_revision: 'sha256:saved',
+      draft_revision: 4,
+      updated_at: '2026-07-16T12:00:00Z',
+      updated_by: 'frontend' as const,
+      dirty_against_saved: false,
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    }
+    persistence.initializeFromDraft({ ...savedDraft, draft_revision: 3 })
+    const discard = vi.spyOn(persistence, 'discardToSaved').mockResolvedValue(savedDraft)
+    useUIStore().markCanvasDirty(canvasId)
+    const panel = panels.get(panelId)
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: panelId },
+    }))
+    await clickLatestTestId('root-workflow-close-discard')
+
+    expect(discard).toHaveBeenCalledOnce()
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(false)
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(panel)
+  })
+
+  it('keeps a dirty root open when restoring its saved draft fails', async () => {
+    mountApp()
+    await flushPromises()
+    const panelId = 'workflow:startup'
+    const canvasId = canvasIdFromPanelId(panelId)
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'discardToSaved').mockRejectedValueOnce(
+      new Error('draft revision conflict'),
+    )
+    useUIStore().markCanvasDirty(canvasId)
+    const panel = panels.get(panelId)
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: panelId },
+    }))
+    await clickLatestTestId('root-workflow-close-discard')
+
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(panel)
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(true)
+    expect(document.body.textContent).toContain('draft revision conflict')
+  })
+
+  it('restores the accepted saved graph but keeps the tab open when recovery cleanup fails', async () => {
+    mountApp()
+    await flushPromises()
+    const panelId = 'workflow:startup'
+    const canvasId = canvasIdFromPanelId(panelId)
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    const savedDraft = {
+      draft_version: 1 as const,
+      workflow_id: 'startup',
+      base_saved_revision: 'sha256:saved',
+      draft_revision: 5,
+      updated_at: '2026-07-16T12:00:00Z',
+      updated_by: 'frontend' as const,
+      dirty_against_saved: false,
+      graph: { nodes: [{ id: 'saved' }], edges: [] },
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    }
+    vi.spyOn(persistence, 'discardToSaved').mockRejectedValueOnce(
+      new CanvasDiscardRecoveryCleanupError(
+        savedDraft as any,
+        new Error('IndexedDB clear failed'),
+      ),
+    )
+    useUIStore().markCanvasDirty(canvasId)
+    const restored = vi.fn()
+    window.addEventListener('bioimageflow:restore-saved-canvas', restored)
+    const panel = panels.get(panelId)
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-close-canvas', {
+      detail: { canvasId: panelId },
+    }))
+    await clickLatestTestId('root-workflow-close-discard')
+
+    expect(restored).toHaveBeenCalledOnce()
+    expect((restored.mock.calls[0]![0] as CustomEvent).detail.draft).toEqual(savedDraft)
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(panel)
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(true)
+    expect(document.body.textContent).toContain('local recovery snapshot could not be cleared')
+    window.removeEventListener('bioimageflow:restore-saved-canvas', restored)
+  })
+
+  it('closes the originally confirmed workflow after delayed deletion and activates an existing root', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    workflow.workflows = [
+      { id: 'startup', name: 'startup', display_name: 'Startup' },
+      { id: 'other', name: 'other', display_name: 'Other' },
+    ] as any
+    const graph = { nodes: [], edges: [], published_inputs: [], published_outputs: [] }
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'other',
+        workflowDisplayName: 'Other',
+        graph,
+        missingTools: [],
+        dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('other'),
+      },
+    }))
+    await flushPromises()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    const startupPanel = panels.get('workflow:startup')
+    const deletion = deferred<void>()
+    vi.spyOn(workflow, 'deleteWorkflow').mockReturnValueOnce(deletion.promise)
+    const request = deferred<void>()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...capturedWorkflowDeletionTarget('startup', canvasId),
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+    panels.get('workflow:other').api.setActive()
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
+      detail: {
+        workflows: [
+          { workflowName: 'startup', identityGeneration: 3 },
+          { workflowName: 'other', identityGeneration: null },
+        ],
+      },
+    }))
+    await flushPromises()
+    expect(panels.get('workflow:startup')).toBe(startupPanel)
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(startupPanel)
+
+    deletion.resolve()
+    await request.promise
+    await flushPromises()
+
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(panels.has('workflow:other')).toBe(true)
+    expect(panels.get('workflow:other').api.setActive).toHaveBeenCalled()
+    expect(panels.has('workflow:workflow')).toBe(false)
+  })
+
+  it('never activates or reopens an older loaded generation across deletion', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const drafts = useWorkflowDraftStore()
+    const staleGraph = { nodes: [], edges: [] }
+    vi.spyOn(workflow, 'loadWorkflow').mockResolvedValueOnce(staleGraph)
+    vi.spyOn(drafts, 'loadDraft').mockRejectedValueOnce(new Error('no draft'))
+    const stalePresentation = await loadRootWorkflowPresentation('startup')
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    const deletion = deferred<void>()
+    vi.spyOn(workflow, 'deleteWorkflow').mockReturnValueOnce(deletion.promise)
+    const request = deferred<void>()
+    const startupPanel = panels.get('workflow:startup')
+    startupPanel.api.setActive.mockClear()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...capturedWorkflowDeletionTarget('startup', canvasId),
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: stalePresentation,
+    }))
+    await flushPromises()
+
+    expect(startupPanel.api.setActive).not.toHaveBeenCalled()
+
+    deletion.resolve()
+    await request.promise
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: stalePresentation,
+    }))
+    await flushPromises()
+
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(panels.has('workflow:workflow')).toBe(false)
+    expect(panels.has('canvas-empty')).toBe(true)
+  })
+
+  it('gates a root and its nested canvases until workflow deletion completes', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const sessions = useSubWorkflowSessionsStore()
+    const lifecycle = useCanvasLifecycleStore()
+    const rootCanvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId: rootCanvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(rootCanvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+      parentCanvasId: 'workflow:startup',
+      parentWorkflowName: 'startup',
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+    })
+    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+      detail: {
+        sessionId: session.id,
+        parentCanvasPanelId: 'workflow:startup',
+      },
+    }))
+    await flushPromises()
+    const nestedPanelId = `sub-workflow:${encodeURIComponent(session.id)}`
+    const nestedCanvasId = canvasIdFromPanelId(nestedPanelId)
+    const deletion = deferred<void>()
+    vi.spyOn(workflow, 'deleteWorkflow').mockReturnValueOnce(deletion.promise)
+    const request = deferred<void>()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...capturedWorkflowDeletionTarget('startup', rootCanvasId),
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+    await flushPromises()
+
+    expect(lifecycle.operationFor(rootCanvasId)).toBe('deleting')
+    expect(lifecycle.operationFor(nestedCanvasId)).toBe('deleting')
+    expect(panels.has('workflow:startup')).toBe(true)
+    expect(panels.has(nestedPanelId)).toBe(true)
+
+    deletion.resolve()
+    await request.promise
+    await flushPromises()
+
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(panels.has(nestedPanelId)).toBe(false)
+    expect(forgetRetainedNestedSnapshot(session.id)).toBe(false)
+    expect(lifecycle.operationFor(rootCanvasId)).toBeNull()
+    expect(lifecycle.operationFor(nestedCanvasId)).toBeNull()
+  })
+
+  it('keeps the exact target mounted when backend deletion fails', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    vi.spyOn(workflow, 'deleteWorkflow').mockRejectedValueOnce(new Error('delete failed'))
+    const request = deferred<void>()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...capturedWorkflowDeletionTarget('startup', canvasId),
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+
+    await expect(request.promise).rejects.toThrow('delete failed')
+    expect(panels.has('workflow:startup')).toBe(true)
+  })
+
+  it('retries the same confirmed deletion after backend DELETE fails', async () => {
+    const wrapper = mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    workflow.observeWorkflowServerIdentityGeneration('startup', 7)
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    canvasSessionRegistry.activate(canvasId)
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    const deleteRequest = vi.spyOn(api, 'delete')
+      .mockRejectedValueOnce(new Error('backend unavailable'))
+      .mockResolvedValueOnce({
+        data: { deleted: true, identity_generation: 8 },
+      } as any)
+    const localIdentityGeneration = workflow.workflowIdentityGeneration('startup')
+    const sessionRegistrationToken = canvasSessionRegistry.get(canvasId)?.registrationToken
+    const menuBar = wrapper.findComponent(MenuBar)
+    const vm = menuBar.vm as any
+    const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+    workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+    expect(vm.deleteCanvasTarget).toMatchObject({
+      workflowName: 'startup',
+      canvasId,
+      localIdentityGeneration,
+      serverIdentityGeneration: 7,
+      sessionRegistrationToken,
+    })
+
+    await clickLatestTestId('delete-workflow-confirm')
+
+    expect(deleteRequest).toHaveBeenCalledTimes(1)
+    expect(deleteRequest).toHaveBeenNthCalledWith(1, '/api/v1/workflows/startup', {
+      params: { expected_identity_generation: 7 },
+    })
+    expect(workflow.workflowIdentityGeneration('startup')).toBe(localIdentityGeneration)
+    expect(canvasSessionRegistry.get(canvasId)?.registrationToken)
+      .toBe(sessionRegistrationToken)
+    expect(vm.deleteDialogVisible).toBe(true)
+    expect(vm.deleteCanvasTarget).toMatchObject({
+      workflowName: 'startup',
+      canvasId,
+      localIdentityGeneration,
+      serverIdentityGeneration: 7,
+      sessionRegistrationToken,
+    })
+
+    await clickLatestTestId('delete-workflow-confirm')
+    await vi.waitFor(() => {
+      expect(vm.deleteDialogVisible).toBe(false)
+    })
+
+    expect(deleteRequest).toHaveBeenCalledTimes(2)
+    expect(deleteRequest).toHaveBeenNthCalledWith(2, '/api/v1/workflows/startup', {
+      params: { expected_identity_generation: 7 },
+    })
+    expect(vm.deleteCanvasTarget).toBeNull()
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(canvasSessionRegistry.get(canvasId)).toBeNull()
+    expect(workflow.workflows).toEqual([])
+    deleteRequest.mockRestore()
+  })
+
+  it('rejects a stale delete request after the same canvas id remounts', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const staleTarget = capturedWorkflowDeletionTarget('startup', canvasId)
+    canvasSessionRegistry.unregister(canvasId)
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const freshToken = canvasSessionRegistry.get(canvasId)?.registrationToken
+    const deleteWorkflow = vi.spyOn(workflow, 'deleteWorkflow')
+    const request = deferred<void>()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...staleTarget,
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+
+    await expect(request.promise).rejects.toBeInstanceOf(
+      WorkflowDeletionTargetChangedError,
+    )
+    expect(freshToken).not.toBe(staleTarget.sessionRegistrationToken)
+    expect(canvasSessionRegistry.get(canvasId)?.registrationToken).toBe(freshToken)
+    expect(deleteWorkflow).not.toHaveBeenCalled()
+    expect(panels.has('workflow:startup')).toBe(true)
+  })
+
+  it('maps the backend generation precondition conflict to a stale target', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    vi.spyOn(workflow, 'deleteWorkflow').mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: { error: 'workflow_identity_generation_conflict' },
+      },
+    })
+    const request = deferred<void>()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...capturedWorkflowDeletionTarget('startup', canvasId),
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+
+    await expect(request.promise).rejects.toBeInstanceOf(
+      WorkflowDeletionTargetChangedError,
+    )
+    expect(panels.has('workflow:startup')).toBe(true)
+  })
+
+  it('reports cleanup failure as committed after deletion disposed the target', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    vi.spyOn(workflow, 'deleteWorkflow').mockImplementationOnce(async (
+      _workflowName,
+      options,
+    ) => {
+      await options?.beforeRecoveryCleanup?.()
+      throw new Error('IndexedDB unavailable')
+    })
+    const request = deferred<void>()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...capturedWorkflowDeletionTarget('startup', canvasId),
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+
+    await expect(request.promise).rejects.toBeInstanceOf(
+      WorkflowDeletionCommittedCleanupError,
+    )
+    expect(panels.has('workflow:startup')).toBe(false)
+  })
+
+  it('shows a non-persistent empty state after deleting the final workflow', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+    })
+    const persistence = getRootCanvasPersistenceResource(canvasId)!
+    vi.spyOn(persistence, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+    vi.spyOn(workflow, 'deleteWorkflow').mockResolvedValueOnce()
+    const request = deferred<void>()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:request-delete-workflow', {
+      detail: {
+        ...capturedWorkflowDeletionTarget('startup', canvasId),
+        resolve: request.resolve,
+        reject: request.reject,
+      },
+    }))
+    await request.promise
+    await flushPromises()
+
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(panels.has('canvas-empty')).toBe(true)
+    expect(panels.has('workflow:workflow')).toBe(false)
+    expect(mockDockviewApi.addPanel.mock.calls.some(
+      (call: any) => call[0].id === 'workflow:workflow',
+    )).toBe(false)
+  })
+
+  it('converges a remote workflow deletion through the same exact-tab fallback', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    workflow.workflows = [
+      { id: 'startup', name: 'startup', display_name: 'Startup' },
+      { id: 'other', name: 'other', display_name: 'Other' },
+    ] as any
+    const graph = { nodes: [], edges: [], published_inputs: [], published_outputs: [] }
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        workflowName: 'other',
+        workflowDisplayName: 'Other',
+        graph,
+        missingTools: [],
+        dirty: false,
+        identityGeneration: useWorkflowStore().workflowIdentityGeneration('other'),
+      },
+    }))
+    await flushPromises()
+    panels.get('workflow:other').api.setActive.mockClear()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-removed', {
+      detail: { workflowName: 'startup' },
+    }))
+    await vi.waitFor(() => {
+      expect(panels.get('workflow:other').api.setActive).toHaveBeenCalledOnce()
+    })
+
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(panels.has('workflow:other')).toBe(true)
+  })
+
+  it('disposes and fences a delayed recovery write before remote deletion clears it', async () => {
+    mountApp()
+    await flushPromises()
+    const workflow = useWorkflowStore()
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    const writeGate = deferred<void>()
+    const writeStarted = deferred<void>()
+    const initialDraft = {
+      draft_version: 1 as const,
+      workflow_id: 'startup',
+      base_saved_revision: 'sha256:saved',
+      draft_revision: 1,
+      updated_at: '2026-07-16T12:00:00Z',
+      updated_by: 'frontend' as const,
+      dirty_against_saved: false,
+      graph: { nodes: [], edges: [] },
+      validation: { valid: true, node_statuses: {}, errors: [] },
+    }
+    const persistence = useCanvasPersistence({
+      descriptor: { kind: 'root', canvasId, workflowId: 'startup' },
+      getWorkflowId: () => 'startup',
+      transports: {
+        fetchDraft: vi.fn(async () => initialDraft),
+        putDraft: vi.fn(async (_workflowId, body) => ({
+          ...initialDraft,
+          draft_revision: body.expected_revision + 1,
+          dirty_against_saved: true,
+          graph: body.graph,
+        })),
+        writeRecovery: vi.fn(async (entry) => {
+          writeStarted.resolve()
+          await writeGate.promise
+          await writeAutoSaveEntry(entry)
+        }),
+      },
+    })
+    persistence.initializeFromDraft(initialDraft)
+    persistence.queueGraph({ nodes: [{ id: 'late' }] as any, edges: [] })
+    const flushing = persistence.flush()
+    const flushingOutcome = flushing.then(
+      () => undefined,
+      () => undefined,
+    )
+    await writeStarted.promise
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-removed', {
+      detail: { workflowName: 'startup' },
+    }))
+    await flushPromises()
+
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(workflow.isWorkflowDeletionInFlight('startup')).toBe(true)
+    writeGate.resolve()
+    await flushingOutcome
+    await vi.waitFor(() => {
+      expect(workflow.isWorkflowDeletionInFlight('startup')).toBe(false)
+    })
+
+    await expect(useAutoSave().loadAutoSave('startup')).resolves.toBeNull()
+  })
+
+  it('does not steal canvas focus when a remotely deleted workflow was not mounted', async () => {
+    mountApp()
+    await flushPromises()
+    const startupPanel = panels.get('workflow:startup')
+    startupPanel.api.setActive.mockClear()
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-removed', {
+      detail: { workflowName: 'not-mounted' },
+    }))
+    await flushPromises()
+
+    expect(panels.has('workflow:startup')).toBe(true)
+    expect(startupPanel.api.setActive).not.toHaveBeenCalled()
+  })
+
+  it('ignores a delayed deletion event from before same-id recreation', async () => {
+    const workflow = useWorkflowStore()
+    workflow.observeWorkflowServerIdentityGeneration('startup', 12)
+    mountApp()
+    await flushPromises()
+    const startupPanel = panels.get('workflow:startup')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-removed', {
+      detail: {
+        workflowName: 'startup',
+        identityGeneration: 11,
+      },
+    }))
+    await flushPromises()
+
+    expect(panels.get('workflow:startup')).toBe(startupPanel)
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(startupPanel)
+    expect(workflow.workflows.map(item => item.id)).toContain('startup')
+  })
+
+  it('replaces a mounted old generation with the refreshed same-id workflow exactly once', async () => {
+    const workflow = useWorkflowStore()
+    const drafts = useWorkflowDraftStore()
+    workflow.observeWorkflowServerIdentityGeneration('startup', 10)
+    resolveStartupWorkflowMock.mockResolvedValueOnce({
+      workflowName: 'startup',
+      workflowDisplayName: 'Old startup',
+      graph: { nodes: [{ id: 'old' }], edges: [] },
+      missingTools: [],
+      dirty: false,
+      identityGeneration: workflow.workflowIdentityGeneration('startup'),
+      serverIdentityGeneration: 10,
+    })
+    mountApp()
+    await flushPromises()
+    const oldPanel = panels.get('workflow:startup')
+    const sessions = useSubWorkflowSessionsStore()
+    const nestedSession = await openAcceptedNestedSession(
+      sessions,
+      nestedSnapshotMocks.open,
+      {
+        parentCanvasId: 'workflow:startup',
+        parentWorkflowName: 'startup',
+        parentNodeId: 'sub_1',
+        graph: { nodes: [], edges: [] },
+      },
+    )
+    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+      detail: {
+        sessionId: nestedSession.id,
+        parentCanvasPanelId: 'workflow:startup',
+      },
+    }))
+    await flushPromises()
+    const nestedPanelId = `sub-workflow:${encodeURIComponent(nestedSession.id)}`
+    const nestedSync = useGraphSync({
+      descriptor: {
+        kind: 'nested',
+        canvasId: canvasIdFromPanelId(nestedPanelId),
+        sessionId: nestedSession.id,
+        parentCanvasId: canvasIdFromPanelId('workflow:startup'),
+      },
+      getWorkflowId: () => 'startup',
+      nestedSnapshot: {
+        initialSnapshot: sessions.snapshotForSession(nestedSession.id),
+      },
+    })
+    vi.useFakeTimers()
+    nestedSync.syncGraphState({ nodes: [{ id: 'queued-old-generation' }] as any, edges: [] })
+    nestedSnapshotMocks.put.mockClear()
+    workflow.workflows = [{
+      id: 'startup',
+      name: 'startup',
+      display_name: 'Fresh startup',
+      identity_generation: 12,
+    }] as any
+    workflow.observeWorkflowServerIdentityGeneration('startup', 12)
+    vi.spyOn(workflow, 'loadWorkflow').mockResolvedValueOnce({
+      nodes: [{ id: 'fresh' }],
+      edges: [],
+    } as any)
+    vi.spyOn(drafts, 'loadDraft').mockRejectedValueOnce(new Error('no retained draft'))
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
+      detail: {
+        workflows: [{ workflowName: 'startup', identityGeneration: 12 }],
+      },
+    }))
+    await vi.waitFor(() => {
+      expect(panels.get('workflow:startup')).not.toBe(oldPanel)
+      expect(panels.get('workflow:startup')?.title).toBe('Fresh startup')
+    })
+
+    const freshPanel = panels.get('workflow:startup')
+    expect(freshPanel.params.serverIdentityGeneration).toBe(12)
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(oldPanel)
+    expect(panels.has(nestedPanelId)).toBe(false)
+    expect(forgetRetainedNestedSnapshot(nestedSession.id)).toBe(false)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(nestedSnapshotMocks.put).not.toHaveBeenCalled()
+    vi.useRealTimers()
+    const removeCount = mockDockviewApi.removePanel.mock.calls.length
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-removed', {
+      detail: { workflowName: 'startup', identityGeneration: 11 },
+    }))
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
+      detail: {
+        workflows: [{ workflowName: 'startup', identityGeneration: 12 }],
+      },
+    }))
+    await flushPromises()
+
+    expect(panels.get('workflow:startup')).toBe(freshPanel)
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledTimes(removeCount)
+  })
+
+  it('does not reopen a fresh same-id workflow when old recovery cleanup fails', async () => {
+    const workflow = useWorkflowStore()
+    workflow.observeWorkflowServerIdentityGeneration('startup', 10)
+    resolveStartupWorkflowMock.mockResolvedValueOnce({
+      workflowName: 'startup',
+      workflowDisplayName: 'Old startup',
+      graph: { nodes: [], edges: [] },
+      missingTools: [],
+      dirty: false,
+      identityGeneration: workflow.workflowIdentityGeneration('startup'),
+      serverIdentityGeneration: 10,
+    })
+    mountApp()
+    await flushPromises()
+    const oldPanel = panels.get('workflow:startup')
+    workflow.workflows = [{
+      id: 'startup',
+      name: 'startup',
+      display_name: 'Fresh startup',
+      identity_generation: 12,
+    }] as any
+    workflow.observeWorkflowServerIdentityGeneration('startup', 12)
+    vi.spyOn(workflow, 'resetWorkflowPresentationGeneration').mockRejectedValueOnce(
+      new Error('old recovery cleanup failed'),
+    )
+    const loadFresh = vi.spyOn(workflow, 'loadWorkflow')
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
+      detail: {
+        workflows: [{ workflowName: 'startup', identityGeneration: 12 }],
+      },
+    }))
+    await vi.waitFor(() => expect(panels.has('canvas-empty')).toBe(true))
+
+    expect(mockDockviewApi.removePanel).toHaveBeenCalledWith(oldPanel)
+    expect(panels.has('workflow:startup')).toBe(false)
+    expect(loadFresh).not.toHaveBeenCalled()
+  })
+
+  it('preserves a dirty mounted identity when reconnect reports the same durable generation', async () => {
+    const workflow = useWorkflowStore()
+    workflow.observeWorkflowServerIdentityGeneration('startup', 0)
+    resolveStartupWorkflowMock.mockResolvedValueOnce({
+      workflowName: 'startup',
+      workflowDisplayName: 'Before restart',
+      graph: { nodes: [], edges: [] },
+      missingTools: [],
+      dirty: false,
+      identityGeneration: workflow.workflowIdentityGeneration('startup'),
+      serverIdentityGeneration: 0,
+    })
+    mountApp()
+    await flushPromises()
+    const oldPanel = panels.get('workflow:startup')
+    const canvasId = canvasIdFromPanelId('workflow:startup')
+    useUIStore().markCanvasDirty(canvasId)
+
+    workflow.workflows = [{
+      id: 'startup',
+      name: 'startup',
+      display_name: 'After restart',
+      identity_generation: 0,
+    }] as any
+
+    window.dispatchEvent(new CustomEvent('bioimageflow:workflow-identities-refreshed', {
+      detail: {
+        workflows: [{
+          workflowName: 'startup',
+          identityGeneration: 0,
+        }],
+      },
+    }))
+    await flushPromises()
+
+    expect(panels.get('workflow:startup')).toBe(oldPanel)
+    expect(mockDockviewApi.removePanel).not.toHaveBeenCalledWith(oldPanel)
+    expect(useUIStore().canvasHasUnsavedChanges(canvasId)).toBe(true)
   })
 
   it('keeps a dirty sub-workflow session open when direct tab close is cancelled', async () => {
@@ -909,7 +2089,8 @@ describe('AppShell', () => {
     mountApp()
     await flushPromises()
     const sessions = useSubWorkflowSessionsStore()
-    const session = sessions.openSession({
+    const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+      parentCanvasId: 'workflow:parent',
       parentWorkflowName: 'parent',
       parentNodeId: 'sub_1',
       parentNodeName: 'Sub 1',
@@ -930,7 +2111,10 @@ describe('AppShell', () => {
       edges: [],
     })
     window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
-      detail: { sessionId: session.id },
+      detail: {
+        sessionId: session.id,
+        parentCanvasPanelId: 'workflow:parent',
+      },
     }))
     await flushPromises()
     const panel = panels.get(
@@ -958,8 +2142,8 @@ describe('AppShell', () => {
     mountApp()
     await flushPromises()
     const sessions = useSubWorkflowSessionsStore()
-    const session = sessions.openSession({
-      parentCanvasId: 'canvas',
+    const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+      parentCanvasId: 'workflow:startup',
       parentWorkflowName: null,
       parentNodeId: 'sub_1',
       parentNodeName: 'Sub 1',
@@ -978,7 +2162,10 @@ describe('AppShell', () => {
     })
     const deleteSession = vi.spyOn(sessions, 'deleteDurableSession').mockResolvedValue()
     window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
-      detail: { sessionId: session.id },
+      detail: {
+        sessionId: session.id,
+        parentCanvasPanelId: 'workflow:startup',
+      },
     }))
     await flushPromises()
     const panel = panels.get(`sub-workflow:${encodeURIComponent(session.id)}`)
@@ -996,8 +2183,8 @@ describe('AppShell', () => {
     mountApp()
     await flushPromises()
     const sessions = useSubWorkflowSessionsStore()
-    const session = sessions.openSession({
-      parentCanvasId: 'canvas',
+    const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+      parentCanvasId: 'workflow:startup',
       parentWorkflowName: null,
       parentNodeId: 'sub_1',
       parentNodeName: 'Sub 1',
@@ -1021,7 +2208,10 @@ describe('AppShell', () => {
     })
     vi.spyOn(sessions, 'deleteDurableSession').mockRejectedValue(new Error('delete failed'))
     window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
-      detail: { sessionId: session.id },
+      detail: {
+        sessionId: session.id,
+        parentCanvasPanelId: 'workflow:startup',
+      },
     }))
     await flushPromises()
     const panel = panels.get(`sub-workflow:${encodeURIComponent(session.id)}`)

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { AxiosError } from 'axios'
 
 vi.mock('@/api/client', () => ({
   api: {
@@ -71,162 +70,6 @@ describe('workflow draft store', () => {
     expect(store.currentDraftRevision).toBe(3)
     expect(store.appliedDraftRevision).toBe(3)
     expect(api.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf')
-  })
-
-  it('flushes pending saves with the tracked expected revision', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1) })
-    vi.mocked(api.put).mockResolvedValueOnce({ data: draft(2) })
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('wf')
-    store.scheduleSave('wf', emptyGraph)
-    expect(store.hasPendingSave).toBe(true)
-    await store.flush()
-
-    expect(api.put).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf', {
-      graph: emptyGraph,
-      expected_revision: 1,
-      updated_by: 'frontend',
-    })
-    expect(store.currentDraftRevision).toBe(2)
-    expect(store.hasPendingSave).toBe(false)
-  })
-
-  it('reports an in-flight save as pending until the request settles', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1) })
-    let resolvePut: (value: { data: ReturnType<typeof draft> }) => void = () => {}
-    vi.mocked(api.put).mockReturnValueOnce(new Promise((resolve) => {
-      resolvePut = resolve
-    }))
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('wf')
-    store.scheduleSave('wf', emptyGraph)
-    const flushPromise = store.flush()
-
-    expect(store.hasPendingSave).toBe(true)
-    resolvePut({ data: draft(2) })
-    await flushPromise
-    expect(store.hasPendingSave).toBe(false)
-  })
-
-  it('marks stale state on revision conflict without retrying blindly', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1) })
-    vi.mocked(api.put).mockRejectedValueOnce(
-      new AxiosError(
-        'conflict',
-        'ERR_BAD_REQUEST',
-        undefined,
-        undefined,
-        {
-          status: 409,
-          statusText: 'Conflict',
-          headers: {},
-          config: {} as any,
-          data: { current_revision: 4 },
-        },
-      ),
-    )
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('wf')
-    store.scheduleSave('wf', emptyGraph)
-    await store.flush()
-
-    expect(store.remoteAvailableRevision).toBe(4)
-    expect(store.isStale).toBe(true)
-    expect(api.put).toHaveBeenCalledTimes(1)
-  })
-
-  it('freshness guard returns false immediately when a remote revision is already unresolved', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(3) })
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('wf')
-    store.noteRemoteChange(changed(4))
-    const fresh = await store.ensureFreshForCriticalOperation('wf')
-
-    expect(fresh).toBe(false)
-    expect(api.get).toHaveBeenCalledTimes(1)
-    expect(store.remoteAvailableRevision).toBe(4)
-  })
-
-  it('freshness guard records a newly discovered remote revision without throwing', async () => {
-    vi.mocked(api.get)
-      .mockResolvedValueOnce({ data: draft(3) })
-      .mockResolvedValueOnce({ data: draft(4) })
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('wf')
-    const fresh = await store.ensureFreshForCriticalOperation('wf')
-
-    expect(fresh).toBe(false)
-    expect(store.remoteAvailableRevision).toBe(4)
-  })
-
-  it('preserves a newer notice that arrives during a freshness request', async () => {
-    let resolveLatest!: (value: { data: WorkflowDraftResponse }) => void
-    vi.mocked(api.get)
-      .mockResolvedValueOnce({ data: draft(3) })
-      .mockReturnValueOnce(new Promise((resolve) => {
-        resolveLatest = resolve
-      }))
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('wf')
-    const freshness = store.ensureFreshForCriticalOperation('wf')
-    await vi.waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
-
-    store.noteRemoteChange(changed(5, {
-      updated_by: 'system',
-      updated_at: '2026-05-21T12:10:00Z',
-      dirty_against_saved: false,
-    }))
-    resolveLatest({ data: draft(4) })
-
-    await expect(freshness).resolves.toBe(false)
-    expect(store.remoteAvailableRevision).toBe(5)
-    expect(store.remoteUpdatedBy).toBe('system')
-    expect(store.remoteUpdatedAt).toBe('2026-05-21T12:10:00Z')
-    expect(store.remoteDirtyAgainstSaved).toBe(false)
-  })
-
-  it('checks an inactive workflow without changing the active projection', async () => {
-    vi.mocked(api.get)
-      .mockResolvedValueOnce({ data: draft(3, emptyGraph, 'workflow-a') })
-      .mockResolvedValueOnce({ data: draft(2, emptyGraph, 'workflow-b') })
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('workflow-a')
-
-    await expect(store.ensureFreshForCriticalOperation('workflow-b')).resolves.toBe(true)
-    expect(store.workflowId).toBe('workflow-a')
-    expect(store.currentDraftRevision).toBe(3)
-    expect(store.appliedDraftRevision).toBe(3)
-
-    store.trackWorkflow('workflow-b')
-    expect(store.currentDraftRevision).toBe(2)
-    expect(store.appliedDraftRevision).toBe(2)
-  })
-
-  it('freshness guard flushes pending local draft saves before reporting fresh', async () => {
-    vi.mocked(api.get)
-      .mockResolvedValueOnce({ data: draft(1) })
-      .mockResolvedValueOnce({ data: draft(2) })
-    vi.mocked(api.put).mockResolvedValueOnce({ data: draft(2) })
-
-    const store = useWorkflowDraftStore()
-    await store.loadDraft('wf')
-    store.scheduleSave('wf', emptyGraph)
-    const fresh = await store.ensureFreshForCriticalOperation('wf')
-
-    expect(fresh).toBe(true)
-    expect(api.put).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf', {
-      graph: emptyGraph,
-      expected_revision: 1,
-      updated_by: 'frontend',
-    })
-    expect(store.currentDraftRevision).toBe(2)
   })
 
   it('notes newer remote draft changes with metadata without applying them', async () => {
@@ -396,44 +239,29 @@ describe('workflow draft store', () => {
     expect(store.remoteUpdatedBy).toBe('agent')
   })
 
-  it('does not reactivate a workflow when its in-flight save is acknowledged', async () => {
+  it('does not reactivate a workflow when its in-flight overwrite is acknowledged', async () => {
     let resolvePut!: (value: { data: WorkflowDraftResponse }) => void
-    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1, emptyGraph, 'workflow-b') })
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: draft(1, emptyGraph, 'workflow-b') })
+      .mockResolvedValueOnce({ data: draft(1, emptyGraph, 'workflow-b') })
     vi.mocked(api.put).mockReturnValueOnce(new Promise((resolve) => {
       resolvePut = resolve
     }))
 
     const store = useWorkflowDraftStore()
     await store.loadDraft('workflow-b')
-    store.scheduleSave('workflow-b', emptyGraph)
-    const flush = store.flush()
+    const overwrite = store.overwriteDraftWithGraph('workflow-b', emptyGraph)
     await vi.waitFor(() => expect(api.put).toHaveBeenCalledOnce())
     store.trackWorkflow('workflow-a')
 
     resolvePut({ data: draft(2, emptyGraph, 'workflow-b') })
-    await flush
+    await overwrite
 
     expect(store.workflowId).toBe('workflow-a')
     expect(store.currentDraftRevision).toBeNull()
     store.trackWorkflow('workflow-b')
     expect(store.currentDraftRevision).toBe(2)
     expect(store.appliedDraftRevision).toBe(2)
-  })
-
-  it('does not schedule a save for an inactive workflow with a retained notice', async () => {
-    const store = useWorkflowDraftStore()
-    store.reset('workflow-a')
-    store.noteRemoteChange(changed(3, { workflow_id: 'workflow-b' }))
-
-    store.scheduleSave('workflow-b', emptyGraph)
-    await store.flush()
-
-    expect(store.workflowId).toBe('workflow-a')
-    expect(store.hasPendingSave).toBe(false)
-    expect(api.get).not.toHaveBeenCalled()
-    expect(api.put).not.toHaveBeenCalled()
-    store.trackWorkflow('workflow-b')
-    expect(store.remoteAvailableRevision).toBe(3)
   })
 
   it('forgets only the deleted workflow state before the id is reused', () => {

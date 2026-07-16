@@ -163,7 +163,7 @@ describe('canvas-scoped graph sync routing', () => {
     const active = useGraphSync()
 
     activateGraphSyncCanvas(canvasA)
-    active.syncNodeParameters('repeated-node', { value: 'active-a' })
+    active.syncGraphState(graph('active-a'))
     const flushA = active.flushNow()
     activateGraphSyncCanvas(canvasB)
     await flushA

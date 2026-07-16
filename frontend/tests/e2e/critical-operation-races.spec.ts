@@ -103,7 +103,7 @@ async function openWorkflow(
   name: string,
   displayName: string,
 ): Promise<void> {
-  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+  await page.locator('.dv-tab').filter({ hasText: /^Workflows$/ }).first().click()
   await page.getByTestId('workflow-search').fill(displayName)
   const row = page.getByTestId(`workflow-row-${name}`)
   await expect(row).toBeVisible({ timeout: 5000 })
@@ -253,6 +253,38 @@ test.describe('critical operation race contracts', () => {
       graphParameter(await loadSavedGraph(page, secondName), secondNode, 'sigma'),
     ).toBe(9)
     await expect(page.getByTestId('workflow-title')).toContainText(secondDisplay)
+  })
+
+  test('Discard restores the saved graph before closing and reopening a root canvas', async ({ page }) => {
+    const workflowName = uniqueName('discard_close')
+    const displayName = `Discard Close ${workflowName}`
+    const nodeId = 'blur_discard'
+    await createWorkflow(page, workflowName, displayName, gaussianGraph(nodeId, 1))
+
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await openWorkflow(page, workflowName, displayName)
+    const sigmaInput = await selectSigmaField(page, nodeId)
+    const draftAccepted = page.waitForResponse((response) => (
+      responseCarriesParameter(response, workflowName, nodeId, 2)
+    ))
+    await editSigma(sigmaInput, 2)
+    await draftAccepted
+    await waitForDraftParameter(page, workflowName, nodeId, 2, true)
+
+    const workflowTab = page.getByTestId('canvas-tab').filter({ hasText: displayName })
+    await workflowTab.getByTestId('canvas-tab-close').click()
+    await expect(page.getByTestId('root-workflow-close-dialog')).toBeVisible()
+    await page.getByTestId('root-workflow-close-discard').click()
+    await expect(workflowTab).not.toBeVisible()
+
+    const discardedDraft = await fetchDraft(page, workflowName)
+    expect(discardedDraft.dirty_against_saved).toBe(false)
+    expect(graphParameter(discardedDraft.graph, nodeId, 'sigma')).toBe(1)
+
+    await openWorkflow(page, workflowName, displayName)
+    const reopenedSigma = await selectSigmaField(page, nodeId)
+    await expect.poll(async () => Number(await reopenedSigma.inputValue())).toBe(1)
   })
 
   test('Run asks again when the accepted graph changes during confirmation', async ({ page }) => {

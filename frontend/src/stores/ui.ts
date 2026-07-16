@@ -51,7 +51,6 @@ function writeStoredThemePreference(preference: ThemePreference): void {
 }
 
 export const useUIStore = defineStore('ui', () => {
-  const legacyPresentation = reactive(createPresentationContext())
   const canvasPresentations = reactive(
     new Map<CanvasId, CanvasPresentationContext>(),
   )
@@ -94,17 +93,13 @@ export const useUIStore = defineStore('ui', () => {
     if (activeCanvasId !== null) {
       return canvasPresentations.get(activeCanvasId) ?? null
     }
-    return canvasSessionRegistry.sessionCount.value === 0
-      ? legacyPresentation
-      : null
+    return null
   }
 
   function writableActivePresentation(): CanvasPresentationContext | null {
     const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
     if (activeCanvasId !== null) return canvasPresentation(activeCanvasId)
-    return canvasSessionRegistry.sessionCount.value === 0
-      ? legacyPresentation
-      : null
+    return null
   }
 
   function canvasPresentation(canvasId: CanvasId): CanvasPresentationContext {

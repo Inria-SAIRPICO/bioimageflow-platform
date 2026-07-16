@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { enableAutoUnmount, mount, flushPromises } from '@vue/test-utils'
 import { computed, defineComponent, h, inject, nextTick, provide, ref, type VNodeChild } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
@@ -26,13 +26,22 @@ import {
   _resetCanvasStatusProjectionForTest,
   useCanvasStatusProjection,
 } from '@/composables/useCanvasStatusProjection'
+import type { GraphState, NodeStatus } from '@/api/types'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
 }))
 
+enableAutoUnmount(afterEach)
+
 const mockedGet = vi.mocked(api.get)
 const mockedPost = vi.mocked(api.post)
+
+const DEFAULT_EXECUTION_CONTEXT = {
+  execution_id: 'exec-data-table',
+  workflow_id: 'data-table-workflow',
+  draft_revision: 7,
+} as const
 
 const DataTableStub = defineComponent({
   props: {
@@ -85,6 +94,69 @@ function registerStatusProjection(
     validationResult: graphSync.validationResult,
     acceptedDraftRevision: ref(acceptedDraftRevision),
   })
+}
+
+interface ActiveDataTableCanvasOptions {
+  graph: GraphState
+  workflowId?: string
+  selectedNodeIds?: string[]
+  acceptedDraftRevision?: number | null
+}
+
+function registerActiveDataTableCanvas({
+  graph,
+  workflowId = DEFAULT_EXECUTION_CONTEXT.workflow_id,
+  selectedNodeIds = [],
+  acceptedDraftRevision = DEFAULT_EXECUTION_CONTEXT.draft_revision,
+}: ActiveDataTableCanvasOptions) {
+  const canvasId = canvasIdFromPanelId(`workflow:${encodeURIComponent(workflowId)}`)
+  const descriptor = { kind: 'root' as const, canvasId, workflowId }
+  const graphSync = useGraphSync({ descriptor, getWorkflowId: () => workflowId })
+  graphSync.currentGraph.value = graph
+  const projection = registerStatusProjection(
+    canvasId,
+    workflowId,
+    graphSync,
+    acceptedDraftRevision,
+  )
+  const uiStore = useUIStore()
+  uiStore.setCanvasWorkflow(canvasId, workflowId, workflowId)
+  uiStore.setCanvasSelectedNodes(canvasId, selectedNodeIds)
+  canvasSessionRegistry.activate(canvasId)
+  const dataTableStore = useDataTableStore()
+  dataTableStore.registerCanvas(canvasId)
+  return { canvasId, dataTableStore, graphSync, projection }
+}
+
+function applyExecutionStatus(
+  nodeStatus: NodeStatus,
+  context = DEFAULT_EXECUTION_CONTEXT,
+): void {
+  useExecutionStore().applyStatusSnapshot({
+    type: 'status_snapshot',
+    ...context,
+    state: 'running',
+    progress: null,
+    last_result: null,
+    node_statuses: { [nodeStatus.node_id]: nodeStatus },
+  })
+}
+
+function filesGraph(nodeId = 'node-1'): GraphState {
+  return {
+    nodes: [{
+      id: nodeId,
+      name: 'Files 1',
+      tool_name: 'files',
+      position: [0, 0],
+      parameters: {},
+      resources: {},
+      output_templates: {},
+      enabled: true,
+      collapsed: false,
+    }],
+    edges: [],
+  }
 }
 
 describe('DataTablePanel', () => {
@@ -166,16 +238,15 @@ describe('DataTablePanel', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('shows a clear no-node-selected empty state instead of terminal data tables', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const uiStore = useUIStore()
-    uiStore.setSelectedNodes([])
-
-    const { currentGraph } = useGraphSync()
-    currentGraph.value = {
+    registerActiveDataTableCanvas({
+      selectedNodeIds: [],
+      graph: {
       nodes: [
         {
           id: 'node-1',
@@ -190,7 +261,8 @@ describe('DataTablePanel', () => {
         },
       ],
       edges: [],
-    }
+      },
+    })
 
     const wrapper = mount(DataTablePanel, {
       global: {
@@ -209,11 +281,9 @@ describe('DataTablePanel', () => {
   it('refreshes executed data when the Data Table tab becomes active after Logger', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    useUIStore().setSelectedNodes(['node-1'])
-    useExecutionStore().nodeStatuses = {
-      'node-1': { node_id: 'node-1', status: 'executed', cached: false },
-    }
-    useGraphSync().currentGraph.value = {
+    const { canvasId, projection } = registerActiveDataTableCanvas({
+      selectedNodeIds: ['node-1'],
+      graph: {
       nodes: [{
         id: 'node-1',
         name: 'Files 1',
@@ -226,9 +296,17 @@ describe('DataTablePanel', () => {
         collapsed: false,
       }],
       edges: [],
-    }
-    const fetchNodeData = vi
-      .spyOn(useDataTableStore(), 'fetchNodeData')
+      },
+    })
+    applyExecutionStatus({ node_id: 'node-1', status: 'executed', cached: false })
+    expect(useExecutionStore().executionId).toBe(DEFAULT_EXECUTION_CONTEXT.execution_id)
+    expect(useExecutionStore().originCanvasId).toBe(canvasId)
+    expect(projection.statusForNode('node-1')).toMatchObject({
+      source: 'execution',
+      status: 'executed',
+    })
+    const fetchCanvasNodeData = vi
+      .spyOn(useDataTableStore(), 'fetchCanvasNodeData')
       .mockResolvedValue(undefined)
     let activeChangeListener = (_event: { isActive: boolean }) => {}
     const dispose = vi.fn()
@@ -247,18 +325,18 @@ describe('DataTablePanel', () => {
       },
     })
     await flushPromises()
-    fetchNodeData.mockClear()
+    fetchCanvasNodeData.mockClear()
 
     activeChangeListener({ isActive: false })
     await nextTick()
-    expect(fetchNodeData).not.toHaveBeenCalled()
+    expect(fetchCanvasNodeData).not.toHaveBeenCalled()
 
     activeChangeListener({ isActive: true })
     await nextTick()
-    expect(fetchNodeData).toHaveBeenCalledOnce()
-    expect(fetchNodeData).toHaveBeenCalledWith('node-1', {
+    expect(fetchCanvasNodeData).toHaveBeenCalledOnce()
+    expect(fetchCanvasNodeData).toHaveBeenCalledWith(canvasId, 'node-1', {
       toolName: 'files',
-      workflowName: null,
+      workflowName: DEFAULT_EXECUTION_CONTEXT.workflow_id,
     })
 
     wrapper.unmount()
@@ -346,18 +424,27 @@ describe('DataTablePanel', () => {
     }
     graphA.syncGraphState(graph)
     graphB.syncGraphState(graph)
-    registerStatusProjection(canvasA, 'a', graphA)
-    registerStatusProjection(canvasB, 'b', graphB)
+    registerStatusProjection(canvasA, 'a', graphA, 7)
+    registerStatusProjection(canvasB, 'b', graphB, 7)
     const ui = useUIStore()
     ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
     ui.setCanvasSelectedNodes(canvasA, ['shared'])
     ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
     ui.setCanvasSelectedNodes(canvasB, ['shared'])
     const execution = useExecutionStore()
-    execution.nodeStatuses = {
-      shared: { node_id: 'shared', status: 'unexecuted', cached: false },
-    }
     graphSyncCanvasSessions.activate(canvasA)
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-a',
+      workflow_id: 'a',
+      draft_revision: 7,
+      state: 'running',
+      progress: null,
+      last_result: null,
+      node_statuses: {
+        shared: { node_id: 'shared', status: 'unexecuted', cached: false },
+      },
+    })
     const store = useDataTableStore()
     vi.spyOn(store, 'fetchNodeData').mockResolvedValue(undefined)
     const fetchCanvasNodeData = vi
@@ -373,6 +460,9 @@ describe('DataTablePanel', () => {
     fetchCanvasNodeData.mockClear()
 
     execution.applyNodeState({
+      execution_id: 'exec-a',
+      workflow_id: 'a',
+      draft_revision: 7,
       node_id: 'shared',
       status: 'executed',
       cached: false,
@@ -642,7 +732,9 @@ describe('DataTablePanel', () => {
   it('renders image path rows as thumbnail, path, Napari, reveal, copy only', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const dataTableStore = useDataTableStore()
+    const { dataTableStore } = registerActiveDataTableCanvas({
+      graph: { nodes: [], edges: [] },
+    })
     dataTableStore.nodeDataCache['node-1'] = {
       columns: ['mask'],
       index: ['0'],
@@ -705,7 +797,9 @@ describe('DataTablePanel', () => {
   it('attempts silent thumbnails for regular path columns', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const dataTableStore = useDataTableStore()
+    const { dataTableStore } = registerActiveDataTableCanvas({
+      graph: { nodes: [], edges: [] },
+    })
     dataTableStore.nodeDataCache['node-1'] = {
       columns: ['csv_path'],
       index: ['0'],
@@ -746,24 +840,10 @@ describe('DataTablePanel', () => {
   it('labels sub-workflow output table columns with published output names', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const uiStore = useUIStore()
-    const dataTableStore = useDataTableStore()
-    uiStore.setSelectedNodes(['sub_1'])
-    dataTableStore.nodeDataCache['sub_1/segment_1'] = {
-      columns: ['mask', 'score'],
-      index: ['0'],
-      rows: [{ mask: '/data/results/mask.tif', score: 0.9 }],
-      absolute_rows: [0],
-      total_rows: 1,
-      page: 0,
-      page_size: 50,
-      column_types: { mask: 'ImageFile', score: 'float' },
-    }
-
-    const { currentGraph } = useGraphSync()
-    currentGraph.value = {
-      nodes: [
-        {
+    const { dataTableStore } = registerActiveDataTableCanvas({
+      selectedNodeIds: ['sub_1'],
+      graph: {
+        nodes: [{
           id: 'sub_1',
           name: 'Segment and measure',
           tool_name: '__sub_workflow__',
@@ -779,9 +859,19 @@ describe('DataTablePanel', () => {
             internal_output: 'mask',
             schema: { type: 'ImageFile' },
           }],
-        },
-      ],
-      edges: [],
+        }],
+        edges: [],
+      },
+    })
+    dataTableStore.nodeDataCache['sub_1/segment_1'] = {
+      columns: ['mask', 'score'],
+      index: ['0'],
+      rows: [{ mask: '/data/results/mask.tif', score: 0.9 }],
+      absolute_rows: [0],
+      total_rows: 1,
+      page: 0,
+      page_size: 50,
+      column_types: { mask: 'ImageFile', score: 'float' },
     }
 
     const wrapper = mount(DataTablePanel, {
@@ -806,13 +896,10 @@ describe('DataTablePanel', () => {
   it('requests scoped internal result data for synthetic sub-workflow nodes', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const uiStore = useUIStore()
-    uiStore.setSelectedNodes(['sub_workflow_1'])
-
-    const { currentGraph } = useGraphSync()
-    currentGraph.value = {
-      nodes: [
-        {
+    registerActiveDataTableCanvas({
+      selectedNodeIds: ['sub_workflow_1'],
+      graph: {
+        nodes: [{
           id: 'sub_workflow_1',
           name: 'Fish analysis',
           tool_name: '__sub_workflow__',
@@ -828,10 +915,10 @@ describe('DataTablePanel', () => {
             internal_output: 'mask',
             schema: { type: 'ImageFile' },
           }],
-        },
-      ],
-      edges: [],
-    }
+        }],
+        edges: [],
+      },
+    })
 
     const wrapper = mount(DataTablePanel, {
       global: {
@@ -857,30 +944,12 @@ describe('DataTablePanel', () => {
     vi.useFakeTimers()
     const pinia = createPinia()
     setActivePinia(pinia)
-    const uiStore = useUIStore()
     const executionStore = useExecutionStore()
-    uiStore.setSelectedNodes(['node-1'])
-    executionStore.nodeStatuses = {
-      'node-1': { node_id: 'node-1', status: 'unexecuted', cached: false },
-    }
-
-    const { currentGraph } = useGraphSync()
-    currentGraph.value = {
-      nodes: [
-        {
-          id: 'node-1',
-          name: 'Files 1',
-          tool_name: 'files',
-          position: [0, 0],
-          parameters: {},
-          resources: {},
-          output_templates: {},
-          enabled: true,
-          collapsed: false,
-        },
-      ],
-      edges: [],
-    }
+    registerActiveDataTableCanvas({
+      selectedNodeIds: ['node-1'],
+      graph: filesGraph(),
+    })
+    applyExecutionStatus({ node_id: 'node-1', status: 'unexecuted', cached: false })
 
     mockedGet
       .mockRejectedValueOnce({ response: { status: 409, data: { detail: 'not ready' } } })
@@ -914,7 +983,12 @@ describe('DataTablePanel', () => {
     expect(wrapper.text()).toContain('Preparing output data')
     expect(mockedGet).toHaveBeenCalledTimes(1)
 
-    executionStore.applyNodeState({ node_id: 'node-1', status: 'executed', cached: false })
+    executionStore.applyNodeState({
+      ...DEFAULT_EXECUTION_CONTEXT,
+      node_id: 'node-1',
+      status: 'executed',
+      cached: false,
+    })
     await flushPromises()
 
     expect(mockedGet).toHaveBeenCalledTimes(2)
@@ -926,26 +1000,10 @@ describe('DataTablePanel', () => {
     vi.useFakeTimers()
     const pinia = createPinia()
     setActivePinia(pinia)
-    const uiStore = useUIStore()
-    uiStore.setSelectedNodes(['node-1'])
-
-    const { currentGraph } = useGraphSync()
-    currentGraph.value = {
-      nodes: [
-        {
-          id: 'node-1',
-          name: 'Files 1',
-          tool_name: 'files',
-          position: [0, 0],
-          parameters: {},
-          resources: {},
-          output_templates: {},
-          enabled: true,
-          collapsed: false,
-        },
-      ],
-      edges: [],
-    }
+    registerActiveDataTableCanvas({
+      selectedNodeIds: ['node-1'],
+      graph: filesGraph(),
+    })
 
     mockedGet
       .mockRejectedValueOnce({ response: { status: 409, data: { detail: 'not ready' } } })
@@ -990,13 +1048,12 @@ describe('DataTablePanel', () => {
     vi.useFakeTimers()
     const pinia = createPinia()
     setActivePinia(pinia)
-    const uiStore = useUIStore()
     const executionStore = useExecutionStore()
-    const dataTableStore = useDataTableStore()
-    uiStore.setSelectedNodes(['node-1'])
-    executionStore.nodeStatuses = {
-      'node-1': { node_id: 'node-1', status: 'unexecuted', cached: false },
-    }
+    const { dataTableStore } = registerActiveDataTableCanvas({
+      selectedNodeIds: ['node-1'],
+      graph: filesGraph(),
+    })
+    applyExecutionStatus({ node_id: 'node-1', status: 'unexecuted', cached: false })
     dataTableStore.nodeDataCache['node-1'] = {
       columns: ['path'],
       index: ['0'],
@@ -1006,24 +1063,6 @@ describe('DataTablePanel', () => {
       page: 0,
       page_size: 50,
       column_types: { path: 'Path' },
-    }
-
-    const { currentGraph } = useGraphSync()
-    currentGraph.value = {
-      nodes: [
-        {
-          id: 'node-1',
-          name: 'Files 1',
-          tool_name: 'files',
-          position: [0, 0],
-          parameters: {},
-          resources: {},
-          output_templates: {},
-          enabled: true,
-          collapsed: false,
-        },
-      ],
-      edges: [],
     }
 
     mockedGet.mockRejectedValueOnce({
@@ -1044,7 +1083,12 @@ describe('DataTablePanel', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('/tmp/stale-before-run.csv')
 
-    executionStore.applyNodeState({ node_id: 'node-1', status: 'executed', cached: false })
+    executionStore.applyNodeState({
+      ...DEFAULT_EXECUTION_CONTEXT,
+      node_id: 'node-1',
+      status: 'executed',
+      cached: false,
+    })
     await flushPromises()
 
     expect(mockedGet).toHaveBeenCalledTimes(1)
@@ -1056,13 +1100,12 @@ describe('DataTablePanel', () => {
   it('refreshes again on execution complete after the latest view is updated', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const uiStore = useUIStore()
     const executionStore = useExecutionStore()
-    const dataTableStore = useDataTableStore()
-    uiStore.setSelectedNodes(['node-1'])
-    executionStore.nodeStatuses = {
-      'node-1': { node_id: 'node-1', status: 'unexecuted', cached: false },
-    }
+    const { dataTableStore } = registerActiveDataTableCanvas({
+      selectedNodeIds: ['node-1'],
+      graph: filesGraph(),
+    })
+    applyExecutionStatus({ node_id: 'node-1', status: 'unexecuted', cached: false })
     dataTableStore.nodeDataCache['node-1'] = {
       columns: ['path'],
       index: ['0'],
@@ -1072,24 +1115,6 @@ describe('DataTablePanel', () => {
       page: 0,
       page_size: 50,
       column_types: { path: 'Path' },
-    }
-
-    const { currentGraph } = useGraphSync()
-    currentGraph.value = {
-      nodes: [
-        {
-          id: 'node-1',
-          name: 'Files 1',
-          tool_name: 'files',
-          position: [0, 0],
-          parameters: {},
-          resources: {},
-          output_templates: {},
-          enabled: true,
-          collapsed: false,
-        },
-      ],
-      edges: [],
     }
 
     mockedGet
@@ -1133,6 +1158,7 @@ describe('DataTablePanel', () => {
     expect(wrapper.text()).toContain('/tmp/before-run.csv')
 
     executionStore.applyNodeState({
+      ...DEFAULT_EXECUTION_CONTEXT,
       node_id: 'node-1',
       status: 'executed',
       cached: false,
@@ -1145,6 +1171,7 @@ describe('DataTablePanel', () => {
     expect(dataTableStore.nodeDataCache['node-1']?.rows[0]?.path).toBe('/tmp/old-latest.csv')
 
     executionStore.applyExecutionComplete({
+      ...DEFAULT_EXECUTION_CONTEXT,
       success: true,
       errors: [],
       node_statuses: {

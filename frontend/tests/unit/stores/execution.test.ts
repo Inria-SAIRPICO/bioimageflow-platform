@@ -25,6 +25,30 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function executionContext(
+  executionId = 'exec-1',
+  workflowId = 'wf_a',
+  draftRevision: number | null = null,
+) {
+  return {
+    execution_id: executionId,
+    workflow_id: workflowId,
+    draft_revision: draftRevision,
+  }
+}
+
+function contextual<T extends object>(
+  payload: T,
+  executionId = 'exec-1',
+  workflowId = 'wf_a',
+  draftRevision: number | null = null,
+) {
+  return {
+    ...payload,
+    ...executionContext(executionId, workflowId, draftRevision),
+  }
+}
+
 describe('execution store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -54,6 +78,7 @@ describe('execution store', () => {
     }
     mockedApi.get.mockResolvedValueOnce({
       data: {
+        ...executionContext(),
         state: 'running',
         last_result: result,
         progress: null,
@@ -75,7 +100,9 @@ describe('execution store', () => {
 
   it('run sends POST, resets nodeStatuses, preserves logs, and waits for backend logs', async () => {
     const graph = { nodes: [], edges: [] }
-    mockedApi.post.mockResolvedValueOnce({ data: { status: 'started' } })
+    mockedApi.post.mockResolvedValueOnce({
+      data: contextual({ status: 'started' }),
+    })
 
     const store = useExecutionStore()
     store.nodeStatuses = {
@@ -129,7 +156,7 @@ describe('execution store', () => {
     await expect(store.run(graph, undefined, 'wf_a')).rejects.toThrow(/already/i)
     expect(mockedApi.post).toHaveBeenCalledOnce()
 
-    request.resolve({ data: { status: 'started' } })
+    request.resolve({ data: contextual({ status: 'started' }) })
     await start
     expect(store.state).toBe('running')
     expect(store.isRunning).toBe(true)
@@ -157,15 +184,19 @@ describe('execution store', () => {
     const store = useExecutionStore()
 
     const firstStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
-    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    store.applyExecutionComplete(contextual({
+      success: true,
+      errors: [],
+      node_statuses: {},
+    }))
     const secondStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
     expect(store.state).toBe('starting')
 
-    firstRequest.resolve({ data: { status: 'started' } })
+    firstRequest.resolve({ data: contextual({ status: 'started' }) })
     await firstStart
     expect(store.state).toBe('starting')
 
-    secondRequest.resolve({ data: { status: 'started' } })
+    secondRequest.resolve({ data: contextual({ status: 'started' }, 'exec-2') })
     await secondStart
     expect(store.state).toBe('running')
   })
@@ -184,7 +215,11 @@ describe('execution store', () => {
     const lateFailure = deferred<never>()
     mockedApi.post.mockReturnValueOnce(lateFailure.promise)
     const nextStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
-    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    store.applyExecutionComplete(contextual({
+      success: true,
+      errors: [],
+      node_statuses: {},
+    }))
     lateFailure.reject(new Error('late failure'))
     await expect(nextStart).rejects.toThrow('late failure')
     expect(store.state).toBe('idle')
@@ -199,7 +234,11 @@ describe('execution store', () => {
     const store = useExecutionStore()
 
     const firstStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
-    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    store.applyExecutionComplete(contextual({
+      success: true,
+      errors: [],
+      node_statuses: {},
+    }))
     const secondStart = store.run({ nodes: [], edges: [] }, undefined, 'wf_a')
     const staleValidationError = {
       type: 'cycle_detected',
@@ -224,7 +263,7 @@ describe('execution store', () => {
     expect(store.validationErrors).toEqual([])
     expect(useLoggerStore().entries).toEqual([])
 
-    secondRequest.resolve({ data: { status: 'started' } })
+    secondRequest.resolve({ data: contextual({ status: 'started' }, 'exec-2') })
     await secondStart
     expect(store.state).toBe('running')
   })
@@ -273,7 +312,7 @@ describe('execution store', () => {
     expect(store.progress).toBeNull()
     expect(store.nodeStatuses).toEqual({})
 
-    request.resolve({ data: { status: 'started' } })
+    request.resolve({ data: contextual({ status: 'started' }) })
     await start
     expect(store.state).toBe('running')
   })
@@ -298,7 +337,9 @@ describe('execution store', () => {
   it('run with nodes passes node list', async () => {
     const graph = { nodes: [], edges: [] }
     const nodes = ['n1', 'n2']
-    mockedApi.post.mockResolvedValueOnce({ data: {} })
+    mockedApi.post.mockResolvedValueOnce({
+      data: contextual({ status: 'started' }),
+    })
 
     const store = useExecutionStore()
     await store.run(graph, nodes, 'wf_a')
@@ -376,7 +417,11 @@ describe('execution store', () => {
     const request = deferred<never>()
     mockedApi.post.mockReturnValueOnce(request.promise)
     const store = useExecutionStore()
-    store.state = 'running'
+    store.applyStatusSnapshot(contextual({
+      state: 'running',
+      last_result: null,
+      progress: null,
+    }))
 
     const stop = store.stop()
     request.reject(new Error('stop failed'))
@@ -386,7 +431,11 @@ describe('execution store', () => {
     const lateFailure = deferred<never>()
     mockedApi.post.mockReturnValueOnce(lateFailure.promise)
     const nextStop = store.stop()
-    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    store.applyExecutionComplete(contextual({
+      success: true,
+      errors: [],
+      node_statuses: {},
+    }))
     lateFailure.reject(new Error('late stop failure'))
     await expect(nextStop).rejects.toThrow('late stop failure')
     expect(store.state).toBe('idle')
@@ -394,33 +443,52 @@ describe('execution store', () => {
 
   it('keeps stopping through late running events and unlocks on idle', () => {
     const store = useExecutionStore()
-    store.state = 'stopping' as any
     const progress: ProgressInfo = { node_id: 'n1', row: 1, total_rows: 2 }
+    store.applyStatusSnapshot(contextual({
+      state: 'running',
+      last_result: null,
+      progress: null,
+    }))
+    store.state = 'stopping' as any
 
-    store.applyProgress(progress)
-    store.applyNodeState({ node_id: 'n1', status: 'running', cached: false })
-    store.applyStatusSnapshot({ state: 'running', last_result: null, progress })
+    store.applyProgress(contextual(progress))
+    store.applyNodeState(contextual({
+      node_id: 'n1',
+      status: 'running',
+      cached: false,
+    }))
+    store.applyStatusSnapshot(contextual({ state: 'running', last_result: null, progress }))
     expect(store.state).toBe('stopping')
     expect(store.isMutationLocked).toBe(true)
 
-    store.applyStatusSnapshot({ state: 'idle', last_result: null, progress: null })
+    store.applyStatusSnapshot(contextual({ state: 'idle', last_result: null, progress: null }))
     expect(store.state).toBe('idle')
     expect(store.isMutationLocked).toBe(false)
   })
 
   it('does not resurrect a terminal execution from late running events', () => {
     const store = useExecutionStore()
+    store.applyStatusSnapshot(contextual({
+      state: 'running',
+      last_result: null,
+      progress: null,
+    }))
     store.state = 'stopping'
-    store.applyExecutionComplete({ success: true, errors: [], node_statuses: {} })
+    const result = contextual({ success: true, errors: [], node_statuses: {} })
+    store.applyExecutionComplete(result)
     const progress: ProgressInfo = { node_id: 'n1', row: 1, total_rows: 2 }
 
-    store.applyProgress(progress)
-    store.applyNodeState({ node_id: 'n1', status: 'running', cached: false })
-    store.applyStatusSnapshot({ state: 'running', last_result: null, progress })
+    store.applyProgress(contextual(progress))
+    store.applyNodeState(contextual({
+      node_id: 'n1',
+      status: 'running',
+      cached: false,
+    }))
+    store.applyStatusSnapshot(contextual({ state: 'running', last_result: null, progress }))
 
     expect(store.state).toBe('idle')
     expect(store.isMutationLocked).toBe(false)
-    expect(store.lastResult).toEqual({ success: true, errors: [], node_statuses: {} })
+    expect(store.lastResult).toEqual(result)
   })
 
   it('clear sends {graph, nodes, workflow_name} and merges returned node_statuses', async () => {
@@ -473,20 +541,20 @@ describe('execution store', () => {
       result_key: 'rk-n1',
       record_id: 'rec-n1',
     }
-    store.applyProgress(p)
-    expect(store.progress).toEqual(p)
+    store.applyProgress(contextual(p))
+    expect(store.progress).toEqual(contextual(p))
     expect(store.state).toBe('running')
   })
 
   it('applyNodeState writes into nodeStatuses by node_id', () => {
     const store = useExecutionStore()
-    store.applyNodeState({
+    store.applyNodeState(contextual({
       node_id: 'n1',
       status: 'running',
       cached: false,
       result_key: 'rk-n1',
       record_id: 'rec-n1',
-    })
+    }))
     expect(store.nodeStatuses.n1).toEqual({
       node_id: 'n1',
       status: 'running',
@@ -536,14 +604,14 @@ describe('execution store', () => {
       b: { node_id: 'b', status: 'failed', cached: false, error: 'old' },
     }
 
-    store.applyStatusSnapshot({
+    store.applyStatusSnapshot(contextual({
       state: 'running',
       last_result: null,
       progress: null,
       node_statuses: {
         a: { node_id: 'a', status: 'running', cached: false },
       },
-    })
+    }))
 
     expect(store.nodeStatuses).toEqual({
       a: { node_id: 'a', status: 'running', cached: false },
@@ -552,16 +620,19 @@ describe('execution store', () => {
 
   it('applyExecutionComplete sets idle, merges node_statuses, clears progress', () => {
     const store = useExecutionStore()
-    store.state = 'running'
-    store.progress = { node_id: 'n1', row: 3, total_rows: 10 }
+    store.applyStatusSnapshot(contextual({
+      state: 'running',
+      last_result: null,
+      progress: { node_id: 'n1', row: 3, total_rows: 10 },
+    }))
 
-    const result: ExecutionResult = {
+    const result = contextual({
       success: true,
       errors: [],
       node_statuses: {
         n1: { node_id: 'n1', status: 'executed', cached: false },
       },
-    }
+    })
     store.applyExecutionComplete(result)
 
     expect(store.state).toBe('idle')
@@ -606,13 +677,13 @@ describe('execution store', () => {
       const errorStore = errorsModule.useErrorStore()
       const store = useExecutionStore()
 
-      store.applyExecutionComplete({
+      store.applyExecutionComplete(contextual({
         success: true,
         errors: [],
         node_statuses: {
           n1: { node_id: 'n1', status: 'executed', cached: false },
         },
-      })
+      }))
       expect(errorStore.errors).toHaveLength(0)
     })
 
@@ -628,7 +699,7 @@ describe('execution store', () => {
         timestamp: 1,
       })
 
-      store.applyExecutionComplete({
+      store.applyExecutionComplete(contextual({
         success: false,
         errors: [],
         node_statuses: {
@@ -641,7 +712,7 @@ describe('execution store', () => {
             traceback: 'tb',
           },
         },
-      })
+      }))
       expect(errorStore.errors).toHaveLength(1)
       const entry = errorStore.errors[0]!
       expect(entry.kind).toBe('execution_failed')
@@ -657,7 +728,7 @@ describe('execution store', () => {
       const errorStore = errorsModule.useErrorStore()
       const store = useExecutionStore()
 
-      store.applyExecutionComplete({
+      store.applyExecutionComplete(contextual({
         success: false,
         errors: [
           {
@@ -667,7 +738,7 @@ describe('execution store', () => {
           },
         ],
         node_statuses: {},
-      })
+      }))
       expect(errorStore.errors).toHaveLength(1)
       expect(errorStore.errors[0]!.kind).toBe('execution_failed')
       expect(errorStore.errors[0]!.detail).toContain(
@@ -688,7 +759,7 @@ describe('execution store', () => {
       const errorStore = errorsModule.useErrorStore()
       const store = useExecutionStore()
 
-      store.applyExecutionComplete({
+      store.applyExecutionComplete(contextual({
         success: false,
         errors: [],
         node_statuses: {
@@ -705,7 +776,7 @@ describe('execution store', () => {
             error: 'b broke',
           },
         },
-      })
+      }))
       expect(errorStore.errors).toHaveLength(1)
       // Detail should mention that more than one node failed.
       expect(errorStore.errors[0]!.detail).toContain('failed')

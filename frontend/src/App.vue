@@ -12,6 +12,8 @@ import CodeEditorTab from './components/layout/CodeEditorTab.vue'
 import AvivatorPanel from './components/panels/AvivatorPanel.vue'
 import AvivatorTab from './components/layout/AvivatorTab.vue'
 import SubWorkflowEditorPanel from './components/panels/SubWorkflowEditorPanel.vue'
+import CanvasTab from './components/layout/CanvasTab.vue'
+import CanvasPlaceholder from './components/canvas/CanvasPlaceholder.vue'
 
 export default defineComponent({
   components: {
@@ -26,17 +28,21 @@ export default defineComponent({
     avivator: AvivatorPanel,
     avivatorTab: AvivatorTab,
     subWorkflowEditor: SubWorkflowEditorPanel,
+    canvasTab: CanvasTab,
+    canvasPlaceholder: CanvasPlaceholder,
   },
 })
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, watch, shallowRef, watchEffect } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, shallowRef, watchEffect } from 'vue'
 import { DockviewVue, type DockviewReadyEvent, type DockviewApi } from 'dockview-vue'
 import { themeDark, themeLight, type DockviewIDisposable, type IDockviewPanel } from 'dockview-core'
 import MenuBar from './components/layout/MenuBar.vue'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
+import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import NapariProgressBanner from './components/execution/NapariProgressBanner.vue'
@@ -50,12 +56,45 @@ import { isDesktop as isPywebview } from './utils/nativeDialogs'
 import { useWebSocket } from './composables/useWebSocket'
 import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
 import { useWorkflowStore } from './stores/workflow'
+import { useCanvasLifecycleStore } from './stores/canvasLifecycle'
 import type { GraphState, MissingTool } from './api/types'
 import type { WorkflowDraftResponse } from './api/workflowDrafts'
-import { canvasIdFromPanelId } from './sessions/canvasSessionRegistry'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from './sessions/canvasSessionRegistry'
+import { useAutoSave } from './composables/useAutoSave'
+import { resolveStartupWorkflow } from './services/startupWorkflow'
+import {
+  isRootWorkflowPresentationCurrent,
+  loadRootWorkflowPresentation,
+  workflowInfoId,
+} from './services/rootWorkflowPresentation'
+import { saveRootWorkflowTarget } from './services/rootWorkflowSave'
+import {
+  CanvasDiscardRecoveryCleanupError,
+  getRootCanvasPersistenceResource,
+} from './composables/useCanvasPersistence'
+import {
+  WorkflowDeletionCommittedCleanupError,
+  WorkflowDeletionTargetChangedError,
+  type WorkflowDeletionEventDetail,
+  type WorkflowDeletionRequest,
+} from './services/workflowDeletion'
+import {
+  CANVAS_EMPTY_PANEL_ID,
+  CANVAS_LOADING_PANEL_ID,
+  isCanvasPanelId,
+  sessionIdFromSubWorkflowPanelId,
+  subWorkflowPanelId,
+  workflowIdFromPanelId,
+  workflowPanelId,
+} from './utils/canvasPanels'
 import {
   activateGraphSyncCanvas,
   deleteRetainedNestedSnapshot,
+  forgetRetainedNestedSnapshot,
+  flushRetainedNestedSnapshot,
   unregisterGraphSyncCanvas,
 } from './composables/useGraphSync'
 
@@ -83,6 +122,20 @@ const datasetBrowserStore = useDatasetBrowserStore()
 const websocket = useWebSocket()
 const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const workflowStore = useWorkflowStore()
+const autoSave = useAutoSave()
+const canvasLifecycleStore = useCanvasLifecycleStore()
+
+interface PendingRootClose {
+  panelId: string
+  panel: IDockviewPanel
+  canvasId: ReturnType<typeof canvasIdFromPanelId>
+  workflowName: string
+}
+
+const rootCloseDialogVisible = ref(false)
+const pendingRootClose = shallowRef<PendingRootClose | null>(null)
+const rootCloseError = ref<string | null>(null)
+const rootCloseBusy = ref(false)
 
 // Initialize once at the root so uiStore.isExecutionLocked reflects
 // executionStore.isMutationLocked anywhere in the tree. The composable has a
@@ -114,14 +167,28 @@ onMounted(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
-  window.addEventListener('bioimageflow:close-canvas', onCloseCanvas as EventListener)
+  window.addEventListener(
+    'bioimageflow:request-close-canvas',
+    onRequestCloseCanvas as EventListener,
+  )
+  window.addEventListener(
+    'bioimageflow:request-delete-workflow',
+    onRequestDeleteWorkflow as EventListener,
+  )
+  window.addEventListener('bioimageflow:workflow-removed', onWorkflowRemoved as EventListener)
+  window.addEventListener(
+    'bioimageflow:workflow-identities-refreshed',
+    onWorkflowIdentitiesRefreshed as EventListener,
+  )
   if (shortcutEnabled) {
     window.addEventListener('keydown', onPreferencesShortcut)
   }
 })
 
 onBeforeUnmount(() => {
+  isUnmounting = true
   canvasActivationRequest += 1
+  rootOpenRequest += 1
   dockviewDisposables.splice(0).forEach((disposable) => disposable.dispose())
   websocket.disconnect()
   window.removeEventListener('bif:open-code-editor-loading', onCodeEditorLoading as EventListener)
@@ -147,7 +214,19 @@ onBeforeUnmount(() => {
     'bioimageflow:canvas-context-updated',
     onCanvasContextUpdated as EventListener,
   )
-  window.removeEventListener('bioimageflow:close-canvas', onCloseCanvas as EventListener)
+  window.removeEventListener(
+    'bioimageflow:request-close-canvas',
+    onRequestCloseCanvas as EventListener,
+  )
+  window.removeEventListener(
+    'bioimageflow:request-delete-workflow',
+    onRequestDeleteWorkflow as EventListener,
+  )
+  window.removeEventListener('bioimageflow:workflow-removed', onWorkflowRemoved as EventListener)
+  window.removeEventListener(
+    'bioimageflow:workflow-identities-refreshed',
+    onWorkflowIdentitiesRefreshed as EventListener,
+  )
   if (shortcutEnabled) {
     window.removeEventListener('keydown', onPreferencesShortcut)
   }
@@ -181,11 +260,24 @@ watchEffect(() => {
 const dockviewApi = shallowRef<DockviewApi | null>(null)
 const dockviewDisposables: DockviewIDisposable[] = []
 const confirmedSubWorkflowPanelCloses = new Set<string>()
+const removedWorkflowSubWorkflowCloses = new Set<string>()
 const subWorkflowParentCanvasIds = new Map<string, string>()
+const openCanvasPanelIds = new Set<string>()
+const rootPanelActivationOrder: string[] = []
 let canvasActivationRequest = 0
+let rootOpenRequest = 0
+let startupResolved = false
+let isUnmounting = false
+let activeCanvasPanelId: string | null = null
+let canvasFallbackPending = false
+let canvasGenerationReplacementCount = 0
+const workflowDeletionsInFlight = new Set<string>()
+const workflowGenerationReplacements = new Map<string, Promise<void>>()
+const deferredWorkflowGenerationReplacements = new Map<string, number>()
 const canvasContexts = new Map<string, {
   workflowName: string
   workflowDisplayName: string
+  serverIdentityGeneration: number | null
 }>()
 const dockviewTheme = computed(() => uiStore.isDarkTheme ? themeDark : themeLight)
 
@@ -198,28 +290,85 @@ function isDockPanelKey(id: string): id is DockPanelKey {
   return panelKeys.includes(id as DockPanelKey)
 }
 
-function subWorkflowPanelId(sessionId: string): string {
-  return `sub-workflow:${encodeURIComponent(sessionId)}`
+function rememberRootActivation(panelId: string): void {
+  const index = rootPanelActivationOrder.indexOf(panelId)
+  if (index !== -1) rootPanelActivationOrder.splice(index, 1)
+  rootPanelActivationOrder.push(panelId)
 }
 
-function workflowPanelId(workflowName: string): string {
-  return `workflow:${encodeURIComponent(workflowName)}`
+function openCanvasPanel(api: DockviewApi): IDockviewPanel | null {
+  for (const panelId of openCanvasPanelIds) {
+    const panel = api.getPanel(panelId)
+    if (panel) return panel
+    openCanvasPanelIds.delete(panelId)
+  }
+  return null
 }
 
-function workflowNameFromPanelId(panelId: string): string | null {
-  if (!panelId.startsWith('workflow:')) return null
-  return decodeURIComponent(panelId.slice('workflow:'.length))
+function openRootPanel(api: DockviewApi): IDockviewPanel | null {
+  for (let index = rootPanelActivationOrder.length - 1; index >= 0; index -= 1) {
+    const panelId = rootPanelActivationOrder[index]
+    const panel = api.getPanel(panelId)
+    if (panel && workflowIdFromPanelId(panel.id) !== null) return panel
+    rootPanelActivationOrder.splice(index, 1)
+  }
+  for (const panelId of openCanvasPanelIds) {
+    if (workflowIdFromPanelId(panelId) === null) continue
+    const panel = api.getPanel(panelId)
+    if (panel) return panel
+    openCanvasPanelIds.delete(panelId)
+  }
+  return null
 }
 
-function sessionIdFromSubWorkflowPanelId(panelId: string): string | null {
-  if (!panelId.startsWith('sub-workflow:')) return null
-  return decodeURIComponent(panelId.slice('sub-workflow:'.length))
+function layoutAnchorPanel(api: DockviewApi): IDockviewPanel | null {
+  return openRootPanel(api)
+    ?? api.getPanel(CANVAS_EMPTY_PANEL_ID)
+    ?? api.getPanel(CANVAS_LOADING_PANEL_ID)
+    ?? openCanvasPanel(api)
 }
 
-function isCanvasPanelId(panelId: string): boolean {
-  return panelId === 'canvas'
-    || workflowNameFromPanelId(panelId) !== null
-    || sessionIdFromSubWorkflowPanelId(panelId) !== null
+function removeCanvasPlaceholder(api: DockviewApi): void {
+  for (const panelId of [CANVAS_LOADING_PANEL_ID, CANVAS_EMPTY_PANEL_ID]) {
+    const panel = api.getPanel(panelId)
+    if (panel) api.removePanel(panel)
+  }
+}
+
+function showEmptyCanvasState(api: DockviewApi): IDockviewPanel | null {
+  const existingRoot = openRootPanel(api)
+  if (existingRoot) return existingRoot
+  const existing = api.getPanel(CANVAS_EMPTY_PANEL_ID)
+  if (existing) return existing
+  const loading = api.getPanel(CANVAS_LOADING_PANEL_ID)
+  const bottomPanel = api.getPanel('dataTable') ?? api.getPanel('logger')
+  const panel = api.addPanel({
+    id: CANVAS_EMPTY_PANEL_ID,
+    component: 'canvasPlaceholder',
+    title: 'Workflows',
+    params: { state: 'empty' },
+    position: loading
+      ? { referencePanel: loading.id, direction: 'within' }
+      : bottomPanel
+        ? { referencePanel: bottomPanel.id, direction: 'above' }
+        : { direction: 'below' },
+  })
+  if (loading) api.removePanel(loading)
+  panel.api.setActive()
+  return panel
+}
+
+function ensureCanvasStateAfterRemoval(api: DockviewApi): void {
+  queueMicrotask(() => {
+    if (
+      isUnmounting
+      || canvasFallbackPending
+      || canvasGenerationReplacementCount > 0
+      || !startupResolved
+      || openRootPanel(api)
+    ) return
+    showEmptyCanvasState(api)
+  })
 }
 
 function requestGraphSyncActivation(panelId: string): void {
@@ -233,6 +382,26 @@ function requestGraphSyncActivation(panelId: string): void {
   })
 }
 
+async function resolveAndOpenStartupWorkflow(api: DockviewApi): Promise<void> {
+  const request = rootOpenRequest
+  let startup: Awaited<ReturnType<typeof resolveStartupWorkflow>> = null
+  try {
+    startup = await resolveStartupWorkflow()
+  } catch (error) {
+    console.warn('[startup] Failed to resolve a workflow:', error)
+  }
+  startupResolved = true
+  if (isUnmounting || dockviewApi.value !== api) return
+  if (request !== rootOpenRequest || openRootPanel(api)) {
+    const loading = api.getPanel(CANVAS_LOADING_PANEL_ID)
+    if (loading) api.removePanel(loading)
+    if (!openRootPanel(api)) showEmptyCanvasState(api)
+    return
+  }
+  if (startup && openWorkflowCanvasPanel(startup)) return
+  showEmptyCanvasState(api)
+}
+
 function onDockviewReady(event: DockviewReadyEvent) {
   const api = event.api
   dockviewApi.value = api
@@ -240,8 +409,17 @@ function onDockviewReady(event: DockviewReadyEvent) {
     api.onDidRemovePanel((panel: IDockviewPanel) => {
       if (isCanvasPanelId(panel.id)) {
         const canvasId = canvasIdFromPanelId(panel.id)
+        openCanvasPanelIds.delete(panel.id)
+        const activationIndex = rootPanelActivationOrder.indexOf(panel.id)
+        if (activationIndex !== -1) rootPanelActivationOrder.splice(activationIndex, 1)
+        if (activeCanvasPanelId === panel.id) activeCanvasPanelId = null
+        canvasContexts.delete(panel.id)
         unregisterGraphSyncCanvas(canvasId)
+        canvasLifecycleStore.finish(canvasId)
         uiStore.releaseCanvasPresentation(canvasId)
+        if (workflowIdFromPanelId(panel.id) !== null) {
+          ensureCanvasStateAfterRemoval(api)
+        }
       }
       if (isDockPanelKey(panel.id)) {
         const panelId = panel.id
@@ -254,6 +432,11 @@ function onDockviewReady(event: DockviewReadyEvent) {
       }
       const sessionId = sessionIdFromSubWorkflowPanelId(panel.id)
       if (!sessionId) {
+        return
+      }
+      if (removedWorkflowSubWorkflowCloses.delete(panel.id)) {
+        subWorkflowSessionsStore.closeSession(sessionId)
+        subWorkflowParentCanvasIds.delete(sessionId)
         return
       }
       if (confirmedSubWorkflowPanelCloses.delete(panel.id)) {
@@ -286,11 +469,14 @@ function onDockviewReady(event: DockviewReadyEvent) {
     )
   }
 
-  // Canvas first — it becomes the root group that others dock relative to
+  // A non-session placeholder establishes the initial layout while startup
+  // resolves. It is replaced by a canonical workflow:<id> panel or the
+  // explicit empty state; it never becomes a canvas identity.
   api.addPanel({
-    id: 'canvas',
-    component: 'canvasView',
-    title: 'Canvas',
+    id: CANVAS_LOADING_PANEL_ID,
+    component: 'canvasPlaceholder',
+    title: 'Loading…',
+    params: { state: 'loading' },
   })
 
   api.addPanel({
@@ -298,7 +484,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
     component: 'tools',
     title: 'Tools',
     initialWidth: 320,
-    position: { referencePanel: 'canvas', direction: 'left' },
+    position: { referencePanel: CANVAS_LOADING_PANEL_ID, direction: 'left' },
   })
 
   api.addPanel({
@@ -313,7 +499,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
     component: 'nodePanel',
     title: 'Nodes',
     initialWidth: 320,
-    position: { referencePanel: 'canvas', direction: 'right' },
+    position: { referencePanel: CANVAS_LOADING_PANEL_ID, direction: 'right' },
   })
 
   const dataTablePanel = api.addPanel({
@@ -321,7 +507,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
     component: 'dataTable',
     title: 'Data Table',
     initialHeight: 250,
-    position: { referencePanel: 'canvas', direction: 'below' },
+    position: { referencePanel: CANVAS_LOADING_PANEL_ID, direction: 'below' },
   })
 
   api.addPanel({
@@ -334,6 +520,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
     },
   })
   dataTablePanel.api.setActive()
+  void resolveAndOpenStartupWorkflow(api)
 }
 
 function activateCodeEditorPanel() {
@@ -388,7 +575,7 @@ function onOpenAvivator(event: CustomEvent<{
     api.removePanel(existing)
   }
   const dataTablePanel = api.getPanel('dataTable')
-  const canvasPanel = api.getPanel('canvas')
+  const canvasPanel = layoutAnchorPanel(api)
   const imageTitle = event.detail?.title?.trim() || 'Image'
   const panel = api.addPanel({
     id: 'avivator',
@@ -404,7 +591,7 @@ function onOpenAvivator(event: CustomEvent<{
     position: dataTablePanel
       ? { referencePanel: 'dataTable', direction: 'within' }
       : canvasPanel
-        ? { referencePanel: 'canvas', direction: 'below' }
+        ? { referencePanel: canvasPanel.id, direction: 'below' }
         : { direction: 'below' },
   })
   panel.api.setActive()
@@ -420,7 +607,10 @@ function openSubWorkflowPanel(sessionId: string): void {
     existing.api.setActive()
     return
   }
-  const canvasPanel = api.getPanel('canvas')
+  const ownerPanelId = subWorkflowParentCanvasIds.get(sessionId)
+  const canvasPanel = ownerPanelId
+    ? api.getPanel(ownerPanelId) ?? layoutAnchorPanel(api)
+    : layoutAnchorPanel(api)
   uiStore.setCanvasWorkflow(
     canvasIdFromPanelId(panelId),
     session.parentWorkflowName,
@@ -433,12 +623,13 @@ function openSubWorkflowPanel(sessionId: string): void {
     params: {
       sessionId,
       panelId,
-      parentCanvasPanelId: subWorkflowParentCanvasIds.get(sessionId) ?? 'canvas',
+      parentCanvasPanelId: ownerPanelId ?? canvasPanel?.id,
     },
     position: canvasPanel
-      ? { referencePanel: 'canvas', direction: 'within' }
+      ? { referencePanel: canvasPanel.id, direction: 'within' }
       : { direction: 'below' },
   })
+  openCanvasPanelIds.add(panel.id)
   panel.api.setActive()
 }
 
@@ -496,7 +687,7 @@ function dockviewParams(panel: IDockviewPanel): Record<string, unknown> {
 
 function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
   const canvasId = canvasIdFromPanelId(panel.id)
-  const workflowNameFromId = workflowNameFromPanelId(panel.id)
+  const workflowNameFromId = workflowIdFromPanelId(panel.id)
   const sessionId = sessionIdFromSubWorkflowPanelId(panel.id)
   if (sessionId) {
     const session = subWorkflowSessionsStore.sessionById(sessionId)
@@ -509,40 +700,27 @@ function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
       session?.parentNodeName ?? null,
     )
   } else if (workflowNameFromId) {
+    rememberRootActivation(panel.id)
     const params = dockviewParams(panel)
-    const workflowName = typeof params.workflowName === 'string'
-      ? params.workflowName
-      : workflowNameFromId
-    if (typeof workflowName === 'string') {
-      workflowStore.activateWorkflow(workflowName, canvasId)
-    }
-    const label = params.workflowDisplayName ?? workflowName
+    const workflowName = workflowNameFromId
+    workflowStore.activateWorkflow(workflowName, canvasId)
+    const label = canvasContexts.get(panel.id)?.workflowDisplayName
+      ?? params.workflowDisplayName
+      ?? workflowName
     if (typeof label === 'string') {
       uiStore.setCanvasWorkflow(canvasId, workflowName, label)
-    }
-  } else if (panel.id === 'canvas') {
-    const context = canvasContexts.get(panel.id)
-    if (context) {
-      workflowStore.activateWorkflow(context.workflowName, canvasId)
-      uiStore.setCanvasWorkflow(
-        canvasId,
-        context.workflowName,
-        context.workflowDisplayName,
-      )
-    } else {
-      uiStore.setCanvasWorkflow(
-        canvasId,
-        workflowStore.currentName,
-        workflowStore.current?.display_name ?? null,
-      )
     }
   } else {
     return
   }
+  activeCanvasPanelId = panel.id
   requestGraphSyncActivation(panel.id)
   window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
     detail: { panelId: panel.id },
   }))
+  if (workflowNameFromId) {
+    void autoSave.setLastOpenedWorkflow(workflowNameFromId)
+  }
 }
 
 function onCanvasContextUpdated(event: CustomEvent<{
@@ -552,10 +730,17 @@ function onCanvasContextUpdated(event: CustomEvent<{
 }>) {
   const detail = event.detail
   if (!detail?.panelId || !detail.workflowName) return
+  const canonicalWorkflowName = workflowIdFromPanelId(detail.panelId)
+  if (
+    canonicalWorkflowName !== null
+    && canonicalWorkflowName !== detail.workflowName
+  ) return
   const title = detail.workflowDisplayName ?? detail.workflowName
   canvasContexts.set(detail.panelId, {
     workflowName: detail.workflowName,
     workflowDisplayName: title,
+    serverIdentityGeneration:
+      canvasContexts.get(detail.panelId)?.serverIdentityGeneration ?? null,
   })
   uiStore.setCanvasWorkflow(
     canvasIdFromPanelId(detail.panelId),
@@ -563,47 +748,594 @@ function onCanvasContextUpdated(event: CustomEvent<{
     title,
   )
   dockviewApi.value?.getPanel(detail.panelId)?.api.setTitle(title)
+  if (
+    workflowIdFromPanelId(detail.panelId) !== null
+    && activeCanvasPanelId === detail.panelId
+  ) {
+    rememberRootActivation(detail.panelId)
+    void autoSave.setLastOpenedWorkflow(detail.workflowName)
+  }
 }
 
-function onCloseCanvas(event: CustomEvent<{ canvasId?: string }>): void {
-  const canvasId = event.detail?.canvasId
-  if (!canvasId) return
-  const panel = dockviewApi.value?.getPanel(canvasId)
-  if (panel) dockviewApi.value?.removePanel(panel)
+function resetRootCloseDialog(): void {
+  if (rootCloseBusy.value) return
+  rootCloseDialogVisible.value = false
+  pendingRootClose.value = null
+  rootCloseError.value = null
+}
+
+function onRequestCloseCanvas(event: CustomEvent<{ canvasId?: string }>): void {
+  const panelId = event.detail?.canvasId
+  const workflowName = panelId ? workflowIdFromPanelId(panelId) : null
+  const api = dockviewApi.value
+  const panel = panelId ? api?.getPanel(panelId) : undefined
+  if (!panelId || !workflowName || !panel) return
+  const canvasId = canvasIdFromPanelId(panelId)
+  if (canvasLifecycleStore.isBusy(canvasId)) return
+  if (!uiStore.canvasHasUnsavedChanges(canvasId)) {
+    api?.removePanel(panel)
+    return
+  }
+  pendingRootClose.value = { panelId, panel, canvasId, workflowName }
+  rootCloseError.value = null
+  rootCloseDialogVisible.value = true
+}
+
+function rootCloseTargetIsMounted(target: PendingRootClose): boolean {
+  return dockviewApi.value?.getPanel(target.panelId) === target.panel
+    && workflowIdFromPanelId(target.panelId) === target.workflowName
+}
+
+function closeRootTarget(target: PendingRootClose): void {
+  const api = dockviewApi.value
+  const panel = api?.getPanel(target.panelId)
+  if (panel) api?.removePanel(panel)
+  rootCloseBusy.value = false
+  canvasLifecycleStore.finish(target.canvasId)
+  resetRootCloseDialog()
+}
+
+async function saveAndCloseRootCanvas(): Promise<void> {
+  const target = pendingRootClose.value
+  if (!target || rootCloseBusy.value) return
+  if (!canvasLifecycleStore.begin(target.canvasId, 'saving')) return
+  rootCloseBusy.value = true
+  rootCloseError.value = null
+  try {
+    const result = await saveRootWorkflowTarget({
+      canvasId: target.canvasId,
+      workflowName: target.workflowName,
+    })
+    if (!rootCloseTargetIsMounted(target)) return
+    if (result.status === 'saved') {
+      closeRootTarget(target)
+      return
+    }
+    rootCloseError.value = result.status === 'newer-edit'
+      ? 'The workflow changed while it was being saved. Review the newer edit and close again.'
+      : result.status === 'conflict'
+        ? 'This workflow changed elsewhere. Resolve the draft conflict before closing.'
+        : 'The workflow is no longer available at its original identity.'
+  } catch (error) {
+    rootCloseError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (rootCloseBusy.value) {
+      rootCloseBusy.value = false
+      canvasLifecycleStore.finish(target.canvasId)
+    }
+  }
+}
+
+async function restoreSavedCanvas(
+  target: PendingRootClose,
+  draft: WorkflowDraftResponse,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const detail = {
+      canvasId: target.canvasId,
+      draft,
+      handled: false,
+      resolve,
+      reject,
+    }
+    window.dispatchEvent(new CustomEvent('bioimageflow:restore-saved-canvas', { detail }))
+    if (!detail.handled) resolve()
+  })
+}
+
+async function discardAndCloseRootCanvas(): Promise<void> {
+  const target = pendingRootClose.value
+  if (!target || rootCloseBusy.value) return
+  if (!canvasLifecycleStore.begin(target.canvasId, 'discarding')) return
+  rootCloseBusy.value = true
+  rootCloseError.value = null
+  try {
+    const persistence = getRootCanvasPersistenceResource(target.canvasId)
+    if (!persistence || persistence.workflowId.value !== target.workflowName) {
+      throw new Error('The workflow is no longer available at its original identity.')
+    }
+    const draft = await persistence.discardToSaved()
+    if (!rootCloseTargetIsMounted(target)) return
+    await restoreSavedCanvas(target, draft)
+    if (!rootCloseTargetIsMounted(target)) return
+    uiStore.markCanvasClean(target.canvasId)
+    closeRootTarget(target)
+  } catch (error) {
+    if (
+      error instanceof CanvasDiscardRecoveryCleanupError
+      && rootCloseTargetIsMounted(target)
+    ) {
+      try {
+        await restoreSavedCanvas(target, error.draft)
+        if (rootCloseTargetIsMounted(target)) {
+          // Keep the close decision actionable: retrying Discard uses the
+          // newly accepted revision and retries the strict recovery clear.
+          uiStore.markCanvasDirty(target.canvasId)
+        }
+      } catch (restoreError) {
+        rootCloseError.value = restoreError instanceof Error
+          ? restoreError.message
+          : String(restoreError)
+        return
+      }
+    }
+    rootCloseError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (rootCloseBusy.value) {
+      rootCloseBusy.value = false
+      canvasLifecycleStore.finish(target.canvasId)
+    }
+  }
+}
+
+function closeNestedCanvasesForWorkflow(workflowName: string): void {
+  const api = dockviewApi.value
+  for (const session of [...subWorkflowSessionsStore.sessions]) {
+    if (session.parentWorkflowName !== workflowName) continue
+    const panelId = subWorkflowPanelId(session.id)
+    const panel = api?.getPanel(panelId)
+    if (panel) {
+      removedWorkflowSubWorkflowCloses.add(panelId)
+      api?.removePanel(panel)
+    } else {
+      subWorkflowSessionsStore.closeSession(session.id)
+      subWorkflowParentCanvasIds.delete(session.id)
+    }
+  }
+}
+
+function closeAndForgetNestedCanvasesForWorkflow(workflowName: string): void {
+  const nestedSessionIds = subWorkflowSessionsStore.sessions
+    .filter(session => session.parentWorkflowName === workflowName)
+    .map(session => session.id)
+  closeNestedCanvasesForWorkflow(workflowName)
+  for (const sessionId of nestedSessionIds) {
+    forgetRetainedNestedSnapshot(sessionId)
+  }
+}
+
+interface DeletionCanvasTarget {
+  canvasId: ReturnType<typeof canvasIdFromPanelId>
+  nestedSessionId: string | null
+}
+
+function deletionCanvasTargets(workflowName: string): DeletionCanvasTarget[] {
+  const targets: DeletionCanvasTarget[] = []
+  const rootPanelId = workflowPanelId(workflowName)
+  if (dockviewApi.value?.getPanel(rootPanelId)) {
+    targets.push({
+      canvasId: canvasIdFromPanelId(rootPanelId),
+      nestedSessionId: null,
+    })
+  }
+  for (const session of subWorkflowSessionsStore.sessions) {
+    if (session.parentWorkflowName !== workflowName) continue
+    targets.push({
+      canvasId: canvasIdFromPanelId(subWorkflowPanelId(session.id)),
+      nestedSessionId: session.id,
+    })
+  }
+  return targets
+}
+
+function beginWorkflowDeletion(
+  targets: DeletionCanvasTarget[],
+): DeletionCanvasTarget[] {
+  const acquired: DeletionCanvasTarget[] = []
+  for (const target of targets) {
+    if (canvasLifecycleStore.begin(target.canvasId, 'deleting')) {
+      acquired.push(target)
+      continue
+    }
+    for (const acquiredTarget of acquired) {
+      canvasLifecycleStore.finish(acquiredTarget.canvasId)
+    }
+    throw new Error('A workflow canvas is already completing another action.')
+  }
+  return acquired
+}
+
+async function activateWorkflowFallback(
+  excludedWorkflowNames: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  const api = dockviewApi.value
+  if (!api) return
+  const remaining = openRootPanel(api)
+  if (remaining) {
+    remaining.api.setActive()
+    return
+  }
+
+  canvasFallbackPending = true
+  try {
+    for (const workflow of workflowStore.flattenedWorkflows) {
+      const workflowName = workflowInfoId(workflow)
+      if (excludedWorkflowNames.has(workflowName)) continue
+      try {
+        const presentation = await loadRootWorkflowPresentation(workflowName)
+        if (openRootPanel(api) || openWorkflowCanvasPanel(presentation)) return
+      } catch {
+        // Try the next workflow in stable tree order.
+      }
+    }
+    showEmptyCanvasState(api)
+  } finally {
+    canvasFallbackPending = false
+  }
+}
+
+function disposeRemovedWorkflowCanvases(workflowName: string): boolean {
+  deferredWorkflowGenerationReplacements.delete(workflowName)
+  closeAndForgetNestedCanvasesForWorkflow(workflowName)
+
+  const panelId = workflowPanelId(workflowName)
+  const canvasId = canvasIdFromPanelId(panelId)
+  const api = dockviewApi.value
+  const panel = api?.getPanel(panelId)
+  const removedRootPanel = Boolean(panel)
+  if (panel) api?.removePanel(panel)
+  // Dockview removal normally triggers this through onDidRemovePanel. Keep the
+  // disposal fence explicit for headless/no-panel convergence as well.
+  unregisterGraphSyncCanvas(canvasId)
+  canvasLifecycleStore.finish(canvasId)
+  if (pendingRootClose.value?.workflowName === workflowName) {
+    rootCloseBusy.value = false
+    resetRootCloseDialog()
+  }
+  return removedRootPanel
+}
+
+async function convergeRemovedWorkflow(workflowName: string): Promise<void> {
+  const removedRootPanel = disposeRemovedWorkflowCanvases(workflowName)
+  try {
+    await workflowStore.forgetDeletedWorkflow(workflowName)
+  } finally {
+    if (removedRootPanel) await activateWorkflowFallback(new Set([workflowName]))
+  }
+}
+
+async function replaceMountedWorkflowGeneration(
+  workflowName: string,
+  serverIdentityGeneration: number,
+): Promise<void> {
+  const existingOperation = workflowGenerationReplacements.get(workflowName)
+  if (existingOperation) return existingOperation
+  const api = dockviewApi.value
+  const panelId = workflowPanelId(workflowName)
+  const canvasId = canvasIdFromPanelId(panelId)
+  const panel = api?.getPanel(panelId)
+  const context = canvasContexts.get(panelId)
+  const lifecycleBusy = canvasLifecycleStore.isBusy(canvasId)
+    || workflowDeletionsInFlight.has(workflowName)
+  if (lifecycleBusy) {
+    deferredWorkflowGenerationReplacements.set(
+      workflowName,
+      Math.max(
+        deferredWorkflowGenerationReplacements.get(workflowName) ?? -1,
+        serverIdentityGeneration,
+      ),
+    )
+    return
+  }
+  if (
+    !api
+    || !panel
+    || context?.serverIdentityGeneration === serverIdentityGeneration
+  ) {
+    deferredWorkflowGenerationReplacements.delete(workflowName)
+    return
+  }
+
+  canvasGenerationReplacementCount += 1
+  const operation = (async () => {
+    if (
+      api.getPanel(panelId) !== panel
+      || workflowDeletionsInFlight.has(workflowName)
+      || canvasLifecycleStore.isBusy(canvasId)
+    ) {
+      deferredWorkflowGenerationReplacements.set(
+        workflowName,
+        serverIdentityGeneration,
+      )
+      return
+    }
+    deferredWorkflowGenerationReplacements.delete(workflowName)
+    closeAndForgetNestedCanvasesForWorkflow(workflowName)
+    api.removePanel(panel)
+    await workflowStore.resetWorkflowPresentationGeneration(workflowName)
+    const presentation = await loadRootWorkflowPresentation(workflowName)
+    if (!openWorkflowCanvasPanel(presentation)) {
+      throw new Error(`Workflow '${workflowName}' could not be reopened at its fresh generation.`)
+    }
+  })().catch(async (replacementError) => {
+    console.warn(
+      `[workflow-generation] Failed to replace '${workflowName}':`,
+      replacementError,
+    )
+    if (!openRootPanel(api)) {
+      await activateWorkflowFallback(new Set([workflowName]))
+    }
+  }).finally(() => {
+    canvasGenerationReplacementCount -= 1
+    workflowGenerationReplacements.delete(workflowName)
+  })
+  workflowGenerationReplacements.set(workflowName, operation)
+  return operation
+}
+
+interface WorkflowIdentityRefreshEntry {
+  workflowName: string
+  identityGeneration: number | null
+}
+
+async function reconcileMountedWorkflowGenerations(
+  entries: WorkflowIdentityRefreshEntry[],
+): Promise<void> {
+  const identities = new Map(entries.map(entry => [entry.workflowName, entry]))
+  for (const [panelId, context] of [...canvasContexts]) {
+    if (workflowIdFromPanelId(panelId) === null) continue
+    if (!dockviewApi.value?.getPanel(panelId)) continue
+    const refreshed = identities.get(context.workflowName)
+    if (!refreshed) {
+      await convergeRemovedWorkflow(context.workflowName)
+      continue
+    }
+    if (
+      refreshed.identityGeneration !== null
+      && refreshed.identityGeneration !== context.serverIdentityGeneration
+    ) {
+      await replaceMountedWorkflowGeneration(
+        context.workflowName,
+        refreshed.identityGeneration,
+      )
+    }
+  }
+}
+
+function onWorkflowIdentitiesRefreshed(event: CustomEvent<{
+  workflows?: WorkflowIdentityRefreshEntry[]
+}>): void {
+  const entries = event.detail?.workflows
+  if (!Array.isArray(entries)) return
+  void reconcileMountedWorkflowGenerations(entries).catch((reconciliationError) => {
+    console.warn('[workflow-generation] Failed to reconcile mounted workflows:', reconciliationError)
+  })
+}
+
+function retryDeferredWorkflowGenerationReplacements(): void {
+  for (const [workflowName, identityGeneration] of [
+    ...deferredWorkflowGenerationReplacements,
+  ]) {
+    const canvasId = canvasIdFromPanelId(workflowPanelId(workflowName))
+    if (
+      canvasLifecycleStore.isBusy(canvasId)
+      || workflowDeletionsInFlight.has(workflowName)
+    ) continue
+    deferredWorkflowGenerationReplacements.delete(workflowName)
+    void replaceMountedWorkflowGeneration(workflowName, identityGeneration)
+  }
+}
+
+watch(
+  () => canvasLifecycleStore.operations.size,
+  retryDeferredWorkflowGenerationReplacements,
+)
+
+async function deleteWorkflowFromRequest(
+  request: WorkflowDeletionEventDetail,
+): Promise<void> {
+  const { workflowName } = request
+  if (workflowDeletionsInFlight.has(workflowName)) {
+    throw new Error(`Workflow '${workflowName}' is already being deleted.`)
+  }
+  const canonicalCanvasId = canvasIdFromPanelId(workflowPanelId(workflowName))
+  if (request.canvasId !== null && request.canvasId !== canonicalCanvasId) {
+    throw new Error('The delete request no longer matches its original workflow tab.')
+  }
+  assertWorkflowDeletionTargetCurrent(request)
+  const targets = deletionCanvasTargets(workflowName)
+  const targetCanvasId = targets.some(target => target.nestedSessionId === null)
+    ? canonicalCanvasId
+    : null
+  const acquiredTargets = beginWorkflowDeletion(targets)
+
+  workflowDeletionsInFlight.add(workflowName)
+  try {
+    if (targetCanvasId) {
+      const persistence = getRootCanvasPersistenceResource(targetCanvasId)
+      if (!persistence || persistence.workflowId.value !== workflowName) {
+        throw new Error('The workflow tab is not initialized for deletion.')
+      }
+      const fresh = await persistence.ensureFreshForCriticalOperation()
+      if (!fresh) {
+        throw new Error('This workflow changed elsewhere. Resolve the draft conflict before deleting it.')
+      }
+    }
+    await Promise.all(acquiredTargets.flatMap(target => (
+      target.nestedSessionId === null
+        ? []
+        : [flushRetainedNestedSnapshot(target.nestedSessionId)]
+    )))
+    assertWorkflowDeletionTargetCurrent(request)
+    let disposedBeforeRecoveryCleanup = false
+    let removedRootPanel = false
+    try {
+      await workflowStore.deleteWorkflow(workflowName, {
+        closingCanvasId: targetCanvasId ?? undefined,
+        allowMountedIdentity: true,
+        expectedIdentityGeneration: request.serverIdentityGeneration ?? undefined,
+        beforeRecoveryCleanup: () => {
+          disposedBeforeRecoveryCleanup = true
+          removedRootPanel = disposeRemovedWorkflowCanvases(workflowName)
+        },
+      })
+      if (!disposedBeforeRecoveryCleanup) {
+        await convergeRemovedWorkflow(workflowName)
+      } else if (removedRootPanel) {
+        await activateWorkflowFallback(new Set([workflowName]))
+      }
+    } catch (error) {
+      if (disposedBeforeRecoveryCleanup && removedRootPanel) {
+        await activateWorkflowFallback(new Set([workflowName]))
+      }
+      if (disposedBeforeRecoveryCleanup) {
+        throw new WorkflowDeletionCommittedCleanupError(workflowName, error)
+      }
+      if (isWorkflowDeleteGenerationConflict(error)) {
+        throw new WorkflowDeletionTargetChangedError(workflowName)
+      }
+      throw error
+    }
+  } finally {
+    workflowDeletionsInFlight.delete(workflowName)
+    for (const target of acquiredTargets) {
+      canvasLifecycleStore.finish(target.canvasId)
+    }
+  }
+}
+
+function isWorkflowDeleteGenerationConflict(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'response' in error
+    && (
+      error as {
+        response?: { status?: unknown; data?: { error?: unknown } }
+      }
+    ).response?.status === 409
+    && (
+      error as {
+        response?: { data?: { error?: unknown } }
+      }
+    ).response?.data?.error === 'workflow_identity_generation_conflict'
+}
+
+function assertWorkflowDeletionTargetCurrent(
+  request: WorkflowDeletionRequest,
+): void {
+  if (!workflowStore.isWorkflowIdentityCurrent(
+    request.workflowName,
+    request.localIdentityGeneration,
+  )) {
+    throw new WorkflowDeletionTargetChangedError(request.workflowName)
+  }
+  if (
+    workflowStore.workflowServerIdentityGeneration(request.workflowName)
+    !== request.serverIdentityGeneration
+  ) {
+    throw new WorkflowDeletionTargetChangedError(request.workflowName)
+  }
+  if (request.canvasId === null) {
+    if (request.sessionRegistrationToken !== null) {
+      throw new WorkflowDeletionTargetChangedError(request.workflowName)
+    }
+    return
+  }
+  const session = canvasSessionRegistry.get(request.canvasId)
+  if (
+    session?.descriptor.kind !== 'root'
+    || session.descriptor.workflowId !== request.workflowName
+    || session.registrationToken !== request.sessionRegistrationToken
+  ) {
+    throw new WorkflowDeletionTargetChangedError(request.workflowName)
+  }
+}
+
+function onRequestDeleteWorkflow(event: CustomEvent<WorkflowDeletionEventDetail>): void {
+  const request = event.detail
+  if (!request?.workflowName) return
+  void deleteWorkflowFromRequest(request).then(request.resolve, request.reject)
+}
+
+function onWorkflowRemoved(event: CustomEvent<{
+  workflowName?: string
+  identityGeneration?: number
+}>): void {
+  const workflowName = event.detail?.workflowName
+  if (!workflowName) return
+  const identityGeneration = event.detail.identityGeneration
+  if (
+    identityGeneration !== undefined
+    && !workflowStore.observeWorkflowServerIdentityGeneration(
+      workflowName,
+      identityGeneration,
+      { structuralEvent: true },
+    )
+  ) return
+  void convergeRemovedWorkflow(workflowName).catch((error) => {
+    console.warn(`[workflow-delete] Failed to converge '${workflowName}':`, error)
+  })
 }
 
 function openWorkflowCanvasPanel(detail: {
   graph: GraphState
-  workflowName?: string
+  workflowName: string
   workflowDisplayName?: string
   missingTools?: MissingTool[]
   dirty?: boolean
   draft?: WorkflowDraftResponse
-}): void {
+  identityGeneration?: number
+  serverIdentityGeneration?: number | null
+}): boolean {
   const api = dockviewApi.value
-  if (!api || !detail.graph) return
-  const workflowName = detail.workflowName ?? workflowStore.currentName ?? 'workflow'
+  if (!api || !detail.graph) return false
+  const workflowName = detail.workflowName
+  if (!workflowName) return false
+  if (
+    workflowDeletionsInFlight.has(workflowName)
+    || !isRootWorkflowPresentationCurrent(
+      workflowName,
+      detail.graph,
+      detail.identityGeneration,
+    )
+  ) return false
   const workflowDisplayName =
     detail.workflowDisplayName
-    ?? workflowStore.current?.display_name
     ?? workflowName
   const panelId = workflowPanelId(workflowName)
   const existing = api.getPanel(panelId)
   if (existing) {
+    rememberRootActivation(existing.id)
     existing.api.setActive()
-    return
+    removeCanvasPlaceholder(api)
+    return true
   }
-  canvasContexts.set(panelId, { workflowName, workflowDisplayName })
+  canvasContexts.set(panelId, {
+    workflowName,
+    workflowDisplayName,
+    serverIdentityGeneration: detail.serverIdentityGeneration ?? null,
+  })
   uiStore.setCanvasWorkflow(
     canvasIdFromPanelId(panelId),
     workflowName,
     workflowDisplayName,
   )
-  const canvasPanel = api.getPanel('canvas')
+  const canvasPanel = layoutAnchorPanel(api)
   const bottomPanel = api.getPanel('dataTable') ?? api.getPanel('logger')
   const panel = api.addPanel({
     id: panelId,
     component: 'canvasView',
+    tabComponent: 'canvasTab',
     title: workflowDisplayName,
     params: {
       panelId,
@@ -613,14 +1345,19 @@ function openWorkflowCanvasPanel(detail: {
       missingTools: detail.missingTools ?? [],
       dirty: detail.dirty ?? false,
       draft: detail.draft,
+      serverIdentityGeneration: detail.serverIdentityGeneration ?? null,
     },
     position: canvasPanel
-      ? { referencePanel: 'canvas', direction: 'within' }
+      ? { referencePanel: canvasPanel.id, direction: 'within' }
       : bottomPanel
         ? { referencePanel: bottomPanel.id, direction: 'above' }
         : { direction: 'below' },
   })
+  openCanvasPanelIds.add(panel.id)
+  rememberRootActivation(panel.id)
   panel.api.setActive()
+  removeCanvasPlaceholder(api)
+  return true
 }
 
 function onApplyGraph(event: CustomEvent<{
@@ -630,17 +1367,22 @@ function onApplyGraph(event: CustomEvent<{
   missingTools?: MissingTool[]
   dirty?: boolean
   draft?: WorkflowDraftResponse
+  identityGeneration?: number
+  serverIdentityGeneration?: number | null
 }>) {
   const detail = event.detail
-  if (!detail?.graph) return
-  openWorkflowCanvasPanel({
+  if (!detail?.graph || !detail.workflowName) return
+  const opened = openWorkflowCanvasPanel({
     graph: detail.graph,
     workflowName: detail.workflowName,
     workflowDisplayName: detail.workflowDisplayName,
     missingTools: detail.missingTools,
     dirty: detail.dirty,
     draft: detail.draft,
+    identityGeneration: detail.identityGeneration,
+    serverIdentityGeneration: detail.serverIdentityGeneration,
   })
+  if (opened) rootOpenRequest += 1
 }
 
 // --- Panel visibility sync ---
@@ -702,7 +1444,9 @@ function getPanelAddOptions(key: string) {
           position: { referencePanel: 'nodePanel' as const, direction: 'right' as const },
         }
       }
-      const canvasPanel = dockviewApi.value?.getPanel('canvas')
+      const canvasPanel = dockviewApi.value
+        ? layoutAnchorPanel(dockviewApi.value)
+        : null
       return {
         id: 'codeEditor',
         component: 'codeEditor',
@@ -710,7 +1454,7 @@ function getPanelAddOptions(key: string) {
         title: 'Code Editor',
         initialWidth: 520,
         position: canvasPanel
-          ? { referencePanel: 'canvas' as const, direction: 'right' as const }
+          ? { referencePanel: canvasPanel.id, direction: 'right' as const }
           : { direction: 'right' as const },
       }
     }
@@ -737,6 +1481,48 @@ defineExpose({ dockviewApi })
     </div>
     <Toast position="bottom-right" />
     <ConfirmDialog />
+    <Dialog
+      :visible="rootCloseDialogVisible"
+      modal
+      header="Save changes before closing?"
+      :closable="!rootCloseBusy"
+      :close-on-escape="!rootCloseBusy"
+      :style="{ width: '460px' }"
+      data-testid="root-workflow-close-dialog"
+      @update:visible="(visible: boolean) => { if (!visible) resetRootCloseDialog() }"
+    >
+      <p>
+        <strong>{{ pendingRootClose?.workflowName }}</strong> has unsaved changes.
+        Save them, restore the last saved version, or keep the tab open.
+      </p>
+      <p v-if="rootCloseError" class="root-close-error" role="alert">
+        {{ rootCloseError }}
+      </p>
+      <template #footer>
+        <Button
+          label="Cancel"
+          text
+          :disabled="rootCloseBusy"
+          data-testid="root-workflow-close-cancel"
+          @click="resetRootCloseDialog"
+        />
+        <Button
+          label="Discard"
+          severity="danger"
+          outlined
+          :disabled="rootCloseBusy"
+          data-testid="root-workflow-close-discard"
+          @click="discardAndCloseRootCanvas"
+        />
+        <Button
+          label="Save"
+          icon="pi pi-save"
+          :loading="rootCloseBusy"
+          data-testid="root-workflow-close-save"
+          @click="saveAndCloseRootCanvas"
+        />
+      </template>
+    </Dialog>
     <SettingsPanel />
     <DatasetBrowser
       v-if="datasetBrowserStore.isOpen && datasetBrowserStore.options"
@@ -805,6 +1591,10 @@ html, body, #app, #bioimageflow-app {
 
 .dockview-wrapper > div {
   height: 100%;
+}
+
+.root-close-error {
+  color: var(--p-red-500);
 }
 
 .bif-dark-theme .vue-flow {

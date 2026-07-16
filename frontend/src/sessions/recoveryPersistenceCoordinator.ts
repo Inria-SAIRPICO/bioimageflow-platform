@@ -78,6 +78,7 @@ export class RecoveryPersistenceCoordinatorDisposedError extends Error {
 let nextOwnershipToken = 0
 const ownershipByRecoveryKey = new Map<string, RecoveryKeyOwnership>()
 const writeTailByRecoveryKey = new Map<string, Promise<void>>()
+const invalidatedOwnershipThroughByRecoveryKey = new Map<string, number>()
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -109,7 +110,11 @@ function abandonOwnership(recoveryKey: string, token: number): void {
 
 function isLatestOwner(recoveryKey: string, token: number): boolean {
   const ownership = ownershipFor(recoveryKey)
-  if (!ownership.activeTokens.has(token) || token < ownership.committedToken) {
+  if (
+    token <= (invalidatedOwnershipThroughByRecoveryKey.get(recoveryKey) ?? 0)
+    || !ownership.activeTokens.has(token)
+    || token < ownership.committedToken
+  ) {
     return false
   }
   for (const activeToken of ownership.activeTokens) {
@@ -147,6 +152,27 @@ function serializeRecoveryKeyWrite<T>(
     }
   })
   return operation
+}
+
+/**
+ * Invalidates recovery snapshots already owned for a key, waits behind every
+ * write that has started for that key, then performs a rejecting clear.
+ */
+export function clearRecoveryPersistenceKeyStrict(
+  recoveryKey: string,
+  clear: () => Promise<void>,
+): Promise<void> {
+  if (recoveryKey.trim().length === 0) {
+    return Promise.reject(new Error('Recovery key must not be empty'))
+  }
+  invalidatedOwnershipThroughByRecoveryKey.set(
+    recoveryKey,
+    Math.max(
+      invalidatedOwnershipThroughByRecoveryKey.get(recoveryKey) ?? 0,
+      nextOwnershipToken,
+    ),
+  )
+  return serializeRecoveryKeyWrite(recoveryKey, clear)
 }
 
 export function createRecoveryPersistenceCoordinator(

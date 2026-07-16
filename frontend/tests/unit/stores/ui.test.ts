@@ -1,19 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useUIStore } from '@/stores/ui'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import {
-  canvasIdFromPanelId,
-  type CanvasSessionDescriptor,
-} from '@/sessions/canvasSessionRegistry'
-import { graphSyncCanvasSessions } from '@/composables/useGraphSync'
-
-function registerCanvas(descriptor: CanvasSessionDescriptor): void {
-  graphSyncCanvasSessions.register(descriptor)
-}
+  registerNestedCanvas,
+  registerRootCanvas,
+} from '@/test-utils/canvasFixtures'
 
 describe('UI store', () => {
   beforeEach(() => {
-    graphSyncCanvasSessions.dispose()
+    canvasSessionRegistry.dispose()
     window.localStorage.clear()
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -32,10 +28,11 @@ describe('UI store', () => {
   })
 
   afterEach(() => {
-    graphSyncCanvasSessions.dispose()
+    canvasSessionRegistry.dispose()
   })
 
   it('starts with no selection', () => {
+    registerRootCanvas('empty-selection', { present: false })
     const store = useUIStore()
     expect(store.selectedNodeIds).toEqual([])
     expect(store.hasSelection).toBe(false)
@@ -44,6 +41,7 @@ describe('UI store', () => {
   })
 
   it('setSelectedNodes updates selection', () => {
+    registerRootCanvas('selection', { present: false })
     const store = useUIStore()
     store.setSelectedNodes(['n1', 'n2'])
     expect(store.hasSelection).toBe(true)
@@ -52,6 +50,7 @@ describe('UI store', () => {
   })
 
   it('clearSelection clears all', () => {
+    registerRootCanvas('clear-selection', { present: false })
     const store = useUIStore()
     store.setSelectedNodes(['n1'])
     store.clearSelection()
@@ -60,6 +59,7 @@ describe('UI store', () => {
   })
 
   it('single selection detected', () => {
+    registerRootCanvas('single-selection', { present: false })
     const store = useUIStore()
     store.setSelectedNodes(['n1'])
     expect(store.isSingleSelection).toBe(true)
@@ -67,6 +67,7 @@ describe('UI store', () => {
   })
 
   it('tracks active workflow name', () => {
+    registerRootCanvas('workflow-name', { present: false })
     const store = useUIStore()
     expect(store.activeWorkflowName).toBeNull()
     store.setActiveWorkflow('My Pipeline')
@@ -74,6 +75,7 @@ describe('UI store', () => {
   })
 
   it('tracks unsaved changes', () => {
+    registerRootCanvas('dirty-state', { present: false })
     const store = useUIStore()
     expect(store.hasUnsavedChanges).toBe(false)
     store.markDirty()
@@ -83,19 +85,15 @@ describe('UI store', () => {
   })
 
   it('isolates presentation state for canvases with identical node ids', () => {
-    const rootCanvasId = canvasIdFromPanelId('workflow:root')
-    const nestedCanvasId = canvasIdFromPanelId('sub-workflow:nested')
-    registerCanvas({
-      kind: 'root',
-      canvasId: rootCanvasId,
-      workflowId: 'root',
-    })
-    registerCanvas({
-      kind: 'nested',
-      canvasId: nestedCanvasId,
+    const root = registerRootCanvas('root', { activate: false })
+    const nested = registerNestedCanvas({
       sessionId: 'nested',
-      parentCanvasId: rootCanvasId,
+      parentCanvasId: root.canvasId,
+      workflowId: 'root',
+      activate: false,
     })
+    const rootCanvasId = root.canvasId
+    const nestedCanvasId = nested.canvasId
     const store = useUIStore()
     const rootNode = { id: 'shared', data: { name: 'Root node' } }
     const nestedNode = { id: 'shared', data: { name: 'Nested node' } }
@@ -109,14 +107,14 @@ describe('UI store', () => {
     store.setCanvasWorkflow(nestedCanvasId, 'root', 'Nested workflow')
     store.markCanvasClean(nestedCanvasId)
 
-    graphSyncCanvasSessions.activate(rootCanvasId)
+    canvasSessionRegistry.activate(rootCanvasId)
     expect(store.selectedNodeIds).toEqual(['shared'])
     expect(store.graphNodes).toEqual([rootNode])
     expect(store.activeWorkflowId).toBe('root')
     expect(store.hasUnsavedChanges).toBe(true)
     expect(store.tabTitle).toBe('BioImageFlow \u2014 Root workflow *')
 
-    graphSyncCanvasSessions.activate(nestedCanvasId)
+    canvasSessionRegistry.activate(nestedCanvasId)
     expect(store.selectedNodeIds).toEqual(['shared'])
     expect(store.graphNodes).toEqual([nestedNode])
     expect(store.activeWorkflowId).toBe('root')
@@ -125,17 +123,15 @@ describe('UI store', () => {
   })
 
   it('keeps inactive canvas updates out of the active presentation facade', () => {
-    const canvasA = canvasIdFromPanelId('workflow:a')
-    const canvasB = canvasIdFromPanelId('workflow:b')
-    registerCanvas({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
-    registerCanvas({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+    const canvasA = registerRootCanvas('a', { activate: false }).canvasId
+    const canvasB = registerRootCanvas('b', { activate: false }).canvasId
     const store = useUIStore()
 
     store.setCanvasSelectedNodes(canvasA, ['same-id'])
     store.setCanvasGraphNodes(canvasA, [{ id: 'same-id', data: { name: 'A' } }])
     store.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
     store.markCanvasClean(canvasA)
-    graphSyncCanvasSessions.activate(canvasA)
+    canvasSessionRegistry.activate(canvasA)
 
     store.setCanvasSelectedNodes(canvasB, ['same-id'])
     store.setCanvasGraphNodes(canvasB, [{ id: 'same-id', data: { name: 'B' } }])
@@ -147,22 +143,21 @@ describe('UI store', () => {
     expect(store.activeWorkflowId).toBe('a')
     expect(store.hasUnsavedChanges).toBe(false)
 
-    graphSyncCanvasSessions.activate(canvasB)
+    canvasSessionRegistry.activate(canvasB)
     expect(store.graphNodes[0]?.data.name).toBe('B')
     expect(store.activeWorkflowName).toBe('Workflow B')
     expect(store.activeWorkflowId).toBe('b')
     expect(store.hasUnsavedChanges).toBe(true)
   })
 
-  it('does not fall back to legacy state when sessions exist without an active canvas', () => {
+  it('does not implicitly activate or mutate a registered canvas', () => {
     const store = useUIStore()
-    store.setSelectedNodes(['legacy'])
-    store.setGraphNodes([{ id: 'legacy' }])
-    store.setActiveWorkflow('Legacy workflow')
-    store.markDirty()
-
-    const canvasId = canvasIdFromPanelId('workflow:registered')
-    registerCanvas({ kind: 'root', canvasId, workflowId: 'registered' })
+    const canvasId = registerRootCanvas('registered', {
+      activate: false,
+      present: false,
+    }).canvasId
+    store.setCanvasWorkflow(canvasId, 'registered', 'Registered workflow')
+    store.setCanvasGraphNodes(canvasId, [{ id: 'registered-node' }])
 
     expect(store.selectedNodeIds).toEqual([])
     expect(store.graphNodes).toEqual([])
@@ -172,26 +167,26 @@ describe('UI store', () => {
     expect(store.tabTitle).toBe('BioImageFlow')
 
     store.setSelectedNodes(['must-not-target-root'])
-    graphSyncCanvasSessions.activate(canvasId)
+    canvasSessionRegistry.activate(canvasId)
     expect(store.selectedNodeIds).toEqual([])
+    expect(store.graphNodes).toEqual([{ id: 'registered-node' }])
+    expect(store.activeWorkflowName).toBe('Registered workflow')
   })
 
   it('keeps remaining canvas context after another canvas unregisters', () => {
-    const canvasA = canvasIdFromPanelId('workflow:a')
-    const canvasB = canvasIdFromPanelId('workflow:b')
-    registerCanvas({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
-    registerCanvas({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+    const canvasA = registerRootCanvas('a', { activate: false }).canvasId
+    const canvasB = registerRootCanvas('b', { activate: false }).canvasId
     const store = useUIStore()
     store.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
     store.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
     store.setCanvasSelectedNodes(canvasB, ['b-node'])
 
-    graphSyncCanvasSessions.activate(canvasA)
-    graphSyncCanvasSessions.unregister(canvasA)
+    canvasSessionRegistry.activate(canvasA)
+    canvasSessionRegistry.unregister(canvasA)
     expect(store.activeWorkflowName).toBeNull()
     expect(store.selectedNodeIds).toEqual([])
 
-    graphSyncCanvasSessions.activate(canvasB)
+    canvasSessionRegistry.activate(canvasB)
     expect(store.activeWorkflowName).toBe('Workflow B')
     expect(store.activeWorkflowId).toBe('b')
     expect(store.selectedNodeIds).toEqual(['b-node'])
@@ -221,17 +216,20 @@ describe('UI store', () => {
   })
 
   it('tab title with no workflow', () => {
+    registerRootCanvas('untitled', { present: false })
     const store = useUIStore()
     expect(store.tabTitle).toBe('BioImageFlow')
   })
 
   it('tab title reflects workflow name', () => {
+    registerRootCanvas('named-title', { present: false })
     const store = useUIStore()
     store.setActiveWorkflow('My Pipeline')
     expect(store.tabTitle).toBe('BioImageFlow \u2014 My Pipeline')
   })
 
   it('tab title shows asterisk for unsaved changes', () => {
+    registerRootCanvas('dirty-title', { present: false })
     const store = useUIStore()
     store.setActiveWorkflow('My Pipeline')
     store.markDirty()
