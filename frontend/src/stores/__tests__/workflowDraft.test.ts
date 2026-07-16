@@ -164,6 +164,51 @@ describe('workflow draft store', () => {
     expect(store.remoteAvailableRevision).toBe(4)
   })
 
+  it('preserves a newer notice that arrives during a freshness request', async () => {
+    let resolveLatest!: (value: { data: WorkflowDraftResponse }) => void
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: draft(3) })
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveLatest = resolve
+      }))
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('wf')
+    const freshness = store.ensureFreshForCriticalOperation('wf')
+    await vi.waitFor(() => expect(api.get).toHaveBeenCalledTimes(2))
+
+    store.noteRemoteChange(changed(5, {
+      updated_by: 'system',
+      updated_at: '2026-05-21T12:10:00Z',
+      dirty_against_saved: false,
+    }))
+    resolveLatest({ data: draft(4) })
+
+    await expect(freshness).resolves.toBe(false)
+    expect(store.remoteAvailableRevision).toBe(5)
+    expect(store.remoteUpdatedBy).toBe('system')
+    expect(store.remoteUpdatedAt).toBe('2026-05-21T12:10:00Z')
+    expect(store.remoteDirtyAgainstSaved).toBe(false)
+  })
+
+  it('checks an inactive workflow without changing the active projection', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: draft(3, emptyGraph, 'workflow-a') })
+      .mockResolvedValueOnce({ data: draft(2, emptyGraph, 'workflow-b') })
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('workflow-a')
+
+    await expect(store.ensureFreshForCriticalOperation('workflow-b')).resolves.toBe(true)
+    expect(store.workflowId).toBe('workflow-a')
+    expect(store.currentDraftRevision).toBe(3)
+    expect(store.appliedDraftRevision).toBe(3)
+
+    store.trackWorkflow('workflow-b')
+    expect(store.currentDraftRevision).toBe(2)
+    expect(store.appliedDraftRevision).toBe(2)
+  })
+
   it('freshness guard flushes pending local draft saves before reporting fresh', async () => {
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: draft(1) })
@@ -349,6 +394,62 @@ describe('workflow draft store', () => {
     expect(store.appliedDraftRevision).toBe(2)
     expect(store.remoteAvailableRevision).toBe(3)
     expect(store.remoteUpdatedBy).toBe('agent')
+  })
+
+  it('does not reactivate a workflow when its in-flight save is acknowledged', async () => {
+    let resolvePut!: (value: { data: WorkflowDraftResponse }) => void
+    vi.mocked(api.get).mockResolvedValueOnce({ data: draft(1, emptyGraph, 'workflow-b') })
+    vi.mocked(api.put).mockReturnValueOnce(new Promise((resolve) => {
+      resolvePut = resolve
+    }))
+
+    const store = useWorkflowDraftStore()
+    await store.loadDraft('workflow-b')
+    store.scheduleSave('workflow-b', emptyGraph)
+    const flush = store.flush()
+    await vi.waitFor(() => expect(api.put).toHaveBeenCalledOnce())
+    store.trackWorkflow('workflow-a')
+
+    resolvePut({ data: draft(2, emptyGraph, 'workflow-b') })
+    await flush
+
+    expect(store.workflowId).toBe('workflow-a')
+    expect(store.currentDraftRevision).toBeNull()
+    store.trackWorkflow('workflow-b')
+    expect(store.currentDraftRevision).toBe(2)
+    expect(store.appliedDraftRevision).toBe(2)
+  })
+
+  it('does not schedule a save for an inactive workflow with a retained notice', async () => {
+    const store = useWorkflowDraftStore()
+    store.reset('workflow-a')
+    store.noteRemoteChange(changed(3, { workflow_id: 'workflow-b' }))
+
+    store.scheduleSave('workflow-b', emptyGraph)
+    await store.flush()
+
+    expect(store.workflowId).toBe('workflow-a')
+    expect(store.hasPendingSave).toBe(false)
+    expect(api.get).not.toHaveBeenCalled()
+    expect(api.put).not.toHaveBeenCalled()
+    store.trackWorkflow('workflow-b')
+    expect(store.remoteAvailableRevision).toBe(3)
+  })
+
+  it('forgets only the deleted workflow state before the id is reused', () => {
+    const store = useWorkflowDraftStore()
+    store.reset('workflow-a')
+    store.noteRemoteChange(changed(4, { workflow_id: 'workflow-a' }))
+    store.noteRemoteChange(changed(6, { workflow_id: 'workflow-b' }))
+
+    store.forgetWorkflow('workflow-b')
+
+    expect(store.workflowId).toBe('workflow-a')
+    expect(store.remoteAvailableRevision).toBe(4)
+    store.trackWorkflow('workflow-b')
+    expect(store.currentDraftRevision).toBeNull()
+    expect(store.appliedDraftRevision).toBeNull()
+    expect(store.remoteAvailableRevision).toBeNull()
   })
 
   it('overwrites a newer remote draft with the current graph revision', async () => {

@@ -4,6 +4,7 @@ import { AxiosError } from 'axios'
 import { api } from '@/api/client'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useUIStore } from '@/stores/ui'
+import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import {
   canvasSessionRegistry,
   type CanvasId,
@@ -229,6 +230,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return workflows.value
       .map((workflow) => workflowId(workflow))
       .filter((id) => id === folderId || id.startsWith(`${folderId}/`))
+  }
+
+  function forgetRetainedDrafts(workflowIds: Iterable<string>): void {
+    const drafts = useWorkflowDraftStore()
+    for (const id of workflowIds) drafts.forgetWorkflow(id)
   }
 
   function remapWorkflowIdPrefix(id: string, oldPrefix: string, newPrefix: string | null): string {
@@ -464,6 +470,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   async function deleteWorkflow(name: string): Promise<void> {
     await api.delete(`/api/v1/workflows/${workflowUrl(name)}`)
+    useWorkflowDraftStore().forgetWorkflow(name)
     workflows.value = workflows.value.filter((item) => workflowId(item) !== name)
     delete workflowFolderIds.value[name]
     workflowOrder.value = workflowOrder.value.filter((item) => item !== name)
@@ -525,11 +532,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
         `/api/v1/workflows/${workflowUrl(name)}`,
         patch,
       )
-      upsertWorkflow(data, patch.action === 'update' ? name : undefined)
       const dataId = workflowId(data)
       if (patch.action === 'update' && dataId !== name) {
+        forgetRetainedDrafts([name])
         await autoSave.renameWorkflow(name, dataId)
       }
+      upsertWorkflow(data, patch.action === 'update' ? name : undefined)
       if (target === undefined) {
         if (canvasSessionRegistry.sessionCount.value === 0) {
           setCurrent(data)
@@ -618,12 +626,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (index === -1) {
       throw new Error('Folder does not exist')
     }
+    const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     const newPath = childFolderPath(workflowFolders.value[index].parentId, trimmed)
     const { data } = await api.patch<WorkflowFolderResponse>(
       `/api/v1/workflows/folders/${workflowUrl(id)}`,
       { new_path: newPath },
     )
     const nextId = data.path
+    if (nextId !== id) forgetRetainedDrafts(previousWorkflowIds)
     const previousCurrent = currentName.value
     const nextCurrent = previousCurrent ? remapWorkflowIdPrefix(previousCurrent, id, nextId) : null
     await renameAutoSavesForFolderMove(id, nextId)
@@ -639,9 +649,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
   ): Promise<void> {
     const folder = workflowFolders.value.find((item) => item.id === id)
     if (!folder) return
+    const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     await api.delete(`/api/v1/workflows/folders/${workflowUrl(id)}`, {
       data: { policy },
     })
+    if (policy !== 'empty') forgetRetainedDrafts(previousWorkflowIds)
     if (policy === 'delete_children') {
       await clearAutoSavesForFolder(id)
       if (currentName.value && remapWorkflowIdPrefix(currentName.value, id, null) !== currentName.value) {
@@ -676,12 +688,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (targetParentId === id || targetParentId?.startsWith(`${id}/`)) {
       throw new Error('Cannot move a folder into itself')
     }
+    const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     const nextPath = childFolderPath(targetParentId, folderLeafName(id))
     const { data } = await api.patch<WorkflowFolderResponse>(
       `/api/v1/workflows/folders/${workflowUrl(id)}`,
       { new_path: nextPath },
     )
     const nextId = data.path
+    if (nextId !== id) forgetRetainedDrafts(previousWorkflowIds)
     const previousCurrent = currentName.value
     const nextCurrent = previousCurrent ? remapWorkflowIdPrefix(previousCurrent, id, nextId) : null
     await renameAutoSavesForFolderMove(id, nextId)
@@ -713,6 +727,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       upsertWorkflow(data, name)
       name = workflowFullId(data)
       if (name !== previousName) {
+        forgetRetainedDrafts([previousName])
         await autoSave.renameWorkflow(previousName, name)
       }
       if (wasCurrent) {
@@ -757,6 +772,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       upsertWorkflow(data, name)
       name = workflowFullId(data)
       if (name !== previousName) {
+        forgetRetainedDrafts([previousName])
         await autoSave.renameWorkflow(previousName, name)
       }
       if (wasCurrent) {

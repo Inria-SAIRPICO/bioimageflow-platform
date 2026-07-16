@@ -22,6 +22,7 @@ const workflowDraftMocks = vi.hoisted(() => ({
   scheduleSave: vi.fn(),
   flush: vi.fn().mockResolvedValue(undefined),
   loadDraft: vi.fn(),
+  forgetWorkflow: vi.fn(),
 }))
 const persistenceMocks = vi.hoisted(() => ({
   canvasId: null as string | null,
@@ -166,6 +167,7 @@ describe('MenuBar', () => {
     workflowDraftMocks.scheduleSave.mockClear()
     workflowDraftMocks.flush.mockClear()
     workflowDraftMocks.loadDraft.mockReset()
+    workflowDraftMocks.forgetWorkflow.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
     persistenceMocks.canvasId = null
