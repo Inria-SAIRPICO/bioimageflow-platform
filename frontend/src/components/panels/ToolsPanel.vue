@@ -12,6 +12,7 @@ import { useToast } from 'primevue/usetoast'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useExecutionStore } from '@/stores/execution'
 import type { ToolCreateResponse, ToolMetadata } from '@/api/types'
 import { api } from '@/api/client'
 import {
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 const toolRegistry = useToolRegistryStore()
 const settingsStore = useSettingsStore()
 const workflowStore = useWorkflowStore()
+const executionStore = useExecutionStore()
 
 const searchQuery = ref('')
 const isSearchActive = computed(() => searchQuery.value.trim().length > 0)
@@ -675,6 +677,7 @@ async function toggleEnvironment(packageName: string) {
 }
 
 async function toggleToolEnvironment(tool: ToolMetadata) {
+  if (executionStore.isRunning) return
   try {
     const status = getToolEnvStatus(tool)
     const envName = getToolEnvName(tool)
@@ -873,8 +876,8 @@ defineExpose({
                   class="tool-list-power-btn"
                   :class="`env-${getToolEnvStatus(tool)}`"
                   :data-testid="`tool-power-${tool.name}`"
-                  :disabled="getToolEnvStatus(tool) === 'unavailable'"
-                  :title="getToolEnvStatus(tool)"
+                  :disabled="executionStore.isRunning || getToolEnvStatus(tool) === 'unavailable'"
+                  :title="executionStore.isRunning ? 'Environment controls are disabled during execution' : getToolEnvStatus(tool)"
                   @click.stop="toggleToolEnvironment(tool)"
                 />
               </span>
@@ -1126,9 +1129,10 @@ defineExpose({
                   icon="pi pi-power-off"
                   text
                   size="small"
+                  class="tool-list-power-btn"
                   :class="`env-${getToolEnvStatus(node.data.tool)}`"
-                  :disabled="getToolEnvStatus(node.data.tool) === 'unavailable'"
-                  :title="getToolEnvStatus(node.data.tool)"
+                  :disabled="executionStore.isRunning || getToolEnvStatus(node.data.tool) === 'unavailable'"
+                  :title="executionStore.isRunning ? 'Environment controls are disabled during execution' : getToolEnvStatus(node.data.tool)"
                   :data-testid="`tool-env-toggle-${node.data.name}`"
                   @click="toggleToolEnvironment(node.data.tool)"
                 />
@@ -1434,15 +1438,22 @@ defineExpose({
 }
 
 /* Force PrimeVue text Button to inherit the env color */
-.tool-list-power-btn.env-stopped :deep(.p-button-icon) {
+.tool-list-power-btn.env-stopped {
   color: var(--p-surface-400);
 }
-.tool-list-power-btn.env-creating :deep(.p-button-icon) {
+.tool-list-power-btn.env-creating {
   color: var(--p-yellow-500);
 }
+.tool-list-power-btn.env-running,
+.tool-list-power-btn.env-ready {
+  color: var(--p-green-500);
+}
+
+.tool-list-power-btn.env-stopped :deep(.p-button-icon),
+.tool-list-power-btn.env-creating :deep(.p-button-icon),
 .tool-list-power-btn.env-running :deep(.p-button-icon),
 .tool-list-power-btn.env-ready :deep(.p-button-icon) {
-  color: var(--p-green-500);
+  color: inherit;
 }
 
 .tool-actions {

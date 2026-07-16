@@ -48,6 +48,11 @@ class _FakeWetlandsWrapper:
         self._env_hashes = {"cellpose-env": "old"}
         self._launch_configs = {"cellpose-env": (1, None, None)}
 
+    def get_or_create(self, env_spec: object) -> _FakeEnvironment:
+        env_name = str(getattr(env_spec, "name"))
+        self._envs[env_name] = self._manager.env
+        return self._manager.env
+
 
 def _registry() -> MagicMock:
     tool = SimpleNamespace(
@@ -78,6 +83,25 @@ def _write_metadata(env_path: Path, recipe_hash: str = "sha256:old") -> None:
     )
     env_path.parent.mkdir(exist_ok=True)
     env_path.write_text("[workspace]\n", encoding="utf-8")
+
+
+async def test_start_and_stop_control_the_shared_environment(tmp_path: Path) -> None:
+    env = _FakeEnvironment()
+    env_path = tmp_path / "workspaces" / "cellpose-env" / "pixi.toml"
+    manager = _FakeWetlandsManager(env, env_path)
+    wetlands = _FakeWetlandsWrapper(manager)
+    service = ToolEnvironmentService(
+        registry=_registry(),
+        wetlands_manager=wetlands,
+    )
+
+    assert service.manager is wetlands
+    assert await service.start("cellpose-env") == "running"
+    assert wetlands._envs == {"cellpose-env": env}
+
+    assert await service.stop("cellpose-env") == "stopped"
+    assert env.exited is True
+    assert wetlands._envs == {}
 
 
 async def test_delete_environment_deletes_cached_environment(tmp_path: Path) -> None:

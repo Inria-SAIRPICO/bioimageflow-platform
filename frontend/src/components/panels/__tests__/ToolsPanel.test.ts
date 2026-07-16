@@ -20,6 +20,7 @@ vi.mock('primevue/useconfirm', () => ({
 import { api } from '@/api/client'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
+import { useExecutionStore } from '@/stores/execution'
 import ToolsPanel from '../ToolsPanel.vue'
 import type { ToolMetadata, PackageInfo, Settings } from '@/api/types'
 
@@ -1248,6 +1249,52 @@ describe('ToolsPanel', () => {
     expect(mockedApi.post).toHaveBeenCalledWith(
       '/api/v1/tools/environments/cellpose-env/start',
     )
+  })
+
+  it('updates the tool power button when execution starts its environment', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const store = useToolRegistryStore()
+    store.tools = store.tools.map((tool) =>
+      tool.name === 'cellpose'
+        ? { ...tool, environment: { name: 'cellpose-env', dependencies: { pip: ['cellpose'] } } }
+        : tool,
+    )
+
+    store.applyEnvironmentStatus({
+      type: 'environment_status',
+      env_name: 'cellpose-env',
+      status: 'running',
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="tool-power-cellpose"]').classes()).toContain('env-running')
+  })
+
+  it('does not toggle tool environments while a workflow is executing', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+    const toolRegistry = useToolRegistryStore()
+    toolRegistry.tools = toolRegistry.tools.map((tool) =>
+      tool.name === 'cellpose'
+        ? { ...tool, environment: { name: 'cellpose-env', dependencies: { pip: ['cellpose'] } } }
+        : tool,
+    )
+    useExecutionStore().state = 'running'
+    mockedApi.post.mockClear()
+
+    const vm = wrapper.vm as unknown as {
+      toggleToolEnvironment: (tool: ToolMetadata) => Promise<void>
+    }
+    await vm.toggleToolEnvironment(toolRegistry.getToolByName('cellpose')!)
+
+    expect(mockedApi.post).not.toHaveBeenCalled()
   })
 
   it('does not start tools without a declared environment', async () => {
