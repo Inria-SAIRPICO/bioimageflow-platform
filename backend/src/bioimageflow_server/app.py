@@ -61,6 +61,11 @@ from bioimageflow_server.routers.napari import (
     get_workflow_store as napari_get_workflow_store,
     router as napari_router,
 )
+from bioimageflow_server.routers.nested_workflow_snapshots import (
+    get_execution_manager as nested_snapshots_get_execution_manager,
+    get_nested_workflow_snapshot_service,
+    router as nested_workflow_snapshots_router,
+)
 from bioimageflow_server.routers.nodes import (
     get_result_store,
     get_thumbnail_manager,
@@ -113,6 +118,9 @@ from bioimageflow_server.services.agent_workspace_context import ensure_agent_wo
 from bioimageflow_server.services.editor import EditorService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
+from bioimageflow_server.services.nested_workflow_snapshot import (
+    NestedWorkflowSnapshotService,
+)
 from bioimageflow_server.services.package_catalog import PackageCatalogService
 from bioimageflow_server.services.package_installer import (
     PackageNetworkError,
@@ -313,6 +321,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     workflow_draft_service = WorkflowDraftService(
         _current_workflow_store,
+        dev_mode_provider=_live_dev_mode,
+        settings_provider=_live_settings,
+    )
+    nested_workflow_snapshot_service = NestedWorkflowSnapshotService(
+        _current_workflow_store,
+        fallback_storage_path_provider=lambda: resolved_storage_path,
         dev_mode_provider=_live_dev_mode,
         settings_provider=_live_settings,
     )
@@ -532,6 +546,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    app.include_router(nested_workflow_snapshots_router, prefix="/api/v1")
     app.include_router(workspace_router, prefix="/api/v1")
     app.include_router(workflow_draft_operations_router, prefix="/api/v1")
     app.include_router(workflow_drafts_router, prefix="/api/v1")
@@ -564,6 +579,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflows_get_connection_manager] = lambda: ws_manager
     app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
+    app.dependency_overrides[get_nested_workflow_snapshot_service] = (
+        lambda: nested_workflow_snapshot_service
+    )
+    app.dependency_overrides[nested_snapshots_get_execution_manager] = (
+        lambda: execution_manager
+    )
     app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_connection_manager] = lambda: ws_manager
     app.dependency_overrides[

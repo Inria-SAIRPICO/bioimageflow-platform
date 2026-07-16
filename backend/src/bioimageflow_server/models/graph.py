@@ -49,6 +49,7 @@ class NodeState(BaseModel):
     published_inputs: list[PublishedInput] = Field(default_factory=list)
     published_outputs: list[PublishedOutput] = Field(default_factory=list)
     sub_workflow_readonly_reason: str | None = None
+    source_workflow_name: str | None = None
 
 
 class ColumnRefEdge(BaseModel):

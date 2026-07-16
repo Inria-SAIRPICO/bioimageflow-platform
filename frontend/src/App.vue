@@ -54,6 +54,7 @@ import type { WorkflowDraftResponse } from './api/workflowDrafts'
 import { canvasIdFromPanelId } from './sessions/canvasSessionRegistry'
 import {
   activateGraphSyncCanvas,
+  deleteRetainedNestedSnapshot,
   unregisterGraphSyncCanvas,
 } from './composables/useGraphSync'
 
@@ -255,8 +256,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
         return
       }
       if (confirmedSubWorkflowPanelCloses.delete(panel.id)) {
-        subWorkflowParentCanvasIds.delete(sessionId)
-        subWorkflowSessionsStore.closeSession(sessionId)
+        void finalizeSubWorkflowClose(sessionId)
         return
       }
       const session = subWorkflowSessionsStore.sessionById(sessionId)
@@ -268,8 +268,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
         queueMicrotask(() => openSubWorkflowPanel(sessionId))
         return
       }
-      subWorkflowParentCanvasIds.delete(sessionId)
-      subWorkflowSessionsStore.closeSession(sessionId)
+      void finalizeSubWorkflowClose(sessionId)
     }),
   )
   const activePanelChange = (api as unknown as {
@@ -454,6 +453,20 @@ function onSubWorkflowSessionOpened(event: CustomEvent<{
   openSubWorkflowPanel(sessionId)
 }
 
+async function finalizeSubWorkflowClose(sessionId: string): Promise<void> {
+  try {
+    const deletedRetainedSnapshot = await deleteRetainedNestedSnapshot(sessionId)
+    if (!deletedRetainedSnapshot) {
+      await subWorkflowSessionsStore.deleteDurableSession(sessionId)
+    }
+    subWorkflowSessionsStore.closeSession(sessionId)
+    subWorkflowParentCanvasIds.delete(sessionId)
+  } catch (error) {
+    console.warn('[nested-snapshot] failed to discard snapshot:', error)
+    queueMicrotask(() => openSubWorkflowPanel(sessionId))
+  }
+}
+
 function onCloseSubWorkflowSession(event: CustomEvent<{
   sessionId?: string
   discardConfirmed?: boolean
@@ -462,8 +475,7 @@ function onCloseSubWorkflowSession(event: CustomEvent<{
   if (!sessionId) return
   const panel = dockviewApi.value?.getPanel(subWorkflowPanelId(sessionId))
   if (!panel) {
-    subWorkflowParentCanvasIds.delete(sessionId)
-    subWorkflowSessionsStore.closeSession(sessionId)
+    void finalizeSubWorkflowClose(sessionId)
     return
   }
   if (event.detail?.discardConfirmed) {

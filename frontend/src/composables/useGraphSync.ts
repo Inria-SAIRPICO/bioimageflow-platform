@@ -18,6 +18,13 @@ import {
   type GraphSyncCoordinator,
   type SyncState,
 } from '@/sessions/graphSyncCoordinator'
+import {
+  createNestedSnapshotPersistence,
+  type AcceptedNestedSnapshot,
+  type NestedSnapshotPersistence,
+} from '@/sessions/nestedSnapshotPersistence'
+import type { NestedWorkflowSnapshotResponse } from '@/api/nestedWorkflowSnapshots'
+import { graphDocumentsEqual } from '@/sessions/graphDocument'
 import type {
   ColumnRefEdge,
   GraphState,
@@ -35,6 +42,16 @@ export type { SyncState } from '@/sessions/graphSyncCoordinator'
 export interface CanvasScopedGraphSyncOptions {
   descriptor: CanvasSessionDescriptor
   getWorkflowId: () => string | null
+  nestedSnapshot?: {
+    initialSnapshot: NestedWorkflowSnapshotResponse
+    onAccepted?: (snapshot: NestedWorkflowSnapshotResponse) => void
+  }
+}
+
+export type AcceptedGraphSnapshot = AcceptedNestedSnapshot | {
+  graph: GraphState
+  validation: ValidationResult
+  snapshotRevision: null
 }
 
 export interface GraphSyncApi {
@@ -42,7 +59,7 @@ export interface GraphSyncApi {
   syncGraphState(graph: GraphState): void
   revalidateGraphState(graph: GraphState): void
   syncNodeParameters(nodeId: string, parameters: Record<string, unknown>): void
-  flushNow(): Promise<void>
+  flushNow(): Promise<AcceptedGraphSnapshot | null>
   validationResult: Ref<ValidationResult | null>
   isPending: Ref<boolean>
   syncState: Ref<SyncState>
@@ -148,6 +165,14 @@ export function serializeGraph(raw: {
 }
 
 export const graphSyncCanvasSessions = canvasSessionRegistry
+export const NESTED_SNAPSHOT_PERSISTENCE_RESOURCE = 'nested-snapshot-persistence'
+
+interface NestedSnapshotPersistenceLease {
+  readonly resource: NestedSnapshotPersistence
+  dispose(): void
+}
+
+const retainedNestedSnapshotResources = new Map<string, NestedSnapshotPersistence>()
 
 let legacyInstance: GraphSyncApi | null = null
 let activeFacade: GraphSyncApi | null = null
@@ -174,6 +199,10 @@ export function unregisterGraphSyncCanvas(canvasId: CanvasId): void {
 /** Test-only: reset all scoped and compatibility state. */
 export function _resetGraphSyncForTest(): void {
   graphSyncCanvasSessions.dispose()
+  for (const resource of retainedNestedSnapshotResources.values()) {
+    resource.dispose()
+  }
+  retainedNestedSnapshotResources.clear()
   legacyInstance?.dispose()
   legacyInstance = null
   activeFacade = null
@@ -194,6 +223,30 @@ function registerScopedGraphSync(options: CanvasScopedGraphSyncOptions): GraphSy
       unregisterGraphSyncCanvas(options.descriptor.canvasId)
     })
   }
+  if (options.nestedSnapshot) {
+    const sessionId = options.nestedSnapshot.initialSnapshot.session_id
+    let resource = retainedNestedSnapshotResources.get(sessionId)
+    if (!resource) {
+      resource = createNestedSnapshotPersistence({
+        canvasId: options.descriptor.canvasId,
+        initialSnapshot: options.nestedSnapshot.initialSnapshot,
+        onAccepted: options.nestedSnapshot.onAccepted,
+      })
+      retainedNestedSnapshotResources.set(sessionId, resource)
+    }
+    const lease = graphSyncCanvasSessions.getOrCreateResource(
+      options.descriptor.canvasId,
+      NESTED_SNAPSHOT_PERSISTENCE_RESOURCE,
+      () => ({ resource, dispose: () => {} }),
+    ) as NestedSnapshotPersistenceLease
+    graphSyncCanvasSessions.getOrCreateCoordinator(
+      options.descriptor.canvasId,
+      () => ({ ...lease.resource.coordinator, dispose: () => {} }),
+    )
+    return createNestedBoundApi(lease.resource, () => {
+      unregisterGraphSyncCanvas(options.descriptor.canvasId)
+    })
+  }
   const coordinator = graphSyncCanvasSessions.getOrCreateCoordinator(
     options.descriptor.canvasId,
     descriptor => createCoordinator(
@@ -205,6 +258,17 @@ function registerScopedGraphSync(options: CanvasScopedGraphSyncOptions): GraphSy
   return createBoundApi(coordinator, () => {
     unregisterGraphSyncCanvas(options.descriptor.canvasId)
   })
+}
+
+export async function deleteRetainedNestedSnapshot(
+  sessionId: string,
+): Promise<boolean> {
+  const resource = retainedNestedSnapshotResources.get(sessionId)
+  if (!resource) return false
+  await resource.deleteLatest()
+  resource.dispose()
+  retainedNestedSnapshotResources.delete(sessionId)
+  return true
 }
 
 function createCoordinator(
@@ -264,9 +328,15 @@ function createBoundApi(
     syncGraphState(graph)
   }
 
-  async function flushNow(): Promise<void> {
+  async function flushNow(): Promise<AcceptedGraphSnapshot | null> {
     await nextTick()
-    await coordinator.flushLatest()
+    const acceptance = await coordinator.flushLatest()
+    if (!acceptance) return null
+    return {
+      graph: deepCloneJson(acceptance.graph),
+      validation: deepCloneJson(acceptance.validation),
+      snapshotRevision: null,
+    }
   }
 
   return {
@@ -279,6 +349,44 @@ function createBoundApi(
     isPending: coordinator.isPending,
     syncState: coordinator.syncState,
     currentGraph: coordinator.currentGraph,
+    dispose,
+  }
+}
+
+function createNestedBoundApi(
+  resource: NestedSnapshotPersistence,
+  dispose: () => void,
+): GraphSyncApi {
+  function queueGraph(graph: GraphState, force = false): void {
+    if (
+      !force
+      && resource.coordinator.semanticRevision.value === 0
+      && graphDocumentsEqual(resource.currentGraph.value, graph)
+    ) {
+      return
+    }
+    resource.queue(graph)
+  }
+
+  return {
+    syncGraph: graph => queueGraph(serializeGraph(graph)),
+    syncGraphState: graph => queueGraph(graph),
+    revalidateGraphState: graph => queueGraph(graph, true),
+    syncNodeParameters: (nodeId, parameters) => {
+      const graph = deepCloneJson(resource.currentGraph.value)
+      const node = graph.nodes.find(candidate => candidate.id === nodeId)
+      if (!node) return
+      node.parameters = deepCloneJson(parameters)
+      queueGraph(graph)
+    },
+    flushNow: async () => {
+      await nextTick()
+      return resource.flushLatest()
+    },
+    validationResult: resource.validationResult,
+    isPending: resource.coordinator.isPending,
+    syncState: resource.coordinator.syncState,
+    currentGraph: resource.currentGraph,
     dispose,
   }
 }
@@ -305,6 +413,13 @@ function createRootBoundApi(
     flushNow: async () => {
       await nextTick()
       await resource.flushValidation()
+      const validation = resource.validationResult.value
+      if (!validation) return null
+      return {
+        graph: deepCloneJson(resource.currentGraph.value),
+        validation: deepCloneJson(validation),
+        snapshotRevision: null,
+      }
     },
     validationResult: resource.validationResult,
     isPending: resource.isValidationPending,
@@ -329,6 +444,15 @@ function createActiveFacade(): GraphSyncApi {
             unregisterGraphSyncCanvas(canvasId)
           })
         }
+      }
+      const nestedLease = graphSyncCanvasSessions.getResource<NestedSnapshotPersistenceLease>(
+        canvasId,
+        NESTED_SNAPSHOT_PERSISTENCE_RESOURCE,
+      )
+      if (nestedLease) {
+        return createNestedBoundApi(nestedLease.resource, () => {
+          unregisterGraphSyncCanvas(canvasId)
+        })
       }
       const coordinator = session?.coordinator
       if (coordinator) {
