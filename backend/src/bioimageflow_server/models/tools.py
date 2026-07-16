@@ -41,6 +41,7 @@ class InputFieldSchema(BaseModel):
     min: float | None = None
     max: float | None = None
     step: float | None = None
+    path_picker: Literal["file", "folder", "both"] | None = None
     choices: list[str] | None = None
     image_spec: dict[str, list[str]] | None = None
 

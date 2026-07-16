@@ -937,6 +937,8 @@ export interface components {
             max?: number | null;
             /** Step */
             step?: number | null;
+            /** Path Picker */
+            path_picker?: "file" | "folder" | "both" | null;
             /** Choices */
             choices?: string[] | null;
             /** Image Spec */

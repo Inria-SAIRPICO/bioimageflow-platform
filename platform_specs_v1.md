@@ -124,6 +124,7 @@ Per-field `InputFieldSchema`:
 | `description` | `string \| null` | From `GUIMeta.description`. |
 | `group` | `string \| null` | From `GUIMeta.group`. |
 | `min` / `max` / `step` | `number \| null` | From `GUIMeta`. |
+| `path_picker` | `"file" \| "folder" \| "both" \| null` | From `GUIMeta.path_picker`; controls picker actions for path-typed inputs without adding runtime validation. |
 | `choices` | `string[] \| null` | Populated for `Literal[...]` and `Enum` fields. |
 | `image_spec` | `object \| null` | `{semantics, layouts, dtypes, formats}` each as `string[]`, populated for `ImageFile` / `ImageShared` fields. |
 
@@ -1177,9 +1178,11 @@ Each input field from the tool's `Inputs` is rendered as a parameter row. Fields
 | `float` | Number input or slider | `min`, `max`, `step` from GUIMeta. If all three are set, render as slider. |
 | `bool` | Checkbox | -- |
 | `Enum` or `Literal[...]` | Dropdown | -- |
-| `Path` (file) | Text input + "Select File" button | In pywebview: native file dialog. In browser: Dataset Browser modal (Section 3.14). |
-| `Path` (directory) | Text input + "Select Folder" button | In pywebview: native folder dialog. In browser: folder selection is not offered — the button is hidden and only manual text entry or drag-and-drop is available. |
-| `ImageFile` | Text input + "Select File" button (filtered by format spec) | Same dual behavior as `Path` (file). File-type filter applies to both the native dialog and the Dataset Browser search filter. |
+| `Path` with `path_picker: "file"` | Text input + "Select File" button | In pywebview: native file dialog. In browser: Dataset Browser modal (Section 3.14). |
+| `Path` with `path_picker: "folder"` | Text input + "Select Folder" button | In pywebview: native folder dialog. In browser: folder selection is not offered — the button is hidden and only manual text entry or drag-and-drop is available. |
+| `Path` with `path_picker: "both"` | Text input + separate "Select File" and "Select Folder" buttons | In pywebview both native actions are shown. In browser only the Dataset Browser file action is shown; folder paths can still be entered manually. |
+| `Path` without `path_picker` | Backward-compatible generic path widget | Behaves as `"both"`; older tool schemas remain usable. |
+| `ImageFile` | Text input + "Select File" button (filtered by format spec) | Same desktop/browser behavior as `Path` with `path_picker: "file"`. File-type filters apply to both the native dialog and the Dataset Browser search filter. |
 | `ImageShared` | *Connection-only* (no manual input widget). Shows "Connect to upstream node" placeholder when unconnected. Unconnected required `ImageShared` fields produce a `missing_connection` validation error on the node. | Always `connectable != "never"`, not user-editable. |
 | `tuple`, `list` | Inline list editor | -- |
 

@@ -1014,11 +1014,61 @@ describe('NodePanel', () => {
       expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(true)
     })
 
+    it('renders both file and folder buttons for an explicit both picker', () => {
+      window.pywebview = { api: mockPywebviewApi() }
+      const tool = makePathTool()
+      tool.inputs.work_dir.path_picker = 'both'
+
+      const data = makeNodeData({ tool, parameters: {} })
+      const w = mountPanel(data)
+
+      expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(true)
+    })
+
+    it('renders only a folder button for a folder picker in desktop mode', () => {
+      window.pywebview = { api: mockPywebviewApi() }
+      const tool = makePathTool()
+      tool.inputs.work_dir.path_picker = 'folder'
+
+      const data = makeNodeData({ tool, parameters: {} })
+      const w = mountPanel(data)
+
+      expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(false)
+      const folderButton = w.find('[data-testid="select-folder-work_dir"]')
+      expect(folderButton.exists()).toBe(true)
+      expect(folderButton.attributes('title')).toBe('Select folder')
+    })
+
+    it('renders only a file button for a file picker on plain Path', () => {
+      window.pywebview = { api: mockPywebviewApi() }
+      const tool = makePathTool()
+      tool.inputs.work_dir.path_picker = 'file'
+
+      const data = makeNodeData({ tool, parameters: {} })
+      const w = mountPanel(data)
+
+      expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(false)
+    })
+
     it('hides the folder button for plain Path in browser mode', () => {
       // No window.pywebview — browser mode.
       const data = makeNodeData({ tool: makePathTool(), parameters: {} })
       const w = mountPanel(data)
       expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(false)
+    })
+
+    it('keeps manual entry but hides all picker buttons for a folder picker in browser mode', () => {
+      const tool = makePathTool()
+      tool.inputs.work_dir.path_picker = 'folder'
+
+      const data = makeNodeData({ tool, parameters: {} })
+      const w = mountPanel(data)
+
+      expect(w.find('[data-testid="path-input-work_dir"]').exists()).toBe(true)
+      expect(w.find('[data-testid="select-file-work_dir"]').exists()).toBe(false)
       expect(w.find('[data-testid="select-folder-work_dir"]').exists()).toBe(false)
     })
 

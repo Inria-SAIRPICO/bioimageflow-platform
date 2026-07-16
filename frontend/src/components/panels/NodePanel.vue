@@ -271,6 +271,21 @@ function isPathType(type: string): boolean {
   return ['Path', 'ImageFile', 'MaskPath'].includes(type)
 }
 
+type PathPickerMode = 'file' | 'folder' | 'both'
+
+function pathPickerMode(field: InputFieldSchema): PathPickerMode {
+  if (field.path_picker) return field.path_picker
+  return field.type === 'Path' ? 'both' : 'file'
+}
+
+function showsFilePicker(field: InputFieldSchema): boolean {
+  return ['file', 'both'].includes(pathPickerMode(field))
+}
+
+function showsFolderPicker(field: InputFieldSchema): boolean {
+  return isDesktop() && ['folder', 'both'].includes(pathPickerMode(field))
+}
+
 function isOutputTemplateApplicable(field: OutputFieldSchema): boolean {
   // Path-template editing only applies to ProcessingTool outputs. DataFrameTool
   // Outputs are column declarations, not files written to disk.
@@ -623,6 +638,7 @@ async function pickFolder(key: string) {
                 @update:model-value="updateParameter(key, $event)"
               />
               <Button
+                v-if="showsFilePicker(field as InputFieldSchema)"
                 icon="pi pi-file"
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select file"
@@ -631,7 +647,7 @@ async function pickFolder(key: string) {
                 @click="pickFile(key, (field as InputFieldSchema).type)"
               />
               <Button
-                v-if="(field as InputFieldSchema).type === 'Path' && isDesktop()"
+                v-if="showsFolderPicker(field as InputFieldSchema)"
                 icon="pi pi-folder-open"
                 class="p-button-text p-button-sm path-picker-btn"
                 title="Select folder"

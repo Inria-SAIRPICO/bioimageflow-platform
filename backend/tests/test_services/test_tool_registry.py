@@ -119,6 +119,7 @@ def test_files_accepts_upstream_is_false():
     meta = _register("Files")
     assert meta.tool_type == "DataFrameTool"
     assert meta.accepts_upstream is False
+    assert meta.inputs["path"].path_picker == "folder"
 
 
 @COMMON_TOOLS_MARK

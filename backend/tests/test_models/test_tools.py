@@ -100,6 +100,25 @@ def test_input_field_schema_nullable_round_trip():
     assert rebuilt.nullable is True
 
 
+@pytest.mark.parametrize("mode", ["file", "folder", "both"])
+def test_input_field_schema_path_picker_round_trip(mode):
+    field = InputFieldSchema(
+        type="Path",
+        required=True,
+        connectable="never",
+        path_picker=mode,
+    )
+
+    rebuilt = InputFieldSchema.model_validate(field.model_dump())
+
+    assert rebuilt.path_picker == mode
+
+
+def test_input_field_schema_path_picker_defaults_to_none():
+    field = InputFieldSchema(type="Path", required=True, connectable="never")
+    assert field.path_picker is None
+
+
 # --- Task 2 tests ---
 
 

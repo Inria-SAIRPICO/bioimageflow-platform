@@ -716,6 +716,17 @@ path-typed outputs.
 - **Tools Panel:** Custom tools appear in the panel with a "Custom" badge and support drag-and-drop onto the canvas.
 - **Webapp mode security:** `POST /tools`, `DELETE /tools/{tool_name}`, and `PATCH /tools/{tool_name}` are disabled in webapp mode (403 Forbidden), and source-opening controls are hidden, unless `enable_unsafe_webapp_features === true`. The "Create Tool" button is hidden when `deployment_mode === "webapp"` and the unsafe debug flag is false.
 
+### 5.6 Path Picker Metadata
+
+`GUIMeta` adds an optional `path_picker` hint for path-typed inputs with values `"file"`, `"folder"`, or `"both"`.
+The library's canonical input schema serializes this as `path_picker: "file" | "folder" | "both" | null`, and the platform passes it through unchanged in `GET /tools`.
+The hint controls Node Panel picker actions only and does not validate the runtime filesystem value.
+Missing or `null` metadata remains backward-compatible: image path types use file selection and a plain `Path` allows both files and folders.
+
+The common-tools `Files.Inputs.path` field declares `path_picker="folder"` because it scans a directory.
+In desktop mode the Node Panel therefore shows only the **Select folder** action for that field.
+In browser mode server-folder browsing is unsupported, so folder-only fields keep manual text entry without a picker button; `"both"` fields retain the Dataset Browser file action.
+
 ---
 
 ## 6. Updated API Endpoint Summary
