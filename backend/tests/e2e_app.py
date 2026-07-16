@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from bioimageflow_server.app import create_app as create_platform_app
 from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.settings_store import SettingsStore
 
 
@@ -25,6 +26,16 @@ class ExecutionFailureEvent(BaseModel):
     node_id: str
     error: str
     traceback: str
+
+
+class _OfflinePyPIVersionService(PyPIVersionService):
+    """Keep managed browser tests independent of the package index."""
+
+    def __init__(self) -> None:
+        pass
+
+    async def get_versions(self, package_name: str) -> list[str]:
+        return []
 
 
 def create_app() -> FastAPI:
@@ -47,6 +58,8 @@ def create_app() -> FastAPI:
     app = create_platform_app(
         AppConfig(
             settings_store=SettingsStore(path=root / "settings.json"),
+            workspace_path=root / "workspace",
+            pypi_versions=_OfflinePyPIVersionService(),
             storage_path=root / "storage",
             workflow_root=root / "workflows",
             datasets_root=root / "datasets",
