@@ -12,6 +12,22 @@ interface NodeOption {
   value: string | null
 }
 
+type ResizableLogColumn = 'timestamp' | 'level' | 'node'
+
+interface ColumnResizeState {
+  column: ResizableLogColumn
+  pointerId: number
+  startX: number
+  startWidth: number
+}
+
+const MIN_COLUMN_WIDTHS: Record<ResizableLogColumn, number> = {
+  timestamp: 88,
+  level: 64,
+  node: 80,
+}
+const MAX_COLUMN_WIDTH = 640
+
 const logger = useLoggerStore()
 const ui = useUIStore()
 
@@ -20,7 +36,17 @@ const autoScope = ref(true)
 const autoScopedNodeId = ref<string | null>(null)
 const manualNodeFilter = ref(false)
 const searchDraft = ref(logger.filter.searchText)
+const columnWidths = ref<Record<ResizableLogColumn, number>>({
+  timestamp: 120,
+  level: 80,
+  node: 192,
+})
+const columnResize = ref<ColumnResizeState | null>(null)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+const logGridStyle = computed(() => ({
+  gridTemplateColumns: `${columnWidths.value.timestamp}px ${columnWidths.value.level}px ${columnWidths.value.node}px minmax(0, 1fr)`,
+}))
 
 const selectedNodeId = computed(() =>
   ui.selectedNodeIds.length === 1 ? ui.selectedNodeIds[0] : null,
@@ -150,6 +176,48 @@ function rowClass(entry: LogEntry): string {
 function nodeLabel(nodeId: string | null): string {
   if (nodeId === null) return ''
   return graphNodeLabels.value.get(nodeId) ?? nodeId
+}
+
+function setColumnWidth(column: ResizableLogColumn, width: number) {
+  columnWidths.value[column] = Math.min(
+    MAX_COLUMN_WIDTH,
+    Math.max(MIN_COLUMN_WIDTHS[column], Math.round(width)),
+  )
+}
+
+function startColumnResize(event: PointerEvent, column: ResizableLogColumn) {
+  event.preventDefault()
+  const handle = event.currentTarget as HTMLElement
+  handle.setPointerCapture?.(event.pointerId)
+  columnResize.value = {
+    column,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startWidth: columnWidths.value[column],
+  }
+}
+
+function resizeColumn(event: PointerEvent) {
+  const resize = columnResize.value
+  if (resize === null || resize.pointerId !== event.pointerId) return
+  setColumnWidth(resize.column, resize.startWidth + event.clientX - resize.startX)
+}
+
+function stopColumnResize(event: PointerEvent) {
+  if (columnResize.value?.pointerId !== event.pointerId) return
+  const handle = event.currentTarget as HTMLElement
+  if (handle.hasPointerCapture?.(event.pointerId)) {
+    handle.releasePointerCapture(event.pointerId)
+  }
+  columnResize.value = null
+}
+
+function resizeColumnWithKeyboard(event: KeyboardEvent, column: ResizableLogColumn) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  event.preventDefault()
+  const direction = event.key === 'ArrowLeft' ? -1 : 1
+  const step = event.shiftKey ? 32 : 8
+  setColumnWidth(column, columnWidths.value[column] + direction * step)
 }
 
 function isAtBottom(el: HTMLElement): boolean {
@@ -285,23 +353,93 @@ watch(
       ref="listEl"
       class="logger-panel__list"
       data-testid="log-list"
+      role="table"
+      aria-label="Log entries"
       @scroll="onListScroll"
     >
+      <div
+        class="logger-panel__header logger-panel__grid"
+        data-testid="log-header"
+        role="row"
+        :style="logGridStyle"
+      >
+        <div class="logger-panel__column-header" role="columnheader">
+          Timestamp
+          <button
+            type="button"
+            class="logger-panel__resize-handle"
+            :class="{ 'logger-panel__resize-handle--active': columnResize?.column === 'timestamp' }"
+            role="separator"
+            aria-label="Resize Timestamp column"
+            aria-orientation="vertical"
+            :aria-valuemin="MIN_COLUMN_WIDTHS.timestamp"
+            :aria-valuemax="MAX_COLUMN_WIDTH"
+            :aria-valuenow="columnWidths.timestamp"
+            @pointerdown="startColumnResize($event, 'timestamp')"
+            @pointermove="resizeColumn"
+            @pointerup="stopColumnResize"
+            @pointercancel="stopColumnResize"
+            @keydown="resizeColumnWithKeyboard($event, 'timestamp')"
+          />
+        </div>
+        <div class="logger-panel__column-header" role="columnheader">
+          Level
+          <button
+            type="button"
+            class="logger-panel__resize-handle"
+            :class="{ 'logger-panel__resize-handle--active': columnResize?.column === 'level' }"
+            role="separator"
+            aria-label="Resize Level column"
+            aria-orientation="vertical"
+            :aria-valuemin="MIN_COLUMN_WIDTHS.level"
+            :aria-valuemax="MAX_COLUMN_WIDTH"
+            :aria-valuenow="columnWidths.level"
+            @pointerdown="startColumnResize($event, 'level')"
+            @pointermove="resizeColumn"
+            @pointerup="stopColumnResize"
+            @pointercancel="stopColumnResize"
+            @keydown="resizeColumnWithKeyboard($event, 'level')"
+          />
+        </div>
+        <div class="logger-panel__column-header" role="columnheader">
+          Node
+          <button
+            type="button"
+            class="logger-panel__resize-handle"
+            :class="{ 'logger-panel__resize-handle--active': columnResize?.column === 'node' }"
+            role="separator"
+            aria-label="Resize Node column"
+            aria-orientation="vertical"
+            :aria-valuemin="MIN_COLUMN_WIDTHS.node"
+            :aria-valuemax="MAX_COLUMN_WIDTH"
+            :aria-valuenow="columnWidths.node"
+            @pointerdown="startColumnResize($event, 'node')"
+            @pointermove="resizeColumn"
+            @pointerup="stopColumnResize"
+            @pointercancel="stopColumnResize"
+            @keydown="resizeColumnWithKeyboard($event, 'node')"
+          />
+        </div>
+        <div class="logger-panel__column-header" role="columnheader">Message</div>
+      </div>
       <div v-if="visibleEntries.length === 0" class="logger-panel__empty" data-testid="log-empty">
         No log messages
       </div>
       <div
         v-for="(entry, index) in visibleEntries"
         :key="`${entry.timestamp}-${index}`"
-        :class="['logger-panel__row', rowClass(entry)]"
+        :class="['logger-panel__row', 'logger-panel__grid', rowClass(entry)]"
         data-testid="log-entry"
+        role="row"
+        :style="logGridStyle"
       >
-        <span class="logger-panel__time" data-testid="log-timestamp">
+        <span class="logger-panel__time" data-testid="log-timestamp" role="cell">
           {{ formatTimestamp(entry.timestamp) }}
         </span>
         <span
           :class="['logger-panel__level-badge', `logger-panel__level-badge--${normalizedLevel(entry).toLowerCase()}`]"
           data-testid="log-level-badge"
+          role="cell"
         >
           {{ levelShort(normalizedLevel(entry)) }}
         </span>
@@ -309,11 +447,12 @@ watch(
           v-if="entry.nodeId !== null"
           class="logger-panel__node"
           data-testid="log-node-name"
+          role="cell"
         >
           {{ nodeLabel(entry.nodeId) }}
         </span>
-        <span v-else class="logger-panel__node" />
-        <span class="logger-panel__message" data-testid="log-message">
+        <span v-else class="logger-panel__node" role="cell" />
+        <span class="logger-panel__message" data-testid="log-message" role="cell">
           {{ entry.message }}
         </span>
       </div>
@@ -398,10 +537,69 @@ watch(
   font-size: 0.8125rem;
 }
 
-.logger-panel__row {
+.logger-panel__grid {
   display: grid;
-  grid-template-columns: 7rem 2.75rem minmax(0, 12rem) minmax(0, 1fr);
   gap: 0.5rem;
+  min-width: 34rem;
+}
+
+.logger-panel__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  align-items: center;
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid var(--bif-border-strong, #d1d5db);
+  background: var(--bif-surface-muted, #f9fafb);
+  color: var(--bif-text-subtle, #4b5563);
+  font-family: var(--p-font-family, sans-serif);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.logger-panel__column-header {
+  position: relative;
+  min-width: 0;
+}
+
+.logger-panel__resize-handle {
+  position: absolute;
+  top: -0.375rem;
+  right: -0.375rem;
+  bottom: -0.375rem;
+  width: 0.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.logger-panel__resize-handle::after {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.1875rem;
+  bottom: 0.25rem;
+  width: 1px;
+  background: var(--bif-border-strong, #d1d5db);
+  content: '';
+}
+
+.logger-panel__resize-handle:hover::after,
+.logger-panel__resize-handle:focus-visible::after,
+.logger-panel__resize-handle--active::after {
+  width: 2px;
+  background: var(--p-primary-color, #2563eb);
+}
+
+.logger-panel__resize-handle:focus-visible {
+  outline: 2px solid var(--p-primary-color, #2563eb);
+  outline-offset: -2px;
+}
+
+.logger-panel__row {
   align-items: start;
   padding: 0.25rem 0.5rem;
   border-bottom: 1px solid var(--bif-surface-hover, #f3f4f6);

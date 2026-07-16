@@ -198,6 +198,41 @@ describe('LoggerPanel', () => {
     expect(row.find('script').exists()).toBe(false)
   })
 
+  it('labels each log column and exposes resizable column boundaries', async () => {
+    const w = mountPanel()
+    const store = useLoggerStore()
+    store.addEntry({ level: 'INFO', message: 'system', nodeId: null, timestamp: 1 })
+    await w.vm.$nextTick()
+    const headers = w.findAll('[role="columnheader"]')
+
+    expect(headers.map((header) => header.text())).toEqual([
+      'Timestamp',
+      'Level',
+      'Node',
+      'Message',
+    ])
+
+    const timestampHandle = w.find('[aria-label="Resize Timestamp column"]')
+    expect(timestampHandle.attributes('aria-valuenow')).toBe('120')
+
+    await timestampHandle.trigger('keydown', { key: 'ArrowRight' })
+    expect(timestampHandle.attributes('aria-valuenow')).toBe('128')
+    expect(w.find('[data-testid="log-header"]').attributes('style')).toContain('128px')
+
+    timestampHandle.element.dispatchEvent(
+      new MouseEvent('pointerdown', { bubbles: true, clientX: 100 }),
+    )
+    timestampHandle.element.dispatchEvent(
+      new MouseEvent('pointermove', { bubbles: true, clientX: 132 }),
+    )
+    timestampHandle.element.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    await w.vm.$nextTick()
+    expect(timestampHandle.attributes('aria-valuenow')).toBe('160')
+    expect(w.find('[data-testid="log-header"]').attributes('style')).toBe(
+      w.find('[data-testid="log-entry"]').attributes('style'),
+    )
+  })
+
   it('hides the node name cell for framework logs', async () => {
     const w = mountPanel()
     const store = useLoggerStore()
