@@ -1,14 +1,16 @@
 # BioImageFlow Platform Specifications — v1 (MVP)
 
-The library specs are at /Users/amasson/Travail/bioimageflow-platform/bioimageflow/docs/source/specs.md . Make sure you read this first.
+Read the [BioImageFlow library specification](bioimageflow/docs/source/specs.md) first for the underlying workflow and tool contracts.
 
-This is the desktop-only MVP specification for the BioImageFlow GUI. It covers the core feature set needed for a fully functional single-user desktop application. For the comprehensive reference including webapp mode, sub-workflows, and planned future features, see `platform_specs_full.md`.
+> **Status: normative current base.** This document defines the implemented single-user platform baseline. [v2](platform_specs_v2.md) contains cumulative, implemented additions. [v3](platform_specs_v3.md) is a future webapp and multi-user proposal, not a description of current behavior.
+
+This is the desktop-oriented MVP specification for the BioImageFlow GUI. It covers the core feature set needed for a fully functional single-user application, including the plain-browser development runtime described below.
 
 ---
 
 ## 1. Overview
 
-The BioImageFlow GUI is a desktop application for building, executing, and inspecting bioimage analysis workflows visually. It wraps the BioImageFlow library (see `specs.md`) with a node-based editor, parameter panels, data viewers, and execution controls.
+The BioImageFlow GUI is a desktop application for building, executing, and inspecting bioimage analysis workflows visually. It wraps the [BioImageFlow library](bioimageflow/docs/source/specs.md) with a node-based editor, parameter panels, data viewers, and execution controls.
 
 **Architecture:** The GUI follows a client-server model. The backend is a Python server (FastAPI) that wraps the BioImageFlow library and exposes a REST + WebSocket API. The frontend is a Vue SPA that communicates with the backend exclusively through this API. The application is packaged with pywebview, giving access to native file dialogs.
 
@@ -56,7 +58,7 @@ The backend is stateless between request-local validation calls except for workf
 | `execution_task: Task | None` | Handle to the currently running execution (for cancellation) |
 | `napari_launcher: NapariLauncher | None` | Manages the Napari process (lazily created) |
 
-There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation, full Run, and Clear compile the complete graph submitted to that request in its explicit workflow storage context. Run Selected derives the selected nodes plus their upstream dependencies from the submitted graph and validates and compiles only that execution subgraph.
+There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation and Clear compile the complete graph submitted to that request in its explicit workflow storage context. Execution without a draft revision does the same as an explicit compatibility operation; revision-addressed execution first proves the submitted graph matches the named accepted draft revision and then compiles the backend-loaded draft. Run Selected derives the selected node IDs plus their upstream dependencies from that exact request or accepted-draft graph and validates and compiles only that execution subgraph.
 
 **Key design points:**
 - **Backend draft source of truth.** Open workflow state is persisted as a backend draft under the workflow directory. Frontend memory and IndexedDB are fallback/local interaction state, not the authoritative saved draft.
@@ -102,6 +104,7 @@ All endpoints are prefixed with `/api/v1/`. The version prefix allows future bre
 | `GET` | `/tools` | List all discovered tools with metadata |
 | `GET` | `/tools/{tool_name}/source` | Get the tool's source directory path |
 | `GET` | `/tools/packages` | List all packages (installed and known). Returns installed versions, available versions, tools per version, and environment status. This is the single source of truth for the Tools Panel — no need to cross-reference with `GET /tools`. |
+| `POST` | `/tools/packages/refresh` | Refresh the known and installed package catalog from its configured package-index sources. |
 | `POST` | `/tools/packages/{package_name}/install` | Install a package version into the tool store (body: `{version?: str}`) |
 | `DELETE` | `/tools/packages/{package_name}` | Uninstall a package version from the tool store (body: `{version?: str}`) |
 | `POST` | `/tools/environments/{env_name}/start` | Start a tool's Wetlands environment |
@@ -148,7 +151,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 | `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits via `POST /graph/nodes/{node_id}/output_schema`. |
 | `dataframe_output` | `boolean` | `true` means the node exposes its full output DataFrame via the `__dataframe_out` header pin. This is `true` for both `ProcessingTool` and `DataFrameTool` nodes in the current library. |
 
-**The `"any"` type.** The library reserves `"any"` (per library `specs.md` §2.4) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
+**The `"any"` type.** The library reserves `"any"` (see [library Section 2.4](bioimageflow/docs/source/specs.md#24-type-compatibility)) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
 ```json
 {
@@ -297,7 +300,7 @@ class CellposeSegmenter(ProcessingTool):
 
 #### 2.4.1b Error Response Format
 
-All API endpoints use a consistent error response format:
+Ordinary HTTP errors and request-body validation failures use the normalized response shape below. Endpoints with revision conflicts or other domain-specific failure contracts may return their documented typed body instead.
 
 ```json
 {
@@ -311,47 +314,48 @@ All API endpoints use a consistent error response format:
 
 | Code | Meaning | Example |
 |------|---------|---------|
-| 400 | Bad Request | Invalid JSON body, missing required fields |
+| 400 | Bad Request | Semantically invalid request or rejected path |
 | 404 | Not Found | Unknown node ID, unknown tool name, unknown workflow |
 | 409 | Conflict | Workflow name already exists, execution already running |
-| 422 | Validation Error | Parameter type mismatch, graph validation failure |
+| 422 | Validation Error | Invalid JSON/request schema, missing required fields, parameter type mismatch, or rejected graph |
 | 423 | Locked | Graph mutation attempted during execution |
 
 #### 2.4.2 Workflow Management
 
-Every user has exactly one active BioImageFlow workspace. In desktop mode this
-is a user-editable filesystem path stored in Settings. The default development
-workspace is `<repo>/workspace/`; packaged desktop builds may choose an
-OS-appropriate default such as `~/BioImageFlow/workspace/`. The workspace has
-fixed child roots:
+Every user has exactly one active BioImageFlow workspace. In desktop mode this is a user-editable filesystem path stored in Settings and defaults to `~/BioImageFlow/workspace/`. The current workspace authority is the workflow tree:
 
 ```text
 workspace/
-  workflows/     # saved workflow tree; each workflow may contain tools/
-  data/          # user-managed local data
-  outputs/       # workflow execution output and cache roots
+  workflows/                          # saved workflow tree
+    <workflow-id>/
+      workflow.json
+      tools/                           # custom tools owned by this workflow
 ```
+
+`GET /workspace` also reports reserved `tools_root` and `outputs_root` paths for compatibility, but current custom tools do not use `<workspace>/tools` and current execution outputs do not use `<workspace>/outputs` as their authority. Execution outputs default under `Settings.output_data_folder` (`~/bioimageflow_data/`) and are scoped below `workflows/<workflow-id>/`. Dataset uploads use the configured dataset root or the BioImageFlow home `datasets/` directory.
 
 Saved workflows are organized under `workspace/workflows/` as folders. Each workflow is a directory that contains `workflow.json` and optional workflow-local files such as `tools/`.
 
-Workflow identifiers are derived from their slash-separated directory paths relative to `workspace/workflows/`, for example `segmentation/nuclei`; they are not independent metadata. `name` remains in the wire model as a compatibility alias for the leaf slug, but new APIs and frontend state use `id`. Each folder or workflow path segment may contain letters, numbers, spaces, underscores, and hyphens. Empty segments, path traversal, and leading/trailing whitespace are rejected.
+Workflow identifiers are derived from their slash-separated directory paths relative to `workspace/workflows/`, for example `segmentation/nuclei`; they are not independent metadata. `WorkflowInfo.name` remains the required compatibility field and `WorkflowInfo.id` is an optional preferred path-derived identity, so clients fall back to `name` when `id` is absent. Each folder or workflow path segment may contain letters, numbers, spaces, underscores, and hyphens. Empty segments, path traversal, and leading/trailing whitespace are rejected.
 
 Renaming or moving a workflow or containing folder changes every affected path-derived workflow id. If an affected workflow already has a draft, the backend validates it before the move and atomically rewrites only its embedded `workflow_id` after the move; workflows without drafts do not gain one. A defensive draft read repairs a valid legacy identity mismatch to the requested route without discarding unknown JSON fields.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/workspace` | Return current workspace path, workflows root, tools root, outputs root, deployment mode, and whether the workspace path is admin-managed/read-only. |
-| `PATCH` | `/workspace` | Desktop-only workspace path change. Body: `{workspace_path: str}`. The backend creates missing child roots after validation. |
+| `PATCH` | `/workspace` | Desktop-only in-memory workspace path change. Body: `{workspace_path: str}`. The current endpoint does not create or migrate directories. |
 | `GET` | `/workflows/tree` | Return the folder/workflow tree rooted at `workspace/workflows/`. |
 | `POST` | `/workflows/folders` | Create a folder under `workspace/workflows/` (body: `{path: str}`). |
 | `PATCH` | `/workflows/folders/{path}` | Rename or move a workflow folder (body: `{new_path: str}`). |
 | `DELETE` | `/workflows/folders/{path}` | Delete a folder. Body: `{policy: "empty" \| "delete_children" \| "move_children_up"}`. `empty` rejects non-empty folders with **409 Conflict**. |
 | `GET` | `/workflows` | Compatibility flat list of saved workflows. New callers should use `/workflows/tree`. |
-| `POST` | `/workflows` | Create a new workflow (body: `{id: str, display_name?: str, description?: str}`). Returns **409 Conflict** if a workflow with the same id already exists, with a suggested alternative id. |
+| `POST` | `/workflows` | Create a new workflow (body: `{name: str, display_name?: str, description?: str, storage_path?: str}`). Returns **409 Conflict** if a workflow with the same path-derived name already exists, with a suggested alternative. |
 | `GET` | `/workflows/{id}` | Load a workflow (returns full graph JSON including GUI state). |
 | `PUT` | `/workflows/{id}` | Save workflow from the current graph/draft path. UI save flows flush/promote the backend draft first. Always succeeds even if graph validation errors exist. |
-| `DELETE` | `/workflows/{id}` | Delete a workflow file and its workspace-scoped output/cache directory. |
-| `PATCH` | `/workflows/{id}` | Update workflow metadata, duplicate, rename, or move (body: `{action: "update" \| "duplicate" \| "move", display_name?: str, description?: str, new_id?: str}`). |
+| `DELETE` | `/workflows/{id}` | Delete a workflow directory and its configured workflow output/cache directory. |
+| `PATCH` | `/workflows/{id}` | Update or duplicate a workflow (body: `{action: "update" \| "duplicate", display_name?: str, description?: str, new_name?: str, folder?: str, new_id?: str, storage_path?: str}`). Rename and move are update operations. |
+| `POST` | `/workflows/{id}/rebind-versions` | Rebind package references to currently active installed versions and return the refreshed workflow plus remaining dependency issues. |
+| `POST` | `/workflows/{id}/activate` | Publish the external active-workflow context and return the workflow; this does not select graph meaning for validation or execution. |
 
 Draft endpoints keep unsaved workflow state available to the frontend and terminal agents without overwriting `workflow.json` on every edit. Workflow ids use the same slash-separated path rules as workflow endpoints.
 
@@ -359,26 +363,18 @@ Draft endpoints keep unsaved workflow state available to the frontend and termin
 |--------|----------|-------------|
 | `GET` | `/workflow-drafts/{id}` | Return the live draft, or synthesize clean revision `0` from `workflow.json` when no draft exists. |
 | `PUT` | `/workflow-drafts/{id}` | Replace and validate the live draft using a complete graph and `expected_revision`; returns the accepted graph, incremented revision, validation result, and derived node statuses; rejects stale revisions and execution locks. |
-| `PATCH` | `/workflow-drafts/{id}` | Apply validated structured draft operations for agents, using `expected_revision`. |
+| `POST` | `/workflow-draft-operations/{id}` | Apply 1–10 validated structured operations for agents using `{expected_revision, operations, updated_by?, validate?}`. |
 
 
-**Workflow loading — missing package resolution:** When loading a workflow that requires tool packages or versions not in the tool store (based on the `tool_package` and `tool_package_version` fields in the serialized nodes), the server returns a `missing_packages` field in the response. The frontend shows a dialog: "This workflow requires packages not installed: [list with versions]. Install them?" with an "Install All" button.
+**Workflow loading — missing dependencies:** When loading a workflow that references unavailable package versions or tool classes, the server returns `missing_packages` and `missing_tools` arrays. The frontend dialog lists required versions, installed alternatives, affected nodes, and missing tools. When at least one alternative package version is installed, **Use installed versions** calls the workflow rebind endpoint; the current dialog does not install missing packages.
 
-**Workflow storage path normalization:** The backend resolves each workflow's
-runtime storage root to `workspace/outputs/<workflow_id>/` before handing a
-graph to the BioImageFlow library. Workflow id separators are sanitized where
-needed for filesystem safety. Relative paths must not reach tool execution as
-CWD-sensitive paths. This is required because ProcessingTool wrappers may run
-subprocesses with `cwd=context.work_dir` while passing framework-provided
-input/output paths directly to the subprocess. Explicit per-workflow
-`storage_path` metadata is preserved for export compatibility, but it is not the
-primary organization control in the platform UI.
+**Workflow storage path normalization:** The backend resolves each workflow's runtime storage root below the configured output-data base, by default `~/bioimageflow_data/workflows/<workflow_id>/`, before handing a graph to the BioImageFlow library. Workflow ID separators are sanitized where needed for filesystem safety. Relative paths must not reach tool execution as CWD-sensitive paths. This is required because ProcessingTool wrappers may run subprocesses with `cwd=context.work_dir` while passing framework-provided input/output paths directly to the subprocess. Explicit per-workflow `storage_path` metadata is preserved for export compatibility, but it is not the primary organization control in the platform UI.
 
 #### 2.4.3 Graph Schema and Validation
 
 ##### Graph JSON Schema (Pydantic Models)
 
-The full-state sync architecture has a single graph payload as its central contract. This schema is formally defined as Pydantic models in the backend, which serve as both validation and documentation. FastAPI auto-generates OpenAPI schemas from these models. The frontend generates TypeScript types from the OpenAPI spec using `openapi-typescript`.
+The full-state sync architecture has a single graph payload as its central contract. This schema is formally defined as Pydantic models in the backend, which serve as both validation and documentation. FastAPI exposes OpenAPI schemas for routed models, and the frontend generates the covered paths and schemas with `openapi-typescript`. The current workflow-draft client retains explicit manual response types in `frontend/src/api/workflowDrafts.ts`, so generated coverage must not be described as the only frontend API contract until those routes are present in the generated file.
 
 **Edge model — discriminated union:**
 
@@ -606,7 +602,6 @@ All validation transports use complete graph payloads. The server does not infer
 | `GET` | `/nodes/{node_id}/data` | Get the output DataFrame as JSON (paginated: `?page=0&page_size=50`) |
 | `GET` | `/nodes/{node_id}/data/csv` | Download output DataFrame as CSV |
 | `GET` | `/nodes/{node_id}/thumbnail` | Get image thumbnail (`?row=0&col=mask&size=128`) |
-| `GET` | `/nodes/{node_id}/status` | Get execution status + cache info |
 
 **Data response:**
 ```json
@@ -617,6 +612,7 @@ All validation transports use complete graph payloads. The server does not infer
     {"mask": "/path/to/mask1.tif", "cell_count": 42},
     {"mask": "/path/to/mask2.tif", "cell_count": 17}
   ],
+  "absolute_rows": [0, 1],
   "total_rows": 250,
   "page": 0,
   "page_size": 50,
@@ -663,7 +659,20 @@ Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not y
 | `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects errors before invalidating cache. Returns updated `NodeStatus` for the cleared nodes and all downstream dependents. |
 | `GET` | `/execution/status` | Get full execution state (see response schema below) |
 
-The `run` endpoint derives all execution meaning from the graph submitted with that request in the required workflow's storage context; it never loads graph meaning from a backend editor session or substitutes a different draft graph. A full Run validates and compiles that complete submitted graph. When `nodes` is provided, Run Selected first derives the selected nodes plus all upstream dependencies from the submitted graph, then validates and compiles only that execution subgraph.
+The `run` endpoint has no implicit backend editor session. Without `draft_revision`, it validates and compiles the complete submitted graph in the required workflow's storage context. With `draft_revision`, it explicitly loads the named accepted draft after using the submitted graph to prove equality with that revision. For either source, a full Run validates the complete graph, while Run Selected derives the selected node IDs plus all upstream dependencies and validates only that execution subgraph.
+
+Normal root-canvas runs verify the submitted graph against the accepted draft revision:
+
+```json
+{
+  "graph": {"nodes": [], "edges": []},
+  "workflow_name": "segmentation/nuclei",
+  "draft_revision": 12,
+  "nodes": null
+}
+```
+
+If `draft_revision` is present, the backend loads that workflow's accepted draft, rejects a stale revision with `draft_revision_conflict`, rejects a different submitted graph with `draft_graph_mismatch`, and compiles the backend-loaded accepted graph after equality is proven. Omitting `draft_revision` retains the request-local execution contract for explicit compatibility callers; it does not authorize the backend to infer graph meaning from request history.
 
 Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
 
@@ -705,7 +714,7 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
 | `workflow_id` | `str \| null` | Path-derived workflow identity compiled for that execution |
 | `draft_revision` | `int \| null` | Accepted root draft revision supplied by the originating canvas, when available |
 
-The frontend derives each canvas's visible status projection from its local provisional state, accepted validation result, and only those execution payloads whose workflow, origin canvas, and draft revision match. These statuses are never persisted into `NodeState`. `GET /execution/status` remains available for explicit status inspection and recovery callers, including external agents, without making request history a source of graph meaning. Normal WebSocket registration and reconnection recovery uses the contextual `status_snapshot` sent by the backend.
+The frontend derives each canvas's visible status projection from its local provisional state, accepted validation result, and only those execution payloads whose server wire context `{execution_id, workflow_id, draft_revision}` matches the locally captured originating canvas. Canvas ID is frontend-local correlation and is not a WebSocket field. These statuses are never persisted into `NodeState`. `GET /execution/status` remains available for explicit status inspection and recovery callers, including external agents, without making request history a source of graph meaning. Normal WebSocket registration and reconnection recovery uses the contextual `status_snapshot` sent by the backend.
 
 #### 2.4.6 Settings
 
@@ -717,17 +726,32 @@ The frontend derives each canvas's visible status projection from its local prov
 **Settings schema:**
 
 ```python
+class OMEROInstance(BaseModel):
+    name: str | None = None
+    host: str
+    port: int = 4064
+    username: str
+
 class Settings(BaseModel):
+    deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None              # e.g., "code {workspace_path} --goto {file_path}"
     napari_env_path: str | None = None              # Custom Napari Conda env path
-    workspace_path: str                             # Desktop user's BioImageFlow workspace path
+    thumbnail_env_path: str | None = None
+    omero_instances: list[OMEROInstance] = []
+    output_data_folder: str = "~/bioimageflow_data/"
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
-    execution_engine: Literal["sequential", "parsl"] = "sequential"
-    cache_max_executions: int | None = None         # Max cached executions per node (None = unlimited)
-    cache_max_age: str | None = None                # Max cache age (e.g., "30d", None = unlimited)
-    dev_mode: bool = True                           # Always true in GUI mode (cache invalidation on code change)
-    enable_unsafe_webapp_features: bool = False     # Debug-only; enables local source-editing actions in webapp mode
+    update_mode: Literal["auto", "manual"] | str = "auto"
+    execution_engine: Literal["sequential", "parallel"] = "sequential"
+    keyboard_shortcuts: dict[str, str] = {}
+    dev_mode: bool = True
+    enable_unsafe_webapp_features: bool = False
+    datasets_root: str | None = None
+    max_upload_size: int = 2 * 1024**3
+    workspace_path: str | None = None
+    workspaces_root: str | None = None
 ```
+
+`GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path` and `resolved_output_data_folder`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 
 `enable_unsafe_webapp_features` is a file-only debug switch for local testing of webapp mode. It is ignored in desktop mode. In webapp mode, the default `false` value keeps local source-editing features disabled; setting it to `true` re-enables actions that can modify or open server-side code, such as creating, renaming, deleting, and opening custom tool scripts. The Settings API must expose the value in `GET /settings` but reject attempts to change it through `PATCH /settings`.
 
@@ -743,8 +767,12 @@ In pywebview mode, path selection uses native file dialogs — no server-side br
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/nodes/{node_id}/image` | Serve an image-valued output cell; query parameters are `row`, `col`, optional `workflow_name`, and optional `format=ome-tiff`. |
+| `GET` | `/nodes/{node_id}/image/{filename}` | Serve the same image with a stable response filename for Avivator-compatible range and offset requests. |
 | `POST` | `/napari/open` | Open image(s) in Napari (body: `{paths: [str], clear_layers: bool}`) |
 | `GET` | `/napari/status` | Check if Napari is running |
+
+The node-image endpoints resolve the requested result inside the explicit workflow storage context. Existing image files are served with their inferred media type. `format=ome-tiff` preserves an existing OME-TIFF or converts a readable 2D, 3D, or 4D image into a bounded temporary OME-TIFF cache keyed by source path, modification time, and size. Missing results, cells, files, and unsupported conversions return explicit HTTP errors instead of silently selecting another workflow's data.
 
 The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in an isolated Conda environment (`napari` + `pyqt`) with its own Qt event loop. Communication uses `multiprocessing.connection` (Client/Listener pattern on localhost). The backend launches Napari lazily on the first `/napari/open` call and reconnects automatically if the process dies.
 
@@ -755,17 +783,9 @@ The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in
 | `POST` | `/editor/open` | Open a file/folder in the user's external editor |
 | `POST` | `/editor/open-tool` | Open the user's workspace as the editor project and focus a tool source file |
 
-The user specifies an external editor command in Settings (Section 3.13.1). The
-command may use `{workspace_path}` for the project folder and `{file_path}` for
-the focused file. For VS Code the recommended command is
-`code {workspace_path} --goto {file_path}`. If no external editor is configured,
-"Open in editor" copies the relevant path to clipboard with a toast.
+The user specifies an external editor command in Settings (Section 3.12.1). The command may use `{workspace_path}` for the project folder and `{file_path}` for the focused file. For VS Code the recommended command is `code {workspace_path} --goto {file_path}`. If no external editor is configured, "Open in editor" copies the relevant path to the clipboard with a toast.
 
-`/editor/open-tool` is used by tool rows and node source links. The backend
-always opens the current user's workspace folder as the editor project, then
-focuses the selected tool file. This applies to workflow-local custom tools and
-installed package tools; package source is focused as a file, not opened as the
-editor project.
+`/editor/open-tool` is used by tool rows and node source links. For a workflow-local custom tool, the backend opens the current workspace as the editor project and focuses the source below `workspace/workflows/<workflow-id>/tools/`. For an installed package tool, it opens the installed tool-store root when available and otherwise uses the source file's parent directory. v2 Section 2.2 defines the embedded-editor response contract.
 
 #### 2.4.10 Dataset Management
 
@@ -783,20 +803,18 @@ Dataset management provides server-side file storage for clients that cannot acc
 {datasets_root}/{timestamp}_{sanitized_filename}.{ext}
 ```
 
-- `{datasets_root}` defaults to `workspace/data/datasets/` in desktop mode and
-  is derived from the user's workspace. It is not configured per workflow.
+- `{datasets_root}` uses the configured application dataset root or defaults to `<BIOIMAGEFLOW_HOME>/datasets/`. It is not configured per workflow.
 - `{timestamp}` is the upload time in ISO 8601 compact format (e.g., `20260421T143022`).
 - `{sanitized_filename}` is the original filename after sanitization (see below).
 
-The `dataset_id` is a stable string derived from the stored filename (e.g., `d_20260421T143022_cells_tif`) and is URL-safe.
+The `dataset_id` is a URL-safe base64 string derived from the stored filename (for example, `d_MjAyNjA0MjFUMTQzMDIyX2NlbGxzLnRpZg`).
 
 **`GET /datasets` response:**
 
 ```json
 [
   {
-    "id": "d_20260421T143022_cells_tif",
-    "filename": "cells.tif",
+    "id": "d_MjAyNjA0MjFUMTQzMDIyX2NlbGxzLnRpZg",
     "original_filename": "cells.tif",
     "size": 52428800,
     "upload_date": "2026-04-21T14:30:22Z",
@@ -816,10 +834,12 @@ The `path` field is the absolute server-side path. This is the value that gets w
 {
   "uploaded": [
     {
-      "id": "d_20260421T143022_cells_tif",
-      "filename": "cells.tif",
+      "id": "d_MjAyNjA0MjFUMTQzMDIyX2NlbGxzLnRpZg",
+      "original_filename": "cells.tif",
       "path": "/abs/path/to/datasets/20260421T143022_cells.tif",
-      "size": 52428800
+      "size": 52428800,
+      "upload_date": "2026-04-21T14:30:22Z",
+      "content_type": "image/tiff"
     }
   ],
   "errors": [
@@ -835,7 +855,7 @@ Per-file errors are returned in the `errors` array so that a partially successfu
 **Upload validation:**
 
 - **Filename sanitization.** Path separators (`/`, `\`) are stripped. Only alphanumerics, hyphens, underscores, and dots are kept; any other character is replaced with `_`. The extension is preserved. Names longer than 255 characters are truncated while preserving the extension. The original filename is retained in the `original_filename` metadata field.
-- **File size limit.** Configurable per deployment, default **2 GB** per file. The authoritative per-file cap is enforced **mid-stream**: as each file in the multipart body is streamed to disk, a running byte counter aborts the upload (HTTP 413 for single-file requests, or a `file_too_large` entry in `errors[]` for multi-file requests) as soon as the cap is exceeded, and the partially-written file is `unlink`ed. `Content-Length` is additionally used as a coarse DoS guard: a request whose declared body size clearly exceeds `max_upload_size * MAX_FILES_PER_REQUEST` (e.g., 2 GB × 32 = 64 GB) is rejected up-front with HTTP 413, before any body is read. It is **not** used as a per-file cap, because a multi-file body legitimately contains multiple files plus multipart boundaries and form fields — a valid N-file upload can have a total size exceeding the per-file cap.
+- **File size limit.** Configurable per deployment, default **2 GB** per file. The authoritative per-file cap is enforced **mid-stream**: as each file in the multipart body is streamed to disk, a running byte counter stops that file, removes the partial write, and reports `file_too_large` in the HTTP 200 response's `errors[]` array. `Content-Length` is additionally used as a coarse DoS guard: a request whose declared body size clearly exceeds `max_upload_size * MAX_FILES_PER_REQUEST` (e.g., 2 GB × 32 = 64 GB) is rejected up-front with HTTP 413, before any body is read. It is **not** used as a per-file cap, because a multi-file body legitimately contains multiple files plus multipart boundaries and form fields — a valid N-file upload can have a total size exceeding the per-file cap.
 - **Path traversal prevention.** The server resolves the final storage path with `Path.resolve()` and verifies it starts with the configured `{datasets_root}`. Any escape attempt is rejected with HTTP 400 `{"error": "path_traversal", "detail": "Invalid filename"}`. This is defensive programming — sanitization already prevents path separators, but resolve-then-check is the authoritative gate.
 - **Content type.** No enforcement in v1. The `content_type` field is informational, derived from the extension.
 
@@ -856,9 +876,15 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 | `status_snapshot` | `{state, last_result?, progress?, node_statuses, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state sent on connection and used for context-aware recovery |
 | `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
 | `tool_reload` | `{tool_name, tool_metadata}` | A tool's source changed (file watcher). Includes full updated tool schema. |
+| `tool_removed` | `{tool_name}` | A previously registered tool source was removed or no longer loads. |
+| `system_error` | `{code, detail, timestamp}` | A non-request system failure that belongs in the global error history. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
 | `environment_status` | `{env_name: str, status: "stopped" | "creating" | "running"}` | Environment state change (asynchronous creation, manual start/stop) |
+| `workflow_tree_changed` | `{action, workflow_id?}` | Workflow or folder catalog mutation; clients refresh the workflow tree. |
+| `active_workflow_changed` | `{workflow_id, updated_by}` | External active-workflow context changed; clients refresh matching workflow state without treating it as graph authority. |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
+
+`workflow_tree_changed` and `active_workflow_changed` are current runtime compatibility notifications emitted by the connection manager, but they are not yet members of the backend's typed `ServerMessage` union or generated frontend API types. Consumers must narrow them by their literal `type` until that schema gap is closed.
 
 There is no `workflow_saved` WebSocket event in the MVP contract. Save/export flows reconcile through the draft and workflow REST APIs instead of relying on a separate save notification.
 
@@ -1194,9 +1220,9 @@ Each output field from `Outputs` is displayed with editable path templates for p
 
 - **Label:** Field name
 - **Type badge:** Visual indicator of the type (ImageFile, int, etc.)
-- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImageFile`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the library's output templating engine (see `specs.md` Section 7.1). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
+- **Path template editor:** *Only for `ProcessingTool` nodes.* For path-typed outputs (`Path`, `ImageFile`), a text input showing the current output path template (e.g., `{input_image.stem}_mask_{row_index}.png`). The user can edit this to customize output file naming. The template syntax follows the [library's output templating engine](bioimageflow/docs/source/specs.md#71-output-templating-engine). Available template variables are shown in a dropdown/autocomplete. Custom templates are stored in `NodeState.output_templates` (a dedicated dict, separate from `parameters`, to avoid mixing user-facing parameters with internal metadata). If a field has no entry in `output_templates`, the tool's default template is used.
 - **Non-path outputs** (int, float, str, etc.) are shown read-only.
-- **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImageFile` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept (see `specs.md` Section 2080: *"DataFrameTool does not use output templating — it returns DataFrames directly."*). The tool's `tool_type` field on `ToolMetadata` is the gate.
+- **`DataFrameTool` outputs are column declarations, not file paths.** When `Outputs` is declared on a `DataFrameTool` (either explicit `IOModel` columns or a `Passthrough` marker), each field describes a column produced by the source/transform DataFrame, not a file written to disk. No path-template editor is shown — even for fields typed as `Path`/`ImageFile` — and `NodeState.output_templates` is not initialized for these nodes. Output templating is a `ProcessingTool`-only concept; [library Section 3.5](bioimageflow/docs/source/specs.md#35-dataframetool) defines `DataFrameTool` as returning DataFrames directly. The tool's `tool_type` field on `ToolMetadata` is the gate.
 
 #### 3.5.4b Resource Configuration
 
@@ -1293,11 +1319,11 @@ workspace/
   workflows/
     my_workflow/
       workflow.json
+      tools/
     segmentation/
       nuclei/
         workflow.json
         tools/
-  tools/
 ```
 
 Each `workflow.json` stores the platform document for the workflow, including
@@ -1332,31 +1358,25 @@ opened, or treated as workflow id collisions.
   system file browser. It does not show a separate workflow-file row because
   that duplicates the storage/path information.
 
-Clicking a row selects it. Double-clicking a workflow, pressing Enter on a
-selected workflow, or using the Open action opens it, subject to the unsaved
-changes prompt. Dragging from anywhere on a workflow row onto a folder moves the
-workflow within the tree, and dragging that same row onto the canvas creates a
-SubWorkflowNode. Drops that would make a workflow contain itself directly or
-indirectly are rejected. Dragging a folder onto another folder moves the full
-folder subtree, including child folders and workflows.
+Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selected workflow, or using the Open action opens it in a root canvas tab or activates the existing tab already presenting that workflow. Dragging from anywhere on a workflow row onto a folder moves the workflow within the tree, and dragging that same row onto the canvas creates a SubWorkflowNode. Drops that would make a workflow contain itself directly or indirectly are rejected. Dragging a folder onto another folder moves the full folder subtree, including child folders and workflows.
 
 **Actions:**
 - **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the filesystem id, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; explicit ids and paths remain API capabilities. On id conflict, the server suggests an alternative.
 - **New folder:** Creates a folder under the selected folder or the tree root.
-- **Open workflow:** Opens the selected saved workflow. Opening a new workflow closes the current one (with save prompt).
+- **Open workflow:** Opens the selected saved workflow in a root canvas tab or activates its existing tab. The startup-loaded root currently uses the bootstrap canvas compatibility path documented by v2 rather than the canonical later-root creation path.
 - **Edit workflow:** The current panel edits a workflow's display name and description. These metadata updates preserve the path-derived workflow `id`. Dragging a workflow row to a folder is the current panel control for moving it; the resulting path and `id` change together, and any existing embedded draft identity follows that route. Editable slug and path-id fields remain API capabilities rather than current panel controls.
 - **Save:** Saves current workflow state including GUI state (Ctrl+S). The frontend flushes the current graph to the backend draft, verifies the draft revision, then saves/promotes that draft through the workflow save path. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
 - **Save as / Duplicate:** Save the current draft under a new id; duplicate saved workflows without copying stale unsaved state unless the current draft is explicitly saved as the new workflow.
 - **Import / Export:** Uses the BioImageFlow library import/export API. The
   platform does not reimplement the library archive format. Export saves/promotes
   a dirty draft first so the archive matches the current editable graph.
-- **Delete:** Delete with confirmation. Deletes the workflow file, workflow-local `.bioimageflow` draft metadata, workspace-scoped output/cache directory, and any local IndexedDB recovery state for this workflow. A confirmed delete of the active root workflow may exempt only the root canvas owner captured when the dialog opened, and is rejected if any other root or nested canvas owns the same workflow. The captured root canvas closes only after the delete succeeds; a failed delete leaves it mounted and keeps the confirmation available for retry. All other identity-changing or removal operations require every affected workflow and sub-workflow tab to be closed before the request. Folder deletion uses the platform dialog system. For non-empty folders, the dialog offers three choices: delete all child workflows/folders, move direct children up to the deleted folder's parent, or cancel.
+- **Delete:** Delete with confirmation. The backend removes the workflow directory, its draft metadata, and the configured workflow output/cache directory; the frontend removes local recovery state after success. A confirmed delete may exempt only the captured active root canvas, and any other root or nested owner blocks the request. Exact deleted-tab closure and deterministic activation of an existing remaining canvas are known lifecycle gaps and are not current guarantees. All other identity-changing or removal operations require every affected workflow and sub-workflow tab to be closed before the request. Folder deletion uses the platform dialog system. For non-empty folders, the dialog offers three choices: delete all child workflows/folders, move direct children up to the deleted folder's parent, or cancel.
 
 ### 3.9 Execution Panel (Menu / Toolbar)
 
 **Buttons:**
 - **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" Pending validation or draft persistence is a command barrier rather than a disabled state: Run flushes the owning canvas, checks draft revision freshness, waits for accepted validation, and then submits that exact graph and revision. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
-- **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
+- **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected stable node IDs. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
 **During execution — Non-Modal Execution Banner:**
@@ -1373,7 +1393,11 @@ Instead of a blocking modal, the GUI shows a **persistent execution banner** at 
 
 ### 3.10 Image Viewer
 
-Napari is managed by the backend via Wetlands (isolated Conda environment). The backend uses a `NapariLauncher` that:
+Image-valued Data Table cells expose both the managed desktop viewer and a browser viewer action.
+
+**Avivator:** The browser action requests the selected cell through the workflow-scoped node-image endpoint with `format=ome-tiff`, then opens the external Avivator application in a Dockview iframe using that absolute image URL. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
+
+**Napari:** Napari is managed by the backend via Wetlands (isolated Conda environment). The backend uses a `NapariLauncher` that:
 
 1. Creates or reuses a Conda environment with `napari` and `pyqt` via Wetlands
 2. Launches a `napari_manager.py` script in that environment
@@ -1412,19 +1436,20 @@ A dedicated panel or modal for application configuration. Settings are persisted
 
 #### 3.12.3 Execution
 
-- **Execution engine:** Dropdown to select `sequential` or `parsl`.
-- **Cache max executions:** Number spinner (or empty for unlimited). Maximum cached executions per node.
-- **Cache max age:** Text input (e.g., "30d", or empty for unlimited). Maximum cache age.
+- **Execution backend:** Read-only summary of the effective backend (`Automatic`, `Wetlands`, or `Direct`) when supplied by the runtime settings contract.
+- **Scheduling:** Read-only summary of `Sequential` or `Parallel`, derived from the effective execution settings and the compatibility `execution_engine` field.
 
 #### 3.12.4 Storage
 
-- **Workspace path:** editable folder picker in desktop mode. Changing it
-  switches the one active per-user workspace after confirmation. The backend
-  creates `workflows/`, `data/`, and `outputs/` if missing.
-- **Workflows root:** read-only display of `workspace/workflows/`.
-- **Outputs root:** read-only display of `workspace/outputs/`.
-- **Tool store path** display (default: `~/.bioimageflow/tool_packages/`)
-- **Wetlands path** display (default: `~/.bioimageflow/wetlands/`, resolved by `bioimageflow.paths.get_wetlands_path()`)
+- **Workspace path:** read-only display with a native Change action in desktop pywebview mode. The current workspace endpoint changes the active path in memory but does not migrate or create directories.
+- **Output data folder:** resolved path display with Reveal and, in desktop mode, Change actions. Changing it does not move existing data.
+- **Tool store path:** read-only resolved path display (default: `~/.bioimageflow/tool_packages/`, with environment overrides applied).
+
+#### 3.12.5 OMERO
+
+OMERO data access is supplied by dedicated tool packages; the platform UI manages credentials but does not browse or broker OMERO data itself.
+
+The OMERO tab lists named server instances with host, port, username, password status, and Add, Save, Duplicate, and Remove actions. The display name defaults to `{host}:{username}` and must be unique. Passwords are submitted only when explicitly saved, stored through the operating-system keyring under service `bioimageflow-omero` and username `{host}:{port}:{username}`, omitted from settings JSON, and represented by `password_stored` in API responses. Removing an instance asks for confirmation and removes its stored credential.
 
 ### 3.13 Drag and Drop (File Import)
 
@@ -1554,7 +1579,9 @@ App starts
   +--> Application ready
 ```
 
-**Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the backend draft differs from the saved workflow. The asterisk disappears after save/promotion. Closing a workflow with unsaved changes shows a confirmation: "Discard unsaved changes?"
+**Unsaved state indicator:** The workflow title in the menu bar shows `"My Workflow *"` when the backend draft differs from the saved workflow. The asterisk disappears after save/promotion.
+
+Root-canvas close does not yet have a normative Save/Discard/Cancel contract. In particular, closing a dirty root must not be documented as discarding until the UI can restore both the saved workflow and its accepted draft. The implemented nested-snapshot discard behavior is specified separately in v2.
 
 Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks revision freshness, and saves/promotes the draft to `workflow.json`.
 
@@ -1576,7 +1603,10 @@ The workflow file (JSON) contains both the library workflow data and GUI-specifi
 
 ```json
 {
-  "workflow": { "...library export format (includes tool_package + tool_package_version per node)..." },
+  "workflow": {
+    "nodes": [],
+    "edges": []
+  },
   "gui": {
     "nodes": {
       "cellpose_segmenter_1": {
@@ -1608,15 +1638,13 @@ Undo/redo is purely client-side. The frontend maintains an undo stack of graph s
 
 A workflow references a tool that is no longer installed (package uninstalled, or workflow shared from another machine).
 
-The node is rendered with a red "Tool not found" badge. The Node Panel shows the tool name and a "Install package" button (if the package is known in the tool store registry). The node cannot be executed until the tool is available.
+The node is rendered with a red "Tool not found" badge and cannot be executed until the tool becomes available. Dependency details and any available version-rebind action are presented by the workflow dependency dialog; the current node UI does not install a package directly.
 
 ### 5.2 Missing Package Version
 
 A workflow requires a tool package version that is not in the tool store (e.g., workflow saved with `bioimageflow-cellpose==1.2.0` but only `1.3.0` is installed).
 
-On load, the server reports missing packages in the load response. The frontend shows a dialog: "This workflow requires packages not installed: [list]. Install them?" Options:
-- **Install required versions:** Installs the exact versions into the tool store.
-- **Use installed versions:** Updates the workflow to use the versions currently in the tool store. All affected nodes are marked Out-of-date.
+On load, the server reports missing package versions and tool classes in the workflow response. The dependency dialog displays required and installed versions plus affected nodes. **Use installed versions** is enabled when package alternatives exist; it calls `POST /workflows/{id}/rebind-versions`, updates the saved workflow references, and marks affected nodes for revalidation. Installing an absent required version remains a separate Tools Panel action.
 
 ---
 
@@ -1641,11 +1669,14 @@ On load, the server reports missing packages in the load response. The frontend 
 
 ## 7. API Endpoint Summary
 
+This table summarizes the primary frontend and agent routes. The generated OpenAPI document is the complete current HTTP surface.
+
 | # | Method | Endpoint | When used |
 |---|--------|----------|-----------|
 | 1 | `GET` | `/api/v1/tools` | Startup; after package install/uninstall |
 | 2 | `GET` | `/api/v1/tools/{tool_name}/source` | "Open in editor" button in Tools Panel |
 | 3 | `GET` | `/api/v1/tools/packages` | Startup; Tools Panel tool list and Manage Tools dialog |
+| 3a | `POST` | `/api/v1/tools/packages/refresh` | Refresh package-index metadata for known and installed packages |
 | 4 | `POST` | `/api/v1/tools/packages/{name}/install` | Row-level version install button in Manage Tools dialog |
 | 5 | `DELETE` | `/api/v1/tools/packages/{name}` | Row-level uninstall button in Manage Tools dialog |
 | 5a | `POST` | `/api/v1/tools/packages/import-url` | Inline **Install tool package** footer; GitHub/GitLab URL source |
@@ -1664,14 +1695,19 @@ On load, the server reports missing packages in the load response. The frontend 
 | 17 | `PUT` | `/api/v1/workflows/{id}` | Ctrl+S save after draft flush/promotion; "Save" menu |
 | 18 | `DELETE` | `/api/v1/workflows/{id}` | "Delete workflow" menu |
 | 19 | `PATCH` | `/api/v1/workflows/{id}` | Update, rename/move, or duplicate workflow |
+| 19a | `POST` | `/api/v1/workflows/{id}/rebind-versions` | Use currently active installed package versions and refresh dependency metadata |
+| 19b | `POST` | `/api/v1/workflows/{id}/activate` | Update external active-workflow context without selecting graph authority |
 | 20 | `GET` | `/api/v1/workflow-drafts/{id}` | Workflow open/startup draft load; agent graph inspection |
 | 21 | `PUT` | `/api/v1/workflow-drafts/{id}` | Per-root-canvas full-graph persistence and validation with `expected_revision` |
-| 22 | `PATCH` | `/api/v1/workflow-drafts/{id}` | Structured validated draft operations for agents |
+| 22 | `POST` | `/api/v1/workflow-draft-operations/{id}` | Structured validated draft operations for agents |
 | 23 | `PUT` | `/api/v1/graph` | Stateless request-local compatibility or transient graph validation; normal root canvases use validated draft writes |
+| 23a | `POST` | `/api/v1/graph/nodes/{node_id}/output_schema` | Request-local dynamic output-schema resolution from a complete graph |
 | 24 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
 | 25 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
 | 26 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
-| 27 | `GET` | `/api/v1/nodes/{node_id}/status` | WebSocket reconnection; resync node states |
+| 26a | `GET` | `/api/v1/nodes/{node_id}/image` | Serve an image-valued result cell, optionally converted to OME-TIFF |
+| 26b | `GET` | `/api/v1/nodes/{node_id}/image/{filename}` | Serve the same image with an Avivator-compatible response filename |
+| 26c | `POST` | `/api/v1/nodes/{node_id}/reveal` | Reveal the image-valued result cell in the system file browser |
 | 28 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons after draft freshness check |
 | 29 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
 | 30 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
@@ -1687,8 +1723,6 @@ On load, the server reports missing packages in the load response. The frontend 
 | 40 | `GET` | `/api/v1/datasets` | Dataset Browser modal; populate list in browser mode |
 | 41 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal upload button; drag-and-drop in browser mode |
 | 42 | `DELETE` | `/api/v1/datasets/{dataset_id}` | Dataset Browser modal delete button |
-
-Total: 42 endpoint entries.
 
 ---
 

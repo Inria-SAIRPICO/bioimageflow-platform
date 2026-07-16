@@ -1,15 +1,16 @@
 # BioImageFlow Platform Specifications — v2
 
-The library specs are at /Users/amasson/Travail/bioimageflow-platform/bioimageflow/docs/source/specs.md .
-> Builds on [platform_specs_v1.md](platform_specs_v1.md). This document describes features added in v2.
+Read the [BioImageFlow library specification](bioimageflow/docs/source/specs.md) for the underlying workflow and tool contracts.
 
-All endpoints listed below use the `/api/v1/` prefix. The architecture, technology stack, full-state sync model, and deployment modes remain unchanged from v1.
+> **Status: normative implemented additions.** This document builds cumulatively on the [v1 current base](platform_specs_v1.md) and defines features implemented by the current platform. [v3](platform_specs_v3.md) remains a future proposal.
+
+All endpoints listed below use the `/api/v1/` prefix. The architecture, technology stack, and draft-backed full-state synchronization model remain as specified in v1.
 
 ---
 
 ## 1. Sub-Workflow Support
 
-Sub-workflows allow grouping a set of nodes into a single reusable unit. The BioImageFlow library provides full sub-workflow support (see `specs.md` Section 14). The GUI adds visual creation, editing, rendering, and execution of sub-workflows.
+Sub-workflows allow grouping a set of nodes into a single reusable unit. The BioImageFlow library provides [sub-workflow support](bioimageflow/docs/source/specs.md#14-sub-workflows). The GUI adds visual creation, editing, rendering, and execution of sub-workflows.
 
 ### 1.1 Creating a Sub-Workflow
 
@@ -43,7 +44,7 @@ selected places the new workflow in that folder. Dragging workflows or folders
 onto a folder moves the corresponding workflow or full folder subtree. Only
 directories containing `workflow.json` are listed as workflows.
 
-Workflow ids are derived from these directory paths. Display metadata does not change identity. Moving a workflow or folder changes each affected id, and every existing moved draft is preflight-validated before its embedded `workflow_id` is atomically updated to the new route. A workflow without a draft remains without one. Mounted root and nested canvas identities are immutable, so the frontend rejects any affected rename, move, or promotion before the request until all workflow and sub-workflow tabs presenting those routes are closed. A confirmed deletion of the active root workflow may exempt only the root canvas captured when the dialog opened; it closes that canvas only after the delete succeeds, and any other root or nested owner still blocks the request. All other deletions require every affected workflow and sub-workflow tab to be closed first.
+Workflow ids are derived from these directory paths. Display metadata does not change identity. Moving a workflow or folder changes each affected id, and every existing moved draft is preflight-validated before its embedded `workflow_id` is atomically updated to the new route. A workflow without a draft remains without one. Mounted root and nested canvas identities are immutable, so the frontend rejects any affected rename, move, or promotion before the request until all workflow and sub-workflow tabs presenting those routes are closed. A confirmed deletion of the active root workflow may exempt only the root canvas captured when the dialog opened, and any other root or nested owner still blocks the request. Exact closure of that deleted root and deterministic activation of an existing remaining canvas are known lifecycle gaps rather than current v2 guarantees. All other deletions require every affected workflow and sub-workflow tab to be closed first.
 
 The platform asks the BioImageFlow library to build and validate the
 sub-workflow. Recursive containment is rejected by the library validation layer;
@@ -87,7 +88,7 @@ Per the library spec:
 
 ### 1.5 Publish Toggle on Parameters
 
-Each connectable input row in the Node Panel (Section 3.5.3 of the full spec) includes a **Publish toggle** — a two-state button (+ icon). The toggle is shown for normal workflow tabs and sub-workflow tabs because any workflow may later be dragged into another workflow and become a SubWorkflowNode. Inputs with `connectable = "never"` do not show a Publish toggle and cannot be exposed as published input pins.
+Each connectable input row in the Node Panel ([v1 Section 3.5.3](platform_specs_v1.md#353-input-parameters)) includes a **Publish toggle** — a two-state button (+ icon). The toggle is shown for normal workflow tabs and sub-workflow tabs because any workflow may later be dragged into another workflow and become a SubWorkflowNode. Inputs with `connectable = "never"` do not show a Publish toggle and cannot be exposed as published input pins.
 
 | Element | Description |
 |---------|-------------|
@@ -102,7 +103,7 @@ When an input is published:
 
 ### 1.6 Publish Toggle on Outputs
 
-Each output field in the Node Panel (Section 3.5.4 of the full spec) includes a **Publish toggle** (+ icon). Published outputs become sub-workflow Outputs, visible as output pins on the parent SubWorkflowNode.
+Each output field in the Node Panel ([v1 Section 3.5.4](platform_specs_v1.md#354-output-fields)) includes a **Publish toggle** (+ icon). Published outputs become sub-workflow Outputs, visible as output pins on the parent SubWorkflowNode.
 
 **Default behavior:** Terminal node outputs are published by default when a sub-workflow is created. Non-terminal node outputs are unpublished by default.
 
@@ -118,36 +119,37 @@ Sub-workflows may contain other sub-workflows. Double-clicking a nested sub-work
 
 ### 1.8 Schema Changes
 
-The root `GraphState` carries `published_inputs` and `published_outputs` in addition to `nodes` and `edges`. This gives every saved workflow the same published interface model as a SubWorkflowNode. SubWorkflowNodes are represented as regular `NodeState` entries with `tool_name` set to the sub-workflow's identifier. The sub-workflow's internal DAG is stored as a nested `GraphState`; the parent node also stores a snapshot of the nested graph's published interface for rendering pins and validating connections:
+The root `GraphState` carries `published_inputs` and `published_outputs` in addition to `nodes` and `edges`. This gives every saved workflow the same published interface model as a SubWorkflowNode. SubWorkflowNodes are regular `NodeState` entries with sentinel `tool_name: "__sub_workflow__"`; `source_workflow_name` carries the path-derived ID when the nested graph came from a saved workflow. The sub-workflow's internal DAG is stored as a nested `GraphState`; the parent node also stores a snapshot of the nested graph's published interface for rendering pins and validating connections:
 
 ```json
 {
-  "workflow": {
-    "nodes": [
-      {
-        "id": "segment_and_measure_1",
-        "name": "Segment and Measure 1",
-        "tool_name": "__sub_workflow__",
-        "source_workflow_name": "segment_and_measure",
-        "position": [400, 300],
-        "parameters": {
-          "cellpose_segmenter_1.diameter": 30.0
-        },
-        "sub_workflow": {
-          "nodes": ["...internal nodes..."],
-          "edges": ["...internal edges..."],
-          "published_inputs": ["...published input descriptors..."],
-          "published_outputs": ["...published output descriptors..."]
-        },
-        "published_inputs": ["...published input descriptors..."],
-        "published_outputs": ["...published output descriptors..."]
-      }
-    ]
-  }
+  "nodes": [
+    {
+      "id": "segment_and_measure_1",
+      "name": "Segment and Measure 1",
+      "tool_name": "__sub_workflow__",
+      "source_workflow_name": "segment_and_measure",
+      "position": [400, 300],
+      "parameters": {},
+      "sub_workflow": {
+        "nodes": [],
+        "edges": [],
+        "published_inputs": [],
+        "published_outputs": []
+      },
+      "published_inputs": [],
+      "published_outputs": []
+    }
+  ],
+  "edges": [],
+  "published_inputs": [],
+  "published_outputs": []
 }
 ```
 
-Canvas tabs are unified: opening a saved workflow or opening a SubWorkflowNode creates a canvas tab named after that workflow/sub-workflow. The initial startup canvas tab is renamed to the loaded workflow display name as soon as its workflow context is known; it must not remain generically named "Canvas" after a workflow has loaded. Each canvas owns its graph snapshot, root-workflow or private-snapshot identity, revision state, synchronization coordinator, undo history, and derived status projection. The Node Panel, selected nodes, validation, and execution controls resolve through the active canvas tab, and switching tabs updates the workflow title shown in the top bar. There is no separate sub-workflow-only editor toolbar.
+Opening a saved workflow or a SubWorkflowNode creates or activates a named canvas tab. Each mounted canvas owns its graph snapshot, root-workflow or private-snapshot identity, revision state, synchronization coordinator, undo history, and derived status projection. The Node Panel, selected nodes, validation, and execution controls resolve through the active canvas tab, and switching tabs updates the workflow title shown in the top bar. There is no separate sub-workflow-only editor toolbar.
+
+**Current startup compatibility exception:** the initially loaded root remains mounted under the bootstrap canvas panel and is associated with its workflow through alias/tracking logic, while later root workflows use `workflow:<id>` panel identity. The visible tab is renamed to the workflow display name, reopening that workflow activates the existing bootstrap tab, and later roots join its tab group. This preserves current activation and placement behavior but is not a unified root-canvas lifecycle or canonical startup panel identity.
 
 **Validation:** Validated root draft writes and private nested-snapshot writes call the BioImageFlow library's recursive sub-workflow validator and surface scoped errors. The stateless `PUT /graph` compatibility/transient-validation endpoint invokes the same validator without persisting graph state. Errors within a sub-workflow reference the scoped node path, for example `"node": "segment_and_measure_1/cellpose_segmenter_1"`.
 
@@ -158,7 +160,6 @@ Canvas tabs are unified: opening a saved workflow or opening a SubWorkflowNode c
 - **Execution banner:** During execution, the progress bar includes flattened internal nodes. The banner shows the scoped node name (e.g., `segment_and_measure_1/cellpose_segmenter_1`).
 - **Data Table:** Selecting a SubWorkflowNode shows the published outputs in the Data Table.
 - **Logger Panel:** Logs from internal nodes are prefixed with the scoped name.
-- **Large workflow warning:** The node count threshold applies to the flattened total (including internal sub-workflow nodes).
 
 ---
 
@@ -187,9 +188,12 @@ Optional query parameter:
 ```json
 {
   "available": true,
-  "url": "http://localhost:8443",
-  "version": "4.23.0",
-  "control_available": true
+  "url": "http://127.0.0.1:32344",
+  "version": "4.106.2",
+  "control_available": true,
+  "launch_attempted": false,
+  "error_code": null,
+  "error_detail": null
 }
 ```
 
@@ -200,7 +204,10 @@ If code-server is not installed or not running:
   "available": false,
   "url": null,
   "version": null,
-  "control_available": false
+  "control_available": false,
+  "launch_attempted": false,
+  "error_code": null,
+  "error_detail": null
 }
 ```
 
@@ -219,7 +226,20 @@ Opens a file or folder in the code editor.
 **Behavior:**
 1. If the user has configured an **external editor command** in Settings (e.g., `code {workspace_path} --goto {file_path}`), the backend launches that command with placeholders substituted.
 2. Otherwise, if code-server is available, the backend instructs code-server to open the path.
-3. If neither is available, the endpoint returns `200` with `{"fallback": "clipboard"}`. The frontend copies the path to the clipboard and shows a toast: "Path copied — open in your local editor."
+3. If neither is available, the endpoint returns the normal `EditorOpenResponse` with `opened: false` and `method: "clipboard"`. The frontend copies `path` to the clipboard and shows the response message.
+
+```json
+{
+  "opened": false,
+  "method": "clipboard",
+  "url": null,
+  "path": "/path/to/tool/source",
+  "project_path": null,
+  "message": "Path copied - open in your local editor.",
+  "error_code": null,
+  "error_detail": null
+}
+```
 
 #### `POST /editor/open-tool`
 
@@ -241,16 +261,19 @@ The endpoint returns the standard editor-open response; `path` is the focused to
 {
   "opened": true,
   "method": "embedded",
-  "url": "http://localhost:8443/?folder=/Users/alice/BioImageFlow/workspace&file=/Users/alice/BioImageFlow/workspace/workflows/segmentation/tools/cellpose_segmenter.py",
-  "path": "/Users/alice/BioImageFlow/workspace/workflows/segmentation/tools/cellpose_segmenter.py",
-  "message": null
+  "url": "http://127.0.0.1:32344/?folder=%2FUsers%2Falice%2FBioImageFlow%2Fworkspace",
+  "path": "/Users/alice/BioImageFlow/workspace/workflows/segmentation/nuclei/tools/cellpose_segmenter.py",
+  "project_path": "/Users/alice/BioImageFlow/workspace",
+  "message": null,
+  "error_code": null,
+  "error_detail": null
 }
 ```
 
 **Behavior:**
 1. If the tool is a custom workflow tool, the editor project path is the current user's workspace folder and the focused file points under `workspace/workflows/<id>/tools/`.
 2. If the tool comes from an installed package, the editor project path is the installed tool-store root when the package source lives under that store; otherwise it falls back to the source file's parent directory.
-3. Embedded code-server opens the project folder and focuses the tool source file.
+3. For embedded code-server, the response URL selects only the project folder. The frontend loads that folder and focuses the response `path` through the opener endpoint without adding a `file` query parameter to the folder URL.
 4. External editor commands receive `{workspace_path}` as the editor project folder and `{file_path}` as the focused source file, for example `code {workspace_path} --goto {file_path}`.
 
 ### 2.3 Frontend
@@ -266,11 +289,11 @@ The endpoint returns the standard editor-open response; `path` is the focused to
   the installed tool-store project and focus the package source file.
 
 **Interactions with tool development:**
-- Editing tool source code in the Code Editor triggers the existing **tool hot-reload** mechanism (v1, Section 2.7 of full spec). Changes are detected by the file watcher, and affected nodes are updated automatically.
+- Editing tool source code in the Code Editor triggers the existing **tool hot-reload** mechanism ([v1 Section 2.7](platform_specs_v1.md#27-tool-hot-reload)). Changes are detected by the file watcher, and affected nodes are updated automatically.
 
 ### 2.4 Settings Changes
 
-The Settings Panel (Section 3.13 of the full spec) includes a Code Editor section:
+The Settings Panel ([v1 Section 3.12](platform_specs_v1.md#312-settings-panel)) includes a Code Editor section:
 
 | Field | Widget | Description |
 |-------|--------|-------------|
@@ -303,6 +326,9 @@ The clipboard payload is self-contained and includes all information needed to r
 ```json
 {
   "bioimageflow_clipboard": true,
+  "clipboard_version": 2,
+  "source_workflow_name": "segmentation/nuclei",
+  "created_at": "2026-07-16T12:00:00.000Z",
   "nodes": [
     {
       "id": "cellpose_segmenter_1",
@@ -318,20 +344,11 @@ The clipboard payload is self-contained and includes all information needed to r
       "tool_package_version": "1.2.0"
     }
   ],
-  "edges": [
-    {
-      "type": "column_ref",
-      "id": "edge_1",
-      "source_node": "cellpose_segmenter_1",
-      "source_output": "mask",
-      "target_node": "stats_1",
-      "target_input": "label_image"
-    }
-  ]
+  "edges": []
 }
 ```
 
-Key fields: `tool_package` and `tool_package_version` are included per node so that version mismatches can be detected on paste.
+`clipboard_version` is required and current serialization emits version 2 together with `source_workflow_name` and `created_at`. `tool_package` and `tool_package_version` are included when registry metadata is available so version mismatches can be detected on paste.
 
 ### 3.2 Paste Behavior Within the Same Workflow
 
@@ -411,26 +428,50 @@ Imports a workflow by calling the BioImageFlow library import/load API.
 
 **Behavior:**
 1. The server passes the upload to the BioImageFlow library import/load API.
-2. If a workflow with the same `id` already exists, the server returns **409 Conflict** with a suggested alternative id (e.g., `"segmentation/my_workflow_2"`).
-3. The server checks `required_packages` against the tool store. If packages or versions are missing, the response includes a `missing_packages` field (same format as workflow loading — see Section 2.4.2 of the full spec).
+2. If a workflow with the same path-derived name already exists, the server returns **409 Conflict** with a `suggested_name` alternative (e.g., `"segmentation/my_workflow_2"`). A caller may retry with the multipart `name_override` field.
+3. The server checks required packages and tools against the tool store. The response uses the same `missing_packages` and `missing_tools` models as workflow loading in [v1 Section 2.4.2](platform_specs_v1.md#242-workflow-management).
 4. On success, the imported workflow is saved as
    `workspace/workflows/<id>/workflow.json`. Any bundled custom tools are
    restored under that workflow directory's `tools/` folder with collision-safe
    names if needed.
 
-**Response (success):**
+**Response (HTTP 201):**
 
 ```json
 {
-  "id": "segmentation/my_workflow",
-  "display_name": "My Workflow",
+  "info": {
+    "id": "segmentation/my_workflow",
+    "name": "my_workflow",
+    "folder": "segmentation",
+    "display_name": "My Workflow",
+    "path": "/Users/alice/BioImageFlow/workspace/workflows/segmentation/my_workflow/workflow.json",
+    "last_modified": "2026-07-16T12:00:00+00:00",
+    "description": null,
+    "storage_path": "/Users/alice/bioimageflow_data/workflows/segmentation/my_workflow",
+    "workspace_path": "/Users/alice/BioImageFlow/workspace",
+    "output_path": "/Users/alice/bioimageflow_data/workflows/segmentation/my_workflow"
+  },
   "missing_packages": [
-    {"name": "bioimageflow-stardist", "version": "0.9.0", "installed_versions": []}
+    {
+      "package_name": "bioimageflow-stardist",
+      "required_version": "0.9.0",
+      "installed_versions": [],
+      "affected_nodes": ["stardist_1"]
+    }
+  ],
+  "missing_tools": [
+    {
+      "node_id": "stardist_1",
+      "tool_name": "StarDist",
+      "package_name": "bioimageflow-stardist",
+      "required_version": "0.9.0",
+      "installed_versions": []
+    }
   ]
 }
 ```
 
-If `missing_packages` is non-empty, the frontend shows a dialog: "This workflow requires packages not installed: [list with versions]. Install them?" with an "Install All" button, same as the workflow loading flow.
+If either dependency array is non-empty, the frontend shows the same dependency dialog used by workflow loading. It lists required versions, installed alternatives, affected nodes, and missing tools; when an installed alternative exists, **Use installed versions** rebinds the imported workflow. Installation remains a separate Tools Panel action.
 
 **Response (conflict):**
 
@@ -438,7 +479,7 @@ If `missing_packages` is non-empty, the frontend shows a dialog: "This workflow 
 {
   "error": "conflict",
   "detail": "Workflow 'segmentation/my_workflow' already exists",
-  "suggested_id": "segmentation/my_workflow_2"
+  "suggested_name": "segmentation/my_workflow_2"
 }
 ```
 
@@ -446,13 +487,14 @@ If `missing_packages` is non-empty, the frontend shows a dialog: "This workflow 
 
 | Code | Condition |
 |------|-----------|
-| 400 | Invalid file format, malformed JSON |
 | 409 | Workflow id conflict |
-| 422 | Valid JSON but invalid workflow structure |
+| 415 | Uploaded filename does not end in `.zip` (normally `.bioimageflow.zip`) |
+| 422 | Invalid archive payload or invalid workflow structure |
+| 423 | Workflow mutation is locked during execution |
 
 ### 4.2 Frontend — Workflows Panel Actions
 
-The Workflows Panel (Section 3.8 of the full spec) includes Export and Import actions:
+The Workflows Panel ([v1 Section 3.8](platform_specs_v1.md#38-workflows-panel)) includes Export and Import actions:
 
 - **Export:** Available in the Workflow menu and as a button in the Workflows Panel. Calls `POST /workflows/{id}/export` and triggers a browser file download of the `.bioimageflow.zip` archive.
 - **Import:** Available in the Workflow menu and as a button in the Workflows Panel. Opens the browser's native file picker filtered to `.bioimageflow.zip` files. On file selection, uploads via `POST /workflows/import`. On success, the imported workflow appears in the workflow tree and can be opened. On id conflict, a dialog offers to rename or cancel.
@@ -470,6 +512,8 @@ The Workflows Panel (Section 3.8 of the full spec) includes Export and Import ac
 Provides endpoints and UI for creating, deleting, and renaming custom tools directly from the GUI.
 
 ### 5.1 Backend
+
+Custom-tool routes are scoped by the optional `workflow_name=<id>` query parameter. The current frontend supplies its active root workflow ID so the service resolves `workspace/workflows/<id>/tools/`; a request without a resolvable workflow context returns 400.
 
 #### `POST /tools`
 
@@ -491,18 +535,19 @@ Creates a new tool from a template.
 
 **Behavior:**
 1. The server validates the name (must be a valid Python class name, must not conflict with existing tools).
-2. A tool file is created at `workspace/workflows/<current_workflow>/tools/{name}.py` using the appropriate template (see Section 5.4).
+2. A tool file is created at `workspace/workflows/<current_workflow>/tools/{snake_case_name}.py` using the appropriate template (see Section 5.4).
 3. Custom tools in this workflow directory are auto-discovered by the server.
-4. The workspace project is opened in the code editor and the tool file is focused (`POST /editor/open-tool`).
-5. The new tool appears in the tool registry and the Tools Panel.
+4. The response returns only after the source is registered. The frontend then refreshes the registry and opens the returned source path through `POST /editor/open`.
 
-**Response (success):**
+**Response (HTTP 201):**
 
 ```json
 {
   "name": "MyNewTool",
-  "path": "/path/to/workflow/tools/MyNewTool.py",
-  "tool_type": "ProcessingTool"
+  "tool_type": "ProcessingTool",
+  "path": "/path/to/workflow/tools/my_new_tool.py",
+  "source_kind": "custom",
+  "editable": true
 }
 ```
 
@@ -510,11 +555,12 @@ Creates a new tool from a template.
 
 | Code | Condition |
 |------|-----------|
-| 400 | Invalid name (not a valid Python identifier, reserved keyword) |
+| 400 | No workflow context is available |
 | 409 | Tool name already exists |
+| 422 | Invalid class name or tool type |
 | 403 | Webapp mode (tool creation disabled for security) |
 
-**Desktop mode only:** This endpoint is disabled in webapp mode (returns 403 Forbidden) to prevent remote code execution.
+**Webapp restriction:** This endpoint returns 403 in webapp mode unless the file-only `enable_unsafe_webapp_features` debug flag is enabled.
 
 #### `DELETE /tools/{tool_name}`
 
@@ -531,7 +577,8 @@ Deletes a custom tool.
 ```json
 {
   "deleted": true,
-  "warning": "Tool was used in workflows: ['my_workflow', 'test_pipeline']. These workflows will show 'Tool not found' errors."
+  "warning": "Tool is referenced by saved workflows.",
+  "affected_workflows": ["my_workflow", "test_pipeline"]
 }
 ```
 
@@ -539,6 +586,8 @@ Deletes a custom tool.
 
 | Code | Condition |
 |------|-----------|
+| 400 | Target is not a workflow-local custom tool or no workflow context is available |
+| 403 | Webapp mode with unsafe source editing disabled |
 | 404 | Tool not found |
 
 #### `PATCH /tools/{tool_name}`
@@ -558,7 +607,7 @@ Renames a custom tool.
 2. The tool file is renamed on disk.
 3. The class name inside the file is updated.
 4. The tool registry is updated.
-5. Nodes in the current workflow using the old tool name are updated to reference the new name.
+5. After the endpoint succeeds, the frontend emits a rename event and mounted canvases reconcile nodes that reference the old tool name.
 
 **Response (success):**
 
@@ -566,7 +615,7 @@ Renames a custom tool.
 {
   "old_name": "MyNewTool",
   "new_name": "MyRenamedTool",
-  "path": "/path/to/workflow/tools/MyRenamedTool.py"
+  "path": "/path/to/workflow/tools/my_renamed_tool.py"
 }
 ```
 
@@ -574,13 +623,15 @@ Renames a custom tool.
 
 | Code | Condition |
 |------|-----------|
-| 400 | Invalid new name |
+| 400 | Target is not a workflow-local custom tool or no workflow context is available |
+| 403 | Webapp mode with unsafe source editing disabled |
 | 404 | Tool not found |
 | 409 | New name conflicts with existing tool |
+| 422 | Invalid new class name |
 
 ### 5.2 Frontend — Tools Panel
 
-The Tools Panel (Section 3.4 of the full spec) includes a **Create Tool** button at the bottom of the panel.
+The Tools Panel ([v1 Section 3.4](platform_specs_v1.md#34-tools-panel-left-sidebar)) includes a **Create Tool** button at the bottom of the panel.
 
 **Create Tool button behavior:**
 1. Opens a modal dialog with:
@@ -608,6 +659,8 @@ tools** and does not show package-version install controls.
 #### ProcessingTool Template
 
 ```python
+"""Custom ProcessingTool: My Tool."""
+
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -618,23 +671,27 @@ from bioimageflow_core import (
     GENERAL_ENV,
     GUIMeta,
     IOModel,
-    ImagePath,
+    ImageSpec,
     Layout,
     ProcessingTool,
     Semantic,
     Template,
 )
 
+
 class MyTool(ProcessingTool):
+    """Processing tool that operates on individual rows."""
+
     display_name = "My Tool"
-    documentation = "Description of what this tool does."
+    documentation = "Describe what this custom processing tool does."
     category = Category.IMAGE_PROCESSING
     tags = ["custom"]
     environment = GENERAL_ENV
 
     class Inputs(IOModel):
         input_image: Annotated[
-            ImagePath(
+            Path,
+            ImageSpec(
                 semantics={Semantic.INTENSITY},
                 layouts={Layout.PLANAR, Layout.PLANAR_CHANNEL},
             ),
@@ -644,19 +701,18 @@ class MyTool(ProcessingTool):
                 connectable=Connectable.BY_DEFAULT,
             ),
         ]
-        # Example scalar parameter:
-        # threshold: Annotated[float, GUIMeta(min=0.0, max=1.0, step=0.01)] = 0.5
 
     class Outputs(IOModel):
         output_image: Annotated[
-            ImagePath(semantics={Semantic.INTENSITY}),
+            Path,
+            ImageSpec(semantics={Semantic.INTENSITY}),
             GUIMeta(
                 display_name="Output image",
                 description="Processed output image.",
             ),
         ] = Template("{input_image.stem}_out{ext}")
 
-    def process_row(self, arguments: Arguments, *, context: Any = None) -> Outputs:
+    def process_row(self, arguments: Arguments, *, context: Any = None) -> "Outputs":
         import shutil
 
         input_path = Path(arguments.input_image)
@@ -668,23 +724,24 @@ class MyTool(ProcessingTool):
         return self.Outputs(output_image=output_path)
 ```
 
-The common-tools package often spells image fields as
-`Annotated[Path, ImageSpec(...), GUIMeta(...)]`. The platform scaffold uses the
-shorter equivalent `Annotated[ImagePath(...), GUIMeta(...)]`: `ImagePath(...)`
-is a convenience factory for `Annotated[Path, ImageSpec(...)]`, and the current
-library serializers flatten nested `Annotated` metadata correctly.
+The scaffold uses the library's current `Annotated[Path, ImageSpec(...), GUIMeta(...)]` image-field contract directly.
 
 #### DataFrameTool Template
 
 ```python
+"""Custom DataFrameTool: My Transform."""
+
 from typing import Annotated, Any
 
 from bioimageflow import DataFrameTool, Passthrough
 from bioimageflow_core import Category, Connectable, GUIMeta, IOModel
 
+
 class MyTransform(DataFrameTool):
+    """DataFrame tool that transforms an entire dataframe."""
+
     display_name = "My Transform"
-    documentation = "Description of what this transform does."
+    documentation = "Describe what this custom dataframe transform does."
     category = Category.UTILITIES
     tags = ["custom"]
 
@@ -696,11 +753,12 @@ class MyTransform(DataFrameTool):
         )] = ""
 
     class Outputs(Passthrough):
-        pass  # Use Passthrough to preserve input columns, or IOModel for explicit schema
+        pass
 
     def transform(self, df: Any, arguments: Any) -> Any:
         result = df.copy()
-        # Transform the DataFrame here.
+
+        # Modify result here. Passthrough outputs preserve upstream columns.
         return result
 ```
 
@@ -766,4 +824,4 @@ No new keyboard shortcuts are introduced in v2. All existing shortcuts from v1 a
 - **Ctrl+C / Ctrl+V** now supports cross-workflow clipboard payloads (behavioral change, same keys).
 - **Ctrl+S** within a sub-workflow tab saves changes to the parent workflow.
 
-The right-click context menu gains a new entry for selected nodes: "Create sub-workflow" (no keyboard shortcut assigned by default; users can assign one via Settings > Keyboard Shortcuts).
+The right-click context menu gains a new entry for selected nodes: "Create sub-workflow". No keyboard shortcut or current shortcut-assignment UI is provided for this action; customizable shortcut UI remains a future v3 proposal.

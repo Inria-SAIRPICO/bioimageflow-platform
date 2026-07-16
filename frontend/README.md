@@ -60,7 +60,7 @@ bun install                      # Install dependencies
 bun run dev                      # Start Vite dev server (port 5173)
 ```
 
-The dev server proxies `/api` to `http://127.0.0.1:8000` and `/ws` to `ws://127.0.0.1:8000`. Start the backend first.
+The dev server proxies `/api` and `/ws` to the backend port selected by `BIOIMAGEFLOW_BACKEND_PORT`, defaulting to `8000`. Start the backend first.
 
 To specify another backend port:
 
@@ -74,11 +74,11 @@ The frontend treats workflows as a tree rooted at the current user's workspace:
 
 ```text
 workspace/
-  workflows/    folders and workflow directories
-  tools/        workspace-owned custom tools
-  data/
-  outputs/
+  workflows/                          folders and workflow directories
+    <workflow-id>/tools/              custom tools owned by one workflow
 ```
+
+Execution outputs use the backend's configured output-data folder rather than `workspace/outputs`, and uploaded datasets use the configured dataset root rather than `workspace/data`.
 
 Desktop users can change the workspace path in Settings with a folder picker.
 Webapp users see a read-only workspace path; the admin configures the
@@ -96,8 +96,10 @@ code-server rooted at the workspace project and focuses the selected tool file.
 ```bash
 bun run test:unit                # Run all unit tests (Vitest)
 bun run test:unit:watch          # Watch mode
-bun run test:e2e                 # Run E2E tests (Playwright, needs backend + frontend)
+bun run test:e2e                 # Run E2E tests with Playwright-managed isolated servers
 ```
+
+Playwright starts and stops the backend and frontend servers declared in `playwright.config.ts`; do not start shared development servers for the normal E2E command. See [`../docs/testing.md`](../docs/testing.md) for the required Chromium lane, optional Firefox lane, and environment-isolation details.
 
 ## Building
 
@@ -113,7 +115,9 @@ bun run type-check               # TypeScript type checking (vue-tsc)
 bun run generate-types           # Generate TypeScript types from backend OpenAPI schema
 ```
 
-Requires the backend running at http://localhost:8000. Fetches `/openapi.json` and generates `src/api/types.ts` using `openapi-typescript`.
+By default this requires the backend at `http://localhost:8000`. Set `OPENAPI_URL` to use another schema URL, for example `OPENAPI_URL=http://localhost:8008/openapi.json bun run generate-types`.
+
+The script regenerates OpenAPI paths and schemas and appends its declared compatibility aliases. Workflow-draft helpers also retain manual types in `src/api/workflowDrafts.ts`, so review the generated diff and run type-checking before committing it.
 
 ## Linting
 

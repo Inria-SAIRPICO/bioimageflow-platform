@@ -1,6 +1,10 @@
 # BioImageFlow Platform Specifications — v3 (Webapp & Multi-User)
 
-> Builds on [platform_specs_v2.md](platform_specs_v2.md). This document describes features added in v3 to support webapp deployment and multi-user operation.
+Read the [BioImageFlow library specification](bioimageflow/docs/source/specs.md) for the underlying workflow and tool contracts.
+
+> **Status: future proposal.** The [v1](platform_specs_v1.md) and [v2](platform_specs_v2.md) documents define the implemented platform. This document proposes webapp and multi-user behavior; it must not be used as evidence that a feature is currently implemented unless that feature is explicitly inherited from v1 or v2.
+
+The proposal builds on stable canvas ownership and backend workflow-draft revision CAS. Before multi-browser locking is implemented, the startup root must also use the same stable canonical canvas lifecycle as later roots; the current bootstrap canvas alias documented in v2 is not a sufficient long-term claimant identity. Revision conflicts remain authoritative, locks are advisory UX, and CRDT or automatic merge semantics remain deferred until simultaneous collaborative editing becomes a product requirement.
 
 ---
 
@@ -27,11 +31,11 @@ BioImageFlow v3 introduces a dual deployment model. The same codebase runs in tw
 - Viv is the primary image viewer (in-browser, see Section 4).
 - Tool creation and source editing are disabled to prevent remote code execution.
 - Tool hot-reload is disabled.
-- The `POST /fs/reveal` endpoint returns 501 Not Implemented. The frontend hides "Reveal in file browser" buttons.
+- The `POST /fs/reveal` endpoint returns 403 Forbidden. The frontend hides "Reveal in file browser" buttons.
 - CORS is configured to allow requests from the frontend's deployed origin. The allowed origins list is configurable at deployment time.
 - Rate limiting and request guards are active (see Section 9).
 - Dataset management endpoints are available (see Section 3).
-- Drag and drop triggers upload via the Dataset Browser (see Section 3.5).
+- Drag and drop triggers upload via the Dataset Browser (see Section 3.4).
 
 ### 1.2.1 Webapp Workspace Root
 
@@ -103,7 +107,7 @@ In webapp mode, the following are disabled to prevent remote code execution:
 | `POST /api/v1/tools` | 403 Forbidden | Tool creation would allow arbitrary code on the server |
 | `POST /api/v1/editor/open` | 403 Forbidden | Source editing would allow arbitrary code modification |
 | `POST /api/v1/editor/open-tool` | 403 Forbidden | Source editing would allow arbitrary code modification |
-| Tool hot-reload (Section 2.7 of v2) | Disabled silently | No user-editable tool code in webapp mode |
+| Tool hot-reload (Section 2.7 of v1) | Disabled silently | No user-editable tool code in webapp mode |
 
 The frontend hides the "Create Tool" button in the Tools Panel and "Open in editor" buttons on tool rows when `deployment_mode === "webapp"`.
 
@@ -173,7 +177,7 @@ The Dataset Browser modal UI is specified in v1 Section 3.14. In webapp mode it 
 
 ### 4.1 Overview
 
-In webapp mode, Napari is not available (it requires a desktop GUI process). The frontend uses [Viv](https://github.com/hms-dbmi/viv) as an in-browser image viewer instead. Viv supports OME-TIFF, OME-Zarr, and common bioimage formats with pan/zoom/contrast controls and 3D orthogonal projections.
+v1 already defines workflow-scoped node-image serving, on-demand OME-TIFF conversion, and the external Avivator action. In the proposed webapp mode, Napari is unavailable because it requires a desktop GUI process. v3 replaces the external viewer dependency with an embedded [Viv](https://github.com/hms-dbmi/viv) panel and extends the image API for authenticated, per-user OME-TIFF and OME-Zarr access.
 
 ### 4.2 UI Integration
 
@@ -186,6 +190,8 @@ Clicking "View image" opens the Viv viewer inline in a new Dockview panel (or as
 **Ctrl+Click** on "View image" replaces the current image in the viewer (if one is open) rather than opening a new panel.
 
 ### 4.3 Image Endpoint
+
+The v1 node-image endpoint remains the base contract. v3 adds authentication, per-user workflow scoping, and OME-Zarr static-tree behavior.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -308,56 +314,9 @@ When more than 5 nodes are selected, only the first 5 individual DataFrames are 
 
 ---
 
-## 6. OMERO Integration
+## 6. OMERO Multi-User Extension
 
-### 6.1 Architecture
-
-OMERO integration is provided through dedicated tool packages (ProcessingTools with OMERO dependencies in their environment), not through core GUI features. The GUI provides only credential management in the Settings panel. OMERO tools handle downloading and uploading (not browsing).
-
-### 6.2 OMERO Settings Panel (Section of Settings)
-
-Located in the Settings panel under "OMERO".
-
-**Instance list:** A table of configured OMERO server connections. Each row represents one OMERO instance.
-
-**Actions:**
-- **Add:** Button below the table. Adds a new empty row.
-- **Remove:** Delete button on each row. Confirmation dialog: `"Remove OMERO instance '{name}'? Stored credentials will be deleted."`.
-- **Duplicate:** Duplicate button on each row. Copies all fields except password.
-
-**Per-instance fields:**
-
-| Field | Widget | Description |
-|-------|--------|-------------|
-| **Name** | Text input | Optional display name. Defaults to `"{host}:{username}"` when left empty. Must be unique across instances. |
-| **Host** | Text input | OMERO server hostname or IP address. Required. |
-| **Port** | Number spinner | OMERO server port. Default: 4064. |
-| **Username** | Text input | OMERO username. Required. |
-| **Password** | Password input + "Save" button | Password is stored via Python `keyring`, not in the settings JSON file. |
-
-### 6.3 Password Storage
-
-Passwords are stored using Python's `keyring` library, which delegates to the OS credential store (macOS Keychain, GNOME Keyring, Windows Credential Locker).
-
-**Keyring service name:** `"bioimageflow-omero"`
-**Keyring username:** `"{host}:{port}:{username}"`
-
-The `PATCH /api/v1/settings` endpoint accepts an `omero_instances` array. When an instance includes a `password` field, the server stores it via `keyring.set_password()` and strips it from the persisted settings JSON. The `GET /api/v1/settings` response never includes passwords — it returns `"password_stored": true` or `"password_stored": false` for each instance.
-
-**Settings model for OMERO:**
-
-```python
-class OMEROInstance(BaseModel):
-    name: str | None = None              # Display name (defaults to "host:username")
-    host: str
-    port: int = 4064
-    username: str
-    # Password is stored via Python keyring, not in this model
-```
-
-### 6.4 Tool Integration
-
-OMERO tools access credentials at runtime via the BioImageFlow library's credential API, which reads from the keyring using the service/username convention above. The GUI does not broker OMERO connections — it only stores credentials.
+v1 defines the current OMERO instance and operating-system-keyring contract. A v3 deployment must scope credentials to the authenticated user's container or an equivalent isolated credential store. A shared launcher or host keyring must never expose one user's OMERO credential status or secret to another user. OMERO data access continues to use dedicated tool packages; the platform does not become an OMERO data broker.
 
 ---
 
@@ -365,36 +324,38 @@ OMERO tools access credentials at runtime via the BioImageFlow library's credent
 
 ### 7.1 Problem
 
-If the user opens the same workflow in multiple browser tabs, concurrent edits could lead to data loss (each tab's auto-save overwrites the other's state in IndexedDB) and race conditions on the server (conflicting `PUT /graph` requests).
+Each root canvas already writes a complete graph to its workflow draft using `expected_revision`. If the same workflow is edited from multiple browser runtimes, draft CAS detects stale writes but cannot decide which user's edit should win. v3 adds an advisory single-writer experience so ordinary users encounter read-only mode before a CAS conflict, without weakening the backend conflict boundary.
 
 ### 7.2 Mechanism
 
-The frontend uses a **`BroadcastChannel`** named `"bioimageflow-lock"` to coordinate between tabs. When a tab opens or loads a workflow, it broadcasts a lock claim message:
+The frontend uses a **`BroadcastChannel`** named `"bioimageflow-lock"` to coordinate between browser runtimes for the same authenticated user. A claim is bound to the path-derived workflow ID, a stable browser-runtime ID, and the canonical root canvas ID:
 
 ```json
 {
   "type": "lock_claim",
   "workflow_id": "segmentation/my_workflow",
-  "tab_id": "uuid-of-this-tab",
+  "browser_id": "uuid-of-this-browser-runtime",
+  "canvas_id": "workflow:segmentation%2Fmy_workflow",
   "timestamp": 1712160000000
 }
 ```
 
 **Lock acquisition rules:**
 
-1. On workflow load, the tab broadcasts a `lock_claim` and waits 200ms for responses.
-2. If another tab responds with `lock_held` for the same workflow, the new tab opens in **read-only mode**.
-3. If no response arrives within 200ms, the tab acquires the lock and begins editing.
-4. The lock-holding tab periodically sends `lock_heartbeat` messages (every 5 seconds). If a tab detects that the lock holder has not sent a heartbeat for 15 seconds (3 missed heartbeats), it assumes the holder tab was closed and allows lock acquisition.
+1. Before enabling mutations for a resolved root canvas, the runtime broadcasts `lock_claim` and waits 200ms for responses.
+2. If another runtime responds with `lock_held` for the same authenticated user and workflow ID, the new canvas opens in **read-only mode**.
+3. If no response arrives within 200ms, the canvas acquires the advisory lock and begins editing from the latest accepted backend draft revision.
+4. The lock holder sends `lock_heartbeat` every 5 seconds. After 15 seconds without a heartbeat, another claimant may attempt acquisition, but it must reload or reconcile the latest accepted draft before enabling mutations.
+5. Every write still sends `expected_revision`. A `draft_revision_conflict` always enters the explicit conflict UI; possession of an advisory lock never authorizes an overwrite.
 
 **Messages:**
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `lock_claim` | `workflow_id`, `tab_id`, `timestamp` | A tab wants to edit this workflow |
-| `lock_held` | `workflow_id`, `tab_id` | Response: another tab already holds the lock |
-| `lock_heartbeat` | `workflow_id`, `tab_id`, `timestamp` | Periodic keepalive from the lock holder |
-| `lock_release` | `workflow_id`, `tab_id` | The lock holder is closing or switching workflows |
+| `lock_claim` | `workflow_id`, `browser_id`, `canvas_id`, `timestamp` | A canonical root canvas wants to edit this workflow |
+| `lock_held` | `workflow_id`, `browser_id`, `canvas_id` | Another runtime already holds the advisory lock |
+| `lock_heartbeat` | `workflow_id`, `browser_id`, `canvas_id`, `timestamp` | Periodic keepalive from the lock holder |
+| `lock_release` | `workflow_id`, `browser_id`, `canvas_id` | The owning canvas is being closed or disposed |
 
 ### 7.3 Read-Only Mode
 
@@ -407,11 +368,11 @@ When a tab opens in read-only mode:
 
 ### 7.4 Lock Release
 
-When the lock-holding tab is closed (or the user switches to a different workflow), it broadcasts a `lock_release` message. Other tabs listening for this workflow can then acquire the lock.
+When the lock-holding canvas is closed or its browser runtime is disposed, it broadcasts `lock_release`. Merely activating another internal Dockview tab does not release the lock, because the original canvas remains mounted and owns its draft coordinator.
 
 **Fallback for unclean closure:** If the lock-holding tab crashes or is killed (no `beforeunload` event fires), the heartbeat timeout (15 seconds) ensures other tabs can eventually acquire the lock.
 
-**`localStorage` fallback:** If `BroadcastChannel` is not available (older browsers), the frontend falls back to a `localStorage`-based lock. The lock key is `"bioimageflow-lock-{encoded_workflow_id}"` with a JSON value containing `{tab_id, timestamp}`. Tabs poll `localStorage` every 2 seconds to detect stale locks (timestamp older than 15 seconds).
+**`localStorage` fallback:** If `BroadcastChannel` is not available, the frontend falls back to a `localStorage`-based advisory lock. The lock key is `"bioimageflow-lock-{encoded_workflow_id}"` and its value contains `{browser_id, canvas_id, timestamp}`. Runtimes poll every 2 seconds to detect stale locks. Backend draft CAS remains the authority in both mechanisms.
 
 ---
 
@@ -494,17 +455,20 @@ The following endpoints are rate-limited server-side:
 
 | Endpoint | Limit | Reason |
 |----------|-------|--------|
-| `PUT /api/v1/graph` | 10 requests/second per session | Prevents validation flooding from rapid edits |
+| `PUT /api/v1/workflow-drafts/{id}` | 10 requests/second per session | Bounds authoritative root-draft validation writes |
+| `POST /api/v1/workflow-draft-operations/{id}` | 10 requests/second per session | Bounds structured agent mutations |
+| `PUT /api/v1/nested-workflow-snapshots/{session_id}` | 10 requests/second per session | Bounds authoritative private-snapshot validation writes |
+| `PUT /api/v1/graph` | 10 requests/second per session | Bounds explicit stateless compatibility or transient-validation calls |
 
 Rate limiting is per-session (identified by the authentication token). Requests exceeding the limit receive HTTP 429 Too Many Requests with a `Retry-After` header.
 
 ### 9.3 Request Body Size Cap
 
-All endpoints have a maximum request body size of **5MB** (configurable). Requests exceeding this limit are rejected with HTTP 413 Payload Too Large before the body is read. This applies to all endpoints except `POST /api/v1/datasets/upload`, which has its own configurable file size limit (default 2GB, see Section 3.6).
+All endpoints have a maximum request body size of **5MB** (configurable). Requests exceeding this limit are rejected with HTTP 413 Payload Too Large before the body is read. This applies to all endpoints except `POST /api/v1/datasets/upload`, which has its own configurable file size limit (default 2GB; see v1 Section 2.4.10).
 
 ### 9.4 Validation Timeout
 
-Graph validation computation (`PUT /api/v1/graph`) has a timeout of **10 seconds** (configurable). If validation exceeds this timeout (e.g., due to an extremely large or complex graph), the server aborts the computation and returns HTTP 504 Gateway Timeout with:
+Graph validation performed by authoritative workflow-draft or nested-snapshot writes, structured draft operations, and explicit request-local `PUT /graph` calls has a timeout of **10 seconds** (configurable). If validation exceeds this timeout, the server aborts the request and returns HTTP 504 Gateway Timeout with:
 
 ```json
 {
@@ -513,7 +477,7 @@ Graph validation computation (`PUT /api/v1/graph`) has a timeout of **10 seconds
 }
 ```
 
-The frontend shows a toast with this message. The graph state in the frontend is unchanged (the last valid state is preserved).
+The frontend shows a toast with this message. The immediate canvas snapshot remains visible, while the last accepted backend draft or private snapshot revision remains unchanged and the canvas stays pending or conflicted until retry.
 
 ### 9.5 Configuration
 
@@ -521,7 +485,7 @@ Rate limiting and request guard parameters are configurable at deployment time v
 
 | Parameter | Environment Variable | Default |
 |-----------|---------------------|---------|
-| Rate limit (graph endpoints) | `BIOIMAGEFLOW_RATE_LIMIT` | `10` (requests/second) |
+| Rate limit (validated graph endpoints) | `BIOIMAGEFLOW_RATE_LIMIT` | `10` (requests/second) |
 | Request body size cap | `BIOIMAGEFLOW_MAX_BODY_SIZE` | `5242880` (5MB) |
 | Validation timeout | `BIOIMAGEFLOW_VALIDATION_TIMEOUT` | `10` (seconds) |
 | Dataset upload size limit | `BIOIMAGEFLOW_MAX_UPLOAD_SIZE` | `2147483648` (2GB) |
@@ -724,28 +688,29 @@ The following table lists all endpoints that are **new or modified** in v3. Endp
 
 | # | Method | Endpoint | Mode | When Used |
 |---|--------|----------|------|-----------|
-| 1 | `GET` | `/api/v1/nodes/{node_id}/image` | Both | Full image file for Viv viewer (webapp primary, desktop fallback) |
-| 2 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Data Table |
-| 3 | `POST` | `/api/v1/tools/packages/refresh` | Both | Re-fetch available versions from PyPI for all known+installed packages (§2.5) |
+| 1 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Data Table |
 
-Dataset management endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE /datasets/{dataset_id}`) are defined in v1 Section 2.4.10. v3 extends them with per-user scoping and authentication (Section 3 above).
+Node-image serving and tool-package refresh are current v1 endpoints. Dataset management endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE /datasets/{dataset_id}`) are also defined in v1 Section 2.4.10. v3 modifies these existing contracts with per-user scoping and authentication.
 
 ### 11.2 Modified Endpoints
 
 | # | Endpoint | Change |
 |---|----------|--------|
-| 1 | `PUT /api/v1/graph` | Rate-limited in webapp mode (10 req/s). Validation timeout (10s). |
-| 2 | `POST /api/v1/tools` | Returns 403 Forbidden in webapp mode. |
-| 3 | `POST /api/v1/tools/packages/{name}/install` | In webapp mode, only known packages are allowed (403 for unknown). |
-| 4 | `POST /api/v1/fs/reveal` | Returns 501 Not Implemented in webapp mode. |
-| 5 | `POST /api/v1/napari/open` | Returns 403 Forbidden in webapp mode. |
-| 6 | `GET /api/v1/napari/status` | Returns 403 Forbidden in webapp mode. |
-| 7 | `POST /api/v1/editor/open` | Returns 403 Forbidden in webapp mode. |
-| 8 | `POST /api/v1/editor/open-tool` | Returns 403 Forbidden in webapp mode. |
-| 9 | `GET /api/v1/workspace` | Returns the derived per-user workspace and admin-managed flags. |
-| 10 | `PATCH /api/v1/workspace` | Returns 403 Forbidden for ordinary webapp users. |
-| 11 | `GET /api/v1/settings` | Response includes `deployment_mode` (read-only) and read-only workspace path information. |
-| 12 | WebSocket `/ws` | Requires `?token=<token>` query parameter in webapp mode. |
+| 1 | `PUT /api/v1/workflow-drafts/{id}` | Rate-limited authoritative root persistence and validation; validation timeout applies. |
+| 2 | `POST /api/v1/workflow-draft-operations/{id}` | Rate-limited structured draft mutations; validation timeout applies. |
+| 3 | `PUT /api/v1/nested-workflow-snapshots/{session_id}` | Rate-limited private-snapshot persistence and validation; validation timeout applies. |
+| 4 | `PUT /api/v1/graph` | Rate-limited only as stateless compatibility or transient validation; validation timeout applies. |
+| 5 | `POST /api/v1/tools` | Returns 403 Forbidden in webapp mode. |
+| 6 | `POST /api/v1/tools/packages/{name}/install` | In webapp mode, only known packages are allowed (403 for unknown). |
+| 7 | `POST /api/v1/fs/reveal` | Returns 403 Forbidden in webapp mode. |
+| 8 | `POST /api/v1/napari/open` | Returns 403 Forbidden in webapp mode. |
+| 9 | `GET /api/v1/napari/status` | Returns 403 Forbidden in webapp mode. |
+| 10 | `POST /api/v1/editor/open` | Returns 403 Forbidden in webapp mode. |
+| 11 | `POST /api/v1/editor/open-tool` | Returns 403 Forbidden in webapp mode. |
+| 12 | `GET /api/v1/workspace` | Returns the derived per-user workspace and admin-managed flags. |
+| 13 | `PATCH /api/v1/workspace` | Returns 403 Forbidden for ordinary webapp users. |
+| 14 | `GET /api/v1/settings` | Returns read-only deployment and workspace information for the authenticated user. |
+| 15 | WebSocket `/ws` | Requires `?token=<token>` query parameter in webapp mode. |
 
 ### 11.3 Launcher Service Endpoints (New Service)
 
@@ -759,49 +724,37 @@ All other requests to the launcher are proxied to the user's BioImageFlow contai
 
 ---
 
-## 12. Settings Model Updates
+## 12. Settings Behavior in v3
 
-The `Settings` model gains the following fields in v3:
-
-```python
-class Settings(BaseModel):
-    # --- Existing fields (unchanged) ---
-    external_editor: str | None = None
-    napari_env_path: str | None = None
-    omero_instances: list[OMEROInstance] = []
-    workspace_path: str                         # Derived from workspaces_root/user_id in webapp mode
-    tool_store_path: str = "~/.bioimageflow/tool_packages/"
-    execution_engine: Literal["sequential", "parsl"] = "sequential"
-    cache_max_executions: int | None = None
-    cache_max_age: str | None = None
-    dev_mode: bool = True
-
-    # --- v3 additions ---
-    deployment_mode: Literal["desktop", "webapp"]    # Read-only, set at server startup
-    update_mode: Literal["auto", "manual"] | str = "auto"  # "auto" or a pinned version string
-    keyboard_shortcuts: dict[str, str] = {}          # Action ID -> key binding overrides
-```
+The current v1 API already exposes `deployment_mode`, `update_mode`, and `keyboard_shortcuts`; their presence in the JSON model does not mean the future v3 controls are implemented. v3 adds the following normative behavior around those existing fields.
 
 ### 12.1 `deployment_mode`
 
-- **Type:** `Literal["desktop", "webapp"]`
-- **Read-only:** Set at server startup based on command-line flag or environment variable (`BIOIMAGEFLOW_MODE`). Cannot be changed via `PATCH /api/v1/settings`. Attempts to set it return HTTP 422 with `{"error": "read_only_field", "detail": "deployment_mode cannot be changed at runtime"}`.
-- **Purpose:** The frontend reads this at startup to configure mode-conditional behavior (button visibility, viewer selection, path selection mechanism).
+- The deployment supplies `"desktop"` or `"webapp"` at server startup.
+- In v3 it is read-only through `PATCH /api/v1/settings`; attempts to change it return 422.
+- The frontend uses it for authentication, path selection, viewer choice, desktop-only action visibility, and request-guard behavior.
 
 ### 12.2 `update_mode`
 
-- **Type:** `Literal["auto", "manual"] | str`
-- **Default:** `"auto"`
-- **Values:**
-  - `"auto"` — BioImageFlow automatically updates to the latest stable version on startup.
-  - `"manual"` — No automatic updates. The user manages updates manually.
-  - A specific version string (e.g., `"2.3.1"`) — Pin to this version. The startup check verifies the running version matches; if not, the server logs a warning.
-- **UI:** Rendered as a dropdown in the Settings panel under "Update Settings" (Section 3.13.4 of v2). The dropdown shows "Auto-update (recommended)", "Manual", and a list of available versions fetched from PyPI at startup.
+- The future update UI edits the existing `Literal["auto", "manual"] | str` field.
+- `"auto"` selects the latest supported stable release, `"manual"` disables automatic updates, and a version string pins that release.
+- The dropdown and package-index version discovery described here are v3 UI requirements, not current v1/v2 guarantees.
 
 ### 12.3 `keyboard_shortcuts`
 
-- **Type:** `dict[str, str]`
-- **Default:** `{}` (empty — all shortcuts use defaults)
-- **Keys:** Action IDs (e.g., `"delete_selected"`, `"undo"`, `"save"`). See Section 8.3 for the full list.
-- **Values:** Key binding strings (e.g., `"Ctrl+Backspace"`, `"Ctrl+Shift+Z"`). Modifier order is normalized to `Ctrl+Alt+Shift+Meta`.
-- **Semantics:** Only overridden shortcuts are stored. Missing entries use the built-in defaults. Setting a value to `""` (empty string) disables the shortcut.
+- The future shortcut editor writes normalized action-ID-to-key-binding overrides into the existing `keyboard_shortcuts` dictionary.
+- Missing entries use defaults and an empty value disables an action.
+- The recording, conflict-resolution, and reset UI is specified in Section 8 and is not implemented by merely exposing the settings field.
+
+---
+
+## 13. Deferred Enhancements Preserved From The Legacy Specification
+
+These items remain future proposals and are not part of the implemented v1/v2 contract:
+
+- **Large-workflow warning:** show a persistent informational warning above a configurable node-count threshold, initially around 50 nodes. For sub-workflows, count the flattened internal total.
+- **Canvas minimap:** offer an optional overview minimap for large graphs without making it a required default control.
+- **WebSocket sequencing and backpressure:** add a monotonic server-to-client sequence number and a bounded delivery policy so reconnecting clients can detect gaps and discard messages older than their contextual resynchronization snapshot.
+- **Step-by-step execution:** expose the library's `compute_steps()` capability as a future debugging mode that prepares and executes one node at a time while preserving the execution context and canvas-lock invariants.
+
+CRDT merge behavior is intentionally not part of these enhancements. Draft revision conflicts and the advisory single-writer UX remain the concurrency boundary until simultaneous collaborative editing is explicitly required.
