@@ -642,7 +642,7 @@ describe('DataTablePanel', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/cell_mask.tif')
   })
 
-  it('renders and copies regular path columns in node data tables', async () => {
+  it('attempts silent thumbnails for regular path columns', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const dataTableStore = useDataTableStore()
@@ -656,6 +656,8 @@ describe('DataTablePanel', () => {
       page_size: 50,
       column_types: { csv_path: 'Path' },
     }
+    const fetchMock = vi.fn().mockRejectedValue(new Error('not an image'))
+    vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(NodeDataTable, {
       props: { nodeId: 'node-1' },
@@ -664,14 +666,19 @@ describe('DataTablePanel', () => {
         stubs: {
           DataTable: DataTableStub,
           Column: ColumnStub,
-          ImageCell: ImageCellStub,
           Paginator: true,
         },
       },
     })
     await flushPromises()
 
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/v1/nodes/node-1/thumbnail')
     expect(wrapper.text()).toContain('/data/results/measurements.csv')
+    expect(wrapper.find('[data-testid="image-thumbnail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="open-napari-0-csv_path"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="open-avivator-0-csv_path"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="reveal-0-csv_path"]').exists()).toBe(true)
     await wrapper.find('[data-testid="path-copy"]').trigger('click')
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('/data/results/measurements.csv')
   })

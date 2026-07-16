@@ -198,6 +198,37 @@ describe('ImageCell', () => {
     )
   })
 
+  it('fails silently when a path is not known to be an image', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('unsupported file'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountCell({
+      value: '/tmp/measurements.csv',
+      hideThumbnailFallback: true,
+      showImageActions: false,
+    })
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(wrapper.find('[data-testid="image-thumbnail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="path-display"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="open-avivator-0-mask"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="reveal-0-mask"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="path-copy"]').exists()).toBe(true)
+  })
+
+  it('renders a successful thumbnail when fallback UI is hidden', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountCell({ hideThumbnailFallback: true })
+    await flushPromises()
+
+    expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)
+    expect(wrapper.find('img.image-cell__thumb').attributes('src')).toBe('blob:mock-url')
+  })
+
   it('keeps Open in Napari enabled after a launch failure so the action can be retried', async () => {
     const fetchMock = vi.fn().mockResolvedValue(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)

@@ -5,7 +5,6 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Paginator from 'primevue/paginator'
 import ImageCell from './ImageCell.vue'
-import PathCell from './PathCell.vue'
 import { useDataTableStore } from '@/stores/dataTable'
 
 const props = defineProps<{
@@ -44,12 +43,12 @@ const visibleColumns = computed(() => {
 
 function isImageColumn(col: string): boolean {
   const type = data.value?.column_types[col]
-  return type === 'ImageFile' || type === 'ImageShared'
+  return type === 'ImageFile' || type === 'ImageShared' || type === 'MaskPath'
 }
 
 function isPathColumn(col: string): boolean {
   const type = data.value?.column_types[col]
-  return type === 'Path' || type === 'ImageFile'
+  return type === 'Path' || type === 'ImageFile' || type === 'MaskPath'
 }
 
 function toggleSort(col: string) {
@@ -149,7 +148,7 @@ function onPage(event: { page: number; rows: number }) {
           </template>
           <template #body="slotProps">
             <div
-              v-if="isImageColumn(col)"
+              v-if="isImageColumn(col) || isPathColumn(col)"
               class="node-data-table__image-path"
             >
               <ImageCell
@@ -159,12 +158,10 @@ function onPage(event: { page: number; rows: number }) {
                 :col="col"
                 :value="String(slotProps.data[col] ?? '')"
                 :show-path="isPathColumn(col)"
+                :show-image-actions="isImageColumn(col)"
+                :hide-thumbnail-fallback="!isImageColumn(col)"
               />
             </div>
-            <PathCell
-              v-else-if="isPathColumn(col)"
-              :value="String(slotProps.data[col] ?? '')"
-            />
             <span v-else>{{ slotProps.data[col] }}</span>
           </template>
         </Column>

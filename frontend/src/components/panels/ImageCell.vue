@@ -5,14 +5,20 @@ import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
 import PathCell from './PathCell.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   nodeId: string
   workflowName?: string | null
   row: number
   col: string
   value: string
   showPath?: boolean
-}>()
+  showImageActions?: boolean
+  hideThumbnailFallback?: boolean
+}>(), {
+  showPath: true,
+  showImageActions: true,
+  hideThumbnailFallback: false,
+})
 
 let toast: ReturnType<typeof useToast> | null = null
 try {
@@ -36,7 +42,9 @@ const THUMBNAIL_RENDER_SIZE = 96
 const AVIVATOR_HOST = 'avivator.gehlenborglab.org'
 
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
-const shouldShowPath = computed(() => props.showPath ?? true)
+const shouldShowPath = computed(() => props.showPath)
+const shouldShowImageActions = computed(() => props.showImageActions)
+const shouldShowThumbnailFallback = computed(() => !props.hideThumbnailFallback)
 const thumbnailStyle = {
   width: `${THUMBNAIL_RENDER_SIZE}px`,
   height: `${THUMBNAIL_RENDER_SIZE}px`,
@@ -261,14 +269,14 @@ async function reveal() {
       alt=""
     >
     <div
-      v-else-if="thumbnailPending"
+      v-else-if="thumbnailPending && shouldShowThumbnailFallback"
       class="image-cell__pending"
       data-testid="image-thumbnail"
       aria-label="thumbnail generating"
       :style="thumbnailStyle"
     />
     <div
-      v-else
+      v-else-if="shouldShowThumbnailFallback"
       class="image-cell__unavailable"
       data-testid="image-thumbnail"
       aria-label="thumbnail unavailable"
@@ -281,6 +289,7 @@ async function reveal() {
     />
     <div class="image-cell__actions">
       <Button
+        v-if="shouldShowImageActions"
         icon="pi pi-image"
         text
         size="small"
@@ -290,6 +299,7 @@ async function reveal() {
         @click="openNapari"
       />
       <Button
+        v-if="shouldShowImageActions"
         icon="pi pi-external-link"
         text
         size="small"
