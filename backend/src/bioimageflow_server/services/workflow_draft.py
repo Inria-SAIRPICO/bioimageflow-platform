@@ -25,7 +25,10 @@ from bioimageflow_server.services.agent_workspace_context import (
     agent_workspace_instructions,
 )
 from bioimageflow_server.services.graph_validator import validate_graph
-from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_store import (
+    WorkflowStoreService,
+    normalize_workflow_draft_identity,
+)
 
 
 _BACKEND_PACKAGE_PARENT = Path(__file__).resolve().parents[2]
@@ -276,13 +279,7 @@ class WorkflowDraftService:
         api_base_url: str | None = None,
     ) -> WorkflowDraftResponse:
         store = self._store()
-        draft_path = self._draft_path(store, workflow_id)
-        if draft_path.exists():
-            draft = WorkflowDraftResponse.model_validate(
-                json.loads(draft_path.read_text(encoding="utf-8"))
-            )
-        else:
-            draft = self._synthesized_draft(store, workflow_id)
+        draft = self._read_or_synthesize(store, workflow_id)
         self.write_agent_context(
             store,
             workflow_id=workflow_id,
@@ -438,11 +435,12 @@ class WorkflowDraftService:
         store: WorkflowStoreService,
         workflow_id: str,
     ) -> WorkflowDraftResponse:
-        draft_path = self._draft_path(store, workflow_id)
-        if draft_path.exists():
-            return WorkflowDraftResponse.model_validate(
-                json.loads(draft_path.read_text(encoding="utf-8"))
-            )
+        raw = normalize_workflow_draft_identity(
+            store.workflow_dir(workflow_id),
+            workflow_id,
+        )
+        if raw is not None:
+            return WorkflowDraftResponse.model_validate(raw)
         return self._synthesized_draft(store, workflow_id)
 
     def _synthesized_draft(
