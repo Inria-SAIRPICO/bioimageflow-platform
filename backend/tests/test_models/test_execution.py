@@ -43,6 +43,16 @@ class TestExecutionContext:
 
         assert ExecutionContext.model_validate(context.model_dump()) == context
 
+    def test_is_immutable(self) -> None:
+        context = ExecutionContext(
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        with pytest.raises(ValidationError):
+            context.draft_revision = 8
+
 
 class TestProgressInfo:
     def test_construction(self) -> None:

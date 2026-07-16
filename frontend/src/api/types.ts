@@ -782,6 +782,8 @@ export interface components {
             nodes?: string[] | null;
             /** Workflow Name */
             workflow_name: string;
+            /** Draft Revision */
+            draft_revision?: number | null;
         };
         /**
          * EnvironmentDeleteRequest
@@ -3243,4 +3245,8 @@ export interface ExecutionStatus {
     state: "running" | "idle";
     last_result: ExecutionResult | null;
     progress: ProgressInfo | null;
+    node_statuses?: Record<string, NodeStatus>;
+    execution_id?: string | null;
+    workflow_id?: string | null;
+    draft_revision?: number | null;
 }

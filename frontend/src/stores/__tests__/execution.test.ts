@@ -212,6 +212,85 @@ describe('execution store', () => {
     expect(execution.nodeStatuses.same?.status).toBe('running')
   })
 
+  it('keeps the discovered WebSocket run active when later IDs mismatch', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const response = deferred<{ data: Record<string, unknown> }>()
+    vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
+    const execution = useExecutionStore()
+
+    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+    execution.applyNodeState({
+      execution_id: 'exec-accepted',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      node_id: 'same',
+      status: 'running',
+      cached: false,
+    })
+    execution.applyNodeState({
+      execution_id: 'exec-mismatch',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      node_id: 'same',
+      status: 'failed',
+      cached: false,
+      error: 'wrong run',
+    })
+    response.resolve({
+      data: {
+        status: 'started',
+        execution_id: 'exec-mismatch',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+      },
+    })
+
+    await expect(run).rejects.toThrow('mismatched context')
+    expect(execution.executionId).toBe('exec-accepted')
+    expect(execution.state).toBe('running')
+    expect(execution.nodeStatuses.same?.status).toBe('running')
+    expect(execution.isMutationLocked).toBe(true)
+  })
+
+  it('ignores legacy execution messages for a context-aware root run', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const response = deferred<{ data: Record<string, unknown> }>()
+    vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
+    const execution = useExecutionStore()
+
+    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+    execution.applyNodeState({
+      node_id: 'legacy',
+      status: 'failed',
+      cached: false,
+      error: 'unscoped',
+    })
+    response.resolve({
+      data: {
+        status: 'started',
+        execution_id: 'exec-accepted',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+      },
+    })
+    await run
+    execution.applyExecutionComplete({
+      success: true,
+      errors: [],
+      node_statuses: {},
+    })
+
+    expect(execution.nodeStatuses.legacy).toBeUndefined()
+    expect(execution.executionId).toBe('exec-accepted')
+    expect(execution.state).toBe('running')
+  })
+
   it('keeps a matching completion that arrives before the Run response', async () => {
     const canvasId = canvasIdFromPanelId('workflow:a')
     const response = deferred<{ data: Record<string, unknown> }>()
@@ -244,6 +323,52 @@ describe('execution store', () => {
     expect(execution.state).toBe('idle')
     expect(execution.lastResult?.success).toBe(true)
     expect(execution.executionId).toBe('exec-fast')
+  })
+
+  it('keeps a completed WebSocket run fenced when the Run response is mismatched', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const response = deferred<{ data: Record<string, unknown> }>()
+    vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
+    const execution = useExecutionStore()
+
+    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+    execution.applyExecutionComplete({
+      type: 'execution_complete',
+      execution_id: 'exec-fast',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      success: true,
+      errors: [],
+      node_statuses: {},
+    })
+    response.resolve({
+      data: {
+        status: 'started',
+        execution_id: 'exec-mismatch',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+      },
+    })
+
+    await expect(run).rejects.toThrow('mismatched context')
+
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-fast',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+
+    expect(execution.state).toBe('idle')
+    expect(execution.executionId).toBe('exec-fast')
+    expect(execution.lastResult?.success).toBe(true)
   })
 
   it('keeps a matching idle snapshot that arrives before the Run response', async () => {
@@ -336,6 +461,124 @@ describe('execution store', () => {
     expect(execution.appliesToCanvas(canvasA)).toBe(true)
     expect(execution.appliesToCanvas(canvasB)).toBe(false)
     expect(execution.isMutationLocked).toBe(true)
+  })
+
+  it('resolves a reconnect origin when its root canvas registers later', () => {
+    const execution = useExecutionStore()
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-123',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+    expect(execution.originCanvasId).toBeNull()
+
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
+    useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
+
+    expect(execution.appliesToCanvas(canvasId)).toBe(true)
+    expect(execution.originCanvasId).toBe(canvasId)
+  })
+
+  it('does not infer a root execution origin from an active nested canvas', () => {
+    const rootCanvas = canvasIdFromPanelId('workflow:a')
+    const nestedCanvas = canvasIdFromPanelId('sub-workflow:nested')
+    canvasSessionRegistry.register({
+      kind: 'root',
+      canvasId: rootCanvas,
+      workflowId: 'wf_a',
+    })
+    canvasSessionRegistry.register({
+      kind: 'nested',
+      canvasId: nestedCanvas,
+      sessionId: 'nested',
+      parentCanvasId: rootCanvas,
+    })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(rootCanvas, 'wf_a', 'Workflow A')
+    ui.setCanvasWorkflow(nestedCanvas, 'wf_a', 'Nested editor')
+    canvasSessionRegistry.activate(nestedCanvas)
+
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-123',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+
+    expect(execution.originCanvasId).toBe(rootCanvas)
+    expect(execution.appliesToCanvas(rootCanvas)).toBe(true)
+    expect(execution.appliesToCanvas(nestedCanvas)).toBe(false)
+  })
+
+  it('uses the active root to disambiguate duplicate workflow canvases', () => {
+    const canvasA = canvasIdFromPanelId('workflow:a-copy-1')
+    const canvasB = canvasIdFromPanelId('workflow:a-copy-2')
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'wf_a' })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasA, 'wf_a', 'Workflow A')
+    ui.setCanvasWorkflow(canvasB, 'wf_a', 'Workflow A')
+    canvasSessionRegistry.activate(canvasB)
+
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-123',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+
+    expect(execution.originCanvasId).toBe(canvasB)
+    expect(execution.appliesToCanvas(canvasA)).toBe(false)
+    expect(execution.appliesToCanvas(canvasB)).toBe(true)
+  })
+
+  it('stops applying to a disposed origin until that canvas registers again', () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
+    useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-123',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+    expect(execution.appliesToCanvas(canvasId)).toBe(true)
+
+    canvasSessionRegistry.unregister(canvasId)
+    expect(execution.appliesToCanvas(canvasId)).toBe(false)
+    expect(execution.isMutationLocked).toBe(true)
+
+    useUIStore().releaseCanvasPresentation(canvasId)
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_b' })
+    useUIStore().setCanvasWorkflow(canvasId, 'wf_b', 'Workflow B')
+    expect(execution.appliesToCanvas(canvasId)).toBe(false)
+
+    canvasSessionRegistry.unregister(canvasId)
+    useUIStore().releaseCanvasPresentation(canvasId)
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
+    useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
+    expect(execution.appliesToCanvas(canvasId)).toBe(true)
   })
 
   it('never fans anonymous execution state across multiple canvases', () => {

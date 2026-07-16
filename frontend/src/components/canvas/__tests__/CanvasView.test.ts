@@ -2597,6 +2597,44 @@ describe('CanvasView', () => {
       canvasSessionRegistry.dispose()
     })
 
+    it('projects a reconnect snapshot received before its canvas mounts', async () => {
+      vueFlowMocks.isolateByInstance = true
+      useToolRegistryStore().tools = [makeTool()] as any
+      const canvasId = canvasIdFromPanelId('workflow:a')
+      useExecutionStore().applyStatusSnapshot({
+        type: 'status_snapshot',
+        execution_id: 'exec-123',
+        workflow_id: 'a',
+        draft_revision: 7,
+        state: 'running',
+        last_result: null,
+        progress: null,
+        node_statuses: {
+          shared: { node_id: 'shared', status: 'running', cached: false },
+        },
+      })
+
+      canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'a' })
+      canvasSessionRegistry.activate(canvasId)
+      const wrapper = mountCanvas({
+        params: {
+          panelId: canvasId,
+          workflowName: 'a',
+          workflowDisplayName: 'A',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(vueFlowMocks.graphs.get(canvasId)!.nodes[0].data.status).toBe('running')
+
+      wrapper.unmount()
+      canvasSessionRegistry.dispose()
+    })
+
     it('uses structured missing-tool state and clears it when the tool reappears', async () => {
       const store = useToolRegistryStore()
       const execution = useExecutionStore()

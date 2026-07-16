@@ -312,10 +312,21 @@ export const useExecutionStore = defineStore('execution', () => {
     const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
     if (
       activeCanvasId !== null
+      && canvasSessionRegistry.get(activeCanvasId)?.descriptor.kind === 'root'
       && ui.canvasWorkflowId(activeCanvasId) === workflowId
     ) return activeCanvasId
-    const matches = ui.canvasIdsForWorkflow(workflowId)
+    const matches = ui.canvasIdsForWorkflow(workflowId).filter(
+      canvasId => canvasSessionRegistry.get(canvasId)?.descriptor.kind === 'root',
+    )
     return matches.length === 1 ? matches[0]! : null
+  }
+
+  function resolveDeferredOriginCanvas(): CanvasId | null {
+    if (originCanvasId.value !== null) return originCanvasId.value
+    if (executionId.value === null || executionWorkflowId.value === null) return null
+    const resolved = resolveOriginCanvas(executionWorkflowId.value)
+    if (resolved !== null) originCanvasId.value = resolved
+    return resolved
   }
 
   function adoptExecutionContext(
@@ -416,7 +427,13 @@ export const useExecutionStore = defineStore('execution', () => {
       if (sessionCount === 1) return canvasSessionRegistry.get(canvasId) !== null
       return anonymousOriginCanvasId === canvasId
     }
-    return originCanvasId.value !== null && originCanvasId.value === canvasId
+    const session = canvasSessionRegistry.get(canvasId)
+    if (
+      session?.descriptor.kind !== 'root'
+      || executionWorkflowId.value === null
+      || useUIStore().canvasWorkflowId(canvasId) !== executionWorkflowId.value
+    ) return false
+    return resolveDeferredOriginCanvas() === canvasId
   }
 
   function applyBackendPhase(
@@ -510,8 +527,19 @@ export const useExecutionStore = defineStore('execution', () => {
       }
     } catch (e: unknown) {
       if (activeStartRequest === requestId) {
-        if (state.value === 'starting') state.value = 'idle'
-        terminalFence = previousTerminalFence
+        const discoveredExecutionId = pendingRun?.requestId === requestId
+          ? pendingRun.executionId
+          : null
+        if (discoveredExecutionId === null) {
+          if (state.value === 'starting') state.value = 'idle'
+          terminalFence = previousTerminalFence
+        } else if (isTerminalExecution(discoveredExecutionId)) {
+          state.value = 'idle'
+          terminalFence = true
+        } else {
+          if (state.value === 'starting') state.value = 'running'
+          terminalFence = false
+        }
         if (pendingRun?.requestId === requestId) pendingRun = null
         const err = e as RunError
         const status = err.response?.status ?? err.status

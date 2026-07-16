@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow import validate_workflow_id
@@ -24,6 +24,8 @@ class ExecutionRequest(BaseModel):
 
 class ExecutionContext(BaseModel):
     """Stable identity for one accepted execution."""
+
+    model_config = ConfigDict(frozen=True)
 
     execution_id: str = Field(min_length=1)
     workflow_id: str = Field(min_length=1)
