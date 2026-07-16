@@ -1,9 +1,18 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodeOutputErrorBlock from '../NodeOutputErrorBlock.vue'
 import { useExecutionStore } from '@/stores/execution'
+import {
+  _resetCanvasStatusProjectionForTest,
+  useCanvasStatusProjection,
+} from '@/composables/useCanvasStatusProjection'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 
 function mountBlock(nodeId: string) {
   return mount(NodeOutputErrorBlock, {
@@ -29,6 +38,8 @@ function setFailed(
 
 describe('NodeOutputErrorBlock', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
+    _resetCanvasStatusProjectionForTest()
     setActivePinia(createPinia())
   })
 
@@ -59,6 +70,27 @@ describe('NodeOutputErrorBlock', () => {
     const w = mountBlock('n1')
     expect(w.find('.error-block').exists()).toBe(true)
     expect(w.text()).toContain('Something broke')
+  })
+
+  it('hides a stale failure after the canvas projects an unexecuted edit', () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const projection = useCanvasStatusProjection({
+      descriptor: { kind: 'root', canvasId, workflowId: 'a' },
+      nodes: ref([{ id: 'n1', enabled: true }]),
+      validationResult: ref(null),
+      acceptedDraftRevision: ref(null),
+    })
+    canvasSessionRegistry.activate(canvasId)
+    setFailed('n1', 'Stale failure')
+    projection.markProvisional('n1', {
+      node_id: 'n1',
+      status: 'unexecuted',
+      cached: false,
+    })
+
+    const w = mountBlock('n1')
+
+    expect(w.find('.error-block').exists()).toBe(false)
   })
 
   it('traceback is collapsed by default', () => {

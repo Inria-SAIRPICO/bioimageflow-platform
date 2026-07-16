@@ -41,7 +41,7 @@ src/
   composables/
     useUndoRedo.ts            Client-side undo/redo
     useGraphSync.ts           Graph state synchronization
-    useStatusReconciliation.ts  Execution status reconciliation
+    useCanvasStatusProjection.ts  Canvas-scoped derived node statuses
   utils/
     clipboard.ts              Copy/paste serialization
     nodeIdGenerator.ts        Unique node ID generation

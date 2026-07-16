@@ -222,6 +222,7 @@ const persistenceMocks = vi.hoisted(() => ({
   hasConflict: { value: false },
   currentGraph: { value: { nodes: [], edges: [] } },
   workflowId: { value: null },
+  acceptedDraftRevision: { value: 7 as number | null },
   canvasId: null,
 }))
 
@@ -372,6 +373,11 @@ function mountCanvas(propsData: {
   })
 }
 
+function projectedStatusesOf(wrapper: ReturnType<typeof mountCanvas>) {
+  const exposed = (wrapper.vm as any).projectedStatuses
+  return exposed?.value ?? exposed
+}
+
 const canvasNodeEditCases = [
   {
     name: 'node rename',
@@ -474,6 +480,7 @@ function draftChanged(
 
 describe('CanvasView', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     _resetClipboardForTest()
     mockNodes.length = 0
@@ -506,6 +513,7 @@ describe('CanvasView', () => {
     persistenceMocks.scopes.length = 0
     persistenceMocks.apis.length = 0
     persistenceMocks.isPending.value = false
+    persistenceMocks.acceptedDraftRevision.value = 7
     canvasCommandMocks.registrations.length = 0
     canvasCommandMocks.dispose.mockClear()
     canvasCommandMocks.routeSave.mockClear()
@@ -654,16 +662,31 @@ describe('CanvasView', () => {
       })
       graphSyncMocks.syncGraph.mockClear()
       persistenceMocks.queueGraph.mockClear()
+      graphSyncMocks.apis[0].validationResult.value = {
+        valid: true,
+        errors: [],
+        node_statuses: {
+          shared: { node_id: 'shared', status: 'executed', cached: false },
+          untouched: { node_id: 'untouched', status: 'executed', cached: false },
+        },
+      }
 
       const updateParameter = canvasCommandMocks.registrations[0].updateParameter
       expect(updateParameter('shared', 'sigma', 2)).toBe(true)
 
       expect(mockNodes[0].data.parameters).not.toBe(previousParameters)
       expect(mockNodes[0].data.parameters).toEqual({ sigma: 2 })
-      expect(mockNodes[0].data.status).toBe('unexecuted')
-      expect(mockNodes[0].data.provisional).toBe(true)
-      expect(mockNodes[1].data.status).toBe('executed')
-      expect(mockNodes[1].data.provisional).toBe(true)
+      expect(projectedStatusesOf(w).shared).toMatchObject({
+        status: 'unexecuted',
+        provisional: true,
+      })
+      expect(projectedStatusesOf(w).untouched).toMatchObject({
+        status: 'executed',
+        provisional: true,
+      })
+      expect(mockNodes[0].data.status).toBe('executed')
+      expect(mockNodes[0].data.provisional).toBeUndefined()
+      expect(mockNodes[1].data.provisional).toBeUndefined()
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
@@ -721,6 +744,14 @@ describe('CanvasView', () => {
         })
         graphSyncMocks.syncGraph.mockClear()
         persistenceMocks.queueGraph.mockClear()
+        graphSyncMocks.apis[0].validationResult.value = {
+          valid: true,
+          errors: [],
+          node_statuses: {
+            shared: { node_id: 'shared', status: 'executed', cached: false },
+            untouched: { node_id: 'untouched', status: 'executed', cached: false },
+          },
+        }
 
         const registration = canvasCommandMocks.registrations[0]
         expect(registration[command](...args)).toBe(true)
@@ -729,10 +760,16 @@ describe('CanvasView', () => {
         if (immutableMap) {
           expect(mockNodes[0].data[immutableMap]).not.toBe(previousMap)
         }
-        expect(mockNodes[0].data.status).toBe('executed')
-        expect(mockNodes[1].data.status).toBe('executed')
-        expect(mockNodes[0].data.provisional).toBe(true)
-        expect(mockNodes[1].data.provisional).toBe(true)
+        expect(projectedStatusesOf(w).shared).toMatchObject({
+          status: 'executed',
+          provisional: true,
+        })
+        expect(projectedStatusesOf(w).untouched).toMatchObject({
+          status: 'executed',
+          provisional: true,
+        })
+        expect(mockNodes[0].data.provisional).toBeUndefined()
+        expect(mockNodes[1].data.provisional).toBeUndefined()
         expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
         expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
         if (expectedSerialized) {
@@ -2589,7 +2626,9 @@ describe('CanvasView', () => {
 
       const firstGraph = vueFlowMocks.graphs.get(canvasA)!
       const secondGraph = vueFlowMocks.graphs.get(canvasB)!
-      expect(firstGraph.nodes[0].data.status).toBe('running')
+      expect(projectedStatusesOf(first).shared.status).toBe('running')
+      expect(firstGraph.nodes[0].data.status).toBe('unexecuted')
+      expect(projectedStatusesOf(second).shared.status).toBe('unexecuted')
       expect(secondGraph.nodes[0].data.status).toBe('unexecuted')
 
       first.unmount()
@@ -2629,7 +2668,8 @@ describe('CanvasView', () => {
       await nextTick()
       await flushPromises()
 
-      expect(vueFlowMocks.graphs.get(canvasId)!.nodes[0].data.status).toBe('running')
+      expect(projectedStatusesOf(wrapper).shared.status).toBe('running')
+      expect(vueFlowMocks.graphs.get(canvasId)!.nodes[0].data.status).toBe('unexecuted')
 
       wrapper.unmount()
       canvasSessionRegistry.dispose()
@@ -3874,6 +3914,13 @@ describe('CanvasView', () => {
         { id: 'e-out', source: 'sub_1', target: 'sink_1', sourceHandle: 'labels', targetHandle: 'count', type: 'column_ref' },
         { id: 'e-removed-out', source: 'sub_1', target: 'sink_2', sourceHandle: 'gone', targetHandle: 'count', type: 'column_ref' },
       )
+      graphSyncMocks.apis[0].validationResult.value = {
+        valid: true,
+        errors: [],
+        node_statuses: {
+          sub_1: { node_id: 'sub_1', status: 'executed', cached: false },
+        },
+      }
 
       const vm = w.vm as any
       graphSyncMocks.syncGraph.mockClear()
@@ -3904,7 +3951,11 @@ describe('CanvasView', () => {
       expect(subNode.data.connectedInputs).toEqual({ input_folder: 'files_1.path' })
       expect(subNode.data.published_inputs[0].name).toBe('input_folder')
       expect(subNode.data.published_outputs[0].name).toBe('label_count')
-      expect(subNode.data.status).toBe('out_of_date')
+      expect(projectedStatusesOf(w).sub_1).toMatchObject({
+        status: 'out_of_date',
+        provisional: true,
+      })
+      expect(subNode.data.status).toBe('executed')
       expect(clearCanvasCache).toHaveBeenCalledWith('canvas', 'sub_1')
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
@@ -3912,6 +3963,35 @@ describe('CanvasView', () => {
       await nextTick()
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(w.emitted('graph-changed')?.length ?? 0).toBe(graphChangedCount + 1)
+      w.unmount()
+    })
+
+    it('keeps an unexecuted parent unexecuted when applying a sub-workflow draft', () => {
+      const w = mountCanvas()
+      mockNodes.splice(0, mockNodes.length, {
+        id: 'sub_1',
+        type: 'sub_workflow',
+        position: { x: 0, y: 0 },
+        data: {
+          name: 'Sub 1',
+          toolName: '__sub_workflow__',
+          status: 'executed',
+          parameters: {},
+          pinnedInputs: {},
+          connectedInputs: {},
+          published_inputs: [],
+          published_outputs: [],
+          sub_workflow: { nodes: [], edges: [] },
+        },
+      })
+
+      ;(w.vm as any).applySubWorkflowDraft('sub_1', { nodes: [], edges: [] })
+
+      expect(projectedStatusesOf(w).sub_1).toMatchObject({
+        status: 'unexecuted',
+        provisional: true,
+      })
+      expect(mockNodes[0].data.status).toBe('executed')
       w.unmount()
     })
 
@@ -4584,8 +4664,8 @@ describe('CanvasView', () => {
       await nextTick()
       await flushPromises()
 
-      expect(mockNodes.find(node => node.id === 'a')?.data.status).toBe('executed')
-      expect(mockNodes.find(node => node.id === 'b')?.data.status).toBe('out_of_date')
+      expect(projectedStatusesOf(w).a.status).toBe('executed')
+      expect(projectedStatusesOf(w).b.status).toBe('out_of_date')
       expect(mockEdges.find(edge => edge.id === 'e1')?.data.errors).toEqual([edgeError])
       expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       expect(graphSyncMocks.revalidateGraphState).not.toHaveBeenCalled()

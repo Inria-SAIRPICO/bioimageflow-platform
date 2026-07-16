@@ -453,6 +453,30 @@ describe('useGraphSync', () => {
 })
 
 describe('serializeGraph', () => {
+  it('excludes runtime status projection fields from serialized nodes', () => {
+    const result = serializeGraph({
+      nodes: [{
+        id: 'n1',
+        position: { x: 0, y: 0 },
+        data: {
+          name: 'Node 1',
+          toolName: 'files',
+          parameters: {},
+          status: 'failed',
+          provisional: true,
+          error: 'runtime only',
+          traceback: 'runtime only',
+        },
+      }],
+      edges: [],
+    })
+
+    expect(result.nodes[0]).not.toHaveProperty('status')
+    expect(result.nodes[0]).not.toHaveProperty('provisional')
+    expect(result.nodes[0]).not.toHaveProperty('error')
+    expect(result.nodes[0]).not.toHaveProperty('traceback')
+  })
+
   it('converts Vue Flow node position {x,y} to backend [x,y]', () => {
     const result = serializeGraph({
       nodes: [{

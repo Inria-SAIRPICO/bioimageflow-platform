@@ -119,6 +119,7 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
     queueGraph: vi.fn(),
     initializeFromDraft: vi.fn(),
     isPending: ref(false),
+    acceptedDraftRevision: ref(7),
     dispose: vi.fn(),
   }),
 }))
@@ -154,6 +155,13 @@ import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { _resetClipboardForTest, writeClipboardPayload } from '@/utils/clipboard'
+import {
+  _resetCanvasStatusProjectionForTest,
+} from '@/composables/useCanvasStatusProjection'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -167,8 +175,15 @@ function mountCanvas() {
   })
 }
 
+function projectedStatusesOf(wrapper: ReturnType<typeof mountCanvas>) {
+  const exposed = (wrapper.vm as any).projectedStatuses
+  return exposed?.value ?? exposed
+}
+
 describe('CanvasView execution lock', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
+    _resetCanvasStatusProjectionForTest()
     setActivePinia(createPinia())
     _resetClipboardForTest()
     mockedApi.get.mockResolvedValue({ data: [] })
@@ -361,7 +376,7 @@ describe('CanvasView execution lock', () => {
     w.unmount()
   })
 
-  it('live executionStore.nodeStatuses propagates into node data', async () => {
+  it('projects live execution statuses without mutating node data', async () => {
     mockNodes = [
       { id: 'n1', data: { toolName: 'T', status: 'unexecuted' } },
     ]
@@ -369,11 +384,13 @@ describe('CanvasView execution lock', () => {
     const exec = useExecutionStore()
     exec.applyNodeState({ node_id: 'n1', status: 'running', cached: false })
     await nextTick()
-    expect(mockNodes[0].data.status).toBe('running')
+    expect(projectedStatusesOf(w).n1.status).toBe('running')
+    expect(mockNodes[0].data.status).toBe('unexecuted')
 
     exec.applyNodeState({ node_id: 'n1', status: 'executed', cached: false })
     await nextTick()
-    expect(mockNodes[0].data.status).toBe('executed')
+    expect(projectedStatusesOf(w).n1.status).toBe('executed')
+    expect(mockNodes[0].data.status).toBe('unexecuted')
     w.unmount()
   })
 
@@ -381,7 +398,7 @@ describe('CanvasView execution lock', () => {
     mockNodes = [
       {
         id: 'n1',
-        data: { toolName: 'T', status: 'unexecuted', provisional: true },
+        data: { toolName: 'T', status: 'unexecuted', parameters: { value: 1 } },
       },
     ]
     const w = mountCanvas()
@@ -390,10 +407,15 @@ describe('CanvasView execution lock', () => {
     exec.nodeStatuses = {
       n1: { node_id: 'n1', status: 'executed', cached: true },
     }
+    expect(canvasCommandMocks.updateParameter?.('n1', 'value', 2)).toBe(true)
     await nextTick()
 
+    expect(projectedStatusesOf(w).n1).toMatchObject({
+      status: 'unexecuted',
+      provisional: true,
+    })
     expect(mockNodes[0].data.status).toBe('unexecuted')
-    expect(mockNodes[0].data.provisional).toBe(true)
+    expect(mockNodes[0].data.provisional).toBeUndefined()
     w.unmount()
   })
 
@@ -455,9 +477,15 @@ describe('CanvasView execution lock', () => {
       },
     ]) as any[]
     const canvas = mountCanvas()
+    const canvasId = canvasIdFromPanelId('canvas')
+    canvasSessionRegistry.activate(canvasId)
+    useExecutionStore().nodeStatuses = {
+      edited: { node_id: 'edited', status: 'executed', cached: false },
+      untouched: { node_id: 'untouched', status: 'executed', cached: false },
+    }
     const ui = useUIStore()
-    ui.setGraphNodes(mockNodes)
-    ui.setSelectedNodes(['edited'])
+    ui.setCanvasGraphNodes(canvasId, mockNodes)
+    ui.setCanvasSelectedNodes(canvasId, ['edited'])
     const panel = mount(NodePanel, {
       global: {
         plugins: [[PrimeVue, { theme: { preset: Aura } }]],
@@ -470,10 +498,18 @@ describe('CanvasView execution lock', () => {
       .vm.$emit('update:modelValue', '/data/new')
     await nextTick()
 
-    expect(mockNodes[0].data.status).toBe('unexecuted')
-    expect(mockNodes[0].data.provisional).toBe(true)
+    expect(projectedStatusesOf(canvas).edited).toMatchObject({
+      status: 'unexecuted',
+      provisional: true,
+    })
+    expect(projectedStatusesOf(canvas).untouched).toMatchObject({
+      status: 'executed',
+      provisional: true,
+    })
+    expect(mockNodes[0].data.status).toBe('executed')
+    expect(mockNodes[0].data.provisional).toBeUndefined()
     expect(mockNodes[1].data.status).toBe('executed')
-    expect(mockNodes[1].data.provisional).toBe(true)
+    expect(mockNodes[1].data.provisional).toBeUndefined()
 
     panel.unmount()
     canvas.unmount()
@@ -497,7 +533,8 @@ describe('CanvasView execution lock', () => {
     })
     await nextTick()
 
-    expect(mockNodes[0].data.status).toBe('executed')
+    expect(projectedStatusesOf(w).n1.status).toBe('executed')
+    expect(mockNodes[0].data.status).toBe('running')
     w.unmount()
   })
 
@@ -525,6 +562,10 @@ describe('CanvasView execution lock', () => {
       },
     ]
     const w = mountCanvas()
+    useExecutionStore().nodeStatuses = {
+      source: { node_id: 'source', status: 'executed', cached: false },
+      target: { node_id: 'target', status: 'executed', cached: false },
+    }
     expect(connectHandler).not.toBeNull()
 
     connectHandler!({
@@ -535,10 +576,16 @@ describe('CanvasView execution lock', () => {
     })
     await nextTick()
 
-    expect(mockNodes[0].data.status).toBe('executed')
-    expect(mockNodes[1].data.status).toBe('executed')
-    expect(mockNodes[0].data.provisional).toBe(true)
-    expect(mockNodes[1].data.provisional).toBe(true)
+    expect(projectedStatusesOf(w).source).toMatchObject({
+      status: 'executed',
+      provisional: true,
+    })
+    expect(projectedStatusesOf(w).target).toMatchObject({
+      status: 'executed',
+      provisional: true,
+    })
+    expect(mockNodes[0].data.provisional).toBeUndefined()
+    expect(mockNodes[1].data.provisional).toBeUndefined()
     w.unmount()
   })
 })

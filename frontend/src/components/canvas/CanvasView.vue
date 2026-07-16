@@ -28,7 +28,10 @@ import {
 } from '@/composables/useCanvasCommands'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useExecutionLock } from '@/composables/useExecutionLock'
-import { useStatusReconciliation, type NodeStateMessage } from '@/composables/useStatusReconciliation'
+import {
+  CANVAS_STATUS_PROJECTION_KEY,
+  useCanvasStatusProjection,
+} from '@/composables/useCanvasStatusProjection'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import {
@@ -43,7 +46,7 @@ import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
-import type { GraphState, MissingTool, NodeState, PublishedInput, PublishedOutput, WorkflowInfo } from '@/api/types'
+import type { GraphState, MissingTool, PublishedInput, PublishedOutput, WorkflowInfo } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
@@ -219,32 +222,20 @@ const undoRedo = useUndoRedo<CanvasHistoryState>()
 const { isLocked } = useExecutionLock()
 const executionStore = useExecutionStore()
 const fieldFocusTracker = useFieldFocusTracker()
+const statusNodes = computed(() => getNodes.value.map(node => ({
+  id: node.id,
+  enabled: node.data?.enabled !== false,
+})))
+const canvasStatusProjection = useCanvasStatusProjection({
+  descriptor: canvasDescriptor,
+  nodes: statusNodes,
+  validationResult,
+  acceptedDraftRevision: canvasPersistence.acceptedDraftRevision,
+})
+const projectedStatuses = canvasStatusProjection.statuses
+provide(CANVAS_STATUS_PROJECTION_KEY, canvasStatusProjection)
 
-// Status reconciliation: mark nodes provisional during debounce; clear when
-// the authoritative validation response arrives.
-const reconciliationNodes = ref<NodeState[]>([])
-const wsMessages = ref<NodeStateMessage[]>([])
-const {
-  reconciledStatuses,
-  markProvisional,
-  applyValidationResult,
-} = useStatusReconciliation(reconciliationNodes, validationResult, wsMessages)
-
-function applyValidationToCanvas(result = validationResult.value): void {
-  applyValidationResult(result)
-  if (result?.node_statuses) {
-    for (const node of getNodes.value) {
-      const status = result.node_statuses[node.id]
-      if (!status || !node.data) continue
-      if (node.data.status !== status.status) {
-        node.data.status = status.status
-      }
-      if (node.data.provisional) {
-        node.data.provisional = false
-      }
-    }
-  }
-
+function applyValidationEdgeErrors(): void {
   // Mirror per-edge validation errors so edge components can render them.
   const byEdge = edgeErrors.value
   for (const edge of getEdges.value) {
@@ -255,29 +246,7 @@ function applyValidationToCanvas(result = validationResult.value): void {
   }
 }
 
-watch(validationResult, applyValidationToCanvas, { deep: true })
-
-// Live per-node status from the execution store takes precedence while an
-// execution is running and for its terminal transition. Later idle snapshots
-// must not overwrite validation for a graph edited after that execution.
-function applyExecutionStatusesToCanvas(statuses = executionStore.nodeStatuses): void {
-  if (!executionStore.appliesToCanvas(canvasId)) return
-  for (const node of getNodes.value) {
-    const status = statuses[node.id]
-    if (status && node.data && node.data.status !== status.status) {
-      node.data.status = status.status
-    }
-  }
-}
-
-watch(
-  [() => executionStore.isRunning, () => executionStore.nodeStatuses],
-  ([running, statuses], [wasRunning]) => {
-    if (!statuses || (!running && !wasRunning)) return
-    applyExecutionStatusesToCanvas(statuses)
-  },
-  { deep: true },
-)
+watch(validationResult, applyValidationEdgeErrors, { deep: true })
 
 const clipboardData = ref<ClipboardPayload | null>(getMemoryClipboardPayload())
 const canvasRef = ref<HTMLDivElement | null>(null)
@@ -353,6 +322,7 @@ interface CanvasHistoryState extends CanvasVueFlowState {
 interface GraphChangeOptions {
   state?: CanvasVueFlowState
   authoritativeGraph?: GraphState
+  statusesAlreadyStaged?: boolean
 }
 
 function deepClone<T>(value: T): T {
@@ -574,8 +544,7 @@ async function applyGraphState(
     await nextTick()
     if (isCanvasUnmounted) return
     setEdges(vueFlowGraph.edges)
-    applyValidationToCanvas()
-    if (executionStore.isRunning) applyExecutionStatusesToCanvas()
+    applyValidationEdgeErrors()
     if (isCanvasUnmounted) return
     const authoritativeGraph = rememberAuthoritativeGraph(graph)
     syncGraphState(authoritativeGraph)
@@ -1066,7 +1035,7 @@ function reconcilePendingToolState(): void {
     emitGraphChanged({ authoritativeGraph: graph })
     return
   }
-  stageGraphValidation(state)
+  stageGraphValidation()
   revalidateGraphState(rememberAuthoritativeGraph(graph))
 }
 
@@ -1308,6 +1277,7 @@ onBeforeUnmount(() => {
   removedFocusedFields.clear()
   dataTableStore.releaseCanvas(canvasId)
   resolvedOutputsStore.releaseCanvas(canvasId)
+  canvasStatusProjection.dispose()
   disposeGraphSync()
   disposeCanvasPersistence()
   canvasCommands.dispose()
@@ -2459,6 +2429,8 @@ function applySubWorkflowDraft(
 ) {
   const node = getNodes.value.find((n: any) => n.id === parentNodeId)
   if (!node?.data) return
+  const parentWasExecuted = canvasStatusProjection.statusForNode(parentNodeId)?.status
+    === 'executed'
   const previousInputs = deepClone(node.data.published_inputs ?? []) as PublishedInput[]
   const previousOutputs = deepClone(node.data.published_outputs ?? []) as PublishedOutput[]
   const nextInputs = deepClone(
@@ -2477,11 +2449,16 @@ function applySubWorkflowDraft(
   node.data.sub_workflow = deepClone(graph)
   node.data.published_inputs = nextInputs
   node.data.published_outputs = nextOutputs
-  if (node.data.status === 'executed') {
-    node.data.status = 'out_of_date'
+  canvasStatusProjection.markAllProvisional()
+  if (parentWasExecuted) {
+    canvasStatusProjection.markProvisional(parentNodeId, {
+      node_id: parentNodeId,
+      status: 'out_of_date',
+      cached: false,
+    })
   }
   dataTableStore.clearCanvasCache(canvasId, parentNodeId)
-  emitGraphChanged()
+  emitGraphChanged({ statusesAlreadyStaged: true })
 }
 
 function saveSubWorkflowSession() {
@@ -2936,34 +2913,18 @@ function updateNodeParameter(
     ...(node.data.parameters ?? {}),
     [key]: value,
   }
-  node.data.status = 'unexecuted'
-  node.data.provisional = true
-  emitGraphChanged()
+  canvasStatusProjection.markAllProvisional()
+  canvasStatusProjection.markProvisional(nodeId, {
+    node_id: nodeId,
+    status: 'unexecuted',
+    cached: false,
+  })
+  emitGraphChanged({ statusesAlreadyStaged: true })
   return true
 }
 
-function stageGraphValidation(state: CanvasVueFlowState): void {
-  reconciliationNodes.value = state.nodes.map((node: any) => ({
-    id: node.id,
-    name: node.data?.name ?? node.id,
-    tool_name: node.data?.toolName ?? '',
-    position: [node.position?.x ?? 0, node.position?.y ?? 0],
-    parameters: node.data?.parameters ?? {},
-    resources: node.data?.resources ?? {},
-    output_templates: node.data?.output_templates ?? {},
-    enabled: node.data?.enabled ?? true,
-    collapsed: node.data?.collapsed ?? false,
-    sub_workflow: node.data?.sub_workflow ?? null,
-    published_inputs: node.data?.published_inputs ?? [],
-    published_outputs: node.data?.published_outputs ?? [],
-    sub_workflow_readonly_reason: node.data?.sub_workflow_readonly_reason ?? null,
-    source_workflow_name: node.data?.source_workflow_name ?? null,
-  })) as NodeState[]
-  for (const node of state.nodes) {
-    const provisionalStatus = node.data?.status ?? 'unexecuted'
-    markProvisional(node.id, provisionalStatus)
-    if (node.data) node.data.provisional = true
-  }
+function stageGraphValidation(): void {
+  canvasStatusProjection.markAllProvisional()
 }
 
 function emitGraphChanged(options: GraphChangeOptions = {}) {
@@ -2979,7 +2940,7 @@ function emitGraphChanged(options: GraphChangeOptions = {}) {
     : state
   const historyState = canvasHistoryState(publishedState)
   undoRedo.push(historyState)
-  stageGraphValidation(state)
+  if (!options.statusesAlreadyStaged) stageGraphValidation()
   if (isSubWorkflowEditor && props.subWorkflowSessionId) {
     if (authoritativeGraph) {
       syncGraphState(authoritativeGraph)
@@ -3013,7 +2974,7 @@ defineExpose({
   saveSubWorkflowSession,
   isValidConnection,
   clipboardData,
-  reconciledStatuses,
+  projectedStatuses,
   syncState,
 })
 </script>

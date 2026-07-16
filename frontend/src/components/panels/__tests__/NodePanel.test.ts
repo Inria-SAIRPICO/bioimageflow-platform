@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { computed, ref } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import NodePanel from '../NodePanel.vue'
@@ -16,6 +17,10 @@ import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
+import {
+  _resetCanvasStatusProjectionForTest,
+  useCanvasStatusProjection,
+} from '@/composables/useCanvasStatusProjection'
 import {
   __resetForTests as resetFieldFocusForTests,
   useFieldFocusTracker,
@@ -90,7 +95,16 @@ function mountPanel(
     canvasId,
     workflowId: null,
   }
-  useGraphSync({ descriptor, getWorkflowId: () => null })
+  const graphSync = useGraphSync({ descriptor, getWorkflowId: () => null })
+  const statusProjection = useCanvasStatusProjection({
+    descriptor,
+    nodes: computed(() => uiStore.graphNodes.map((node: any) => ({
+      id: node.id,
+      enabled: node.data?.enabled !== false,
+    }))),
+    validationResult: graphSync.validationResult,
+    acceptedDraftRevision: ref(null),
+  })
   useCanvasCommands({
     descriptor,
     renameNode: (nodeId, name) => {
@@ -247,8 +261,12 @@ function mountPanel(
         ...node.data.parameters,
         [key]: value,
       }
-      node.data.status = 'unexecuted'
-      node.data.provisional = true
+      statusProjection.markAllProvisional()
+      statusProjection.markProvisional(nodeId, {
+        node_id: nodeId,
+        status: 'unexecuted',
+        cached: false,
+      })
       return true
     },
   })
@@ -272,12 +290,34 @@ function mountPanel(
 
 describe('NodePanel', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     _resetGraphSyncForTest()
     _resetCanvasCommandsForTest()
+    _resetCanvasStatusProjectionForTest()
     resetFieldFocusForTests()
     mountedCanvasIndex = 0
     for (const command of Object.values(nodeEditCommandCalls)) command.mockClear()
+  })
+
+  it('renders and styles the projected status instead of serialized node data', async () => {
+    const w = mountPanel(makeNodeData({ status: 'executed' }))
+
+    expect(w.find('.status-badge').text()).toBe('unexecuted')
+
+    useGraphSync().validationResult.value = {
+      valid: true,
+      errors: [],
+      node_statuses: {
+        'node-1': { node_id: 'node-1', status: 'out_of_date', cached: false },
+      },
+    }
+    await w.vm.$nextTick()
+
+    expect(w.find('.status-badge').text()).toBe('out_of_date')
+    expect(w.find('.status-badge').classes()).toContain('status-out-of-date')
+
+    w.unmount()
   })
 
   it('reports parameter focus with the active canvas identity', async () => {
@@ -1191,9 +1231,16 @@ describe('NodePanel', () => {
       canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
       const ui = useUIStore()
       for (const [canvasId, name] of [[canvasA, 'A'], [canvasB, 'B']] as const) {
+        const workflowId = canvasId === canvasA ? 'a' : 'b'
         ui.setCanvasWorkflow(canvasId, canvasId === canvasA ? 'a' : 'b', name)
         ui.setCanvasSelectedNodes(canvasId, ['shared'])
         ui.setCanvasGraphNodes(canvasId, [{ id: 'shared', data: makeNodeData() }])
+        useCanvasStatusProjection({
+          descriptor: { kind: 'root', canvasId, workflowId },
+          nodes: ref([{ id: 'shared', enabled: true }]),
+          validationResult: ref(null),
+          acceptedDraftRevision: ref(7),
+        })
       }
       canvasSessionRegistry.activate(canvasA)
       const w = mount(NodePanel, {
