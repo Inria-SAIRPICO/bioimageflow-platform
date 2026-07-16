@@ -38,6 +38,12 @@ test.describe('logger panel', () => {
     await expect(page.locator('[data-testid="log-node-filter"]')).toBeVisible()
     await expect(page.locator('[data-testid="log-search"]')).toBeVisible()
     await expect(page.locator('[data-testid="log-auto-scroll"]')).toBeVisible()
+    await expect(page.locator('[data-testid="log-header"] [role="columnheader"]')).toHaveText([
+      'Timestamp',
+      'Level',
+      'Node',
+      'Message',
+    ])
 
     const before = wsMessages.filter((msg: any) => msg?.type === 'subscribe_logs').length
     await page.locator('[data-testid="log-level-DEBUG"]').click()
