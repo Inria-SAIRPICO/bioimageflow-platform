@@ -9,7 +9,9 @@ import threading
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from uuid import UUID
 
@@ -21,6 +23,7 @@ from bioimageflow_server.models.nested_workflow_snapshot import (
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import ValidationResult
 from bioimageflow_server.services.graph_validator import validate_graph
+from bioimageflow_server.services.graph_worker import run_graph_work
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
@@ -58,6 +61,13 @@ class NestedSnapshotHasDependents(ValueError):
         )
 
 
+@dataclass(frozen=True)
+class _RootValidationContext:
+    workflow_id: str | None
+    identity_generation: int | None
+    storage_path: Path | None
+
+
 class NestedWorkflowSnapshotService:
     """Persist nested editor documents without changing their parent workflow."""
 
@@ -90,41 +100,88 @@ class NestedWorkflowSnapshotService:
     ) -> NestedWorkflowSnapshotResponse:
         """Return the existing hierarchical session or create it atomically."""
 
-        store = self._store()
-        root_generation = (
-            store.workflow_generation(owner.workflow_id)
-            if owner.kind == "root" and owner.workflow_id is not None
-            else None
-        )
-        with self._lock:
-            if root_generation is not None:
-                assert owner.workflow_id is not None
-                store.ensure_workflow_generation(
-                    owner.workflow_id,
-                    root_generation,
-                )
-            root_workflow_id = self._root_workflow_id(store, owner)
-            for path in self._snapshot_dir(store).glob("*.json"):
-                candidate = self._read_path(path)
-                if candidate.owner == owner and candidate.parent_node_id == parent_node_id:
-                    return candidate
+        graph = graph.model_copy(deep=True)
+        while True:
+            store = self._store()
+            with self._lock:
+                root_context = self._root_validation_context_locked(store, owner)
+                existing = self._find_snapshot(store, owner, parent_node_id)
+                if existing is not None:
+                    return existing
+                session_id = uuid.uuid4()
 
-            session_id = uuid.uuid4()
-            response = NestedWorkflowSnapshotResponse(
-                session_id=session_id,
-                owner=owner,
-                parent_node_id=parent_node_id,
-                snapshot_revision=0,
-                updated_at=_utc_now(),
-                graph=graph,
-                validation=self._validate(store, root_workflow_id, graph),
+            try:
+                validation = self._validate(
+                    store,
+                    root_context.workflow_id,
+                    graph,
+                )
+            except Exception:
+                with self._lock:
+                    existing = self._find_snapshot(store, owner, parent_node_id)
+                    if existing is not None:
+                        return existing
+                    with self._root_validation_commit_locked(
+                        store,
+                        owner,
+                        root_context,
+                    ) as context_is_current:
+                        if not context_is_current:
+                            continue
+                raise
+
+            with self._lock:
+                existing = self._find_snapshot(store, owner, parent_node_id)
+                if existing is not None:
+                    return existing
+                with self._root_validation_commit_locked(
+                    store,
+                    owner,
+                    root_context,
+                ) as context_is_current:
+                    if not context_is_current:
+                        continue
+                    response = NestedWorkflowSnapshotResponse(
+                        session_id=session_id,
+                        owner=owner,
+                        parent_node_id=parent_node_id,
+                        snapshot_revision=0,
+                        updated_at=_utc_now(),
+                        graph=graph,
+                        validation=validation,
+                    )
+                    self._write(store, response)
+                    return response
+
+    async def open_snapshot_async(
+        self,
+        owner: NestedSnapshotOwner,
+        parent_node_id: str,
+        graph: GraphState,
+    ) -> NestedWorkflowSnapshotResponse:
+        """Open a snapshot without blocking the event loop."""
+
+        graph = graph.model_copy(deep=True)
+        return await run_graph_work(
+            partial(
+                self.open_snapshot,
+                owner,
+                parent_node_id,
+                graph,
             )
-            self._write(store, response)
-            return response
+        )
 
     def get_snapshot(self, session_id: UUID) -> NestedWorkflowSnapshotResponse:
         with self._lock:
             return self._read(self._store(), session_id)
+
+    async def get_snapshot_async(
+        self,
+        session_id: UUID,
+    ) -> NestedWorkflowSnapshotResponse:
+        """Read a snapshot without blocking the event loop."""
+
+        return await run_graph_work(partial(self.get_snapshot, session_id))
 
     def put_snapshot(
         self,
@@ -133,22 +190,76 @@ class NestedWorkflowSnapshotService:
         expected_revision: int,
         graph: GraphState,
     ) -> NestedWorkflowSnapshotResponse:
-        with self._lock:
-            store = self._store()
-            current = self._read(store, session_id)
-            self._ensure_revision(current, expected_revision)
-            root_workflow_id = self._root_workflow_id(store, current.owner)
-            accepted = NestedWorkflowSnapshotResponse(
-                session_id=current.session_id,
-                owner=current.owner,
-                parent_node_id=current.parent_node_id,
-                snapshot_revision=current.snapshot_revision + 1,
-                updated_at=_utc_now(),
+        graph = graph.model_copy(deep=True)
+        while True:
+            with self._lock:
+                store = self._store()
+                current = self._read(store, session_id)
+                self._ensure_revision(current, expected_revision)
+                root_context = self._root_validation_context_locked(
+                    store,
+                    current.owner,
+                )
+
+            try:
+                validation = self._validate(
+                    store,
+                    root_context.workflow_id,
+                    graph,
+                )
+            except Exception:
+                with self._lock:
+                    current = self._read(store, session_id)
+                    self._ensure_revision(current, expected_revision)
+                    with self._root_validation_commit_locked(
+                        store,
+                        current.owner,
+                        root_context,
+                    ) as context_is_current:
+                        if not context_is_current:
+                            continue
+                raise
+
+            with self._lock:
+                current = self._read(store, session_id)
+                self._ensure_revision(current, expected_revision)
+                with self._root_validation_commit_locked(
+                    store,
+                    current.owner,
+                    root_context,
+                ) as context_is_current:
+                    if not context_is_current:
+                        continue
+                    accepted = NestedWorkflowSnapshotResponse(
+                        session_id=current.session_id,
+                        owner=current.owner,
+                        parent_node_id=current.parent_node_id,
+                        snapshot_revision=current.snapshot_revision + 1,
+                        updated_at=_utc_now(),
+                        graph=graph,
+                        validation=validation,
+                    )
+                    self._write(store, accepted)
+                    return accepted
+
+    async def put_snapshot_async(
+        self,
+        session_id: UUID,
+        *,
+        expected_revision: int,
+        graph: GraphState,
+    ) -> NestedWorkflowSnapshotResponse:
+        """Validate and commit a snapshot through the bounded graph worker."""
+
+        graph = graph.model_copy(deep=True)
+        return await run_graph_work(
+            partial(
+                self.put_snapshot,
+                session_id,
+                expected_revision=expected_revision,
                 graph=graph,
-                validation=self._validate(store, root_workflow_id, graph),
             )
-            self._write(store, accepted)
-            return accepted
+        )
 
     def delete_snapshot(self, session_id: UUID, *, expected_revision: int) -> None:
         with self._lock:
@@ -159,6 +270,22 @@ class NestedWorkflowSnapshotService:
             if dependents:
                 raise NestedSnapshotHasDependents(session_id, dependents)
             self._path(store, session_id).unlink()
+
+    async def delete_snapshot_async(
+        self,
+        session_id: UUID,
+        *,
+        expected_revision: int,
+    ) -> None:
+        """Delete a snapshot without blocking the event loop."""
+
+        await run_graph_work(
+            partial(
+                self.delete_snapshot,
+                session_id,
+                expected_revision=expected_revision,
+            )
+        )
 
     def delete_for_root_workflow(self, workflow_id: str) -> list[UUID]:
         """Delete every retained snapshot owned by one root workflow."""
@@ -208,6 +335,61 @@ class NestedWorkflowSnapshotService:
                 except FileNotFoundError:
                     pass
             return removed
+
+    def _find_snapshot(
+        self,
+        store: WorkflowStoreService,
+        owner: NestedSnapshotOwner,
+        parent_node_id: str,
+    ) -> NestedWorkflowSnapshotResponse | None:
+        for path in self._snapshot_dir(store).glob("*.json"):
+            candidate = self._read_path(path)
+            if candidate.owner == owner and candidate.parent_node_id == parent_node_id:
+                return candidate
+        return None
+
+    def _root_validation_context_locked(
+        self,
+        store: WorkflowStoreService,
+        owner: NestedSnapshotOwner,
+    ) -> _RootValidationContext:
+        workflow_id = self._root_workflow_id(store, owner)
+        if workflow_id is None:
+            return _RootValidationContext(
+                workflow_id=None,
+                identity_generation=None,
+                storage_path=self._fallback_storage_path_provider(),
+            )
+        with store.workflow_mutation(workflow_id):
+            store.get_workflow(workflow_id)
+            return _RootValidationContext(
+                workflow_id=workflow_id,
+                identity_generation=store.workflow_generation(workflow_id),
+                storage_path=store.get_storage_path(workflow_id),
+            )
+
+    @contextmanager
+    def _root_validation_commit_locked(
+        self,
+        store: WorkflowStoreService,
+        owner: NestedSnapshotOwner,
+        expected: _RootValidationContext,
+    ) -> Iterator[bool]:
+        workflow_id = self._root_workflow_id(store, owner)
+        if workflow_id != expected.workflow_id:
+            yield False
+            return
+        if workflow_id is None:
+            yield self._fallback_storage_path_provider() == expected.storage_path
+            return
+
+        assert expected.identity_generation is not None
+        with store.workflow_mutation(workflow_id):
+            store.ensure_workflow_generation(
+                workflow_id,
+                expected.identity_generation,
+            )
+            yield store.get_storage_path(workflow_id) == expected.storage_path
 
     def _dependent_session_ids(
         self,

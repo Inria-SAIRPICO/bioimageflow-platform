@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
 
@@ -21,6 +23,7 @@ from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedSnapshotRevisionConflict,
     NestedWorkflowSnapshotService,
 )
+from bioimageflow_server.services.execution import ExecutionConflictError
 
 router = APIRouter(
     prefix="/nested-workflow-snapshots",
@@ -43,6 +46,23 @@ def _locked_response(execution_manager: Any | None) -> JSONResponse | None:
         detail="Workflow editing is locked while execution is in progress"
     )
     return JSONResponse(status_code=423, content=body.model_dump())
+
+
+@asynccontextmanager
+async def _idle_mutation_lease(
+    execution_manager: Any | None,
+) -> AsyncIterator[None]:
+    if execution_manager is None:
+        yield
+        return
+    lease = getattr(execution_manager, "exclusive_idle_mutation", None)
+    if lease is None:
+        if getattr(execution_manager, "is_running", False):
+            raise ExecutionConflictError("An execution is already running")
+        yield
+        return
+    async with lease():
+        yield
 
 
 def _conflict_response(exc: NestedSnapshotRevisionConflict) -> JSONResponse:
@@ -72,16 +92,23 @@ def _dependency_conflict_response(
 )
 async def open_nested_workflow_snapshot(
     body: NestedWorkflowSnapshotOpenRequest,
-    service: NestedWorkflowSnapshotService = Depends(
-        get_nested_workflow_snapshot_service
-    ),
+    service: NestedWorkflowSnapshotService = Depends(get_nested_workflow_snapshot_service),
     execution_manager: Any | None = Depends(get_execution_manager),
 ) -> NestedWorkflowSnapshotResponse | JSONResponse:
-    locked = _locked_response(execution_manager)
-    if locked is not None:
-        return locked
     try:
-        return service.open_snapshot(body.owner, body.parent_node_id, body.graph)
+        async with _idle_mutation_lease(execution_manager):
+            return await service.open_snapshot_async(
+                body.owner,
+                body.parent_node_id,
+                body.graph,
+            )
+    except ExecutionConflictError:
+        return _locked_response(execution_manager) or JSONResponse(
+            status_code=423,
+            content=NestedWorkflowSnapshotLockedResponse(
+                detail="Workflow editing is locked while execution is in progress"
+            ).model_dump(),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -91,12 +118,10 @@ async def open_nested_workflow_snapshot(
 @router.get("/{session_id}", response_model=NestedWorkflowSnapshotResponse)
 async def get_nested_workflow_snapshot(
     session_id: UUID,
-    service: NestedWorkflowSnapshotService = Depends(
-        get_nested_workflow_snapshot_service
-    ),
+    service: NestedWorkflowSnapshotService = Depends(get_nested_workflow_snapshot_service),
 ) -> NestedWorkflowSnapshotResponse:
     try:
-        return service.get_snapshot(session_id)
+        return await service.get_snapshot_async(session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -112,19 +137,22 @@ async def get_nested_workflow_snapshot(
 async def put_nested_workflow_snapshot(
     session_id: UUID,
     body: NestedWorkflowSnapshotPutRequest,
-    service: NestedWorkflowSnapshotService = Depends(
-        get_nested_workflow_snapshot_service
-    ),
+    service: NestedWorkflowSnapshotService = Depends(get_nested_workflow_snapshot_service),
     execution_manager: Any | None = Depends(get_execution_manager),
 ) -> NestedWorkflowSnapshotResponse | JSONResponse:
-    locked = _locked_response(execution_manager)
-    if locked is not None:
-        return locked
     try:
-        return service.put_snapshot(
-            session_id,
-            expected_revision=body.expected_revision,
-            graph=body.graph,
+        async with _idle_mutation_lease(execution_manager):
+            return await service.put_snapshot_async(
+                session_id,
+                expected_revision=body.expected_revision,
+                graph=body.graph,
+            )
+    except ExecutionConflictError:
+        return _locked_response(execution_manager) or JSONResponse(
+            status_code=423,
+            content=NestedWorkflowSnapshotLockedResponse(
+                detail="Workflow editing is locked while execution is in progress"
+            ).model_dump(),
         )
     except NestedSnapshotRevisionConflict as exc:
         return _conflict_response(exc)
@@ -152,16 +180,22 @@ async def put_nested_workflow_snapshot(
 async def delete_nested_workflow_snapshot(
     session_id: UUID,
     expected_revision: int = Query(ge=0),
-    service: NestedWorkflowSnapshotService = Depends(
-        get_nested_workflow_snapshot_service
-    ),
+    service: NestedWorkflowSnapshotService = Depends(get_nested_workflow_snapshot_service),
     execution_manager: Any | None = Depends(get_execution_manager),
 ) -> Response:
-    locked = _locked_response(execution_manager)
-    if locked is not None:
-        return locked
     try:
-        service.delete_snapshot(session_id, expected_revision=expected_revision)
+        async with _idle_mutation_lease(execution_manager):
+            await service.delete_snapshot_async(
+                session_id,
+                expected_revision=expected_revision,
+            )
+    except ExecutionConflictError:
+        return _locked_response(execution_manager) or JSONResponse(
+            status_code=423,
+            content=NestedWorkflowSnapshotLockedResponse(
+                detail="Workflow editing is locked while execution is in progress"
+            ).model_dump(),
+        )
     except NestedSnapshotRevisionConflict as exc:
         return _conflict_response(exc)
     except NestedSnapshotHasDependents as exc:

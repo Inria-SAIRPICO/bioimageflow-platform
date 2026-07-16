@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
+import threading
 import tomllib
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -14,6 +16,17 @@ import pytest
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.workflow import WorkflowCreate
+from bioimageflow_server.models.validation import ValidationResult
+from bioimageflow_server.routers.execution import (
+    get_workflow_draft_service as execution_get_workflow_draft_service,
+)
+from bioimageflow_server.routers.workflow_drafts import (
+    get_workflow_draft_service as drafts_get_workflow_draft_service,
+)
+from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
 from bioimageflow_server.services import workflow_draft as workflow_draft_service
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -93,6 +106,10 @@ async def _create_workflow(client: httpx.AsyncClient, name: str = "wf") -> None:
     assert response.status_code == 201
 
 
+def _graph_state(node_id: str) -> GraphState:
+    return GraphState.model_validate(_graph(node_id))
+
+
 def _graph(node_id: str = "bad") -> dict[str, Any]:
     return {
         "nodes": [
@@ -122,7 +139,12 @@ async def test_get_synthesizes_draft_from_saved_workflow(
     assert body["draft_revision"] == 0
     assert body["dirty_against_saved"] is False
     assert body["updated_by"] == "system"
-    assert body["graph"] == {"nodes": [], "edges": [], "published_inputs": [], "published_outputs": []}
+    assert body["graph"] == {
+        "nodes": [],
+        "edges": [],
+        "published_inputs": [],
+        "published_outputs": [],
+    }
     assert body["base_saved_revision"].startswith("sha256:")
     assert not (
         tmp_path / "workspace" / "workflows" / "wf" / ".bioimageflow" / "draft.json"
@@ -317,14 +339,7 @@ async def test_reset_to_saved_is_revision_checked_and_publishes_only_on_success(
             }
         ]
 
-        draft_path = (
-            tmp_path
-            / "workspace"
-            / "workflows"
-            / "wf"
-            / ".bioimageflow"
-            / "draft.json"
-        )
+        draft_path = tmp_path / "workspace" / "workflows" / "wf" / ".bioimageflow" / "draft.json"
         accepted_bytes = draft_path.read_bytes()
         stale = await client.post(
             "/api/v1/workflow-drafts/wf/reset-to-saved",
@@ -485,9 +500,7 @@ async def test_put_does_not_publish_when_locked(
 
     manager.publish_workflow_draft_changed = _publish  # type: ignore[method-assign]
 
-    async for client in _client(
-        tmp_path, is_running=True, connection_manager=manager
-    ):
+    async for client in _client(tmp_path, is_running=True, connection_manager=manager):
         await _create_workflow(client, "wf")
 
         response = await client.put(
@@ -524,13 +537,7 @@ async def test_get_repairs_legacy_mismatched_draft_identity_without_losing_field
     workflow_id = "folder/wf"
     await _create_workflow(client, workflow_id)
     draft_path = (
-        tmp_path
-        / "workspace"
-        / "workflows"
-        / "folder"
-        / "wf"
-        / ".bioimageflow"
-        / "draft.json"
+        tmp_path / "workspace" / "workflows" / "folder" / "wf" / ".bioimageflow" / "draft.json"
     )
     draft_path.parent.mkdir(parents=True, exist_ok=True)
     legacy = {
@@ -575,13 +582,7 @@ async def test_get_does_not_repair_mismatched_invalid_draft(
     workflow_id = "folder/wf"
     await _create_workflow(client, workflow_id)
     draft_path = (
-        tmp_path
-        / "workspace"
-        / "workflows"
-        / "folder"
-        / "wf"
-        / ".bioimageflow"
-        / "draft.json"
+        tmp_path / "workspace" / "workflows" / "folder" / "wf" / ".bioimageflow" / "draft.json"
     )
     draft_path.parent.mkdir(parents=True, exist_ok=True)
     invalid = {
@@ -614,3 +615,175 @@ async def test_put_rejects_writes_while_execution_is_running(
 
     assert response.status_code == 423
     assert response.json()["error"] == "workflow_locked"
+
+
+async def test_admitted_draft_validation_blocks_run_until_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=registry,
+        storage_base_dir=tmp_path / "workspace" / "outputs",
+    )
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
+    graph_a = _graph_state("graph-a")
+    graph_b = _graph_state("graph-b")
+    accepted = drafts.put_draft(
+        "wf",
+        graph=graph_a,
+        expected_revision=0,
+        should_validate=False,
+    )
+    manager = ExecutionManager(
+        NullEventBus(),
+        registry,
+        Settings(
+            deployment_mode="desktop",
+            output_data_folder=str(tmp_path / "outputs"),
+        ),
+    )
+    validation_entered = threading.Event()
+    release_validation = threading.Event()
+
+    def blocking_validate(
+        _store: WorkflowStoreService,
+        _workflow_id: str,
+        graph: GraphState,
+    ) -> ValidationResult:
+        if graph == graph_b:
+            validation_entered.set()
+            assert release_validation.wait(timeout=2)
+        return drafts._default_validation(graph)
+
+    monkeypatch.setattr(drafts, "_validate", blocking_validate)
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=store,
+            execution_manager=manager,
+            settings=manager.settings,
+            storage_path=tmp_path / "outputs",
+            disable_hot_reload=True,
+        )
+    )
+    app.dependency_overrides[drafts_get_workflow_draft_service] = lambda: drafts
+    app.dependency_overrides[execution_get_workflow_draft_service] = lambda: drafts
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        draft_write = asyncio.create_task(
+            client.put(
+                "/api/v1/workflow-drafts/wf",
+                json={
+                    "graph": graph_b.model_dump(mode="json"),
+                    "expected_revision": accepted.draft_revision,
+                    "updated_by": "frontend",
+                },
+            )
+        )
+        try:
+            async with asyncio.timeout(2):
+                while not validation_entered.is_set():
+                    await asyncio.sleep(0)
+
+            run = await client.post(
+                "/api/v1/execution/run",
+                json={
+                    "graph": graph_a.model_dump(mode="json"),
+                    "workflow_name": "wf",
+                    "draft_revision": accepted.draft_revision,
+                },
+            )
+
+            assert run.status_code == 409
+            assert draft_write.done() is False
+            assert manager._starting is False
+            assert manager.context is None
+            assert manager.get_status().state == "idle"
+        finally:
+            release_validation.set()
+
+        committed = await draft_write
+
+    assert committed.status_code == 200
+    assert committed.json()["draft_revision"] == accepted.draft_revision + 1
+    assert manager.is_running is False
+
+
+async def test_revision_zero_authority_validation_is_reserved_as_starting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=registry,
+        storage_base_dir=tmp_path / "workspace" / "outputs",
+    )
+    store.create_workflow(WorkflowCreate(name="wf"))
+    drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
+    manager = ExecutionManager(
+        NullEventBus(),
+        registry,
+        Settings(
+            deployment_mode="desktop",
+            output_data_folder=str(tmp_path / "outputs"),
+        ),
+    )
+    validation_entered = threading.Event()
+    release_validation = threading.Event()
+
+    def blocking_validate(
+        _store: WorkflowStoreService,
+        _workflow_id: str,
+        graph: GraphState,
+    ) -> ValidationResult:
+        validation_entered.set()
+        assert release_validation.wait(timeout=2)
+        return drafts._default_validation(graph)
+
+    monkeypatch.setattr(drafts, "_validate", blocking_validate)
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=store,
+            execution_manager=manager,
+            settings=manager.settings,
+            storage_path=tmp_path / "outputs",
+            disable_hot_reload=True,
+        )
+    )
+    app.dependency_overrides[drafts_get_workflow_draft_service] = lambda: drafts
+    app.dependency_overrides[execution_get_workflow_draft_service] = lambda: drafts
+    transport = httpx.ASGITransport(app=app)
+    payload = {
+        "graph": GraphState(nodes=[], edges=[]).model_dump(mode="json"),
+        "workflow_name": "wf",
+        "draft_revision": 0,
+    }
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first_run = asyncio.create_task(client.post("/api/v1/execution/run", json=payload))
+        try:
+            async with asyncio.timeout(2):
+                while not validation_entered.is_set():
+                    await asyncio.sleep(0)
+
+            status = (await client.get("/api/v1/execution/status")).json()
+            duplicate = await client.post("/api/v1/execution/run", json=payload)
+
+            assert status["state"] == "starting"
+            assert status["workflow_id"] == "wf"
+            assert status["draft_revision"] == 0
+            assert status["execution_id"]
+            assert duplicate.status_code == 409
+            assert first_run.done() is False
+        finally:
+            release_validation.set()
+
+        accepted = await first_run
+
+    assert accepted.status_code == 202, accepted.text

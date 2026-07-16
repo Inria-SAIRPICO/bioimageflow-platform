@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -69,6 +71,18 @@ class _FakeExecutionManager:
                 }
 
         return _Status()
+
+    @asynccontextmanager
+    async def reserve_start(
+        self,
+        workflow_id: str,
+        draft_revision: int | None,
+    ) -> AsyncIterator[ExecutionContext]:
+        yield ExecutionContext(
+            execution_id="reserved-mcp",
+            workflow_id=workflow_id,
+            draft_revision=draft_revision,
+        )
 
 
 def _write_state(tmp_path: Path, *, workflow_id: str = "folder/wf") -> Path:
@@ -237,7 +251,9 @@ async def test_workflow_lifecycle_tools_call_backend_workflow_api(
                     "graph": {"nodes": [], "edges": []},
                 },
             )
-        return httpx.Response(500, json={"detail": f"Unexpected {request.method} {request.url.path}"})
+        return httpx.Response(
+            500, json={"detail": f"Unexpected {request.method} {request.url.path}"}
+        )
 
     gateway = BioImageFlowMCPGateway(
         state_path=state_path,
@@ -375,7 +391,9 @@ async def test_rename_active_workflow_refreshes_agent_state_context(
                     "validation": {"valid": False, "errors": [{"type": "missing_tool"}]},
                 },
             )
-        return httpx.Response(500, json={"detail": f"Unexpected {request.method} {request.url.path}"})
+        return httpx.Response(
+            500, json={"detail": f"Unexpected {request.method} {request.url.path}"}
+        )
 
     gateway = BioImageFlowMCPGateway(
         state_path=state_path,
@@ -731,9 +749,7 @@ async def test_set_node_enabled_calls_backend_operation_api(
             "expected_revision": 4,
             "updated_by": "agent",
             "validate": True,
-            "operations": [
-                {"type": "set_node_enabled", "node_id": "n1", "enabled": False}
-            ],
+            "operations": [{"type": "set_node_enabled", "node_id": "n1", "enabled": False}],
         }
     ]
 
@@ -775,9 +791,7 @@ async def test_move_node_calls_backend_operation_api(tmp_path: Path) -> None:
             "expected_revision": 8,
             "updated_by": "agent",
             "validate": True,
-            "operations": [
-                {"type": "move_node", "node_id": "n1", "position": [120, 240]}
-            ],
+            "operations": [{"type": "move_node", "node_id": "n1", "position": [120, 240]}],
         }
     ]
 
@@ -1070,17 +1084,13 @@ async def test_registered_enable_and_move_tools_delegate_to_backend_operations(
             "expected_revision": 11,
             "updated_by": "agent",
             "validate": True,
-            "operations": [
-                {"type": "set_node_enabled", "node_id": "n1", "enabled": True}
-            ],
+            "operations": [{"type": "set_node_enabled", "node_id": "n1", "enabled": True}],
         },
         {
             "expected_revision": 11,
             "updated_by": "agent",
             "validate": True,
-            "operations": [
-                {"type": "move_node", "node_id": "n1", "position": [10, 20]}
-            ],
+            "operations": [{"type": "move_node", "node_id": "n1", "position": [10, 20]}],
         },
         {
             "expected_revision": 11,
@@ -1593,8 +1603,7 @@ async def test_connect_nodes_returns_structured_error_for_missing_named_fields(
         "ok": False,
         "error": "invalid_connect_nodes_arguments",
         "detail": (
-            "source_output and target_input are required when positional_index "
-            "is not provided"
+            "source_output and target_input are required when positional_index is not provided"
         ),
     }
 
@@ -2011,12 +2020,8 @@ async def test_describe_workflow_compacts_graph_without_parameters(
     ]
     assert "parameters" not in result["nodes"][0]
     assert result["edges"] == _contract_draft_response()["graph"]["edges"]
-    assert result["published_inputs"] == _contract_draft_response()["graph"][
-        "published_inputs"
-    ]
-    assert result["published_outputs"] == _contract_draft_response()["graph"][
-        "published_outputs"
-    ]
+    assert result["published_inputs"] == _contract_draft_response()["graph"]["published_inputs"]
+    assert result["published_outputs"] == _contract_draft_response()["graph"]["published_outputs"]
 
 
 async def test_describe_workflow_includes_parameters_when_requested(

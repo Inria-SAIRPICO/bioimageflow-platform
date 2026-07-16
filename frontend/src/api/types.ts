@@ -3653,7 +3653,7 @@ export interface ExecutionResult {
 }
 
 export interface ExecutionStatus {
-    state: "running" | "idle";
+    state: "starting" | "running" | "idle";
     last_result: ExecutionResult | null;
     progress: ProgressInfo | null;
     node_statuses?: Record<string, NodeStatus>;

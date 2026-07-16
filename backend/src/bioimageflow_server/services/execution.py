@@ -6,11 +6,10 @@ no-op implementation, the :class:`ExecutionManager` that drives
 :func:`clear_node_cache` helper used by the ``/execution/clear``
 endpoint.
 
-The manager uses the simple two-state flag ``state in {"idle",
-"running"}`` as its concurrency guard. ``start()`` is fire-and-forget,
-so an ``asyncio.Lock`` held across ``async with`` would release
-immediately. A synchronous check-and-set on the flag before spawning
-the background task guarantees at most one execution.
+The manager serializes execution preparation and graph mutations through
+one async boundary. An accepted run publishes a distinct ``starting``
+status while compilation is offloaded, then changes to ``running`` only
+after the compiled snapshot passes its final authority check.
 """
 
 from __future__ import annotations
@@ -21,7 +20,9 @@ import logging
 import re
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
@@ -215,6 +216,10 @@ class ExecutionManager:
         self._node_statuses: dict[str, NodeStatus] = {}
         self._workflow: Any | None = None
         self._run_task: asyncio.Task | None = None
+        self._preparation_lock = asyncio.Lock()
+        self._starting = False
+        self._pending_context: ExecutionContext | None = None
+        self._idle_operation_active = False
         # Track the last node_id that emitted a "started" event, used to
         # mark the "currently running" node as unexecuted on cancel if
         # no explicit "cancelled" progress event was received.
@@ -224,10 +229,20 @@ class ExecutionManager:
 
     @property
     def is_running(self) -> bool:
-        return self.state == "running"
+        return self.state == "running" or self._starting or self._idle_operation_active
 
     def get_status(self) -> ExecutionStatus:
-        context_fields = self.context.model_dump() if self.context is not None else {}
+        if self._starting:
+            assert self._pending_context is not None
+            return ExecutionStatus(
+                state="starting",
+                last_result=None,
+                progress=None,
+                node_statuses={},
+                **self._pending_context.model_dump(),
+            )
+        context = self.context
+        context_fields = context.model_dump() if context is not None else {}
         return ExecutionStatus(
             state=self.state,
             last_result=self.last_result,
@@ -246,6 +261,8 @@ class ExecutionManager:
         *,
         workflow_id: str,
         draft_revision: int | None = None,
+        ensure_context_current: Callable[[], Awaitable[None]] | None = None,
+        reserved_context: ExecutionContext | None = None,
     ) -> ExecutionContext:
         """Kick off a background execution.
 
@@ -254,28 +271,78 @@ class ExecutionManager:
             WorkflowBuildError: if the graph cannot be built into a
                 :class:`bioimageflow.Workflow`.
         """
-        # Check-and-set the flag in one synchronous section (no await).
-        if self.state == "running":
+        graph = graph.model_copy(deep=True)
+        nodes = list(nodes) if nodes is not None else None
+        if reserved_context is None:
+            async with self.reserve_start(workflow_id, draft_revision) as context:
+                return await self._start_reserved(
+                    context,
+                    graph,
+                    nodes,
+                    storage_path,
+                    ensure_context_current,
+                )
+        if (
+            not self._starting
+            or self._pending_context != reserved_context
+            or reserved_context.workflow_id != workflow_id
+            or reserved_context.draft_revision != draft_revision
+        ):
+            raise RuntimeError("Execution start reservation is not current")
+        return await self._start_reserved(
+            reserved_context,
+            graph,
+            nodes,
+            storage_path,
+            ensure_context_current,
+        )
+
+    @asynccontextmanager
+    async def reserve_start(
+        self,
+        workflow_id: str,
+        draft_revision: int | None,
+    ) -> AsyncIterator[ExecutionContext]:
+        """Reserve the engine before any offloaded Run authority preparation."""
+
+        if self.is_running:
             raise ExecutionConflictError(
                 "An execution is already running; stop it before starting a new one"
             )
-        context = ExecutionContext(
-            execution_id=str(uuid4()),
-            workflow_id=workflow_id,
-            draft_revision=draft_revision,
-        )
-        self.state = "running"
+        async with self._preparation_lock:
+            if self.is_running:
+                raise ExecutionConflictError(
+                    "An execution is already running; stop it before starting a new one"
+                )
+            context = ExecutionContext(
+                execution_id=str(uuid4()),
+                workflow_id=workflow_id,
+                draft_revision=draft_revision,
+            )
+            self._pending_context = context
+            self._starting = True
+            try:
+                yield context
+            finally:
+                self._starting = False
+                self._pending_context = None
 
-        # Execution compiles the graph submitted with this run request; no
-        # validation or editor session can alter its meaning.
+    async def _start_reserved(
+        self,
+        context: ExecutionContext,
+        graph: GraphState,
+        nodes: list[str] | None,
+        storage_path: Path | None,
+        ensure_context_current: Callable[[], Awaitable[None]] | None,
+    ) -> ExecutionContext:
+        live_settings = self._settings_provider() if self._settings_provider else self.settings
+        run_storage_path = storage_path if storage_path is not None else self.storage_path
+        build_graph = _execution_subgraph(graph, nodes) if nodes else graph
+        on_progress = self._make_progress_callback(context)
         try:
-            live_settings = self._settings_provider() if self._settings_provider else self.settings
-            run_storage_path = storage_path if storage_path is not None else self.storage_path
-            build_graph = _execution_subgraph(graph, nodes) if nodes else graph
-            on_progress = self._make_progress_callback(context)
-            validation_output = GraphValidationService(
+            validation_output = await GraphValidationService(
                 self.tool_registry
-            ).validate_with_compilation(
+            ).validate_with_compilation_async(
                 build_graph,
                 storage_path=run_storage_path,
                 on_progress=on_progress,
@@ -283,7 +350,8 @@ class ExecutionManager:
                 settings=live_settings,
             )
         except Exception as exc:
-            self.state = "idle"
+            if ensure_context_current is not None:
+                await ensure_context_current()
             raise WorkflowBuildError(
                 [
                     GraphValidationError(
@@ -293,13 +361,14 @@ class ExecutionManager:
                 ]
             ) from exc
 
+        if ensure_context_current is not None:
+            await ensure_context_current()
+
         if not validation_output.validation.valid:
-            self.state = "idle"
             raise WorkflowBuildError(validation_output.validation.errors)
 
-        # An accepted run supersedes the prior result. Rejected requests leave
-        # the observable execution status unchanged.
         self.context = context
+        self.state = "running"
         self.progress = None
         self.last_result = None
         self._node_statuses = {}
@@ -314,18 +383,10 @@ class ExecutionManager:
 
         workflow = validation_output.compilation.workflow
         self._workflow = workflow
-
-        # Resolve execution targets. If caller passed an explicit subset,
-        # look them up on workflow.nodes; otherwise pass none and let
-        # the library auto-detect terminal nodes.
         targets: tuple[Any, ...] = ()
         if nodes:
             node_map = dict(workflow.nodes)
-            resolved: list[Any] = []
-            for nid in nodes:
-                if nid in node_map:
-                    resolved.append(node_map[nid])
-            targets = tuple(resolved)
+            targets = tuple(node_map[nid] for nid in nodes if nid in node_map)
 
         dev_mode = bool(live_settings.dev_mode)
         target_label = ", ".join(nodes) if nodes else "workflow terminals"
@@ -343,24 +404,58 @@ class ExecutionManager:
             self._attach_environment_status_hook(engine)
             if engine is None or not use_explicit_engine:
                 return workflow.compute(*targets, dev_mode=dev_mode)
-            return workflow.compute(*targets, dev_mode=dev_mode, engine=engine)
+            return workflow.compute(
+                *targets,
+                dev_mode=dev_mode,
+                engine=engine,
+            )
 
         loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
         self._run_task = task
         task.add_done_callback(
-            lambda completed, run_context=context: self._on_run_done(completed, run_context)
+            lambda completed, run_context=context: self._on_run_done(
+                completed,
+                run_context,
+            )
         )
         return context
 
     async def stop(self) -> None:
-        if self._workflow is None or self.state != "running":
-            return
-        self.event_bus.publish_log("INFO", "Execution stop requested", None, time.time())
-        try:
-            self._workflow.cancel()
-        except Exception:  # pragma: no cover — defensive
-            logger.exception("Workflow.cancel() raised")
+        async with self._preparation_lock:
+            if self._workflow is None or self.state != "running":
+                return
+            self.event_bus.publish_log("INFO", "Execution stop requested", None, time.time())
+            try:
+                self._workflow.cancel()
+            except Exception:  # pragma: no cover — defensive
+                logger.exception("Workflow.cancel() raised")
+
+    @asynccontextmanager
+    async def exclusive_idle_mutation(self) -> AsyncIterator[None]:
+        """Lease the idle engine across a complete graph mutation."""
+
+        if self.is_running:
+            raise ExecutionConflictError(
+                "An execution is already running; stop it before editing the workflow"
+            )
+        async with self._preparation_lock:
+            if self.is_running:
+                raise ExecutionConflictError(
+                    "An execution is already running; stop it before editing the workflow"
+                )
+            self._idle_operation_active = True
+            try:
+                yield
+            finally:
+                self._idle_operation_active = False
+
+    @asynccontextmanager
+    async def exclusive_idle_graph_operation(self) -> AsyncIterator[None]:
+        """Compatibility alias for cache operations requiring the idle lease."""
+
+        async with self.exclusive_idle_mutation():
+            yield
 
     # ---- Internals ---------------------------------------------------------
 
@@ -982,7 +1077,16 @@ def _execution_subgraph(graph: GraphState, node_ids: list[str] | None) -> GraphS
 # ---- Cache clearer ----------------------------------------------------------
 
 
-def clear_node_cache(
+@dataclass(frozen=True)
+class NodeCacheClearPlan:
+    """Validated request-local plan awaiting identity-fenced invalidation."""
+
+    workflow: Any
+    valid_node_ids: tuple[str, ...]
+    downstream_node_ids: frozenset[str]
+
+
+def prepare_node_cache_clear(
     node_ids: list[str],
     graph: GraphState,
     registry: ToolRegistryService,
@@ -990,13 +1094,11 @@ def clear_node_cache(
     *,
     dev_mode: bool = True,
     settings: Settings | None = None,
-) -> dict[str, NodeStatus]:
-    """Clear cache directories for ``node_ids`` and compute downstream impact.
+) -> NodeCacheClearPlan:
+    """Compile and validate an immutable cache-clear request.
 
-    Compiles and validates the complete request graph before performing
-    any invalidation. Returns a dict keyed by node ID. Cleared nodes get
-    status ``"unexecuted"``; their transitive downstream receives
-    ``"out_of_date"``. Unknown node IDs are silently skipped.
+    The returned plan has no persistence side effects and can be discarded when
+    its workflow identity or storage context changes before commit.
     """
     try:
         validation_output = GraphValidationService(registry).validate_with_compilation(
@@ -1020,28 +1122,41 @@ def clear_node_cache(
 
     # Filter to valid node IDs known to the workflow.
     known = set(workflow.nodes.keys())
-    valid_ids = [nid for nid in node_ids if nid in known]
-    if not valid_ids:
-        return {}
-
-    # Invalidate without cascade first to identify directly cleared nodes.
-    directly_cleared = workflow.invalidate(valid_ids, cascade=False)
+    valid_ids = tuple(nid for nid in node_ids if nid in known)
 
     # Collect transitive downstream of each requested node.
     downstream: set[str] = set()
     for nid in valid_ids:
         downstream.update(workflow.downstream_of(nid))
 
-    # Invalidate downstream nodes (the direct ones are already cleared).
-    downstream -= directly_cleared
     downstream -= set(valid_ids)
+
+    return NodeCacheClearPlan(
+        workflow=workflow,
+        valid_node_ids=valid_ids,
+        downstream_node_ids=frozenset(downstream),
+    )
+
+
+def commit_node_cache_clear(plan: NodeCacheClearPlan) -> dict[str, NodeStatus]:
+    """Apply a validated cache-clear plan inside its caller's identity fence."""
+
+    if not plan.valid_node_ids:
+        return {}
+
+    directly_cleared = plan.workflow.invalidate(
+        list(plan.valid_node_ids),
+        cascade=False,
+    )
+    downstream = set(plan.downstream_node_ids)
+    downstream -= directly_cleared
     if downstream:
-        workflow.invalidate(list(downstream), cascade=False)
+        plan.workflow.invalidate(list(downstream), cascade=False)
 
     result: dict[str, NodeStatus] = {}
 
     # Directly requested nodes → unexecuted.
-    for nid in valid_ids:
+    for nid in plan.valid_node_ids:
         result[nid] = NodeStatus(node_id=nid, status="unexecuted", cached=False)
 
     # Downstream nodes → out_of_date.
@@ -1049,3 +1164,26 @@ def clear_node_cache(
         result[nid] = NodeStatus(node_id=nid, status="out_of_date", cached=False)
 
     return result
+
+
+def clear_node_cache(
+    node_ids: list[str],
+    graph: GraphState,
+    registry: ToolRegistryService,
+    storage_path: Path | None,
+    *,
+    dev_mode: bool = True,
+    settings: Settings | None = None,
+) -> dict[str, NodeStatus]:
+    """Compile, validate, and clear cache for synchronous callers."""
+
+    return commit_node_cache_clear(
+        prepare_node_cache_clear(
+            node_ids,
+            graph.model_copy(deep=True),
+            registry,
+            storage_path,
+            dev_mode=dev_mode,
+            settings=settings,
+        )
+    )

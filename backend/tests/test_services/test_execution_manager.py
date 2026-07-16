@@ -490,6 +490,90 @@ class TestExecutionManagerLifecycle:
         wf.go.set()
         await _drain(em, timeout=3.0)
 
+    async def test_start_compiles_off_loop_with_explicit_pending_context(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        wf = _FakeWorkflow()
+        builder = _install_fake_builder(monkeypatch, wf)
+        build = builder.side_effect
+        assert callable(build)
+        compile_entered = threading.Event()
+        release_compile = threading.Event()
+        event_loop_thread = threading.get_ident()
+
+        def blocking_build(*args: Any, **kwargs: Any) -> Any:
+            assert threading.get_ident() != event_loop_thread
+            compile_entered.set()
+            assert release_compile.wait(timeout=2)
+            return build(*args, **kwargs)
+
+        builder.side_effect = blocking_build
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        prior_context = ExecutionContext(
+            execution_id="prior-execution",
+            workflow_id="prior-workflow",
+            draft_revision=3,
+        )
+        em.context = prior_context
+        prior_result = ExecutionResult(success=True)
+        prior_progress = ProgressInfo(node_id="prior-node", row=1, total_rows=1)
+        prior_node_status = NodeStatus(
+            node_id="prior-node",
+            status="executed",
+            cached=True,
+        )
+        em.last_result = prior_result
+        em.progress = prior_progress
+        em._node_statuses = {"prior-node": prior_node_status}
+        context_rechecked = False
+
+        async def ensure_context_current() -> None:
+            nonlocal context_rechecked
+            assert em.state == "idle"
+            assert em.context is prior_context
+            context_rechecked = True
+
+        start = asyncio.create_task(
+            em.start(
+                _graph_with([("n1", True)]),
+                workflow_id="new-workflow",
+                draft_revision=4,
+                ensure_context_current=ensure_context_current,
+            )
+        )
+        try:
+            async with asyncio.timeout(2):
+                while not compile_entered.is_set():
+                    await asyncio.sleep(0)
+
+            assert em.is_running is True
+            status = em.get_status()
+            assert status.state == "starting"
+            assert status.execution_id != prior_context.execution_id
+            assert status.workflow_id == "new-workflow"
+            assert status.draft_revision == 4
+            assert status.last_result is None
+            assert status.progress is None
+            assert status.node_statuses == {}
+            assert em.context is prior_context
+            assert em.last_result is prior_result
+            assert em.progress is prior_progress
+            assert em._node_statuses == {"prior-node": prior_node_status}
+            with pytest.raises(ExecutionConflictError):
+                await em.start(
+                    _graph_with([("n2", True)]),
+                    workflow_id="other-workflow",
+                )
+            await asyncio.wait_for(asyncio.sleep(0), timeout=0.1)
+        finally:
+            release_compile.set()
+
+        accepted_context = await start
+        assert accepted_context.workflow_id == "new-workflow"
+        assert context_rechecked is True
+        await _drain(em)
+
     async def test_rapid_double_start_second_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         wf = _FakeWorkflow()
         _install_fake_builder(monkeypatch, wf)
@@ -498,6 +582,22 @@ class TestExecutionManagerLifecycle:
         with pytest.raises(ExecutionConflictError):
             await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
         await _drain(em)
+
+    async def test_idle_mutation_lease_blocks_run_without_reporting_starting(self) -> None:
+        em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+
+        async with em.exclusive_idle_mutation():
+            assert em.is_running is True
+            status = em.get_status()
+            assert status.state == "idle"
+            assert status.execution_id is None
+            with pytest.raises(ExecutionConflictError):
+                await em.start(
+                    _graph_with([("n1", True)]),
+                    workflow_id="wf-test",
+                )
+
+        assert em.is_running is False
 
     async def test_run_selected_builds_only_selected_nodes_and_upstream(
         self, monkeypatch: pytest.MonkeyPatch

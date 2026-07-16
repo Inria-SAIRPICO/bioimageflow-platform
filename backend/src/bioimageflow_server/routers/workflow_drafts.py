@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,6 +20,7 @@ from bioimageflow_server.services.workflow_draft import (
     WorkflowDraftRevisionConflict,
     WorkflowDraftService,
 )
+from bioimageflow_server.services.execution import ExecutionConflictError
 
 router = APIRouter(prefix="/workflow-drafts", tags=["workflow-drafts"])
 
@@ -47,6 +50,25 @@ def _ensure_unlocked(execution_manager: Any | None) -> JSONResponse | None:
         )
         return JSONResponse(status_code=423, content=body.model_dump())
     return None
+
+
+@asynccontextmanager
+async def _idle_mutation_lease(
+    execution_manager: Any | None,
+) -> AsyncIterator[None]:
+    """Keep Run mutually exclusive with an admitted async draft mutation."""
+
+    if execution_manager is None:
+        yield
+        return
+    lease = getattr(execution_manager, "exclusive_idle_mutation", None)
+    if lease is None:
+        if getattr(execution_manager, "is_running", False):
+            raise ExecutionConflictError("An execution is already running")
+        yield
+        return
+    async with lease():
+        yield
 
 
 def _conflict_response(exc: WorkflowDraftRevisionConflict) -> JSONResponse:
@@ -82,7 +104,10 @@ async def get_workflow_draft(
     service: WorkflowDraftService = Depends(get_workflow_draft_service),
 ) -> WorkflowDraftResponse:
     try:
-        return service.get_draft(workflow_id, api_base_url=_api_base_url(request))
+        return await service.get_draft_async(
+            workflow_id,
+            api_base_url=_api_base_url(request),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow not found") from exc
     except ValueError as exc:
@@ -105,20 +130,25 @@ async def put_workflow_draft(
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowDraftResponse | JSONResponse:
-    locked = _ensure_unlocked(execution_manager)
-    if locked is not None:
-        return locked
     try:
-        draft = service.put_draft(
-            workflow_id,
-            graph=body.graph,
-            expected_revision=body.expected_revision,
-            updated_by=body.updated_by,
-            should_validate=body.validate_,
-            api_base_url=_api_base_url(request),
+        async with _idle_mutation_lease(execution_manager):
+            draft = await service.put_draft_async(
+                workflow_id,
+                graph=body.graph,
+                expected_revision=body.expected_revision,
+                updated_by=body.updated_by,
+                should_validate=body.validate_,
+                api_base_url=_api_base_url(request),
+            )
+            _publish_workflow_draft_changed(connection_manager, draft)
+            return draft
+    except ExecutionConflictError:
+        return _ensure_unlocked(execution_manager) or JSONResponse(
+            status_code=423,
+            content=WorkflowDraftLockedResponse(
+                detail="Workflow editing is locked while execution is in progress",
+            ).model_dump(),
         )
-        _publish_workflow_draft_changed(connection_manager, draft)
-        return draft
     except WorkflowDraftRevisionConflict as exc:
         return _conflict_response(exc)
     except FileNotFoundError as exc:
@@ -143,18 +173,23 @@ async def reset_workflow_draft_to_saved(
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowDraftResponse | JSONResponse:
-    locked = _ensure_unlocked(execution_manager)
-    if locked is not None:
-        return locked
     try:
-        draft = service.reset_draft_to_saved(
-            workflow_id,
-            expected_revision=body.expected_revision,
-            updated_by=body.updated_by,
-            api_base_url=_api_base_url(request),
+        async with _idle_mutation_lease(execution_manager):
+            draft = await service.reset_draft_to_saved_async(
+                workflow_id,
+                expected_revision=body.expected_revision,
+                updated_by=body.updated_by,
+                api_base_url=_api_base_url(request),
+            )
+            _publish_workflow_draft_changed(connection_manager, draft)
+            return draft
+    except ExecutionConflictError:
+        return _ensure_unlocked(execution_manager) or JSONResponse(
+            status_code=423,
+            content=WorkflowDraftLockedResponse(
+                detail="Workflow editing is locked while execution is in progress",
+            ).model_dump(),
         )
-        _publish_workflow_draft_changed(connection_manager, draft)
-        return draft
     except WorkflowDraftRevisionConflict as exc:
         return _conflict_response(exc)
     except FileNotFoundError as exc:

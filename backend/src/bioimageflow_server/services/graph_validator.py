@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,7 @@ from bioimageflow_server.models.validation import (
 )
 from bioimageflow_server.services.graph_builder import BuildOutput
 from bioimageflow_server.services.graph_compiler import GraphCompiler
+from bioimageflow_server.services.graph_worker import run_graph_work
 from bioimageflow_server.services.graph_translator import (
     lib_validation_error_to_graph_error,
 )
@@ -182,6 +184,52 @@ class GraphValidationService:
             settings=settings,
             on_progress=on_progress,
         ).validation
+
+    async def validate_with_compilation_async(
+        self,
+        graph: GraphState,
+        *,
+        storage_path: Path | None = None,
+        dev_mode: bool = True,
+        settings: Settings | None = None,
+        on_progress: Callable[[Any], None] | None = None,
+    ) -> GraphValidationOutput:
+        """Compile and validate without occupying the application event loop."""
+
+        graph = graph.model_copy(deep=True)
+        return await run_graph_work(
+            partial(
+                self.validate_with_compilation,
+                graph,
+                storage_path=storage_path,
+                dev_mode=dev_mode,
+                settings=settings,
+                on_progress=on_progress,
+            )
+        )
+
+    async def validate_async(
+        self,
+        graph: GraphState,
+        *,
+        storage_path: Path | None = None,
+        dev_mode: bool = True,
+        settings: Settings | None = None,
+        on_progress: Callable[[Any], None] | None = None,
+    ) -> ValidationResult:
+        """Validate without occupying the application event loop."""
+
+        graph = graph.model_copy(deep=True)
+        return await run_graph_work(
+            partial(
+                self.validate,
+                graph,
+                storage_path=storage_path,
+                dev_mode=dev_mode,
+                settings=settings,
+                on_progress=on_progress,
+            )
+        )
 
 
 def validate_graph(

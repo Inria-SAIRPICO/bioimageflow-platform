@@ -19,9 +19,10 @@ from bioimageflow_server.models.workflow_draft_operations import (
 from bioimageflow_server.routers.workflow_drafts import (
     _api_base_url,
     _conflict_response,
-    _ensure_unlocked,
+    _idle_mutation_lease,
     _publish_workflow_draft_changed,
 )
+from bioimageflow_server.services.execution import ExecutionConflictError
 from bioimageflow_server.services.workflow_draft import (
     WorkflowDraftRevisionConflict,
     WorkflowDraftService,
@@ -72,33 +73,36 @@ async def apply_workflow_draft_operations_endpoint(
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
 ) -> WorkflowDraftResponse | JSONResponse:
-    locked = _ensure_unlocked(execution_manager)
-    if locked is not None:
-        return locked
     try:
-        current = service.get_draft_snapshot(workflow_id)
-        graph = apply_and_validate_workflow_draft_operations(
-            current.graph,
-            body.operations,
-            get_tool_metadata=registry.get_tool,
+        async with _idle_mutation_lease(execution_manager):
+            current = await service.get_draft_snapshot_async(workflow_id)
+            graph = apply_and_validate_workflow_draft_operations(
+                current.graph,
+                body.operations,
+                get_tool_metadata=registry.get_tool,
+            )
+            draft = await service.put_draft_async(
+                workflow_id,
+                graph=graph,
+                expected_revision=body.expected_revision,
+                updated_by=body.updated_by,
+                should_validate=body.validate_,
+                api_base_url=_api_base_url(request),
+            )
+            _publish_workflow_draft_changed(connection_manager, draft)
+            return draft
+    except ExecutionConflictError:
+        error_body = WorkflowDraftLockedResponse(
+            detail="Workflow editing is locked while execution is in progress",
         )
-        draft = service.put_draft(
-            workflow_id,
-            graph=graph,
-            expected_revision=body.expected_revision,
-            updated_by=body.updated_by,
-            should_validate=body.validate_,
-            api_base_url=_api_base_url(request),
-        )
-        _publish_workflow_draft_changed(connection_manager, draft)
-        return draft
+        return JSONResponse(status_code=423, content=error_body.model_dump())
     except WorkflowDraftOperationError as exc:
-        body = WorkflowDraftOperationValidationResponse(
+        error_body = WorkflowDraftOperationValidationResponse(
             operation_index=exc.operation_index,
             code=exc.code,
             detail=exc.detail,
         )
-        return JSONResponse(status_code=422, content=body.model_dump())
+        return JSONResponse(status_code=422, content=error_body.model_dump())
     except WorkflowDraftRevisionConflict as exc:
         return _conflict_response(exc)
     except FileNotFoundError as exc:

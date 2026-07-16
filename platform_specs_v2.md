@@ -153,6 +153,14 @@ Startup uses a temporary non-canvas loading placeholder only while it resolves a
 
 **Validation:** Validated root draft writes and private nested-snapshot writes call the BioImageFlow library's recursive sub-workflow validator and surface scoped errors. The stateless `PUT /graph` compatibility/transient-validation endpoint invokes the same validator without persisting graph state. Errors within a sub-workflow reference the scoped node path, for example `"node": "segment_and_measure_1/cellpose_segmenter_1"`.
 
+Graph compilation, recursive validation, output-schema resolution, Run preparation, and cache-clear planning execute through the backend's bounded graph worker rather than occupying the application event loop.
+
+Revisioned root-draft and private-snapshot mutations retain an immutable graph snapshot, capture the expected revision and durable workflow identity generation, release their mutation lock for validation, then reacquire the lock and recheck the captured authority before committing atomically. Root reset also rechecks the saved-artifact hash, nested snapshots recheck root storage context and open-session uniqueness, and stale validation results are discarded, retried against a changed non-conflicting context, or returned as revision conflicts instead of overwriting newer state.
+
+Draft, semantic-operation, nested-snapshot, and transient graph-validation requests hold one execution-manager idle lease across their complete asynchronous prepare/validate/commit sequence, so an admitted edit finishes before Run and a Run already preparing or running rejects later edits. The lease does not present editing as execution startup.
+
+Run reports an explicit `starting` status with its pending execution identity, without attaching prior execution results, until its exact graph has compiled, validated, and passed a single final workflow generation, storage-context, draft-revision, and exact-draft-graph authority recheck. Cache Clear is serialized with Run, validates outside workflow locks, and performs cache invalidation only while the captured identity generation and storage context remain current.
+
 ### 1.9 Integration with v1 Features
 
 - **Undo/redo:** Creating a sub-workflow from selection is a single undo step. Undoing restores all internal nodes, edges, and canvas positions, and removes the SubWorkflowNode.

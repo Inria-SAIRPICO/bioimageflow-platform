@@ -9,7 +9,9 @@ import sys
 import tempfile
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from bioimageflow_server.services.agent_workspace_context import (
     agent_workspace_instructions,
 )
 from bioimageflow_server.services.graph_validator import validate_graph
+from bioimageflow_server.services.graph_worker import run_graph_work
 from bioimageflow_server.services.workflow_store import (
     WorkflowStoreService,
     normalize_workflow_draft_identity,
@@ -253,6 +256,31 @@ class WorkflowDraftRevisionConflict(ValueError):
         )
 
 
+class _SavedWorkflowChanged(RuntimeError):
+    """Signal that validation must restart against a newer saved artifact."""
+
+
+@dataclass(frozen=True)
+class WorkflowDraftAuthoritySnapshot:
+    """One draft plus the durable workflow context that authorized its read."""
+
+    draft: WorkflowDraftResponse
+    identity_generation: int
+    storage_path: Path
+
+
+@dataclass(frozen=True)
+class _DraftWritePreparation:
+    store: WorkflowStoreService
+    workflow_id: str
+    expected_revision: int
+    identity_generation: int
+    current: WorkflowDraftResponse
+    graph: GraphState
+    saved_revision: str
+    dirty_against_saved: bool
+
+
 class WorkflowDraftService:
     """Manage live drafts under workflow-local ``.bioimageflow`` folders."""
 
@@ -276,10 +304,7 @@ class WorkflowDraftService:
         api_base_url: str | None = None,
     ) -> WorkflowDraftResponse:
         store = self._store()
-        # Reading can repair a legacy draft identity in place, so it belongs to
-        # the same serialization domain as PUT, reset, move, and delete.
-        with store.workflow_mutation(workflow_id):
-            draft = self._read_or_synthesize(store, workflow_id)
+        draft = self._read_validated_snapshot(store, workflow_id)
         self.write_agent_context(
             store,
             workflow_id=workflow_id,
@@ -288,12 +313,66 @@ class WorkflowDraftService:
         )
         return draft
 
+    async def get_draft_async(
+        self,
+        workflow_id: str,
+        *,
+        api_base_url: str | None = None,
+    ) -> WorkflowDraftResponse:
+        """Read a draft without running filesystem or validation work on the event loop."""
+
+        return await run_graph_work(
+            partial(
+                self.get_draft,
+                workflow_id,
+                api_base_url=api_base_url,
+            )
+        )
+
     def get_draft_snapshot(self, workflow_id: str) -> WorkflowDraftResponse:
         """Return the latest draft without updating agent workspace context."""
 
         store = self._store()
+        return self._read_validated_authority_snapshot(store, workflow_id).draft
+
+    async def get_draft_snapshot_async(
+        self,
+        workflow_id: str,
+    ) -> WorkflowDraftResponse:
+        """Return a draft snapshot without blocking the event loop."""
+
+        return await run_graph_work(partial(self.get_draft_snapshot, workflow_id))
+
+    def get_draft_authority(
+        self,
+        workflow_id: str,
+    ) -> WorkflowDraftAuthoritySnapshot:
+        """Return a validated draft and its atomic identity/storage authority."""
+
+        store = self._store()
+        return self._read_validated_authority_snapshot(store, workflow_id)
+
+    async def get_draft_authority_async(
+        self,
+        workflow_id: str,
+    ) -> WorkflowDraftAuthoritySnapshot:
+        """Read draft authority through the bounded graph worker."""
+
+        return await run_graph_work(partial(self.get_draft_authority, workflow_id))
+
+    def get_draft_authority_snapshot(
+        self,
+        workflow_id: str,
+    ) -> WorkflowDraftResponse:
+        """Read current draft authority without compiling or updating agent context.
+
+        Callers may already hold the same workflow mutation lock when several
+        authority fields must be checked at one linearization point.
+        """
+
+        store = self._store()
         with store.workflow_mutation(workflow_id):
-            return self._read_or_synthesize(store, workflow_id)
+            return self._read_current_for_mutation_locked(store, workflow_id)
 
     def put_draft(
         self,
@@ -305,42 +384,59 @@ class WorkflowDraftService:
         should_validate: bool = True,
         api_base_url: str | None = None,
     ) -> WorkflowDraftResponse:
-        store = self._store()
-        with store.workflow_mutation(workflow_id):
-            current = self._read_or_synthesize(store, workflow_id)
-            if expected_revision != current.draft_revision:
-                raise WorkflowDraftRevisionConflict(
-                    expected_revision=expected_revision,
-                    current=current,
-                )
-            saved_revision = self._saved_revision(store, workflow_id)
-            validation = (
-                self._validate(store, workflow_id, graph)
-                if should_validate
-                else self._default_validation(graph)
-            )
-            dirty = self._graph_differs_from_saved(store, workflow_id, graph)
-            draft = WorkflowDraftResponse(
-                workflow_id=workflow_id,
-                base_saved_revision=current.base_saved_revision if dirty else saved_revision,
-                draft_revision=current.draft_revision + 1,
-                updated_at=_utc_now(),
-                updated_by=updated_by,
-                dirty_against_saved=dirty,
+        graph = graph.model_copy(deep=True)
+        while True:
+            prepared = self._prepare_draft_write(
+                workflow_id,
                 graph=graph,
-                validation=validation,
+                expected_revision=expected_revision,
             )
-            _json_dump_atomic(
-                self._draft_path(store, workflow_id),
-                draft.model_dump(mode="json"),
-            )
-            self.write_agent_context(
-                store,
-                workflow_id=workflow_id,
-                draft=draft,
+            try:
+                validation = (
+                    self._validate(prepared.store, workflow_id, graph)
+                    if should_validate
+                    else self._default_validation(graph)
+                )
+            except Exception:
+                try:
+                    self._ensure_draft_preparation_current(prepared)
+                except _SavedWorkflowChanged:
+                    continue
+                raise
+            try:
+                return self._commit_draft_write(
+                    prepared,
+                    validation=validation,
+                    updated_by=updated_by,
+                    api_base_url=api_base_url,
+                )
+            except _SavedWorkflowChanged:
+                continue
+
+    async def put_draft_async(
+        self,
+        workflow_id: str,
+        *,
+        graph: GraphState,
+        expected_revision: int,
+        updated_by: DraftWriter = "frontend",
+        should_validate: bool = True,
+        api_base_url: str | None = None,
+    ) -> WorkflowDraftResponse:
+        """Validate and commit a draft through the bounded graph worker."""
+
+        graph = graph.model_copy(deep=True)
+        return await run_graph_work(
+            partial(
+                self.put_draft,
+                workflow_id,
+                graph=graph,
+                expected_revision=expected_revision,
+                updated_by=updated_by,
+                should_validate=should_validate,
                 api_base_url=api_base_url,
             )
-            return draft
+        )
 
     def reset_draft_to_saved(
         self,
@@ -352,37 +448,52 @@ class WorkflowDraftService:
     ) -> WorkflowDraftResponse:
         """CAS-replace the accepted draft with the current saved graph."""
 
-        store = self._store()
-        with store.workflow_mutation(workflow_id):
-            current = self._read_or_synthesize(store, workflow_id)
-            if expected_revision != current.draft_revision:
-                raise WorkflowDraftRevisionConflict(
-                    expected_revision=expected_revision,
-                    current=current,
+        while True:
+            prepared = self._prepare_reset_to_saved(
+                workflow_id,
+                expected_revision=expected_revision,
+            )
+            try:
+                validation = self._validate(
+                    prepared.store,
+                    workflow_id,
+                    prepared.graph,
                 )
-            saved = store.get_workflow(workflow_id).graph
-            saved_revision = self._saved_revision(store, workflow_id)
-            draft = WorkflowDraftResponse(
-                workflow_id=workflow_id,
-                base_saved_revision=saved_revision,
-                draft_revision=current.draft_revision + 1,
-                updated_at=_utc_now(),
+            except Exception:
+                try:
+                    self._ensure_draft_preparation_current(prepared)
+                except _SavedWorkflowChanged:
+                    continue
+                raise
+            try:
+                return self._commit_draft_write(
+                    prepared,
+                    validation=validation,
+                    updated_by=updated_by,
+                    api_base_url=api_base_url,
+                )
+            except _SavedWorkflowChanged:
+                continue
+
+    async def reset_draft_to_saved_async(
+        self,
+        workflow_id: str,
+        *,
+        expected_revision: int,
+        updated_by: DraftWriter = "frontend",
+        api_base_url: str | None = None,
+    ) -> WorkflowDraftResponse:
+        """Reset a draft through the bounded graph worker."""
+
+        return await run_graph_work(
+            partial(
+                self.reset_draft_to_saved,
+                workflow_id,
+                expected_revision=expected_revision,
                 updated_by=updated_by,
-                dirty_against_saved=False,
-                graph=saved,
-                validation=self._validate(store, workflow_id, saved),
-            )
-            _json_dump_atomic(
-                self._draft_path(store, workflow_id),
-                draft.model_dump(mode="json"),
-            )
-            self.write_agent_context(
-                store,
-                workflow_id=workflow_id,
-                draft=draft,
                 api_base_url=api_base_url,
             )
-            return draft
+        )
 
     def write_agent_context(
         self,
@@ -435,16 +546,16 @@ class WorkflowDraftService:
                 "MCP list_workflows {}",
                 "MCP describe_workflow {}",
                 "MCP list_tools {}",
-                "MCP describe_bioimageflow_tool {\"tool_name\":\"<tool name>\"}",
-                "MCP create_workflow {\"workflow_id\":\"<workflow id>\",\"display_name\":\"<display name>\",\"set_active\":true}",
-                "MCP duplicate_workflow {\"source_workflow_id\":\"<workflow id>\",\"new_workflow_id\":\"<new workflow id>\",\"set_active\":true}",
-                "MCP set_active_workflow {\"workflow_id\":\"<workflow id>\"}",
-                "MCP create_node {\"node_id\":\"<id>\",\"tool_name\":\"<tool name>\",\"name\":\"<display name>\",\"position\":[0,0],\"parameters\":{}}",
-                "MCP connect_nodes {\"source_node\":\"<id>\",\"source_output\":\"<output>\",\"target_node\":\"<id>\",\"target_input\":\"<input>\"}",
-                "MCP update_node_parameters {\"node_id\":\"<id>\",\"parameters\":{}}",
-                "MCP apply_workflow_operations {\"operations\":[{\"type\":\"create_node\",\"node_id\":\"<id>\",\"tool_name\":\"<tool name>\",\"name\":\"<display name>\",\"position\":[0,0],\"parameters\":{}}]}",
+                'MCP describe_bioimageflow_tool {"tool_name":"<tool name>"}',
+                'MCP create_workflow {"workflow_id":"<workflow id>","display_name":"<display name>","set_active":true}',
+                'MCP duplicate_workflow {"source_workflow_id":"<workflow id>","new_workflow_id":"<new workflow id>","set_active":true}',
+                'MCP set_active_workflow {"workflow_id":"<workflow id>"}',
+                'MCP create_node {"node_id":"<id>","tool_name":"<tool name>","name":"<display name>","position":[0,0],"parameters":{}}',
+                'MCP connect_nodes {"source_node":"<id>","source_output":"<output>","target_node":"<id>","target_input":"<input>"}',
+                'MCP update_node_parameters {"node_id":"<id>","parameters":{}}',
+                'MCP apply_workflow_operations {"operations":[{"type":"create_node","node_id":"<id>","tool_name":"<tool name>","name":"<display name>","position":[0,0],"parameters":{}}]}',
                 "MCP validate_workflow {}",
-                "MCP run_workflow {\"nodes\":[\"<optional node id>\"]}",
+                'MCP run_workflow {"nodes":["<optional node id>"]}',
                 "MCP get_execution_status {}",
             ],
         }
@@ -465,23 +576,219 @@ class WorkflowDraftService:
     def _draft_path(self, store: WorkflowStoreService, workflow_id: str) -> Path:
         return store.workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
 
-    def _read_or_synthesize(
+    def _read_existing_draft_locked(
         self,
         store: WorkflowStoreService,
         workflow_id: str,
-    ) -> WorkflowDraftResponse:
+    ) -> WorkflowDraftResponse | None:
         raw = normalize_workflow_draft_identity(
             store.workflow_dir(workflow_id),
             workflow_id,
         )
-        if raw is not None:
-            return WorkflowDraftResponse.model_validate(raw)
-        return self._synthesized_draft(store, workflow_id)
+        return WorkflowDraftResponse.model_validate(raw) if raw is not None else None
+
+    def _read_current_for_mutation_locked(
+        self,
+        store: WorkflowStoreService,
+        workflow_id: str,
+    ) -> WorkflowDraftResponse:
+        existing = self._read_existing_draft_locked(store, workflow_id)
+        if existing is not None:
+            return existing
+        return self._synthesized_draft(
+            store,
+            workflow_id,
+            validation=self._default_validation(
+                store.get_workflow(workflow_id).graph,
+            ),
+        )
+
+    def _read_validated_snapshot(
+        self,
+        store: WorkflowStoreService,
+        workflow_id: str,
+    ) -> WorkflowDraftResponse:
+        return self._read_validated_authority_snapshot(store, workflow_id).draft
+
+    def _read_validated_authority_snapshot(
+        self,
+        store: WorkflowStoreService,
+        workflow_id: str,
+    ) -> WorkflowDraftAuthoritySnapshot:
+        """Read one coherent draft without validating under its mutation lock."""
+
+        while True:
+            with store.workflow_mutation(workflow_id):
+                identity_generation = store.workflow_generation(workflow_id)
+                storage_path = store.get_storage_path(workflow_id)
+                existing = self._read_existing_draft_locked(store, workflow_id)
+                if existing is not None:
+                    return WorkflowDraftAuthoritySnapshot(
+                        draft=existing,
+                        identity_generation=identity_generation,
+                        storage_path=storage_path,
+                    )
+                saved_revision = self._saved_revision(store, workflow_id)
+                synthesized = self._synthesized_draft(
+                    store,
+                    workflow_id,
+                    validation=self._default_validation(
+                        store.get_workflow(workflow_id).graph,
+                    ),
+                )
+
+            validation = self._validate(store, workflow_id, synthesized.graph)
+
+            with store.workflow_mutation(workflow_id):
+                store.ensure_workflow_generation(
+                    workflow_id,
+                    identity_generation,
+                )
+                existing = self._read_existing_draft_locked(store, workflow_id)
+                if existing is not None:
+                    return WorkflowDraftAuthoritySnapshot(
+                        draft=existing,
+                        identity_generation=identity_generation,
+                        storage_path=store.get_storage_path(workflow_id),
+                    )
+                if (
+                    self._saved_revision(store, workflow_id) != saved_revision
+                    or store.get_storage_path(workflow_id) != storage_path
+                ):
+                    continue
+                return WorkflowDraftAuthoritySnapshot(
+                    draft=synthesized.model_copy(update={"validation": validation}),
+                    identity_generation=identity_generation,
+                    storage_path=storage_path,
+                )
+
+    def _prepare_draft_write(
+        self,
+        workflow_id: str,
+        *,
+        graph: GraphState,
+        expected_revision: int,
+    ) -> _DraftWritePreparation:
+        store = self._store()
+        with store.workflow_mutation(workflow_id):
+            current = self._read_current_for_mutation_locked(store, workflow_id)
+            self._ensure_expected_revision(current, expected_revision)
+            return _DraftWritePreparation(
+                store=store,
+                workflow_id=workflow_id,
+                expected_revision=expected_revision,
+                identity_generation=store.workflow_generation(workflow_id),
+                current=current,
+                graph=graph,
+                saved_revision=self._saved_revision(store, workflow_id),
+                dirty_against_saved=self._graph_differs_from_saved(
+                    store,
+                    workflow_id,
+                    graph,
+                ),
+            )
+
+    def _prepare_reset_to_saved(
+        self,
+        workflow_id: str,
+        *,
+        expected_revision: int,
+    ) -> _DraftWritePreparation:
+        store = self._store()
+        with store.workflow_mutation(workflow_id):
+            current = self._read_current_for_mutation_locked(store, workflow_id)
+            self._ensure_expected_revision(current, expected_revision)
+            saved = store.get_workflow(workflow_id).graph
+            return _DraftWritePreparation(
+                store=store,
+                workflow_id=workflow_id,
+                expected_revision=expected_revision,
+                identity_generation=store.workflow_generation(workflow_id),
+                current=current,
+                graph=saved,
+                saved_revision=self._saved_revision(store, workflow_id),
+                dirty_against_saved=False,
+            )
+
+    def _commit_draft_write(
+        self,
+        prepared: _DraftWritePreparation,
+        *,
+        validation: ValidationResult,
+        updated_by: DraftWriter,
+        api_base_url: str | None,
+    ) -> WorkflowDraftResponse:
+        store = prepared.store
+        workflow_id = prepared.workflow_id
+        with store.workflow_mutation(workflow_id):
+            current = self._recheck_draft_preparation_locked(prepared)
+
+            draft = WorkflowDraftResponse(
+                workflow_id=workflow_id,
+                base_saved_revision=(
+                    current.base_saved_revision
+                    if prepared.dirty_against_saved
+                    else prepared.saved_revision
+                ),
+                draft_revision=current.draft_revision + 1,
+                updated_at=_utc_now(),
+                updated_by=updated_by,
+                dirty_against_saved=prepared.dirty_against_saved,
+                graph=prepared.graph,
+                validation=validation,
+            )
+            _json_dump_atomic(
+                self._draft_path(store, workflow_id),
+                draft.model_dump(mode="json"),
+            )
+            self.write_agent_context(
+                store,
+                workflow_id=workflow_id,
+                draft=draft,
+                api_base_url=api_base_url,
+            )
+            return draft
+
+    def _ensure_draft_preparation_current(
+        self,
+        prepared: _DraftWritePreparation,
+    ) -> WorkflowDraftResponse:
+        with prepared.store.workflow_mutation(prepared.workflow_id):
+            return self._recheck_draft_preparation_locked(prepared)
+
+    def _recheck_draft_preparation_locked(
+        self,
+        prepared: _DraftWritePreparation,
+    ) -> WorkflowDraftResponse:
+        store = prepared.store
+        workflow_id = prepared.workflow_id
+        store.ensure_workflow_generation(
+            workflow_id,
+            prepared.identity_generation,
+        )
+        current = self._read_current_for_mutation_locked(store, workflow_id)
+        self._ensure_expected_revision(current, prepared.expected_revision)
+        if self._saved_revision(store, workflow_id) != prepared.saved_revision:
+            raise _SavedWorkflowChanged
+        return current
+
+    @staticmethod
+    def _ensure_expected_revision(
+        current: WorkflowDraftResponse,
+        expected_revision: int,
+    ) -> None:
+        if expected_revision != current.draft_revision:
+            raise WorkflowDraftRevisionConflict(
+                expected_revision=expected_revision,
+                current=current,
+            )
 
     def _synthesized_draft(
         self,
         store: WorkflowStoreService,
         workflow_id: str,
+        *,
+        validation: ValidationResult,
     ) -> WorkflowDraftResponse:
         workflow = store.get_workflow(workflow_id)
         return WorkflowDraftResponse(
@@ -492,7 +799,7 @@ class WorkflowDraftService:
             updated_by="system",
             dirty_against_saved=False,
             graph=workflow.graph,
-            validation=self._validate(store, workflow_id, workflow.graph),
+            validation=validation,
         )
 
     def _saved_revision(self, store: WorkflowStoreService, workflow_id: str) -> str:

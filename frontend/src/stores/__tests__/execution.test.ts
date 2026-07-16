@@ -39,6 +39,7 @@ describe('execution store', () => {
   beforeEach(() => {
     canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
+    vi.mocked(api.get).mockReset()
     vi.mocked(api.post).mockReset()
   })
 
@@ -696,8 +697,39 @@ describe('execution store', () => {
     expect(execution.appliesToCanvas(canvasA)).toBe(false)
   })
 
-  it('lets a newer running reconnect snapshot replace a terminal context', () => {
+  it.each(['starting', 'running'] as const)(
+    'handles a newer %s reconnect snapshot without prematurely committing identity',
+    (phase) => {
+      const execution = useExecutionStore()
+      execution.applyStatusSnapshot({
+        execution_id: 'exec-old',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+        state: 'idle',
+        last_result: { success: true, errors: [], node_statuses: {} },
+        progress: null,
+        node_statuses: {},
+      })
+
+      execution.applyStatusSnapshot({
+        execution_id: 'exec-new',
+        workflow_id: 'wf_a',
+        draft_revision: 8,
+        state: phase,
+        last_result: null,
+        progress: null,
+        node_statuses: {},
+      })
+
+      expect(execution.executionId).toBe(phase === 'starting' ? 'exec-old' : 'exec-new')
+      expect(execution.state).toBe(phase)
+      execution.$dispose()
+    },
+  )
+
+  it('rolls back a locally discovered starting identity when Run is rejected', async () => {
     const execution = useExecutionStore()
+    const canvasId = canvasIdFromPanelId('workflow:a')
     execution.applyStatusSnapshot({
       execution_id: 'exec-old',
       workflow_id: 'wf_a',
@@ -707,19 +739,108 @@ describe('execution store', () => {
       progress: null,
       node_statuses: {},
     })
+    const response = deferred<{ data: Record<string, unknown> }>()
+    vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
 
+    const run = execution.run(
+      { nodes: [], edges: [] },
+      undefined,
+      'wf_a',
+      { canvasId, draftRevision: 8 },
+    )
     execution.applyStatusSnapshot({
-      execution_id: 'exec-new',
+      execution_id: 'exec-provisional',
       workflow_id: 'wf_a',
       draft_revision: 8,
+      state: 'starting',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+    response.reject({
+      response: { status: 422, data: { detail: 'rejected', errors: [] } },
+      message: 'rejected',
+    })
+
+    await expect(run).rejects.toMatchObject({ message: 'rejected' })
+    expect(execution.state).toBe('idle')
+    expect(execution.executionId).toBe('exec-old')
+    expect(execution.executionDraftRevision).toBe(7)
+    expect(execution.lastResult?.success).toBe(true)
+  })
+
+  it('polls an externally observed starting identity back to backend idle', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: {
+          state: 'idle',
+          last_result: null,
+          progress: null,
+          node_statuses: {},
+        },
+      })
+      const execution = useExecutionStore()
+
+      execution.applyStatusSnapshot({
+        execution_id: 'exec-provisional',
+        workflow_id: 'wf_a',
+        draft_revision: 8,
+        state: 'starting',
+        last_result: null,
+        progress: null,
+        node_statuses: {},
+      })
+      expect(execution.state).toBe('starting')
+      expect(execution.executionId).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(250)
+
+      expect(api.get).toHaveBeenCalledWith('/api/v1/execution/status')
+      expect(execution.state).toBe('idle')
+      expect(execution.executionId).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lets a newer external start supersede a failed provisional identity without idle', () => {
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-a',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'starting',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-b',
+      workflow_id: 'wf_b',
+      draft_revision: 3,
+      state: 'starting',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+
+    expect(execution.state).toBe('starting')
+    expect(execution.executionId).toBeNull()
+
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-b',
+      workflow_id: 'wf_b',
+      draft_revision: 3,
       state: 'running',
       last_result: null,
       progress: null,
       node_statuses: {},
     })
 
-    expect(execution.executionId).toBe('exec-new')
     expect(execution.state).toBe('running')
+    expect(execution.executionId).toBe('exec-b')
+    expect(execution.executionWorkflowId).toBe('wf_b')
   })
 
   it('keeps the prior terminal context when a new start is rejected', async () => {

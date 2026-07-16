@@ -75,7 +75,7 @@ class ExecutionCompleteMessage(_MessageBase):
 
 class StatusSnapshotMessage(_MessageBase):
     type: Literal["status_snapshot"] = "status_snapshot"
-    state: Literal["running", "idle"]
+    state: Literal["starting", "running", "idle"]
     last_result: dict[str, Any] | None = None
     progress: dict[str, Any] | None = None
     node_statuses: dict[str, Any] = {}

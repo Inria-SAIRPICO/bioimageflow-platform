@@ -75,7 +75,7 @@ class ExecutionResult(BaseModel):
 class ExecutionStatus(BaseModel):
     """Current execution status of the engine."""
 
-    state: Literal["running", "idle"]
+    state: Literal["starting", "running", "idle"]
     last_result: ExecutionResult | None = None
     progress: ProgressInfo | None = None
     node_statuses: dict[str, NodeStatus] = Field(default_factory=dict)

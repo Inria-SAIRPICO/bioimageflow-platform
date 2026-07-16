@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, onScopeDispose } from 'vue'
 import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
@@ -85,6 +85,8 @@ interface ClearResponse {
 }
 
 export type ExecutionPhase = 'idle' | 'starting' | 'running' | 'stopping'
+
+const PROVISIONAL_STATUS_POLL_MS = 250
 
 export interface EnvironmentRecoveryAction {
   kind: 'delete_environment'
@@ -258,6 +260,8 @@ export const useExecutionStore = defineStore('execution', () => {
   let activeStopRequest: number | null = null
   let terminalFence = false
   let pendingRun: PendingRun | null = null
+  let provisionalContext: ExecutionWireContext | null = null
+  let provisionalStatusPoll: ReturnType<typeof setTimeout> | null = null
   const terminalExecutionIds: string[] = []
 
   const isStarting = computed(() => state.value === 'starting')
@@ -295,6 +299,18 @@ export const useExecutionStore = defineStore('execution', () => {
     }
   }
 
+  function matchesPendingRunContext(incoming: ExecutionWireContext): boolean {
+    if (pendingRun === null) return false
+    const revisionMatches = pendingRun.draftRevision === undefined
+      || incoming.draft_revision === pendingRun.draftRevision
+    return incoming.workflow_id === pendingRun.workflowId
+      && revisionMatches
+      && (
+        pendingRun.executionId === null
+        || incoming.execution_id === pendingRun.executionId
+      )
+  }
+
   function isTerminalExecution(executionId: string): boolean {
     return terminalExecutionIds.includes(executionId)
   }
@@ -312,6 +328,30 @@ export const useExecutionStore = defineStore('execution', () => {
     progress.value = null
     nodeStatuses.value = {}
   }
+
+  function clearProvisionalContext(): void {
+    provisionalContext = null
+    if (provisionalStatusPoll !== null) {
+      clearTimeout(provisionalStatusPoll)
+      provisionalStatusPoll = null
+    }
+  }
+
+  function scheduleProvisionalStatusPoll(): void {
+    if (
+      provisionalContext === null
+      || pendingRun !== null
+      || provisionalStatusPoll !== null
+    ) return
+    provisionalStatusPoll = setTimeout(async () => {
+      provisionalStatusPoll = null
+      if (provisionalContext === null || pendingRun !== null) return
+      await fetchStatus()
+      scheduleProvisionalStatusPoll()
+    }, PROVISIONAL_STATUS_POLL_MS)
+  }
+
+  onScopeDispose(clearProvisionalContext)
 
   function resolveOriginCanvas(workflowId: string): CanvasId | null {
     const ui = useUIStore()
@@ -371,17 +411,22 @@ export const useExecutionStore = defineStore('execution', () => {
     }
     if (incoming === null) return false
 
+    if (
+      source !== 'snapshot'
+      && provisionalContext !== null
+      && (
+        pendingRun === null
+        || sameExecutionContext(provisionalContext, incoming)
+      )
+    ) {
+      clearProvisionalContext()
+      if (pendingRun === null && state.value === 'starting') state.value = 'idle'
+    }
+
     const current = currentExecutionContext()
     if (pendingRun !== null) {
-      const revisionMatches = pendingRun.draftRevision === undefined
-        || incoming.draft_revision === pendingRun.draftRevision
       if (
-        incoming.workflow_id !== pendingRun.workflowId
-        || !revisionMatches
-        || (
-          pendingRun.executionId !== null
-          && incoming.execution_id !== pendingRun.executionId
-        )
+        !matchesPendingRunContext(incoming)
         || (
           isTerminalExecution(incoming.execution_id)
           && !(
@@ -434,7 +479,7 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyBackendPhase(
-    next: 'idle' | 'running',
+    next: 'idle' | 'starting' | 'running',
     allowOwnedIdleWhileStarting = false,
   ): boolean {
     // An idle payload cannot describe the run whose start request still owns
@@ -444,8 +489,8 @@ export const useExecutionStore = defineStore('execution', () => {
       && next === 'idle'
       && !allowOwnedIdleWhileStarting
     ) return false
-    if (state.value === 'stopping' && next === 'running') return true
-    if (state.value === 'idle' && terminalFence && next === 'running') return false
+    if (state.value === 'stopping' && next !== 'idle') return true
+    if (state.value === 'idle' && terminalFence && next !== 'idle') return false
     const wasActive = state.value === 'running' || state.value === 'stopping'
     state.value = next
     if (next === 'idle' && wasActive) terminalFence = true
@@ -528,14 +573,16 @@ export const useExecutionStore = defineStore('execution', () => {
         const discoveredExecutionId = pendingRun?.requestId === requestId
           ? pendingRun.executionId
           : null
-        if (discoveredExecutionId === null) {
-          if (state.value === 'starting') state.value = 'idle'
+        if (state.value === 'starting') {
+          state.value = 'idle'
+          terminalFence = previousTerminalFence
+          clearProvisionalContext()
+        } else if (discoveredExecutionId === null) {
           terminalFence = previousTerminalFence
         } else if (isTerminalExecution(discoveredExecutionId)) {
           state.value = 'idle'
           terminalFence = true
         } else {
-          if (state.value === 'starting') state.value = 'running'
           terminalFence = false
         }
         if (pendingRun?.requestId === requestId) pendingRun = null
@@ -632,12 +679,47 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyStatusSnapshot(snapshot: ExecutionStatusSnapshot) {
-    if (
-      executionContextFrom(snapshot) === undefined
-      && snapshot.state !== 'idle'
-    ) return
-    if (!acceptPayloadContext(snapshot, 'snapshot')) return
     const incoming = executionContextFrom(snapshot)
+    if (snapshot.state === 'starting') {
+      if (incoming === undefined || incoming === null) return
+      if (pendingRun !== null) {
+        if (!matchesPendingRunContext(incoming)) return
+        pendingRun.executionId = incoming.execution_id
+      } else {
+        if (
+          state.value !== 'idle'
+          && provisionalContext === null
+        ) return
+        const current = currentExecutionContext()
+        if (
+          current !== null
+          && current.workflow_id === incoming.workflow_id
+          && current.draft_revision !== null
+          && incoming.draft_revision !== null
+          && incoming.draft_revision < current.draft_revision
+        ) return
+      }
+      provisionalContext = incoming
+      state.value = 'starting'
+      scheduleProvisionalStatusPoll()
+      return
+    }
+
+    if (provisionalContext !== null) {
+      const matchesProvisional = incoming !== undefined
+        && incoming !== null
+        && sameExecutionContext(provisionalContext, incoming)
+      if (
+        snapshot.state === 'running'
+        && !matchesProvisional
+        && pendingRun !== null
+      ) return
+      clearProvisionalContext()
+      if (pendingRun !== null && snapshot.state === 'idle' && !matchesProvisional) return
+      if (pendingRun === null && state.value === 'starting') state.value = 'idle'
+    }
+    if (incoming === undefined && snapshot.state !== 'idle') return
+    if (!acceptPayloadContext(snapshot, 'snapshot')) return
     const ownsPendingRun = incoming !== undefined
       && incoming !== null
       && pendingRun?.executionId === incoming.execution_id
