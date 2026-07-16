@@ -24,7 +24,7 @@ const workflowDraftMocks = vi.hoisted(() => ({
   loadDraft: vi.fn(),
 }))
 const persistenceMocks = vi.hoisted(() => ({
-  canvasId: 'workflow:a' as string | null,
+  canvasId: null as string | null,
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
   queueDraft: vi.fn(),
   flush: vi.fn().mockResolvedValue(undefined),
@@ -79,6 +79,10 @@ import {
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
 import { useGraphSync } from '@/composables/useGraphSync'
+import {
+  ROOT_PERSISTENCE_RESOURCE,
+  type RootCanvasPersistenceResource,
+} from '@/composables/useCanvasPersistence'
 import type { GraphState } from '@/api/types'
 
 // PrimeVue Menubar uses matchMedia for responsive behavior
@@ -154,7 +158,7 @@ describe('MenuBar', () => {
     workflowDraftMocks.loadDraft.mockReset()
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
-    persistenceMocks.canvasId = 'workflow:a'
+    persistenceMocks.canvasId = null
     persistenceMocks.queueDraft.mockClear()
     persistenceMocks.flush.mockClear()
     canvasCommandMocks.routeSave.mockClear()
@@ -612,6 +616,151 @@ describe('MenuBar', () => {
         undefined,
         { responseType: 'blob' },
       )
+    })
+
+    it('keeps confirmed export bound to the root canvas that opened the dialog', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      const initialGraphA: GraphState = { nodes: [], edges: [] }
+      const latestGraphA: GraphState = {
+        nodes: [{
+          id: 'a-node',
+          name: 'A node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: { value: 'latest-a' },
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const graphB: GraphState = {
+        nodes: [{
+          id: 'b-node',
+          name: 'B node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: { value: 'b' },
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const syncA = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+        getWorkflowId: () => 'a',
+      })
+      const syncB = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
+        getWorkflowId: () => 'b',
+      })
+      syncA.currentGraph.value = initialGraphA
+      syncB.currentGraph.value = graphB
+      const persistenceA = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+        canvasA,
+        ROOT_PERSISTENCE_RESOURCE,
+      )!
+      const persistenceB = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+        canvasB,
+        ROOT_PERSISTENCE_RESOURCE,
+      )!
+      const ensureFreshA = vi.spyOn(persistenceA, 'ensureFreshForCriticalOperation')
+        .mockResolvedValue(true)
+      const queueDraftA = vi.spyOn(persistenceA, 'queueDraft')
+      const flushA = vi.spyOn(persistenceA, 'flush').mockResolvedValue(undefined)
+      const ensureFreshB = vi.spyOn(persistenceB, 'ensureFreshForCriticalOperation')
+        .mockResolvedValue(true)
+      const queueDraftB = vi.spyOn(persistenceB, 'queueDraft')
+      const flushB = vi.spyOn(persistenceB, 'flush').mockResolvedValue(undefined)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as any
+      const workflowB = { name: 'b', display_name: 'Workflow B' } as any
+      store.workflows = [workflowA, workflowB]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      apiMocks.put.mockResolvedValueOnce({ data: workflowA })
+      apiMocks.post.mockResolvedValueOnce({ data: new Blob(['zip']), headers: {} })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      workflowMenu.items.find((item: any) => item.label === 'Export').command()
+      syncA.currentGraph.value = latestGraphA
+      canvasSessionRegistry.activate(canvasB)
+      persistenceMocks.canvasId = canvasB
+      store.current = workflowB
+      await vm.confirmExportCurrentWorkflow()
+
+      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
+        graph: latestGraphA,
+      })
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        '/api/v1/workflows/a/export',
+        undefined,
+        { responseType: 'blob' },
+      )
+      expect(ensureFreshA).toHaveBeenCalledOnce()
+      expect(queueDraftA).toHaveBeenCalledWith(latestGraphA)
+      expect(flushA).toHaveBeenCalledOnce()
+      expect(ensureFreshB).not.toHaveBeenCalled()
+      expect(queueDraftB).not.toHaveBeenCalled()
+      expect(flushB).not.toHaveBeenCalled()
+      expect(persistenceMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('aborts confirmed export when its root canvas was disposed', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+        getWorkflowId: () => 'a',
+      })
+      useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
+        getWorkflowId: () => 'b',
+      })
+      const persistenceB = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+        canvasB,
+        ROOT_PERSISTENCE_RESOURCE,
+      )!
+      const ensureFreshB = vi.spyOn(persistenceB, 'ensureFreshForCriticalOperation')
+        .mockResolvedValue(true)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as any
+      const workflowB = { name: 'b', display_name: 'Workflow B' } as any
+      store.workflows = [workflowA, workflowB]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      workflowMenu.items.find((item: any) => item.label === 'Export').command()
+      canvasSessionRegistry.unregister(canvasA)
+      canvasSessionRegistry.activate(canvasB)
+      persistenceMocks.canvasId = canvasB
+      store.current = workflowB
+      await vm.confirmExportCurrentWorkflow()
+
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(apiMocks.post).not.toHaveBeenCalled()
+      expect(ensureFreshB).not.toHaveBeenCalled()
+      expect(persistenceMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
+      expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }))
+      wrapper.unmount()
     })
 
     it('blocks save when unresolved remote draft changes need resolution', async () => {
