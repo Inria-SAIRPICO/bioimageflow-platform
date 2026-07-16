@@ -3,6 +3,11 @@ import { defineStore } from 'pinia'
 import { api } from '@/api/client'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import { useLoggerStore } from '@/stores/logger'
+import { useUIStore } from '@/stores/ui'
+import {
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
 import type {
   ExecutionResult,
   ExecutionStatus,
@@ -12,7 +17,20 @@ import type {
   ProgressInfo,
 } from '@/api/types'
 
-interface NodeStateMessage {
+interface ExecutionContextFields {
+  execution_id?: string | null
+  workflow_id?: string | null
+  draft_revision?: number | null
+}
+
+interface ExecutionWireContext {
+  execution_id: string
+  workflow_id: string
+  draft_revision: number | null
+}
+
+interface NodeStateMessage extends ExecutionContextFields {
+  type?: 'node_state'
   node_id: string
   status: NodeStatus['status']
   cached: boolean
@@ -24,10 +42,36 @@ interface NodeStateMessage {
 
 interface ExecutionStatusResponse extends ExecutionStatus {
   node_statuses?: Record<string, NodeStatus>
+  execution_id?: string | null
+  workflow_id?: string | null
+  draft_revision?: number | null
 }
 
-interface ExecutionStatusSnapshot extends ExecutionStatus {
+interface ExecutionStatusSnapshot extends ExecutionStatus, ExecutionContextFields {
+  type?: 'status_snapshot'
   node_statuses?: Record<string, NodeStatus>
+}
+
+interface ExecutionCompletePayload extends ExecutionResult, ExecutionContextFields {
+  type?: 'execution_complete'
+}
+
+interface ProgressPayload extends ProgressInfo, ExecutionContextFields {
+  type?: 'progress'
+}
+
+export interface RunExecutionOptions {
+  canvasId: CanvasId | null
+  draftRevision: number | null
+}
+
+interface PendingRun {
+  requestId: number
+  workflowId: string
+  draftRevision: number | null | undefined
+  canvasId: CanvasId | null
+  graph: GraphState
+  executionId: string | null
 }
 
 interface ClearResponse {
@@ -140,6 +184,52 @@ function hasExistingFailureLog(
   })
 }
 
+function executionContextFrom(
+  value: ExecutionContextFields,
+): ExecutionWireContext | null | undefined {
+  const hasContextField = value.execution_id !== undefined
+    || value.workflow_id !== undefined
+    || value.draft_revision !== undefined
+  if (!hasContextField) return undefined
+  if (
+    value.execution_id === null
+    && value.workflow_id === null
+    && value.draft_revision === null
+  ) return undefined
+  if (
+    typeof value.execution_id !== 'string'
+    || value.execution_id.length === 0
+    || typeof value.workflow_id !== 'string'
+    || value.workflow_id.length === 0
+    || (
+      value.draft_revision !== null
+      && (
+        typeof value.draft_revision !== 'number'
+        || !Number.isInteger(value.draft_revision)
+        || value.draft_revision < 0
+      )
+    )
+  ) return null
+  return {
+    execution_id: value.execution_id,
+    workflow_id: value.workflow_id,
+    draft_revision: value.draft_revision,
+  }
+}
+
+function sameExecutionContext(
+  left: ExecutionWireContext,
+  right: ExecutionWireContext,
+): boolean {
+  return left.execution_id === right.execution_id
+    && left.workflow_id === right.workflow_id
+    && left.draft_revision === right.draft_revision
+}
+
+function cloneGraph(graph: GraphState): GraphState {
+  return JSON.parse(JSON.stringify(graph)) as GraphState
+}
+
 export const useExecutionStore = defineStore('execution', () => {
   const state = ref<ExecutionPhase>('idle')
   const lastResult = ref<ExecutionResult | null>(null)
@@ -150,11 +240,19 @@ export const useExecutionStore = defineStore('execution', () => {
   const validationErrors = ref<GraphValidationError[]>([])
   const environmentRecoveryAction = ref<EnvironmentRecoveryAction | null>(null)
   const dismissedEnvironmentRecoveryKey = ref<string | null>(null)
+  const executionId = ref<string | null>(null)
+  const executionWorkflowId = ref<string | null>(null)
+  const executionDraftRevision = ref<number | null>(null)
+  const originCanvasId = ref<CanvasId | null>(null)
+  const originGraph = ref<GraphState | null>(null)
 
   let requestSequence = 0
   let activeStartRequest: number | null = null
   let activeStopRequest: number | null = null
   let terminalFence = false
+  let pendingRun: PendingRun | null = null
+  let anonymousOriginCanvasId: CanvasId | null = null
+  const terminalExecutionIds: string[] = []
 
   const isStarting = computed(() => state.value === 'starting')
   const isRunning = computed(() => state.value === 'running' || state.value === 'stopping')
@@ -182,10 +280,156 @@ export const useExecutionStore = defineStore('execution', () => {
     dismissedEnvironmentRecoveryKey.value = recoveryActionKey(action)
   }
 
-  function applyBackendPhase(next: 'idle' | 'running'): boolean {
+  function currentExecutionContext(): ExecutionWireContext | null {
+    if (executionId.value === null || executionWorkflowId.value === null) return null
+    return {
+      execution_id: executionId.value,
+      workflow_id: executionWorkflowId.value,
+      draft_revision: executionDraftRevision.value,
+    }
+  }
+
+  function isTerminalExecution(executionId: string): boolean {
+    return terminalExecutionIds.includes(executionId)
+  }
+
+  function rememberTerminalExecution(executionId: string): void {
+    const existing = terminalExecutionIds.indexOf(executionId)
+    if (existing >= 0) terminalExecutionIds.splice(existing, 1)
+    terminalExecutionIds.push(executionId)
+    if (terminalExecutionIds.length > 8) terminalExecutionIds.shift()
+  }
+
+  function clearRuntimeResult(): void {
+    clearEnvironmentRecovery()
+    lastResult.value = null
+    progress.value = null
+    nodeStatuses.value = {}
+  }
+
+  function resolveOriginCanvas(workflowId: string): CanvasId | null {
+    const ui = useUIStore()
+    const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+    if (
+      activeCanvasId !== null
+      && ui.canvasWorkflowId(activeCanvasId) === workflowId
+    ) return activeCanvasId
+    const matches = ui.canvasIdsForWorkflow(workflowId)
+    return matches.length === 1 ? matches[0]! : null
+  }
+
+  function adoptExecutionContext(
+    context: ExecutionWireContext,
+    canvasId: CanvasId | null,
+    graph: GraphState | null,
+  ): void {
+    const previous = currentExecutionContext()
+    const changed = previous === null || !sameExecutionContext(previous, context)
+    if (
+      changed
+      && previous !== null
+      && previous.execution_id !== context.execution_id
+    ) {
+      rememberTerminalExecution(previous.execution_id)
+    }
+    if (changed) clearRuntimeResult()
+    if (changed) terminalFence = false
+    anonymousOriginCanvasId = null
+    executionId.value = context.execution_id
+    executionWorkflowId.value = context.workflow_id
+    executionDraftRevision.value = context.draft_revision
+    originCanvasId.value = canvasId
+    originGraph.value = graph === null ? null : cloneGraph(graph)
+  }
+
+  function acceptPayloadContext(
+    payload: ExecutionContextFields,
+    source: 'event' | 'response' | 'snapshot',
+  ): boolean {
+    const incoming = executionContextFrom(payload)
+    if (incoming === undefined) {
+      const accepted = executionId.value === null
+        && (pendingRun === null || pendingRun.draftRevision === undefined)
+      if (!accepted) return false
+      if (canvasSessionRegistry.sessionCount.value > 1) {
+        const nextOrigin = canvasSessionRegistry.activeCanvasId.value
+        if (anonymousOriginCanvasId !== nextOrigin) clearRuntimeResult()
+        anonymousOriginCanvasId = nextOrigin
+      }
+      return true
+    }
+    if (incoming === null) return false
+
+    const current = currentExecutionContext()
+    if (pendingRun !== null) {
+      const revisionMatches = pendingRun.draftRevision === undefined
+        || incoming.draft_revision === pendingRun.draftRevision
+      if (
+        incoming.workflow_id !== pendingRun.workflowId
+        || !revisionMatches
+        || (
+          pendingRun.executionId !== null
+          && incoming.execution_id !== pendingRun.executionId
+        )
+        || (
+          isTerminalExecution(incoming.execution_id)
+          && !(
+            source === 'response'
+            && pendingRun.executionId === incoming.execution_id
+          )
+        )
+      ) return false
+      pendingRun.executionId = incoming.execution_id
+      if (current === null || !sameExecutionContext(current, incoming)) {
+        adoptExecutionContext(incoming, pendingRun.canvasId, pendingRun.graph)
+      }
+      return true
+    }
+
+    if (current !== null && sameExecutionContext(current, incoming)) {
+      return source === 'snapshot'
+        || !isTerminalExecution(incoming.execution_id)
+    }
+    if (isTerminalExecution(incoming.execution_id) || source === 'response') {
+      return false
+    }
+    if (state.value !== 'idle') return false
+    if (
+      current !== null
+      && current.workflow_id === incoming.workflow_id
+      && current.draft_revision !== null
+      && incoming.draft_revision !== null
+      && incoming.draft_revision < current.draft_revision
+    ) return false
+    adoptExecutionContext(
+      incoming,
+      resolveOriginCanvas(incoming.workflow_id),
+      null,
+    )
+    return true
+  }
+
+  function appliesToCanvas(canvasId: CanvasId): boolean {
+    if (executionId.value === null) {
+      const sessionCount = canvasSessionRegistry.sessionCount.value
+      if (sessionCount === 0) return true
+      if (sessionCount === 1) return canvasSessionRegistry.get(canvasId) !== null
+      return anonymousOriginCanvasId === canvasId
+    }
+    return originCanvasId.value !== null && originCanvasId.value === canvasId
+  }
+
+  function applyBackendPhase(
+    next: 'idle' | 'running',
+    allowOwnedIdleWhileStarting = false,
+  ): boolean {
     // An idle payload cannot describe the run whose start request still owns
     // this phase; reject its result, progress, and node statuses together.
-    if (state.value === 'starting' && next === 'idle') return false
+    if (
+      state.value === 'starting'
+      && next === 'idle'
+      && !allowOwnedIdleWhileStarting
+    ) return false
     if (state.value === 'stopping' && next === 'running') return true
     if (state.value === 'idle' && terminalFence && next === 'running') return false
     const wasActive = state.value === 'running' || state.value === 'stopping'
@@ -199,13 +443,7 @@ export const useExecutionStore = defineStore('execution', () => {
       const { data } = await api.get<ExecutionStatusResponse>(
         '/api/v1/execution/status',
       )
-      if (!applyBackendPhase(data.state)) return
-      lastResult.value = data.last_result
-      updateEnvironmentRecovery(data.last_result)
-      progress.value = data.progress
-      if (data.node_statuses) {
-        nodeStatuses.value = { ...nodeStatuses.value, ...data.node_statuses }
-      }
+      applyStatusSnapshot(data)
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : String(e)
     }
@@ -215,6 +453,7 @@ export const useExecutionStore = defineStore('execution', () => {
     graph: GraphState,
     nodes: string[] | undefined,
     workflowName: string,
+    options?: RunExecutionOptions,
   ) {
     if (workflowName.trim().length === 0) {
       throw new Error('Workflow identity is required for execution')
@@ -222,30 +461,58 @@ export const useExecutionStore = defineStore('execution', () => {
     if (state.value !== 'idle') {
       throw new Error('already running')
     }
+    if (options?.canvasId !== null && options?.canvasId !== undefined) {
+      if (
+        typeof options.draftRevision !== 'number'
+        || !Number.isInteger(options.draftRevision)
+        || options.draftRevision < 0
+      ) {
+        throw new Error('An accepted draft revision is required for execution')
+      }
+    }
     const requestId = ++requestSequence
+    const previousTerminalFence = terminalFence
     activeStartRequest = requestId
     terminalFence = false
+    pendingRun = {
+      requestId,
+      workflowId: workflowName,
+      draftRevision: options?.draftRevision,
+      canvasId: options?.canvasId ?? null,
+      graph: cloneGraph(graph),
+      executionId: null,
+    }
     state.value = 'starting'
     error.value = null
     isConflict.value = false
     validationErrors.value = []
-    clearEnvironmentRecovery()
-    lastResult.value = null
-    progress.value = null
-    nodeStatuses.value = {}
     try {
-      await api.post('/api/v1/execution/run', {
+      const payload = {
         graph,
         nodes,
         workflow_name: workflowName,
-      })
-      if (activeStartRequest === requestId && state.value === 'starting') {
-        state.value = 'running'
+        ...(options?.draftRevision !== undefined
+          ? { draft_revision: options.draftRevision }
+          : {}),
+      }
+      const { data } = await api.post<ExecutionContextFields & { status: string }>(
+        '/api/v1/execution/run',
+        payload,
+      )
+      if (activeStartRequest === requestId) {
+        const responseContext = executionContextFrom(data)
+        if (!acceptPayloadContext(data, 'response')) {
+          throw new Error('Execution start returned a mismatched context')
+        }
+        if (responseContext === undefined) clearRuntimeResult()
+        if (state.value === 'starting') state.value = 'running'
+        pendingRun = null
       }
     } catch (e: unknown) {
-      if (activeStartRequest === requestId && state.value === 'starting') {
-        state.value = 'idle'
-        terminalFence = true
+      if (activeStartRequest === requestId) {
+        if (state.value === 'starting') state.value = 'idle'
+        terminalFence = previousTerminalFence
+        if (pendingRun?.requestId === requestId) pendingRun = null
         const err = e as RunError
         const status = err.response?.status ?? err.status
         if (status === 409) {
@@ -309,13 +576,15 @@ export const useExecutionStore = defineStore('execution', () => {
     return data
   }
 
-  function applyProgress(p: ProgressInfo) {
+  function applyProgress(p: ProgressPayload) {
+    if (!acceptPayloadContext(p, 'event')) return
     if (state.value === 'idle' && terminalFence) return
     if (state.value !== 'stopping') state.value = 'running'
     progress.value = p
   }
 
   function applyNodeState(msg: NodeStateMessage) {
+    if (!acceptPayloadContext(msg, 'event')) return
     if (msg.status === 'running' && state.value === 'idle' && terminalFence) return
     if (msg.status === 'running' && state.value !== 'stopping') {
       state.value = 'running'
@@ -335,16 +604,26 @@ export const useExecutionStore = defineStore('execution', () => {
   }
 
   function applyStatusSnapshot(snapshot: ExecutionStatusSnapshot) {
-    if (!applyBackendPhase(snapshot.state)) return
+    if (!acceptPayloadContext(snapshot, 'snapshot')) return
+    const incoming = executionContextFrom(snapshot)
+    const ownsPendingRun = incoming !== undefined
+      && incoming !== null
+      && pendingRun?.executionId === incoming.execution_id
+    if (!applyBackendPhase(snapshot.state, ownsPendingRun)) return
     lastResult.value = snapshot.last_result
     updateEnvironmentRecovery(snapshot.last_result)
     progress.value = snapshot.progress
     if (snapshot.node_statuses) {
       nodeStatuses.value = { ...snapshot.node_statuses }
     }
+    if (snapshot.state === 'idle' && executionId.value !== null) {
+      terminalFence = true
+      rememberTerminalExecution(executionId.value)
+    }
   }
 
-  function applyExecutionComplete(payload: ExecutionResult) {
+  function applyExecutionComplete(payload: ExecutionCompletePayload) {
+    if (!acceptPayloadContext(payload, 'event')) return
     state.value = 'idle'
     terminalFence = true
     lastResult.value = payload
@@ -353,6 +632,7 @@ export const useExecutionStore = defineStore('execution', () => {
     if (payload.node_statuses) {
       nodeStatuses.value = { ...nodeStatuses.value, ...payload.node_statuses }
     }
+    if (executionId.value !== null) rememberTerminalExecution(executionId.value)
 
     if (!payload.success) {
       _reportFailure(payload)
@@ -420,6 +700,12 @@ export const useExecutionStore = defineStore('execution', () => {
     isStopping,
     isMutationLocked,
     canStop,
+    executionId,
+    executionWorkflowId,
+    executionDraftRevision,
+    originCanvasId,
+    originGraph,
+    appliesToCanvas,
     fetchStatus,
     run,
     stop,

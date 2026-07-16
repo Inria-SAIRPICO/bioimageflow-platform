@@ -32,6 +32,9 @@ class ProgressMessage(_MessageBase):
     timestamp: float
     result_key: str | None = None
     record_id: str | None = None
+    execution_id: str | None = None
+    workflow_id: str | None = None
+    draft_revision: int | None = None
 
 
 # Reuse NodeStatus's status literal so we do not redeclare the 6-value list here.
@@ -47,6 +50,9 @@ class NodeStateMessage(_MessageBase):
     traceback: str | None = None
     result_key: str | None = None
     record_id: str | None = None
+    execution_id: str | None = None
+    workflow_id: str | None = None
+    draft_revision: int | None = None
 
 
 class LogMessage(_MessageBase):
@@ -62,6 +68,9 @@ class ExecutionCompleteMessage(_MessageBase):
     success: bool
     errors: list[dict[str, Any]] = []
     node_statuses: dict[str, Any]
+    execution_id: str | None = None
+    workflow_id: str | None = None
+    draft_revision: int | None = None
 
 
 class StatusSnapshotMessage(_MessageBase):
@@ -70,6 +79,9 @@ class StatusSnapshotMessage(_MessageBase):
     last_result: dict[str, Any] | None = None
     progress: dict[str, Any] | None = None
     node_statuses: dict[str, Any] = {}
+    execution_id: str | None = None
+    workflow_id: str | None = None
+    draft_revision: int | None = None
 
 
 class ToolReloadMessage(_MessageBase):

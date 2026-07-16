@@ -281,6 +281,45 @@ async def test_broadcast_execution_complete() -> None:
     assert ws.sent[0]["success"] is True
 
 
+async def test_execution_messages_and_snapshot_share_one_context() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext, ExecutionStatus
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    context = ExecutionContext(
+        execution_id="exec-123",
+        workflow_id="wf_a",
+        draft_revision=7,
+    )
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_progress("n1", "row_progress", 1, 2, 1.0, context=context)
+    await mgr.broadcast_node_state("n1", "executed", False, context=context)
+    await mgr.broadcast_execution_complete(True, [], {}, context=context)
+    await mgr.send_status_snapshot(
+        ws,
+        ExecutionStatus(
+            state="idle",
+            execution_id=context.execution_id,
+            workflow_id=context.workflow_id,
+            draft_revision=context.draft_revision,
+        ),
+    )
+    await _drain(mgr)
+
+    assert [payload["type"] for payload in ws.sent] == [
+        "progress",
+        "node_state",
+        "execution_complete",
+        "status_snapshot",
+    ]
+    for payload in ws.sent:
+        assert payload["execution_id"] == "exec-123"
+        assert payload["workflow_id"] == "wf_a"
+        assert payload["draft_revision"] == 7
+
+
 async def test_broadcast_execution_complete_serializes_pydantic_node_statuses() -> None:
     """ExecutionManager passes ``dict[str, NodeStatus]`` (Pydantic models).
     The broadcast must convert them to plain dicts so ``json.dumps`` works.

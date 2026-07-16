@@ -8,10 +8,24 @@ vi.mock('@/api/client', () => ({
 import { useExecutionStore } from '../execution'
 import { useLoggerStore } from '../logger'
 import { useErrorStore } from '../errors'
+import { useUIStore } from '../ui'
 import { api } from '@/api/client'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
 
 describe('execution store', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     vi.mocked(api.post).mockReset()
   })
@@ -127,6 +141,285 @@ describe('execution store', () => {
       nodes: undefined,
       workflow_name: 'wf_a',
     })
+  })
+
+  it('captures root execution identity and sends the accepted draft revision', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        status: 'started',
+        execution_id: 'exec-123',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+      },
+    })
+    const execution = useExecutionStore()
+    const graph = { nodes: [], edges: [] }
+
+    await execution.run(graph, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/execution/run', {
+      graph,
+      nodes: undefined,
+      workflow_name: 'wf_a',
+      draft_revision: 7,
+    })
+    expect(execution.executionId).toBe('exec-123')
+    expect(execution.executionWorkflowId).toBe('wf_a')
+    expect(execution.executionDraftRevision).toBe(7)
+    expect(execution.originCanvasId).toBe(canvasId)
+    expect(execution.originGraph).toEqual(graph)
+  })
+
+  it('accepts a matching WebSocket event before the Run response', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const response = deferred<{ data: Record<string, unknown> }>()
+    vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
+    const execution = useExecutionStore()
+    const graph = { nodes: [], edges: [] }
+
+    const run = execution.run(graph, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+    execution.applyNodeState({
+      type: 'node_state',
+      execution_id: 'exec-123',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      node_id: 'same',
+      status: 'running',
+      cached: false,
+    })
+
+    expect(execution.executionId).toBe('exec-123')
+    expect(execution.originCanvasId).toBe(canvasId)
+    expect(execution.nodeStatuses.same?.status).toBe('running')
+    response.resolve({
+      data: {
+        status: 'started',
+        execution_id: 'exec-123',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+      },
+    })
+    await run
+
+    expect(execution.state).toBe('running')
+    expect(execution.nodeStatuses.same?.status).toBe('running')
+  })
+
+  it('keeps a matching completion that arrives before the Run response', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const response = deferred<{ data: Record<string, unknown> }>()
+    vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
+    const execution = useExecutionStore()
+
+    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+    execution.applyExecutionComplete({
+      type: 'execution_complete',
+      execution_id: 'exec-fast',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      success: true,
+      errors: [],
+      node_statuses: {},
+    })
+    response.resolve({
+      data: {
+        status: 'started',
+        execution_id: 'exec-fast',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+      },
+    })
+    await run
+
+    expect(execution.state).toBe('idle')
+    expect(execution.lastResult?.success).toBe(true)
+    expect(execution.executionId).toBe('exec-fast')
+  })
+
+  it('keeps a matching idle snapshot that arrives before the Run response', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const response = deferred<{ data: Record<string, unknown> }>()
+    vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
+    const execution = useExecutionStore()
+
+    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-fast',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'idle',
+      progress: null,
+      last_result: { success: true, errors: [], node_statuses: {} },
+      node_statuses: {},
+    })
+    response.resolve({
+      data: {
+        status: 'started',
+        execution_id: 'exec-fast',
+        workflow_id: 'wf_a',
+        draft_revision: 7,
+      },
+    })
+    await run
+
+    expect(execution.state).toBe('idle')
+    expect(execution.lastResult?.success).toBe(true)
+  })
+
+  it('rejects late events from an older execution id', () => {
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-new',
+      workflow_id: 'wf_a',
+      draft_revision: 8,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {
+        same: { node_id: 'same', status: 'running', cached: false },
+      },
+    })
+
+    execution.applyNodeState({
+      type: 'node_state',
+      execution_id: 'exec-old',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      node_id: 'same',
+      status: 'failed',
+      cached: false,
+      error: 'late failure',
+    })
+
+    expect(execution.executionId).toBe('exec-new')
+    expect(execution.nodeStatuses.same?.status).toBe('running')
+  })
+
+  it('routes reconnect identity to one matching open root canvas', () => {
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'wf_b' })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasA, 'wf_a', 'Workflow A')
+    ui.setCanvasWorkflow(canvasB, 'wf_b', 'Workflow B')
+    canvasSessionRegistry.activate(canvasB)
+    const execution = useExecutionStore()
+
+    execution.applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-123',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+
+    expect(execution.originCanvasId).toBe(canvasA)
+    expect(execution.appliesToCanvas(canvasA)).toBe(true)
+    expect(execution.appliesToCanvas(canvasB)).toBe(false)
+    expect(execution.isMutationLocked).toBe(true)
+  })
+
+  it('never fans anonymous execution state across multiple canvases', () => {
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'wf_b' })
+    const execution = useExecutionStore()
+
+    canvasSessionRegistry.activate(canvasA)
+    execution.applyNodeState({ node_id: 'same', status: 'running', cached: false })
+    expect(execution.appliesToCanvas(canvasA)).toBe(true)
+    expect(execution.appliesToCanvas(canvasB)).toBe(false)
+
+    canvasSessionRegistry.activate(canvasB)
+    expect(execution.appliesToCanvas(canvasA)).toBe(true)
+    expect(execution.appliesToCanvas(canvasB)).toBe(false)
+
+    execution.applyNodeState({ node_id: 'same', status: 'executed', cached: false })
+    expect(execution.appliesToCanvas(canvasA)).toBe(false)
+    expect(execution.appliesToCanvas(canvasB)).toBe(true)
+
+    canvasSessionRegistry.activate(null)
+    execution.applyNodeState({ node_id: 'same', status: 'unexecuted', cached: false })
+    expect(execution.appliesToCanvas(canvasA)).toBe(false)
+    expect(execution.appliesToCanvas(canvasB)).toBe(false)
+
+    canvasSessionRegistry.unregister(canvasB)
+    expect(execution.appliesToCanvas(canvasA)).toBe(true)
+  })
+
+  it('lets a newer running reconnect snapshot replace a terminal context', () => {
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-old',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'idle',
+      last_result: { success: true, errors: [], node_statuses: {} },
+      progress: null,
+      node_statuses: {},
+    })
+
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-new',
+      workflow_id: 'wf_a',
+      draft_revision: 8,
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+    })
+
+    expect(execution.executionId).toBe('exec-new')
+    expect(execution.state).toBe('running')
+  })
+
+  it('keeps the prior terminal context when a new start is rejected', async () => {
+    const execution = useExecutionStore()
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-old',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      state: 'idle',
+      last_result: { success: true, errors: [], node_statuses: {} },
+      progress: null,
+      node_statuses: {},
+    })
+    vi.mocked(api.post).mockRejectedValueOnce({
+      response: { status: 422, data: { errors: [] } },
+      message: 'rejected',
+    })
+
+    await expect(execution.run(
+      { nodes: [], edges: [] },
+      undefined,
+      'wf_a',
+      { canvasId, draftRevision: 8 },
+    )).rejects.toMatchObject({ message: 'rejected' })
+
+    expect(execution.executionId).toBe('exec-old')
+    expect(execution.executionDraftRevision).toBe(7)
+    expect(execution.lastResult?.success).toBe(true)
   })
 
   it('posts workflow_name when clearing cache', async () => {

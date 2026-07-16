@@ -15,6 +15,8 @@ const workflowDraftMocks = vi.hoisted(() => ({
 
 const persistenceMocks = vi.hoisted(() => ({
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
+  acceptedDraftRevision: { value: null as number | null },
+  canvasId: null as ReturnType<typeof canvasIdFromPanelId> | null,
 }))
 
 vi.mock('@/stores/workflowDraft', () => ({
@@ -87,6 +89,8 @@ describe('RunButton', () => {
     workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
+    persistenceMocks.acceptedDraftRevision.value = null
+    persistenceMocks.canvasId = null
   })
 
   it('Run button is enabled when idle and validation is not pending', () => {
@@ -260,6 +264,47 @@ describe('RunButton', () => {
     await nextTick()
 
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['node-a'], 'wf_a')
+  })
+
+  it('captures the active root canvas and accepted draft revision', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
+    canvasSessionRegistry.activate(canvasId)
+    persistenceMocks.canvasId = canvasId
+    persistenceMocks.acceptedDraftRevision.value = 7
+    const { wrapper } = mountButton()
+    const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 7,
+    })
+  })
+
+  it('does not start a root execution without an accepted draft revision', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
+    useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
+    canvasSessionRegistry.activate(canvasId)
+    persistenceMocks.canvasId = canvasId
+    const { wrapper } = mountButton()
+    const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(runSpy).not.toHaveBeenCalled()
+    expect(wrapper.emitted('toast')?.[0]?.[0]).toMatchObject({
+      severity: 'error',
+      summary: 'Run failed',
+    })
   })
 
   it('passes the active workflow name to run', async () => {

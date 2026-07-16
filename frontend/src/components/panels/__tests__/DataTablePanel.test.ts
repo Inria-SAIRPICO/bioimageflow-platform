@@ -236,6 +236,81 @@ describe('DataTablePanel', () => {
     wrapper.unmount()
   })
 
+  it('ignores status and result updates owned by another canvas', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    const graphA = useGraphSync({
+      descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+      getWorkflowId: () => 'a',
+    })
+    useGraphSync({
+      descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
+      getWorkflowId: () => 'b',
+    })
+    graphA.syncGraphState({
+      nodes: [{
+        id: 'shared',
+        name: 'Shared node',
+        tool_name: 'files',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+    ui.setCanvasSelectedNodes(canvasA, ['shared'])
+    ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+    ui.setCanvasSelectedNodes(canvasB, ['shared'])
+    graphSyncCanvasSessions.activate(canvasA)
+    const store = useDataTableStore()
+    vi.spyOn(store, 'fetchNodeData').mockResolvedValue(undefined)
+    const fetchCanvasNodeData = vi
+      .spyOn(store, 'fetchCanvasNodeData')
+      .mockResolvedValue(undefined)
+    const clearCanvasCache = vi.spyOn(store, 'clearCanvasCache')
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: { Button: true, NodeDataTable: true },
+      },
+    })
+    await flushPromises()
+    fetchCanvasNodeData.mockClear()
+    clearCanvasCache.mockClear()
+
+    useExecutionStore().applyStatusSnapshot({
+      type: 'status_snapshot',
+      execution_id: 'exec-b',
+      workflow_id: 'b',
+      draft_revision: 7,
+      state: 'idle',
+      progress: null,
+      last_result: {
+        success: true,
+        errors: [],
+        node_statuses: {
+          shared: { node_id: 'shared', status: 'executed', cached: false },
+        },
+      },
+      node_statuses: {
+        shared: { node_id: 'shared', status: 'executed', cached: false },
+      },
+    })
+    await nextTick()
+    await flushPromises()
+
+    expect(fetchCanvasNodeData).not.toHaveBeenCalled()
+    expect(clearCanvasCache).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('does not render a delayed response from another canvas with the same node id', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

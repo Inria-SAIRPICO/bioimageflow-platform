@@ -18,6 +18,7 @@ from bioimageflow_core.tool import IOModel
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
+from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.graph import GraphState, NodeState, PositionalEdge
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
@@ -104,6 +105,9 @@ class RecordingEventBus:
         self.progress_events: list[tuple[str, str, int, int, float]] = []
         self.node_state_events: list[tuple[str, str, bool, str | None, str | None]] = []
         self.complete_events: list[tuple[bool, list, dict]] = []
+        self.progress_contexts: list[ExecutionContext | None] = []
+        self.node_state_contexts: list[ExecutionContext | None] = []
+        self.complete_contexts: list[ExecutionContext | None] = []
         self.log_events: list[tuple[str, str, str | None, float]] = []
         self.environment_events: list[tuple[str, str]] = []
 
@@ -116,8 +120,10 @@ class RecordingEventBus:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.progress_events.append((node_id, status, row, total_rows, timestamp))
+        self.progress_contexts.append(context)
 
     def publish_node_state(
         self,
@@ -128,13 +134,20 @@ class RecordingEventBus:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.node_state_events.append((node_id, status, cached, error, traceback))
+        self.node_state_contexts.append(context)
 
     def publish_execution_complete(
-        self, success: bool, errors: list, node_statuses: dict
+        self,
+        success: bool,
+        errors: list,
+        node_statuses: dict,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.complete_events.append((success, errors, node_statuses))
+        self.complete_contexts.append(context)
 
     def publish_log(
         self,
@@ -288,7 +301,11 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
         storage_path=tmp_path,
     )
 
-    await manager.start(graph)
+    context = await manager.start(
+        graph,
+        workflow_id="integration-workflow",
+        draft_revision=3,
+    )
     await _drain_manager(manager)
 
     assert manager.last_result is not None
@@ -301,6 +318,10 @@ async def test_execution_manager_runs_real_dataframe_workflow_and_updates_cache(
     assert bus.complete_events[-1][0] is True
     assert ("source", "executed", False, None, None) in bus.node_state_events
     assert ("offset", "executed", False, None, None) in bus.node_state_events
+    assert bus.node_state_contexts
+    assert all(event_context == context for event_context in bus.node_state_contexts)
+    assert all(event_context == context for event_context in bus.progress_contexts)
+    assert bus.complete_contexts == [context]
     assert any("Workflow execution completed successfully" in event[1] for event in bus.log_events)
 
     _assert_shifted_cache(tmp_path)

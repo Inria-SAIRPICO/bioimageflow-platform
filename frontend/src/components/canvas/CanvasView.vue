@@ -263,6 +263,7 @@ watch(validationResult, applyValidationToCanvas, { deep: true })
 watch(
   [() => executionStore.isRunning, () => executionStore.nodeStatuses],
   ([running, statuses], [wasRunning]) => {
+    if (!executionStore.appliesToCanvas(canvasId)) return
     if (!statuses || (!running && !wasRunning)) return
     for (const node of getNodes.value) {
       const s = statuses[node.id]

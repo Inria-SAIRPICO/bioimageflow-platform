@@ -52,6 +52,22 @@ class TestProgressMessage:
                 bogus="x",
             )
 
+    def test_carries_execution_context(self) -> None:
+        msg = ProgressMessage(
+            node_id="n1",
+            status="row_progress",
+            row=1,
+            total_rows=2,
+            timestamp=1.0,
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        assert msg.execution_id == "exec-123"
+        assert msg.workflow_id == "wf_a"
+        assert msg.draft_revision == 7
+
 
 class TestNodeStateMessage:
     def test_all_statuses(self) -> None:
@@ -87,6 +103,18 @@ class TestNodeStateMessage:
         assert msg.error == "bad"
         assert msg.traceback == "tb"
 
+    def test_carries_execution_context(self) -> None:
+        msg = NodeStateMessage(
+            node_id="n1",
+            status="running",
+            cached=False,
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        assert msg.execution_id == "exec-123"
+
 
 class TestLogMessage:
     def test_without_node_id(self) -> None:
@@ -121,6 +149,17 @@ class TestExecutionCompleteMessage:
         assert len(msg.errors) == 1
         assert msg.node_statuses["n1"]["status"] == "failed"
 
+    def test_carries_execution_context(self) -> None:
+        msg = ExecutionCompleteMessage(
+            success=True,
+            node_statuses={},
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        assert msg.execution_id == "exec-123"
+
 
 class TestStatusSnapshotMessage:
     def test_running_snapshot(self) -> None:
@@ -136,6 +175,16 @@ class TestStatusSnapshotMessage:
         assert msg.state == "running"
         assert msg.progress["row"] == 2
         assert msg.node_statuses["n1"]["status"] == "running"
+
+    def test_carries_execution_context(self) -> None:
+        msg = StatusSnapshotMessage(
+            state="idle",
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        assert msg.execution_id == "exec-123"
 
 
 class TestToolReloadMessage:

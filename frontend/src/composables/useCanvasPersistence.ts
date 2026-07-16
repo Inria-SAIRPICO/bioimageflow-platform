@@ -55,6 +55,7 @@ export interface CanvasScopedPersistenceOptions {
 export interface CanvasPersistenceApi {
   readonly canvasId: CanvasId | null
   readonly workflowId: Ref<string | null>
+  readonly acceptedDraftRevision: Ref<number | null>
   readonly currentGraph: Ref<GraphState>
   readonly isPending: Ref<boolean>
   readonly hasConflict: Ref<boolean>
@@ -70,6 +71,7 @@ export interface CanvasPersistenceApi {
 export interface RootCanvasPersistenceResource extends DisposableCanvasResource {
   readonly canvasId: CanvasId
   readonly workflowId: Ref<string | null>
+  readonly acceptedDraftRevision: Ref<number | null>
   readonly currentGraph: Ref<GraphState>
   readonly validationResult: Ref<ValidationResult | null>
   readonly isValidationPending: Ref<boolean>
@@ -155,6 +157,7 @@ function createRootPersistenceResource(options: {
   debounceMs?: number
 }): RootCanvasPersistenceResource {
   const workflowId = ref<string | null>(options.initialWorkflowId)
+  const acceptedDraftRevision = ref<number | null>(null)
   const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
   const validationResult = ref<ValidationResult | null>(null)
   const draftCoordinator = shallowRef<WorkflowDraftCoordinator | null>(null)
@@ -234,6 +237,7 @@ function createRootPersistenceResource(options: {
   function acceptDraftResponse(response: WorkflowDraftResponse): void {
     const accepted = cloneJson(response)
     authoritativeDraft = accepted
+    acceptedDraftRevision.value = accepted.draft_revision
     currentGraph.value = cloneGraph(accepted.graph)
     validationResult.value = cloneJson(accepted.validation)
     currentGraphHasAcceptedValidation = true
@@ -437,6 +441,7 @@ function createRootPersistenceResource(options: {
   return {
     canvasId: options.canvasId,
     workflowId,
+    acceptedDraftRevision,
     currentGraph,
     validationResult,
     isValidationPending,
@@ -462,6 +467,7 @@ function createBoundApi(
   return {
     canvasId: resource.canvasId,
     workflowId: resource.workflowId,
+    acceptedDraftRevision: resource.acceptedDraftRevision,
     currentGraph: resource.currentGraph,
     isPending: resource.isPending,
     hasConflict: resource.hasConflict,
@@ -482,10 +488,12 @@ function createUnavailableBoundApi(
   dispose: () => void,
 ): CanvasPersistenceApi {
   const workflowId = ref<string | null>(null)
+  const acceptedDraftRevision = ref<number | null>(null)
   const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
   return {
     canvasId,
     workflowId,
+    acceptedDraftRevision,
     currentGraph,
     isPending: ref(false),
     hasConflict: ref(false),
@@ -526,6 +534,9 @@ function createActiveFacade(): CanvasPersistenceApi {
       return canvasSessionRegistry.activeCanvasId.value
     },
     workflowId: computed(() => selected()?.workflowId.value ?? null),
+    acceptedDraftRevision: computed(
+      () => selected()?.acceptedDraftRevision.value ?? null,
+    ),
     currentGraph: computed(() => selected()?.currentGraph.value ?? { nodes: [], edges: [] }),
     isPending: computed(() => selected()?.isPending.value ?? false),
     hasConflict: computed(() => selected()?.hasConflict.value ?? false),
@@ -551,6 +562,13 @@ function getLegacyFacade(): CanvasPersistenceApi {
     }
   })
   const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
+  const acceptedDraftRevision = computed(() => {
+    try {
+      return useWorkflowDraftStore().appliedDraftRevision
+    } catch {
+      return null
+    }
+  })
   const isPending = computed(() => {
     try {
       return useWorkflowDraftStore().hasPendingSave
@@ -574,6 +592,7 @@ function getLegacyFacade(): CanvasPersistenceApi {
   legacyFacade = {
     canvasId: null,
     workflowId,
+    acceptedDraftRevision,
     currentGraph,
     isPending,
     hasConflict,

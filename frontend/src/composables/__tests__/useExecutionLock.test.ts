@@ -10,6 +10,7 @@ import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import type { ValidationResult } from '@/api/types'
+import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 
 describe('useExecutionLock', () => {
   beforeEach(() => {
@@ -83,6 +84,33 @@ describe('useExecutionLock', () => {
 
     expect(flushNow).toHaveBeenCalled()
     expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a')
+  })
+
+  it('captures the accepted draft revision after the final graph flush', async () => {
+    const { lockForExecution } = useExecutionLock()
+    const exec = useExecutionStore()
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const graph = { nodes: [], edges: [] }
+    const acceptedDraftRevision = ref<number | null>(7)
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    await lockForExecution({
+      graph,
+      graphSync: {
+        flushNow: vi.fn(async () => {
+          acceptedDraftRevision.value = 8
+        }),
+        validationResult: ref({ valid: true, node_statuses: {}, errors: [] }),
+      },
+      canvasId,
+      workflowName: 'wf_a',
+      acceptedDraftRevision,
+    })
+
+    expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 8,
+    })
   })
 
   it('lockForExecution aborts if its canvas target changes while graph sync flushes', async () => {

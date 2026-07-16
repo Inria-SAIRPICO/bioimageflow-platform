@@ -1182,6 +1182,61 @@ describe('NodePanel', () => {
       expect(error.text()).toContain('Traceback line 2')
     })
 
+    it('does not render another canvas execution for the same node id', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+      const ui = useUIStore()
+      for (const [canvasId, name] of [[canvasA, 'A'], [canvasB, 'B']] as const) {
+        ui.setCanvasWorkflow(canvasId, canvasId === canvasA ? 'a' : 'b', name)
+        ui.setCanvasSelectedNodes(canvasId, ['shared'])
+        ui.setCanvasGraphNodes(canvasId, [{ id: 'shared', data: makeNodeData() }])
+      }
+      canvasSessionRegistry.activate(canvasA)
+      const w = mount(NodePanel, {
+        global: { plugins: [pinia, PrimeVue] },
+      })
+
+      useExecutionStore().applyStatusSnapshot({
+        type: 'status_snapshot',
+        execution_id: 'exec-b',
+        workflow_id: 'b',
+        draft_revision: 7,
+        state: 'idle',
+        progress: null,
+        last_result: {
+          success: false,
+          errors: [],
+          node_statuses: {
+            shared: {
+              node_id: 'shared',
+              status: 'failed',
+              cached: false,
+              error: 'B failed',
+            },
+          },
+        },
+        node_statuses: {
+          shared: {
+            node_id: 'shared',
+            status: 'failed',
+            cached: false,
+            error: 'B failed',
+          },
+        },
+      })
+      await w.vm.$nextTick()
+
+      expect(w.find('[data-testid="node-runtime-error"]').exists()).toBe(false)
+      canvasSessionRegistry.activate(canvasB)
+      await w.vm.$nextTick()
+      expect(w.find('[data-testid="node-runtime-error"]').text()).toContain('B failed')
+      w.unmount()
+    })
+
     it('renders selected-node logs and hides other nodes', async () => {
       const w = mountPanel(makeNodeData())
       const logger = useLoggerStore()

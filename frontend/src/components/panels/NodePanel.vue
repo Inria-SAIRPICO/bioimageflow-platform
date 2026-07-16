@@ -69,6 +69,13 @@ const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
 const fieldFocusTracker = useFieldFocusTracker()
 const isNodeEditingDisabled = computed(() => executionStore.isMutationLocked)
+const executionAppliesToActiveCanvas = computed(() => {
+  const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+  if (activeCanvasId === null) {
+    return canvasSessionRegistry.sessionCount.value === 0
+  }
+  return executionStore.appliesToCanvas(activeCanvasId)
+})
 const focusedParameterRows = new Map<EventTarget, FieldFocusTarget>()
 
 const selectedNodeErrors = computed(() => {
@@ -113,6 +120,7 @@ watch(
 )
 
 const selectedNodeStatus = computed(() => {
+  if (!executionAppliesToActiveCanvas.value) return null
   const nodeId = selectedNode.value?.id
   return nodeId ? executionStore.nodeStatuses[nodeId] ?? null : null
 })
@@ -648,6 +656,7 @@ async function pickFolder(key: string) {
       <NodeOutputErrorBlock
         v-if="uiStore.selectedNodeIds[0]"
         :node-id="uiStore.selectedNodeIds[0]"
+        :active="executionAppliesToActiveCanvas"
       />
 
       <!-- Outputs section (Fix 19: output template editing) -->

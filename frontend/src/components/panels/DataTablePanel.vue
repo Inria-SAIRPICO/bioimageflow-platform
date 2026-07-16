@@ -175,6 +175,13 @@ function currentDataTableTarget(): DataTableTarget {
   }
 }
 
+function executionAppliesToTarget(target: DataTableTarget): boolean {
+  if (target.canvasId === null) {
+    return canvasSessionRegistry.sessionCount.value === 0
+  }
+  return executionStore.appliesToCanvas(target.canvasId)
+}
+
 function refreshEntry(entry: DataTableEntry, target: DataTableTarget): void {
   const options = {
     toolName: entry.toolName,
@@ -218,6 +225,7 @@ watch(
         watch(
           () => executionStore.nodeStatuses[entry.dataNodeId]?.status,
           (next, prev) => {
+            if (!executionAppliesToTarget(target)) return
             if (prev !== 'executed' && next === 'executed') {
               refreshEntry(entry, target)
             } else if (next === 'out_of_date' || next === 'unexecuted') {
@@ -236,6 +244,7 @@ watch(
   (result) => {
     if (!result?.success) return
     const target = currentDataTableTarget()
+    if (!executionAppliesToTarget(target)) return
     const refreshed = new Set<string>()
     for (const entry of displayedEntries.value) {
       if (refreshed.has(entry.dataNodeId)) continue

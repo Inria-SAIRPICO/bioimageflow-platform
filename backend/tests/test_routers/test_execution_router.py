@@ -18,6 +18,7 @@ from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.execution import (
+    ExecutionContext,
     ExecutionResult,
     ExecutionStatus,
     ProgressInfo,
@@ -125,7 +126,11 @@ class _FakeExecutionManager:
         status: ExecutionStatus | None = None,
     ) -> None:
         self.is_running = running
-        self.start = AsyncMock()
+        self.start = AsyncMock(return_value=ExecutionContext(
+            execution_id="exec-123",
+            workflow_id="wf",
+            draft_revision=7,
+        ))
         self.stop = AsyncMock()
         if start_error is not None:
             self.start.side_effect = start_error
@@ -179,11 +184,22 @@ async def test_run_returns_202(idle_client) -> None:
     client, em = idle_client
     resp = await client.post(
         "/api/v1/execution/run",
-        json={"graph": _minimal_graph(), "workflow_name": "wf"},
+        json={
+            "graph": _minimal_graph(),
+            "workflow_name": "wf",
+            "draft_revision": 7,
+        },
     )
     assert resp.status_code == 202, resp.text
-    assert resp.json() == {"status": "started"}
+    assert resp.json() == {
+        "status": "started",
+        "execution_id": "exec-123",
+        "workflow_id": "wf",
+        "draft_revision": 7,
+    }
     em.start.assert_awaited_once()
+    assert em.start.await_args.kwargs["workflow_id"] == "wf"
+    assert em.start.await_args.kwargs["draft_revision"] == 7
 
 
 async def test_run_conflict_returns_409(tmp_path: Path) -> None:
@@ -552,6 +568,9 @@ async def test_status_running_with_progress(tmp_path: Path) -> None:
         state="running",
         last_result=None,
         progress=ProgressInfo(node_id="n1", row=1, total_rows=10),
+        execution_id="exec-123",
+        workflow_id="wf",
+        draft_revision=7,
     )
     object.__setattr__(status, "node_statuses", {})
     em = _FakeExecutionManager(running=True, status=status)
@@ -561,6 +580,9 @@ async def test_status_running_with_progress(tmp_path: Path) -> None:
     body = resp.json()
     assert body["state"] == "running"
     assert body["progress"]["row"] == 1
+    assert body["execution_id"] == "exec-123"
+    assert body["workflow_id"] == "wf"
+    assert body["draft_revision"] == 7
 
 
 async def test_status_includes_node_statuses(tmp_path: Path) -> None:

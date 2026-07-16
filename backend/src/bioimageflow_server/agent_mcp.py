@@ -731,6 +731,7 @@ class BioImageFlowMCPGateway:
         payload: dict[str, Any] = {
             "graph": graph,
             "workflow_name": state.active_workflow_id,
+            "draft_revision": draft.get("draft_revision"),
         }
         if nodes is not None:
             payload["nodes"] = nodes

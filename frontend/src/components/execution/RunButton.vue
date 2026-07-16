@@ -131,12 +131,22 @@ async function runCore(nodes?: string[]) {
       if (!ok) return
       if (!isTargetActive()) return
     }
+    const draftRevision = canvasPersistence.acceptedDraftRevision.value
+    if (targetCanvasId !== null && draftRevision === null) {
+      throw new Error('An accepted draft revision is required for execution')
+    }
     const started = await lockForExecution({
       graph,
       nodes,
       graphSync: props.graphSync,
       workflowName,
       isTargetActive,
+      ...(targetCanvasId !== null
+        ? {
+            canvasId: targetCanvasId,
+            acceptedDraftRevision: canvasPersistence.acceptedDraftRevision,
+          }
+        : {}),
     })
     if (!started || !isTargetActive()) return
     emit('run-started')

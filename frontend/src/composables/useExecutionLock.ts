@@ -5,6 +5,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { validationErrorsForExecution } from '@/utils/executionSelection'
 import type { GraphState, ValidationResult } from '@/api/types'
+import type { CanvasId } from '@/sessions/canvasSessionRegistry'
 
 export interface ExecutionGraphSync {
   flushNow: () => Promise<void>
@@ -17,6 +18,8 @@ export interface LockForExecutionOptions {
   nodes?: string[]
   graphSync: ExecutionGraphSync
   workflowName: string
+  canvasId?: CanvasId | null
+  acceptedDraftRevision?: Readonly<Ref<number | null>>
   isTargetActive?: () => boolean
 }
 
@@ -62,7 +65,17 @@ export function useExecutionLock() {
     }
 
     // 3. Kick off the run.
-    await exec.run(graph, nodes, workflowName)
+    if (
+      options.canvasId !== undefined
+      || options.acceptedDraftRevision !== undefined
+    ) {
+      await exec.run(graph, nodes, workflowName, {
+        canvasId: options.canvasId ?? null,
+        draftRevision: options.acceptedDraftRevision?.value ?? null,
+      })
+    } else {
+      await exec.run(graph, nodes, workflowName)
+    }
     return true
   }
 
