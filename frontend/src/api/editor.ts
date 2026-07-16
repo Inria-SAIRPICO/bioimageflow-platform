@@ -1,4 +1,8 @@
+import { getActivePinia } from 'pinia'
 import { api } from '@/api/client'
+import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
+import { useGraphSync } from '@/composables/useGraphSync'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useUIStore } from '@/stores/ui'
 
@@ -180,12 +184,32 @@ export async function openToolWithEditor(
 }
 
 async function flushDraftIfAvailable(): Promise<void> {
-  try {
+  if (canvasSessionRegistry.sessionCount.value === 0) {
+    if (getActivePinia() === undefined) return
     await useWorkflowDraftStore().flush()
-  } catch {
-    // Unit tests and non-app callers may not have an active Pinia instance.
-    // Opening the editor should still work; the in-app path flushes drafts.
+    return
   }
+
+  const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+  if (activeCanvasId === null) {
+    throw new Error(
+      'Select an active workflow or sub-workflow canvas before opening the editor.',
+    )
+  }
+  const session = canvasSessionRegistry.get(activeCanvasId)
+  if (session === null) {
+    throw new Error('The active canvas session is unavailable. Select its tab and try again.')
+  }
+  if (session.descriptor.kind === 'root') {
+    const fresh = await useCanvasPersistence().ensureFreshForCriticalOperation()
+    if (!fresh) {
+      throw new Error(
+        'Resolve the active workflow conflict before opening the editor.',
+      )
+    }
+    return
+  }
+  await useGraphSync().flushNow()
 }
 
 export async function handleEditorOpenResponse(

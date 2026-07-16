@@ -1483,7 +1483,7 @@ For a root workflow canvas, the **backend draft is the durable source of truth**
 2. Parameter commands also project the target node as provisional `unexecuted` before any asynchronous persistence starts.
 3. A root canvas debounces validated full-graph `PUT /workflow-drafts/{id}` writes with `expected_revision`; a nested canvas debounces revision-CAS snapshot writes.
 4. The accepted response updates only that canvas's graph, validation, and accepted draft or snapshot revision.
-5. On save, save-as, new workflow creation flows, Run, export, or editor/agent launch, the owning canvas flushes pending persistence and checks revision freshness.
+5. Save, save-as, new workflow creation, Run, and export cross the owning root canvas's freshness barrier. Editor path and tool launches cross that same barrier for an active root canvas, flush the active private snapshot and wait for acceptance for an active nested canvas, or use the legacy draft flush only when no canvas session is registered.
 6. Run submits that canvas's exact graph plus workflow id and accepted draft revision. Full Run validates and compiles the complete submitted graph; Run Selected derives, validates, and compiles only the selected-plus-upstream execution subgraph from that submitted graph.
 7. During execution, graph mutations are globally locked; contextual progress and state updates arrive by WebSocket and are projected only onto the matching canvas.
 8. Draft-change notices are retained by workflow id. Clean matching canvases auto-apply, while dirty or pending canvases retain their graph and expose a conflict.
@@ -1687,8 +1687,8 @@ On load, the server reports missing packages in the load response. The frontend 
 | 34 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
 | 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table |
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
-| 37 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells; agent/editor launch after draft flush |
-| 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links |
+| 37 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells after the active canvas persistence barrier |
+| 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links after the active canvas persistence barrier |
 | 39 | `GET` | `/api/v1/health` | Health check |
 | 40 | `GET` | `/api/v1/datasets` | Dataset Browser modal; populate list in browser mode |
 | 41 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal upload button; drag-and-drop in browser mode |
