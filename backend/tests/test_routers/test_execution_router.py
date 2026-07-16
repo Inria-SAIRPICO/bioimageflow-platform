@@ -23,9 +23,17 @@ from bioimageflow_server.models.execution import (
     ExecutionStatus,
     ProgressInfo,
 )
+from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
-from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
+from bioimageflow_server.models.validation import (
+    GraphValidationError,
+    NodeStatus,
+    ValidationResult,
+)
+from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
+from bioimageflow_server.models.workflow_draft import DraftWriter, WorkflowDraftResponse
 from bioimageflow_server.routers.execution import (
+    get_workflow_draft_service as execution_get_workflow_draft_service,
     get_workflow_store as execution_get_workflow_store,
 )
 from bioimageflow_server.services.execution import (
@@ -33,6 +41,7 @@ from bioimageflow_server.services.execution import (
     WorkflowBuildError,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
 # ---- Mock tool classes (module-level so from_dict can re-import) -----------
@@ -118,6 +127,26 @@ def _minimal_graph() -> dict:
     }
 
 
+def _accepted_draft(
+    graph: dict[str, Any] | None = None,
+    *,
+    workflow_id: str = "wf",
+    revision: int = 7,
+    valid: bool = True,
+    updated_by: DraftWriter = "frontend",
+) -> WorkflowDraftResponse:
+    return WorkflowDraftResponse(
+        workflow_id=workflow_id,
+        base_saved_revision="sha256:test",
+        draft_revision=revision,
+        updated_at="2026-07-16T00:00:00Z",
+        updated_by=updated_by,
+        dirty_against_saved=True,
+        graph=GraphState.model_validate(graph or _minimal_graph()),
+        validation=ValidationResult(valid=valid),
+    )
+
+
 class _FakeExecutionManager:
     def __init__(
         self,
@@ -151,6 +180,7 @@ async def _make_client(
     execution_manager: Any = None,
     tool_registry: ToolRegistryService | None = None,
     workflow_store: Any = None,
+    workflow_draft_service: Any = None,
 ) -> httpx.AsyncClient:
     config = AppConfig(
         storage_path=tmp_path,
@@ -159,6 +189,10 @@ async def _make_client(
         workflow_store=workflow_store,
     )
     app = create_app(config)
+    if workflow_draft_service is not None:
+        app.dependency_overrides[execution_get_workflow_draft_service] = (
+            lambda: workflow_draft_service
+        )
     transport = ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 
@@ -168,10 +202,13 @@ async def idle_client(tmp_path: Path) -> AsyncIterator[tuple[httpx.AsyncClient, 
     em = _FakeExecutionManager(running=False)
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
+    workflow_draft_service = MagicMock()
+    workflow_draft_service.get_draft_snapshot.return_value = _accepted_draft()
     c = await _make_client(
         tmp_path,
         execution_manager=em,
         workflow_store=workflow_store,
+        workflow_draft_service=workflow_draft_service,
     )
     async with c:
         yield c, em
@@ -200,6 +237,358 @@ async def test_run_returns_202(idle_client) -> None:
     em.start.assert_awaited_once()
     assert em.start.await_args.kwargs["workflow_id"] == "wf"
     assert em.start.await_args.kwargs["draft_revision"] == 7
+    assert em.start.await_args.args[0] == _accepted_draft().graph
+
+
+async def test_run_selected_uses_accepted_draft_graph(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    draft_service = MagicMock()
+    accepted = _accepted_draft()
+    draft_service.get_draft_snapshot.return_value = accepted
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+        workflow_draft_service=draft_service,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": accepted.graph.model_dump(mode="json"),
+                "nodes": ["n1"],
+                "workflow_name": "wf",
+                "draft_revision": 7,
+            },
+        )
+
+    assert response.status_code == 202, response.text
+    assert em.start.await_args.args[0] is accepted.graph
+    assert em.start.await_args.kwargs["nodes"] == ["n1"]
+
+
+async def test_run_rejects_stale_draft_before_execution_side_effects(
+    tmp_path: Path,
+) -> None:
+    prior_context = ExecutionContext(
+        execution_id="exec-prior",
+        workflow_id="prior",
+        draft_revision=3,
+    )
+    prior_status = ExecutionStatus(
+        state="idle",
+        execution_id=prior_context.execution_id,
+        workflow_id=prior_context.workflow_id,
+        draft_revision=prior_context.draft_revision,
+    )
+    em = _FakeExecutionManager(running=False, status=prior_status)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    draft_service = MagicMock()
+    draft_service.get_draft_snapshot.return_value = _accepted_draft(revision=8)
+    cache_sentinel = tmp_path / "cache-sentinel"
+    cache_sentinel.write_text("retained")
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+        workflow_draft_service=draft_service,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": _minimal_graph(),
+                "workflow_name": "wf",
+                "draft_revision": 7,
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "draft_revision_conflict",
+        "detail": "Draft revision conflict: expected 7, current is 8",
+        "expected_revision": 7,
+        "current_revision": 8,
+        "current_updated_by": "frontend",
+        "current_updated_at": "2026-07-16T00:00:00Z",
+    }
+    em.start.assert_not_awaited()
+    workflow_store.get_storage_path.assert_not_called()
+    assert em.get_status() is prior_status
+    assert cache_sentinel.read_text() == "retained"
+
+
+async def test_run_rejects_same_revision_graph_mismatch(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    accepted_graph = _minimal_graph()
+    accepted_graph["nodes"][0]["parameters"] = {"value": 1}
+    draft_service = MagicMock()
+    draft_service.get_draft_snapshot.return_value = _accepted_draft(accepted_graph)
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+        workflow_draft_service=draft_service,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": _minimal_graph(),
+                "workflow_name": "wf",
+                "draft_revision": 7,
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "draft_graph_mismatch",
+        "detail": (
+            "Submitted graph does not match accepted draft revision 7 "
+            "for workflow 'wf'"
+        ),
+        "workflow_id": "wf",
+        "draft_revision": 7,
+    }
+    em.start.assert_not_awaited()
+    workflow_store.get_storage_path.assert_not_called()
+
+
+async def test_run_without_revision_preserves_inline_execution(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    em.start.return_value = ExecutionContext(
+        execution_id="exec-inline",
+        workflow_id="wf",
+        draft_revision=None,
+    )
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    draft_service = MagicMock()
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+        workflow_draft_service=draft_service,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={"graph": _minimal_graph(), "workflow_name": "wf"},
+        )
+
+    assert response.status_code == 202, response.text
+    draft_service.get_draft_snapshot.assert_not_called()
+    assert em.start.await_args.args[0] == GraphState.model_validate(_minimal_graph())
+    assert em.start.await_args.kwargs["draft_revision"] is None
+
+
+async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) -> None:
+    em = _FakeExecutionManager(running=False)
+    em.start.return_value = ExecutionContext(
+        execution_id="exec-zero",
+        workflow_id="wf",
+        draft_revision=0,
+    )
+    workflow_store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=ToolRegistryService(),
+        storage_base_dir=tmp_path / "workspace" / "outputs",
+    )
+    workflow_store.create_workflow(WorkflowCreate(name="wf"))
+    draft_path = workflow_store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+    assert not draft_path.exists()
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": {"nodes": [], "edges": []},
+                "workflow_name": "wf",
+                "draft_revision": 0,
+            },
+        )
+
+    assert response.status_code == 202, response.text
+    assert response.json()["draft_revision"] == 0
+    assert em.start.await_args.args[0] == GraphState(nodes=[], edges=[])
+    assert em.start.await_args.kwargs["draft_revision"] == 0
+    assert not draft_path.exists()
+
+
+async def test_run_rejects_revision_zero_graph_mismatch_without_materializing_draft(
+    tmp_path: Path,
+) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=ToolRegistryService(),
+        storage_base_dir=tmp_path / "workspace" / "outputs",
+    )
+    workflow_store.create_workflow(WorkflowCreate(name="wf"))
+    draft_path = workflow_store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": _minimal_graph(),
+                "workflow_name": "wf",
+                "draft_revision": 0,
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "draft_graph_mismatch"
+    assert response.json()["draft_revision"] == 0
+    em.start.assert_not_awaited()
+    assert not draft_path.exists()
+
+
+@pytest.mark.parametrize("race", ["moved", "deleted"])
+async def test_run_returns_not_found_when_workflow_disappears_before_start(
+    tmp_path: Path,
+    race: str,
+) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=ToolRegistryService(),
+        storage_base_dir=tmp_path / "workspace" / "outputs",
+    )
+    workflow_store.create_workflow(WorkflowCreate(name="wf"))
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+    )
+    if race == "moved":
+        workflow_store.patch_workflow(
+            "wf",
+            WorkflowUpdate(action="update", new_id="archive/wf"),
+        )
+    else:
+        workflow_store.delete_workflow("wf")
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": _minimal_graph(),
+                "workflow_name": "wf",
+                "draft_revision": 7,
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+    em.start.assert_not_awaited()
+
+
+async def test_run_selected_defers_invalid_full_draft_validation_to_execution_scope(
+    tmp_path: Path,
+) -> None:
+    em = _FakeExecutionManager(running=False)
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    invalid_graph = _minimal_graph()
+    error = GraphValidationError(
+        type="missing_tool",
+        detail="Tool 'T' is not installed",
+        node="n1",
+    )
+    draft = _accepted_draft(invalid_graph, valid=False)
+    draft.validation.errors = [error]
+    draft_service = MagicMock()
+    draft_service.get_draft_snapshot.return_value = draft
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+        workflow_draft_service=draft_service,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": invalid_graph,
+                "nodes": ["n1"],
+                "workflow_name": "wf",
+                "draft_revision": 7,
+            },
+        )
+
+    assert response.status_code == 202, response.text
+    em.start.assert_awaited_once()
+    assert em.start.await_args.args[0] is draft.graph
+    assert em.start.await_args.kwargs["nodes"] == ["n1"]
+
+
+@pytest.mark.parametrize("retained_validation_valid", [False, True])
+async def test_run_recompiles_draft_instead_of_trusting_retained_validation(
+    tmp_path: Path,
+    retained_validation_valid: bool,
+) -> None:
+    error = GraphValidationError(
+        type="missing_tool",
+        detail="Tool 'T' is not installed",
+        node="n1",
+    )
+    em = _FakeExecutionManager(
+        running=False,
+        start_error=WorkflowBuildError([error]),
+    )
+    workflow_store = MagicMock()
+    workflow_store.get_storage_path.return_value = tmp_path
+    draft = _accepted_draft(_minimal_graph(), valid=retained_validation_valid)
+    if not retained_validation_valid:
+        draft.validation.errors = [error]
+    draft_service = MagicMock()
+    draft_service.get_draft_snapshot.return_value = draft
+    client = await _make_client(
+        tmp_path,
+        execution_manager=em,
+        workflow_store=workflow_store,
+        workflow_draft_service=draft_service,
+    )
+
+    async with client:
+        response = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": _minimal_graph(),
+                "workflow_name": "wf",
+                "draft_revision": 7,
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": "validation_error",
+        "detail": "Failed to build workflow: 1 error(s)",
+        "errors": [error.model_dump()],
+    }
+    em.start.assert_awaited_once()
+    assert em.start.await_args.args[0] is draft.graph
 
 
 async def test_run_conflict_returns_409(tmp_path: Path) -> None:

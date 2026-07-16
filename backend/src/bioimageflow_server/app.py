@@ -51,6 +51,7 @@ from bioimageflow_server.routers.execution import (
     get_settings as execution_get_settings,
     get_storage_path as execution_get_storage_path,
     get_tool_registry as execution_get_tool_registry,
+    get_workflow_draft_service as execution_get_workflow_draft_service,
     get_workflow_store as execution_get_workflow_store,
     router as execution_router,
 )
@@ -571,6 +572,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[
+        execution_get_workflow_draft_service
+    ] = lambda: workflow_draft_service
     app.dependency_overrides[execution_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[execution_get_settings] = _live_settings
     app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store

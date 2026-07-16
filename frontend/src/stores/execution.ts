@@ -237,6 +237,7 @@ export const useExecutionStore = defineStore('execution', () => {
   const nodeStatuses = ref<Record<string, NodeStatus>>({})
   const error = ref<string | null>(null)
   const isConflict = ref(false)
+  const conflictCode = ref<string | null>(null)
   const validationErrors = ref<GraphValidationError[]>([])
   const environmentRecoveryAction = ref<EnvironmentRecoveryAction | null>(null)
   const dismissedEnvironmentRecoveryKey = ref<string | null>(null)
@@ -502,6 +503,7 @@ export const useExecutionStore = defineStore('execution', () => {
     state.value = 'starting'
     error.value = null
     isConflict.value = false
+    conflictCode.value = null
     validationErrors.value = []
     try {
       const payload = {
@@ -545,6 +547,7 @@ export const useExecutionStore = defineStore('execution', () => {
         const status = err.response?.status ?? err.status
         if (status === 409) {
           isConflict.value = true
+          conflictCode.value = err.response?.data?.error ?? null
         } else if (status === 422) {
           validationErrors.value = err.response?.data?.errors ?? []
         }
@@ -720,6 +723,7 @@ export const useExecutionStore = defineStore('execution', () => {
     nodeStatuses,
     error,
     isConflict,
+    conflictCode,
     validationErrors,
     environmentRecoveryAction,
     isEnvironmentRecoveryDialogVisible,

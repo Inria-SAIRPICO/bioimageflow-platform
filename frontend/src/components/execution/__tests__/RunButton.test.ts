@@ -304,6 +304,47 @@ describe('RunButton', () => {
     })
   })
 
+  it('disables nested-canvas Run commands and never enters preparation', async () => {
+    const parentCanvasId = canvasIdFromPanelId('workflow:a')
+    const nestedCanvasId = canvasIdFromPanelId('sub-workflow:nested-a')
+    canvasSessionRegistry.register({
+      kind: 'root',
+      canvasId: parentCanvasId,
+      workflowId: 'wf_a',
+    })
+    canvasSessionRegistry.register({
+      kind: 'nested',
+      canvasId: nestedCanvasId,
+      sessionId: 'nested-a',
+      parentCanvasId,
+    })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(nestedCanvasId, 'wf_a', 'Nested A')
+    ui.setCanvasSelectedNodes(nestedCanvasId, ['nested-node'])
+    canvasSessionRegistry.activate(nestedCanvasId)
+    persistenceMocks.canvasId = nestedCanvasId
+    const { wrapper, flushNow } = mountButton()
+    const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
+
+    const run = wrapper.find('[data-testid="run-workflow-button"]')
+    const runSelected = wrapper.find('[data-testid="run-selected-button"]')
+    expect(run.attributes('disabled')).toBeDefined()
+    expect(runSelected.attributes('disabled')).toBeDefined()
+    expect(run.attributes('title')).toMatch(/owning root workflow/i)
+    expect(runSelected.attributes('title')).toMatch(/owning root workflow/i)
+
+    const exposed = wrapper.vm as unknown as {
+      onRun(): Promise<void>
+      onRunSelected(): Promise<void>
+    }
+    await exposed.onRun()
+    await exposed.onRunSelected()
+
+    expect(persistenceMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
+    expect(flushNow).not.toHaveBeenCalled()
+    expect(runSpy).not.toHaveBeenCalled()
+  })
+
   it('passes the active workflow name to run', async () => {
     const { wrapper } = mountButton()
     const exec = useExecutionStore()
@@ -643,7 +684,7 @@ describe('RunButton', () => {
     expect(runSpy).not.toHaveBeenCalled()
   })
 
-  it('emits toast on 409 conflict', async () => {
+  it('emits an already-running warning for an untyped 409 conflict', async () => {
     const { wrapper } = mountButton()
     const exec = useExecutionStore()
     vi.spyOn(exec, 'run').mockRejectedValue({ response: { status: 409 } })
@@ -652,8 +693,35 @@ describe('RunButton', () => {
     await nextTick()
     const toasts = wrapper.emitted('toast')
     expect(toasts).toBeTruthy()
-    expect(toasts![0][0]).toMatchObject({ severity: 'warn' })
+    expect(toasts![0][0]).toMatchObject({
+      severity: 'warn',
+      summary: 'An execution is already running',
+    })
   })
+
+  it.each(['draft_revision_conflict', 'draft_graph_mismatch'])(
+    'emits a workflow-changed warning for %s',
+    async (errorCode) => {
+      const { wrapper } = mountButton()
+      const exec = useExecutionStore()
+      vi.spyOn(exec, 'run').mockRejectedValue({
+        response: {
+          status: 409,
+          data: { error: errorCode, detail: 'Execution input is stale' },
+        },
+      })
+
+      await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+      await nextTick()
+      await nextTick()
+
+      expect(wrapper.emitted('toast')?.[0]?.[0]).toMatchObject({
+        severity: 'warn',
+        summary: 'Workflow changed before execution',
+        detail: expect.stringMatching(/refresh.*retry/i),
+      })
+    },
+  )
 
   it('emits toast on 422 validation failure', async () => {
     const { wrapper } = mountButton()

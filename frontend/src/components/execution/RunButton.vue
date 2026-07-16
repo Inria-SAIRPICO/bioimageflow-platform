@@ -43,14 +43,22 @@ const activeWorkflowId = computed(() => {
     ? workflowStore.currentName
     : null
 })
+const isNestedCanvasActive = computed(() => {
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  return canvasId !== null
+    && canvasSessionRegistry.get(canvasId)?.descriptor.kind === 'nested'
+})
 
 const runDisabled = computed(
-  () => exec.isMutationLocked || !activeWorkflowId.value,
+  () => exec.isMutationLocked || !activeWorkflowId.value || isNestedCanvasActive.value,
 )
 const runTooltip = computed(() => {
   if (exec.isStarting) return 'Execution is starting'
   if (exec.isStopping) return 'Execution is stopping'
   if (exec.isRunning) return 'Execution in progress'
+  if (isNestedCanvasActive.value) {
+    return 'Run the owning root workflow to execute this sub-workflow'
+  }
   if (!activeWorkflowId.value) return 'Open or save a workflow before running'
   return ''
 })
@@ -109,6 +117,7 @@ function cloneJson<T>(value: T): T {
 }
 
 async function runCore(nodes?: string[]) {
+  if (isNestedCanvasActive.value) return
   if (exec.isMutationLocked) return
   const targetCanvasId = canvasPersistence.canvasId
   const workflowName = activeWorkflowId.value
@@ -174,9 +183,24 @@ async function runCore(nodes?: string[]) {
       return
     }
   } catch (e: unknown) {
-    const err = e as { response?: { status?: number }; message?: string }
+    const err = e as {
+      response?: { status?: number; data?: { error?: string } }
+      message?: string
+    }
     const status = err?.response?.status
     if (status === 409) {
+      const conflictCode = err.response?.data?.error ?? exec.conflictCode
+      if (
+        conflictCode === 'draft_revision_conflict'
+        || conflictCode === 'draft_graph_mismatch'
+      ) {
+        emit('toast', {
+          severity: 'warn',
+          summary: 'Workflow changed before execution',
+          detail: 'Refresh the workflow, resolve any draft changes, and retry.',
+        })
+        return
+      }
       emit('toast', {
         severity: 'warn',
         summary: 'An execution is already running',
@@ -276,6 +300,7 @@ defineExpose({
       icon="pi pi-play"
       label="Run Selected"
       :disabled="runSelectedDisabled"
+      :title="runTooltip"
       data-testid="run-selected-button"
       severity="secondary"
       @click="onRunSelected"

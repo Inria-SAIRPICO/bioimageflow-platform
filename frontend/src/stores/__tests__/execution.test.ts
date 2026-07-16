@@ -174,6 +174,26 @@ describe('execution store', () => {
     expect(execution.originGraph).toEqual(graph)
   })
 
+  it.each(['draft_revision_conflict', 'draft_graph_mismatch'])(
+    'retains the machine-readable Run conflict code %s',
+    async (errorCode) => {
+      vi.mocked(api.post).mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: { error: errorCode, detail: 'Execution input is stale' },
+        },
+      })
+      const execution = useExecutionStore()
+
+      await expect(
+        execution.run({ nodes: [], edges: [] }, undefined, 'wf_a'),
+      ).rejects.toBeTruthy()
+
+      expect(execution.isConflict).toBe(true)
+      expect(execution.conflictCode).toBe(errorCode)
+    },
+  )
+
   it('accepts a matching WebSocket event before the Run response', async () => {
     const canvasId = canvasIdFromPanelId('workflow:a')
     const response = deferred<{ data: Record<string, unknown> }>()

@@ -1618,6 +1618,54 @@ async def test_run_workflow_returns_compact_error_when_draft_fetch_fails(
     }
 
 
+@pytest.mark.parametrize(
+    "conflict_payload",
+    [
+        {
+            "error": "draft_revision_conflict",
+            "detail": "Draft revision conflict: expected 7, current is 8",
+            "expected_revision": 7,
+            "current_revision": 8,
+            "current_updated_by": "frontend",
+            "current_updated_at": "2026-07-16T00:00:00Z",
+        },
+        {
+            "error": "draft_graph_mismatch",
+            "detail": "Submitted graph does not match accepted draft revision 7",
+            "workflow_id": "wf",
+            "draft_revision": 7,
+        },
+    ],
+)
+async def test_run_workflow_preserves_structured_execution_input_conflict(
+    tmp_path: Path,
+    conflict_payload: dict[str, Any],
+) -> None:
+    state_path = _write_state(tmp_path, workflow_id="wf")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"draft_revision": 7, "graph": {"nodes": [], "edges": []}},
+            )
+        return httpx.Response(
+            409,
+            json=conflict_payload,
+        )
+
+    gateway = BioImageFlowMCPGateway(
+        state_path=state_path,
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await gateway.run_workflow() == {
+        "ok": False,
+        "status_code": 409,
+        **conflict_payload,
+    }
+
+
 async def test_validation_and_run_return_structured_error_for_missing_graph(
     tmp_path: Path,
 ) -> None:

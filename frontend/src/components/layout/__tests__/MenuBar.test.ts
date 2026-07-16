@@ -1835,6 +1835,34 @@ describe('MenuBar', () => {
       expect(runSelected.disabled).toBe(false)
     })
 
+    it('disables Run commands for an active nested canvas', () => {
+      const parentCanvasId = canvasIdFromPanelId('workflow:a')
+      const nestedCanvasId = canvasIdFromPanelId('sub-workflow:nested-a')
+      canvasSessionRegistry.register({
+        kind: 'root',
+        canvasId: parentCanvasId,
+        workflowId: 'wf_a',
+      })
+      canvasSessionRegistry.register({
+        kind: 'nested',
+        canvasId: nestedCanvasId,
+        sessionId: 'nested-a',
+        parentCanvasId,
+      })
+      const ui = useUIStore()
+      ui.setCanvasWorkflow(nestedCanvasId, 'wf_a', 'Nested A')
+      ui.setCanvasSelectedNodes(nestedCanvasId, ['nested-node'])
+      canvasSessionRegistry.activate(nestedCanvasId)
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const execution = vm.menuItems.find((item: any) => item.label === 'Execution')
+
+      expect(execution.items.find((item: any) => item.label === 'Run Workflow').disabled)
+        .toBe(true)
+      expect(execution.items.find((item: any) => item.label === 'Run Selected').disabled)
+        .toBe(true)
+    })
+
     it.each(['starting', 'stopping'] as const)(
       'locks workflow and edit actions while execution is %s',
       async (phase) => {

@@ -9,17 +9,34 @@ from bioimageflow_server.models.workflow import validate_workflow_id
 
 
 class ExecutionRequest(BaseModel):
-    """Request to execute a graph (or a subset of its nodes)."""
+    """Execute an inline graph or verify it against an accepted draft revision."""
 
     graph: dict[str, Any]
     nodes: list[str] | None = None
     workflow_name: str = Field(min_length=1)
-    draft_revision: int | None = Field(default=None, ge=0)
+    draft_revision: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Current accepted root-draft revision to verify. Revision 0 is the "
+            "non-historical view synthesized from the current saved workflow when "
+            "no draft file exists; the submitted graph must still match that view."
+        ),
+    )
 
     @field_validator("workflow_name")
     @classmethod
     def validate_workflow_name(cls, value: str) -> str:
         return validate_workflow_id(value)
+
+
+class DraftGraphMismatchResponse(BaseModel):
+    """Conflict returned when a revision is paired with a different graph."""
+
+    error: Literal["draft_graph_mismatch"] = "draft_graph_mismatch"
+    detail: str
+    workflow_id: str
+    draft_revision: int = Field(ge=0)
 
 
 class ExecutionContext(BaseModel):

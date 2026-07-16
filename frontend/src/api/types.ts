@@ -806,8 +806,26 @@ export interface components {
             content_type?: string | null;
         };
         /**
+         * DraftGraphMismatchResponse
+         * @description Conflict returned when a revision is paired with a different graph.
+         */
+        DraftGraphMismatchResponse: {
+            /**
+             * Error
+             * @default draft_graph_mismatch
+             * @constant
+             */
+            error: "draft_graph_mismatch";
+            /** Detail */
+            detail: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Draft Revision */
+            draft_revision: number;
+        };
+        /**
          * ExecutionRequest
-         * @description Request to execute a graph (or a subset of its nodes).
+         * @description Execute an inline graph or verify it against an accepted draft revision.
          */
         ExecutionRequest: {
             /** Graph */
@@ -818,7 +836,10 @@ export interface components {
             nodes?: string[] | null;
             /** Workflow Name */
             workflow_name: string;
-            /** Draft Revision */
+            /**
+             * Draft Revision
+             * @description Current accepted root-draft revision to verify. Revision 0 is the non-historical view synthesized from the current saved workflow when no draft file exists; the submitted graph must still match that view.
+             */
             draft_revision?: number | null;
         };
         /**
@@ -1701,6 +1722,31 @@ export interface components {
             /** Storage Path */
             storage_path?: string | null;
         };
+        /**
+         * WorkflowDraftConflictResponse
+         * @description Machine-readable optimistic concurrency conflict.
+         */
+        WorkflowDraftConflictResponse: {
+            /**
+             * Error
+             * @default draft_revision_conflict
+             * @constant
+             */
+            error: "draft_revision_conflict";
+            /** Detail */
+            detail: string;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Current Revision */
+            current_revision: number;
+            /**
+             * Current Updated By
+             * @enum {string}
+             */
+            current_updated_by: "frontend" | "agent" | "system";
+            /** Current Updated At */
+            current_updated_at: string;
+        };
         /** WorkflowFolderCreate */
         WorkflowFolderCreate: {
             /** Path */
@@ -1838,6 +1884,7 @@ export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['B
 export type ClearRequest = components['schemas']['ClearRequest'];
 export type ColumnRefEdge = components['schemas']['ColumnRefEdge'];
 export type Dataset = components['schemas']['Dataset'];
+export type DraftGraphMismatchResponse = components['schemas']['DraftGraphMismatchResponse'];
 export type EnvironmentDeleteRequest = components['schemas']['EnvironmentDeleteRequest'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
 export type GraphState = components['schemas']['GraphState'];
@@ -1883,6 +1930,7 @@ export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
+export type WorkflowDraftConflictResponse = components['schemas']['WorkflowDraftConflictResponse'];
 export type WorkflowFile = components['schemas']['WorkflowFile'];
 export type WorkflowFolderCreate = components['schemas']['WorkflowFolderCreate'];
 export type WorkflowFolderDelete = components['schemas']['WorkflowFolderDelete'];
@@ -2559,6 +2607,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"] | components["schemas"]["DraftGraphMismatchResponse"];
                 };
             };
             /** @description Validation Error */

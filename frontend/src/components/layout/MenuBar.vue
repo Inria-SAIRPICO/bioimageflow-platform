@@ -179,6 +179,13 @@ function runDisabledReason(): string | null {
   if (executionStore.isStarting) return 'Execution is starting'
   if (executionStore.isStopping) return 'Execution is stopping'
   if (executionStore.isRunning) return 'Execution in progress'
+  const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+  if (
+    activeCanvasId !== null
+    && canvasSessionRegistry.get(activeCanvasId)?.descriptor.kind === 'nested'
+  ) {
+    return 'Run the owning root workflow to execute this sub-workflow'
+  }
   if (isPending.value) return 'Waiting for validation…'
   if (!activeWorkflowId.value) return 'Open or save a workflow before running'
   return null
