@@ -17,6 +17,7 @@ from bioimageflow_server.models.nested_workflow_snapshot import (
     NestedSnapshotOwner,
     NestedWorkflowSnapshotResponse,
 )
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import ValidationResult
 from bioimageflow_server.services.graph_validator import validate_graph
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -43,6 +44,19 @@ class NestedSnapshotRevisionConflict(ValueError):
         )
 
 
+class NestedSnapshotHasDependents(ValueError):
+    """Raised when deletion would orphan snapshots owned by this session."""
+
+    def __init__(self, session_id: UUID, dependent_session_ids: list[UUID]) -> None:
+        self.session_id = session_id
+        self.dependent_session_ids = dependent_session_ids
+        count = len(dependent_session_ids)
+        super().__init__(
+            f"Cannot delete nested snapshot {session_id}: {count} dependent nested "
+            f"snapshot{'s' if count != 1 else ''} must be deleted first"
+        )
+
+
 class NestedWorkflowSnapshotService:
     """Persist nested editor documents without changing their parent workflow."""
 
@@ -52,7 +66,7 @@ class NestedWorkflowSnapshotService:
         *,
         fallback_storage_path_provider: Callable[[], Path | None] | None = None,
         dev_mode_provider: Callable[[], bool] | None = None,
-        settings_provider: Callable[[], object | None] | None = None,
+        settings_provider: Callable[[], Settings | None] | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
         self._fallback_storage_path_provider = (
@@ -124,7 +138,25 @@ class NestedWorkflowSnapshotService:
             store = self._store()
             current = self._read(store, session_id)
             self._ensure_revision(current, expected_revision)
+            dependents = self._dependent_session_ids(store, session_id)
+            if dependents:
+                raise NestedSnapshotHasDependents(session_id, dependents)
             self._path(store, session_id).unlink()
+
+    def _dependent_session_ids(
+        self,
+        store: WorkflowStoreService,
+        session_id: UUID,
+    ) -> list[UUID]:
+        dependents: list[UUID] = []
+        for path in self._snapshot_dir(store).glob("*.json"):
+            candidate = self._read_path(path)
+            if (
+                candidate.owner.kind == "nested"
+                and candidate.owner.session_id == session_id
+            ):
+                dependents.append(candidate.session_id)
+        return dependents
 
     def _root_workflow_id(self, owner: NestedSnapshotOwner) -> str | None:
         if owner.kind == "root":

@@ -75,6 +75,16 @@ class NestedWorkflowSnapshotConflictResponse(BaseModel):
     current_revision: int
 
 
+class NestedWorkflowSnapshotDependencyConflictResponse(BaseModel):
+    """Machine-readable conflict for snapshots that still own child sessions."""
+
+    error: Literal["nested_snapshot_has_dependents"] = (
+        "nested_snapshot_has_dependents"
+    )
+    detail: str
+    dependent_session_ids: list[UUID]
+
+
 class NestedWorkflowSnapshotLockedResponse(BaseModel):
     """Machine-readable global execution lock response."""
 

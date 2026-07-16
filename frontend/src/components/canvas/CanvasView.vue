@@ -2514,6 +2514,10 @@ async function saveSubWorkflowSession(): Promise<void> {
   try {
     const accepted = await flushNow()
     if (!accepted) return
+    if (
+      isCanvasUnmounted
+      || subWorkflowSessionsStore.sessionById(sessionId) !== session
+    ) return
     let acknowledged = false
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
       detail: {
@@ -2543,15 +2547,23 @@ async function saveSubWorkflowSession(): Promise<void> {
 }
 
 function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
+  sessionId?: string
   parentCanvasId?: string
   parentNodeId?: string
   acknowledge?: () => void
 } & Partial<SubWorkflowApplyPayload>>) {
   const detail = event.detail
   if (
-    detail?.parentCanvasId !== canvasId
+    !detail?.sessionId
+    || detail.parentCanvasId !== canvasId
     || !detail.parentNodeId
     || !detail.graph
+  ) return
+  const session = subWorkflowSessionsStore.sessionById(detail.sessionId)
+  if (
+    !session
+    || session.parentCanvasId !== canvasId
+    || session.parentNodeId !== detail.parentNodeId
   ) return
   const applied = applySubWorkflowDraft(detail.parentNodeId, detail.graph, {
     published_inputs: detail.published_inputs,

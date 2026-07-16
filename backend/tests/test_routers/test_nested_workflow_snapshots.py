@@ -187,3 +187,63 @@ async def test_mutations_return_423_without_changing_the_record(
     assert [replace.status_code, delete.status_code, other_open.status_code] == [423, 423, 423]
     assert path.read_bytes() == before
     assert len(list(path.parent.glob("*.json"))) == 1
+
+
+async def test_delete_rejects_orphaning_a_nested_snapshot(
+    client_and_manager: tuple[httpx.AsyncClient, _ExecutionManager, WorkflowStoreService],
+) -> None:
+    client, _, _ = client_and_manager
+    parent_response = await client.post(
+        "/api/v1/nested-workflow-snapshots/open",
+        json={
+            "owner": {
+                "kind": "root",
+                "canvas_id": "workflow:root-a",
+                "workflow_id": "root-a",
+            },
+            "parent_node_id": "sub_1",
+            "graph": _graph("inner"),
+        },
+    )
+    parent = parent_response.json()
+    child_response = await client.post(
+        "/api/v1/nested-workflow-snapshots/open",
+        json={
+            "owner": {"kind": "nested", "session_id": parent["session_id"]},
+            "parent_node_id": "sub_2",
+            "graph": _graph("deep_inner"),
+        },
+    )
+    child = child_response.json()
+
+    rejected = await client.delete(
+        f"/api/v1/nested-workflow-snapshots/{parent['session_id']}",
+        params={"expected_revision": parent["snapshot_revision"]},
+    )
+    child_update = await client.put(
+        f"/api/v1/nested-workflow-snapshots/{child['session_id']}",
+        json={
+            "expected_revision": child["snapshot_revision"],
+            "graph": _graph("deep_inner", "still_editable"),
+        },
+    )
+
+    assert rejected.status_code == 409
+    assert rejected.json() == {
+        "error": "nested_snapshot_has_dependents",
+        "detail": (
+            f"Cannot delete nested snapshot {parent['session_id']}: 1 dependent "
+            "nested snapshot must be deleted first"
+        ),
+        "dependent_session_ids": [child["session_id"]],
+    }
+    assert child_update.status_code == 200
+
+    openapi = (await client.get("/openapi.json")).json()
+    conflict_schema = openapi["paths"][
+        "/api/v1/nested-workflow-snapshots/{session_id}"
+    ]["delete"]["responses"]["409"]["content"]["application/json"]["schema"]
+    assert {item["$ref"] for item in conflict_schema["anyOf"]} == {
+        "#/components/schemas/NestedWorkflowSnapshotConflictResponse",
+        "#/components/schemas/NestedWorkflowSnapshotDependencyConflictResponse",
+    }

@@ -1022,6 +1022,22 @@ export interface components {
             current_revision: number;
         };
         /**
+         * NestedWorkflowSnapshotDependencyConflictResponse
+         * @description Machine-readable conflict for snapshots that still own child sessions.
+         */
+        NestedWorkflowSnapshotDependencyConflictResponse: {
+            /**
+             * Error
+             * @default nested_snapshot_has_dependents
+             * @constant
+             */
+            error: "nested_snapshot_has_dependents";
+            /** Detail */
+            detail: string;
+            /** Dependent Session Ids */
+            dependent_session_ids: string[];
+        };
+        /**
          * NestedWorkflowSnapshotLockedResponse
          * @description Machine-readable global execution lock response.
          */
@@ -1831,6 +1847,7 @@ export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
 export type NapariStatus = components['schemas']['NapariStatus'];
 export type NestedSnapshotOwner = components['schemas']['NestedSnapshotOwner'];
 export type NestedWorkflowSnapshotConflictResponse = components['schemas']['NestedWorkflowSnapshotConflictResponse'];
+export type NestedWorkflowSnapshotDependencyConflictResponse = components['schemas']['NestedWorkflowSnapshotDependencyConflictResponse'];
 export type NestedWorkflowSnapshotLockedResponse = components['schemas']['NestedWorkflowSnapshotLockedResponse'];
 export type NestedWorkflowSnapshotOpenRequest = components['schemas']['NestedWorkflowSnapshotOpenRequest'];
 export type NestedWorkflowSnapshotPutRequest = components['schemas']['NestedWorkflowSnapshotPutRequest'];
@@ -2782,7 +2799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NestedWorkflowSnapshotConflictResponse"];
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotConflictResponse"] | components["schemas"]["NestedWorkflowSnapshotDependencyConflictResponse"];
                 };
             };
             /** @description Validation Error */

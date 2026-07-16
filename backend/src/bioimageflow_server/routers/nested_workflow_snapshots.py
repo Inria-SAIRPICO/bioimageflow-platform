@@ -10,12 +10,14 @@ from fastapi.responses import JSONResponse, Response
 
 from bioimageflow_server.models.nested_workflow_snapshot import (
     NestedWorkflowSnapshotConflictResponse,
+    NestedWorkflowSnapshotDependencyConflictResponse,
     NestedWorkflowSnapshotLockedResponse,
     NestedWorkflowSnapshotOpenRequest,
     NestedWorkflowSnapshotPutRequest,
     NestedWorkflowSnapshotResponse,
 )
 from bioimageflow_server.services.nested_workflow_snapshot import (
+    NestedSnapshotHasDependents,
     NestedSnapshotRevisionConflict,
     NestedWorkflowSnapshotService,
 )
@@ -50,6 +52,16 @@ def _conflict_response(exc: NestedSnapshotRevisionConflict) -> JSONResponse:
         current_revision=exc.current.snapshot_revision,
     )
     return JSONResponse(status_code=409, content=body.model_dump())
+
+
+def _dependency_conflict_response(
+    exc: NestedSnapshotHasDependents,
+) -> JSONResponse:
+    body = NestedWorkflowSnapshotDependencyConflictResponse(
+        detail=str(exc),
+        dependent_session_ids=exc.dependent_session_ids,
+    )
+    return JSONResponse(status_code=409, content=body.model_dump(mode="json"))
 
 
 @router.post(
@@ -128,7 +140,12 @@ async def put_nested_workflow_snapshot(
     response_class=Response,
     response_model=None,
     responses={
-        409: {"model": NestedWorkflowSnapshotConflictResponse},
+        409: {
+            "model": (
+                NestedWorkflowSnapshotConflictResponse
+                | NestedWorkflowSnapshotDependencyConflictResponse
+            )
+        },
         423: {"model": NestedWorkflowSnapshotLockedResponse},
     },
 )
@@ -147,6 +164,8 @@ async def delete_nested_workflow_snapshot(
         service.delete_snapshot(session_id, expected_revision=expected_revision)
     except NestedSnapshotRevisionConflict as exc:
         return _conflict_response(exc)
+    except NestedSnapshotHasDependents as exc:
+        return _dependency_conflict_response(exc)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return Response(status_code=204)

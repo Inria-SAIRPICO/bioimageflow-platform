@@ -12,6 +12,7 @@ from bioimageflow_server.models.nested_workflow_snapshot import (
 )
 from bioimageflow_server.models.workflow import WorkflowCreate
 from bioimageflow_server.services.nested_workflow_snapshot import (
+    NestedSnapshotHasDependents,
     NestedSnapshotRevisionConflict,
     NestedWorkflowSnapshotService,
 )
@@ -154,6 +155,37 @@ def test_stale_replace_and_delete_do_not_change_the_accepted_file(
         expected_revision=accepted.snapshot_revision,
     )
     assert not path.exists()
+
+
+def test_parent_delete_is_rejected_while_nested_snapshots_depend_on_it(
+    service: NestedWorkflowSnapshotService,
+) -> None:
+    parent = service.open_snapshot(
+        NestedSnapshotOwner(
+            kind="root", canvas_id="workflow:root-a", workflow_id="root-a"
+        ),
+        "sub_1",
+        _graph("inner"),
+    )
+    child = service.open_snapshot(
+        NestedSnapshotOwner(kind="nested", session_id=parent.session_id),
+        "sub_2",
+        _graph("deep_inner"),
+    )
+
+    with pytest.raises(NestedSnapshotHasDependents):
+        service.delete_snapshot(parent.session_id, expected_revision=0)
+
+    accepted_child = service.put_snapshot(
+        child.session_id,
+        expected_revision=0,
+        graph=_graph("deep_inner", "still_editable"),
+    )
+    service.delete_snapshot(
+        child.session_id,
+        expected_revision=accepted_child.snapshot_revision,
+    )
+    service.delete_snapshot(parent.session_id, expected_revision=0)
 
 
 def test_unsaved_root_canvas_is_a_valid_stable_owner(
