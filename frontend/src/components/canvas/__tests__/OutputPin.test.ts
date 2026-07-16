@@ -65,6 +65,13 @@ describe('OutputPin', () => {
       expect(w.find('.output-pin').classes()).toContain('output-pin--header')
     })
 
+    it('styles the DataFrame label as an output type badge', () => {
+      const w = factory({ fieldName: '__dataframe_out', displayName: 'DataFrame', fieldType: 'DataFrame', variant: 'header' })
+      expect(w.find('.pin-label').classes()).toContain('type-badge')
+      expect(w.findAll('.type-badge')).toHaveLength(1)
+      expect(w.find('.type-badge').text()).toBe('DataFrame')
+    })
+
     it('header variant renders square pin (no border-radius 50%)', () => {
       const w = factory({ fieldName: '__dataframe_out', fieldType: 'DataFrame', variant: 'header' })
       const handle = w.find('.pin-handle')

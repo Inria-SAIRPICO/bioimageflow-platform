@@ -28,7 +28,9 @@ const tooltip = computed(() => {
     :class="{ 'output-pin--placeholder': placeholder, 'output-pin--any': fieldType === 'any', 'output-pin--header': variant === 'header' }"
     :title="tooltip"
   >
-    <span class="pin-label">{{ displayName ?? fieldName }}</span>
+    <span class="pin-label" :class="{ 'type-badge': variant === 'header' }">
+      {{ displayName ?? fieldName }}
+    </span>
     <span v-if="variant !== 'header'" class="type-badge">{{ fieldType === 'any' ? '?' : fieldType }}</span>
     <Handle
       type="source"
@@ -90,8 +92,4 @@ const tooltip = computed(() => {
   border-radius: 2px !important;
 }
 
-.output-pin--header .pin-label {
-  font-size: 11px;
-  font-weight: 600;
-}
 </style>
