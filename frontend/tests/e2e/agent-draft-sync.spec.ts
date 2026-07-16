@@ -29,32 +29,17 @@ async function createServerWorkflow(page: Page, name: string, graph: GraphState)
 }
 
 async function rememberLastOpenedWorkflow(page: Page, name: string) {
-  await page.evaluate(
-    (workflowName) => new Promise<void>((resolve, reject) => {
-      const req = indexedDB.open('bioimageflow-autosave', 1)
-      req.onupgradeneeded = () => {
-        const db = req.result
-        if (!db.objectStoreNames.contains('workflows')) {
-          db.createObjectStore('workflows', { keyPath: 'name' })
-        }
-        if (!db.objectStoreNames.contains('preferences')) {
-          db.createObjectStore('preferences')
-        }
-      }
-      req.onsuccess = () => {
-        const db = req.result
-        const tx = db.transaction('preferences', 'readwrite')
-        tx.objectStore('preferences').put(workflowName, 'last_opened_workflow')
-        tx.oncomplete = () => {
-          db.close()
-          resolve()
-        }
-        tx.onerror = () => reject(tx.error)
-      }
-      req.onerror = () => reject(req.error)
-    }),
-    name,
-  )
+  await page.evaluate(async (workflowName) => {
+    const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+    await useAutoSave().setLastOpenedWorkflow(workflowName)
+  }, name)
+}
+
+async function lastOpenedWorkflow(page: Page): Promise<string | null> {
+  return page.evaluate(async () => {
+    const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+    return useAutoSave().getLastOpenedWorkflow()
+  })
 }
 
 async function installDraftWebSocketProbe(page: Page) {
@@ -101,7 +86,12 @@ test.describe('agent draft sync', () => {
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    // The initial startup canvas creates its fallback workflow asynchronously.
+    // Wait for that transaction before replacing the preference, otherwise its
+    // late last-opened write can race this fixture and make reload nondeterministic.
+    await expect.poll(() => lastOpenedWorkflow(page)).not.toBeNull()
     await rememberLastOpenedWorkflow(page, workflowName)
+    await expect.poll(() => lastOpenedWorkflow(page)).toBe(workflowName)
     await page.reload()
     await expect(page.locator('[data-testid="workflow-title"]')).toContainText(workflowName)
     await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
