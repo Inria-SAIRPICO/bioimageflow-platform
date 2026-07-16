@@ -232,6 +232,40 @@ export const useWorkflowStore = defineStore('workflow', () => {
       .filter((id) => id === folderId || id.startsWith(`${folderId}/`))
   }
 
+  function assertWorkflowIdentitiesUnmounted(
+    workflowIds: Iterable<string>,
+    closingCanvasId?: CanvasId,
+  ): void {
+    const affected = [...new Set(workflowIds)].filter((id) => (
+      uiStore.canvasIdsForWorkflow(id).some((canvasId) => (
+        canvasId !== closingCanvasId && canvasSessionRegistry.get(canvasId) !== null
+      ))
+    ))
+    if (affected.length === 0) return
+    const names = affected.map((id) => `'${id}'`).join(', ')
+    throw new Error(
+      `Close the affected workflow and sub-workflow tabs before renaming, moving, or deleting ${names}.`,
+    )
+  }
+
+  function workflowUpdateIdentity(name: string, patch: WorkflowUpdate): string | null {
+    if (patch.action !== 'update') return null
+    if (patch.new_id !== null && patch.new_id !== undefined) return patch.new_id
+    const currentFolder = parentFolderPath(name)
+    if (patch.new_name !== null && patch.new_name !== undefined) {
+      const targetFolder = patch.folder !== null && patch.folder !== undefined
+        ? patch.folder
+        : currentFolder
+      const leaf = folderLeafName(patch.new_name)
+      return targetFolder ? `${targetFolder}/${leaf}` : leaf
+    }
+    if (patch.folder !== null && patch.folder !== undefined) {
+      const leaf = folderLeafName(name)
+      return patch.folder ? `${patch.folder}/${leaf}` : leaf
+    }
+    return null
+  }
+
   function forgetRetainedDrafts(workflowIds: Iterable<string>): void {
     const drafts = useWorkflowDraftStore()
     for (const id of workflowIds) drafts.forgetWorkflow(id)
@@ -468,7 +502,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return data
   }
 
-  async function deleteWorkflow(name: string): Promise<void> {
+  async function deleteWorkflow(
+    name: string,
+    options: { closingCanvasId?: CanvasId } = {},
+  ): Promise<void> {
+    assertWorkflowIdentitiesUnmounted([name], options.closingCanvasId)
     await api.delete(`/api/v1/workflows/${workflowUrl(name)}`)
     useWorkflowDraftStore().forgetWorkflow(name)
     workflows.value = workflows.value.filter((item) => workflowId(item) !== name)
@@ -527,6 +565,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     patch: WorkflowUpdate,
     target?: WorkflowSaveTarget,
   ): Promise<WorkflowInfo> {
+    const nextIdentity = workflowUpdateIdentity(name, patch)
+    if (nextIdentity !== null && nextIdentity !== name) {
+      assertWorkflowIdentitiesUnmounted([name])
+    }
     try {
       const { data } = await api.patch<WorkflowInfo>(
         `/api/v1/workflows/${workflowUrl(name)}`,
@@ -628,6 +670,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     const newPath = childFolderPath(workflowFolders.value[index].parentId, trimmed)
+    if (newPath !== id) assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
     const { data } = await api.patch<WorkflowFolderResponse>(
       `/api/v1/workflows/folders/${workflowUrl(id)}`,
       { new_path: newPath },
@@ -650,6 +693,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const folder = workflowFolders.value.find((item) => item.id === id)
     if (!folder) return
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
+    if (policy !== 'empty') assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
     await api.delete(`/api/v1/workflows/folders/${workflowUrl(id)}`, {
       data: { policy },
     })
@@ -690,6 +734,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     const previousWorkflowIds = workflowIdsInFolderPrefix(id)
     const nextPath = childFolderPath(targetParentId, folderLeafName(id))
+    if (nextPath !== id) assertWorkflowIdentitiesUnmounted(previousWorkflowIds)
     const { data } = await api.patch<WorkflowFolderResponse>(
       `/api/v1/workflows/folders/${workflowUrl(id)}`,
       { new_path: nextPath },
@@ -720,6 +765,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const previousName = name
     const wasCurrent = currentName.value === previousName
     if (previousFolderId !== folderId) {
+      assertWorkflowIdentitiesUnmounted([name])
       const { data } = await api.patch<WorkflowInfo>(
         `/api/v1/workflows/${workflowUrl(name)}`,
         { action: 'update', folder: folderId ?? '' },
@@ -765,6 +811,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const previousName = name
     const wasCurrent = currentName.value === previousName
     if (previousFolderId !== folderId) {
+      assertWorkflowIdentitiesUnmounted([name])
       const { data } = await api.patch<WorkflowInfo>(
         `/api/v1/workflows/${workflowUrl(name)}`,
         { action: 'update', folder: folderId ?? '' },

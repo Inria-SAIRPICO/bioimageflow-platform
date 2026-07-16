@@ -26,7 +26,6 @@ from bioimageflow_server.models.workflow import (
     WorkflowImportResponse,
     WorkflowSaveBody,
     WorkflowUpdate,
-    canonical_workflow_name,
     validate_workflow_id,
 )
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
@@ -866,12 +865,6 @@ class WorkflowStoreService:
             new_leaf = self._leaf_name(name)
             new_name = f"{patch.folder}/{new_leaf}" if patch.folder else new_leaf
             new_name = self._validate_name(new_name)
-        elif patch.display_name is not None:
-            try:
-                new_leaf = canonical_workflow_name(patch.display_name)
-                new_name = f"{old_folder}/{new_leaf}" if old_folder else new_leaf
-            except ValidationError:
-                new_name = name
         if new_name != name and self._has_name_collision(new_name):
             raise FileExistsError(new_name)
         if new_name != name:

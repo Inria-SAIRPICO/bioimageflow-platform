@@ -328,7 +328,25 @@ async def test_patch_duplicate_conflict_preserves_suggested_name(
     assert conflict.json()["suggested_name"] == "copy_2"
 
 
-async def test_patch_display_rename_conflict_suggests_canonical_name(
+async def test_patch_display_name_keeps_identity_when_canonical_slug_exists(
+    client: httpx.AsyncClient,
+) -> None:
+    assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
+    assert (
+        await client.post("/api/v1/workflows", json={"name": "new_workflow"})
+    ).status_code == 201
+
+    response = await client.patch(
+        "/api/v1/workflows/wf",
+        json={"action": "update", "display_name": "New workflow"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "wf"
+    assert response.json()["display_name"] == "New workflow"
+
+
+async def test_patch_explicit_rename_conflict_suggests_alternative(
     client: httpx.AsyncClient,
 ) -> None:
     assert (await client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
@@ -338,7 +356,7 @@ async def test_patch_display_rename_conflict_suggests_canonical_name(
 
     conflict = await client.patch(
         "/api/v1/workflows/wf",
-        json={"action": "update", "display_name": "New workflow"},
+        json={"action": "update", "new_name": "new_workflow"},
     )
 
     assert conflict.status_code == 409

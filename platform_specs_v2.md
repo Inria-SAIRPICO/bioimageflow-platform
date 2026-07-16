@@ -43,7 +43,7 @@ selected places the new workflow in that folder. Dragging workflows or folders
 onto a folder moves the corresponding workflow or full folder subtree. Only
 directories containing `workflow.json` are listed as workflows.
 
-Workflow ids are derived from these directory paths. Moving a workflow or folder therefore changes each affected id, and every existing moved draft is preflight-validated before its embedded `workflow_id` is atomically updated to the new route. A workflow without a draft remains without one.
+Workflow ids are derived from these directory paths. Display metadata does not change identity. Moving a workflow or folder changes each affected id, and every existing moved draft is preflight-validated before its embedded `workflow_id` is atomically updated to the new route. A workflow without a draft remains without one. Mounted root and nested canvas identities are immutable, so the frontend rejects any affected rename, move, promotion, or deletion before the request until all workflow and sub-workflow tabs presenting those routes are closed.
 
 The platform asks the BioImageFlow library to build and validate the
 sub-workflow. Recursive containment is rejected by the library validation layer;

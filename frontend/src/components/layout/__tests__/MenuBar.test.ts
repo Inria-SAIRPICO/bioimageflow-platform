@@ -457,16 +457,23 @@ describe('MenuBar', () => {
       canvasSessionRegistry.activate(canvasA)
       persistenceMocks.canvasId = canvasA
       let resolveDelete!: (value: { data: { deleted: boolean } }) => void
-      apiMocks.delete.mockReturnValueOnce(new Promise((resolve) => {
-        resolveDelete = resolve
-      }))
+      apiMocks.delete.mockImplementationOnce(() => {
+        expect(canvasSessionRegistry.get(canvasA)).not.toBeNull()
+        return new Promise((resolve) => {
+          resolveDelete = resolve
+        })
+      })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
       workflow.items.find((item: any) => item.label === 'Delete').command()
       const closed: string[] = []
       const applied: any[] = []
-      const onClose = (event: Event) => closed.push((event as CustomEvent).detail.canvasId)
+      const onClose = (event: Event) => {
+        const canvasId = (event as CustomEvent).detail.canvasId
+        closed.push(canvasId)
+        canvasSessionRegistry.unregister(canvasId)
+      }
       const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
       window.addEventListener('bioimageflow:close-canvas', onClose)
       window.addEventListener('bioimageflow:apply-graph', onApply)
@@ -483,6 +490,39 @@ describe('MenuBar', () => {
       expect(store.currentName).toBe('b')
       window.removeEventListener('bioimageflow:close-canvas', onClose)
       window.removeEventListener('bioimageflow:apply-graph', onApply)
+      wrapper.unmount()
+    })
+
+    it('keeps the confirmed canvas mounted when workflow deletion fails', async () => {
+      const canvasId = canvasIdFromPanelId('workflow:a')
+      canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'a' })
+      const workflow = { name: 'a', display_name: 'Workflow A' } as any
+      const store = useWorkflowStore()
+      store.workflows = [workflow]
+      store.current = workflow
+      useUIStore().setCanvasWorkflow(canvasId, 'a', 'Workflow A')
+      canvasSessionRegistry.activate(canvasId)
+      persistenceMocks.canvasId = canvasId
+      apiMocks.delete.mockRejectedValueOnce(new Error('delete failed'))
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+      const closed: string[] = []
+      const onClose = (event: Event) => closed.push((event as CustomEvent).detail.canvasId)
+      window.addEventListener('bioimageflow:close-canvas', onClose)
+
+      await vm.confirmDeleteWorkflow()
+
+      expect(apiMocks.delete).toHaveBeenCalledWith('/api/v1/workflows/a')
+      expect(closed).toEqual([])
+      expect(canvasSessionRegistry.get(canvasId)).not.toBeNull()
+      expect(store.workflows).toEqual([workflow])
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'error',
+        summary: 'Delete workflow failed',
+      }))
+      window.removeEventListener('bioimageflow:close-canvas', onClose)
       wrapper.unmount()
     })
 

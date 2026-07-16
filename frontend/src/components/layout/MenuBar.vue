@@ -700,16 +700,19 @@ async function confirmDeleteWorkflow(): Promise<void> {
   if (!name) return
   const target = deleteCanvasTarget.value
   try {
-    await workflowStore.deleteWorkflow(name)
-    if (executionStore.isMutationLocked) return
-    deleteDialogVisible.value = false
-    deleteTargetName.value = null
-    deleteCanvasTarget.value = null
+    await workflowStore.deleteWorkflow(name, target?.canvasId
+      ? { closingCanvasId: target.canvasId }
+      : undefined)
     if (target?.canvasId !== null && target?.canvasId !== undefined) {
       window.dispatchEvent(new CustomEvent('bioimageflow:close-canvas', {
         detail: { canvasId: target.canvasId },
       }))
-    } else if (target?.workflowName === name) {
+    }
+    if (executionStore.isMutationLocked) return
+    deleteDialogVisible.value = false
+    deleteTargetName.value = null
+    deleteCanvasTarget.value = null
+    if (target?.canvasId === null && target.workflowName === name) {
       applyGraph({ nodes: [], edges: [] })
     }
   } catch (err: unknown) {
