@@ -33,7 +33,30 @@ export interface WorkflowDraftChangedMessage {
   dirty_against_saved: boolean
 }
 
+interface RetainedWorkflowDraftState {
+  currentDraftRevision: number | null
+  appliedDraftRevision: number | null
+  remoteAvailableRevision: number | null
+  remoteUpdatedBy: DraftWriter | null
+  remoteUpdatedAt: string | null
+  remoteDirtyAgainstSaved: boolean | null
+  lastWriter: string | null
+}
+
+function emptyRetainedState(): RetainedWorkflowDraftState {
+  return {
+    currentDraftRevision: null,
+    appliedDraftRevision: null,
+    remoteAvailableRevision: null,
+    remoteUpdatedBy: null,
+    remoteUpdatedAt: null,
+    remoteDirtyAgainstSaved: null,
+    lastWriter: null,
+  }
+}
+
 export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
+  const retainedByWorkflowId = new Map<string, RetainedWorkflowDraftState>()
   const workflowId = ref<string | null>(null)
   const currentDraftRevision = ref<number | null>(null)
   const appliedDraftRevision = ref<number | null>(null)
@@ -51,11 +74,75 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     remoteAvailableRevision.value > appliedDraftRevision.value
   ))
 
+  function retainedState(id: string): RetainedWorkflowDraftState {
+    let state = retainedByWorkflowId.get(id)
+    if (state === undefined) {
+      state = emptyRetainedState()
+      retainedByWorkflowId.set(id, state)
+    }
+    return state
+  }
+
+  function projectState(state: RetainedWorkflowDraftState): void {
+    currentDraftRevision.value = state.currentDraftRevision
+    appliedDraftRevision.value = state.appliedDraftRevision
+    remoteAvailableRevision.value = state.remoteAvailableRevision
+    remoteUpdatedBy.value = state.remoteUpdatedBy
+    remoteUpdatedAt.value = state.remoteUpdatedAt
+    remoteDirtyAgainstSaved.value = state.remoteDirtyAgainstSaved
+    lastWriter.value = state.lastWriter
+  }
+
+  function projectTrackedWorkflow(id: string): void {
+    workflowId.value = id
+    projectState(retainedState(id))
+  }
+
+  function projectIfTracked(
+    id: string,
+    state: RetainedWorkflowDraftState,
+  ): void {
+    if (workflowId.value === id) projectState(state)
+  }
+
+  function clearRetainedRemoteChange(state: RetainedWorkflowDraftState): void {
+    state.remoteAvailableRevision = null
+    state.remoteUpdatedBy = null
+    state.remoteUpdatedAt = null
+    state.remoteDirtyAgainstSaved = null
+  }
+
+  function knownRevision(state: RetainedWorkflowDraftState): number {
+    return Math.max(
+      state.currentDraftRevision ?? -1,
+      state.appliedDraftRevision ?? -1,
+      state.remoteAvailableRevision ?? -1,
+    )
+  }
+
+  function retainRemoteResponse(
+    state: RetainedWorkflowDraftState,
+    response: WorkflowDraftResponse,
+  ): void {
+    if (response.draft_revision <= knownRevision(state)) return
+    state.remoteAvailableRevision = response.draft_revision
+    state.remoteUpdatedBy = response.updated_by
+    state.remoteUpdatedAt = response.updated_at
+    state.remoteDirtyAgainstSaved = response.dirty_against_saved
+  }
+
   function clearRemoteChange(): void {
-    remoteAvailableRevision.value = null
-    remoteUpdatedBy.value = null
-    remoteUpdatedAt.value = null
-    remoteDirtyAgainstSaved.value = null
+    const id = workflowId.value
+    if (id === null) {
+      remoteAvailableRevision.value = null
+      remoteUpdatedBy.value = null
+      remoteUpdatedAt.value = null
+      remoteDirtyAgainstSaved.value = null
+      return
+    }
+    const state = retainedState(id)
+    clearRetainedRemoteChange(state)
+    projectState(state)
   }
 
   function cancelPendingSave(): void {
@@ -67,17 +154,10 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     hasQueuedSave.value = false
   }
 
-  function applyResponse(response: WorkflowDraftResponse): void {
-    workflowId.value = response.workflow_id
-    currentDraftRevision.value = response.draft_revision
-    appliedDraftRevision.value = response.draft_revision
-    clearRemoteChange()
-    lastWriter.value = response.updated_by
-  }
-
   async function loadDraft(id: string): Promise<WorkflowDraftResponse> {
+    trackWorkflow(id)
     const response = await fetchWorkflowDraft(id)
-    applyResponse(response)
+    acknowledgeAcceptedDraft(response)
     return response
   }
 
@@ -100,9 +180,7 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
       expected_revision: latest.draft_revision,
       updated_by: 'frontend',
     })
-    if (updateTrackedDraft) {
-      applyResponse(response)
-    }
+    acknowledgeAcceptedDraft(response)
     return response
   }
 
@@ -112,60 +190,69 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
       timer = null
     }
     pending = null
-    workflowId.value = id
-    currentDraftRevision.value = null
-    appliedDraftRevision.value = null
-    clearRemoteChange()
-    lastWriter.value = null
+    retainedByWorkflowId.clear()
+    if (id === null) {
+      workflowId.value = null
+      projectState(emptyRetainedState())
+    } else {
+      projectTrackedWorkflow(id)
+    }
     hasQueuedSave.value = false
     isSaving.value = false
   }
 
   function trackWorkflow(id: string): void {
     if (workflowId.value === id) return
-    workflowId.value = id
-    currentDraftRevision.value = null
-    appliedDraftRevision.value = null
-    clearRemoteChange()
-    lastWriter.value = null
+    projectTrackedWorkflow(id)
+  }
+
+  function forgetWorkflow(id: string): void {
+    if (pending?.workflowId === id) cancelPendingSave()
+    retainedByWorkflowId.delete(id)
+    if (workflowId.value !== id) return
+    workflowId.value = null
+    projectState(emptyRetainedState())
   }
 
   function noteRemoteChange(message: WorkflowDraftChangedMessage): void {
-    if (workflowId.value !== message.workflow_id) return
-    const knownRevision = Math.max(
-      currentDraftRevision.value ?? -1,
-      appliedDraftRevision.value ?? -1,
-      remoteAvailableRevision.value ?? -1,
-    )
-    if (message.draft_revision <= knownRevision) return
-    remoteAvailableRevision.value = message.draft_revision
-    remoteUpdatedBy.value = message.updated_by
-    remoteUpdatedAt.value = message.updated_at
-    remoteDirtyAgainstSaved.value = message.dirty_against_saved
+    const state = retainedState(message.workflow_id)
+    if (message.draft_revision <= knownRevision(state)) return
+    state.remoteAvailableRevision = message.draft_revision
+    state.remoteUpdatedBy = message.updated_by
+    state.remoteUpdatedAt = message.updated_at
+    state.remoteDirtyAgainstSaved = message.dirty_against_saved
+    projectIfTracked(message.workflow_id, state)
   }
 
   function acknowledgeAcceptedDraft(response: WorkflowDraftResponse): void {
-    if (workflowId.value !== response.workflow_id) return
-    currentDraftRevision.value = Math.max(
-      currentDraftRevision.value ?? -1,
+    const state = retainedState(response.workflow_id)
+    const previousAcceptedRevision = Math.max(
+      state.currentDraftRevision ?? -1,
+      state.appliedDraftRevision ?? -1,
+    )
+    state.currentDraftRevision = Math.max(
+      state.currentDraftRevision ?? -1,
       response.draft_revision,
     )
-    appliedDraftRevision.value = Math.max(
-      appliedDraftRevision.value ?? -1,
+    state.appliedDraftRevision = Math.max(
+      state.appliedDraftRevision ?? -1,
       response.draft_revision,
     )
     if (
-      remoteAvailableRevision.value !== null
-      && remoteAvailableRevision.value <= response.draft_revision
+      state.remoteAvailableRevision !== null
+      && state.remoteAvailableRevision <= response.draft_revision
     ) {
-      clearRemoteChange()
+      clearRetainedRemoteChange(state)
     }
-    lastWriter.value = response.updated_by
+    if (response.draft_revision >= previousAcceptedRevision) {
+      state.lastWriter = response.updated_by
+    }
+    projectIfTracked(response.workflow_id, state)
   }
 
   function scheduleSave(id: string, graph: GraphState): void {
-    if (isStale.value) return
-    workflowId.value = id
+    if (hasUnresolvedRemoteChange(id)) return
+    trackWorkflow(id)
     pending = { workflowId: id, graph: cloneGraph(graph) }
     hasQueuedSave.value = true
     if (timer !== null) {
@@ -177,11 +264,11 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
   }
 
   function hasUnresolvedRemoteChange(id: string | null = workflowId.value): boolean {
-    if (!id || workflowId.value !== id || remoteAvailableRevision.value === null) {
-      return false
-    }
-    return appliedDraftRevision.value === null ||
-      remoteAvailableRevision.value > appliedDraftRevision.value
+    if (!id) return false
+    const state = retainedByWorkflowId.get(id)
+    if (state === undefined || state.remoteAvailableRevision === null) return false
+    return state.appliedDraftRevision === null ||
+      state.remoteAvailableRevision > state.appliedDraftRevision
   }
 
   async function flush(): Promise<void> {
@@ -195,10 +282,20 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     }
     const entry = pending
     pending = null
-    if (currentDraftRevision.value === null || workflowId.value !== entry.workflowId) {
-      await loadDraft(entry.workflowId)
+    if (hasUnresolvedRemoteChange(entry.workflowId)) {
+      hasQueuedSave.value = pending !== null || timer !== null
+      return
     }
-    const expected = currentDraftRevision.value ?? 0
+    const state = retainedState(entry.workflowId)
+    if (state.currentDraftRevision === null) {
+      const latest = await fetchLatestDraft(entry.workflowId)
+      acknowledgeAcceptedDraft(latest)
+      if (hasUnresolvedRemoteChange(entry.workflowId)) {
+        hasQueuedSave.value = pending !== null || timer !== null
+        return
+      }
+    }
+    const expected = state.currentDraftRevision ?? 0
     isSaving.value = true
     try {
       const response = await putWorkflowDraft(entry.workflowId, {
@@ -206,11 +303,15 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
         expected_revision: expected,
         updated_by: 'frontend',
       })
-      applyResponse(response)
+      acknowledgeAcceptedDraft(response)
     } catch (err) {
       const remote = conflictRevision(err)
       if (remote !== null) {
-        remoteAvailableRevision.value = remote
+        const conflictState = retainedState(entry.workflowId)
+        if (remote > knownRevision(conflictState)) {
+          conflictState.remoteAvailableRevision = remote
+        }
+        projectIfTracked(entry.workflowId, conflictState)
       }
       console.warn('[workflow-draft] Failed to save draft:', err)
     } finally {
@@ -228,17 +329,21 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
       return false
     }
     const latest = await fetchWorkflowDraft(id)
-    if (
-      appliedDraftRevision.value !== null &&
-      latest.draft_revision > appliedDraftRevision.value
-    ) {
-      remoteAvailableRevision.value = latest.draft_revision
-      remoteUpdatedBy.value = latest.updated_by
-      remoteUpdatedAt.value = latest.updated_at
-      remoteDirtyAgainstSaved.value = latest.dirty_against_saved
+    const state = retainedState(id)
+    if (hasUnresolvedRemoteChange(id)) {
+      retainRemoteResponse(state, latest)
+      projectIfTracked(id, state)
       return false
     }
-    applyResponse(latest)
+    if (
+      state.appliedDraftRevision !== null &&
+      latest.draft_revision > state.appliedDraftRevision
+    ) {
+      retainRemoteResponse(state, latest)
+      projectIfTracked(id, state)
+      return false
+    }
+    acknowledgeAcceptedDraft(latest)
     return true
   }
 
@@ -266,6 +371,7 @@ export const useWorkflowDraftStore = defineStore('workflowDraft', () => {
     overwriteDraftWithGraph,
     reset,
     trackWorkflow,
+    forgetWorkflow,
     noteRemoteChange,
     acknowledgeAcceptedDraft,
     clearRemoteChange,

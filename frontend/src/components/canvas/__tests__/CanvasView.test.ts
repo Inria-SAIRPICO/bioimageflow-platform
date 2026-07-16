@@ -4987,6 +4987,59 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('auto-applies a retained remote notice when its clean root canvas activates', async () => {
+      useToolRegistryStore().tools = [makeTool()]
+      const initialGraph = { nodes: [graphNode('old-b')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote-b', 120)], edges: [] }
+      const draftStore = useWorkflowDraftStore()
+      apiMocks.get.mockResolvedValueOnce({
+        data: draftResponse(1, { nodes: [graphNode('active-a')], edges: [] }, false, 'a'),
+      })
+      await draftStore.loadDraft('a')
+      draftStore.noteRemoteChange(draftChanged(2, {
+        workflow_id: 'b',
+        dirty_against_saved: false,
+      }))
+      expect(draftStore.workflowId).toBe('a')
+      expect(draftStore.remoteAvailableRevision).toBeNull()
+
+      useWorkflowStore().current = { name: 'b', display_name: 'B' } as any
+      apiMocks.get.mockClear()
+      apiMocks.get.mockResolvedValueOnce({
+        data: draftResponse(2, remoteGraph, false, 'b'),
+      })
+      const w = mountCanvas({
+        params: {
+          panelId: 'canvas:b',
+          workflowName: 'b',
+          workflowDisplayName: 'B',
+          graph: initialGraph,
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old-b'])
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+        detail: { panelId: 'canvas:b' },
+      }))
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(apiMocks.get).toHaveBeenCalledOnce()
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/b')
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['remote-b'])
+      expect(draftStore.workflowId).toBe('b')
+      expect(draftStore.appliedDraftRevision).toBe(2)
+      expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(persistenceMocks.resolveFromDraft).toHaveBeenCalledWith(
+        draftResponse(2, remoteGraph, false, 'b'),
+      )
+      w.unmount()
+    })
+
     it('syncs the draft store to an activated root canvas workflow before later remote events', async () => {
       useToolRegistryStore().tools = [makeTool()] as any
       const draftStore = useWorkflowDraftStore()

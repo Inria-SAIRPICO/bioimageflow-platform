@@ -24,12 +24,24 @@ vi.mock('@/composables/useAutoSave', () => ({
 
 import { api } from '@/api/client'
 import { useWorkflowStore } from '../workflow'
+import { useWorkflowDraftStore } from '../workflowDraft'
 import { useUIStore } from '../ui'
 import type { WorkflowInfo } from '@/api/types'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
+
+function noteRemoteDraft(workflowId: string, revision: number): void {
+  useWorkflowDraftStore().noteRemoteChange({
+    type: 'workflow_draft_changed',
+    workflow_id: workflowId,
+    draft_revision: revision,
+    updated_by: 'agent',
+    updated_at: '2026-07-16T10:05:00Z',
+    dirty_against_saved: true,
+  })
+}
 
 describe('workflow store', () => {
   beforeEach(() => {
@@ -53,6 +65,27 @@ describe('workflow store', () => {
     autoSaveMocks.clearAutoSave.mockClear()
     autoSaveMocks.setLastOpenedWorkflow.mockClear()
     autoSaveMocks.renameWorkflow.mockClear()
+  })
+
+  it('forgets retained draft state after deleting a workflow', async () => {
+    vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
+    const store = useWorkflowStore()
+    store.workflows = [{
+      name: 'workflow-b',
+      display_name: 'Workflow B',
+      path: '/tmp/workflow-b.json',
+      last_modified: '2026-07-16T10:00:00Z',
+    }]
+    const drafts = useWorkflowDraftStore()
+    drafts.reset('workflow-a')
+    noteRemoteDraft('workflow-b', 6)
+
+    await store.deleteWorkflow('workflow-b')
+    drafts.trackWorkflow('workflow-b')
+
+    expect(drafts.currentDraftRevision).toBeNull()
+    expect(drafts.appliedDraftRevision).toBeNull()
+    expect(drafts.remoteAvailableRevision).toBeNull()
   })
 
   it('finishes a delayed save against its original canvas and workflow', async () => {
@@ -196,6 +229,9 @@ describe('workflow store', () => {
       last_modified: '2026-04-30T11:00:00Z',
     }]
     store.current = store.workflows[0]
+    const drafts = useWorkflowDraftStore()
+    drafts.reset('Untitled')
+    noteRemoteDraft('Untitled', 4)
 
     const renamed = await store.patchWorkflow('Untitled', {
       action: 'update',
@@ -207,6 +243,8 @@ describe('workflow store', () => {
     expect(store.workflows.map((workflow) => workflow.name)).toEqual(['new_workflow'])
     expect(autoSaveMocks.renameWorkflow).toHaveBeenCalledWith('Untitled', 'new_workflow')
     expect(autoSaveMocks.setLastOpenedWorkflow).toHaveBeenCalledWith('new_workflow')
+    drafts.trackWorkflow('Untitled')
+    expect(drafts.remoteAvailableRevision).toBeNull()
   })
 
   it('keeps the source workflow listed when duplicating', async () => {
@@ -437,7 +475,6 @@ describe('workflow store', () => {
         last_modified: '2026-04-30T12:00:00Z',
       },
     ]
-
     const folder = await store.createWorkflowFolder('Analysis')
     await store.moveWorkflowToFolder('beta', folder.id)
 
@@ -481,6 +518,10 @@ describe('workflow store', () => {
         last_modified: '2026-04-30T12:00:00Z',
       },
     ]
+    const drafts = useWorkflowDraftStore()
+    drafts.reset('beta')
+    noteRemoteDraft('beta', 5)
+    noteRemoteDraft('Analysis Results/beta', 6)
 
     const folder = await store.createWorkflowFolder('Analysis Results')
     await store.moveWorkflowToFolder('beta', folder.id)
@@ -498,6 +539,10 @@ describe('workflow store', () => {
     expect(store.flattenedWorkflows.map((workflow) => (
       (workflow as WorkflowInfo & { id?: string }).id || workflow.name
     ))).toEqual(['Analysis Results/beta'])
+    drafts.trackWorkflow('beta')
+    expect(drafts.remoteAvailableRevision).toBeNull()
+    drafts.trackWorkflow('Analysis Results/beta')
+    expect(drafts.remoteAvailableRevision).toBe(6)
   })
 
   it('updates the active workflow identity when moving it into a folder', async () => {
@@ -539,7 +584,6 @@ describe('workflow store', () => {
     }
     store.workflows = [workflow]
     store.current = workflow
-
     const folder = await store.createWorkflowFolder('Analysis Results')
     await store.moveWorkflowToFolder('beta', folder.id)
     await store.saveWorkflow({ nodes: [], edges: [] })
@@ -697,6 +741,9 @@ describe('workflow store', () => {
     }
     store.workflowOrder = ['Analysis Results/Quality Control/beta']
     store.current = workflow
+    const drafts = useWorkflowDraftStore()
+    drafts.reset('Analysis Results/Quality Control/beta')
+    noteRemoteDraft('Analysis Results/Quality Control/beta', 7)
 
     await store.moveWorkflowFolder('Analysis Results/Quality Control', 'Archive 2026')
 
@@ -714,6 +761,53 @@ describe('workflow store', () => {
       name: 'Quality Control',
       parentId: 'Archive 2026',
     })
+    drafts.trackWorkflow('Analysis Results/Quality Control/beta')
+    expect(drafts.remoteAvailableRevision).toBeNull()
+  })
+
+  it('forgets retained child drafts when deleting a folder with its children', async () => {
+    vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: {
+        path: '',
+        display_name: 'workspace',
+        folders: [],
+        workflows: [],
+      },
+    })
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'Archive', name: 'Archive', parentId: null },
+      { id: 'Archive/Nested', name: 'Nested', parentId: 'Archive' },
+    ]
+    store.workflows = [
+      {
+        id: 'Archive/alpha',
+        name: 'alpha',
+        display_name: 'Alpha',
+        path: '/tmp/Archive/alpha/workflow.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+      {
+        id: 'Archive/Nested/beta',
+        name: 'beta',
+        display_name: 'Beta',
+        path: '/tmp/Archive/Nested/beta/workflow.json',
+        last_modified: '2026-04-30T12:00:00Z',
+      },
+    ]
+    const drafts = useWorkflowDraftStore()
+    drafts.reset('outside')
+    for (const workflowId of ['Archive/alpha', 'Archive/Nested/beta']) {
+      noteRemoteDraft(workflowId, 3)
+    }
+
+    await store.deleteWorkflowFolder('Archive', 'delete_children')
+
+    for (const workflowId of ['Archive/alpha', 'Archive/Nested/beta']) {
+      drafts.trackWorkflow(workflowId)
+      expect(drafts.remoteAvailableRevision).toBeNull()
+    }
   })
 
   it('sorts workflows and folders alphabetically within each folder', async () => {

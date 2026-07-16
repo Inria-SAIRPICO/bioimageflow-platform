@@ -66,6 +66,31 @@ describe('useWebSocket workflow draft dispatch', () => {
     expect(draft.remoteDirtyAgainstSaved).toBe(true)
   })
 
+  it('retains an inactive workflow draft message until that workflow is tracked', () => {
+    const draft = useWorkflowDraftStore()
+    draft.reset('workflow-a')
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'workflow_draft_changed',
+        workflow_id: 'workflow-b',
+        draft_revision: 9,
+        updated_by: 'agent',
+        updated_at: '2026-05-21T12:09:00Z',
+        dirty_against_saved: false,
+      }),
+    } as MessageEvent)
+
+    expect(draft.remoteAvailableRevision).toBeNull()
+    draft.trackWorkflow('workflow-b')
+    expect(draft.remoteAvailableRevision).toBe(9)
+    expect(draft.remoteUpdatedBy).toBe('agent')
+    expect(draft.remoteUpdatedAt).toBe('2026-05-21T12:09:00Z')
+    expect(draft.remoteDirtyAgainstSaved).toBe(false)
+  })
+
   it('dispatches tool_reload and tool_removed messages to the tool registry store', () => {
     const registry = useToolRegistryStore()
     const ws = useWebSocket()
