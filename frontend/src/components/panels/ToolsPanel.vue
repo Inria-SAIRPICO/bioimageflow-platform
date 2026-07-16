@@ -884,10 +884,7 @@ defineExpose({
               class="tool-list-meta"
               :title="tool.tags.join(' · ')"
             >
-              <span class="tool-list-tags">{{ tool.tags.slice(0, 2).join(' · ') }}</span>
-              <span v-if="tool.tags.length > 2" class="tool-list-tag-overflow">
-                +{{ tool.tags.length - 2 }}
-              </span>
+              <span class="tool-list-tags">{{ tool.tags.join(' · ') }}</span>
             </div>
           </div>
         </div>
@@ -1269,7 +1266,7 @@ defineExpose({
   align-items: center;
   gap: 6px;
   width: 100%;
-  background: var(--bif-surface-hover);
+  background: color-mix(in srgb, var(--p-primary-color) 10%, var(--bif-surface-active));
   border: 0;
   padding: 4px 4px;
   text-align: left;
@@ -1283,7 +1280,7 @@ defineExpose({
 }
 
 .tool-category-header:not(:disabled):hover {
-  background-color: var(--bif-surface-active);
+  background-color: color-mix(in srgb, var(--p-primary-color) 18%, var(--bif-surface-active));
 }
 
 .tool-category-header:disabled {
@@ -1402,10 +1399,7 @@ defineExpose({
 .tool-list-tags {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tool-list-tag-overflow {
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 @media (hover: none) {

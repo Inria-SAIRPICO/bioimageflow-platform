@@ -260,7 +260,7 @@ describe('ToolsPanel', () => {
     expect(vm.filteredTools).toHaveLength(4)
   })
 
-  it('renders tags as compact metadata and summarizes overflow', async () => {
+  it('renders every tag as compact single-line metadata', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
       const store = useToolRegistryStore()
@@ -273,8 +273,8 @@ describe('ToolsPanel', () => {
     await wrapper.vm.$nextTick()
 
     const row = wrapper.get('[data-testid="tool-item-threshold"]')
-    expect(row.get('.tool-list-tags').text()).toBe('segmentation · binary')
-    expect(row.get('.tool-list-tag-overflow').text()).toBe('+1')
+    expect(row.get('.tool-list-tags').text()).toBe('segmentation · binary · image')
+    expect(row.find('.tool-list-tag-overflow').exists()).toBe(false)
     expect(row.get('.tool-list-meta').attributes('title')).toBe('segmentation · binary · image')
     expect(row.find('.p-tag').exists()).toBe(false)
   })
