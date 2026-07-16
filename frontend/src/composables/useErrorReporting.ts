@@ -1,4 +1,5 @@
 import { useToast } from 'primevue/usetoast'
+import { hasInjectionContext } from 'vue'
 import {
   ERROR_KIND_LABELS,
   useErrorStore,
@@ -83,14 +84,16 @@ export function __resetErrorReportingForTests(): void {
 
 export function useErrorReporting() {
   const errorStore = useErrorStore()
-  // useToast throws when no ToastService provider is mounted (unit tests
-  // that don't go through the App root). Toasts are nice-to-have so we
-  // proceed without them.
+  // Store actions and background coordinators can report errors outside a
+  // component setup context. In that case there is no Vue injection scope,
+  // so history remains authoritative and toast feedback is simply omitted.
   let toast: ReturnType<typeof useToast> | null = null
-  try {
-    toast = useToast()
-  } catch {
-    toast = null
+  if (hasInjectionContext()) {
+    try {
+      toast = useToast()
+    } catch {
+      toast = null
+    }
   }
 
   function reportError(input: ErrorReportingInput): string | undefined {

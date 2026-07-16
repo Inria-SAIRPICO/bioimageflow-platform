@@ -19,5 +19,11 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['tests/unit/**/*.test.ts', 'src/**/__tests__/*.test.ts'],
+    setupFiles: ['./tests/setup.ts'],
+    onConsoleLog(log, type) {
+      if (type === 'stderr') {
+        throw new Error(`Unexpected console warning or error:\n${log}`)
+      }
+    },
   },
 })

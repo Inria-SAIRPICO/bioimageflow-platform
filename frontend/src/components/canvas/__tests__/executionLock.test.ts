@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, ref, computed, nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import PrimeVue from 'primevue/config'
-import Aura from '@primevue/themes/aura'
 import InputText from 'primevue/inputtext'
 
 // --- Mock shared state that matches the pattern in CanvasView.test.ts ---
@@ -158,10 +156,9 @@ import { _resetClipboardForTest, writeClipboardPayload } from '@/utils/clipboard
 import {
   _resetCanvasStatusProjectionForTest,
 } from '@/composables/useCanvasStatusProjection'
-import {
-  canvasIdFromPanelId,
-  canvasSessionRegistry,
-} from '@/sessions/canvasSessionRegistry'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import { rootCanvasId, rootCanvasParams } from '@/test-utils/canvasFixtures'
+import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -170,7 +167,11 @@ const mockedApi = api as unknown as {
 
 function mountCanvas() {
   return mount(CanvasView, {
-    props: { nodes: [], edges: [] },
+    props: {
+      nodes: [],
+      edges: [],
+      params: rootCanvasParams('execution-lock'),
+    },
     attachTo: document.body,
   })
 }
@@ -477,7 +478,7 @@ describe('CanvasView execution lock', () => {
       },
     ]) as any[]
     const canvas = mountCanvas()
-    const canvasId = canvasIdFromPanelId('canvas')
+    const canvasId = rootCanvasId('execution-lock')
     canvasSessionRegistry.activate(canvasId)
     useExecutionStore().nodeStatuses = {
       edited: { node_id: 'edited', status: 'executed', cached: false },
@@ -487,9 +488,7 @@ describe('CanvasView execution lock', () => {
     ui.setCanvasGraphNodes(canvasId, mockNodes)
     ui.setCanvasSelectedNodes(canvasId, ['edited'])
     const panel = mount(NodePanel, {
-      global: {
-        plugins: [[PrimeVue, { theme: { preset: Aura } }]],
-      },
+      global: primeVueTestGlobal(),
     })
 
     panel

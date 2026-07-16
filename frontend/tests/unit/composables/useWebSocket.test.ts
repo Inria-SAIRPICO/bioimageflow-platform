@@ -633,6 +633,7 @@ describe('useWebSocket', () => {
   })
 
   it('unknown message type is ignored without crashing', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const { useWebSocket } = await import('@/composables/useWebSocket')
     useWebSocket().connect('ws://test/ws')
     latestSocket().open()
@@ -640,6 +641,10 @@ describe('useWebSocket', () => {
     expect(() => {
       latestSocket().receive({ type: 'bogus_type', foo: 'bar' })
     }).not.toThrow()
+    expect(warning).toHaveBeenCalledWith(
+      '[useWebSocket] unknown message type:',
+      'bogus_type',
+    )
   })
 
   it('connect() while a previous socket exists detaches it (no ghost reconnects)', async () => {

@@ -991,6 +991,7 @@ describe('AppShell', () => {
   })
 
   it('reopens a nested session when durable deletion fails', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     mountApp()
     await flushPromises()
@@ -1036,6 +1037,10 @@ describe('AppShell', () => {
     ]
     expect(lastCall?.[0].params).toEqual(
       expect.objectContaining({ sessionId: session.id }),
+    )
+    expect(warning).toHaveBeenCalledWith(
+      '[nested-snapshot] failed to discard snapshot:',
+      expect.objectContaining({ message: 'delete failed' }),
     )
   })
 })

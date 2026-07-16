@@ -6,6 +6,11 @@ vi.mock('primevue/usetoast', () => ({
   useToast: () => ({ add: toastAdd, removeAllGroups: vi.fn() }),
 }))
 
+vi.mock('vue', async importOriginal => {
+  const original = await importOriginal<typeof import('vue')>()
+  return { ...original, hasInjectionContext: () => true }
+})
+
 import { useErrorReporting, __resetErrorReportingForTests } from '@/composables/useErrorReporting'
 import { useErrorStore } from '@/stores/errors'
 
@@ -87,8 +92,7 @@ describe('useErrorReporting', () => {
     expect(id).toBeUndefined()
   })
 
-  it('useToast() throwing does not crash reportError', () => {
-    // Replace mock to throw on this turn.
+  it('a toast provider failure does not crash reportError', () => {
     toastAdd.mockImplementationOnce(() => {
       throw new Error('no provider')
     })

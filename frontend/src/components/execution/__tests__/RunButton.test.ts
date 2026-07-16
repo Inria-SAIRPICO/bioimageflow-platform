@@ -2,8 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import PrimeVue from 'primevue/config'
-import Aura from '@primevue/themes/aura'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
@@ -31,17 +29,23 @@ import RunButton from '../RunButton.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { GraphState, ValidationResult } from '@/api/types'
+import type { ValidationResult } from '@/api/types'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
+import { makeGraph, makeGraphNode } from '@/test-utils/graphFixtures'
+import {
+  registerNestedCanvas,
+  registerRootCanvas,
+} from '@/test-utils/canvasFixtures'
+import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 
 function mountButton(opts: {
   validationResult?: ValidationResult | null
   syncPending?: boolean
 } = {}) {
-  const graph: GraphState = { nodes: [], edges: [] }
+  const graph = makeGraph()
   const flushNow = vi.fn(async () => {})
   const validationResult = ref<ValidationResult | null>(
     opts.validationResult ?? {
@@ -53,17 +57,9 @@ function mountButton(opts: {
   const currentGraph = ref(graph)
   const graphSync = { flushNow, validationResult, currentGraph }
   const wrapper = mount(RunButton, {
-    global: {
-      plugins: [[PrimeVue, { theme: { preset: Aura } }]],
-      stubs: {
-        // PrimeVue Dialog teleports to document.body; stub it so the
-        // assertions can use wrapper.find() without poking at the DOM.
-        Dialog: {
-          template: '<div v-if="visible" :data-testid="$attrs[\'data-testid\']"><slot /><slot name="footer" /></div>',
-          props: ['visible'],
-        },
-      },
-    },
+    // PrimeVue Dialog teleports to document.body; the shared visible stub
+    // keeps assertions within this wrapper.
+    global: primeVueTestGlobal({ dialog: true }),
     props: {
       graph,
       graphSync,
@@ -109,11 +105,9 @@ describe('RunButton', () => {
   })
 
   it('does not fall back to the global workflow when no registered canvas is active', () => {
-    const canvasId = canvasIdFromPanelId('workflow:registered')
-    canvasSessionRegistry.register({
-      kind: 'root',
-      canvasId,
-      workflowId: 'registered',
+    registerRootCanvas('registered', {
+      activate: false,
+      present: false,
     })
 
     const { wrapper } = mountButton()
@@ -238,14 +232,18 @@ describe('RunButton', () => {
   })
 
   it('runs the active canvas selection and workflow identity', async () => {
-    const canvasA = canvasIdFromPanelId('workflow:a')
-    const canvasB = canvasIdFromPanelId('workflow:b')
-    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
-    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'wf_b' })
+    const { canvasId: canvasA } = registerRootCanvas('wf_a', {
+      panelId: 'workflow:a',
+      displayName: 'Workflow A',
+      activate: false,
+    })
+    const { canvasId: canvasB } = registerRootCanvas('wf_b', {
+      panelId: 'workflow:b',
+      displayName: 'Workflow B',
+      activate: false,
+    })
     const ui = useUIStore()
-    ui.setCanvasWorkflow(canvasA, 'wf_a', 'Workflow A')
     ui.setCanvasSelectedNodes(canvasA, ['node-a'])
-    ui.setCanvasWorkflow(canvasB, 'wf_b', 'Workflow B')
     ui.setCanvasSelectedNodes(canvasB, ['node-b'])
     canvasSessionRegistry.activate(canvasA)
     useWorkflowStore().current = {
@@ -264,11 +262,10 @@ describe('RunButton', () => {
   })
 
   it('captures the active root canvas and accepted draft revision', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:a')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
-    const ui = useUIStore()
-    ui.setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
-    canvasSessionRegistry.activate(canvasId)
+    const { canvasId } = registerRootCanvas('wf_a', {
+      panelId: 'workflow:a',
+      displayName: 'Workflow A',
+    })
     persistenceMocks.canvasId = canvasId
     persistenceMocks.acceptedDraftRevision.value = 7
     const { wrapper } = mountButton()
@@ -285,10 +282,10 @@ describe('RunButton', () => {
   })
 
   it('does not start a root execution without an accepted draft revision', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:a')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
-    useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
-    canvasSessionRegistry.activate(canvasId)
+    const { canvasId } = registerRootCanvas('wf_a', {
+      panelId: 'workflow:a',
+      displayName: 'Workflow A',
+    })
     persistenceMocks.canvasId = canvasId
     const { wrapper } = mountButton()
     const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
@@ -305,23 +302,20 @@ describe('RunButton', () => {
   })
 
   it('disables nested-canvas Run commands and never enters preparation', async () => {
-    const parentCanvasId = canvasIdFromPanelId('workflow:a')
-    const nestedCanvasId = canvasIdFromPanelId('sub-workflow:nested-a')
-    canvasSessionRegistry.register({
-      kind: 'root',
-      canvasId: parentCanvasId,
-      workflowId: 'wf_a',
+    const { canvasId: parentCanvasId } = registerRootCanvas('wf_a', {
+      panelId: 'workflow:a',
+      displayName: 'Workflow A',
+      activate: false,
     })
-    canvasSessionRegistry.register({
-      kind: 'nested',
-      canvasId: nestedCanvasId,
+    const { canvasId: nestedCanvasId } = registerNestedCanvas({
       sessionId: 'nested-a',
       parentCanvasId,
+      workflowId: 'wf_a',
+      panelId: 'sub-workflow:nested-a',
+      displayName: 'Nested A',
     })
     const ui = useUIStore()
-    ui.setCanvasWorkflow(nestedCanvasId, 'wf_a', 'Nested A')
     ui.setCanvasSelectedNodes(nestedCanvasId, ['nested-node'])
-    canvasSessionRegistry.activate(nestedCanvasId)
     persistenceMocks.canvasId = nestedCanvasId
     const { wrapper, flushNow } = mountButton()
     const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
@@ -385,34 +379,20 @@ describe('RunButton', () => {
   })
 
   it('uses the latest graph-sync graph after the freshness check', async () => {
-    const staleGraph: GraphState = {
-      nodes: [{
+    const staleGraph = makeGraph({
+      nodes: [makeGraphNode({
         id: 'stale',
         name: 'Stale',
         tool_name: 'old_tool',
-        position: [0, 0],
-        parameters: {},
-        resources: {},
-        output_templates: {},
-        enabled: true,
-        collapsed: false,
-      }],
-      edges: [],
-    }
-    const freshGraph: GraphState = {
-      nodes: [{
+      })],
+    })
+    const freshGraph = makeGraph({
+      nodes: [makeGraphNode({
         id: 'fresh',
         name: 'Fresh',
         tool_name: 'new_tool',
-        position: [0, 0],
-        parameters: {},
-        resources: {},
-        output_templates: {},
-        enabled: true,
-        collapsed: false,
-      }],
-      edges: [],
-    }
+      })],
+    })
     const { wrapper, currentGraph } = mountButton()
     await wrapper.setProps({ graph: staleGraph })
     currentGraph.value = freshGraph
@@ -546,40 +526,24 @@ describe('RunButton', () => {
   })
 
   it('requires fresh confirmation when the graph changes while confirmation is open', async () => {
-    const canvasId = canvasIdFromPanelId('workflow:a')
-    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
-    useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
-    canvasSessionRegistry.activate(canvasId)
+    const { canvasId } = registerRootCanvas('wf_a', {
+      panelId: 'workflow:a',
+      displayName: 'Workflow A',
+    })
     persistenceMocks.canvasId = canvasId
     persistenceMocks.acceptedDraftRevision.value = 7
-    const graphA: GraphState = {
-      nodes: [{
+    const graphA = makeGraph({
+      nodes: [makeGraphNode({
         id: 'node-a',
         name: 'Node A',
-        tool_name: 'tool',
-        position: [0, 0],
-        parameters: {},
-        resources: {},
-        output_templates: {},
-        enabled: true,
-        collapsed: false,
-      }],
-      edges: [],
-    }
-    const graphB: GraphState = {
-      nodes: [{
+      })],
+    })
+    const graphB = makeGraph({
+      nodes: [makeGraphNode({
         id: 'node-b',
         name: 'Node B',
-        tool_name: 'tool',
-        position: [0, 0],
-        parameters: {},
-        resources: {},
-        output_templates: {},
-        enabled: true,
-        collapsed: false,
-      }],
-      edges: [],
-    }
+      })],
+    })
     const { wrapper, currentGraph, validationResult, flushNow } = mountButton({
       validationResult: {
         valid: true,
@@ -628,13 +592,16 @@ describe('RunButton', () => {
   })
 
   it('does not redirect a confirmed run when another canvas becomes active', async () => {
-    const canvasA = canvasIdFromPanelId('workflow:a')
-    const canvasB = canvasIdFromPanelId('workflow:b')
-    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
-    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'wf_b' })
-    const ui = useUIStore()
-    ui.setCanvasWorkflow(canvasA, 'wf_a', 'Workflow A')
-    ui.setCanvasWorkflow(canvasB, 'wf_b', 'Workflow B')
+    const { canvasId: canvasA } = registerRootCanvas('wf_a', {
+      panelId: 'workflow:a',
+      displayName: 'Workflow A',
+      activate: false,
+    })
+    const { canvasId: canvasB } = registerRootCanvas('wf_b', {
+      panelId: 'workflow:b',
+      displayName: 'Workflow B',
+      activate: false,
+    })
     canvasSessionRegistry.activate(canvasA)
     persistenceMocks.canvasId = canvasA
     persistenceMocks.acceptedDraftRevision.value = 7

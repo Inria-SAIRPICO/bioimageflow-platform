@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { computed } from 'vue'
-import PrimeVue from 'primevue/config'
-import Aura from '@primevue/themes/aura'
 import InputText from 'primevue/inputtext'
 
 vi.mock('@/api/client', () => ({
@@ -37,36 +35,34 @@ import {
 } from '@/composables/useCanvasPersistence'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
-import type { GraphState, ToolMetadata } from '@/api/types'
-import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
-import {
-  canvasIdFromPanelId,
-  canvasSessionRegistry,
-} from '@/sessions/canvasSessionRegistry'
+import type { ToolMetadata } from '@/api/types'
+import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import {
   _resetCanvasStatusProjectionForTest,
   useCanvasStatusProjection,
 } from '@/composables/useCanvasStatusProjection'
+import { makeGraph, makeGraphNode } from '@/test-utils/graphFixtures'
+import { makeRootCanvasDescriptor } from '@/test-utils/canvasFixtures'
+import {
+  createInMemoryCanvasPersistence,
+  makeWorkflowDraft,
+} from '@/test-utils/persistenceFixtures'
+import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 
 const mockedApi = api as unknown as {
   post: ReturnType<typeof vi.fn>
   put: ReturnType<typeof vi.fn>
 }
 
-const graph: GraphState = {
-  nodes: [{
+const graph = makeGraph({
+  nodes: [makeGraphNode({
     id: 'files',
     name: 'Files',
     tool_name: 'files',
     position: [0, 0],
     parameters: { path: '/data/old' },
-    resources: {},
-    output_templates: {},
-    enabled: true,
-    collapsed: false,
-  }],
-  edges: [],
-}
+  })],
+})
 
 const tool = {
   name: 'files',
@@ -125,49 +121,20 @@ describe('parameter edit followed immediately by Run', () => {
       path: '/tmp/workflows/parameter_edit.json',
       last_modified: '2026-01-01T00:00:00Z',
     }
-    const canvasId = canvasIdFromPanelId('workflow:parameter_edit')
-    const descriptor = {
-      kind: 'root' as const,
-      canvasId,
-      workflowId: 'parameter_edit',
-    }
-    let persistedDraft: WorkflowDraftResponse = {
-      draft_version: 1,
+    const descriptor = makeRootCanvasDescriptor('parameter_edit')
+    const canvasId = descriptor.canvasId
+    const persistedDraft = makeWorkflowDraft({
       workflow_id: 'parameter_edit',
       base_saved_revision: 'sha256:test',
       draft_revision: 1,
-      updated_at: '2026-01-01T00:00:00Z',
-      updated_by: 'frontend',
-      dirty_against_saved: false,
       graph,
       validation: { valid: true, node_statuses: {}, errors: [] },
-    }
-    const putDraft = vi.fn(async (
-      _workflowId: string,
-      body: {
-        graph: GraphState
-        expected_revision: number
-        validate?: boolean
-      },
-    ) => {
-      persistedDraft = {
-        ...persistedDraft,
-        draft_revision: body.expected_revision + 1,
-        dirty_against_saved: true,
-        graph: body.graph,
-        validation: { valid: true, node_statuses: {}, errors: [] },
-      }
-      return persistedDraft
     })
-    const writeRecovery = vi.fn(async () => {})
+    const persistence = createInMemoryCanvasPersistence(persistedDraft)
     const canvasPersistence = useCanvasPersistence({
       descriptor,
       getWorkflowId: () => 'parameter_edit',
-      transports: {
-        fetchDraft: async () => persistedDraft,
-        putDraft,
-        writeRecovery,
-      },
+      transports: persistence.transports,
     })
     canvasPersistence.initializeFromDraft(persistedDraft)
     const graphSync = useGraphSync({
@@ -250,7 +217,7 @@ describe('parameter edit followed immediately by Run', () => {
       },
     })
     const panel = mount(NodePanel, {
-      global: { plugins: [[PrimeVue, { theme: { preset: Aura } }], pinia] },
+      global: primeVueTestGlobal({ pinia }),
     })
     const runButton = mount(RunButton, {
       props: {
@@ -258,15 +225,7 @@ describe('parameter edit followed immediately by Run', () => {
         graphSync,
         syncPending: false,
       },
-      global: {
-        plugins: [[PrimeVue, { theme: { preset: Aura } }], pinia],
-        stubs: {
-          Dialog: {
-            template: '<div v-if="visible"><slot /><slot name="footer" /></div>',
-            props: ['visible'],
-          },
-        },
-      },
+      global: primeVueTestGlobal({ pinia, dialog: true }),
     })
 
     panel
@@ -304,8 +263,8 @@ describe('parameter edit followed immediately by Run', () => {
         }),
       }),
     )
-    expect(putDraft).toHaveBeenCalledOnce()
-    expect(putDraft).toHaveBeenCalledWith(
+    expect(persistence.putDraft).toHaveBeenCalledOnce()
+    expect(persistence.putDraft).toHaveBeenCalledWith(
       'parameter_edit',
       expect.objectContaining({
         graph: expect.objectContaining({
@@ -316,7 +275,7 @@ describe('parameter edit followed immediately by Run', () => {
         validate: true,
       }),
     )
-    expect(writeRecovery).toHaveBeenCalledOnce()
+    expect(persistence.writeRecovery).toHaveBeenCalledOnce()
     expect(mockedApi.put).not.toHaveBeenCalled()
 
     panel.unmount()

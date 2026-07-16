@@ -14,14 +14,8 @@ import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
-    resolve = res
-  })
-  return { promise, resolve }
-}
+import { deferred } from '@/test-utils/asyncFixtures'
+import { makeGraph } from '@/test-utils/graphFixtures'
 
 describe('execution store', () => {
   beforeEach(() => {
@@ -132,7 +126,7 @@ describe('execution store', () => {
   it('posts workflow_name when starting execution', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { status: 'started' } })
     const execution = useExecutionStore()
-    const graph = { nodes: [], edges: [] }
+    const graph = makeGraph()
 
     await execution.run(graph, undefined, 'wf_a')
 
@@ -154,7 +148,7 @@ describe('execution store', () => {
       },
     })
     const execution = useExecutionStore()
-    const graph = { nodes: [], edges: [] }
+    const graph = makeGraph()
 
     await execution.run(graph, undefined, 'wf_a', {
       canvasId,
@@ -199,7 +193,7 @@ describe('execution store', () => {
     const response = deferred<{ data: Record<string, unknown> }>()
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
     const execution = useExecutionStore()
-    const graph = { nodes: [], edges: [] }
+    const graph = makeGraph()
 
     const run = execution.run(graph, undefined, 'wf_a', {
       canvasId,

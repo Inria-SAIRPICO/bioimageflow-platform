@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { GraphState, ValidationResult } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { canvasIdFromPanelId } from '../canvasSessionRegistry'
 import {
@@ -7,26 +6,18 @@ import {
   createWorkflowDraftCoordinator,
   type WorkflowDraftWriteRequest,
 } from '../workflowDraftCoordinator'
+import {
+  makeGraph,
+  makeGraphNode,
+  makeValidationResult,
+} from '@/test-utils/graphFixtures'
+import { makeWorkflowDraft } from '@/test-utils/persistenceFixtures'
+import { deferred } from '@/test-utils/asyncFixtures'
 
-function graph(value: string): GraphState {
-  return {
-    nodes: [{
-      id: 'node',
-      name: 'Node',
-      tool_name: 'tool',
-      position: [0, 0],
-      parameters: { value },
-      resources: {},
-      output_templates: {},
-      enabled: true,
-      collapsed: false,
-    }],
-    edges: [],
-  }
-}
-
-function validation(): ValidationResult {
-  return { valid: true, node_statuses: {}, errors: [] }
+function graph(value: string) {
+  return makeGraph({
+    nodes: [makeGraphNode({ parameters: { value } })],
+  })
 }
 
 function response(
@@ -34,27 +25,15 @@ function response(
   value = `revision-${draftRevision}`,
   workflowId = 'workflow-a',
 ): WorkflowDraftResponse {
-  return {
-    draft_version: 1,
+  return makeWorkflowDraft({
     workflow_id: workflowId,
     base_saved_revision: 'sha256:base',
     draft_revision: draftRevision,
     updated_at: '2026-07-15T12:00:00Z',
-    updated_by: 'frontend',
     dirty_against_saved: true,
     graph: graph(value),
-    validation: validation(),
-  }
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res
-    reject = rej
+    validation: makeValidationResult(),
   })
-  return { promise, resolve, reject }
 }
 
 describe('workflow draft coordinator', () => {
