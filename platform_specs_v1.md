@@ -1311,8 +1311,7 @@ opened, or treated as workflow id collisions.
 
 **Panel layout:**
 
-- **Toolbar:** New workflow, New folder, Save, Duplicate, Import, Export,
-  Rename selected item, Delete selected item.
+- **Toolbar:** New workflow, New folder, Save, Duplicate, Import, Export, Edit selected item, Delete selected item. Editing a selected workflow changes its display name; editing a selected folder renames that folder.
 - **Search:** Filters by workflow display name, id, and folder name while
   preserving matching ancestors.
 - **Workflow tree:** Nested folders and workflows under `workspace/workflows/`.
@@ -1339,24 +1338,16 @@ indirectly are rejected. Dragging a folder onto another folder moves the full
 folder subtree, including child folders and workflows.
 
 **Actions:**
-- **New workflow:** Opens a creation dialog with fields: display name
-  (free-form), folder, id/slug (auto-generated from display name, editable, with
-  slash-separated safe path segments), and description (optional, multiline). On
-  id conflict, the server suggests an alternative. When a folder is selected in
-  the tree, the dialog creates the workflow inside that folder by default.
+- **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the filesystem id, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; explicit ids and paths remain API capabilities. On id conflict, the server suggests an alternative.
 - **New folder:** Creates a folder under the selected folder or the tree root.
 - **Open workflow:** Opens the selected saved workflow. Opening a new workflow closes the current one (with save prompt).
-- **Edit workflow:** Each workflow has an **Edit** action to modify display name, description, folder, or slug. Display-name and other metadata updates preserve the path-derived workflow `id`. Changing the folder or slug changes the directory path and therefore the `id`; any existing embedded draft identity follows that route. A mounted root or nested canvas keeps an immutable workflow identity, so the frontend rejects any rename, move, promotion, or deletion that would change or remove an affected open route before sending the request and tells the user to close all affected workflow and sub-workflow tabs first.
+- **Edit workflow:** The current panel edits a workflow's display name and description. These metadata updates preserve the path-derived workflow `id`. Dragging a workflow row to a folder is the current panel control for moving it; the resulting path and `id` change together, and any existing embedded draft identity follows that route. Editable slug and path-id fields remain API capabilities rather than current panel controls.
 - **Save:** Saves current workflow state including GUI state (Ctrl+S). The frontend flushes the current graph to the backend draft, verifies the draft revision, then saves/promotes that draft through the workflow save path. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
 - **Save as / Duplicate:** Save the current draft under a new id; duplicate saved workflows without copying stale unsaved state unless the current draft is explicitly saved as the new workflow.
 - **Import / Export:** Uses the BioImageFlow library import/export API. The
   platform does not reimplement the library archive format. Export saves/promotes
   a dirty draft first so the archive matches the current editable graph.
-- **Delete:** Delete with confirmation. Deletes the workflow file, workflow-local
-  `.bioimageflow` draft metadata, workspace-scoped output/cache directory, and
-  any local IndexedDB recovery state for this workflow. Folder deletion uses the platform dialog system. For non-empty
-  folders, the dialog offers three choices: delete all child workflows/folders,
-  move direct children up to the deleted folder's parent, or cancel.
+- **Delete:** Delete with confirmation. Deletes the workflow file, workflow-local `.bioimageflow` draft metadata, workspace-scoped output/cache directory, and any local IndexedDB recovery state for this workflow. A confirmed delete of the active root workflow may exempt only the root canvas owner captured when the dialog opened, and is rejected if any other root or nested canvas owns the same workflow. The captured root canvas closes only after the delete succeeds; a failed delete leaves it mounted and keeps the confirmation available for retry. All other identity-changing or removal operations require every affected workflow and sub-workflow tab to be closed before the request. Folder deletion uses the platform dialog system. For non-empty folders, the dialog offers three choices: delete all child workflows/folders, move direct children up to the deleted folder's parent, or cancel.
 
 ### 3.9 Execution Panel (Menu / Toolbar)
 

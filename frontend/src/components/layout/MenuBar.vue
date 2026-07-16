@@ -708,10 +708,10 @@ async function confirmDeleteWorkflow(): Promise<void> {
         detail: { canvasId: target.canvasId },
       }))
     }
-    if (executionStore.isMutationLocked) return
     deleteDialogVisible.value = false
     deleteTargetName.value = null
     deleteCanvasTarget.value = null
+    if (executionStore.isMutationLocked) return
     if (target?.canvasId === null && target.workflowName === name) {
       applyGraph({ nodes: [], edges: [] })
     }
@@ -793,7 +793,7 @@ async function submitRename(): Promise<void> {
     renameDialogVisible.value = false
     renameTarget.value = null
   } catch (err: unknown) {
-    showError('Rename workflow failed', err)
+    showError('Edit workflow display name failed', err)
   }
 }
 
@@ -973,8 +973,8 @@ defineExpose({
           text
           rounded
           size="small"
-          aria-label="Rename workflow"
-          title="Rename workflow"
+          aria-label="Edit workflow display name"
+          title="Edit workflow display name"
           data-testid="workflow-title-edit"
           :disabled="executionStore.isMutationLocked"
           @click="openRenameDialog"
@@ -1088,12 +1088,12 @@ defineExpose({
   <Dialog
     v-model:visible="renameDialogVisible"
     modal
-    header="Rename workflow"
+    header="Edit workflow display name"
     :style="{ width: '380px' }"
     data-testid="rename-workflow-dialog"
   >
     <label class="rename-field">
-      <span>Name</span>
+      <span>Display name</span>
       <InputText
         v-model="renameDisplayName"
         autofocus
