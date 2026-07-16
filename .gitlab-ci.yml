@@ -1,0 +1,143 @@
+# Local equivalents for every lane are documented in docs/testing.md.
+stages:
+  - quality
+  - browser
+  - certification
+
+variables:
+  BUN_VERSION: "1.3.8"
+  UV_VERSION: "0.10.9"
+  # Keep editable sibling inputs on exact commits that the configured remotes can fetch.
+  BIOIMAGEFLOW_SOURCE_REVISION: "30473f203fd6dee81b476f20c0b2566675da44aa"
+  LAUNCHER_SOURCE_REVISION: "54c38b5e404bac9f3db5203ac29fa75b2b7c5df3"
+  WETLANDS_SOURCE_REVISION: "d0780c44a15c894cb69bed83562e864cc62c6288"
+  BIOIMAGEFLOW_HOME: "$CI_PROJECT_DIR/.ci/bioimageflow-home"
+  BIOIMAGEFLOW_TOOL_STORE: "$CI_PROJECT_DIR/.ci/bioimageflow-home/tool_packages"
+  BIOIMAGEFLOW_WETLANDS: "$CI_PROJECT_DIR/.ci/bioimageflow-home/wetlands"
+  BUN_INSTALL_CACHE_DIR: "$CI_PROJECT_DIR/.cache/bun"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
+  UV_FROZEN: "1"
+  UV_LINK_MODE: "copy"
+
+.backend-job:
+  image: ghcr.io/astral-sh/uv:0.10.9-python3.12-bookworm-slim
+  before_script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends ca-certificates git
+    - bash scripts/ci/bootstrap_backend_sources.sh
+    - cd backend
+    - uv sync --extra dev --frozen
+    - cd ..
+  cache:
+    key:
+      files:
+        - backend/uv.lock
+      prefix: backend-python-3.12
+    paths:
+      - .cache/uv/
+
+.browser-job:
+  image: mcr.microsoft.com/playwright:v1.59.1-noble
+  before_script:
+    - apt-get update
+    - apt-get install --yes --no-install-recommends ca-certificates git python3-pip
+    - npm install --global "bun@$BUN_VERSION"
+    - python3 -m pip install --break-system-packages "uv==$UV_VERSION"
+    - bun --version
+    - uv --version
+    - bash scripts/ci/bootstrap_backend_sources.sh
+    - cd backend
+    - uv sync --extra dev --frozen
+    - cd ../frontend
+    - bun install --frozen-lockfile
+    - cd ..
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - frontend/playwright-report/
+      - frontend/test-results/
+  cache:
+    - key:
+        files:
+          - backend/uv.lock
+        prefix: browser-python-3.12
+      paths:
+        - .cache/uv/
+    - key:
+        files:
+          - frontend/bun.lock
+        prefix: browser-bun-1.3.8
+      paths:
+        - .cache/bun/
+
+.scheduled-or-manual:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: on_success
+    - when: manual
+      allow_failure: true
+
+frontend:required:
+  stage: quality
+  image: oven/bun:1.3.8
+  cache:
+    key:
+      files:
+        - frontend/bun.lock
+      prefix: frontend-bun-1.3.8
+    paths:
+      - .cache/bun/
+  before_script:
+    - cd frontend
+    - bun install --frozen-lockfile
+  script:
+    - bun run lint
+    - bun run type-check
+    - bun run test:unit
+
+backend:required:
+  extends: .backend-job
+  stage: quality
+  script:
+    - cd backend
+    - uv run --frozen ruff check .
+    - uv run --frozen pytest -m "not common_tools"
+    - >-
+      uv run --frozen pytest
+      tests/test_logging_config.py
+      tests/test_ws/test_handler.py::test_publish_without_loop_drops_silently
+      tests/test_ws/test_handler.py::test_publish_logs_future_exceptions
+      tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger
+      -q
+
+chromium:required:
+  extends: .browser-job
+  stage: browser
+  script:
+    - cd frontend
+    - bun run test:e2e -- --project=chromium
+
+firefox:scheduled:
+  extends:
+    - .browser-job
+    - .scheduled-or-manual
+  stage: browser
+  script:
+    - cd frontend
+    - bun run test:e2e -- --project=firefox
+
+common-tools:external:
+  extends: .backend-job
+  stage: certification
+  variables:
+    BIOIMAGEFLOW_COMMON_TOOLS_VERSION: "0.1.6"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: manual
+      allow_failure: true
+  script:
+    - bash scripts/ci/install_common_tools_from_index.sh
+    - cd backend
+    - uv run --frozen pytest --run-common-tools -m common_tools
