@@ -69,6 +69,7 @@ contains A).
 - Opening a sub-workflow resolves or creates a private durable snapshot before the editor mounts. Root-owned snapshots are identified by the exact parent canvas and optional workflow ID; deeper snapshots are owned by their parent snapshot session.
 - Every nested edit replaces one complete `GraphState`, including its published interface, through revision-checked background persistence. The parent graph remains unchanged until explicit Save.
 - Save first flushes all queued edits, then applies the exact graph accepted by the snapshot API only to the addressed parent canvas. The nested session becomes clean only after that parent acknowledges the apply.
+- Parent apply is conditional on the parent's nested graph and published interface still matching the baseline captured when the editor opened or last saved. Unrelated parent edits are preserved, but a missing parent or independently changed nested graph/interface rejects the apply without a parent history transition and leaves the durable nested session dirty.
 - A confirmed discard flushes the latest private edit and deletes the snapshot with its accepted revision before local state is dropped. A canceled discard retains the session, and a process restart recovers the last accepted private snapshot.
 - Closing the sub-workflow tab returns focus to the parent workflow tab.
 

@@ -52,11 +52,15 @@ import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
-import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
+import {
+  useSubWorkflowSessionsStore,
+  type SubWorkflowParentConflictReason,
+} from '@/stores/subWorkflowSessions'
 import {
   canvasIdFromPanelId,
   type CanvasSessionDescriptor,
 } from '@/sessions/canvasSessionRegistry'
+import { graphDocumentsEqual } from '@/sessions/graphDocument'
 
 const emit = defineEmits<{
   'graph-changed': [payload: { nodes: any[]; edges: any[] }]
@@ -312,6 +316,11 @@ interface SubWorkflowApplyPayload {
   published_inputs?: PublishedInput[]
   published_outputs?: PublishedOutput[]
 }
+
+type SubWorkflowParentApplyResult =
+  | { status: 'applied' }
+  | { status: 'conflict'; reason: SubWorkflowParentConflictReason }
+  | { status: 'rejected'; reason: 'locked' }
 
 interface PublicationContext {
   parentNodeId?: string
@@ -2518,17 +2527,36 @@ async function saveSubWorkflowSession(): Promise<void> {
       isCanvasUnmounted
       || subWorkflowSessionsStore.sessionById(sessionId) !== session
     ) return
-    let acknowledged = false
+    const outcome: { result: SubWorkflowParentApplyResult } = {
+      result: {
+        status: 'conflict',
+        reason: 'parent_missing',
+      },
+    }
     window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
       detail: {
         sessionId,
         parentCanvasId: session.parentCanvasId,
         parentNodeId: session.parentNodeId,
         graph: accepted.graph,
-        acknowledge: () => { acknowledged = true },
+        complete: (nextResult: SubWorkflowParentApplyResult) => {
+          outcome.result = nextResult
+        },
       },
     }))
-    if (!acknowledged) return
+    const result = outcome.result
+    if (result.status !== 'applied') {
+      if (result.status === 'conflict') {
+        subWorkflowSessionsStore.markParentApplyConflict(sessionId, result.reason)
+        uiStore.markCanvasDirty(canvasId)
+      }
+      reportError({
+        kind: 'graph_sync_error',
+        detail: subWorkflowParentApplyError(result),
+        alwaysToast: true,
+      })
+      return
+    }
     subWorkflowSessionsStore.markSaved(
       sessionId,
       accepted.graph,
@@ -2546,11 +2574,39 @@ async function saveSubWorkflowSession(): Promise<void> {
   }
 }
 
+function subWorkflowParentApplyError(result: Exclude<
+  SubWorkflowParentApplyResult,
+  { status: 'applied' }
+>): string {
+  if (result.status === 'rejected') {
+    return 'Cannot save nested workflow while execution is active.'
+  }
+  if (result.reason === 'parent_changed') {
+    return 'Cannot save nested workflow because its parent node changed after this editor was opened.'
+  }
+  return 'Cannot save nested workflow because its parent is no longer available.'
+}
+
+function currentSubWorkflowDocument(node: any): GraphState | null {
+  const graph = node?.data?.sub_workflow
+  if (
+    !graph
+    || typeof graph !== 'object'
+    || !Array.isArray(graph.nodes)
+    || !Array.isArray(graph.edges)
+  ) return null
+  return deepClone({
+    ...graph,
+    published_inputs: node.data.published_inputs ?? graph.published_inputs ?? [],
+    published_outputs: node.data.published_outputs ?? graph.published_outputs ?? [],
+  }) as GraphState
+}
+
 function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
   sessionId?: string
   parentCanvasId?: string
   parentNodeId?: string
-  acknowledge?: () => void
+  complete?: (result: SubWorkflowParentApplyResult) => void
 } & Partial<SubWorkflowApplyPayload>>) {
   const detail = event.detail
   if (
@@ -2565,11 +2621,26 @@ function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
     || session.parentCanvasId !== canvasId
     || session.parentNodeId !== detail.parentNodeId
   ) return
+  const parentNode = getNodes.value.find((node: any) => node.id === detail.parentNodeId)
+  if (!parentNode?.data) {
+    detail.complete?.({ status: 'conflict', reason: 'parent_missing' })
+    return
+  }
+  const currentDocument = currentSubWorkflowDocument(parentNode)
+  if (
+    currentDocument === null
+    || !graphDocumentsEqual(currentDocument, session.savedSnapshot)
+  ) {
+    detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
+    return
+  }
   const applied = applySubWorkflowDraft(detail.parentNodeId, detail.graph, {
     published_inputs: detail.published_inputs,
     published_outputs: detail.published_outputs,
   })
-  if (applied) detail.acknowledge?.()
+  detail.complete?.(applied
+    ? { status: 'applied' }
+    : { status: 'rejected', reason: 'locked' })
 }
 
 function selectAll() {
