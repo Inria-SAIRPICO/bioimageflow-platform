@@ -37,6 +37,14 @@ describe('useErrorReporting', () => {
     expect(toastAdd.mock.calls[0]![0]).toMatchObject({ severity: 'warn' })
   })
 
+  it('graph_sync_error: command feedback does not consume background deduplication', () => {
+    const { reportError } = useErrorReporting()
+    reportError({ kind: 'graph_sync_error', detail: 'command 1', alwaysToast: true })
+    reportError({ kind: 'graph_sync_error', detail: 'background' })
+    reportError({ kind: 'graph_sync_error', detail: 'command 2', alwaysToast: true })
+    expect(toastAdd).toHaveBeenCalledTimes(3)
+  })
+
   it('websocket_error: does not show a toast but records history', () => {
     const store = useErrorStore()
     const { reportError } = useErrorReporting()

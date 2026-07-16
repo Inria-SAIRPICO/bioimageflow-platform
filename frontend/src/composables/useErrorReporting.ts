@@ -72,6 +72,11 @@ const TOAST_POLICY: Record<ErrorKind, KindPolicy> = {
 
 const _toastedKinds = new Set<ErrorKind>()
 
+type ErrorReportingInput = ErrorReportInput & {
+  /** Command failures need feedback for each explicit user attempt. */
+  alwaysToast?: boolean
+}
+
 export function __resetErrorReportingForTests(): void {
   _toastedKinds.clear()
 }
@@ -88,7 +93,7 @@ export function useErrorReporting() {
     toast = null
   }
 
-  function reportError(input: ErrorReportInput): string | undefined {
+  function reportError(input: ErrorReportingInput): string | undefined {
     const policy = TOAST_POLICY[input.kind] ?? TOAST_POLICY.unknown
 
     let id: string | undefined
@@ -96,8 +101,11 @@ export function useErrorReporting() {
       id = errorStore.report(input)
     }
 
-    if (policy.toast && (!policy.once || !_toastedKinds.has(input.kind))) {
-      _toastedKinds.add(input.kind)
+    if (
+      policy.toast
+      && (input.alwaysToast || !policy.once || !_toastedKinds.has(input.kind))
+    ) {
+      if (!input.alwaysToast) _toastedKinds.add(input.kind)
       if (toast) {
         try {
           toast.add({

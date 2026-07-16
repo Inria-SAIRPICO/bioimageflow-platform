@@ -397,6 +397,7 @@ import {
   __resetForTests as resetFieldFocusForTests,
   useFieldFocusTracker,
 } from '@/composables/useFieldFocusTracker'
+import { __resetErrorReportingForTests } from '@/composables/useErrorReporting'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -530,6 +531,7 @@ describe('CanvasView', () => {
   beforeEach(() => {
     canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
+    __resetErrorReportingForTests()
     _resetClipboardForTest()
     mockNodes.length = 0
     mockEdges.length = 0
@@ -3643,6 +3645,40 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('marks a clean no-response save dirty and reports every failed attempt', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const baseline = makeNestedGraph(1)
+      const session = sessions.openSession({
+        parentCanvasId: 'workflow:missing',
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: baseline,
+      })
+      graphSyncMocks.flushNow.mockResolvedValue({
+        graph: baseline,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+        snapshotRevision: 2,
+      })
+      const w = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+      toastMocks.add.mockClear()
+
+      await canvasCommandMocks.registrations[0].save()
+      await canvasCommandMocks.registrations[0].save()
+
+      expect(sessions.isDirty(session.id)).toBe(true)
+      expect(sessions.sessionById(session.id)?.parentApplyConflict).toBe('parent_missing')
+      expect(useUIStore().canvasHasUnsavedChanges(canvasIdFromPanelId(
+        `sub-workflow:${encodeURIComponent(session.id)}`,
+      ))).toBe(true)
+      expect(toastMocks.add).toHaveBeenCalledTimes(2)
+      expect(toastMocks.add).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        detail: 'Cannot save nested workflow because its parent is no longer available.',
+      }))
+      w.unmount()
+    })
+
     it('does not apply an accepted nested snapshot after its canvas unmounts', async () => {
       const sessions = useSubWorkflowSessionsStore()
       const session = sessions.openSession({
@@ -3770,10 +3806,14 @@ describe('CanvasView', () => {
         current: makeNestedGraph(9),
       },
       {
-        name: 'published interface',
-        current: makeNestedGraph(1, 'renamed_image'),
+        name: 'wrapper published interface',
+        current: makeNestedGraph(1),
+        wrapperInputs: makeNestedGraph(1, 'renamed_image').published_inputs,
       },
-    ])('rejects an independently changed parent $name without a transition', async ({ current }) => {
+    ])('rejects an independently changed parent $name without a transition', async ({
+      current,
+      wrapperInputs,
+    }) => {
       const sessions = useSubWorkflowSessionsStore()
       const baseline = makeNestedGraph(1)
       const accepted = makeNestedGraph(2)
@@ -3797,7 +3837,9 @@ describe('CanvasView', () => {
       })
       const parent = mountCanvas({ params: { panelId: 'workflow:parent' } })
       await flushPromises()
-      mockNodes.splice(0, mockNodes.length, makeParentSubWorkflowNode(current))
+      mockNodes.splice(0, mockNodes.length, makeParentSubWorkflowNode(current, {
+        ...(wrapperInputs ? { published_inputs: wrapperInputs } : {}),
+      }))
       persistenceMocks.queueGraph.mockClear()
       const complete = vi.fn()
 
@@ -3816,6 +3858,9 @@ describe('CanvasView', () => {
         reason: 'parent_changed',
       })
       expect(mockNodes[0].data.sub_workflow).toEqual(current)
+      if (wrapperInputs) {
+        expect(mockNodes[0].data.published_inputs).toEqual(wrapperInputs)
+      }
       expect(parent.emitted('graph-changed')).toBeUndefined()
       expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
       expect(sessions.isDirty(session.id)).toBe(true)
@@ -3824,6 +3869,40 @@ describe('CanvasView', () => {
         acceptedSnapshot: accepted,
         savedSnapshot: baseline,
       })
+      parent.unmount()
+    })
+
+    it('returns a locked rejection without creating a parent conflict or transition', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const baseline = makeNestedGraph(1)
+      const session = sessions.openSession({
+        parentCanvasId: 'workflow:parent',
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: baseline,
+      })
+      const parent = mountCanvas({ params: { panelId: 'workflow:parent' } })
+      await flushPromises()
+      mockNodes.splice(0, mockNodes.length, makeParentSubWorkflowNode(baseline))
+      useExecutionStore().state = 'starting'
+      await nextTick()
+      const complete = vi.fn()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
+        detail: {
+          sessionId: session.id,
+          parentCanvasId: 'workflow:parent',
+          parentNodeId: 'sub_1',
+          graph: baseline,
+          complete,
+        },
+      }))
+
+      expect(complete).toHaveBeenCalledWith({ status: 'rejected', reason: 'locked' })
+      expect(sessions.sessionById(session.id)?.parentApplyConflict).toBeNull()
+      expect(sessions.isDirty(session.id)).toBe(false)
+      expect(parent.emitted('graph-changed')).toBeUndefined()
       parent.unmount()
     })
 

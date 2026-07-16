@@ -2548,10 +2548,12 @@ async function saveSubWorkflowSession(): Promise<void> {
     if (result.status !== 'applied') {
       if (result.status === 'conflict') {
         subWorkflowSessionsStore.markParentApplyConflict(sessionId, result.reason)
+        uiStore.markCanvasDirty(canvasId)
       }
       reportError({
         kind: 'graph_sync_error',
         detail: subWorkflowParentApplyError(result),
+        alwaysToast: true,
       })
       return
     }
