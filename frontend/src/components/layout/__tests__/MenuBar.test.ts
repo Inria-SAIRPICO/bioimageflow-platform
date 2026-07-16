@@ -23,6 +23,7 @@ const workflowDraftMocks = vi.hoisted(() => ({
   flush: vi.fn().mockResolvedValue(undefined),
   loadDraft: vi.fn(),
   forgetWorkflow: vi.fn(),
+  acknowledgeAcceptedDraft: vi.fn(),
 }))
 const persistenceMocks = vi.hoisted(() => ({
   canvasId: null as string | null,
@@ -81,10 +82,12 @@ import {
 } from '@/sessions/canvasSessionRegistry'
 import { useGraphSync } from '@/composables/useGraphSync'
 import {
+  getOrCreateRootPersistenceResource,
   ROOT_PERSISTENCE_RESOURCE,
   type RootCanvasPersistenceResource,
 } from '@/composables/useCanvasPersistence'
-import type { GraphState } from '@/api/types'
+import type { GraphState, WorkflowInfo } from '@/api/types'
+import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -168,6 +171,7 @@ describe('MenuBar', () => {
     workflowDraftMocks.flush.mockClear()
     workflowDraftMocks.loadDraft.mockReset()
     workflowDraftMocks.forgetWorkflow.mockClear()
+    workflowDraftMocks.acknowledgeAcceptedDraft.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
     persistenceMocks.canvasId = null
@@ -892,9 +896,10 @@ describe('MenuBar', () => {
         expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
         if (phase === 'save') {
           expect(queueDraftA).not.toHaveBeenCalled()
-          expect(flushA).not.toHaveBeenCalled()
+          expect(flushA).toHaveBeenCalledOnce()
         } else {
           expect(queueDraftA).toHaveBeenCalledWith(capturedGraphA)
+          expect(flushA).toHaveBeenCalledTimes(2)
         }
         expect(ensureFreshB).not.toHaveBeenCalled()
         expect(queueDraftB).not.toHaveBeenCalled()
@@ -1267,6 +1272,438 @@ describe('MenuBar', () => {
       expect(workflowDraftMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
       expect(workflowDraftMocks.scheduleSave).not.toHaveBeenCalled()
       expect(workflowDraftMocks.flush).not.toHaveBeenCalled()
+    })
+
+    it('marks a fixed root canvas clean only after its captured graph finishes saving', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const graphA: GraphState = { nodes: [], edges: [] }
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
+      const syncA = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+        getWorkflowId: () => 'a',
+      })
+      syncA.currentGraph.value = graphA
+      const persistenceA = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+        canvasA,
+        ROOT_PERSISTENCE_RESOURCE,
+      )!
+      vi.spyOn(persistenceA, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+      const queueDraft = vi.spyOn(persistenceA, 'queueDraft').mockImplementation(() => {})
+      const flush = vi.spyOn(persistenceA, 'flush').mockResolvedValue(undefined)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.markCanvasDirty(canvasA)
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      apiMocks.put.mockResolvedValueOnce({ data: workflowA })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      await workflowMenu.items.find((item: any) => item.label === 'Save').command()
+
+      expect(queueDraft).toHaveBeenCalledWith(graphA)
+      expect(flush).toHaveBeenCalledOnce()
+      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('keeps Save bound to the graph captured before the freshness barrier', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const graphA: GraphState = { nodes: [], edges: [] }
+      const graphB: GraphState = {
+        nodes: [{
+          id: 'newer-node',
+          name: 'Newer node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: { value: 'graph-b' },
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
+      const syncA = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+        getWorkflowId: () => 'a',
+      })
+      syncA.currentGraph.value = graphA
+      const persistenceA = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+        canvasA,
+        ROOT_PERSISTENCE_RESOURCE,
+      )!
+      const pendingFreshness = deferred<boolean>()
+      vi.spyOn(persistenceA, 'ensureFreshForCriticalOperation')
+        .mockReturnValueOnce(pendingFreshness.promise)
+      const queueDraft = vi.spyOn(persistenceA, 'queueDraft').mockImplementation(() => {})
+      const queueGraph = vi.spyOn(persistenceA, 'queueGraph').mockImplementation(() => {})
+      vi.spyOn(persistenceA, 'flush').mockResolvedValue(undefined)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.markCanvasDirty(canvasA)
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      apiMocks.put.mockResolvedValueOnce({ data: workflowA })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      const saving = workflowMenu.items.find((item: any) => item.label === 'Save').command()
+      await vi.waitFor(() => (
+        expect(persistenceA.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
+      ))
+      syncA.currentGraph.value = graphB
+      ui.markCanvasDirty(canvasA)
+      pendingFreshness.resolve(true)
+      await saving
+
+      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', { graph: graphA })
+      expect(queueDraft).not.toHaveBeenCalled()
+      expect(queueGraph).toHaveBeenCalledWith(graphB)
+      expect(syncA.currentGraph.value).toEqual(graphB)
+      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
+      wrapper.unmount()
+    })
+
+    it('marks the canvas clean when a newer edit converges back to graph A during preservation', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const graphA: GraphState = { nodes: [], edges: [] }
+      const graphB: GraphState = {
+        nodes: [{
+          id: 'temporary-node',
+          name: 'Temporary node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
+      const syncA = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+        getWorkflowId: () => 'a',
+      })
+      syncA.currentGraph.value = graphA
+      const persistenceA = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+        canvasA,
+        ROOT_PERSISTENCE_RESOURCE,
+      )!
+      vi.spyOn(persistenceA, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+      const queueDraft = vi.spyOn(persistenceA, 'queueDraft').mockImplementation(() => {})
+      vi.spyOn(persistenceA, 'queueGraph').mockImplementation(() => {})
+      const pendingPreservation = deferred<void>()
+      const flush = vi.spyOn(persistenceA, 'flush')
+        .mockReturnValueOnce(pendingPreservation.promise)
+        .mockResolvedValue(undefined)
+      const pendingSave = deferred<{ data: WorkflowInfo }>()
+      apiMocks.put.mockReturnValueOnce(pendingSave.promise)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.markCanvasDirty(canvasA)
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      const saving = workflowMenu.items.find((item: any) => item.label === 'Save').command()
+      await vi.waitFor(() => expect(apiMocks.put).toHaveBeenCalledOnce())
+      syncA.currentGraph.value = graphB
+      ui.markCanvasDirty(canvasA)
+      pendingSave.resolve({ data: workflowA })
+      await vi.waitFor(() => expect(flush).toHaveBeenCalledOnce())
+
+      syncA.currentGraph.value = graphA
+      ui.markCanvasDirty(canvasA)
+      pendingPreservation.resolve()
+      await saving
+
+      expect(queueDraft).toHaveBeenCalledWith(graphA)
+      expect(flush).toHaveBeenCalledTimes(2)
+      expect(syncA.currentGraph.value).toEqual(graphA)
+      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('preserves graph B when it lands after the preservation check resolves', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const graphA: GraphState = { nodes: [], edges: [] }
+      const graphB: GraphState = {
+        nodes: [{
+          id: 'newer-node',
+          name: 'Newer node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: {},
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
+      const syncA = useGraphSync({
+        descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+        getWorkflowId: () => 'a',
+      })
+      const persistenceA = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+        canvasA,
+        ROOT_PERSISTENCE_RESOURCE,
+      )!
+      let liveGraph = graphA
+      let injectNewerGraphOnRead = false
+      Object.defineProperty(persistenceA, 'currentGraph', {
+        configurable: true,
+        value: {
+          get value() {
+            const result = liveGraph
+            if (injectNewerGraphOnRead) {
+              injectNewerGraphOnRead = false
+              queueMicrotask(() => {
+                liveGraph = graphB
+                useUIStore().markCanvasDirty(canvasA)
+              })
+            }
+            return result
+          },
+        },
+      })
+      vi.spyOn(persistenceA, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+      const queueDraft = vi.spyOn(persistenceA, 'queueDraft').mockImplementation((graph) => {
+        liveGraph = graph
+      })
+      vi.spyOn(persistenceA, 'flush').mockResolvedValue(undefined)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.markCanvasDirty(canvasA)
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      apiMocks.put.mockImplementationOnce(async () => {
+        injectNewerGraphOnRead = true
+        return { data: workflowA }
+      })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      await workflowMenu.items.find((item: any) => item.label === 'Save').command()
+
+      expect(queueDraft).not.toHaveBeenCalled()
+      expect(liveGraph).toEqual(graphB)
+      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
+      syncA.dispose()
+      wrapper.unmount()
+    })
+
+    it('saves graph A while preserving graph B as the dirty accepted draft when the save PUT is delayed', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      const graphA: GraphState = { nodes: [], edges: [] }
+      const graphB: GraphState = {
+        nodes: [{
+          id: 'newer-node',
+          name: 'Newer node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: { value: 'graph-b' },
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
+      const workflowB = { name: 'b', display_name: 'Workflow B' } as WorkflowInfo
+      let savedGraph = graphA
+      let draftRevision = 1
+      let acceptedDraft: WorkflowDraftResponse = {
+        draft_version: 1,
+        workflow_id: 'a',
+        base_saved_revision: 'sha256:graph-a',
+        draft_revision: draftRevision,
+        updated_at: '2026-07-16T10:00:00Z',
+        updated_by: 'frontend',
+        dirty_against_saved: false,
+        graph: graphA,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+      }
+      const descriptorA = { kind: 'root', canvasId: canvasA, workflowId: 'a' } as const
+      canvasSessionRegistry.register(descriptorA)
+      const persistenceA = getOrCreateRootPersistenceResource({
+        descriptor: descriptorA,
+        getWorkflowId: () => 'a',
+        transports: {
+          fetchDraft: vi.fn(async () => acceptedDraft),
+          putDraft: vi.fn(async (_workflowId, body) => {
+            draftRevision += 1
+            acceptedDraft = {
+              ...acceptedDraft,
+              draft_revision: draftRevision,
+              base_saved_revision: 'sha256:graph-a',
+              dirty_against_saved: JSON.stringify(body.graph) !== JSON.stringify(savedGraph),
+              graph: JSON.parse(JSON.stringify(body.graph)) as GraphState,
+            }
+            return acceptedDraft
+          }),
+          writeRecovery: vi.fn(async () => {}),
+        },
+      })
+      persistenceA.initializeFromDraft(acceptedDraft)
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA, workflowB]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      ui.markCanvasDirty(canvasA)
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      const pendingSave = deferred<{ data: WorkflowInfo }>()
+      apiMocks.put.mockReturnValueOnce(pendingSave.promise)
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      const saving = workflowMenu.items.find((item: any) => item.label === 'Save').command()
+      await vi.waitFor(() => expect(apiMocks.put).toHaveBeenCalledOnce())
+      expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', { graph: graphA })
+
+      persistenceA.queueGraph(graphB)
+      ui.markCanvasDirty(canvasA)
+      canvasSessionRegistry.activate(canvasB)
+      persistenceMocks.canvasId = canvasB
+      store.current = workflowB
+      savedGraph = JSON.parse(JSON.stringify(graphA)) as GraphState
+      pendingSave.resolve({ data: workflowA })
+      await saving
+
+      expect(savedGraph).toEqual(graphA)
+      expect(acceptedDraft.graph).toEqual(graphB)
+      expect(acceptedDraft.dirty_against_saved).toBe(true)
+      expect(persistenceA.currentGraph.value).toEqual(graphB)
+      expect(persistenceA.acceptedDraftRevision.value).toBe(draftRevision)
+      expect(persistenceA.isPending.value).toBe(false)
+      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
+      expect(store.currentName).toBe('b')
+      wrapper.unmount()
+    })
+
+    it('keeps graph B dirty and accepted when it is edited during the graph A draft flush', async () => {
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const graphA: GraphState = { nodes: [], edges: [] }
+      const graphB: GraphState = {
+        nodes: [{
+          id: 'newer-node',
+          name: 'Newer node',
+          tool_name: 'tool',
+          position: [0, 0],
+          parameters: { value: 'graph-b' },
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
+      let draftRevision = 1
+      let acceptedDraft: WorkflowDraftResponse = {
+        draft_version: 1,
+        workflow_id: 'a',
+        base_saved_revision: 'sha256:graph-a',
+        draft_revision: draftRevision,
+        updated_at: '2026-07-16T10:00:00Z',
+        updated_by: 'frontend',
+        dirty_against_saved: false,
+        graph: graphA,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+      }
+      const pendingDraftA = deferred<WorkflowDraftResponse>()
+      const putDraft = vi.fn((_workflowId: string, body: { graph: GraphState }) => {
+        if (putDraft.mock.calls.length === 1) return pendingDraftA.promise
+        draftRevision += 1
+        acceptedDraft = {
+          ...acceptedDraft,
+          draft_revision: draftRevision,
+          dirty_against_saved: JSON.stringify(body.graph) !== JSON.stringify(graphA),
+          graph: JSON.parse(JSON.stringify(body.graph)) as GraphState,
+        }
+        return Promise.resolve(acceptedDraft)
+      })
+      const descriptorA = { kind: 'root', canvasId: canvasA, workflowId: 'a' } as const
+      canvasSessionRegistry.register(descriptorA)
+      const persistenceA = getOrCreateRootPersistenceResource({
+        descriptor: descriptorA,
+        getWorkflowId: () => 'a',
+        transports: {
+          fetchDraft: vi.fn(async () => acceptedDraft),
+          putDraft,
+          writeRecovery: vi.fn(async () => {}),
+        },
+      })
+      persistenceA.initializeFromDraft(acceptedDraft)
+      const store = useWorkflowStore()
+      const ui = useUIStore()
+      store.workflows = [workflowA]
+      store.current = workflowA
+      ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+      ui.markCanvasDirty(canvasA)
+      canvasSessionRegistry.activate(canvasA)
+      persistenceMocks.canvasId = canvasA
+      apiMocks.put.mockResolvedValueOnce({ data: workflowA })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      const saving = workflowMenu.items.find((item: any) => item.label === 'Save').command()
+      await vi.waitFor(() => expect(putDraft).toHaveBeenCalledOnce())
+      expect(putDraft.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ graph: graphA }))
+
+      persistenceA.queueGraph(graphB)
+      ui.markCanvasDirty(canvasA)
+      draftRevision += 1
+      acceptedDraft = {
+        ...acceptedDraft,
+        draft_revision: draftRevision,
+        dirty_against_saved: false,
+        graph: graphA,
+      }
+      pendingDraftA.resolve(acceptedDraft)
+      await saving
+
+      expect(putDraft).toHaveBeenCalledTimes(3)
+      expect(putDraft.mock.calls[putDraft.mock.calls.length - 1]?.[1]).toEqual(expect.objectContaining({
+        graph: graphB,
+      }))
+      expect(acceptedDraft.graph).toEqual(graphB)
+      expect(acceptedDraft.dirty_against_saved).toBe(true)
+      expect(persistenceA.currentGraph.value).toEqual(graphB)
+      expect(persistenceA.acceptedDraftRevision.value).toBe(draftRevision)
+      expect(persistenceA.isPending.value).toBe(false)
+      expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
+      wrapper.unmount()
     })
 
     it('aborts Save when another canvas becomes active during the freshness barrier', async () => {

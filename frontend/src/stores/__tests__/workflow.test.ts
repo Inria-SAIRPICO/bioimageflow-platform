@@ -121,7 +121,7 @@ describe('workflow store', () => {
     expect(drafts.remoteAvailableRevision).toBeNull()
   })
 
-  it('finishes a delayed save against its original canvas and workflow', async () => {
+  it('finishes a delayed save against its original canvas without claiming it is clean', async () => {
     const canvasA = canvasIdFromPanelId('workflow:a')
     const canvasB = canvasIdFromPanelId('workflow:b')
     canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
@@ -173,7 +173,7 @@ describe('workflow store', () => {
     expect(ui.activeWorkflowId).toBe('b')
     expect(ui.activeWorkflowName).toBe('Workflow B')
     expect(ui.hasUnsavedChanges).toBe(true)
-    expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(false)
+    expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
   })
 
   it('finishes a delayed rename against its original canvas presentation', async () => {

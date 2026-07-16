@@ -478,7 +478,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     await autoSave.clearAutoSave(workflowId(data))
     if (target === undefined) {
       setCurrent(data)
-      markPresentationClean()
       await autoSave.setLastOpenedWorkflow(workflowId(data))
       return data
     }
@@ -491,7 +490,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
       workflowId(data),
       data.display_name,
     )
-    uiStore.markCanvasClean(target.canvasId)
     if (
       canvasSessionRegistry.activeCanvasId.value === target.canvasId
       && currentName.value === targetWorkflowName

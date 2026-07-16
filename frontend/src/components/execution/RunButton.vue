@@ -13,6 +13,7 @@ import {
 } from '@/utils/executionSelection'
 import type { GraphState, ValidationResult } from '@/api/types'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import { graphDocumentsEqual } from '@/sessions/graphDocument'
 
 const props = defineProps<{
   graph: GraphState
@@ -94,10 +95,17 @@ function currentExecutionGraph(): GraphState {
   return props.graphSync.currentGraph?.value ?? props.graph
 }
 
-function findOutOfDateNodes(graph: GraphState, nodes?: string[]): string[] {
-  const result: ValidationResult | null = props.graphSync.validationResult.value
+function findOutOfDateNodes(
+  result: ValidationResult | null,
+  graph: GraphState,
+  nodes?: string[],
+): string[] {
   if (!result || !result.node_statuses) return []
   return outOfDateNodeIdsForExecution(result.node_statuses, graph, nodes)
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 async function runCore(nodes?: string[]) {
@@ -107,7 +115,7 @@ async function runCore(nodes?: string[]) {
   if (!workflowName) return
   const isTargetActive = () => canvasPersistence.canvasId === targetCanvasId
     && activeWorkflowId.value === workflowName
-  let graph = currentExecutionGraph()
+  let graph = cloneJson(currentExecutionGraph())
   try {
     const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
     if (!isTargetActive()) return
@@ -119,37 +127,52 @@ async function runCore(nodes?: string[]) {
       })
       return
     }
-    // Pending validation is a command barrier, not a reason to disable Run.
-    // Refresh before deriving the confirmation set so that decision belongs
-    // to the exact graph the user is about to submit.
-    await props.graphSync.flushNow()
-    if (!isTargetActive()) return
-    graph = currentExecutionGraph()
-    const outOfDate = findOutOfDateNodes(graph, nodes)
-    if (outOfDate.length > 0) {
-      const ok = await confirmOutOfDate(outOfDate)
-      if (!ok) return
+    while (true) {
+      // Pending validation is a command barrier, not a reason to disable Run.
+      // Each iteration captures one exact validated graph and draft revision.
+      await props.graphSync.flushNow()
       if (!isTargetActive()) return
+      const preparedGraph = cloneJson(currentExecutionGraph())
+      const preparedValidation = cloneJson(props.graphSync.validationResult.value)
+      const preparedDraftRevision = canvasPersistence.acceptedDraftRevision.value
+      if (targetCanvasId !== null && preparedDraftRevision === null) {
+        throw new Error('An accepted draft revision is required for execution')
+      }
+      const outOfDate = findOutOfDateNodes(
+        preparedValidation,
+        preparedGraph,
+        nodes,
+      )
+      if (outOfDate.length > 0) {
+        const ok = await confirmOutOfDate(outOfDate)
+        if (!ok) return
+        if (!isTargetActive()) return
+        if (
+          !graphDocumentsEqual(currentExecutionGraph(), preparedGraph)
+          || canvasPersistence.acceptedDraftRevision.value !== preparedDraftRevision
+        ) {
+          continue
+        }
+      }
+
+      graph = preparedGraph
+      const started = await lockForExecution({
+        graph: preparedGraph,
+        nodes,
+        validationResult: preparedValidation,
+        workflowName,
+        isTargetActive,
+        ...(targetCanvasId !== null
+          ? {
+              canvasId: targetCanvasId,
+              acceptedDraftRevision: preparedDraftRevision,
+            }
+          : {}),
+      })
+      if (!started || !isTargetActive()) return
+      emit('run-started')
+      return
     }
-    const draftRevision = canvasPersistence.acceptedDraftRevision.value
-    if (targetCanvasId !== null && draftRevision === null) {
-      throw new Error('An accepted draft revision is required for execution')
-    }
-    const started = await lockForExecution({
-      graph,
-      nodes,
-      graphSync: props.graphSync,
-      workflowName,
-      isTargetActive,
-      ...(targetCanvasId !== null
-        ? {
-            canvasId: targetCanvasId,
-            acceptedDraftRevision: canvasPersistence.acceptedDraftRevision,
-          }
-        : {}),
-    })
-    if (!started || !isTargetActive()) return
-    emit('run-started')
   } catch (e: unknown) {
     const err = e as { response?: { status?: number }; message?: string }
     const status = err?.response?.status

@@ -174,12 +174,9 @@ describe('RunButton', () => {
     await nextTick()
     await nextTick()
 
-    expect(flushNow).toHaveBeenCalledTimes(2)
+    expect(flushNow).toHaveBeenCalledOnce()
     expect(runSpy).toHaveBeenCalledOnce()
     expect(flushNow.mock.invocationCallOrder[0]).toBeLessThan(
-      runSpy.mock.invocationCallOrder[0]!,
-    )
-    expect(flushNow.mock.invocationCallOrder[1]).toBeLessThan(
       runSpy.mock.invocationCallOrder[0]!,
     )
   })
@@ -459,7 +456,7 @@ describe('RunButton', () => {
     await nextTick()
     await nextTick()
 
-    expect(flushNow).toHaveBeenCalledTimes(2)
+    expect(flushNow).toHaveBeenCalledTimes(1)
     expect(runSpy).toHaveBeenCalled()
   })
 
@@ -505,6 +502,125 @@ describe('RunButton', () => {
     await nextTick()
     await nextTick()
     expect(runSpy).toHaveBeenCalled()
+  })
+
+  it('requires fresh confirmation when the graph changes while confirmation is open', async () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
+    useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
+    canvasSessionRegistry.activate(canvasId)
+    persistenceMocks.canvasId = canvasId
+    persistenceMocks.acceptedDraftRevision.value = 7
+    const graphA: GraphState = {
+      nodes: [{
+        id: 'node-a',
+        name: 'Node A',
+        tool_name: 'tool',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    const graphB: GraphState = {
+      nodes: [{
+        id: 'node-b',
+        name: 'Node B',
+        tool_name: 'tool',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    const { wrapper, currentGraph, validationResult, flushNow } = mountButton({
+      validationResult: {
+        valid: true,
+        node_statuses: {
+          'node-a': { node_id: 'node-a', status: 'out_of_date', cached: false },
+        },
+        errors: [],
+      },
+    })
+    currentGraph.value = graphA
+    const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    expect(wrapper.emitted('confirm-required')).toEqual([[['node-a']]])
+
+    currentGraph.value = graphB
+    validationResult.value = {
+      valid: true,
+      node_statuses: {
+        'node-b': { node_id: 'node-b', status: 'out_of_date', cached: false },
+      },
+      errors: [],
+    }
+    persistenceMocks.acceptedDraftRevision.value = 8
+    await wrapper.find('[data-testid="out-of-date-continue"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(flushNow).toHaveBeenCalledTimes(2)
+    expect(wrapper.emitted('confirm-required')).toEqual([
+      [['node-a']],
+      [['node-b']],
+    ])
+    expect(runSpy).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="out-of-date-continue"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(flushNow).toHaveBeenCalledTimes(2)
+    expect(runSpy).toHaveBeenCalledWith(graphB, undefined, 'wf_a', {
+      canvasId,
+      draftRevision: 8,
+    })
+  })
+
+  it('does not redirect a confirmed run when another canvas becomes active', async () => {
+    const canvasA = canvasIdFromPanelId('workflow:a')
+    const canvasB = canvasIdFromPanelId('workflow:b')
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'wf_a' })
+    canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'wf_b' })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasA, 'wf_a', 'Workflow A')
+    ui.setCanvasWorkflow(canvasB, 'wf_b', 'Workflow B')
+    canvasSessionRegistry.activate(canvasA)
+    persistenceMocks.canvasId = canvasA
+    persistenceMocks.acceptedDraftRevision.value = 7
+    const { wrapper, flushNow } = mountButton({
+      validationResult: {
+        valid: true,
+        node_statuses: {
+          n1: { node_id: 'n1', status: 'out_of_date', cached: false },
+        },
+        errors: [],
+      },
+    })
+    const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
+
+    await wrapper.find('[data-testid="run-workflow-button"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="out-of-date-confirm"]').exists()).toBe(true)
+
+    canvasSessionRegistry.activate(canvasB)
+    persistenceMocks.canvasId = canvasB
+    await wrapper.find('[data-testid="out-of-date-continue"]').trigger('click')
+    await nextTick()
+    await nextTick()
+
+    expect(flushNow).toHaveBeenCalledOnce()
+    expect(runSpy).not.toHaveBeenCalled()
+    expect(wrapper.emitted('run-started')).toBeUndefined()
   })
 
   it('run aborts on cancel', async () => {

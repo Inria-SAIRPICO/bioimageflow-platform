@@ -63,11 +63,10 @@ describe('useExecutionLock', () => {
     },
   )
 
-  it('lockForExecution flushes graph sync, then calls run when valid', async () => {
+  it('lockForExecution submits the exact prepared graph when valid', async () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
 
-    const flushNow = vi.fn(async () => {})
     const validationResult = ref<ValidationResult | null>({
       valid: true,
       node_statuses: {},
@@ -78,33 +77,26 @@ describe('useExecutionLock', () => {
     const graph = { nodes: [], edges: [] }
     await lockForExecution({
       graph,
-      graphSync: { flushNow, validationResult },
+      validationResult: validationResult.value,
       workflowName: 'wf_a',
     })
 
-    expect(flushNow).toHaveBeenCalled()
     expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a')
   })
 
-  it('captures the accepted draft revision after the final graph flush', async () => {
+  it('submits the prepared accepted draft revision', async () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
     const canvasId = canvasIdFromPanelId('workflow:a')
     const graph = { nodes: [], edges: [] }
-    const acceptedDraftRevision = ref<number | null>(7)
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
 
     await lockForExecution({
       graph,
-      graphSync: {
-        flushNow: vi.fn(async () => {
-          acceptedDraftRevision.value = 8
-        }),
-        validationResult: ref({ valid: true, node_statuses: {}, errors: [] }),
-      },
+      validationResult: { valid: true, node_statuses: {}, errors: [] },
       canvasId,
       workflowName: 'wf_a',
-      acceptedDraftRevision,
+      acceptedDraftRevision: 8,
     })
 
     expect(runSpy).toHaveBeenCalledWith(graph, undefined, 'wf_a', {
@@ -113,39 +105,30 @@ describe('useExecutionLock', () => {
     })
   })
 
-  it('lockForExecution aborts if its canvas target changes while graph sync flushes', async () => {
+  it('lockForExecution aborts if its prepared canvas target is no longer active', async () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
-    let resolveFlush!: () => void
-    const flushNow = vi.fn(() => new Promise<void>((resolve) => {
-      resolveFlush = resolve
-    }))
     const validationResult = ref<ValidationResult | null>({
       valid: true,
       node_statuses: {},
       errors: [],
     })
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
-    let targetActive = true
 
-    const result = lockForExecution({
+    await expect(lockForExecution({
       graph: { nodes: [], edges: [] },
-      graphSync: { flushNow, validationResult },
+      validationResult: validationResult.value,
       workflowName: 'wf_a',
-      isTargetActive: () => targetActive,
-    })
-    targetActive = false
-    resolveFlush()
+      isTargetActive: () => false,
+    })).resolves.toBe(false)
 
-    await expect(result).resolves.toBe(false)
     expect(runSpy).not.toHaveBeenCalled()
   })
 
-  it('lockForExecution aborts if validation fails after flush', async () => {
+  it('lockForExecution aborts if prepared validation failed', async () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
 
-    const flushNow = vi.fn(async () => {})
     const validationResult = ref<ValidationResult | null>({
       valid: false,
       node_statuses: {},
@@ -164,12 +147,11 @@ describe('useExecutionLock', () => {
     await expect(
       lockForExecution({
         graph: { nodes: [], edges: [] },
-        graphSync: { flushNow, validationResult },
+        validationResult: validationResult.value,
         workflowName: 'wf_a',
       }),
     ).rejects.toThrow(/validation/i)
 
-    expect(flushNow).toHaveBeenCalled()
     expect(runSpy).not.toHaveBeenCalled()
   })
 
@@ -177,7 +159,6 @@ describe('useExecutionLock', () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
 
-    const flushNow = vi.fn(async () => {})
     const validationResult = ref<ValidationResult | null>({
       valid: true,
       node_statuses: {},
@@ -189,7 +170,7 @@ describe('useExecutionLock', () => {
     await lockForExecution({
       graph,
       nodes: ['n1', 'n2'],
-      graphSync: { flushNow, validationResult },
+      validationResult: validationResult.value,
       workflowName: 'wf_a',
     })
 
@@ -200,7 +181,6 @@ describe('useExecutionLock', () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
 
-    const flushNow = vi.fn(async () => {})
     const validationResult = ref<ValidationResult | null>({
       valid: false,
       node_statuses: {},
@@ -230,7 +210,7 @@ describe('useExecutionLock', () => {
     await lockForExecution({
       graph: graph as never,
       nodes: ['selected'],
-      graphSync: { flushNow, validationResult },
+      validationResult: validationResult.value,
       workflowName: 'wf_a',
     })
 

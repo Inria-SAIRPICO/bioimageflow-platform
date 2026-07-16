@@ -331,6 +331,9 @@ async function onWorkflowDialogSubmit(payload: {
     const copiedWorkflowName = workflowId(info)
     if (target.canvasId === null) {
       await workflowStore.saveWorkflow(target.graph)
+      if (graphDocumentsEqual(currentGraph.value, target.graph)) {
+        workflowStore.markClean()
+      }
     } else {
       await workflowStore.saveWorkflow(target.graph, {
         canvasId: target.canvasId,
@@ -416,16 +419,16 @@ function isFixedRootSaveTargetAvailable(
     && persistence.workflowId.value === target.workflowName
 }
 
-function preserveNewerFixedTargetGraph(
+async function preserveNewerFixedTargetGraph(
   target: WorkflowSaveTarget,
   persistence: RootCanvasPersistenceResource,
   capturedGraph: GraphState,
-): boolean {
-  if (graphDocumentsEqual(persistence.currentGraph.value, capturedGraph)) return false
-  const latestGraph = persistence.currentGraph.value
+): Promise<void> {
+  if (graphDocumentsEqual(persistence.currentGraph.value, capturedGraph)) return
+  const latestGraph = cloneGraph(persistence.currentGraph.value)
   persistence.queueGraph(latestGraph)
   if (target.canvasId !== null) uiStore.markCanvasDirty(target.canvasId)
-  return true
+  await persistence.flush()
 }
 
 function cloneGraph(graph: GraphState): GraphState {
@@ -439,12 +442,16 @@ async function saveCurrentWorkflowGraph(
   } = {},
   target = currentSaveTarget(),
   fixedPersistence?: RootCanvasPersistenceResource,
+  initiatingGraph?: GraphState,
 ): Promise<WorkflowInfo | null> {
   const persistence = fixedPersistence ?? canvasPersistence
   const isTargetAvailable = fixedPersistence === undefined
     ? () => isSaveTargetActive(target)
     : () => isFixedRootSaveTargetAvailable(target, fixedPersistence)
   if (!isTargetAvailable()) return null
+  const capturedGraph = initiatingGraph === undefined
+    ? null
+    : cloneGraph(initiatingGraph)
   const fresh = await persistence.ensureFreshForCriticalOperation()
   if (!isTargetAvailable()) return null
   if (!fresh) {
@@ -452,9 +459,9 @@ async function saveCurrentWorkflowGraph(
     return null
   }
   if (!target.workflowName) return null
-  const graph = fixedPersistence
-    ? cloneGraph(fixedPersistence.currentGraph.value)
-    : currentGraph.value
+  const graph = capturedGraph ?? cloneGraph(
+    fixedPersistence?.currentGraph.value ?? currentGraph.value,
+  )
   const info = target.canvasId === null
     ? await workflowStore.saveWorkflow(graph)
     : await workflowStore.saveWorkflow(graph, {
@@ -462,17 +469,24 @@ async function saveCurrentWorkflowGraph(
         workflowName: target.workflowName,
       })
   if (!isTargetAvailable()) return null
-  if (
-    fixedPersistence
-    && preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
-  ) return null
+  if (fixedPersistence) {
+    await preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
+    if (
+      !isTargetAvailable()
+      || !graphDocumentsEqual(fixedPersistence.currentGraph.value, graph)
+    ) return null
+  }
   persistence.queueDraft(graph)
   await persistence.flush()
   if (!isTargetAvailable()) return null
-  if (
-    fixedPersistence
-    && preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
-  ) return null
+  if (fixedPersistence) {
+    await preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
+    if (
+      !isTargetAvailable()
+      || !graphDocumentsEqual(fixedPersistence.currentGraph.value, graph)
+    ) return null
+  }
+  workflowStore.markClean(target.canvasId ?? undefined)
   if (options.showSuccessToast !== false) {
     toast?.add({
       severity: 'success',
@@ -502,8 +516,20 @@ async function saveWorkflow(): Promise<void> {
     workflowDialogVisible.value = true
     return
   }
+  const fixedPersistence = target.canvasId === null
+    ? undefined
+    : getRootCanvasPersistenceResource(target.canvasId) ?? undefined
+  if (target.canvasId !== null && fixedPersistence === undefined) return
+  const initiatingGraph = cloneGraph(
+    fixedPersistence?.currentGraph.value ?? currentGraph.value,
+  )
   try {
-    await saveCurrentWorkflowGraph({ showSuccessToast: true }, target)
+    await saveCurrentWorkflowGraph(
+      { showSuccessToast: true },
+      target,
+      fixedPersistence,
+      initiatingGraph,
+    )
   } catch (err: unknown) {
     showError('Save workflow failed', err)
   }
