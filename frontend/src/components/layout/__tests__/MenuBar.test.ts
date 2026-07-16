@@ -85,6 +85,16 @@ import {
 } from '@/composables/useCanvasPersistence'
 import type { GraphState } from '@/api/types'
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 // PrimeVue Menubar uses matchMedia for responsive behavior
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -618,6 +628,28 @@ describe('MenuBar', () => {
       )
     })
 
+    it('releases the captured export target when the dialog is cancelled', async () => {
+      const workflow = useWorkflowStore()
+      workflow.current = {
+        name: 'cell_segmentation',
+        display_name: 'Cell segmentation',
+        path: '/tmp/cell_segmentation.json',
+        last_modified: '2026-04-29T00:00:00Z',
+      }
+      apiMocks.put.mockResolvedValueOnce({ data: workflow.current })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      workflowMenu.items.find((item: any) => item.label === 'Export').command()
+      vm.exportSaveDialogVisible = false
+      await vm.confirmExportCurrentWorkflow()
+
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(apiMocks.post).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
     it('keeps confirmed export bound to the root canvas that opened the dialog', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
       const canvasB = canvasIdFromPanelId('workflow:b')
@@ -716,6 +748,115 @@ describe('MenuBar', () => {
       expect(persistenceMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
       wrapper.unmount()
     })
+
+    it.each(['save', 'flush'] as const)(
+      'aborts fixed export and preserves a newer A edit arriving during %s',
+      async (phase) => {
+        const canvasA = canvasIdFromPanelId('workflow:a')
+        const canvasB = canvasIdFromPanelId('workflow:b')
+        const capturedGraphA: GraphState = { nodes: [], edges: [] }
+        const newerGraphA: GraphState = {
+          nodes: [{
+            id: 'newer-a-node',
+            name: 'Newer A node',
+            tool_name: 'tool',
+            position: [0, 0],
+            parameters: { value: 'newer-a' },
+            resources: {},
+            output_templates: {},
+            enabled: true,
+            collapsed: false,
+          }],
+          edges: [],
+        }
+        const graphB: GraphState = { nodes: [], edges: [] }
+        useGraphSync({
+          descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
+          getWorkflowId: () => 'a',
+        })
+        useGraphSync({
+          descriptor: { kind: 'root', canvasId: canvasB, workflowId: 'b' },
+          getWorkflowId: () => 'b',
+        })
+        const persistenceA = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+          canvasA,
+          ROOT_PERSISTENCE_RESOURCE,
+        )!
+        const persistenceB = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+          canvasB,
+          ROOT_PERSISTENCE_RESOURCE,
+        )!
+        persistenceA.currentGraph.value = capturedGraphA
+        persistenceB.currentGraph.value = graphB
+        vi.spyOn(persistenceA, 'ensureFreshForCriticalOperation').mockResolvedValue(true)
+        const queueDraftA = vi.spyOn(persistenceA, 'queueDraft')
+        const queueGraphA = vi.spyOn(persistenceA, 'queueGraph').mockImplementation(() => {})
+        const pendingFlush = deferred<void>()
+        const flushA = vi.spyOn(persistenceA, 'flush').mockImplementation(
+          phase === 'flush' ? () => pendingFlush.promise : async () => {},
+        )
+        const ensureFreshB = vi.spyOn(persistenceB, 'ensureFreshForCriticalOperation')
+          .mockResolvedValue(true)
+        const queueDraftB = vi.spyOn(persistenceB, 'queueDraft')
+        const flushB = vi.spyOn(persistenceB, 'flush').mockResolvedValue(undefined)
+        const workflowA = { name: 'a', display_name: 'Workflow A' } as any
+        const workflowB = { name: 'b', display_name: 'Workflow B' } as any
+        const pendingSave = deferred<{ data: typeof workflowA }>()
+        const store = useWorkflowStore()
+        const ui = useUIStore()
+        store.workflows = [workflowA, workflowB]
+        store.current = workflowA
+        ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
+        ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+        canvasSessionRegistry.activate(canvasA)
+        persistenceMocks.canvasId = canvasA
+        if (phase === 'save') {
+          apiMocks.put.mockReturnValueOnce(pendingSave.promise)
+        } else {
+          apiMocks.put.mockResolvedValueOnce({ data: workflowA })
+        }
+        const wrapper = mountMenuBar()
+        const vm = wrapper.vm as any
+        const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+        workflowMenu.items.find((item: any) => item.label === 'Export').command()
+        canvasSessionRegistry.activate(canvasB)
+        persistenceMocks.canvasId = canvasB
+        store.current = workflowB
+        const confirmation = vm.confirmExportCurrentWorkflow()
+        if (phase === 'save') {
+          await vi.waitFor(() => expect(apiMocks.put).toHaveBeenCalledOnce())
+        } else {
+          await vi.waitFor(() => expect(flushA).toHaveBeenCalledOnce())
+        }
+        persistenceA.currentGraph.value = newerGraphA
+        ui.markCanvasDirty(canvasA)
+        if (phase === 'save') {
+          pendingSave.resolve({ data: workflowA })
+        } else {
+          pendingFlush.resolve()
+        }
+        await confirmation
+
+        expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
+          graph: capturedGraphA,
+        })
+        expect(apiMocks.post).not.toHaveBeenCalled()
+        expect(persistenceA.currentGraph.value).toEqual(newerGraphA)
+        expect(queueGraphA).toHaveBeenCalledWith(newerGraphA)
+        expect(ui.canvasHasUnsavedChanges(canvasA)).toBe(true)
+        if (phase === 'save') {
+          expect(queueDraftA).not.toHaveBeenCalled()
+          expect(flushA).not.toHaveBeenCalled()
+        } else {
+          expect(queueDraftA).toHaveBeenCalledWith(capturedGraphA)
+        }
+        expect(ensureFreshB).not.toHaveBeenCalled()
+        expect(queueDraftB).not.toHaveBeenCalled()
+        expect(flushB).not.toHaveBeenCalled()
+        wrapper.unmount()
+      },
+    )
 
     it('aborts confirmed export when its root canvas was disposed', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')

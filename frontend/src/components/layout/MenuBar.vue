@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useTemplateRef } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
@@ -29,6 +37,7 @@ import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
+import { graphDocumentsEqual } from '@/sessions/graphDocument'
 import {
   canvasSessionRegistry,
   type CanvasId,
@@ -100,6 +109,9 @@ const deleteDialogWorkflow = computed(() => {
 const discardDialogVisible = ref(false)
 const exportSaveDialogVisible = ref(false)
 const exportDialogTarget = shallowRef<WorkflowExportTarget | null>(null)
+watch(exportSaveDialogVisible, (visible) => {
+  if (!visible) exportDialogTarget.value = null
+}, { flush: 'sync' })
 const aboutDialogVisible = ref(false)
 const renameDialogVisible = ref(false)
 const importRenameDialogVisible = ref(false)
@@ -404,6 +416,22 @@ function isFixedRootSaveTargetAvailable(
     && persistence.workflowId.value === target.workflowName
 }
 
+function preserveNewerFixedTargetGraph(
+  target: WorkflowSaveTarget,
+  persistence: RootCanvasPersistenceResource,
+  capturedGraph: GraphState,
+): boolean {
+  if (graphDocumentsEqual(persistence.currentGraph.value, capturedGraph)) return false
+  const latestGraph = persistence.currentGraph.value
+  persistence.queueGraph(latestGraph)
+  if (target.canvasId !== null) uiStore.markCanvasDirty(target.canvasId)
+  return true
+}
+
+function cloneGraph(graph: GraphState): GraphState {
+  return JSON.parse(JSON.stringify(graph)) as GraphState
+}
+
 async function saveCurrentWorkflowGraph(
   options: {
     showSuccessToast?: boolean
@@ -424,7 +452,9 @@ async function saveCurrentWorkflowGraph(
     return null
   }
   if (!target.workflowName) return null
-  const graph = fixedPersistence?.currentGraph.value ?? currentGraph.value
+  const graph = fixedPersistence
+    ? cloneGraph(fixedPersistence.currentGraph.value)
+    : currentGraph.value
   const info = target.canvasId === null
     ? await workflowStore.saveWorkflow(graph)
     : await workflowStore.saveWorkflow(graph, {
@@ -432,9 +462,17 @@ async function saveCurrentWorkflowGraph(
         workflowName: target.workflowName,
       })
   if (!isTargetAvailable()) return null
+  if (
+    fixedPersistence
+    && preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
+  ) return null
   persistence.queueDraft(graph)
   await persistence.flush()
   if (!isTargetAvailable()) return null
+  if (
+    fixedPersistence
+    && preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
+  ) return null
   if (options.showSuccessToast !== false) {
     toast?.add({
       severity: 'success',
