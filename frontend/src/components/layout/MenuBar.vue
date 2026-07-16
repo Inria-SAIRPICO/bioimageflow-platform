@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
@@ -10,7 +18,11 @@ import type { MenuItem } from 'primevue/menuitem'
 import { useUIStore, type ThemePreference } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useGraphSync } from '@/composables/useGraphSync'
-import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
+import {
+  getRootCanvasPersistenceResource,
+  useCanvasPersistence,
+  type RootCanvasPersistenceResource,
+} from '@/composables/useCanvasPersistence'
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useAutoSave } from '@/composables/useAutoSave'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
@@ -25,6 +37,7 @@ import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
+import { graphDocumentsEqual } from '@/sessions/graphDocument'
 import {
   canvasSessionRegistry,
   type CanvasId,
@@ -95,6 +108,10 @@ const deleteDialogWorkflow = computed(() => {
 })
 const discardDialogVisible = ref(false)
 const exportSaveDialogVisible = ref(false)
+const exportDialogTarget = shallowRef<WorkflowExportTarget | null>(null)
+watch(exportSaveDialogVisible, (visible) => {
+  if (!visible) exportDialogTarget.value = null
+}, { flush: 'sync' })
 const aboutDialogVisible = ref(false)
 const renameDialogVisible = ref(false)
 const importRenameDialogVisible = ref(false)
@@ -373,6 +390,11 @@ interface WorkflowSaveTarget {
   workflowName: string | null
 }
 
+interface WorkflowExportTarget extends WorkflowSaveTarget {
+  workflowName: string
+  persistence: RootCanvasPersistenceResource | null
+}
+
 function currentSaveTarget(): WorkflowSaveTarget {
   return {
     canvasId: canvasPersistence.canvasId,
@@ -385,28 +407,72 @@ function isSaveTargetActive(target: WorkflowSaveTarget): boolean {
     && activeWorkflowId.value === target.workflowName
 }
 
-async function saveCurrentWorkflowGraph(options: {
-  showSuccessToast?: boolean
-  conflictAction?: 'saving' | 'exporting'
-} = {}, target = currentSaveTarget()): Promise<WorkflowInfo | null> {
-  const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
-  if (!isSaveTargetActive(target)) return null
+function isFixedRootSaveTargetAvailable(
+  target: WorkflowSaveTarget,
+  persistence: RootCanvasPersistenceResource,
+): boolean {
+  return target.canvasId !== null
+    && getRootCanvasPersistenceResource(target.canvasId) === persistence
+    && persistence.workflowId.value === target.workflowName
+}
+
+function preserveNewerFixedTargetGraph(
+  target: WorkflowSaveTarget,
+  persistence: RootCanvasPersistenceResource,
+  capturedGraph: GraphState,
+): boolean {
+  if (graphDocumentsEqual(persistence.currentGraph.value, capturedGraph)) return false
+  const latestGraph = persistence.currentGraph.value
+  persistence.queueGraph(latestGraph)
+  if (target.canvasId !== null) uiStore.markCanvasDirty(target.canvasId)
+  return true
+}
+
+function cloneGraph(graph: GraphState): GraphState {
+  return JSON.parse(JSON.stringify(graph)) as GraphState
+}
+
+async function saveCurrentWorkflowGraph(
+  options: {
+    showSuccessToast?: boolean
+    conflictAction?: 'saving' | 'exporting'
+  } = {},
+  target = currentSaveTarget(),
+  fixedPersistence?: RootCanvasPersistenceResource,
+): Promise<WorkflowInfo | null> {
+  const persistence = fixedPersistence ?? canvasPersistence
+  const isTargetAvailable = fixedPersistence === undefined
+    ? () => isSaveTargetActive(target)
+    : () => isFixedRootSaveTargetAvailable(target, fixedPersistence)
+  if (!isTargetAvailable()) return null
+  const fresh = await persistence.ensureFreshForCriticalOperation()
+  if (!isTargetAvailable()) return null
   if (!fresh) {
     showDraftConflictWarning(options.conflictAction ?? 'saving')
     return null
   }
   if (!target.workflowName) return null
-  const graph = currentGraph.value
+  const graph = fixedPersistence
+    ? cloneGraph(fixedPersistence.currentGraph.value)
+    : currentGraph.value
   const info = target.canvasId === null
     ? await workflowStore.saveWorkflow(graph)
     : await workflowStore.saveWorkflow(graph, {
         canvasId: target.canvasId,
         workflowName: target.workflowName,
       })
-  if (!isSaveTargetActive(target)) return null
-  canvasPersistence.queueDraft(graph)
-  await canvasPersistence.flush()
-  if (!isSaveTargetActive(target)) return null
+  if (!isTargetAvailable()) return null
+  if (
+    fixedPersistence
+    && preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
+  ) return null
+  persistence.queueDraft(graph)
+  await persistence.flush()
+  if (!isTargetAvailable()) return null
+  if (
+    fixedPersistence
+    && preserveNewerFixedTargetGraph(target, fixedPersistence, graph)
+  ) return null
   if (options.showSuccessToast !== false) {
     toast?.add({
       severity: 'success',
@@ -445,19 +511,30 @@ async function saveWorkflow(): Promise<void> {
 
 function exportCurrentWorkflow(): void {
   if (executionStore.isMutationLocked) return
-  const name = activeWorkflowId.value
-  if (!name) return
+  const target = currentSaveTarget()
+  if (!target.workflowName) return
+  exportDialogTarget.value = {
+    ...target,
+    workflowName: target.workflowName,
+    persistence: target.canvasId === null
+      ? null
+      : getRootCanvasPersistenceResource(target.canvasId),
+  }
   exportSaveDialogVisible.value = true
 }
 
 async function confirmExportCurrentWorkflow(): Promise<void> {
   if (executionStore.isMutationLocked) return
+  const target = exportDialogTarget.value
+  exportDialogTarget.value = null
   exportSaveDialogVisible.value = false
+  if (!target) return
   try {
+    if (target.canvasId !== null && target.persistence === null) return
     const info = await saveCurrentWorkflowGraph({
       showSuccessToast: false,
       conflictAction: 'exporting',
-    })
+    }, target, target.persistence ?? undefined)
     if (!info) return
     await workflowStore.exportWorkflow(workflowId(info))
   } catch (err: unknown) {

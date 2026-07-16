@@ -149,6 +149,17 @@ export function getOrCreateRootPersistenceResource(
   ) as RootCanvasPersistenceResource
 }
 
+export function getRootCanvasPersistenceResource(
+  canvasId: CanvasId,
+): RootCanvasPersistenceResource | null {
+  const session = canvasSessionRegistry.get(canvasId)
+  if (session?.descriptor.kind !== 'root') return null
+  return canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
+    canvasId,
+    ROOT_PERSISTENCE_RESOURCE,
+  )
+}
+
 function createRootPersistenceResource(options: {
   canvasId: CanvasId
   initialWorkflowId: string | null
