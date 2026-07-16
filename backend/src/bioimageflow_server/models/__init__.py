@@ -21,6 +21,12 @@ from bioimageflow_server.models.graph import (
     PositionalEdge,
 )
 from bioimageflow_server.models.nodes import NodeDataResponse
+from bioimageflow_server.models.nested_workflow_snapshot import (
+    NestedSnapshotOwner,
+    NestedWorkflowSnapshotOpenRequest,
+    NestedWorkflowSnapshotPutRequest,
+    NestedWorkflowSnapshotResponse,
+)
 from bioimageflow_server.models.settings import OMEROInstance, Settings
 from bioimageflow_server.models.tools import (
     AppConfig,
@@ -104,6 +110,10 @@ __all__ = [
     "MissingTool",
     "MoveNodeOperation",
     "NodeState",
+    "NestedSnapshotOwner",
+    "NestedWorkflowSnapshotOpenRequest",
+    "NestedWorkflowSnapshotPutRequest",
+    "NestedWorkflowSnapshotResponse",
     "NodeStateMessage",
     "NodeStatus",
     "NodeDataResponse",
