@@ -896,7 +896,7 @@ describe('ToolsPanel', () => {
     const openPromise = vm.openInEditor('threshold')
 
     expect(onLoading).toHaveBeenCalledTimes(1)
-    expect(loadingDetails[0]).toEqual({ path: '' })
+    expect(loadingDetails[0]).toEqual({ path: '', requestId: expect.any(Number) })
     await vi.waitFor(() => expect(resolveOpen).toBeTypeOf('function'))
 
     resolveOpen({
@@ -910,7 +910,7 @@ describe('ToolsPanel', () => {
     })
     await openPromise
 
-    expect(loadingDetails).toEqual([{ path: '' }])
+    expect(loadingDetails).toEqual([{ path: '', requestId: expect.any(Number) }])
     window.removeEventListener('bif:open-code-editor-loading', onLoading)
   })
 

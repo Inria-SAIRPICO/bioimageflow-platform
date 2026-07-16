@@ -19,7 +19,7 @@ The BioImageFlow GUI is a desktop application for building, executing, and inspe
 
 Dataset management endpoints (Section 2.4.10) are available in both environments — they are the only way for a non-pywebview client to get bytes onto the server. In pywebview mode they are unused by the standard flows but still reachable.
 
-**Multi-user:** The MVP is single-user. The session system is deferred to a future version — it can be added as a middleware layer without breaking the API.
+**Collaboration:** The MVP is single-user. Multi-user authentication, collaborative editing, and CRDT merge semantics are deferred. Current revision checks detect stale writes but do not merge concurrent edits.
 
 **Language:** English only (no i18n for now).
 
@@ -41,28 +41,33 @@ Dataset management endpoints (Section 2.4.10) are available in both environments
 
 ### 2.2 Architecture: Draft-Backed Full-State Sync
 
-The frontend owns immediate interactive canvas state (nodes, edges, positions, parameters), and the backend live draft is the durable source of truth for the current editable workflow. The backend remains the validation and execution authority. `workflow.json` is the saved/exportable artifact; it is updated only by explicit save/promotion flows.
+Each frontend canvas owns its immediate graph snapshot, canvas identity, workflow or nested-snapshot identity, revision state, and synchronization resources. For a root workflow canvas, the backend live draft is the durable source of truth for the current editable graph. The backend remains the validation and execution authority. `workflow.json` is the saved/exportable artifact; it is updated only by explicit save/promotion flows.
 
-The frontend sends the full graph as JSON on meaningful changes. The backend stores the graph in the workflow draft, validates it, and returns errors. The backend is still stateless *between validation requests* except for draft files, agent context, and transient execution state. A server restart during execution loses the running workflow, but the latest editable graph can be recovered from the backend draft.
+Normal root-canvas synchronization sends complete graph snapshots to `PUT /workflow-drafts/{id}` with revision CAS. The accepted draft response is the ordinary persistence and validation authority: it returns the accepted graph, draft revision, validation errors, and derived node statuses together. Nested canvases use their private snapshot endpoint instead. `PUT /graph` remains a request-local, stateless compatibility and transient-validation endpoint; it does not persist a graph or select an active canvas.
+
+The backend is stateless between request-local validation calls except for workflow and draft files, private nested snapshots, agent workspace context, and transient execution state. A server restart during execution loses the running workflow, but root drafts and accepted nested snapshots remain recoverable.
 
 **Server state is minimal:**
 
 | State | Description |
 |-------|-------------|
 | `tool_registry: dict[str, type[BaseTool]]` | Discovered tools indexed by class name (the unique tool identifier) |
-| `workflow_id: str | None` | Currently open workflow identifier, relative to the user's workspace workflows tree |
+| `agent workspace context` | The active workflow id and draft revision written for external agents; this context does not select graph meaning for validation, persistence, or execution requests |
 | `execution_task: Task | None` | Handle to the currently running execution (for cancellation) |
 | `napari_launcher: NapariLauncher | None` | Manages the Napari process (lazily created) |
 
-There is no `last_valid_workflow` cache. The server rebuilds the Workflow from the submitted or selected draft graph on validation and execution paths.
+There is no `last_valid_workflow` cache and no authoritative backend editor session. Validation, full Run, and Clear compile the complete graph submitted to that request in its explicit workflow storage context. Run Selected derives the selected nodes plus their upstream dependencies from the submitted graph and validates and compiles only that execution subgraph.
 
 **Key design points:**
 - **Backend draft source of truth.** Open workflow state is persisted as a backend draft under the workflow directory. Frontend memory and IndexedDB are fallback/local interaction state, not the authoritative saved draft.
+- **Canvas-scoped ownership.** Every registered canvas owns its graph snapshot, identity, revision, persistence coordinator, and derived status projection. Active-canvas facades only route commands to that ownership boundary.
 - **Structured server-side graph editing for agents.** Normal canvas editing still sends full graph state. Agents use validated draft operations instead of hand-editing workflow JSON.
 - **Undo/redo is purely client-side.** The frontend maintains its own undo stack (snapshots of the graph state). No server round-trip needed. See [Section 4.6](#46-undoredo) for details.
 - **Validation is authoritative on the server.** The frontend may do lightweight client-side checks (cycle detection, basic type checks) for instant UX feedback, but the server is the final authority before execution.
 - **Vue Flow maintains the interactive graph client-side.** This approach keeps editing responsive while the backend draft provides durable state for agents, save, run, and export.
 - **Graph editing is locked during execution.** While a workflow is running, the frontend disables all graph mutations (node/edge creation, deletion, parameter changes). The user can only view data and logs. This avoids race conditions between the running workflow and user edits.
+
+**Compatibility and deferred architecture:** Frontend active-session facades retain a zero-registered-canvas compatibility mode for older callers and tests; normal multi-canvas operation always resolves an explicit registered canvas. Canvas synchronization uses revision CAS and explicit execution context, not CRDTs or graph-content digests. Generalized multi-file filesystem transactions are deferred; individual JSON persistence and targeted identity repairs remain atomic.
 
 ### 2.3 Tool Discovery and the Tool Store
 
@@ -326,14 +331,11 @@ workspace/
   outputs/       # workflow execution output and cache roots
 ```
 
-Saved workflows are organized under `workspace/workflows/` as folders. Each
-workflow is a directory that contains `workflow.json` and optional workflow-local
-files such as `tools/`. Workflow identifiers are slash-separated paths relative
-to `workspace/workflows/`, for example `segmentation/nuclei`. `name` remains in
-the wire model as a compatibility alias for the leaf slug, but new APIs and
-frontend state use `id`. Each folder or workflow path segment may contain
-letters, numbers, spaces, underscores, and hyphens. Empty segments, path
-traversal, and leading/trailing whitespace are rejected.
+Saved workflows are organized under `workspace/workflows/` as folders. Each workflow is a directory that contains `workflow.json` and optional workflow-local files such as `tools/`.
+
+Workflow identifiers are derived from their slash-separated directory paths relative to `workspace/workflows/`, for example `segmentation/nuclei`; they are not independent metadata. `name` remains in the wire model as a compatibility alias for the leaf slug, but new APIs and frontend state use `id`. Each folder or workflow path segment may contain letters, numbers, spaces, underscores, and hyphens. Empty segments, path traversal, and leading/trailing whitespace are rejected.
+
+Renaming or moving a workflow or containing folder changes every affected path-derived workflow id. If an affected workflow already has a draft, the backend validates it before the move and atomically rewrites only its embedded `workflow_id` after the move; workflows without drafts do not gain one. A defensive draft read repairs a valid legacy identity mismatch to the requested route without discarding unknown JSON fields.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -355,7 +357,7 @@ Draft endpoints keep unsaved workflow state available to the frontend and termin
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/workflow-drafts/{id}` | Return the live draft, or synthesize clean revision `0` from `workflow.json` when no draft exists. |
-| `PUT` | `/workflow-drafts/{id}` | Replace the live draft with a full graph using `expected_revision`; rejects stale revisions and execution locks. |
+| `PUT` | `/workflow-drafts/{id}` | Replace and validate the live draft using a complete graph and `expected_revision`; returns the accepted graph, incremented revision, validation result, and derived node statuses; rejects stale revisions and execution locks. |
 | `PATCH` | `/workflow-drafts/{id}` | Apply validated structured draft operations for agents, using `expected_revision`. |
 
 
@@ -448,6 +450,8 @@ class NodeStatus(BaseModel):
     cached: bool
     error: str | None = None             # Error message (only for status="failed")
     traceback: str | None = None         # Full traceback string (only for status="failed")
+    result_key: str | None = None        # Cache/result identity when available
+    record_id: str | None = None         # Record identity when available
 
 class GraphValidationError(BaseModel):
     """A single validation error."""
@@ -460,6 +464,7 @@ class GraphValidationError(BaseModel):
         "missing_package",
         "invalid_node_id",
         "invalid_edge_id",
+        "source_tool_upstream",
     ]
     detail: str
     node: str | None = None
@@ -467,7 +472,7 @@ class GraphValidationError(BaseModel):
     field: str | None = None
 
 class ValidationResult(BaseModel):
-    """Response from PUT /graph."""
+    """Validation returned by draft/snapshot persistence and PUT /graph."""
     valid: bool
     node_statuses: dict[str, NodeStatus] = {}
     errors: list[GraphValidationError] = []
@@ -475,13 +480,13 @@ class ValidationResult(BaseModel):
 
 **Node `id` vs `name`:** The `id` is the URL-safe, unique, special-character-free identifier used in API endpoints (e.g., `/nodes/{id}/data`) and edge references (`source_node`, `target_node`). The `name` is the human-readable display name shown on the canvas and in the Node Panel. The `id` is auto-generated from the tool's **class name** by converting CamelCase to snake_case and appending a numeric suffix for uniqueness (e.g., class `CellposeSegmenter` → id `"cellpose_segmenter_1"`). The `id` is stable once assigned — renaming the `name` does not change the `id`. All API endpoints and WebSocket messages use `id` (not `name`). The `name` is used only in UI display contexts.
 
-**Node ID validation:** The backend validates node ID uniqueness and format in `PUT /graph`. Duplicate or malformed IDs produce a `GraphValidationError` of type `"invalid_node_id"`.
+**Node ID validation:** The backend validates node ID uniqueness and format whenever it validates a graph, including draft, nested-snapshot, full Run, Clear, and request-local `/graph` paths. Run Selected performs the same validation on the selected-plus-upstream execution subgraph derived only from its submitted graph. Duplicate or malformed IDs produce a `GraphValidationError` of type `"invalid_node_id"`.
 
 **Edge IDs:** Edge IDs (`ColumnRefEdge.id`, `PositionalEdge.id`) are frontend-generated UUIDs (or nanoid). The backend validates uniqueness; duplicate or missing edge IDs produce a `GraphValidationError` of type `"invalid_edge_id"`.
 
 **Positional index normalization:** The backend normalizes `positional_index` values on `PositionalEdge`s: it sorts by `positional_index` and reassigns `0..N-1`. This makes the frontend resilient to gaps after edge disconnection.
 
-Note: `NodeStatus` is used both in the `PUT /graph` response and in WebSocket `node_state` messages — the same schema for both, avoiding the inconsistency of having `status` vs `ui_status` in different contexts.
+Note: `NodeStatus` is used in accepted draft and nested-snapshot validation results, the direct `PUT /graph` compatibility response, execution status, Clear responses, and WebSocket `node_state` messages. The schema is shared, while its frontend projection remains canvas and execution-context scoped.
 
 Note: `NodeState` does not include `tool_version`. The `tool_package` and `tool_package_version` are stored in the library's serialization format (per node), not in the GUI's graph state. The server resolves tool versions from the tool store when building the Workflow.
 
@@ -499,6 +504,8 @@ The backend translation layer maps between the GUI schema and the library's `wor
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `PUT` | `/graph` | Submit the complete graph state for request-local validation. Returns validation and cache status derived only from that request snapshot. |
+
+Normal root canvases do not use this endpoint as their persistence authority; they use the validated `PUT /workflow-drafts/{id}` response. Nested canvases use validated private snapshot writes. `PUT /graph` is retained for zero-session compatibility callers and explicit transient validation, and it never stores an active graph for a later request.
 
 **Request body — example `GraphState`:**
 
@@ -581,13 +588,15 @@ The backend:
 4. Checks cache status for each node (compares current parameters + upstream signature against stored hashes)
 5. Returns the `ValidationResult` with per-node status
 
-**Validation timing and debouncing:** The frontend sends `PUT /graph` on structural changes (add/remove node, add/remove edge, parameter change confirmed by blur or Enter). Cosmetic-only changes (node position, collapsed state) do not trigger validation.
+**Validation timing and debouncing:** Each canvas publishes a complete immutable graph snapshot to its own synchronization coordinator. A root canvas queues validated draft persistence, while a nested canvas queues a validated private-snapshot replacement. The transport is debounced so newer snapshots supersede older pending work without sharing state between canvases.
 
-Changes are **debounced**: the frontend accumulates changes and sends `PUT /graph` after **300ms of inactivity**. During the debounce window, the frontend shows provisional client-side status with a subtle visual indicator (slightly desaturated colors) to signal "unconfirmed." If an edit occurs while a validation request is in flight, the in-flight request is cancelled and a new one is sent after the debounce window.
+Parameter edit commands first update the owning canvas graph, synchronously publish that complete graph snapshot, mark the edited node provisionally `unexecuted`, and mark existing status projections provisional. Draft or nested-snapshot persistence then runs through the canvas coordinator. `NodeState` itself never receives these provisional or derived status fields.
+
+During the debounce window, the frontend shows provisional client-side status with a subtle visual indicator to signal "unconfirmed." A newer edit supersedes an older pending snapshot, and stale responses cannot replace the owning canvas's newer graph or revision.
 
 **Ctrl+Enter** triggers immediate validation without waiting for the debounce.
 
-Parameter changes use the same full-state `PUT /graph` contract as structural changes. The server does not retain an active graph between requests, so validation meaning never depends on request history.
+All validation transports use complete graph payloads. The server does not infer graph meaning from request history or from another canvas.
 
 #### 2.4.4 Node Data (Outputs)
 
@@ -648,12 +657,14 @@ Or when unresolvable (e.g. required kwargs like `JoinOnColumn.join_column` not y
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/execution/run` | Submit graph + run (body: `{graph: GraphState, nodes?: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. |
+| `POST` | `/execution/run` | Submit graph + run (body: `{graph: GraphState, nodes?: [str], workflow_name: str, draft_revision?: int}`). `workflow_name` is required and validated as a workflow ID. Scoped root canvases also send their accepted draft revision. |
 | `POST` | `/execution/stop` | Stop the current execution |
 | `POST` | `/execution/clear` | Clear outputs for specified nodes (body: `{graph: GraphState, nodes: [str], workflow_name: str}`). `workflow_name` is required and validated as a workflow ID. The server compiles and validates the submitted graph in that workflow's storage context and rejects errors before invalidating cache. Returns updated `NodeStatus` for the cleared nodes and all downstream dependents. |
 | `GET` | `/execution/status` | Get full execution state (see response schema below) |
 
-The `run` endpoint accepts the full graph (same `GraphState` format as `PUT /graph`) and resolves cache state from the required workflow identity. This ensures the executed workflow always matches what the user sees and cannot fall back to a shared cache namespace. The backend validates, builds the Workflow, and executes. If `nodes` is provided, those nodes and all their out-of-date or unexecuted dependencies are re-executed — stale cached results are never used. If `nodes` is omitted, all enabled unexecuted/out-of-date nodes are executed.
+The `run` endpoint derives all execution meaning from the graph submitted with that request in the required workflow's storage context; it never loads graph meaning from a backend editor session or substitutes a different draft graph. A full Run validates and compiles that complete submitted graph. When `nodes` is provided, Run Selected first derives the selected nodes plus all upstream dependencies from the submitted graph, then validates and compiles only that execution subgraph.
+
+Every accepted Run creates an immutable execution context `{execution_id, workflow_id, draft_revision}`. The `202` response returns that context, `GET /execution/status` retains it with the current or last accepted execution, and progress, node-state, status-snapshot, and completion messages carry it. The execution lock remains global: only one execution may run in the process, even when several canvases are open.
 
 A second `POST /execution/run` while one is already running returns HTTP 409 Conflict.
 
@@ -666,6 +677,9 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
 ```json
 {
   "state": "idle",
+  "execution_id": "4af78551-23af-4f07-b41f-a18d857d8197",
+  "workflow_id": "segmentation/nuclei",
+  "draft_revision": 12,
   "last_result": {
     "success": true,
     "errors": [],
@@ -673,17 +687,24 @@ A second `POST /execution/run` while one is already running returns HTTP 409 Con
       "cellpose_segmenter_1": {"node_id": "cellpose_segmenter_1", "status": "executed", "cached": true}
     }
   },
-  "progress": null
+  "progress": null,
+  "node_statuses": {
+    "cellpose_segmenter_1": {"node_id": "cellpose_segmenter_1", "status": "executed", "cached": true}
+  }
 }
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `state` | `"running" \| "idle"` | Whether an execution is in progress |
-| `last_result` | `ExecutionResult \| null` | Final result of the last execution (same schema as `execution_complete` WebSocket message). Persists after execution ends, cleared on the next `POST /execution/run`. `null` if no execution has run since server start. |
-| `progress` | `ProgressInfo \| null` | Current progress (only when `state` is `"running"`): `{node_id, row, total_rows}` |
+| `last_result` | `ExecutionResult \| null` | Final result of the last execution (same result fields as `execution_complete`). Persists after execution ends and is cleared only when the next Run has been accepted after compilation. `null` if no execution has run since server start. |
+| `progress` | `ProgressInfo \| null` | Current progress (only when `state` is `"running"`): `{node_id, row, total_rows, result_key?, record_id?}` |
+| `node_statuses` | `dict[str, NodeStatus]` | Current or final statuses for the retained execution context |
+| `execution_id` | `str \| null` | Unique accepted execution identity |
+| `workflow_id` | `str \| null` | Path-derived workflow identity compiled for that execution |
+| `draft_revision` | `int \| null` | Accepted root draft revision supplied by the originating canvas, when available |
 
-This ensures that if the frontend misses the `execution_complete` WebSocket message (e.g., during a brief disconnection), it can recover the final state via this endpoint on reconnect.
+The frontend derives each canvas's visible status projection from its local provisional state, accepted validation result, and only those execution payloads whose workflow, origin canvas, and draft revision match. These statuses are never persisted into `NodeState`. `GET /execution/status` remains available for explicit status inspection and recovery callers, including external agents, without making request history a source of graph meaning. Normal WebSocket registration and reconnection recovery uses the contextual `status_snapshot` sent by the backend.
 
 #### 2.4.6 Settings
 
@@ -817,7 +838,7 @@ Per-file errors are returned in the `errors` array so that a partially successfu
 - **Path traversal prevention.** The server resolves the final storage path with `Path.resolve()` and verifies it starts with the configured `{datasets_root}`. Any escape attempt is rejected with HTTP 400 `{"error": "path_traversal", "detail": "Invalid filename"}`. This is defensive programming — sanitization already prevents path separators, but resolve-then-check is the authoritative gate.
 - **Content type.** No enforcement in v1. The `content_type` field is informational, derived from the extension.
 
-**Single-user note.** v1 is single-user (see Section 1), so datasets are shared across all sessions on the machine. Multi-user scoping (per-user directories, auth-based access control) is added in v3.
+**Single-user note.** v1 is single-user (see Section 1), so datasets are shared across all canvases and browser windows on the machine. Per-user directories, authentication, and collaborative access control are deferred.
 
 ### 2.5 WebSocket API
 
@@ -827,16 +848,20 @@ A single WebSocket connection at `/ws` provides real-time updates. Messages are 
 
 | Type | Payload | Description |
 |------|---------|-------------|
-| `progress` | `{node_id, status, row, total_rows, timestamp}` | Maps directly to BioImageFlow's `ProgressEvent` |
-| `node_state` | `{node_id, status, cached, error?, traceback?}` | Node state change. Uses the same `NodeStatus` schema as `PUT /graph` response. |
-| `log` | `{level, message, node_id?, timestamp}` | Log message (from BioImageFlow logger and worker forwarding) |
-| `execution_complete` | `{success, errors?: [...], node_statuses: dict[str, NodeStatus]}` | Workflow execution finished. Includes final per-node statuses (same schema as `PUT /graph` response), eliminating the need for a post-execution `PUT /graph` just to refresh statuses. |
+| `progress` | `{node_id, status, row, total_rows, timestamp, result_key?, record_id?, execution_id?, workflow_id?, draft_revision?}` | Progress for one accepted execution context |
+| `node_state` | `{node_id, status, cached, error?, traceback?, result_key?, record_id?, execution_id?, workflow_id?, draft_revision?}` | Node state change for one accepted execution context; status fields use the shared `NodeStatus` schema |
+| `log` | `{level, message, node_id?, timestamp}` | Unscoped log message from the BioImageFlow logger and worker forwarding; log payloads intentionally do not carry execution or canvas context |
+| `execution_complete` | `{success, errors?: [...], node_statuses: dict[str, NodeStatus], execution_id?, workflow_id?, draft_revision?}` | Workflow execution finished with final statuses for one accepted execution context |
+| `status_snapshot` | `{state, last_result?, progress?, node_statuses, execution_id?, workflow_id?, draft_revision?}` | Current or retained execution state sent on connection and used for context-aware recovery |
+| `workflow_draft_changed` | `{workflow_id, draft_revision, updated_by, updated_at, dirty_against_saved}` | A successful draft mutation for one path-derived workflow id |
 | `tool_reload` | `{tool_name, tool_metadata}` | A tool's source changed (file watcher). Includes full updated tool schema. |
 | `package_install` | `{package_name, status, detail?}` | Package installation progress (installing/complete/failed) |
 | `environment_status` | `{env_name: str, status: "stopped" | "creating" | "running"}` | Environment state change (asynchronous creation, manual start/stop) |
 | `ack` | `{ref: str}` | Acknowledges a client-to-server message (ref = the client's `message_id`) |
 
 There is no `workflow_saved` WebSocket event in the MVP contract. Save/export flows reconcile through the draft and workflow REST APIs instead of relying on a separate save notification.
+
+The frontend retains `workflow_draft_changed` notices by `workflow_id` instead of projecting every notice onto the active canvas. A clean matching root canvas auto-loads and applies the newer draft. A matching canvas with local edits or pending persistence keeps its graph and presents conflict resolution; inactive workflows retain their notice until tracked. Nested canvases do not auto-apply root-draft notices.
 
 **Client-to-server messages:**
 
@@ -847,7 +872,7 @@ All client-to-server messages include an optional `message_id: str` field. When 
 | `subscribe_logs` | `{message_id?, node_id?: str, level?: str}` | Filter log stream. After the `ack`, all subsequent `log` messages match the new filter. |
 
 **Reconnection strategy:** On WebSocket disconnect, the frontend uses exponential backoff (1s, 2s, 4s, 8s, max 30s) to reconnect. On reconnection, the frontend:
-1. Fetches `GET /execution/status` to resynchronize the full execution state, including per-node statuses (the response uses the same `NodeStatus` schema as WebSocket `node_state` messages, including `error` and `traceback` for failed nodes).
+1. Receives a contextual `status_snapshot` from the backend immediately after WebSocket registration. The frontend projects the retained execution state only onto the matching canvas and accepted draft revision.
 2. Fetches `GET /tools` to detect tool registry changes (e.g., if the tool store was modified during the disconnection or a server restart).
 3. Re-sends `subscribe_logs` with the previous filter (the subscription is server-side state tied to the WebSocket connection and is lost on disconnect). The frontend stores the last subscription filter locally.
 
@@ -974,11 +999,11 @@ Per-tool-type header pin rules:
 
 Disabled nodes are rendered at reduced opacity. Nodes downstream of a disabled node remain in their current status (typically "unexecuted") — no special visual treatment is needed since the disabled ancestor is visible in the graph.
 
-**Node status reconciliation:** Client-side status is **provisional** (for instant feedback based on local parameter comparison). Server-side status is **authoritative**. The reconciliation rules are:
+**Node status reconciliation:** Status is a derived canvas projection and is never stored in `NodeState`. Client-side status is provisional for immediate feedback, while accepted validation and matching execution context are authoritative. The reconciliation rules are:
 
-- **At rest (no execution):** The frontend displays server status from the last `PUT /graph` response. If a `PUT /graph` request is in flight (during the debounce window), the frontend shows its own provisional status with slightly desaturated colors to signal "unconfirmed."
-- **During execution:** WebSocket `node_state` messages override the last known status. These are authoritative during execution.
-- **After execution:** The frontend sends `PUT /graph` to get fresh status (cache hits may have changed). This replaces all provisional states.
+- **At rest (no execution):** A root canvas displays status from its last accepted validated draft response; a nested canvas uses its last accepted snapshot validation. During pending persistence, provisional statuses remain visible with a slightly desaturated treatment.
+- **On a parameter command:** The owning canvas synchronously publishes the updated graph, projects the edited node as provisional `unexecuted`, and keeps other known statuses provisional until validation accepts the new snapshot.
+- **During and after execution:** Contextual progress, `node_state`, status snapshots, and completion statuses override validation only for the root canvas whose workflow and accepted draft revision match that execution. Other canvases retain their own validation projection.
 
 **Node interactions:**
 - **Select:** Click a node. Shift+click toggles selection. Click on empty canvas clears selection.
@@ -1002,7 +1027,7 @@ Edges represent data flow between nodes. There are two kinds of edges (see [Sect
 - Drag from an output pin to an input pin (or vice versa).
 - The frontend performs lightweight client-side validation (cycle detection, basic type check, cross-region rejection) for instant feedback.
 - Invalid connections show a visual rejection (red flash + tooltip with reason).
-- After creation, the full graph is sent to `PUT /graph` for authoritative server validation.
+- After creation, the full graph is queued through the owning canvas's validated draft or nested-snapshot persistence path. Request-local `PUT /graph` remains the compatibility fallback when no scoped canvas exists.
 
 **Edge deletion:**
 - Select an edge and press Delete.
@@ -1286,8 +1311,7 @@ opened, or treated as workflow id collisions.
 
 **Panel layout:**
 
-- **Toolbar:** New workflow, New folder, Save, Duplicate, Import, Export,
-  Rename selected item, Delete selected item.
+- **Toolbar:** New workflow, New folder, Save, Duplicate, Import, Export, Edit selected item, Delete selected item. Editing a selected workflow changes its display name; editing a selected folder renames that folder.
 - **Search:** Filters by workflow display name, id, and folder name while
   preserving matching ancestors.
 - **Workflow tree:** Nested folders and workflows under `workspace/workflows/`.
@@ -1314,31 +1338,21 @@ indirectly are rejected. Dragging a folder onto another folder moves the full
 folder subtree, including child folders and workflows.
 
 **Actions:**
-- **New workflow:** Opens a creation dialog with fields: display name
-  (free-form), folder, id/slug (auto-generated from display name, editable, with
-  slash-separated safe path segments), and description (optional, multiline). On
-  id conflict, the server suggests an alternative. When a folder is selected in
-  the tree, the dialog creates the workflow inside that folder by default.
+- **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the filesystem id, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; explicit ids and paths remain API capabilities. On id conflict, the server suggests an alternative.
 - **New folder:** Creates a folder under the selected folder or the tree root.
 - **Open workflow:** Opens the selected saved workflow. Opening a new workflow closes the current one (with save prompt).
-- **Edit workflow:** Each workflow has an **Edit** action to modify display
-  name, description, folder, or slug. Moving or renaming changes the workflow
-  `id`; the frontend updates any current-workflow references atomically.
+- **Edit workflow:** The current panel edits a workflow's display name and description. These metadata updates preserve the path-derived workflow `id`. Dragging a workflow row to a folder is the current panel control for moving it; the resulting path and `id` change together, and any existing embedded draft identity follows that route. Editable slug and path-id fields remain API capabilities rather than current panel controls.
 - **Save:** Saves current workflow state including GUI state (Ctrl+S). The frontend flushes the current graph to the backend draft, verifies the draft revision, then saves/promotes that draft through the workflow save path. Saving always succeeds regardless of validation errors. Uses atomic writes (write to a temporary file, then rename) to prevent corruption on crashes or disk-full errors.
 - **Save as / Duplicate:** Save the current draft under a new id; duplicate saved workflows without copying stale unsaved state unless the current draft is explicitly saved as the new workflow.
 - **Import / Export:** Uses the BioImageFlow library import/export API. The
   platform does not reimplement the library archive format. Export saves/promotes
   a dirty draft first so the archive matches the current editable graph.
-- **Delete:** Delete with confirmation. Deletes the workflow file, workflow-local
-  `.bioimageflow` draft metadata, workspace-scoped output/cache directory, and
-  any local IndexedDB recovery state for this workflow. Folder deletion uses the platform dialog system. For non-empty
-  folders, the dialog offers three choices: delete all child workflows/folders,
-  move direct children up to the deleted folder's parent, or cancel.
+- **Delete:** Delete with confirmation. Deletes the workflow file, workflow-local `.bioimageflow` draft metadata, workspace-scoped output/cache directory, and any local IndexedDB recovery state for this workflow. A confirmed delete of the active root workflow may exempt only the root canvas owner captured when the dialog opened, and is rejected if any other root or nested canvas owns the same workflow. The captured root canvas closes only after the delete succeeds; a failed delete leaves it mounted and keeps the confirmation available for retry. All other identity-changing or removal operations require every affected workflow and sub-workflow tab to be closed before the request. Folder deletion uses the platform dialog system. For non-empty folders, the dialog offers three choices: delete all child workflows/folders, move direct children up to the deleted folder's parent, or cancel.
 
 ### 3.9 Execution Panel (Menu / Toolbar)
 
 **Buttons:**
-- **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" **Disabled** when a validation or draft save is pending. If clicked during the debounce window, the frontend flushes pending draft writes, checks draft revision freshness, waits for validation, and only then proceeds with execution. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
+- **Run Workflow**: Execute all enabled nodes that are Unexecuted or Out-of-date. Shows a confirmation dialog: "The following out-of-date nodes will be re-executed, replacing their previous outputs: [list]. Continue?" Pending validation or draft persistence is a command barrier rather than a disabled state: Run flushes the owning canvas, checks draft revision freshness, waits for accepted validation, and then submits that exact graph and revision. If validation fails after the flush, execution is aborted and a toast is shown: "Validation errors found — fix them before running."
 - **Run Selected:** Run only the currently selected nodes (and all their out-of-date or unexecuted dependencies). Sends `POST /execution/run` with `nodes` set to the selected node names. Also available via right-click context menu on selected nodes. Same debounce-flush behavior as Run Workflow.
 - **Stop:** Cancel the current execution. Visible only during execution.
 
@@ -1454,16 +1468,16 @@ A PrimeVue **Dialog** that replaces native file/folder dialogs in browser mode. 
 
 ### 4.1 Principle
 
-The **backend draft is the source of truth** for the current editable graph. The frontend remains the owner of immediate canvas interaction and optimistic local state. The server remains the authority for validation and execution. The workflow is:
+For a root workflow canvas, the **backend draft is the durable source of truth** for the current editable graph. The frontend canvas remains the owner of immediate interaction state and of the exact graph snapshot being queued. Every canvas has a stable canvas identity and owns its graph snapshot, workflow or nested-snapshot identity, semantic revision, accepted persistence revision, synchronization coordinator, undo history, and status projection.
 
-1. User edits the graph in the frontend (instant, no round-trip)
-2. Frontend debounces changes and sends the full graph to the backend draft API with `expected_revision`
-3. Backend stores the draft, validates it, and returns validation errors plus per-node status
-4. Frontend updates node visual states and records the accepted draft revision
-5. On save, save-as, new workflow creation flows, run, export, or editor/agent launch, the frontend flushes pending draft writes and checks revision freshness
-6. On run, the backend executes the selected/current draft revision after validation
-7. During execution, the Execution Banner is shown; graph mutations are locked; progress and state updates arrive via WebSocket
-8. On execution complete, the frontend refreshes statuses against the current graph/draft state
+1. A user command edits only its owning canvas and synchronously publishes one complete graph snapshot.
+2. Parameter commands also project the target node as provisional `unexecuted` before any asynchronous persistence starts.
+3. A root canvas debounces validated full-graph `PUT /workflow-drafts/{id}` writes with `expected_revision`; a nested canvas debounces revision-CAS snapshot writes.
+4. The accepted response updates only that canvas's graph, validation, and accepted draft or snapshot revision.
+5. Save, save-as, new workflow creation, Run, and export cross the owning root canvas's freshness barrier. Editor path and tool launches cross that same barrier for an active root canvas, flush the active private snapshot and wait for acceptance for an active nested canvas, or use the legacy draft flush only when no canvas session is registered.
+6. Run submits that canvas's exact graph plus workflow id and accepted draft revision. Full Run validates and compiles the complete submitted graph; Run Selected derives, validates, and compiles only the selected-plus-upstream execution subgraph from that submitted graph.
+7. During execution, graph mutations are globally locked; contextual progress and state updates arrive by WebSocket and are projected only onto the matching canvas.
+8. Draft-change notices are retained by workflow id. Clean matching canvases auto-apply, while dirty or pending canvases retain their graph and expose a conflict.
 
 `workflow.json` is a saved artifact, not the live editing source. Derived workflow/export sections are regenerated from the draft graph through the existing workflow save/export translation path.
 
@@ -1491,8 +1505,8 @@ The **backend draft is the source of truth** for the current editable graph. The
            |  (green)    | |   (red)   |
            +------+------+ +-----------+
                   |
-          change  |
-          params  v
+       validation |
+        cache miss v
            +------+------+
            | Out-of-date |
            |  (orange)   |
@@ -1507,7 +1521,7 @@ The **backend draft is the source of truth** for the current editable graph. The
 - **Cache is unaffected.** The `enabled` flag is NOT part of the signature hash. Re-enabling a node with unchanged parameters hits existing cache.
 - **Serialization:** The `enabled` flag is persisted in the workflow JSON (`"enabled": false` when disabled, omitted when enabled).
 
-**Out-of-date detection:** Out-of-date status is **server-authoritative**. The server determines whether a node is out-of-date by comparing the current parameters and upstream signature hashes against cached results (via `PUT /graph` response). The frontend does not maintain `last_execution_params` for out-of-date detection. When the user modifies parameters, the node status is shown as "unconfirmed" (desaturated) until the next `PUT /graph` response arrives.
+**Out-of-date detection:** Out-of-date status is server-authoritative. The server compares the submitted graph's current parameters and upstream signatures against cached results and returns the result in the accepted draft or nested-snapshot validation response (or direct `/graph` compatibility response). The frontend does not maintain `last_execution_params` for out-of-date detection. A parameter command immediately projects its target as provisional `unexecuted`; the accepted validation may then classify it as `out_of_date` when a stale cache entry exists.
 
 ### 4.3 Auto-Save and Startup Recovery
 
@@ -1529,7 +1543,7 @@ App starts
   +--> If backend draft exists or is synthesized:
   |      Load graph from the draft and record its revision
   |      Show unsaved indicator when dirty_against_saved is true
-  |      Send validation/status refresh as needed
+  |      Use the validation/status projection returned with that accepted draft
   |
   +--> If backend draft load fails but IndexedDB recovery exists:
   |      Load IndexedDB recovery state and schedule a draft save when the backend is available
@@ -1648,9 +1662,9 @@ On load, the server reports missing packages in the load response. The frontend 
 | 18 | `DELETE` | `/api/v1/workflows/{id}` | "Delete workflow" menu |
 | 19 | `PATCH` | `/api/v1/workflows/{id}` | Update, rename/move, or duplicate workflow |
 | 20 | `GET` | `/api/v1/workflow-drafts/{id}` | Workflow open/startup draft load; agent graph inspection |
-| 21 | `PUT` | `/api/v1/workflow-drafts/{id}` | Draft autosave/full-graph replacement with `expected_revision` |
+| 21 | `PUT` | `/api/v1/workflow-drafts/{id}` | Per-root-canvas full-graph persistence and validation with `expected_revision` |
 | 22 | `PATCH` | `/api/v1/workflow-drafts/{id}` | Structured validated draft operations for agents |
-| 23 | `PUT` | `/api/v1/graph` | Validation/status refresh for all meaningful graph changes |
+| 23 | `PUT` | `/api/v1/graph` | Stateless request-local compatibility or transient graph validation; normal root canvases use validated draft writes |
 | 24 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
 | 25 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
 | 26 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
@@ -1658,14 +1672,14 @@ On load, the server reports missing packages in the load response. The frontend 
 | 28 | `POST` | `/api/v1/execution/run` | "Run Workflow" / "Run Selected" buttons after draft freshness check |
 | 29 | `POST` | `/api/v1/execution/stop` | "Stop" button in execution banner |
 | 30 | `POST` | `/api/v1/execution/clear` | "Clear" button in Node Panel |
-| 31 | `GET` | `/api/v1/execution/status` | WebSocket reconnection; resync execution state |
+| 31 | `GET` | `/api/v1/execution/status` | Explicit execution status inspection and recovery; WebSocket registration sends `status_snapshot` automatically |
 | 32 | `GET` | `/api/v1/settings` | Opening Settings panel; startup |
 | 33 | `PATCH` | `/api/v1/settings` | Changing non-workspace settings |
 | 34 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
 | 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table |
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
-| 37 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells; agent/editor launch after draft flush |
-| 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links |
+| 37 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells after the active canvas persistence barrier |
+| 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links after the active canvas persistence barrier |
 | 39 | `GET` | `/api/v1/health` | Health check |
 | 40 | `GET` | `/api/v1/datasets` | Dataset Browser modal; populate list in browser mode |
 | 41 | `POST` | `/api/v1/datasets/upload` | Dataset Browser modal upload button; drag-and-drop in browser mode |

@@ -108,11 +108,16 @@ function dispatchWorkflowCommand(
 }
 
 async function runPanelAction(action: () => Promise<void>): Promise<void> {
+  workflowStore.error = null
   try {
     await action()
   } catch (error: unknown) {
     workflowStore.error = error instanceof Error ? error.message : String(error)
   }
+}
+
+function clearPanelActionError(): void {
+  workflowStore.error = null
 }
 
 function toPrimeTreeNodes(nodes: WorkflowTreeNode[]): WorkflowPrimeTreeNode[] {
@@ -634,8 +639,8 @@ defineExpose({
         icon="pi pi-pencil"
         text
         size="small"
-        aria-label="Rename selected item"
-        title="Rename selected item"
+        aria-label="Edit selected item"
+        title="Edit selected item"
         :disabled="!selectedWorkflow && !selectedFolder"
         data-testid="workflow-rename-selected-btn"
         @click="openRenameSelectedItem"
@@ -693,6 +698,25 @@ defineExpose({
       class="workflows-panel__tree-shell"
       data-testid="workflow-list"
     >
+      <div
+        v-if="workflowStore.error"
+        class="workflows-panel__error"
+        role="alert"
+        data-testid="workflow-action-error"
+      >
+        <i class="pi pi-exclamation-triangle workflows-panel__error-icon" aria-hidden="true" />
+        <span class="workflows-panel__error-copy">{{ workflowStore.error }}</span>
+        <Button
+          icon="pi pi-times"
+          text
+          size="small"
+          severity="secondary"
+          aria-label="Dismiss workflow action error"
+          title="Dismiss workflow action error"
+          data-testid="workflow-action-error-dismiss"
+          @click="clearPanelActionError"
+        />
+      </div>
       <Tree
         v-model:value="renderedTreeNodes"
         v-model:selectionKeys="selectedKeys"
@@ -806,13 +830,13 @@ defineExpose({
     <Dialog
       v-model:visible="folderDialogVisible"
       modal
-      :header="folderDialogMode === 'create' ? 'New folder' : folderDialogMode === 'rename-folder' ? 'Rename folder' : 'Rename workflow'"
+      :header="folderDialogMode === 'create' ? 'New folder' : folderDialogMode === 'rename-folder' ? 'Rename folder' : 'Edit workflow display name'"
       :style="{ width: '28rem' }"
       data-testid="workflow-folder-dialog"
     >
       <div class="folder-dialog-body">
         <label for="workflow-folder-name">
-          {{ folderDialogMode === 'rename-workflow' ? 'Workflow name' : 'Folder name' }}
+          {{ folderDialogMode === 'rename-workflow' ? 'Display name' : 'Folder name' }}
         </label>
         <InputText
           id="workflow-folder-name"
@@ -939,6 +963,31 @@ defineExpose({
 .workflows-panel__tree-shell {
   min-height: 0;
   overflow: auto;
+}
+
+.workflows-panel__error {
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--p-red-500, #dc2626) 9%, var(--bif-surface));
+  border: 1px solid color-mix(in srgb, var(--p-red-500, #dc2626) 45%, transparent);
+  border-radius: 4px;
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.45rem 0.5rem;
+}
+
+.workflows-panel__error-icon {
+  color: var(--p-red-600, #b91c1c);
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+}
+
+.workflows-panel__error-copy {
+  flex: 1 1 auto;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .workflow-tree {

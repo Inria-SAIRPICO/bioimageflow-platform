@@ -43,6 +43,8 @@ selected places the new workflow in that folder. Dragging workflows or folders
 onto a folder moves the corresponding workflow or full folder subtree. Only
 directories containing `workflow.json` are listed as workflows.
 
+Workflow ids are derived from these directory paths. Display metadata does not change identity. Moving a workflow or folder changes each affected id, and every existing moved draft is preflight-validated before its embedded `workflow_id` is atomically updated to the new route. A workflow without a draft remains without one. Mounted root and nested canvas identities are immutable, so the frontend rejects any affected rename, move, or promotion before the request until all workflow and sub-workflow tabs presenting those routes are closed. A confirmed deletion of the active root workflow may exempt only the root canvas captured when the dialog opened; it closes that canvas only after the delete succeeds, and any other root or nested owner still blocks the request. All other deletions require every affected workflow and sub-workflow tab to be closed first.
+
 The platform asks the BioImageFlow library to build and validate the
 sub-workflow. Recursive containment is rejected by the library validation layer;
 the platform surfaces that validation error in the GUI. A workflow cannot
@@ -68,7 +70,7 @@ contains A).
 - Saving a sub-workflow tab applies both the internal DAG and the published interface to the parent node. Publishing-only changes mark the tab dirty. If a published pin is renamed, existing parent edges targeting the same internal field/output are moved to the new handle. If a pin is unpublished, parent edges and stale parent-level parameter values for that pin are removed.
 - Opening a sub-workflow resolves or creates a private durable snapshot before the editor mounts. Root-owned snapshots are identified by the exact parent canvas and optional workflow ID; deeper snapshots are owned by their parent snapshot session.
 - Every nested edit replaces one complete `GraphState`, including its published interface, through revision-checked background persistence. The parent graph remains unchanged until explicit Save.
-- Save first flushes all queued edits, then applies the exact graph accepted by the snapshot API only to the addressed parent canvas. The nested session becomes clean only after that parent acknowledges the apply.
+- Save first flushes all queued edits, then applies the exact graph and published interface accepted by the snapshot API only to the addressed parent canvas as one undo transition. The nested session becomes clean only after that parent acknowledges the apply.
 - Parent apply is conditional on the parent's nested graph and published interface still matching the baseline captured when the editor opened or last saved. Unrelated parent edits are preserved, but a missing parent or independently changed nested graph/interface rejects the apply without a parent history transition and leaves the durable nested session dirty.
 - A confirmed discard flushes the latest private edit and deletes the snapshot with its accepted revision before local state is dropped. A canceled discard retains the session, and a process restart recovers the last accepted private snapshot.
 - Closing the sub-workflow tab returns focus to the parent workflow tab.
@@ -145,12 +147,9 @@ The root `GraphState` carries `published_inputs` and `published_outputs` in addi
 }
 ```
 
-Canvas tabs are unified: opening a saved workflow or opening a SubWorkflowNode creates a canvas tab named after that workflow/sub-workflow. The initial startup canvas tab is renamed to the loaded workflow display name as soon as its workflow context is known; it must not remain generically named "Canvas" after a workflow has loaded. The Node Panel, selected nodes, validation, and execution controls are scoped to the active canvas tab, and switching tabs updates the workflow title shown in the top bar. There is no separate sub-workflow-only editor toolbar.
+Canvas tabs are unified: opening a saved workflow or opening a SubWorkflowNode creates a canvas tab named after that workflow/sub-workflow. The initial startup canvas tab is renamed to the loaded workflow display name as soon as its workflow context is known; it must not remain generically named "Canvas" after a workflow has loaded. Each canvas owns its graph snapshot, root-workflow or private-snapshot identity, revision state, synchronization coordinator, undo history, and derived status projection. The Node Panel, selected nodes, validation, and execution controls resolve through the active canvas tab, and switching tabs updates the workflow title shown in the top bar. There is no separate sub-workflow-only editor toolbar.
 
-**Validation:** The `PUT /graph` endpoint calls the BioImageFlow library's
-recursive sub-workflow validator and surfaces scoped errors. Errors within a
-sub-workflow reference the scoped node path (e.g.,
-`"node": "segment_and_measure_1/cellpose_segmenter_1"`).
+**Validation:** Validated root draft writes and private nested-snapshot writes call the BioImageFlow library's recursive sub-workflow validator and surface scoped errors. The stateless `PUT /graph` compatibility/transient-validation endpoint invokes the same validator without persisting graph state. Errors within a sub-workflow reference the scoped node path, for example `"node": "segment_and_measure_1/cellpose_segmenter_1"`.
 
 ### 1.9 Integration with v1 Features
 
@@ -368,7 +367,7 @@ When pasting into a different workflow, the following resolution steps occur:
 ### 3.5 Integration with v1 Features
 
 - **Undo/redo:** Cross-workflow paste is undoable as a single step, same as within-workflow paste.
-- **Validation:** After paste, the frontend triggers a `PUT /graph` to validate the updated graph (via the standard debounce mechanism).
+- **Validation:** After paste, the frontend synchronously publishes the updated full graph through the owning canvas coordinator. A root canvas uses a validated draft write and a nested canvas uses a validated private-snapshot write; stateless `PUT /graph` remains only the zero-session compatibility fallback.
 - **SubWorkflowNodes:** Cross-workflow copy/paste of SubWorkflowNodes includes the full internal DAG in the clipboard payload.
 
 ---
@@ -742,7 +741,8 @@ New and modified endpoints introduced in v2:
 
 | Endpoint | Change |
 |----------|--------|
-| `PUT /api/v1/graph` | Now invokes the BioImageFlow library recursive sub-workflow validator. Errors reference scoped node paths. |
+| `PUT /api/v1/workflow-drafts/{id}` | Root-canvas full-graph persistence also returns recursive validation and derived statuses for the accepted draft revision. |
+| `PUT /api/v1/graph` | Stateless compatibility/transient validation invokes the BioImageFlow library recursive sub-workflow validator without retaining an active graph. Errors reference scoped node paths. |
 | `GET /api/v1/settings` | Response includes `external_editor` and `enable_unsafe_webapp_features` fields for code editor fallback and webapp debugging. |
 | `PATCH /api/v1/settings` | Accepts `external_editor` field updates. Rejects `enable_unsafe_webapp_features`; that flag is file-only. |
 

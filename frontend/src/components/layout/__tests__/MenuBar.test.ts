@@ -457,16 +457,23 @@ describe('MenuBar', () => {
       canvasSessionRegistry.activate(canvasA)
       persistenceMocks.canvasId = canvasA
       let resolveDelete!: (value: { data: { deleted: boolean } }) => void
-      apiMocks.delete.mockReturnValueOnce(new Promise((resolve) => {
-        resolveDelete = resolve
-      }))
+      apiMocks.delete.mockImplementationOnce(() => {
+        expect(canvasSessionRegistry.get(canvasA)).not.toBeNull()
+        return new Promise((resolve) => {
+          resolveDelete = resolve
+        })
+      })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
       workflow.items.find((item: any) => item.label === 'Delete').command()
       const closed: string[] = []
       const applied: any[] = []
-      const onClose = (event: Event) => closed.push((event as CustomEvent).detail.canvasId)
+      const onClose = (event: Event) => {
+        const canvasId = (event as CustomEvent).detail.canvasId
+        closed.push(canvasId)
+        canvasSessionRegistry.unregister(canvasId)
+      }
       const onApply = (event: Event) => applied.push((event as CustomEvent).detail)
       window.addEventListener('bioimageflow:close-canvas', onClose)
       window.addEventListener('bioimageflow:apply-graph', onApply)
@@ -483,6 +490,42 @@ describe('MenuBar', () => {
       expect(store.currentName).toBe('b')
       window.removeEventListener('bioimageflow:close-canvas', onClose)
       window.removeEventListener('bioimageflow:apply-graph', onApply)
+      wrapper.unmount()
+    })
+
+    it('keeps the confirmed canvas mounted when workflow deletion fails', async () => {
+      const canvasId = canvasIdFromPanelId('workflow:a')
+      canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'a' })
+      const workflow = { name: 'a', display_name: 'Workflow A' } as any
+      const store = useWorkflowStore()
+      store.workflows = [workflow]
+      store.current = workflow
+      useUIStore().setCanvasWorkflow(canvasId, 'a', 'Workflow A')
+      canvasSessionRegistry.activate(canvasId)
+      persistenceMocks.canvasId = canvasId
+      apiMocks.delete.mockRejectedValueOnce(new Error('delete failed'))
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+      workflowMenu.items.find((item: any) => item.label === 'Delete').command()
+      const closed: string[] = []
+      const onClose = (event: Event) => closed.push((event as CustomEvent).detail.canvasId)
+      window.addEventListener('bioimageflow:close-canvas', onClose)
+
+      await vm.confirmDeleteWorkflow()
+
+      expect(apiMocks.delete).toHaveBeenCalledWith('/api/v1/workflows/a')
+      expect(closed).toEqual([])
+      expect(canvasSessionRegistry.get(canvasId)).not.toBeNull()
+      expect(store.workflows).toEqual([workflow])
+      expect(vm.deleteDialogVisible).toBe(true)
+      expect(vm.deleteTargetName).toBe('a')
+      expect(vm.deleteCanvasTarget).toMatchObject({ canvasId, workflowName: 'a' })
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'error',
+        summary: 'Delete workflow failed',
+      }))
+      window.removeEventListener('bioimageflow:close-canvas', onClose)
       wrapper.unmount()
     })
 
@@ -1026,8 +1069,23 @@ describe('MenuBar', () => {
       wrapper.unmount()
     })
 
-    it('does not close a canvas when delayed deletion finishes after execution starts', async () => {
-      setActiveWorkflow()
+    it('closes the captured root and clears delete state when execution locks after success', async () => {
+      const canvasId = canvasIdFromPanelId('workflow:wf_a')
+      const workflowInfo = {
+        name: 'wf_a',
+        display_name: 'Workflow A',
+        description: null,
+        storage_path: '/tmp/workflows/wf_a',
+        path: '/tmp/workflows/wf_a.json',
+        last_modified: '2026-01-01T00:00:00Z',
+      }
+      const workflowStore = useWorkflowStore()
+      workflowStore.workflows = [workflowInfo]
+      workflowStore.current = workflowInfo
+      useUIStore().setCanvasWorkflow(canvasId, 'wf_a', 'Workflow A')
+      canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'wf_a' })
+      canvasSessionRegistry.activate(canvasId)
+      persistenceMocks.canvasId = canvasId
       let resolveDelete!: (value: { data: { deleted: boolean } }) => void
       apiMocks.delete.mockReturnValueOnce(new Promise((resolve) => {
         resolveDelete = resolve
@@ -1046,7 +1104,10 @@ describe('MenuBar', () => {
       resolveDelete({ data: { deleted: true } })
       await deletion
 
-      expect(closed).toEqual([])
+      expect(closed).toEqual([{ canvasId }])
+      expect(vm.deleteDialogVisible).toBe(false)
+      expect(vm.deleteTargetName).toBeNull()
+      expect(vm.deleteCanvasTarget).toBeNull()
       window.removeEventListener('bioimageflow:close-canvas', onClose)
       wrapper.unmount()
     })
@@ -1144,7 +1205,7 @@ describe('MenuBar', () => {
       confirmSpy.mockRestore()
     })
 
-    it('shows an edit-name affordance when a workflow is active', async () => {
+    it('labels workflow display-name editing accurately', async () => {
       const workflow = useWorkflowStore()
       workflow.current = {
         name: 'cell_segmentation',
@@ -1159,7 +1220,14 @@ describe('MenuBar', () => {
 
       const edit = wrapper.find('[data-testid="workflow-title-edit"]')
       expect(edit.exists()).toBe(true)
-      expect(edit.attributes('aria-label')).toBe('Rename workflow')
+      expect(edit.attributes('aria-label')).toBe('Edit workflow display name')
+      expect(edit.attributes('title')).toBe('Edit workflow display name')
+
+      await edit.trigger('click')
+      await flushPromises()
+      const dialog = document.body.querySelector('[data-testid="rename-workflow-dialog"]')
+      expect(dialog?.textContent).toContain('Edit workflow display name')
+      expect(dialog?.textContent).toContain('Display name')
     })
 
     it('save success toast uses the workflow display name', async () => {

@@ -3,6 +3,11 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { api } from '@/api/client'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
+import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import WorkflowsPanel from '../WorkflowsPanel.vue'
 import type { WorkflowInfo } from '@/api/types'
@@ -104,6 +109,7 @@ function mountPanel(items: WorkflowInfo[] = workflows) {
 
 describe('WorkflowsPanel', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     vi.mocked(api.get).mockReset()
     vi.mocked(api.post).mockReset()
@@ -441,7 +447,13 @@ describe('WorkflowsPanel', () => {
     })
     const wrapper = mountPanel()
 
-    await wrapper.find('[data-testid="workflow-rename-selected-btn"]').trigger('click')
+    const editSelected = wrapper.find('[data-testid="workflow-rename-selected-btn"]')
+    expect(editSelected.attributes('aria-label')).toBe('Edit selected item')
+    expect(editSelected.attributes('title')).toBe('Edit selected item')
+    await editSelected.trigger('click')
+    const dialog = wrapper.find('[data-testid="workflow-folder-dialog"]')
+    expect(dialog.attributes('header')).toBe('Edit workflow display name')
+    expect(dialog.text()).toContain('Display name')
     await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Alpha renamed')
     await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
     await flushPromises()
@@ -452,6 +464,72 @@ describe('WorkflowsPanel', () => {
       display_name: 'Alpha renamed',
     })
     expect(wrapper.find('[data-testid="workflow-row-alpha_api"]').text()).toContain('Alpha renamed')
+  })
+
+  it('shows and dismisses the close-tabs guard when a folder rename is blocked', async () => {
+    const nestedWorkflow: WorkflowInfo = {
+      ...workflows[0],
+      id: 'Analysis/alpha_api',
+      folder: 'Analysis',
+    }
+    const wrapper = mountPanel([nestedWorkflow])
+    const store = useWorkflowStore()
+    store.workflowFolders = [{ id: 'Analysis', name: 'Analysis', parentId: null }]
+    store.workflowFolderIds = { 'Analysis/alpha_api': 'Analysis' }
+    const canvasId = canvasIdFromPanelId('workflow:Analysis/alpha_api')
+    useUIStore().setCanvasWorkflow(canvasId, 'Analysis/alpha_api', 'Alpha Workflow')
+    canvasSessionRegistry.register({
+      kind: 'root',
+      canvasId,
+      workflowId: 'Analysis/alpha_api',
+    })
+    await flushPromises()
+
+    ;(wrapper.vm as any).selectFolder('Analysis')
+    await wrapper.find('[data-testid="workflow-rename-selected-btn"]').trigger('click')
+    await wrapper.find('[data-testid="workflow-folder-name-input"]').setValue('Published')
+    await wrapper.find('[data-testid="workflow-folder-dialog-submit"]').trigger('click')
+    await flushPromises()
+
+    const error = wrapper.find('[data-testid="workflow-action-error"]')
+    expect(error.attributes('role')).toBe('alert')
+    expect(error.text()).toMatch(/close.*workflow.*sub-workflow.*tab/is)
+    expect(api.patch).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-testid="workflow-action-error-dismiss"]').trigger('click')
+    expect(wrapper.find('[data-testid="workflow-action-error"]').exists()).toBe(false)
+  })
+
+  it('clears a blocked workflow move error when the next panel action succeeds', async () => {
+    const wrapper = mountPanel()
+    const store = useWorkflowStore()
+    store.workflowFolders = [{ id: 'Analysis', name: 'Analysis', parentId: null }]
+    store.workflowFolderIds = { alpha_api: null, beta_api: null }
+    const canvasId = canvasIdFromPanelId('workflow:alpha_api')
+    useUIStore().setCanvasWorkflow(canvasId, 'alpha_api', 'Alpha Workflow')
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'alpha_api' })
+    await flushPromises()
+
+    await dropTreeNode(wrapper, 'workflow-tree-workflow_alpha_api', (nodes, dragNode) => {
+      const targetFolder = findNode(nodes, 'workflow-tree-folder_Analysis')
+      targetFolder.children = [...(targetFolder.children ?? []), dragNode]
+      return nodes
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workflow-action-error"]').text()).toMatch(
+      /close.*workflow.*sub-workflow.*tab/is,
+    )
+    expect(api.patch).not.toHaveBeenCalled()
+
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { revealed: true } })
+    await (wrapper.vm as any).revealSelectedWorkflowFolder()
+    await flushPromises()
+
+    expect(api.post).toHaveBeenCalledWith('/api/v1/fs/reveal', {
+      path: '/library/workflows/alpha_api',
+    })
+    expect(wrapper.find('[data-testid="workflow-action-error"]').exists()).toBe(false)
   })
 
   it('offers delete-all and move-up policies when deleting a folder with children', async () => {

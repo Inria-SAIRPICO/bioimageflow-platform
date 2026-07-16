@@ -1819,6 +1819,10 @@ export interface components {
             description?: string | null;
             /** New Name */
             new_name?: string | null;
+            /** Folder */
+            folder?: string | null;
+            /** New Id */
+            new_id?: string | null;
             /** Storage Path */
             storage_path?: string | null;
         };

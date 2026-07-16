@@ -30,7 +30,40 @@ import type { WorkflowInfo } from '@/api/types'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
+  type CanvasId,
 } from '@/sessions/canvasSessionRegistry'
+
+function workflowInfo(id: string, displayName = id): WorkflowInfo {
+  const leaf = id.slice(id.lastIndexOf('/') + 1)
+  const folder = id.includes('/') ? id.slice(0, id.lastIndexOf('/')) : ''
+  return {
+    id,
+    name: leaf,
+    folder,
+    display_name: displayName,
+    path: `/tmp/${id}/workflow.json`,
+    last_modified: '2026-07-16T10:00:00Z',
+  }
+}
+
+function registerWorkflowCanvas(
+  workflowId: string,
+  kind: 'root' | 'nested' = 'root',
+): CanvasId {
+  const canvasId = canvasIdFromPanelId(`${kind}:${workflowId}`)
+  if (kind === 'root') {
+    canvasSessionRegistry.register({ kind, canvasId, workflowId })
+  } else {
+    canvasSessionRegistry.register({
+      kind,
+      canvasId,
+      sessionId: `session:${workflowId}`,
+      parentCanvasId: canvasIdFromPanelId(`parent:${workflowId}`),
+    })
+  }
+  useUIStore().setCanvasWorkflow(canvasId, workflowId, workflowId)
+  return canvasId
+}
 
 function noteRemoteDraft(workflowId: string, revision: number): void {
   useWorkflowDraftStore().noteRemoteChange({
@@ -212,12 +245,12 @@ describe('workflow store', () => {
     expect(ui.hasUnsavedChanges).toBe(true)
   })
 
-  it('updates active identity and autosave keys after canonical rename', async () => {
+  it('keeps identity and autosave keys stable after a display-name update', async () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
-        name: 'new_workflow',
+        name: 'Untitled',
         display_name: 'New workflow',
-        path: '/tmp/new_workflow.json',
+        path: '/tmp/Untitled.json',
         last_modified: '2026-04-30T12:00:00Z',
       },
     })
@@ -238,13 +271,13 @@ describe('workflow store', () => {
       display_name: 'New workflow',
     })
 
-    expect(renamed.name).toBe('new_workflow')
-    expect(store.currentName).toBe('new_workflow')
-    expect(store.workflows.map((workflow) => workflow.name)).toEqual(['new_workflow'])
-    expect(autoSaveMocks.renameWorkflow).toHaveBeenCalledWith('Untitled', 'new_workflow')
-    expect(autoSaveMocks.setLastOpenedWorkflow).toHaveBeenCalledWith('new_workflow')
+    expect(renamed.name).toBe('Untitled')
+    expect(store.currentName).toBe('Untitled')
+    expect(store.workflows.map((workflow) => workflow.name)).toEqual(['Untitled'])
+    expect(autoSaveMocks.renameWorkflow).not.toHaveBeenCalled()
+    expect(autoSaveMocks.setLastOpenedWorkflow).toHaveBeenCalledWith('Untitled')
     drafts.trackWorkflow('Untitled')
-    expect(drafts.remoteAvailableRevision).toBeNull()
+    expect(drafts.remoteAvailableRevision).toBe(4)
   })
 
   it('keeps the source workflow listed when duplicating', async () => {
@@ -440,6 +473,263 @@ describe('workflow store', () => {
       name: 'WorkflowConflictError',
       suggestedName: 'wf_2',
     })
+  })
+
+  it.each([
+    ['new_id', { new_id: 'Archive/renamed' }],
+    ['new_name', { new_name: 'renamed' }],
+    ['folder', { folder: 'Archive' }],
+  ])('rejects an open workflow update that changes identity through %s', async (_, identityPatch) => {
+    const store = useWorkflowStore()
+    const ui = useUIStore()
+    const workflow = workflowInfo('Analysis/alpha', 'Alpha')
+    store.workflows = [workflow]
+    store.workflowFolders = [
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+      { id: 'Archive', name: 'Archive', parentId: null },
+    ]
+    store.workflowFolderIds = { 'Analysis/alpha': 'Analysis' }
+    store.workflowOrder = ['Analysis/alpha']
+    const canvasId = registerWorkflowCanvas('Analysis/alpha')
+    const descriptor = canvasSessionRegistry.get(canvasId)?.descriptor
+
+    await expect(store.patchWorkflow('Analysis/alpha', {
+      action: 'update',
+      ...identityPatch,
+    })).rejects.toThrow(/close.*workflow.*sub-workflow.*tab/is)
+
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(autoSaveMocks.renameWorkflow).not.toHaveBeenCalled()
+    expect(store.workflows).toEqual([workflow])
+    expect(store.workflowFolderIds).toEqual({ 'Analysis/alpha': 'Analysis' })
+    expect(ui.canvasWorkflowId(canvasId)).toBe('Analysis/alpha')
+    expect(canvasSessionRegistry.get(canvasId)?.descriptor).toBe(descriptor)
+  })
+
+  it('allows display and metadata updates without changing an open workflow identity', async () => {
+    const store = useWorkflowStore()
+    const ui = useUIStore()
+    const workflow = workflowInfo('Analysis/alpha', 'Alpha')
+    store.workflows = [workflow]
+    const canvasId = registerWorkflowCanvas('Analysis/alpha')
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: {
+        ...workflow,
+        display_name: 'Renamed display',
+        description: 'Updated description',
+      },
+    })
+
+    const updated = await store.patchWorkflow('Analysis/alpha', {
+      action: 'update',
+      display_name: 'Renamed display',
+      description: 'Updated description',
+    }, {
+      canvasId,
+      workflowName: 'Analysis/alpha',
+    })
+
+    expect(api.patch).toHaveBeenCalledWith(
+      '/api/v1/workflows/Analysis/alpha',
+      {
+        action: 'update',
+        display_name: 'Renamed display',
+        description: 'Updated description',
+      },
+    )
+    expect(updated.id).toBe('Analysis/alpha')
+    expect(ui.canvasWorkflowId(canvasId)).toBe('Analysis/alpha')
+    expect(canvasSessionRegistry.get(canvasId)?.descriptor).toMatchObject({
+      kind: 'root',
+      workflowId: 'Analysis/alpha',
+    })
+  })
+
+  it('rejects workflow moves across folders while allowing same-folder reorder', async () => {
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+      { id: 'Archive', name: 'Archive', parentId: null },
+    ]
+    store.workflows = [
+      workflowInfo('Analysis/alpha', 'Alpha'),
+      workflowInfo('Analysis/beta', 'Beta'),
+      workflowInfo('Archive/gamma', 'Gamma'),
+    ]
+    store.workflowFolderIds = {
+      'Analysis/alpha': 'Analysis',
+      'Analysis/beta': 'Analysis',
+      'Archive/gamma': 'Archive',
+    }
+    store.workflowOrder = ['Analysis/beta', 'Analysis/alpha', 'Archive/gamma']
+    registerWorkflowCanvas('Analysis/alpha')
+
+    await expect(
+      store.moveWorkflowToFolder('Analysis/alpha', 'Archive'),
+    ).rejects.toThrow(/close.*tab/is)
+    await expect(
+      store.moveWorkflowBefore('Analysis/alpha', 'Archive/gamma'),
+    ).rejects.toThrow(/close.*tab/is)
+
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(store.workflowOrder).toEqual([
+      'Analysis/beta',
+      'Analysis/alpha',
+      'Archive/gamma',
+    ])
+
+    await store.moveWorkflowBefore('Analysis/alpha', 'Analysis/beta')
+
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(store.workflowOrder).toEqual([
+      'Analysis/alpha',
+      'Analysis/beta',
+      'Archive/gamma',
+    ])
+  })
+
+  it('rejects folder rename when a registered root canvas presents a descendant workflow', async () => {
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+      { id: 'Analysis/Nested', name: 'Nested', parentId: 'Analysis' },
+    ]
+    store.workflows = [workflowInfo('Analysis/Nested/alpha', 'Alpha')]
+    registerWorkflowCanvas('Analysis/Nested/alpha')
+
+    await expect(
+      store.renameWorkflowFolder('Analysis', 'Renamed'),
+    ).rejects.toThrow(/close.*workflow.*sub-workflow.*tab/is)
+
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(store.workflowFolders[0]).toEqual({
+      id: 'Analysis',
+      name: 'Analysis',
+      parentId: null,
+    })
+  })
+
+  it('rejects folder move when a registered nested canvas presents a descendant workflow', async () => {
+    const store = useWorkflowStore()
+    const ui = useUIStore()
+    store.workflowFolders = [
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+      { id: 'Analysis/Nested', name: 'Nested', parentId: 'Analysis' },
+      { id: 'Archive', name: 'Archive', parentId: null },
+    ]
+    store.workflows = [workflowInfo('Analysis/Nested/alpha', 'Alpha')]
+    const canvasId = registerWorkflowCanvas('Analysis/Nested/alpha', 'nested')
+    const descriptor = canvasSessionRegistry.get(canvasId)?.descriptor
+
+    await expect(
+      store.moveWorkflowFolder('Analysis/Nested', 'Archive'),
+    ).rejects.toThrow(/close.*workflow.*sub-workflow.*tab/is)
+
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(ui.canvasWorkflowId(canvasId)).toBe('Analysis/Nested/alpha')
+    expect(canvasSessionRegistry.get(canvasId)?.descriptor).toBe(descriptor)
+  })
+
+  it('rejects child promotion when a promoted workflow is open', async () => {
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+    ]
+    store.workflows = [workflowInfo('Analysis/alpha', 'Alpha')]
+    registerWorkflowCanvas('Analysis/alpha')
+
+    await expect(
+      store.deleteWorkflowFolder('Analysis', 'move_children_up'),
+    ).rejects.toThrow(/close.*tab/is)
+
+    expect(api.delete).not.toHaveBeenCalled()
+    expect(autoSaveMocks.renameWorkflow).not.toHaveBeenCalled()
+    expect(store.workflowFolders).toEqual([
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+    ])
+  })
+
+  it('rejects direct deletion while a nested canvas presents the workflow', async () => {
+    const store = useWorkflowStore()
+    const workflow = workflowInfo('Analysis/alpha', 'Alpha')
+    store.workflows = [workflow]
+    const canvasId = registerWorkflowCanvas('Analysis/alpha', 'nested')
+    const descriptor = canvasSessionRegistry.get(canvasId)?.descriptor
+
+    await expect(store.deleteWorkflow('Analysis/alpha')).rejects.toThrow(/close.*tab/is)
+
+    expect(api.delete).not.toHaveBeenCalled()
+    expect(autoSaveMocks.clearAutoSave).not.toHaveBeenCalled()
+    expect(store.workflows).toEqual([workflow])
+    expect(canvasSessionRegistry.get(canvasId)?.descriptor).toBe(descriptor)
+  })
+
+  it('allows direct deletion after the presenting canvas is unregistered', async () => {
+    const store = useWorkflowStore()
+    store.workflows = [workflowInfo('Analysis/alpha', 'Alpha')]
+    const canvasId = registerWorkflowCanvas('Analysis/alpha')
+    canvasSessionRegistry.unregister(canvasId)
+    vi.mocked(api.delete).mockResolvedValueOnce({ data: { deleted: true } })
+
+    await store.deleteWorkflow('Analysis/alpha')
+
+    expect(api.delete).toHaveBeenCalledWith('/api/v1/workflows/Analysis/alpha')
+    expect(store.workflows).toEqual([])
+  })
+
+  it('does not let a confirmed closing canvas exempt another open owner', async () => {
+    const store = useWorkflowStore()
+    store.workflows = [workflowInfo('Analysis/alpha', 'Alpha')]
+    const closingCanvasId = registerWorkflowCanvas('Analysis/alpha')
+    registerWorkflowCanvas('Analysis/alpha', 'nested')
+
+    await expect(store.deleteWorkflow('Analysis/alpha', {
+      closingCanvasId,
+    })).rejects.toThrow(/close.*tab/is)
+
+    expect(api.delete).not.toHaveBeenCalled()
+    expect(store.workflows).toHaveLength(1)
+  })
+
+  it('rejects deleting a folder subtree while any descendant workflow is open', async () => {
+    const store = useWorkflowStore()
+    store.workflowFolders = [
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+      { id: 'Analysis/Nested', name: 'Nested', parentId: 'Analysis' },
+    ]
+    store.workflows = [workflowInfo('Analysis/Nested/alpha', 'Alpha')]
+    registerWorkflowCanvas('Analysis/Nested/alpha')
+
+    await expect(
+      store.deleteWorkflowFolder('Analysis', 'delete_children'),
+    ).rejects.toThrow(/close.*tab/is)
+
+    expect(api.delete).not.toHaveBeenCalled()
+    expect(autoSaveMocks.clearAutoSave).not.toHaveBeenCalled()
+    expect(store.workflowFolders).toHaveLength(2)
+    expect(store.workflows).toHaveLength(1)
+  })
+
+  it('ignores stale workflow presentations after their canvas session closes', async () => {
+    const store = useWorkflowStore()
+    const canvasId = canvasIdFromPanelId('closed:Analysis/alpha')
+    store.workflowFolders = [
+      { id: 'Analysis', name: 'Analysis', parentId: null },
+      { id: 'Archive', name: 'Archive', parentId: null },
+    ]
+    store.workflows = [workflowInfo('Analysis/alpha', 'Alpha')]
+    store.workflowFolderIds = { 'Analysis/alpha': 'Analysis' }
+    store.workflowOrder = ['Analysis/alpha']
+    useUIStore().setCanvasWorkflow(canvasId, 'Analysis/alpha', 'Alpha')
+    vi.mocked(api.patch).mockResolvedValueOnce({
+      data: workflowInfo('Archive/alpha', 'Alpha'),
+    })
+
+    await store.moveWorkflowToFolder('Analysis/alpha', 'Archive')
+
+    expect(api.patch).toHaveBeenCalledOnce()
+    expect(store.workflows.map(workflow => workflow.id)).toEqual(['Archive/alpha'])
+    expect(useUIStore().canvasWorkflowId(canvasId)).toBe('Analysis/alpha')
   })
 
   it('organizes workflows into folders while exposing a flattened workflow list', async () => {
