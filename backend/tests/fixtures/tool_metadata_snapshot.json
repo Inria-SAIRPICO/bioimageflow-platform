@@ -20,6 +20,7 @@
       "max": 500.0,
       "min": 0.0,
       "nullable": false,
+      "path_picker": null,
       "required": false,
       "step": 0.5,
       "type": "float"
@@ -45,6 +46,7 @@
       "max": null,
       "min": null,
       "nullable": false,
+      "path_picker": null,
       "required": true,
       "step": null,
       "type": "ImageFile"
@@ -60,6 +62,7 @@
       "max": null,
       "min": null,
       "nullable": false,
+      "path_picker": null,
       "required": false,
       "step": null,
       "type": "str"
