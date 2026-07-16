@@ -39,6 +39,7 @@ import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
+import NapariProgressBanner from './components/execution/NapariProgressBanner.vue'
 import EnvironmentRecoveryDialog from './components/execution/EnvironmentRecoveryDialog.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetBrowserStore } from './stores/datasetBrowser'
@@ -725,6 +726,7 @@ defineExpose({ dockviewApi })
   <div id="bioimageflow-app">
     <MenuBar />
     <ExecutionBanner />
+    <NapariProgressBanner />
     <EnvironmentRecoveryDialog />
     <div class="dockview-wrapper">
       <DockviewVue

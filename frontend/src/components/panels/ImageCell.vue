@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
+import { useNapariStore } from '@/stores/napari'
 import PathCell from './PathCell.vue'
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ try {
 }
 
 const napariDisabled = ref(false)
+const napari = useNapariStore()
 const blobUrl = ref<string | null>(null)
 const thumbnailPending = ref(false)
 const fetchFailed = ref(false)
@@ -192,7 +194,7 @@ function showError(detail: string) {
 async function openNapari(event: MouseEvent) {
   if (napariDisabled.value) return
   try {
-    await api.post('/api/v1/napari/open', {
+    await napari.open({
       paths: [props.value],
       clear_layers: event.ctrlKey || event.metaKey,
       node_id: props.nodeId,
@@ -285,7 +287,7 @@ async function reveal() {
         text
         size="small"
         title="Open in Napari"
-        :disabled="napariDisabled"
+        :disabled="napariDisabled || napari.requestPending"
         :data-testid="`open-napari-${row}-${colSlug}`"
         @click="openNapari"
       />
