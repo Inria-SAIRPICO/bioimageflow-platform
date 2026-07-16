@@ -90,6 +90,19 @@ describe('NodeContextMenu', () => {
     expect(w.emitted('close')).toBeTruthy()
   })
 
+  it('emits close when an outside canvas element stops event propagation', () => {
+    const outside = document.createElement('div')
+    outside.addEventListener('mousedown', (event) => event.stopPropagation())
+    document.body.appendChild(outside)
+    const w = factory()
+
+    outside.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+
+    expect(w.emitted('close')).toBeTruthy()
+    w.unmount()
+    outside.remove()
+  })
+
   it('positions menu at given coordinates', () => {
     const w = factory()
     const menu = w.find('.node-context-menu')

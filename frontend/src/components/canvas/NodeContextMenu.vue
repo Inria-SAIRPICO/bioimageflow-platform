@@ -40,12 +40,14 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  document.addEventListener('mousedown', onClickOutside)
+  // Canvas controls may stop bubbling mouse events, so observe outside clicks
+  // during capture before they can be intercepted.
+  document.addEventListener('mousedown', onClickOutside, true)
   document.addEventListener('keydown', onKeydown)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('mousedown', onClickOutside)
+  document.removeEventListener('mousedown', onClickOutside, true)
   document.removeEventListener('keydown', onKeydown)
 })
 </script>
