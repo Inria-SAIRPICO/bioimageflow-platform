@@ -1,8 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const e2eRoot = join(tmpdir(), 'bioimageflow-platform-playwright');
+const e2eRoot = process.env.BIOIMAGEFLOW_E2E_ROOT
+  ?? mkdtempSync(join(tmpdir(), 'bioimageflow-platform-playwright-'));
 const frontendPort = process.env.BIOIMAGEFLOW_E2E_FRONTEND_PORT ?? '5173';
 const backendPort = process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000';
 const hotReloadFixture = join(
@@ -33,7 +35,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `cd ../backend && uv run uvicorn tests.e2e_app:create_app --factory --host 127.0.0.1 --port ${backendPort}`,
+      command: `cd ../backend && uv run --frozen uvicorn tests.e2e_app:create_app --factory --host 127.0.0.1 --port ${backendPort}`,
       url: `http://127.0.0.1:${backendPort}/api/v1/health`,
       reuseExistingServer: false,
       env: {

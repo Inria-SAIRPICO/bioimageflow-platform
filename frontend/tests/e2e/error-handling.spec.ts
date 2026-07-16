@@ -1,4 +1,34 @@
 import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
+
+function uniqueWorkflowName(): string {
+  const project = test.info().project.name.replace(/[^a-zA-Z0-9_-]/g, '_')
+  return `error_context_${project}_${Date.now()}_${Math.floor(Math.random() * 10000)}`
+}
+
+async function createAndOpenWorkflow(page: Page): Promise<string> {
+  const name = uniqueWorkflowName()
+  const displayName = `Error Context ${name}`
+  const created = await page.request.post(`${API_BASE}/api/v1/workflows`, {
+    data: { name, display_name: displayName },
+  })
+  expect(created.status()).toBe(201)
+  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
+    data: { graph: { nodes: [], edges: [] } },
+  })
+  expect(saved.ok()).toBeTruthy()
+
+  await page.goto('/')
+  await expect(page.locator('#bioimageflow-app')).toBeVisible()
+  await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
+  await page.getByTestId('workflow-search').fill(displayName)
+  await expect(page.getByTestId(`workflow-row-${name}`)).toBeVisible({ timeout: 5000 })
+  await page.getByTestId(`workflow-row-${name}`).dblclick()
+  await expect(page.getByTestId('workflow-title')).toContainText(displayName)
+  return name
+}
 
 /**
  * E2E coverage for the three-level error handling system (spec §3.11).
@@ -9,11 +39,20 @@ import { test, expect } from '@playwright/test'
  * deterministic tool registry.
  */
 test.describe('error handling', () => {
+  let workflowName = ''
+
   test.beforeEach(async ({ page }) => {
-    const seed = await page.request.post('/api/v1/dev/seed')
+    const seed = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
     expect(seed.ok()).toBeTruthy()
-    await page.goto('/')
-    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    workflowName = await createAndOpenWorkflow(page)
+  })
+
+  test.afterEach(async ({ page }) => {
+    if (workflowName) {
+      await page.request
+        .delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
+        .catch(() => undefined)
+    }
   })
 
   test('error indicator is hidden when no errors have occurred', async ({
@@ -22,52 +61,87 @@ test.describe('error handling', () => {
     await expect(page.locator('.error-indicator')).toHaveCount(0)
   })
 
-  test('graph_sync_error: indicator appears and history records the entry', async ({
+  test('contextual execution failure is recorded once in history and logger', async ({
     page,
   }) => {
-    // Intercept the next PUT /graph and force a network failure so the
-    // graph-sync layer reports a graph_sync_error.
-    await page.route('**/api/v1/graph', async (route, request) => {
-      if (request.method() === 'PUT') {
-        await route.abort('failed')
-      } else {
-        await route.continue()
-      }
-    })
+    const draftResponse = await page.request.get(
+      `${API_BASE}/api/v1/workflow-drafts/${workflowName}`,
+    )
+    expect(draftResponse.ok()).toBeTruthy()
+    const draftRevision = (await draftResponse.json()).draft_revision as number
 
-    // Trigger a sync by submitting a graph through the API client surface
-    // the app uses; this mirrors what the canvas would do after a node drop.
-    await page.evaluate(async () => {
-      const win = window as unknown as { __bif_test_trigger?: () => void }
-      // Direct drive: import the composable singleton and queue a sync.
-      // This is shallower than the real drag-drop flow but exercises the
-      // same error path.
-      const mod = await import('/src/composables/useGraphSync.ts')
-      const sync = mod.useGraphSync()
-      sync.syncGraph({ nodes: [], edges: [] })
-      await sync.flushNow()
-      void win.__bif_test_trigger
-    })
+    const result = await page.evaluate(
+      async ({ workflowId, revision }) => {
+        const { useExecutionStore } = await import('/src/stores/execution.ts')
+        const { useLoggerStore } = await import('/src/stores/logger.ts')
+        const execution = useExecutionStore()
+        const logger = useLoggerStore()
+        const executionId = `error-e2e-${Date.now()}`
+        const nodeId = 'failed_node'
 
-    // Indicator becomes visible after the failed sync.
+        // Worker logs are intentionally unscoped. A matching log can arrive
+        // before the contextual completion event, which must not duplicate it.
+        logger.addEntry({
+          level: 'ERROR',
+          message: 'boom\ntraceback-e2e',
+          nodeId,
+          timestamp: Date.now() / 1000,
+        })
+        execution.applyStatusSnapshot({
+          state: 'running',
+          last_result: null,
+          progress: null,
+          node_statuses: {},
+          execution_id: executionId,
+          workflow_id: workflowId,
+          draft_revision: revision,
+        })
+        execution.applyExecutionComplete({
+          success: false,
+          errors: [],
+          node_statuses: {
+            [nodeId]: {
+              node_id: nodeId,
+              status: 'failed',
+              cached: false,
+              error: 'boom',
+              traceback: 'traceback-e2e',
+            },
+          },
+          execution_id: executionId,
+          workflow_id: workflowId,
+          draft_revision: revision,
+        })
+        return logger.entries.filter(
+          (entry) => entry.level === 'ERROR' && entry.nodeId === nodeId,
+        ).length
+      },
+      { workflowId: workflowName, revision: draftRevision },
+    )
+    expect(result).toBe(1)
+
     await expect(page.locator('.error-indicator')).toBeVisible({
       timeout: 5000,
     })
-    // Unread badge shows 1.
     await expect(page.locator('.error-indicator .unread-badge')).toHaveText('1')
 
-    // Open the history panel.
     await page.locator('.error-indicator').click()
     const panel = page.locator('[data-testid="error-row"]').first()
     await expect(panel).toBeVisible()
-    await expect(panel).toContainText('Graph sync error')
+    await expect(panel).toContainText('Execution failed')
+    await expect(panel).toContainText('failed_node: boom')
 
-    // Dismiss the row; unread count drops, history still has the entry.
     await page
       .locator('[data-testid="error-row-dismiss"]')
       .first()
       .click()
     await expect(page.locator('.error-indicator .unread-badge')).toHaveCount(0)
+
+    await page.getByTestId('error-history-close').click()
+    await page.locator('.dv-tab').filter({ hasText: 'Logger' }).click()
+    const failureLog = page.getByTestId('log-entry').filter({ hasText: 'boom' })
+    await expect(failureLog).toHaveCount(1)
+    await expect(failureLog).toContainText('failed_node')
   })
 
   test('cycle detection produces a global banner above the canvas', async ({

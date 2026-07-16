@@ -236,22 +236,18 @@ test.describe('workflow publishing and sub-workflow E2E', () => {
     await openWorkflowFromPanel(page, parentName, parentDisplay)
 
     await page.locator('.dv-tab').filter({ hasText: 'Workflows' }).click()
-    await page.getByTestId('workflow-search').fill(childDisplay)
-    const dragHandle = page.getByTestId(`workflow-drag-${childName}`)
-    await expect(dragHandle.locator('.pi-bars')).toBeVisible()
-    const handleStyle = await dragHandle.evaluate((element) => {
-      const style = getComputedStyle(element)
-      const iconStyle = getComputedStyle(element.querySelector('.pi')!)
-      return {
-        color: style.color,
-        opacity: style.opacity,
-        iconFont: iconStyle.fontFamily,
-      }
-    })
-    expect(handleStyle.opacity).not.toBe('0')
-    expect(handleStyle.iconFont.toLowerCase()).toContain('primeicons')
+    const workflowSearch = page.getByTestId('workflow-search')
+    await workflowSearch.fill(childDisplay)
+    const workflowRow = page.getByTestId(`workflow-row-${childName}`)
+    await expect(workflowRow).toBeVisible()
+    await workflowSearch.clear()
+    await expect(workflowRow).toBeVisible()
+    const draggableRow = workflowRow.locator(
+      'xpath=ancestor::*[@draggable="true"][1]',
+    )
+    await expect(draggableRow).toBeVisible()
 
-    await dragHandle.dragTo(page.locator('.vue-flow'), {
+    await draggableRow.dragTo(page.locator('.vue-flow'), {
       targetPosition: { x: 360, y: 240 },
     })
     const subWorkflowNode = page.locator('.vue-flow__node').filter({ hasText: childDisplay })

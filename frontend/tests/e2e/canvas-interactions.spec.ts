@@ -43,16 +43,16 @@ async function addSeedNumbersNode(page: Page) {
   await page.locator('[data-testid="tool-search"]').fill(source.name)
   const tool = page.getByTestId(`tool-item-${source.name}`)
   await expect(tool).toBeVisible({ timeout: 5000 })
-  const graphResponse = page.waitForResponse(
+  const draftResponse = page.waitForResponse(
     (resp) =>
-      resp.url().includes('/api/v1/graph') &&
+      resp.url().includes('/api/v1/workflow-drafts/') &&
       resp.request().method() === 'PUT' &&
       resp.status() === 200,
   )
   await tool.dragTo(page.locator('.vue-flow'), {
     targetPosition: { x: 260, y: 180 },
   })
-  const response = await graphResponse
+  const response = await draftResponse
   const node = page.locator('.vue-flow__node').first()
   await expect(node).toBeVisible({ timeout: 5000 })
   return { node, tool: source, response }
@@ -78,7 +78,7 @@ test.describe('Canvas interactions', () => {
     ).toContainText(source.display_name)
   })
 
-  test('PUT /graph returns 200', async ({ page }) => {
+  test('node drop is accepted by workflow draft persistence', async ({ page }) => {
     const { response } = await addSeedNumbersNode(page)
     expect(response.status()).toBe(200)
   })

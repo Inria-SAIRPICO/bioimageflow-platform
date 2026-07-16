@@ -67,16 +67,16 @@ async function addSourceNode(page: Page, source: ToolMetadata) {
   await page.locator('[data-testid="tool-search"]').fill(source.name)
   const tool = page.getByTestId(`tool-item-${source.name}`)
   await expect(tool).toBeVisible({ timeout: 5000 })
-  const graphResponse = page.waitForResponse(
+  const draftResponse = page.waitForResponse(
     (resp) =>
-      resp.url().includes('/api/v1/graph') &&
+      resp.url().includes('/api/v1/workflow-drafts/') &&
       resp.request().method() === 'PUT' &&
       resp.status() === 200,
   )
   await tool.dragTo(page.locator('.vue-flow'), {
     targetPosition: { x: 300, y: 180 },
   })
-  await graphResponse
+  await draftResponse
   const node = page.locator('.vue-flow__node').first()
   await expect(node).toBeVisible({ timeout: 5000 })
   await expect(node.locator('.node-name')).toContainText(source.display_name)
