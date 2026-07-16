@@ -260,16 +260,21 @@ watch(validationResult, applyValidationToCanvas, { deep: true })
 // Live per-node status from the execution store takes precedence while an
 // execution is running and for its terminal transition. Later idle snapshots
 // must not overwrite validation for a graph edited after that execution.
+function applyExecutionStatusesToCanvas(statuses = executionStore.nodeStatuses): void {
+  if (!executionStore.appliesToCanvas(canvasId)) return
+  for (const node of getNodes.value) {
+    const status = statuses[node.id]
+    if (status && node.data && node.data.status !== status.status) {
+      node.data.status = status.status
+    }
+  }
+}
+
 watch(
   [() => executionStore.isRunning, () => executionStore.nodeStatuses],
   ([running, statuses], [wasRunning]) => {
     if (!statuses || (!running && !wasRunning)) return
-    for (const node of getNodes.value) {
-      const s = statuses[node.id]
-      if (s && node.data && node.data.status !== s.status) {
-        node.data.status = s.status
-      }
-    }
+    applyExecutionStatusesToCanvas(statuses)
   },
   { deep: true },
 )
@@ -570,6 +575,7 @@ async function applyGraphState(
     if (isCanvasUnmounted) return
     setEdges(vueFlowGraph.edges)
     applyValidationToCanvas()
+    if (executionStore.isRunning) applyExecutionStatusesToCanvas()
     if (isCanvasUnmounted) return
     const authoritativeGraph = rememberAuthoritativeGraph(graph)
     syncGraphState(authoritativeGraph)

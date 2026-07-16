@@ -21,6 +21,7 @@ from typing import Any, Protocol
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 
+from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.ws import ClientMessage, SubscribeLogsMessage
 
 
@@ -172,6 +173,7 @@ class ConnectionManager:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         payload = {
             "type": "progress",
@@ -182,6 +184,7 @@ class ConnectionManager:
             "timestamp": timestamp,
             "result_key": result_key,
             "record_id": record_id,
+            **_context_payload(context),
         }
         self._enqueue_all(payload)
 
@@ -194,6 +197,7 @@ class ConnectionManager:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         payload = {
             "type": "node_state",
@@ -204,6 +208,7 @@ class ConnectionManager:
             "traceback": traceback,
             "result_key": result_key,
             "record_id": record_id,
+            **_context_payload(context),
         }
         self._enqueue_all(payload)
 
@@ -231,6 +236,7 @@ class ConnectionManager:
         success: bool,
         errors: list,
         node_statuses: dict,
+        context: ExecutionContext | None = None,
     ) -> None:
         # ExecutionManager passes a dict[str, NodeStatus] (Pydantic models).
         # ``send_json`` uses plain ``json.dumps``, which can't serialize models —
@@ -243,6 +249,7 @@ class ConnectionManager:
                 k: v.model_dump() if hasattr(v, "model_dump") else v
                 for k, v in node_statuses.items()
             },
+            **_context_payload(context),
         }
         self._enqueue_all(payload)
 
@@ -379,6 +386,7 @@ class ConnectionManager:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         self._schedule(
             self.broadcast_progress(
@@ -389,6 +397,7 @@ class ConnectionManager:
                 timestamp,
                 result_key,
                 record_id,
+                context,
             ),
             "progress",
         )
@@ -402,6 +411,7 @@ class ConnectionManager:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         self._schedule(
             self.broadcast_node_state(
@@ -412,6 +422,7 @@ class ConnectionManager:
                 traceback,
                 result_key,
                 record_id,
+                context,
             ),
             "node_state",
         )
@@ -433,9 +444,10 @@ class ConnectionManager:
         success: bool,
         errors: list,
         node_statuses: dict,
+        context: ExecutionContext | None = None,
     ) -> None:
         self._schedule(
-            self.broadcast_execution_complete(success, errors, node_statuses),
+            self.broadcast_execution_complete(success, errors, node_statuses, context),
             "execution_complete",
         )
 
@@ -614,6 +626,10 @@ def _dump_plain(value: Any) -> Any:
     return value
 
 
+def _context_payload(context: ExecutionContext | None) -> dict[str, Any]:
+    return context.model_dump() if context is not None else {}
+
+
 def _status_snapshot_payload(status: Any) -> dict[str, Any]:
     if hasattr(status, "model_dump"):
         payload = status.model_dump()
@@ -630,13 +646,22 @@ def _status_snapshot_payload(status: Any) -> dict[str, Any]:
     if node_statuses is None:
         node_statuses = payload.get("node_statuses", {})
 
-    return {
+    result = {
         "type": "status_snapshot",
         "state": payload.get("state", "idle"),
         "last_result": _dump_plain(payload.get("last_result")),
         "progress": _dump_plain(payload.get("progress")),
         "node_statuses": _dump_plain(node_statuses or {}),
     }
+    execution_id = payload.get("execution_id")
+    workflow_id = payload.get("workflow_id")
+    if isinstance(execution_id, str) and isinstance(workflow_id, str):
+        result.update(
+            execution_id=execution_id,
+            workflow_id=workflow_id,
+            draft_revision=payload.get("draft_revision"),
+        )
+    return result
 
 
 # ---- /ws endpoint (Task 3 lives here too) -----------------------------------

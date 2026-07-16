@@ -97,7 +97,14 @@ describe('parameter edit followed immediately by Run', () => {
     mockedApi.put.mockResolvedValue({
       data: { valid: true, node_statuses: {}, errors: [] },
     })
-    mockedApi.post.mockResolvedValue({ data: {} })
+    mockedApi.post.mockResolvedValue({
+      data: {
+        status: 'started',
+        execution_id: 'exec-parameter-edit',
+        workflow_id: 'parameter_edit',
+        draft_revision: 2,
+      },
+    })
   })
 
   it('submits the parameter emitted by the real NodePanel field', async () => {
@@ -253,6 +260,7 @@ describe('parameter edit followed immediately by Run', () => {
     expect(mockedApi.post).toHaveBeenCalledWith(
       '/api/v1/execution/run',
       expect.objectContaining({
+        draft_revision: 2,
         graph: expect.objectContaining({
           nodes: expect.arrayContaining([
             expect.objectContaining({ parameters: { path: '/data/new' } }),

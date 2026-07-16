@@ -208,6 +208,12 @@ export const useUIStore = defineStore('ui', () => {
     return canvasPresentations.get(canvasId)?.activeWorkflowId ?? null
   }
 
+  function canvasIdsForWorkflow(workflowId: string): CanvasId[] {
+    return [...canvasPresentations.entries()]
+      .filter(([, presentation]) => presentation.activeWorkflowId === workflowId)
+      .map(([canvasId]) => canvasId)
+  }
+
   function markCanvasDirty(canvasId: CanvasId) {
     canvasPresentation(canvasId).hasUnsavedChanges = true
   }
@@ -322,6 +328,7 @@ export const useUIStore = defineStore('ui', () => {
     setCanvasGraphNodes,
     setCanvasWorkflow,
     canvasWorkflowId,
+    canvasIdsForWorkflow,
     markCanvasDirty,
     markCanvasClean,
     canvasHasUnsavedChanges,

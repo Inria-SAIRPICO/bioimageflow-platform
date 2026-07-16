@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from bioimageflow_server.models.execution import (
+    ExecutionContext,
     ExecutionRequest,
     ExecutionResult,
     ExecutionStatus,
@@ -19,13 +20,38 @@ class TestExecutionRequest:
         er = ExecutionRequest(
             graph={"nodes": [], "edges": []},
             nodes=["n1", "n2"],
+            workflow_name="wf_a",
+            draft_revision=7,
         )
         assert er.graph == {"nodes": [], "edges": []}
         assert er.nodes == ["n1", "n2"]
+        assert er.workflow_name == "wf_a"
+        assert er.draft_revision == 7
 
     def test_selective_none(self) -> None:
-        er = ExecutionRequest(graph={"nodes": []})
+        er = ExecutionRequest(graph={"nodes": []}, workflow_name="wf_a")
         assert er.nodes is None
+
+
+class TestExecutionContext:
+    def test_roundtrip(self) -> None:
+        context = ExecutionContext(
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        assert ExecutionContext.model_validate(context.model_dump()) == context
+
+    def test_is_immutable(self) -> None:
+        context = ExecutionContext(
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        with pytest.raises(ValidationError):
+            context.draft_revision = 8
 
 
 class TestProgressInfo:
@@ -83,3 +109,21 @@ class TestExecutionStatus:
         assert es2.state == "running"
         assert es2.progress is not None
         assert es2.progress.node_id == "n1"
+
+    def test_retains_execution_identity_while_idle(self) -> None:
+        es = ExecutionStatus(
+            state="idle",
+            execution_id="exec-123",
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+
+        assert es.model_dump() | {} == {
+            "state": "idle",
+            "last_result": None,
+            "progress": None,
+            "node_statuses": {},
+            "execution_id": "exec-123",
+            "workflow_id": "wf_a",
+            "draft_revision": 7,
+        }

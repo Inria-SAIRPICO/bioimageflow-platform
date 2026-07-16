@@ -22,6 +22,7 @@ from bioimageflow_server.agent_mcp import (
     create_mcp_server,
     read_agent_state,
 )
+from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -46,7 +47,13 @@ class _FakeExecutionManager:
     is_running = False
 
     def __init__(self) -> None:
-        self.start = AsyncMock()
+        self.start = AsyncMock(
+            return_value=ExecutionContext(
+                execution_id="exec-mcp",
+                workflow_id="wf",
+                draft_revision=1,
+            )
+        )
         self.stop = AsyncMock()
 
     def get_status(self) -> Any:
@@ -1163,7 +1170,12 @@ async def test_validation_run_status_and_stop_call_execution_endpoints(
         (
             "POST",
             "/api/v1/execution/run",
-            {"graph": {"nodes": [], "edges": []}, "workflow_name": "wf", "nodes": ["n1"]},
+            {
+                "graph": {"nodes": [], "edges": []},
+                "workflow_name": "wf",
+                "draft_revision": 1,
+                "nodes": ["n1"],
+            },
         ),
         ("GET", "/api/v1/execution/status", {}),
         ("POST", "/api/v1/execution/stop", {}),
@@ -1265,7 +1277,13 @@ async def test_mcp_registered_tools_smoke_against_asgi_app(tmp_path: Path) -> No
     assert validation["ok"] is True
     assert validation["valid"] is False
     assert validation["errors"][0]["type"] == "missing_tool"
-    assert run == {"ok": True, "status": "started"}
+    assert run == {
+        "ok": True,
+        "status": "started",
+        "execution_id": "exec-mcp",
+        "workflow_id": "wf",
+        "draft_revision": 1,
+    }
     assert status["ok"] is True
     assert status["state"] == "idle"
     assert stop == {"ok": True, "status": "stopping"}

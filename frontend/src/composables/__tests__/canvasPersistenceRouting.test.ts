@@ -168,6 +168,7 @@ describe('canvas persistence routing', () => {
     expect(sync.currentGraph.value).toEqual(graph('captured'))
     expect(sync.validationResult.value).toEqual(acceptedValidation)
     expect(sync.isPending.value).toBe(false)
+    expect(persistence.acceptedDraftRevision.value).toBe(5)
   })
 
   it('projects the accepted response graph and validation as one authority', async () => {

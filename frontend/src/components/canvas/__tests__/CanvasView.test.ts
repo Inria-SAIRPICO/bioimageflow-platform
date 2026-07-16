@@ -348,7 +348,10 @@ import {
   __resetForTests as resetFieldFocusForTests,
   useFieldFocusTracker,
 } from '@/composables/useFieldFocusTracker'
-import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -2537,6 +2540,99 @@ describe('CanvasView', () => {
       }))
       first.unmount()
       second.unmount()
+    })
+
+    it('projects execution statuses only onto the originating canvas', async () => {
+      vueFlowMocks.isolateByInstance = true
+      useToolRegistryStore().tools = [makeTool()] as any
+      const graph = { nodes: [makeGraphNode('shared')], edges: [] }
+      const canvasA = canvasIdFromPanelId('workflow:a')
+      const canvasB = canvasIdFromPanelId('workflow:b')
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasA, workflowId: 'a' })
+      canvasSessionRegistry.register({ kind: 'root', canvasId: canvasB, workflowId: 'b' })
+      const first = mountCanvas({
+        params: {
+          panelId: canvasA,
+          workflowName: 'a',
+          workflowDisplayName: 'A',
+          graph,
+          dirty: false,
+        },
+      })
+      const second = mountCanvas({
+        params: {
+          panelId: canvasB,
+          workflowName: 'b',
+          workflowDisplayName: 'B',
+          graph,
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+      canvasSessionRegistry.activate(canvasA)
+
+      useExecutionStore().applyStatusSnapshot({
+        type: 'status_snapshot',
+        execution_id: 'exec-123',
+        workflow_id: 'a',
+        draft_revision: 7,
+        state: 'running',
+        last_result: null,
+        progress: null,
+        node_statuses: {
+          shared: { node_id: 'shared', status: 'running', cached: false },
+        },
+      })
+      await nextTick()
+
+      const firstGraph = vueFlowMocks.graphs.get(canvasA)!
+      const secondGraph = vueFlowMocks.graphs.get(canvasB)!
+      expect(firstGraph.nodes[0].data.status).toBe('running')
+      expect(secondGraph.nodes[0].data.status).toBe('unexecuted')
+
+      first.unmount()
+      second.unmount()
+      canvasSessionRegistry.dispose()
+    })
+
+    it('projects a reconnect snapshot received before its canvas mounts', async () => {
+      vueFlowMocks.isolateByInstance = true
+      useToolRegistryStore().tools = [makeTool()] as any
+      const canvasId = canvasIdFromPanelId('workflow:a')
+      useExecutionStore().applyStatusSnapshot({
+        type: 'status_snapshot',
+        execution_id: 'exec-123',
+        workflow_id: 'a',
+        draft_revision: 7,
+        state: 'running',
+        last_result: null,
+        progress: null,
+        node_statuses: {
+          shared: { node_id: 'shared', status: 'running', cached: false },
+        },
+      })
+
+      canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'a' })
+      canvasSessionRegistry.activate(canvasId)
+      const wrapper = mountCanvas({
+        params: {
+          panelId: canvasId,
+          workflowName: 'a',
+          workflowDisplayName: 'A',
+          graph: { nodes: [makeGraphNode('shared')], edges: [] },
+          dirty: false,
+        },
+      })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(vueFlowMocks.graphs.get(canvasId)!.nodes[0].data.status).toBe('running')
+
+      wrapper.unmount()
+      canvasSessionRegistry.dispose()
     })
 
     it('uses structured missing-tool state and clears it when the tool reappears', async () => {

@@ -19,6 +19,7 @@ import pytest
 from wetlands.exceptions import EnvironmentReuseError
 
 from bioimageflow_server.models.execution import (
+    ExecutionContext,
     ExecutionResult,
     ProgressInfo,
 )
@@ -85,6 +86,9 @@ class RecordingEventBus:
         self.progress_identity_events: list[tuple[str, str | None, str | None]] = []
         self.node_state_identity_events: list[tuple[str, str | None, str | None]] = []
         self.complete_events: list[tuple[bool, list, dict]] = []
+        self.progress_contexts: list[ExecutionContext | None] = []
+        self.node_state_contexts: list[ExecutionContext | None] = []
+        self.complete_contexts: list[ExecutionContext | None] = []
         self.log_events: list[tuple[str, str, str | None, float]] = []
         self.environment_events: list[tuple[str, str]] = []
 
@@ -97,9 +101,11 @@ class RecordingEventBus:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.progress_events.append((node_id, status, row, total_rows, timestamp))
         self.progress_identity_events.append((node_id, result_key, record_id))
+        self.progress_contexts.append(context)
 
     def publish_node_state(
         self,
@@ -110,14 +116,21 @@ class RecordingEventBus:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.node_state_events.append((node_id, status, cached, error, traceback))
         self.node_state_identity_events.append((node_id, result_key, record_id))
+        self.node_state_contexts.append(context)
 
     def publish_execution_complete(
-        self, success: bool, errors: list, node_statuses: dict
+        self,
+        success: bool,
+        errors: list,
+        node_statuses: dict,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.complete_events.append((success, errors, node_statuses))
+        self.complete_contexts.append(context)
 
     def publish_log(
         self,
@@ -299,6 +312,40 @@ class TestExecutionManagerLifecycle:
         assert em.is_running is False
         assert em.last_result is not None
         assert em.last_result.success is True
+
+    async def test_one_context_is_bound_to_progress_completion_and_terminal_status(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bus = RecordingEventBus()
+        wf = _FakeWorkflow(
+            events=[
+                _ProgressEventStub(
+                    "n1", "row_progress", current=1, maximum=2, timestamp=1.0
+                ),
+                _ProgressEventStub("n1", "completed", timestamp=2.0),
+            ]
+        )
+        _install_fake_builder(monkeypatch, wf)
+        em = ExecutionManager(bus, MagicMock(), _settings())
+
+        context = await em.start(
+            _graph_with([("n1", True)]),
+            workflow_id="wf_a",
+            draft_revision=7,
+        )
+        await _drain(em)
+
+        assert context.workflow_id == "wf_a"
+        assert context.draft_revision == 7
+        assert context.execution_id
+        assert bus.progress_contexts == [context]
+        assert bus.node_state_contexts == [context]
+        assert bus.complete_contexts == [context]
+        status = em.get_status()
+        assert status.execution_id == context.execution_id
+        assert status.workflow_id == "wf_a"
+        assert status.draft_revision == 7
+        assert status.last_result is not None
 
     async def test_start_and_complete_are_published_as_backend_logs(
         self, monkeypatch: pytest.MonkeyPatch
@@ -959,9 +1006,19 @@ class TestExecutionManagerResult:
         em.last_result = prior_result
         em.progress = prior_progress
         em._node_statuses = {"previous": prior_status}
+        prior_context = ExecutionContext(
+            execution_id="exec-prior",
+            workflow_id="wf_prior",
+            draft_revision=3,
+        )
+        em.context = prior_context
 
         with pytest.raises(WorkflowBuildError) as exc_info:
-            await em.start(_graph_with([("n1", True)]))
+            await em.start(
+                _graph_with([("n1", True)]),
+                workflow_id="wf_rejected",
+                draft_revision=4,
+            )
 
         assert exc_info.value.errors[0].node == "n1"
         assert exc_info.value.errors[0].field == "count"
@@ -970,6 +1027,7 @@ class TestExecutionManagerResult:
         assert em.last_result is prior_result
         assert em.progress is prior_progress
         assert em._node_statuses == {"previous": prior_status}
+        assert em.context is prior_context
 
     async def test_disabled_nodes_seeded_as_disabled(
         self, monkeypatch: pytest.MonkeyPatch

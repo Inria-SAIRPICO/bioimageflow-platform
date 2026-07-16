@@ -24,8 +24,10 @@ import traceback
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
+from uuid import uuid4
 
 from bioimageflow_server.models.execution import (
+    ExecutionContext,
     ExecutionResult,
     ExecutionStatus,
     ProgressInfo,
@@ -71,6 +73,7 @@ class ExecutionEventBus(Protocol):
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None: ...
 
     def publish_node_state(
@@ -82,10 +85,15 @@ class ExecutionEventBus(Protocol):
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None: ...
 
     def publish_execution_complete(
-        self, success: bool, errors: list, node_statuses: dict
+        self,
+        success: bool,
+        errors: list,
+        node_statuses: dict,
+        context: ExecutionContext | None = None,
     ) -> None: ...
 
     def publish_log(
@@ -111,6 +119,7 @@ class NullEventBus:
         timestamp: float,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         return None
 
@@ -123,11 +132,16 @@ class NullEventBus:
         traceback: str | None = None,
         result_key: str | None = None,
         record_id: str | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         return None
 
     def publish_execution_complete(
-        self, success: bool, errors: list, node_statuses: dict
+        self,
+        success: bool,
+        errors: list,
+        node_statuses: dict,
+        context: ExecutionContext | None = None,
     ) -> None:
         return None
 
@@ -189,6 +203,7 @@ class ExecutionManager:
         self.state: Literal["running", "idle"] = "idle"
         self.progress: ProgressInfo | None = None
         self.last_result: ExecutionResult | None = None
+        self.context: ExecutionContext | None = None
         self._node_statuses: dict[str, NodeStatus] = {}
         self._workflow: Any | None = None
         self._run_task: asyncio.Task | None = None
@@ -204,18 +219,14 @@ class ExecutionManager:
         return self.state == "running"
 
     def get_status(self) -> ExecutionStatus:
-        status = ExecutionStatus(
+        context_fields = self.context.model_dump() if self.context is not None else {}
+        return ExecutionStatus(
             state=self.state,
             last_result=self.last_result,
             progress=self.progress,
+            node_statuses=dict(self._node_statuses),
+            **context_fields,
         )
-        # Expose node_statuses as an attribute so mid-execution reconnects
-        # can resync per-node state. The base model doesn't declare this
-        # field; attach it as model_extra-compatible by using __setattr__.
-        # (Pydantic v2 allows extras via model_config; here we attach on
-        # the instance directly.)
-        object.__setattr__(status, "node_statuses", dict(self._node_statuses))
-        return status
 
     # ---- Lifecycle ---------------------------------------------------------
 
@@ -224,7 +235,9 @@ class ExecutionManager:
         graph: GraphState,
         nodes: list[str] | None = None,
         storage_path: Path | None = None,
-    ) -> None:
+        workflow_id: str = "legacy",
+        draft_revision: int | None = None,
+    ) -> ExecutionContext:
         """Kick off a background execution.
 
         Raises:
@@ -237,6 +250,11 @@ class ExecutionManager:
             raise ExecutionConflictError(
                 "An execution is already running; stop it before starting a new one"
             )
+        context = ExecutionContext(
+            execution_id=str(uuid4()),
+            workflow_id=workflow_id,
+            draft_revision=draft_revision,
+        )
         self.state = "running"
 
         # Execution compiles the graph submitted with this run request; no
@@ -249,7 +267,7 @@ class ExecutionManager:
                 storage_path if storage_path is not None else self.storage_path
             )
             build_graph = _execution_subgraph(graph, nodes) if nodes else graph
-            on_progress = self._make_progress_callback()
+            on_progress = self._make_progress_callback(context)
             validation_output = GraphValidationService(
                 self.tool_registry
             ).validate_with_compilation(
@@ -276,6 +294,7 @@ class ExecutionManager:
 
         # An accepted run supersedes the prior result. Rejected requests leave
         # the observable execution status unchanged.
+        self.context = context
         self.progress = None
         self.last_result = None
         self._node_statuses = {}
@@ -320,7 +339,12 @@ class ExecutionManager:
         loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
         self._run_task = task
-        task.add_done_callback(self._on_run_done)
+        task.add_done_callback(
+            lambda completed, run_context=context: self._on_run_done(
+                completed, run_context
+            )
+        )
+        return context
 
     async def stop(self) -> None:
         if self._workflow is None or self.state != "running":
@@ -333,7 +357,9 @@ class ExecutionManager:
 
     # ---- Internals ---------------------------------------------------------
 
-    def _make_progress_callback(self) -> Callable[[Any], None]:
+    def _make_progress_callback(
+        self, context: ExecutionContext
+    ) -> Callable[[Any], None]:
         """Return the ``on_progress`` callback for this run.
 
         Closes over ``self`` so it can update the manager's state from
@@ -371,7 +397,14 @@ class ExecutionManager:
                     record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "running", False, None, None, result_key, record_id
+                    node_id,
+                    "running",
+                    False,
+                    None,
+                    None,
+                    result_key,
+                    record_id,
+                    context=context,
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -399,6 +432,7 @@ class ExecutionManager:
                     timestamp,
                     result_key,
                     record_id,
+                    context=context,
                 )
                 self.event_bus.publish_log(
                     "DEBUG",
@@ -426,6 +460,7 @@ class ExecutionManager:
                     timestamp,
                     result_key,
                     record_id,
+                    context=context,
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -444,7 +479,14 @@ class ExecutionManager:
                     record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "executed", False, None, None, result_key, record_id
+                    node_id,
+                    "executed",
+                    False,
+                    None,
+                    None,
+                    result_key,
+                    record_id,
+                    context=context,
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -463,7 +505,14 @@ class ExecutionManager:
                     record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "executed", True, None, None, result_key, record_id
+                    node_id,
+                    "executed",
+                    True,
+                    None,
+                    None,
+                    result_key,
+                    record_id,
+                    context=context,
                 )
                 self.event_bus.publish_log(
                     "INFO",
@@ -486,7 +535,14 @@ class ExecutionManager:
                     record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "failed", False, message, tb, result_key, record_id
+                    node_id,
+                    "failed",
+                    False,
+                    message,
+                    tb,
+                    result_key,
+                    record_id,
+                    context=context,
                 )
                 self.event_bus.publish_log(
                     "ERROR",
@@ -505,7 +561,14 @@ class ExecutionManager:
                     record_id=record_id,
                 )
                 self.event_bus.publish_node_state(
-                    node_id, "unexecuted", False, None, None, result_key, record_id
+                    node_id,
+                    "unexecuted",
+                    False,
+                    None,
+                    None,
+                    result_key,
+                    record_id,
+                    context=context,
                 )
                 return
 
@@ -552,7 +615,9 @@ class ExecutionManager:
         if callable(publish):
             publish(env_name, status)
 
-    def _on_run_done(self, task: asyncio.Task) -> None:
+    def _on_run_done(
+        self, task: asyncio.Task, context: ExecutionContext
+    ) -> None:
         """Called on the event loop when the background task finishes."""
         try:
             exc = task.exception()
@@ -632,7 +697,12 @@ class ExecutionManager:
                             traceback=tb,
                         )
                         self.event_bus.publish_node_state(
-                            target_id, "failed", False, detail, tb
+                            target_id,
+                            "failed",
+                            False,
+                            detail,
+                            tb,
+                            context=context,
                         )
                     elif current.status == "failed" and not current.error:
                         self._node_statuses[target_id] = NodeStatus(
@@ -643,7 +713,12 @@ class ExecutionManager:
                             traceback=tb,
                         )
                         self.event_bus.publish_node_state(
-                            target_id, "failed", False, detail, tb
+                            target_id,
+                            "failed",
+                            False,
+                            detail,
+                            tb,
+                            context=context,
                         )
                     elif current.status == "failed":
                         should_publish_error_log = False
@@ -663,7 +738,10 @@ class ExecutionManager:
             node_statuses=dict(self._node_statuses),
         )
         self.event_bus.publish_execution_complete(
-            success, errors, dict(self._node_statuses)
+            success,
+            errors,
+            dict(self._node_statuses),
+            context=context,
         )
         if success:
             logger.info("Workflow execution completed successfully")

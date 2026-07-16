@@ -105,10 +105,12 @@ async def run_execution(
             detail=f"Workflow '{body.workflow_name}' not found",
         ) from exc
     try:
-        await execution_manager.start(
+        context = await execution_manager.start(
             graph,
             nodes=body.nodes,
             storage_path=run_storage_path,
+            workflow_id=body.workflow_name,
+            draft_revision=body.draft_revision,
         )
     except ExecutionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -121,7 +123,7 @@ async def run_execution(
                 "errors": [e.model_dump() for e in exc.errors],
             },
         )
-    return {"status": "started"}
+    return {"status": "started", **context.model_dump()}
 
 
 @router.post("/stop")
