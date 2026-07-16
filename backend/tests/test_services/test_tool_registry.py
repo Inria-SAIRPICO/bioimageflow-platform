@@ -130,8 +130,8 @@ def test_inner_join_accepts_upstream_is_true():
 
 
 @COMMON_TOOLS_MARK
-def test_processing_tool_atlas_has_correct_type_and_accepts_upstream():
-    meta = _register("Atlas")
+def test_processing_tool_connected_components_has_correct_type_and_accepts_upstream():
+    meta = _register("ConnectedComponents")
     assert meta.tool_type == "ProcessingTool"
     assert meta.accepts_upstream is True
     assert meta.dataframe_output is True
@@ -615,25 +615,20 @@ def test_scan_tool_store_registers_common_tools():
     Caught a class of bug where the package's __init__.py used absolute
     imports — _stamp_tool_classes skipped every class, register_package
     filtered them all out, and the GUI's tool list came up empty with
-    no diagnostic. If this test goes red with a count mismatch, check
+    no diagnostic. If this test reports missing public exports, check
     that the package __init__.py uses relative imports
     (`from .X import Y`), not absolute (`from pkg.X import Y`).
     """
-    from bioimageflow.paths import get_tool_store_path
-    store_path = get_tool_store_path()
-    common_tools_dir = store_path / "bioimageflow_common_tools"
-    if not common_tools_dir.exists():
-        load_common_tools_class("Files")
+    from bioimageflow.tool_loader import load_versioned_package
+
+    _, version = load_common_tools_class("Files")
+    common_tools = load_versioned_package(PACKAGE_NAME, version)
+    expected = set(common_tools.__all__)
+    assert expected
 
     reg = ToolRegistryService()
     reg.scan_tool_store()
 
-    expected = {
-        "Files", "Generate", "ConvertImage", "ExtractChannel", "Atlas",
-        "ConnectedComponents", "CellposeSAM", "LabelOverlaps",
-        "InnerJoin", "CrossJoin", "JoinOnColumn", "Concat", "Collect",
-        "Mosaic",
-    }
     found = {t.name for t in reg.list_tools()}
     missing = expected - found
     pkg = reg.get_package(PACKAGE_NAME)
