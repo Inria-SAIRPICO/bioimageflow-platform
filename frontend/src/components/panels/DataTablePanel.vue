@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, effectScope, onBeforeUnmount, ref, watch, type EffectScope } from 'vue'
+import { computed, effectScope, onBeforeUnmount, onMounted, ref, watch, type EffectScope } from 'vue'
+import type { DockviewIDisposable, DockviewPanelApi } from 'dockview-core'
 import Button from 'primevue/button'
 import NodeDataTable from './NodeDataTable.vue'
 import { useGraphSync } from '@/composables/useGraphSync'
@@ -17,6 +18,12 @@ import {
   canvasSessionRegistry,
   type CanvasId,
 } from '@/sessions/canvasSessionRegistry'
+
+const props = defineProps<{
+  params?: {
+    api?: DockviewPanelApi
+  }
+}>()
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -218,7 +225,23 @@ function clearEntry(entry: DataTableEntry, target: DataTableTarget): void {
   }
 }
 
+function refreshExecutedEntries(): void {
+  const target = currentDataTableTarget()
+  const statusProjection = statusProjectionForTarget(target)
+  if (statusProjection === null) return
+  const refreshed = new Set<string>()
+  for (const entry of displayedEntries.value) {
+    if (refreshed.has(entry.dataNodeId)) continue
+    const status = statusProjection.statusForNode(entry.dataNodeId)
+    if (status?.source === 'execution' && status.status === 'executed') {
+      refreshed.add(entry.dataNodeId)
+      refreshEntry(entry, target)
+    }
+  }
+}
+
 let scope: EffectScope | null = null
+let activeChangeDisposable: DockviewIDisposable | null = null
 
 watch(
   displayedEntries,
@@ -256,22 +279,20 @@ watch(
   () => executionStore.lastResult,
   (result) => {
     if (!result?.success) return
-    const target = currentDataTableTarget()
-    const statusProjection = statusProjectionForTarget(target)
-    if (statusProjection === null) return
-    const refreshed = new Set<string>()
-    for (const entry of displayedEntries.value) {
-      if (refreshed.has(entry.dataNodeId)) continue
-      const status = statusProjection.statusForNode(entry.dataNodeId)
-      if (status?.source === 'execution' && status.status === 'executed') {
-        refreshed.add(entry.dataNodeId)
-        refreshEntry(entry, target)
-      }
-    }
+    refreshExecutedEntries()
   },
 )
 
-onBeforeUnmount(() => scope?.stop())
+onMounted(() => {
+  activeChangeDisposable = props.params?.api?.onDidActiveChange(({ isActive }) => {
+    if (isActive) refreshExecutedEntries()
+  }) ?? null
+})
+
+onBeforeUnmount(() => {
+  scope?.stop()
+  activeChangeDisposable?.dispose()
+})
 </script>
 
 <template>

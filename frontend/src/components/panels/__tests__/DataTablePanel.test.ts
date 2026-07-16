@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { computed, defineComponent, h, inject, nextTick, provide, ref, type VNodeChild } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import type { DockviewPanelApi } from 'dockview-core'
 import DataTablePanel from '../DataTablePanel.vue'
 import NodeDataTable from '../NodeDataTable.vue'
 import PathCell from '../PathCell.vue'
@@ -203,6 +204,65 @@ describe('DataTablePanel', () => {
 
     expect(wrapper.text().toLowerCase()).toContain('no node selected')
     expect(wrapper.find('[data-testid="node-data-table-node-1"]').exists()).toBe(false)
+  })
+
+  it('refreshes executed data when the Data Table tab becomes active after Logger', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useUIStore().setSelectedNodes(['node-1'])
+    useExecutionStore().nodeStatuses = {
+      'node-1': { node_id: 'node-1', status: 'executed', cached: false },
+    }
+    useGraphSync().currentGraph.value = {
+      nodes: [{
+        id: 'node-1',
+        name: 'Files 1',
+        tool_name: 'files',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    }
+    const fetchNodeData = vi
+      .spyOn(useDataTableStore(), 'fetchNodeData')
+      .mockResolvedValue(undefined)
+    let activeChangeListener = (_event: { isActive: boolean }) => {}
+    const dispose = vi.fn()
+    const panelApi = {
+      onDidActiveChange: vi.fn((listener: (event: { isActive: boolean }) => void) => {
+        activeChangeListener = listener
+        return { dispose }
+      }),
+    } as unknown as DockviewPanelApi
+
+    const wrapper = mount(DataTablePanel, {
+      props: { params: { api: panelApi } },
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: { Button: true, NodeDataTable: true },
+      },
+    })
+    await flushPromises()
+    fetchNodeData.mockClear()
+
+    activeChangeListener({ isActive: false })
+    await nextTick()
+    expect(fetchNodeData).not.toHaveBeenCalled()
+
+    activeChangeListener({ isActive: true })
+    await nextTick()
+    expect(fetchNodeData).toHaveBeenCalledOnce()
+    expect(fetchNodeData).toHaveBeenCalledWith('node-1', {
+      toolName: 'files',
+      workflowName: null,
+    })
+
+    wrapper.unmount()
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('requests node data with the active canvas workflow identity', async () => {
