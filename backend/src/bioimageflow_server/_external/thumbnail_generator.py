@@ -52,7 +52,15 @@ def create_thumbnail(
             image_path_with_extension.symlink_to(image_path)
             created_symlink = True
 
-        image = BioImage(str(image_path_with_extension))
+        if image_path_with_extension.suffix.lower() in {".tif", ".tiff"}:
+            # This endpoint always renders one concrete file, never a TIFF glob.
+            # Select the single-file reader explicitly so numeric filename
+            # components cannot make bioio-tiff-glob claim the image as a series.
+            from bioio_tifffile import Reader as TiffReader
+
+            image = BioImage(str(image_path_with_extension), reader=TiffReader)
+        else:
+            image = BioImage(str(image_path_with_extension))
         data = image.get_image_data("TCZYX")
     finally:
         if created_symlink and image_path_with_extension.exists():

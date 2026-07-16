@@ -3,7 +3,7 @@
 The helper lives under ``_external/`` and is launched as a subprocess
 inside the thumbnail Wetlands env (which has ``bioio`` + ``pillow``
 installed). For unit tests we load it via ``importlib.util`` and stub
-``bioio`` so the test process never imports it.
+``bioio`` plus its TIFF reader so the test process never imports them.
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ def _make_bioio_stub(captured: dict[str, Any] | None = None) -> ModuleType:
     captured = captured if captured is not None else {}
 
     class _FakeBioImage:
-        def __init__(self, path: Any) -> None:
+        def __init__(self, path: Any, reader: Any = None) -> None:
             captured["path"] = str(path)
+            captured["reader"] = reader
 
         def get_image_data(self, order: str) -> Any:
             captured["order"] = order
@@ -33,7 +34,10 @@ def _make_bioio_stub(captured: dict[str, Any] | None = None) -> ModuleType:
     return mod
 
 
-def _load_module(bioio_stub: ModuleType | None = None) -> ModuleType:
+def _load_module(
+    bioio_stub: ModuleType | None = None,
+    tifffile_stub: ModuleType | None = None,
+) -> ModuleType:
     backend_root = Path(__file__).resolve().parents[2]
     script_path = (
         backend_root
@@ -44,7 +48,11 @@ def _load_module(bioio_stub: ModuleType | None = None) -> ModuleType:
     )
     if bioio_stub is None:
         bioio_stub = _make_bioio_stub()
+    if tifffile_stub is None:
+        tifffile_stub = ModuleType("bioio_tifffile")
+        tifffile_stub.__dict__["Reader"] = type("TiffReader", (), {})
     sys.modules["bioio"] = bioio_stub
+    sys.modules["bioio_tifffile"] = tifffile_stub
     spec = importlib.util.spec_from_file_location("thumbnail_generator", script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -75,6 +83,7 @@ def test_create_thumbnail_writes_png_for_2d_array(tmp_path: Path) -> None:
     assert thumbnail_path.read_bytes().startswith(b"\x89PNG")
     # The TCZYX order request reaches bioio, with the canonical-extension symlink
     assert captured["order"] == "TCZYX"
+    assert captured["reader"].__name__ == "TiffReader"
 
 
 def test_create_thumbnail_passes_string_path_to_bioimage(tmp_path: Path) -> None:
@@ -83,10 +92,11 @@ def test_create_thumbnail_passes_string_path_to_bioimage(tmp_path: Path) -> None
     captured: dict[str, Any] = {"data": np.zeros((1, 1, 1, 8, 8), dtype=np.uint8)}
 
     class _StrictBioImage:
-        def __init__(self, path: Any) -> None:
+        def __init__(self, path: Any, reader: Any = None) -> None:
             if not isinstance(path, str):
                 raise TypeError(f"expected str path, got {type(path)}")
             captured["path"] = path
+            captured["reader"] = reader
 
         def get_image_data(self, order: str) -> Any:
             captured["order"] = order
@@ -103,6 +113,25 @@ def test_create_thumbnail_passes_string_path_to_bioimage(tmp_path: Path) -> None
     tg.create_thumbnail(str(image_path), "tif", str(thumbnail_path), size=(8, 8))
 
     assert captured["path"] == str(image_path)
+    assert captured["reader"].__name__ == "TiffReader"
+    assert thumbnail_path.is_file()
+
+
+def test_create_thumbnail_uses_bioio_discovery_for_non_tiff(tmp_path: Path) -> None:
+    import numpy as np
+
+    captured: dict[str, Any] = {"data": np.zeros((1, 1, 1, 8, 8), dtype=np.uint8)}
+    bioio_stub = _make_bioio_stub(captured)
+    tg = _load_module(bioio_stub)
+
+    image_path = tmp_path / "image.png"
+    image_path.write_bytes(b"fake-png-content")
+    thumbnail_path = tmp_path / "thumb.png"
+
+    tg.create_thumbnail(str(image_path), "png", str(thumbnail_path), size=(8, 8))
+
+    assert captured["path"] == str(image_path)
+    assert captured["reader"] is None
     assert thumbnail_path.is_file()
 
 

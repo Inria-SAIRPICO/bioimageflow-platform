@@ -47,17 +47,16 @@ _GENERATOR_MODULE_NAME: str = str(
 
 
 # Pip dependencies for the ``thumbnail`` Wetlands env. Mirrors Galaxy's
-# choice plus a couple of extras for ome-zarr / ome-tiff. Pinned to the
-# versions Galaxy ships so we get a known-good stack.
+# reader stack plus ome-zarr / ome-tiff support. TIFF glob support is
+# intentionally omitted because this service accepts only concrete files.
 _THUMBNAIL_ENV_PIP: tuple[str, ...] = (
-    "bioio==3.0.0",
+    "bioio==3.4.0",
     "pillow==11.1.0",
     "numpy",
     "bioio-ome-zarr",
     "bioio-ome-tiff",
     "bioio-imageio",
     "bioio-tifffile",
-    "bioio-tiff-glob",
 )
 
 
