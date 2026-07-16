@@ -14,6 +14,8 @@ import type {
 } from '@/api/types'
 import { graphDocumentsEqual } from '@/sessions/graphDocument'
 
+export type SubWorkflowParentConflictReason = 'parent_missing' | 'parent_changed'
+
 export interface SubWorkflowSession {
   id: string
   owner: NestedSnapshotOwner
@@ -23,8 +25,10 @@ export interface SubWorkflowSession {
   parentNodeId: string
   parentNodeName: string
   draft: GraphState
+  /** Child document last applied to the parent node. */
   savedSnapshot: GraphState
   acceptedSnapshot: GraphState
+  parentApplyConflict: SubWorkflowParentConflictReason | null
   snapshotRevision: number
   updatedAt: string
   validation: ValidationResult
@@ -126,6 +130,7 @@ function createSession(
     draft,
     savedSnapshot,
     acceptedSnapshot: deepClone(draft),
+    parentApplyConflict: null,
     snapshotRevision: options.snapshotRevision ?? 0,
     updatedAt: new Date().toISOString(),
     validation: deepClone(options.validation ?? defaultValidation()),
@@ -159,7 +164,8 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     .map((session) => session.id))
 
   function isSessionDirty(session: SubWorkflowSession): boolean {
-    return !graphDocumentsEqual(session.draft, session.savedSnapshot)
+    return session.parentApplyConflict !== null
+      || !graphDocumentsEqual(session.draft, session.savedSnapshot)
   }
 
   function sessionById(id: string): SubWorkflowSession | undefined {
@@ -240,6 +246,7 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     const accepted = completeGraph(graph)
     session.draft = deepClone(accepted)
     session.savedSnapshot = deepClone(accepted)
+    session.parentApplyConflict = null
     if (snapshotRevision !== null && snapshotRevision !== undefined) {
       session.snapshotRevision = snapshotRevision
     }
@@ -262,6 +269,15 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     const session = sessionById(id)
     if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
     session.draft = completeGraph(graph)
+  }
+
+  function markParentApplyConflict(
+    id: string,
+    reason: SubWorkflowParentConflictReason,
+  ): void {
+    const session = sessionById(id)
+    if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
+    session.parentApplyConflict = reason
   }
 
   function acceptSnapshot(
@@ -313,6 +329,7 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     saveSession,
     markSaved,
     updateDraft,
+    markParentApplyConflict,
     acceptSnapshot,
     snapshotForSession,
     closeSession,

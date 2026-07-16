@@ -118,6 +118,26 @@ describe('useSubWorkflowSessionsStore', () => {
     expect(store.isDirty(session.id)).toBe(true)
   })
 
+  it('keeps a parent apply conflict dirty until a later apply succeeds', () => {
+    const store = useSubWorkflowSessionsStore()
+    const session = store.openSession({
+      parentWorkflowName: 'parent',
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: graph('internal_1'),
+    })
+
+    store.markParentApplyConflict(session.id, 'parent_changed')
+
+    expect(store.isDirty(session.id)).toBe(true)
+    expect(store.sessionById(session.id)?.parentApplyConflict).toBe('parent_changed')
+
+    store.markSaved(session.id, session.draft)
+
+    expect(store.isDirty(session.id)).toBe(false)
+    expect(store.sessionById(session.id)?.parentApplyConflict).toBeNull()
+  })
+
   it('refuses to open readonly class-based sub-workflows', () => {
     const store = useSubWorkflowSessionsStore()
 

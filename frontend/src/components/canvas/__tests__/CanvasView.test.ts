@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, ref, reactive, computed, nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import type { ToolMetadata } from '@/api/types'
+import type { GraphState, ToolMetadata } from '@/api/types'
 
 // --- Mock data ---
 
@@ -62,13 +62,51 @@ function makeGraphNode(
     id,
     name: id,
     tool_name: 'gaussian_blur',
-    position: [0, 0],
+    position: [0, 0] as [number, number],
     parameters: { sigma: 1 },
     resources: {},
     output_templates: { result: '' },
     enabled: true,
     collapsed: false,
     ...overrides,
+  }
+}
+
+function makeNestedGraph(sigma: number, inputName = 'image'): GraphState {
+  return {
+    nodes: [makeGraphNode('inner_1', { parameters: { sigma } })],
+    edges: [],
+    published_inputs: [{
+      name: inputName,
+      internal_node_id: 'inner_1',
+      internal_field: 'image',
+      kind: 'input',
+      schema: { type: 'ImageFile' },
+      default: null,
+    }],
+    published_outputs: [],
+  }
+}
+
+function makeParentSubWorkflowNode(
+  graph: GraphState,
+  data: Record<string, unknown> = {},
+) {
+  return {
+    id: 'sub_1',
+    type: 'sub_workflow',
+    position: { x: 0, y: 0 },
+    data: {
+      name: 'Sub 1',
+      toolName: '__sub_workflow__',
+      parameters: { wrapper_note: 'preserve' },
+      pinnedInputs: {},
+      connectedInputs: {},
+      published_inputs: structuredClone(graph.published_inputs ?? []),
+      published_outputs: structuredClone(graph.published_outputs ?? []),
+      sub_workflow: structuredClone(graph),
+      ...data,
+    },
   }
 }
 
@@ -3493,7 +3531,7 @@ describe('CanvasView', () => {
         snapshotRevision: 8,
       })
       const applied = vi.fn((event: Event) => {
-        ;(event as CustomEvent).detail.acknowledge()
+        ;(event as CustomEvent).detail.complete({ status: 'applied' })
       })
       window.addEventListener('bioimageflow:apply-sub-workflow-session', applied)
 
@@ -3526,6 +3564,7 @@ describe('CanvasView', () => {
         save: expect.any(Function),
       })
       await canvasCommandMocks.registrations[0].save()
+      window.removeEventListener('bioimageflow:apply-sub-workflow-session', applied)
 
       expect(applied).toHaveBeenCalledTimes(1)
       expect((applied.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
@@ -3542,11 +3581,10 @@ describe('CanvasView', () => {
       expect(sessions.isDirty(session.id)).toBe(false)
       expect(sessions.sessionById(session.id)?.snapshotRevision).toBe(8)
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
-      window.removeEventListener('bioimageflow:apply-sub-workflow-session', applied)
       w.unmount()
     })
 
-    it('keeps a nested session dirty when the accepted snapshot has no parent acknowledgement', async () => {
+    it('keeps the durable accepted snapshot dirty when its parent canvas is missing', async () => {
       const sessions = useSubWorkflowSessionsStore()
       const session = sessions.openSession({
         parentCanvasId: 'workflow:missing',
@@ -3568,10 +3606,25 @@ describe('CanvasView', () => {
         }],
         published_outputs: [],
       })
-      graphSyncMocks.flushNow.mockResolvedValue({
-        graph: sessions.sessionById(session.id)!.draft,
-        validation: { valid: true, node_statuses: {}, errors: [] },
-        snapshotRevision: 2,
+      const acceptedGraph = JSON.parse(JSON.stringify(
+        sessions.sessionById(session.id)!.draft,
+      )) as GraphState
+      graphSyncMocks.flushNow.mockImplementation(async () => {
+        sessions.acceptSnapshot(session.id, {
+          snapshot_version: 1,
+          session_id: session.id,
+          owner: session.owner,
+          parent_node_id: session.parentNodeId,
+          snapshot_revision: 2,
+          updated_at: '2026-07-16T06:00:00Z',
+          graph: acceptedGraph,
+          validation: { valid: true, node_statuses: {}, errors: [] },
+        })
+        return {
+          graph: acceptedGraph,
+          validation: { valid: true, node_statuses: {}, errors: [] },
+          snapshotRevision: 2,
+        }
       })
       const w = mountCanvas({ subWorkflowSessionId: session.id })
       await flushPromises()
@@ -3579,6 +3632,14 @@ describe('CanvasView', () => {
       await canvasCommandMocks.registrations[0].save()
 
       expect(sessions.isDirty(session.id)).toBe(true)
+      expect(sessions.sessionById(session.id)).toMatchObject({
+        snapshotRevision: 2,
+        acceptedSnapshot: acceptedGraph,
+        savedSnapshot: { published_inputs: [] },
+      })
+      expect(toastMocks.add).toHaveBeenCalledWith(expect.objectContaining({
+        detail: 'Cannot save nested workflow because its parent is no longer available.',
+      }))
       w.unmount()
     })
 
@@ -3670,37 +3731,261 @@ describe('CanvasView', () => {
           parentCanvasId: 'workflow:parent-b',
           parentNodeId: 'sub_1',
           graph,
-          acknowledge: vi.fn(),
+          complete: vi.fn(),
         },
       }))
       expect(w.emitted('graph-changed')).toBeUndefined()
 
-      const staleAcknowledge = vi.fn()
+      const staleComplete = vi.fn()
       window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
         detail: {
           sessionId: 'stale-session',
           parentCanvasId: 'workflow:parent-a',
           parentNodeId: 'sub_1',
           graph,
-          acknowledge: staleAcknowledge,
+          complete: staleComplete,
         },
       }))
-      expect(staleAcknowledge).not.toHaveBeenCalled()
+      expect(staleComplete).not.toHaveBeenCalled()
       expect(w.emitted('graph-changed')).toBeUndefined()
 
-      const acknowledge = vi.fn()
+      const complete = vi.fn()
       window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
         detail: {
           sessionId: session.id,
           parentCanvasId: 'workflow:parent-a',
           parentNodeId: 'sub_1',
           graph,
-          acknowledge,
+          complete,
         },
       }))
-      expect(acknowledge).toHaveBeenCalledTimes(1)
+      expect(complete).toHaveBeenCalledWith({ status: 'applied' })
       expect(w.emitted('graph-changed')).toHaveLength(1)
       w.unmount()
+    })
+
+    it.each([
+      {
+        name: 'child graph',
+        current: makeNestedGraph(9),
+      },
+      {
+        name: 'published interface',
+        current: makeNestedGraph(1, 'renamed_image'),
+      },
+    ])('rejects an independently changed parent $name without a transition', async ({ current }) => {
+      const sessions = useSubWorkflowSessionsStore()
+      const baseline = makeNestedGraph(1)
+      const accepted = makeNestedGraph(2)
+      const session = sessions.openSession({
+        parentCanvasId: 'workflow:parent',
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: baseline,
+      })
+      sessions.updateDraft(session.id, accepted)
+      sessions.acceptSnapshot(session.id, {
+        snapshot_version: 1,
+        session_id: session.id,
+        owner: session.owner,
+        parent_node_id: session.parentNodeId,
+        snapshot_revision: 4,
+        updated_at: '2026-07-16T06:00:00Z',
+        graph: accepted,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+      })
+      const parent = mountCanvas({ params: { panelId: 'workflow:parent' } })
+      await flushPromises()
+      mockNodes.splice(0, mockNodes.length, makeParentSubWorkflowNode(current))
+      persistenceMocks.queueGraph.mockClear()
+      const complete = vi.fn()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
+        detail: {
+          sessionId: session.id,
+          parentCanvasId: 'workflow:parent',
+          parentNodeId: 'sub_1',
+          graph: accepted,
+          complete,
+        },
+      }))
+
+      expect(complete).toHaveBeenCalledWith({
+        status: 'conflict',
+        reason: 'parent_changed',
+      })
+      expect(mockNodes[0].data.sub_workflow).toEqual(current)
+      expect(parent.emitted('graph-changed')).toBeUndefined()
+      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+      expect(sessions.isDirty(session.id)).toBe(true)
+      expect(sessions.sessionById(session.id)).toMatchObject({
+        snapshotRevision: 4,
+        acceptedSnapshot: accepted,
+        savedSnapshot: baseline,
+      })
+      parent.unmount()
+    })
+
+    it('rejects a missing parent node without a transition', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const baseline = makeNestedGraph(1)
+      const accepted = makeNestedGraph(2)
+      const session = sessions.openSession({
+        parentCanvasId: 'workflow:parent',
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: baseline,
+      })
+      sessions.updateDraft(session.id, accepted)
+      const parent = mountCanvas({ params: { panelId: 'workflow:parent' } })
+      await flushPromises()
+      mockNodes.splice(0, mockNodes.length)
+      persistenceMocks.queueGraph.mockClear()
+      const complete = vi.fn()
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
+        detail: {
+          sessionId: session.id,
+          parentCanvasId: 'workflow:parent',
+          parentNodeId: 'sub_1',
+          graph: accepted,
+          complete,
+        },
+      }))
+
+      expect(complete).toHaveBeenCalledWith({
+        status: 'conflict',
+        reason: 'parent_missing',
+      })
+      expect(parent.emitted('graph-changed')).toBeUndefined()
+      expect(persistenceMocks.queueGraph).not.toHaveBeenCalled()
+      expect(sessions.isDirty(session.id)).toBe(true)
+      parent.unmount()
+    })
+
+    it('rebases over unrelated parent edits as one undoable transition and advances the baseline', async () => {
+      vueFlowMocks.isolateByInstance = true
+      const sessions = useSubWorkflowSessionsStore()
+      const baseline = makeNestedGraph(1)
+      const acceptedFirst = makeNestedGraph(2)
+      const acceptedSecond = makeNestedGraph(3)
+      const parent = mountCanvas({
+        params: {
+          panelId: 'workflow:parent',
+          workflowName: 'parent',
+          workflowDisplayName: 'Parent',
+        },
+      })
+      await flushPromises()
+      const parentGraph = vueFlowMocks.graphs.get('workflow:parent')!
+      parentGraph.nodes.splice(
+        0,
+        parentGraph.nodes.length,
+        makeParentSubWorkflowNode(baseline, {
+          name: 'Unrelated wrapper rename',
+          parameters: {
+            image: '/parent-edit.tif',
+            wrapper_note: 'preserve',
+            unrelated: 42,
+          },
+        }),
+        {
+          id: 'other',
+          type: 'tool',
+          position: { x: 200, y: 0 },
+          data: {
+            name: 'Other',
+            toolName: 'gaussian_blur',
+            parameters: { sigma: 5 },
+          },
+        },
+      )
+      parentGraph.edges.splice(0, parentGraph.edges.length, {
+        id: 'parent-edge',
+        source: 'other',
+        target: 'sub_1',
+        sourceHandle: 'result',
+        targetHandle: 'image',
+        type: 'column_ref',
+      })
+
+      const session = sessions.openSession({
+        parentCanvasId: 'workflow:parent',
+        parentWorkflowName: 'parent',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: baseline,
+      })
+      canvasCommandMocks.registrations[0].renameNode('other', 'Unrelated changed')
+      const child = mountCanvas({ subWorkflowSessionId: session.id })
+      await flushPromises()
+      const childCommands = canvasCommandMocks.registrations[1]
+      persistenceMocks.queueGraph.mockClear()
+      const parentTransitionCount = parent.emitted('graph-changed')?.length ?? 0
+
+      sessions.updateDraft(session.id, acceptedFirst)
+      graphSyncMocks.flushNow.mockResolvedValueOnce({
+        graph: acceptedFirst,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+        snapshotRevision: 5,
+      })
+      await childCommands.save()
+
+      const parentNode = () => parentGraph.nodes.find((node: any) => node.id === 'sub_1')!
+      const unrelatedNode = () => parentGraph.nodes.find((node: any) => node.id === 'other')!
+      expect(parentNode().data.sub_workflow).toEqual(acceptedFirst)
+      expect(parentNode().data).toMatchObject({
+        name: 'Unrelated wrapper rename',
+        parameters: {
+          image: '/parent-edit.tif',
+          wrapper_note: 'preserve',
+          unrelated: 42,
+        },
+      })
+      expect(unrelatedNode().data.name).toBe('Unrelated changed')
+      expect(parentGraph.edges).toEqual([expect.objectContaining({ id: 'parent-edge' })])
+      expect(parent.emitted('graph-changed')).toHaveLength(parentTransitionCount + 1)
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledTimes(1)
+      expect(sessions.isDirty(session.id)).toBe(false)
+      expect(sessions.sessionById(session.id)?.savedSnapshot).toEqual(acceptedFirst)
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:canvas-tab-activated', {
+        detail: { panelId: 'workflow:parent' },
+      }))
+      window.dispatchEvent(new CustomEvent('bioimageflow:edit-command', {
+        detail: { command: 'undo' },
+      }))
+      expect(parentNode().data.sub_workflow).toEqual(baseline)
+      expect(unrelatedNode().data.name).toBe('Unrelated changed')
+      expect(parentGraph.edges).toEqual([expect.objectContaining({ id: 'parent-edge' })])
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:edit-command', {
+        detail: { command: 'redo' },
+      }))
+      expect(parentNode().data.sub_workflow).toEqual(acceptedFirst)
+      expect(unrelatedNode().data.name).toBe('Unrelated changed')
+      expect(parentGraph.edges).toEqual([expect.objectContaining({ id: 'parent-edge' })])
+
+      sessions.updateDraft(session.id, acceptedSecond)
+      graphSyncMocks.flushNow.mockResolvedValueOnce({
+        graph: acceptedSecond,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+        snapshotRevision: 6,
+      })
+      await childCommands.save()
+
+      expect(parentNode().data.sub_workflow).toEqual(acceptedSecond)
+      expect(unrelatedNode().data.name).toBe('Unrelated changed')
+      expect(parentGraph.edges).toEqual([expect.objectContaining({ id: 'parent-edge' })])
+      expect(sessions.isDirty(session.id)).toBe(false)
+      expect(sessions.sessionById(session.id)).toMatchObject({
+        savedSnapshot: acceptedSecond,
+        snapshotRevision: 6,
+      })
+      child.unmount()
+      parent.unmount()
     })
 
     it('publishes nested parameter edits through the same synchronous canvas command', async () => {
