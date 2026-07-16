@@ -29,6 +29,7 @@ const settingsStore = useSettingsStore()
 const workflowStore = useWorkflowStore()
 
 const searchQuery = ref('')
+const isSearchActive = computed(() => searchQuery.value.trim().length > 0)
 const showCreateDialog = ref(false)
 const showManageDialog = ref(false)
 const confirm = useConfirm()
@@ -181,10 +182,13 @@ const categoryGroups = computed<CategoryGroup[]>(() => {
 const collapsedCategories = ref(new Set<string>())
 
 function isCategoryCollapsed(category: string): boolean {
-  return collapsedCategories.value.has(category)
+  // Every rendered group contains a search match, so keep it open while the
+  // query is active. Preserve the user's collapse state for normal browsing.
+  return !isSearchActive.value && collapsedCategories.value.has(category)
 }
 
 function toggleCategoryCollapsed(category: string) {
+  if (isSearchActive.value) return
   const next = new Set(collapsedCategories.value)
   if (next.has(category)) next.delete(category)
   else next.add(category)
@@ -224,9 +228,8 @@ const treeNodes = computed<TreeNode[]>(() => {
   //
   // While a search query is active, hide package rows that have no tool
   // children — the user is looking for a tool, not browsing packages.
-  const searchActive = searchQuery.value.trim().length > 0
   const names = new Set<string>(Object.keys(grouped))
-  if (!searchActive) {
+  if (!isSearchActive.value) {
     for (const pkg of toolRegistry.packages) {
       names.add(pkg.name)
     }
@@ -797,6 +800,7 @@ defineExpose({
           type="button"
           class="tool-category-header"
           :aria-expanded="!isCategoryCollapsed(group.category)"
+          :disabled="isSearchActive"
           :data-testid="`category-toggle-${group.category}`"
           @click="toggleCategoryCollapsed(group.category)"
         >
@@ -1276,8 +1280,12 @@ defineExpose({
   border-radius: 3px;
 }
 
-.tool-category-header:hover {
+.tool-category-header:not(:disabled):hover {
   background-color: var(--bif-surface-active);
+}
+
+.tool-category-header:disabled {
+  cursor: default;
 }
 
 .tool-category-chevron {

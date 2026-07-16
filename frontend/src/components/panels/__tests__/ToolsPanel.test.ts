@@ -285,6 +285,34 @@ describe('ToolsPanel', () => {
     expect(wrapper.find('.tool-category-count').exists()).toBe(false)
   })
 
+  it('opens a collapsed category when search finds one of its tools', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const categoryToggle = wrapper.get('[data-testid="category-toggle-Image Processing"]')
+    await categoryToggle.trigger('click')
+    expect(categoryToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-testid="tool-item-threshold"]').exists()).toBe(false)
+
+    const vm = wrapper.vm as unknown as { searchQuery: string }
+    vm.searchQuery = 'threshold'
+    await wrapper.vm.$nextTick()
+
+    expect(categoryToggle.attributes('aria-expanded')).toBe('true')
+    expect(categoryToggle.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="tool-item-threshold"]').exists()).toBe(true)
+
+    await categoryToggle.trigger('click')
+    vm.searchQuery = ''
+    await wrapper.vm.$nextTick()
+
+    expect(categoryToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-testid="tool-item-threshold"]').exists()).toBe(false)
+  })
+
   it('treeNodes groups tools by package', async () => {
     const wrapper = mountPanel()
     await vi.waitFor(() => {
