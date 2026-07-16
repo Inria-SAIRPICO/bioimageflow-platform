@@ -204,7 +204,64 @@ describe('workflow draft store', () => {
     expect(store.isStale).toBe(true)
   })
 
-  it('ignores remote draft changes for other workflows or known revisions', async () => {
+  it('restores a retained remote notice when its workflow becomes tracked', () => {
+    const store = useWorkflowDraftStore()
+    store.reset('workflow-a')
+
+    store.noteRemoteChange(changed(5, {
+      workflow_id: 'workflow-b',
+      updated_by: 'system',
+      updated_at: '2026-05-21T12:09:00Z',
+      dirty_against_saved: false,
+    }))
+
+    expect(store.workflowId).toBe('workflow-a')
+    expect(store.remoteAvailableRevision).toBeNull()
+
+    store.trackWorkflow('workflow-b')
+
+    expect(store.remoteAvailableRevision).toBe(5)
+    expect(store.remoteUpdatedBy).toBe('system')
+    expect(store.remoteUpdatedAt).toBe('2026-05-21T12:09:00Z')
+    expect(store.remoteDirtyAgainstSaved).toBe(false)
+  })
+
+  it('keeps workflow notices independent when acknowledging an inactive workflow', () => {
+    const store = useWorkflowDraftStore()
+    store.reset('workflow-a')
+    store.noteRemoteChange(changed(4, { workflow_id: 'workflow-a' }))
+    store.noteRemoteChange(changed(6, { workflow_id: 'workflow-b' }))
+
+    store.acknowledgeAcceptedDraft(draft(6, emptyGraph, 'workflow-b'))
+
+    expect(store.workflowId).toBe('workflow-a')
+    expect(store.appliedDraftRevision).toBeNull()
+    expect(store.remoteAvailableRevision).toBe(4)
+
+    store.trackWorkflow('workflow-b')
+    expect(store.currentDraftRevision).toBe(6)
+    expect(store.appliedDraftRevision).toBe(6)
+    expect(store.remoteAvailableRevision).toBeNull()
+
+    store.trackWorkflow('workflow-a')
+    expect(store.appliedDraftRevision).toBeNull()
+    expect(store.remoteAvailableRevision).toBe(4)
+  })
+
+  it('clears every retained workflow state on reset', () => {
+    const store = useWorkflowDraftStore()
+    store.reset('workflow-a')
+    store.noteRemoteChange(changed(5, { workflow_id: 'workflow-b' }))
+
+    store.reset('workflow-a')
+    store.trackWorkflow('workflow-b')
+
+    expect(store.currentDraftRevision).toBeNull()
+    expect(store.appliedDraftRevision).toBeNull()
+    expect(store.remoteAvailableRevision).toBeNull()
+  })
+
+  it('does not project inactive-workflow or already-known notices', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: draft(3) })
 
     const store = useWorkflowDraftStore()
