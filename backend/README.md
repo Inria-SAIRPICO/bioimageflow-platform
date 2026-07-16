@@ -119,24 +119,15 @@ With `--dev` the pywebview window points at `http://localhost:5173` (the Vite de
 
 ## Workspace Storage
 
-The backend resolves platform-owned workflow files through one active workspace
-per user. In desktop development the default workspace is the repo-local
-`../workspace/` unless overridden in Settings. In webapp mode the launcher or
-deployment config provides a workspaces root, and each authenticated user gets
-`<workspaces_root>/<user_id>/workspace/`.
+The backend resolves platform-owned workflow files through one active workspace per user. Desktop mode defaults to `~/BioImageFlow/workspace/` unless overridden in Settings. A proposed webapp deployment provides a workspaces root and derives `<workspaces_root>/<user_id>/workspace/`.
 
 ```text
 workspace/
-  workflows/    folders and workflow directories
-  tools/        workspace-owned custom tool scripts
-  data/         local/uploaded datasets
-  outputs/      workflow runtime storage and caches
+  workflows/                          folders and workflow directories
+    <workflow-id>/tools/              custom tools owned by one workflow
 ```
 
-Workflow ids are slash-separated paths relative to `workspace/workflows/`.
-Runtime execution paths passed to the BioImageFlow library are resolved under
-`workspace/outputs/<workflow_id>/`. Custom tools are workspace-scoped rather
-than stored in individual workflow folders.
+Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Runtime execution paths passed to the BioImageFlow library are resolved below the configured output-data folder, by default `~/bioimageflow_data/workflows/<workflow-id>/`. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`. The compatibility `WorkspaceInfo` response also reports reserved `tools_root` and `outputs_root` values, but those paths are not the current custom-tool or execution-output authorities.
 
 ### How it fits together
 
@@ -147,16 +138,18 @@ The pywebview JS bridge (`DesktopApi`) exposes native file/folder pickers, a sav
 ## Testing
 
 ```bash
-uv run pytest                             # All tests
+uv run --frozen pytest -m "not common_tools"  # Required deterministic lane
 uv run pytest tests/test_desktop.py       # Desktop + DesktopApi + shutdown
 uv run pytest tests/test_routers          # Router tests only
 ```
 
 Desktop tests mock `webview`, `uvicorn`, and `threading.Thread`, so they run headlessly without opening any window.
 
+External common-tools certification is intentionally separate and requires `--run-common-tools` after installing the pinned published package into an empty tool store. See [`../docs/testing.md`](../docs/testing.md) for exact required, logging-order, browser, and external-certification commands.
+
 ## API Overview
 
-All endpoints are prefixed with `/api/v1/`.
+All endpoints are prefixed with `/api/v1/`. This is a short orientation list; use the generated OpenAPI document for the complete current surface.
 
 | Method   | Endpoint                            | Description                                 |
 |----------|-------------------------------------|---------------------------------------------|

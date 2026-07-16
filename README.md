@@ -1,6 +1,6 @@
 # BioImageFlow Platform
 
-A desktop application for building, executing, and inspecting bioimage analysis workflows visually. It wraps the [BioImageFlow](https://github.com/your-org/bioimageflow) library with a node-based editor, parameter panels, data viewers, and execution controls.
+A desktop application for building, executing, and inspecting bioimage analysis workflows visually. It wraps the [BioImageFlow](https://gitlab.inria.fr/sairpico/bioimageflow) library with a node-based editor, parameter panels, data viewers, and execution controls.
 
 ## Architecture
 
@@ -10,29 +10,27 @@ bioimageflow-platform/
   frontend/         Vue 3 SPA with node-based workflow editor
   bioimageflow/     Symlink to the BioImageFlow library
   docs/             Specs and implementation plans
-  workspace/        Default local development workspace (ignored/generated)
 ```
 
 The platform follows a **client-server model**:
 
 - The **backend** is a Python server (FastAPI) that exposes a REST + WebSocket API. It handles tool discovery, graph validation, workflow execution, and real-time progress streaming.
-- The **frontend** is a Vue SPA that owns the graph state (nodes, edges, positions, parameters) and communicates with the backend exclusively through the API.
+- The **frontend** is a Vue SPA whose mounted canvases own immediate graph interaction state (nodes, edges, positions, parameters) and communicate with the backend exclusively through the API.
 - The backend also ships a **pywebview entrypoint** that opens the SPA in a native OS window, exposes native file dialogs to the frontend, and manages the full application lifecycle.
 
-The frontend owns all graph state. The backend is stateless between requests for graph editing -- each request sends the full graph as JSON. The backend holds only transient execution state during workflow runs.
+Each root canvas persists its editable graph through a revisioned backend workflow draft, which is the durable authority shared with Save, Run, and agents. Nested canvases persist private revisioned snapshots until explicit parent apply. `workflow.json` is the explicitly saved artifact, and `PUT /graph` remains only stateless compatibility or transient validation. The backend also holds transient execution state during workflow runs.
 
 ## Workspace Model
 
-Each user has one active BioImageFlow workspace. Desktop users can change their
-workspace path in Settings; webapp deployments derive it from an admin-managed
-workspaces root as `<workspaces_root>/<user_id>/workspace/`.
+Each user has one active BioImageFlow workspace. Desktop mode defaults to `~/BioImageFlow/workspace/` and can select another path in Settings; proposed webapp deployments derive it from an admin-managed workspaces root as `<workspaces_root>/<user_id>/workspace/`.
 
 ```text
 workspace/
-  workflows/    Saved workflow tree, folders, and workflow-local tools
-  data/         Local/uploaded datasets
-  outputs/      Runtime outputs and caches per workflow id
+  workflows/                          Saved workflow tree and folders
+    <workflow-id>/tools/              Custom tools owned by one workflow
 ```
+
+Execution outputs use the configured output-data folder, which defaults to `~/bioimageflow_data/`, and are scoped by workflow ID. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`; neither is owned by `workspace/data` or `workspace/outputs` in the current implementation.
 
 Workflow ids are paths relative to `workspace/workflows/`, such as
 `segmentation/nuclei` or `My Project/quality_control`. Folder path segments can
@@ -59,7 +57,7 @@ package** footer below the table.
 - **Python** >= 3.12
 - **Node.js** >= 20 (or [Bun](https://bun.sh/))
 - **uv** (Python package manager)
-- The [BioImageFlow library](https://github.com/your-org/bioimageflow) cloned alongside this repo (symlinked as `bioimageflow/`)
+- The [BioImageFlow library](https://gitlab.inria.fr/sairpico/bioimageflow) cloned alongside this repo (symlinked as `bioimageflow/`)
 
 ## Quick Start — Desktop (production)
 
@@ -103,7 +101,7 @@ bun install
 bun run dev
 ```
 
-Open <http://localhost:5173>. Vite proxies `/api` and `/ws` to the backend on port 8000.
+Open <http://localhost:5173>. Vite proxies `/api` and `/ws` to `BIOIMAGEFLOW_BACKEND_PORT`, defaulting to port 8000.
 
 The module entrypoint uses the packaged backend logging config by default, so application INFO logs are visible during development. To run raw Uvicorn instead, pass the same config explicitly:
 
@@ -132,16 +130,24 @@ The pywebview window loads `http://localhost:5173` while the FastAPI backend run
 
 ## Testing
 
+The required local checks match CI:
+
 ```bash
-# Backend
-cd backend && uv run pytest
+# Backend lint, deterministic tests, and logging-order regression
+cd backend
+uv run --frozen ruff check .
+uv run --frozen pytest -m "not common_tools"
+uv run --frozen pytest tests/test_logging_config.py tests/test_ws/test_handler.py::test_publish_without_loop_drops_silently tests/test_ws/test_handler.py::test_publish_logs_future_exceptions tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger -q
 
-# Frontend unit tests
-cd frontend && bun run test:unit
-
-# Frontend E2E tests (requires both backend and frontend running)
-cd frontend && bun run test:e2e
+# Frontend lint, type-check, unit tests, and Chromium E2E
+cd ../frontend
+bun run lint
+bun run type-check
+bun run test:unit
+bun run test:e2e -- --project=chromium
 ```
+
+Playwright manages isolated backend and frontend servers. See [`docs/testing.md`](docs/testing.md) for dependency setup, Firefox, exact source bootstrap, and separate external common-tools certification.
 
 ## Development
 
@@ -171,11 +177,14 @@ Then restart the backend.
 
 ## Documentation
 
-- `specs.md` -- BioImageFlow library specifications
-- `platform_specs_v1.md` -- MVP platform specifications
-- `platform_specs_v2.md` -- Sub-workflows and embedded code editor
-- `platform_specs_v3.md` -- Webapp and multi-user platform specifications
-- `workspace_root_implementation_plan.md` -- Workspace-root implementation plan
+The versioned specifications are cumulative and have distinct status:
+
+- [`platform_specs_v1.md`](platform_specs_v1.md) — normative current base.
+- [`platform_specs_v2.md`](platform_specs_v2.md) — normative implemented additions, including sub-workflows and editor integration.
+- [`platform_specs_v3.md`](platform_specs_v3.md) — future webapp and multi-user proposal; it is not an implemented contract.
+- [`bioimageflow/docs/source/specs.md`](bioimageflow/docs/source/specs.md) — BioImageFlow library specification.
+
+There is intentionally no separate comprehensive platform specification; current requirements live in v1/v2 and future proposals live in v3.
 
 ## Todo
 
