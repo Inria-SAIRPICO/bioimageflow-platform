@@ -219,6 +219,9 @@ class _FakeWetlandsManager:
         self._envs[env_spec.name] = env
         return env
 
+    def shutdown_all(self) -> None:
+        self._envs.clear()
+
 
 def _settings(dev_mode: bool = True) -> Settings:
     return Settings(
@@ -368,25 +371,43 @@ class TestExecutionManagerLifecycle:
         class _WorkflowWithWetlands(_FakeWorkflow):
             def __init__(self) -> None:
                 super().__init__()
-                self.manager = _FakeWetlandsManager()
-                self._engine = type("Engine", (), {"_env_manager": self.manager})()
+                self.private_manager = _FakeWetlandsManager()
 
-            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
-                self._engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
-                return super().compute(*targets, dev_mode=dev_mode)
+            def _make_engine(self) -> Any:
+                return type("Engine", (), {"_env_manager": self.private_manager})()
+
+            def compute(
+                self,
+                *targets: Any,
+                dev_mode: bool = False,
+                engine: Any = None,
+            ) -> dict[str, Any]:
+                try:
+                    engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
+                    return super().compute(*targets, dev_mode=dev_mode)
+                finally:
+                    engine._env_manager.shutdown_all()
 
         bus = RecordingEventBus()
         wf = _WorkflowWithWetlands()
+        shared_manager = _FakeWetlandsManager()
         _install_fake_builder(monkeypatch, wf)
-        em = ExecutionManager(bus, MagicMock(), _settings())
+        em = ExecutionManager(
+            bus,
+            MagicMock(),
+            _settings(),
+            environment_manager_provider=lambda: shared_manager,
+        )
 
         await em.start(_graph_with([("n1", True)]))
         await _drain(em)
 
-        assert wf.manager.calls == ["cellpose-env"]
+        assert wf.private_manager.calls == []
+        assert shared_manager.calls == ["cellpose-env"]
         assert bus.environment_events == [
             ("cellpose-env", "creating"),
             ("cellpose-env", "running"),
+            ("cellpose-env", "stopped"),
         ]
 
     async def test_execution_marks_environment_stopped_when_wetlands_start_fails(

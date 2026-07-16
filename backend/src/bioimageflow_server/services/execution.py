@@ -190,6 +190,7 @@ class ExecutionManager:
         settings: Settings,
         storage_path: Path | None = None,
         settings_provider: Callable[[], Settings] | None = None,
+        environment_manager_provider: Callable[[], Any | None] | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
@@ -198,6 +199,7 @@ class ExecutionManager:
         # so live SettingsStore PATCHes (e.g. flipping ``dev_mode``) take
         # effect on the next run without restarting the app.
         self._settings_provider = settings_provider
+        self._environment_manager_provider = environment_manager_provider
         self.storage_path = storage_path
 
         self.state: Literal["running", "idle"] = "idle"
@@ -309,7 +311,6 @@ class ExecutionManager:
 
         workflow = validation_output.compilation.workflow
         self._workflow = workflow
-        self._attach_environment_status_hook(workflow)
 
         # Resolve execution targets. If caller passed an explicit subset,
         # look them up on workflow.nodes; otherwise pass none and let
@@ -334,7 +335,12 @@ class ExecutionManager:
         )
 
         def _run_sync() -> Any:
-            return workflow.compute(*targets, dev_mode=dev_mode)
+            use_explicit_engine = callable(getattr(workflow, "_make_engine", None))
+            engine = self._make_execution_engine(workflow)
+            self._attach_environment_status_hook(engine)
+            if engine is None or not use_explicit_engine:
+                return workflow.compute(*targets, dev_mode=dev_mode)
+            return workflow.compute(*targets, dev_mode=dev_mode, engine=engine)
 
         loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
@@ -574,14 +580,29 @@ class ExecutionManager:
 
         return _on_progress
 
-    def _attach_environment_status_hook(self, workflow: Any) -> None:
+    def _make_execution_engine(self, workflow: Any) -> Any | None:
+        """Create the engine before execution so its environment lifecycle is observable."""
+        make_engine = getattr(workflow, "_make_engine", None)
+        if not callable(make_engine):
+            return getattr(workflow, "_engine", None)
+
+        engine = make_engine()
+        manager = getattr(engine, "_env_manager", None)
+        if manager is None or self._environment_manager_provider is None:
+            return engine
+
+        shared_manager = self._environment_manager_provider()
+        if shared_manager is not None:
+            setattr(engine, "_env_manager", shared_manager)
+        return engine
+
+    def _attach_environment_status_hook(self, engine: Any) -> None:
         """Publish Wetlands environment lifecycle changes during execution.
 
         The library owns environment startup inside ``WetlandsEnvManager``.
-        Hooking the per-workflow manager keeps the platform UI in sync for
-        automatic starts triggered by ``workflow.compute()``.
+        Hooking the execution engine's manager keeps the platform UI in sync
+        for automatic starts and shutdowns triggered by ``workflow.compute()``.
         """
-        engine = getattr(workflow, "_engine", None)
         manager = getattr(engine, "_env_manager", None)
         get_or_create = getattr(manager, "get_or_create", None)
         if manager is None or not callable(get_or_create):
@@ -608,6 +629,18 @@ class ExecutionManager:
             return env
 
         setattr(manager, "get_or_create", _get_or_create_with_status)
+        shutdown_all = getattr(manager, "shutdown_all", None)
+        if callable(shutdown_all):
+            def _shutdown_all_with_status() -> Any:
+                envs = getattr(manager, "_envs", None)
+                env_names = list(envs) if isinstance(envs, dict) else []
+                try:
+                    return shutdown_all()
+                finally:
+                    for env_name in env_names:
+                        self._publish_environment_status(env_name, "stopped")
+
+            setattr(manager, "shutdown_all", _shutdown_all_with_status)
         setattr(manager, "_bioimageflow_platform_env_status_hooked", True)
 
     def _publish_environment_status(self, env_name: str, status: str) -> None:

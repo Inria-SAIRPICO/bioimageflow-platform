@@ -33,6 +33,11 @@ class ToolEnvironmentService:
             self._wetlands = WetlandsEnvManager()
         return self._wetlands
 
+    @property
+    def manager(self) -> Any:
+        """Return the shared Wetlands manager used by manual and automatic runs."""
+        return self._manager
+
     async def start(self, env_name: str) -> str:
         tools = self._tools_for_environment(env_name)
         if not tools:
@@ -113,17 +118,16 @@ class ToolEnvironmentService:
             publish(env_name, status)
 
     def _stop_wetlands_environment(self, env_name: str) -> None:
-        if self._wetlands is None:
-            return
-        envs = getattr(self._wetlands, "_envs", None)
+        wetlands = self._manager
+        envs = getattr(wetlands, "_envs", None)
         if isinstance(envs, dict):
             env = envs.pop(env_name, None)
             if env is not None and hasattr(env, "exit"):
                 env.exit()
-        hashes = getattr(self._wetlands, "_env_hashes", None)
+        hashes = getattr(wetlands, "_env_hashes", None)
         if isinstance(hashes, dict):
             hashes.pop(env_name, None)
-        configs = getattr(self._wetlands, "_launch_configs", None)
+        configs = getattr(wetlands, "_launch_configs", None)
         if isinstance(configs, dict):
             configs.pop(env_name, None)
 

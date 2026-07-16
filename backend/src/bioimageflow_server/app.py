@@ -246,18 +246,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     resolved_storage_path = normalize_workflow_storage_path(configured_storage_path)
     assert resolved_storage_path is not None
 
-    if config.execution_manager is not None:
-        execution_manager: Any = config.execution_manager
-    else:
-        settings_provider = (lambda: settings_store.get()) if settings_store is not None else None
-        execution_manager = ExecutionManager(
-            event_bus=event_bus,
-            tool_registry=registry,
-            settings=resolved_settings,
-            storage_path=resolved_storage_path,
-            settings_provider=settings_provider,
-        )
-
     result_store = config.result_store or ResultStoreService(
         storage_path=resolved_storage_path,
         tool_registry=registry,
@@ -372,6 +360,23 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         catalog=catalog,
         connection_manager=ws_manager,
     )
+
+    if config.execution_manager is not None:
+        execution_manager: Any = config.execution_manager
+    else:
+        settings_provider = (lambda: settings_store.get()) if settings_store is not None else None
+
+        def _tool_environment_manager() -> Any | None:
+            return getattr(tool_environment_service, "manager", None)
+
+        execution_manager = ExecutionManager(
+            event_bus=event_bus,
+            tool_registry=registry,
+            settings=resolved_settings,
+            storage_path=resolved_storage_path,
+            settings_provider=settings_provider,
+            environment_manager_provider=_tool_environment_manager,
+        )
 
     # Always instantiate a launcher (cheap config + state). The expensive
     # Conda solve is deferred to the first /napari/open call.
