@@ -322,7 +322,11 @@ def test_embedded_connection_failure_falls_back_to_clipboard(tmp_path: Path) -> 
         ),
         exc=ConnectionError("no opener"),
     )
-    service = _service(embedded=embedded)
+    service = _service(
+        embedded=embedded,
+        embedded_startup_timeout=0.0,
+        embedded_poll_interval=0.0,
+    )
 
     response = service.open_path(str(tool))
 

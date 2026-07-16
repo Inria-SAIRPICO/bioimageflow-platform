@@ -34,6 +34,9 @@ def test_editor_status_allows_nullable_url_and_version() -> None:
         "url": None,
         "version": None,
         "control_available": False,
+        "launch_attempted": False,
+        "error_code": None,
+        "error_detail": None,
     }
 
 

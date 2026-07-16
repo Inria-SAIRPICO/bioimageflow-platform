@@ -20,7 +20,6 @@ from bioimageflow_server.services.package_installer import (
     PackageNetworkError,
     PackageNotFoundError,
     PypiPackageInstaller,
-    _local_common_tools_root,
     _project_version,
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
@@ -165,6 +164,8 @@ async def test_install_common_tools_uses_local_checkout_without_pypi(
     pypi: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    source_root = Path(__file__).parents[1] / "fixtures" / "common_tools_checkout"
+    monkeypatch.setattr(installer_module, "_local_common_tools_root", lambda: source_root)
     monkeypatch.setattr(
         installer_module,
         "ensure_installed",
@@ -174,12 +175,10 @@ async def test_install_common_tools_uses_local_checkout_without_pypi(
     await installer.install("bioimageflow_common_tools", version=None)
 
     pypi.get_latest_stable.assert_not_called()
-    source_root = _local_common_tools_root()
-    assert source_root is not None
     version = _project_version(source_root)
     installed = tool_store / "bioimageflow_common_tools" / version / "bioimageflow_common_tools"
     assert (installed / "__init__.py").exists()
-    assert (installed / "atlas.py").exists()
+    assert (installed / "fixture_tool.py").exists()
     registry.scan_tool_store.assert_called_once_with(tool_store)
 
 

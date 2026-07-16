@@ -56,7 +56,7 @@ packages = ["src/bioimageflow_server"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "common_tools: optional certification tests requiring an installed bioimageflow_common_tools tool store; set BIOIMAGEFLOW_TOOL_STORE or BIOIMAGEFLOW_HOME.",
+    "common_tools: external certification tests requiring --run-common-tools and an installed bioimageflow_common_tools tool store.",
 ]
 
 [tool.ruff]

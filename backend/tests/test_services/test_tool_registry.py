@@ -629,7 +629,7 @@ def test_scan_tool_store_registers_common_tools():
     reg = ToolRegistryService()
     reg.scan_tool_store()
 
-    found = {t.name for t in reg.list_tools()}
+    found = {t.name for t in reg.list_tools() if t.package == PACKAGE_NAME}
     missing = expected - found
     pkg = reg.get_package(PACKAGE_NAME)
     if missing and pkg is not None and pkg.load_errors and not found:
