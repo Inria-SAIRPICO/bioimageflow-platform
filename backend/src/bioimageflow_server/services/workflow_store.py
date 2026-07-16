@@ -59,11 +59,11 @@ class WorkflowArchiveAdapter(Protocol):
     ) -> dict[str, Any]: ...
 
 
-def normalize_workflow_draft_identity(
+def _prepared_workflow_draft_identity(
     workflow_dir: Path,
     workflow_id: str,
-) -> dict[str, Any] | None:
-    """Return an existing draft, repairing its path-derived identity if needed."""
+) -> tuple[Path, dict[str, Any], bool] | None:
+    """Load and validate the path-authoritative form of an existing draft."""
 
     draft_path = workflow_dir / ".bioimageflow" / "draft.json"
     if not draft_path.exists():
@@ -73,11 +73,25 @@ def normalize_workflow_draft_identity(
         raw = json.load(handle)
     if not isinstance(raw, dict):
         raise ValueError(f"Draft file {draft_path} must contain a JSON object")
-    if raw.get("workflow_id") == workflow_id:
-        return raw
 
-    normalized = {**raw, "workflow_id": workflow_id}
+    identity_changed = raw.get("workflow_id") != workflow_id
+    normalized = {**raw, "workflow_id": workflow_id} if identity_changed else raw
     WorkflowDraftResponse.model_validate(normalized)
+    return draft_path, normalized, identity_changed
+
+
+def normalize_workflow_draft_identity(
+    workflow_dir: Path,
+    workflow_id: str,
+) -> dict[str, Any] | None:
+    """Return an existing draft, repairing its path-derived identity if needed."""
+
+    prepared = _prepared_workflow_draft_identity(workflow_dir, workflow_id)
+    if prepared is None:
+        return None
+    draft_path, normalized, identity_changed = prepared
+    if not identity_changed:
+        return normalized
     fd, tmp_name = tempfile.mkstemp(
         dir=str(draft_path.parent),
         prefix=f".{draft_path.name}.",
@@ -292,6 +306,7 @@ class WorkflowStoreService:
         self,
         moves: list[tuple[str, str]],
     ) -> None:
+        self._validate_moved_workflow_drafts(moves)
         for old_name, new_name in moves:
             if old_name == new_name:
                 continue
@@ -307,6 +322,14 @@ class WorkflowStoreService:
             new_storage = self._managed_storage_path(new_name)
             if new_storage.exists() and new_storage != self._managed_storage_path(old_name):
                 raise FileExistsError(new_name)
+
+    def _validate_moved_workflow_drafts(
+        self,
+        moves: list[tuple[str, str]],
+    ) -> None:
+        for old_name, new_name in moves:
+            if old_name != new_name:
+                _prepared_workflow_draft_identity(self.workflow_dir(old_name), new_name)
 
     def _rewrite_moved_workflows(self, moves: list[tuple[str, str]]) -> None:
         for old_name, new_name in moves:
@@ -851,6 +874,8 @@ class WorkflowStoreService:
                 new_name = name
         if new_name != name and self._has_name_collision(new_name):
             raise FileExistsError(new_name)
+        if new_name != name:
+            self._validate_moved_workflow_drafts([(name, new_name)])
 
         if patch.display_name is not None:
             metadata["display_name"] = patch.display_name
