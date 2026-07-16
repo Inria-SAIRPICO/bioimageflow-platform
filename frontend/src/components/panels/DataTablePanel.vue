@@ -229,7 +229,12 @@ watch(
     scope = effectScope()
     scope.run(() => {
       for (const entry of entries) {
-        fetchIfMissing(entry)
+        const initialStatus = statusProjection?.statusForNode(entry.dataNodeId) ?? null
+        if (initialStatus?.source === 'execution' && initialStatus.status === 'executed') {
+          refreshEntry(entry, target)
+        } else {
+          fetchIfMissing(entry)
+        }
         if (statusProjection === null) continue
         watch(
           () => statusProjection.statusForNode(entry.dataNodeId)?.status,
