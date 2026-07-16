@@ -29,6 +29,7 @@ from bioimageflow_server.models.workflow import (
     canonical_workflow_name,
     validate_workflow_id,
 )
+from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
 from bioimageflow_server.services.graph_translator import (
     collect_required_packages,
     _detect_missing_packages,
@@ -56,6 +57,58 @@ class WorkflowArchiveAdapter(Protocol):
         *,
         extract_to: Path | None = None,
     ) -> dict[str, Any]: ...
+
+
+def _prepared_workflow_draft_identity(
+    workflow_dir: Path,
+    workflow_id: str,
+) -> tuple[Path, dict[str, Any], bool] | None:
+    """Load and validate the path-authoritative form of an existing draft."""
+
+    draft_path = workflow_dir / ".bioimageflow" / "draft.json"
+    if not draft_path.exists():
+        return None
+
+    with draft_path.open("r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+    if not isinstance(raw, dict):
+        raise ValueError(f"Draft file {draft_path} must contain a JSON object")
+
+    identity_changed = raw.get("workflow_id") != workflow_id
+    normalized = {**raw, "workflow_id": workflow_id} if identity_changed else raw
+    WorkflowDraftResponse.model_validate(normalized)
+    return draft_path, normalized, identity_changed
+
+
+def normalize_workflow_draft_identity(
+    workflow_dir: Path,
+    workflow_id: str,
+) -> dict[str, Any] | None:
+    """Return an existing draft, repairing its path-derived identity if needed."""
+
+    prepared = _prepared_workflow_draft_identity(workflow_dir, workflow_id)
+    if prepared is None:
+        return None
+    draft_path, normalized, identity_changed = prepared
+    if not identity_changed:
+        return normalized
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(draft_path.parent),
+        prefix=f".{draft_path.name}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(normalized, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(tmp_name, draft_path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
+    return normalized
 
 
 def _merge_export_requirements(
@@ -233,6 +286,7 @@ class WorkflowStoreService:
         if old_name == new_name:
             return
         path = self._path_for(new_name)
+        normalize_workflow_draft_identity(path.parent, new_name)
         raw = json.loads(path.read_text(encoding="utf-8"))
         metadata = raw.get("metadata", {})
         if not isinstance(metadata, dict):
@@ -252,6 +306,7 @@ class WorkflowStoreService:
         self,
         moves: list[tuple[str, str]],
     ) -> None:
+        self._validate_moved_workflow_drafts(moves)
         for old_name, new_name in moves:
             if old_name == new_name:
                 continue
@@ -267,6 +322,14 @@ class WorkflowStoreService:
             new_storage = self._managed_storage_path(new_name)
             if new_storage.exists() and new_storage != self._managed_storage_path(old_name):
                 raise FileExistsError(new_name)
+
+    def _validate_moved_workflow_drafts(
+        self,
+        moves: list[tuple[str, str]],
+    ) -> None:
+        for old_name, new_name in moves:
+            if old_name != new_name:
+                _prepared_workflow_draft_identity(self.workflow_dir(old_name), new_name)
 
     def _rewrite_moved_workflows(self, moves: list[tuple[str, str]]) -> None:
         for old_name, new_name in moves:
@@ -811,6 +874,8 @@ class WorkflowStoreService:
                 new_name = name
         if new_name != name and self._has_name_collision(new_name):
             raise FileExistsError(new_name)
+        if new_name != name:
+            self._validate_moved_workflow_drafts([(name, new_name)])
 
         if patch.display_name is not None:
             metadata["display_name"] = patch.display_name
@@ -831,6 +896,7 @@ class WorkflowStoreService:
             destination = self._workflow_dir(new_name)
             destination.parent.mkdir(parents=True, exist_ok=True)
             path.parent.rename(destination)
+            normalize_workflow_draft_identity(destination, new_name)
         self._write_raw(new_name, raw)
         return self._metadata_from_raw(
             new_name,

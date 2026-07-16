@@ -17,9 +17,12 @@ from bioimageflow_server.models.workflow import (
     WorkflowSaveBody,
     WorkflowUpdate,
 )
+from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
 from bioimageflow_server.services.workflow_store import (
     WorkflowStoreService,
+    normalize_workflow_draft_identity,
 )
+from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
@@ -73,6 +76,63 @@ class _FakeArchiveAdapter:
 
 def _workflow_json(store: WorkflowStoreService, name: str) -> Path:
     return store.root_dir / name / "workflow.json"
+
+
+def _draft_json(store: WorkflowStoreService, name: str) -> Path:
+    return store.root_dir / name / ".bioimageflow" / "draft.json"
+
+
+def _draft_payload(workflow_id: str, revision: int = 7) -> dict:
+    return {
+        "draft_version": 1,
+        "workflow_id": workflow_id,
+        "base_saved_revision": "sha256:saved-before-move",
+        "draft_revision": revision,
+        "updated_at": "2026-07-16T04:30:00Z",
+        "updated_by": "agent",
+        "dirty_against_saved": True,
+        "graph": {
+            "nodes": [
+                {
+                    "id": "draft-node",
+                    "name": "Draft node",
+                    "tool_name": "MissingTool",
+                    "position": [12, 34],
+                    "parameters": {"threshold": 0.75},
+                    "enabled": True,
+                    "collapsed": False,
+                }
+            ],
+            "edges": [],
+        },
+        "validation": {
+            "valid": False,
+            "node_statuses": {
+                "draft-node": {
+                    "node_id": "draft-node",
+                    "status": "out_of_date",
+                    "cached": True,
+                    "result_key": "cached-result",
+                }
+            },
+            "errors": [
+                {
+                    "type": "missing_tool",
+                    "detail": "MissingTool is unavailable",
+                    "node": "draft-node",
+                }
+            ],
+        },
+        "future_compatible": {"preserve": [1, 2, 3]},
+    }
+
+
+def _write_draft(store: WorkflowStoreService, workflow_id: str, revision: int = 7) -> dict:
+    payload = _draft_payload(workflow_id, revision)
+    path = _draft_json(store, workflow_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return payload
 
 
 def _export_document(
@@ -316,6 +376,159 @@ def test_move_workflow_between_folders(store: WorkflowStoreService) -> None:
     assert moved.id == "analysis/nuclei"
     assert (store.root_dir / "analysis" / "nuclei" / "workflow.json").exists()
     assert not (store.root_dir / "segmentation" / "nuclei").exists()
+
+
+def test_direct_workflow_move_rewrites_only_existing_draft_identity(
+    store: WorkflowStoreService,
+) -> None:
+    old_id = "segmentation/nuclei"
+    new_id = "analysis/renamed-nuclei"
+    store.create_workflow(WorkflowCreate(name=old_id))
+    original = _write_draft(store, old_id)
+
+    moved = store.patch_workflow(
+        old_id,
+        WorkflowUpdate(action="update", new_id=new_id),
+    )
+
+    expected = {**original, "workflow_id": new_id}
+    assert moved.id == new_id
+    assert json.loads(_draft_json(store, new_id).read_text(encoding="utf-8")) == expected
+    snapshot = WorkflowDraftService(lambda: store).get_draft_snapshot(new_id)
+    assert snapshot == WorkflowDraftResponse.model_validate(expected)
+    assert not store.workflow_dir(old_id).exists()
+    assert not _draft_json(store, old_id).exists()
+    with pytest.raises(FileNotFoundError):
+        store.get_workflow(old_id)
+
+
+def test_folder_move_rewrites_all_child_draft_identities(
+    store: WorkflowStoreService,
+) -> None:
+    moves = {
+        "project/one": "archive/moved/one",
+        "project/nested/two": "archive/moved/nested/two",
+    }
+    originals: dict[str, dict] = {}
+    for revision, old_id in enumerate(moves, start=3):
+        store.create_workflow(WorkflowCreate(name=old_id))
+        originals[old_id] = _write_draft(store, old_id, revision)
+    no_draft_old_id = "project/no-draft"
+    no_draft_new_id = "archive/moved/no-draft"
+    store.create_workflow(WorkflowCreate(name=no_draft_old_id))
+
+    store.rename_folder("project", "archive/moved")
+
+    for old_id, new_id in moves.items():
+        expected = {**originals[old_id], "workflow_id": new_id}
+        assert json.loads(_draft_json(store, new_id).read_text(encoding="utf-8")) == expected
+        assert WorkflowDraftService(lambda: store).get_draft_snapshot(new_id).workflow_id == new_id
+        assert not _draft_json(store, old_id).exists()
+    assert not _draft_json(store, no_draft_old_id).exists()
+    assert not _draft_json(store, no_draft_new_id).exists()
+
+
+def test_delete_folder_promotes_child_drafts_with_new_identities(
+    store: WorkflowStoreService,
+) -> None:
+    moves = {
+        "project/one": "one",
+        "project/nested/two": "nested/two",
+    }
+    originals: dict[str, dict] = {}
+    for revision, old_id in enumerate(moves, start=8):
+        store.create_workflow(WorkflowCreate(name=old_id))
+        originals[old_id] = _write_draft(store, old_id, revision)
+
+    store.delete_folder("project", "move_children_up")
+
+    for old_id, new_id in moves.items():
+        expected = {**originals[old_id], "workflow_id": new_id}
+        assert json.loads(_draft_json(store, new_id).read_text(encoding="utf-8")) == expected
+        assert not _draft_json(store, old_id).exists()
+
+
+def test_moving_workflow_without_draft_does_not_create_one(
+    store: WorkflowStoreService,
+) -> None:
+    old_id = "project/no-draft"
+    new_id = "archive/no-draft"
+    store.create_workflow(WorkflowCreate(name=old_id))
+    assert not _draft_json(store, old_id).exists()
+
+    store.patch_workflow(
+        old_id,
+        WorkflowUpdate(action="update", new_id=new_id),
+    )
+
+    assert not _draft_json(store, old_id).exists()
+    assert not _draft_json(store, new_id).exists()
+
+
+def test_direct_move_rejects_malformed_draft_before_moving_workflow(
+    store: WorkflowStoreService,
+) -> None:
+    old_id = "project/malformed"
+    new_id = "archive/malformed"
+    store.create_workflow(WorkflowCreate(name=old_id))
+    draft_path = _draft_json(store, old_id)
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(json.JSONDecodeError):
+        store.patch_workflow(
+            old_id,
+            WorkflowUpdate(action="update", new_id=new_id),
+        )
+
+    assert store.get_workflow(old_id).info.id == old_id
+    assert draft_path.read_text(encoding="utf-8") == "{not-json"
+    assert not store.workflow_dir(new_id).exists()
+
+
+def test_folder_move_preflights_all_child_drafts_before_renaming(
+    store: WorkflowStoreService,
+) -> None:
+    workflow_ids = ["project/one", "project/nested/two"]
+    for workflow_id in workflow_ids:
+        store.create_workflow(WorkflowCreate(name=workflow_id))
+        _write_draft(store, workflow_id)
+    invalid_path = _draft_json(store, "project/nested/two")
+    invalid_path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a JSON object"):
+        store.rename_folder("project", "archive/moved")
+
+    for workflow_id in workflow_ids:
+        assert store.get_workflow(workflow_id).info.id == workflow_id
+    assert json.loads(_draft_json(store, "project/one").read_text(encoding="utf-8"))[
+        "workflow_id"
+    ] == "project/one"
+    assert invalid_path.read_text(encoding="utf-8") == "[]"
+    assert not (store.root_dir / "archive" / "moved").exists()
+
+
+def test_draft_identity_repair_cleans_temp_file_when_replace_fails(
+    store: WorkflowStoreService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow_id = "project/repair"
+    store.create_workflow(WorkflowCreate(name=workflow_id))
+    draft_path = _draft_json(store, workflow_id)
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    original = _draft_payload("legacy/location")
+    draft_path.write_text(json.dumps(original, indent=2), encoding="utf-8")
+
+    def fail_replace(_source: str, _target: Path) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr("bioimageflow_server.services.workflow_store.os.replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        normalize_workflow_draft_identity(store.workflow_dir(workflow_id), workflow_id)
+
+    assert json.loads(draft_path.read_text(encoding="utf-8")) == original
+    assert not list(draft_path.parent.glob(".draft.json.*.tmp"))
 
 
 def test_move_workflow_to_folder_with_spaces(store: WorkflowStoreService) -> None:

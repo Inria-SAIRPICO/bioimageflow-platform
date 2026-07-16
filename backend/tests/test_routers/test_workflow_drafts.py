@@ -14,6 +14,7 @@ import pytest
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
 from bioimageflow_server.services import workflow_draft as workflow_draft_service
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -418,6 +419,87 @@ async def test_nested_workflow_draft_route_does_not_shadow_workflow_get(
     assert draft.json()["workflow_id"] == "folder/wf"
     assert workflow.status_code == 200
     assert workflow.json()["info"]["id"] == "folder/wf"
+
+
+async def test_get_repairs_legacy_mismatched_draft_identity_without_losing_fields(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    workflow_id = "folder/wf"
+    await _create_workflow(client, workflow_id)
+    draft_path = (
+        tmp_path
+        / "workspace"
+        / "workflows"
+        / "folder"
+        / "wf"
+        / ".bioimageflow"
+        / "draft.json"
+    )
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy = {
+        "draft_version": 1,
+        "workflow_id": "legacy/location",
+        "base_saved_revision": "sha256:legacy",
+        "draft_revision": 11,
+        "updated_at": "2026-07-16T04:45:00Z",
+        "updated_by": "agent",
+        "dirty_against_saved": True,
+        "graph": _graph("legacy-node"),
+        "validation": {
+            "valid": False,
+            "node_statuses": {},
+            "errors": [
+                {
+                    "type": "missing_tool",
+                    "detail": "MissingTool is unavailable",
+                    "node": "legacy-node",
+                }
+            ],
+        },
+        "future_compatible": {"preserve": True},
+    }
+    draft_path.write_text(json.dumps(legacy, indent=2), encoding="utf-8")
+
+    response = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    normalized = {**legacy, "workflow_id": workflow_id}
+    assert body == WorkflowDraftResponse.model_validate(normalized).model_dump(mode="json")
+    repaired = json.loads(draft_path.read_text(encoding="utf-8"))
+    assert repaired == normalized
+    assert not list(draft_path.parent.glob(".draft.json.*.tmp"))
+
+
+async def test_get_does_not_repair_mismatched_invalid_draft(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+) -> None:
+    workflow_id = "folder/wf"
+    await _create_workflow(client, workflow_id)
+    draft_path = (
+        tmp_path
+        / "workspace"
+        / "workflows"
+        / "folder"
+        / "wf"
+        / ".bioimageflow"
+        / "draft.json"
+    )
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    invalid = {
+        "draft_version": 1,
+        "workflow_id": "legacy/location",
+        "future_compatible": {"preserve": True},
+    }
+    draft_path.write_text(json.dumps(invalid, indent=2), encoding="utf-8")
+
+    response = await client.get(f"/api/v1/workflow-drafts/{workflow_id}")
+
+    assert response.status_code == 422
+    assert json.loads(draft_path.read_text(encoding="utf-8")) == invalid
+    assert not list(draft_path.parent.glob(".draft.json.*.tmp"))
 
 
 async def test_put_rejects_writes_while_execution_is_running(
