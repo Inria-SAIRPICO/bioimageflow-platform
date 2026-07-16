@@ -260,6 +260,24 @@ describe('ToolsPanel', () => {
     expect(vm.filteredTools).toHaveLength(4)
   })
 
+  it('renders tags as compact metadata and summarizes overflow', async () => {
+    const wrapper = mountPanel()
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.tools.length).toBeGreaterThan(0)
+    })
+
+    const store = useToolRegistryStore()
+    const threshold = store.tools.find((tool) => tool.name === 'threshold')!
+    threshold.tags = ['segmentation', 'binary', 'image']
+    await wrapper.vm.$nextTick()
+
+    const row = wrapper.get('[data-testid="tool-item-threshold"]')
+    expect(row.get('.tool-list-tags').text()).toBe('segmentation · binary')
+    expect(row.get('.tool-list-tag-overflow').text()).toBe('+1')
+    expect(row.get('.tool-list-meta').attributes('title')).toBe('segmentation · binary · image')
+    expect(row.find('.p-tag').exists()).toBe(false)
+  })
 
   it('labels the synthetic custom package as workflow tools in Manage Tools', async () => {
     const wrapper = mountPanel()

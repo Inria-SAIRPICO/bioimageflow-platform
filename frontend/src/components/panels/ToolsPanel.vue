@@ -5,7 +5,6 @@ import Column from 'primevue/column'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
-import Tag from 'primevue/tag'
 import CreateToolDialog from './CreateToolDialog.vue'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
@@ -823,48 +822,50 @@ defineExpose({
             <div class="tool-list-item-row">
               <span class="tool-list-name">{{ tool.display_name }}</span>
               <span class="tool-list-right">
-                <Button
-                  icon="pi pi-info-circle"
-                  text
-                  size="small"
-                  class="tool-list-info-btn"
-                  title="Tool information"
-                  :data-testid="`tool-info-${tool.name}`"
-                  @click.stop="toggleDocumentation(tool.name)"
-                />
-                <Button
-                  v-if="localToolActionsAvailable"
-                  icon="pi pi-code"
-                  text
-                  size="small"
-                  class="tool-list-action-btn"
-                  title="Open tool script"
-                  :data-testid="`tool-open-script-${tool.name}`"
-                  @click.stop="openInEditor(tool.name)"
-                />
-                <Button
-                  v-if="localToolActionsAvailable && isEditableTool(tool)"
-                  icon="pi pi-file-edit"
-                  text
-                  size="small"
-                  class="tool-list-action-btn"
-                  title="Rename tool"
-                  :disabled="toolRegistry.customToolBusy"
-                  :data-testid="`tool-rename-${tool.name}`"
-                  @click.stop="renameCustomTool(tool)"
-                />
-                <Button
-                  v-if="localToolActionsAvailable && isEditableTool(tool)"
-                  icon="pi pi-trash"
-                  text
-                  size="small"
-                  severity="danger"
-                  class="tool-list-action-btn"
-                  title="Delete tool"
-                  :disabled="toolRegistry.customToolBusy"
-                  :data-testid="`tool-delete-${tool.name}`"
-                  @click.stop="requestDeleteCustomTool(tool)"
-                />
+                <span class="tool-list-secondary-actions">
+                  <Button
+                    icon="pi pi-info-circle"
+                    text
+                    size="small"
+                    class="tool-list-info-btn"
+                    title="Tool information"
+                    :data-testid="`tool-info-${tool.name}`"
+                    @click.stop="toggleDocumentation(tool.name)"
+                  />
+                  <Button
+                    v-if="localToolActionsAvailable"
+                    icon="pi pi-code"
+                    text
+                    size="small"
+                    class="tool-list-action-btn"
+                    title="Open tool script"
+                    :data-testid="`tool-open-script-${tool.name}`"
+                    @click.stop="openInEditor(tool.name)"
+                  />
+                  <Button
+                    v-if="localToolActionsAvailable && isEditableTool(tool)"
+                    icon="pi pi-file-edit"
+                    text
+                    size="small"
+                    class="tool-list-action-btn"
+                    title="Rename tool"
+                    :disabled="toolRegistry.customToolBusy"
+                    :data-testid="`tool-rename-${tool.name}`"
+                    @click.stop="renameCustomTool(tool)"
+                  />
+                  <Button
+                    v-if="localToolActionsAvailable && isEditableTool(tool)"
+                    icon="pi pi-trash"
+                    text
+                    size="small"
+                    severity="danger"
+                    class="tool-list-action-btn"
+                    title="Delete tool"
+                    :disabled="toolRegistry.customToolBusy"
+                    :data-testid="`tool-delete-${tool.name}`"
+                    @click.stop="requestDeleteCustomTool(tool)"
+                  />
+                </span>
                 <Button
                   icon="pi pi-power-off"
                   text
@@ -878,14 +879,15 @@ defineExpose({
                 />
               </span>
             </div>
-            <div v-if="tool.tags.length" class="tool-list-meta">
-              <Tag
-                v-for="tag in tool.tags"
-                :key="tag"
-                :value="tag"
-                severity="secondary"
-                class="tool-list-tag"
-              />
+            <div
+              v-if="tool.tags.length"
+              class="tool-list-meta"
+              :title="tool.tags.join(' · ')"
+            >
+              <span class="tool-list-tags">{{ tool.tags.slice(0, 2).join(' · ') }}</span>
+              <span v-if="tool.tags.length > 2" class="tool-list-tag-overflow">
+                +{{ tool.tags.length - 2 }}
+              </span>
             </div>
           </div>
         </div>
@@ -1304,12 +1306,20 @@ defineExpose({
 .tool-list-item {
   cursor: grab;
   user-select: none;
-  padding: 6px 6px;
+  padding: 7px 6px;
+  background-color: var(--bif-surface);
+  border-bottom: 1px solid var(--bif-border-muted);
   border-radius: 4px;
   transition: background-color 0.15s;
 }
-.tool-list-item:hover {
-  background-color: var(--bif-surface-hover);
+
+.tool-list-item:nth-child(even) {
+  background-color: color-mix(in srgb, var(--p-primary-color) 5%, var(--bif-surface));
+}
+
+.tool-list-item:hover,
+.tool-list-item:focus-within {
+  background-color: color-mix(in srgb, var(--p-primary-color) 14%, var(--bif-surface));
 }
 
 .tool-list-item-row {
@@ -1321,7 +1331,7 @@ defineExpose({
 
 .tool-list-name {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   flex: 1;
   min-width: 0;
   white-space: nowrap;
@@ -1335,6 +1345,22 @@ defineExpose({
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+}
+
+.tool-list-secondary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 0.15s ease, opacity 0.15s ease;
+}
+
+.tool-list-item:hover .tool-list-secondary-actions,
+.tool-list-item:focus-within .tool-list-secondary-actions {
+  max-width: 104px;
+  opacity: 1;
 }
 
 .tool-list-info-btn,
@@ -1356,10 +1382,16 @@ defineExpose({
 
 .tool-list-meta {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  margin-top: 2px;
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--bif-text-subtle);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .tool-list-category {
@@ -1367,10 +1399,20 @@ defineExpose({
   color: var(--p-text-muted-color);
 }
 
-.tool-list-tag {
-  font-size: 10px;
-  padding: 0 4px;
-  line-height: 16px;
+.tool-list-tags {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-list-tag-overflow {
+  flex-shrink: 0;
+}
+
+@media (hover: none) {
+  .tool-list-secondary-actions {
+    max-width: 104px;
+    opacity: 1;
+  }
 }
 
 .tool-list-empty {
