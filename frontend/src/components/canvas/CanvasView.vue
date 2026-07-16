@@ -160,7 +160,8 @@ const canvasDescriptor: CanvasSessionDescriptor = isSubWorkflowEditor
         canvasId,
         sessionId: props.subWorkflowSessionId!,
         parentCanvasId: canvasIdFromPanelId(
-          props.parentCanvasPanelId
+          initialNestedSession?.parentCanvasId
+          ?? props.parentCanvasPanelId
           ?? initialCanvasParams?.parentCanvasPanelId
           ?? 'canvas',
         ),
@@ -180,6 +181,17 @@ if (!isSubWorkflowEditor && initialCanvasParams?.draft) {
 const graphSync = useGraphSync({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
+  nestedSnapshot: initialNestedSession?.durable && props.subWorkflowSessionId
+    ? {
+        initialSnapshot: subWorkflowSessionsStore.snapshotForSession(
+          props.subWorkflowSessionId,
+        ),
+        onAccepted: snapshot => subWorkflowSessionsStore.acceptSnapshot(
+          props.subWorkflowSessionId!,
+          snapshot,
+        ),
+      }
+    : undefined,
 })
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
@@ -457,8 +469,8 @@ function currentPublicationContext(): PublicationContext | null {
   if (!session) return null
   return {
     parentNodeId: session.parentNodeId,
-    published_inputs: session.published_inputs,
-    published_outputs: session.published_outputs,
+    published_inputs: session.draft.published_inputs ?? [],
+    published_outputs: session.draft.published_outputs ?? [],
   }
 }
 
@@ -494,8 +506,11 @@ function replacePublishedInterface(
   if (!props.subWorkflowSessionId) return false
   const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
   if (!session) return false
-  session.published_inputs = inputs
-  session.published_outputs = outputs
+  session.draft = {
+    ...session.draft,
+    published_inputs: deepClone(inputs),
+    published_outputs: deepClone(outputs),
+  }
   refreshPublicationContextOnNodes()
   return true
 }
@@ -1226,12 +1241,10 @@ async function loadSubWorkflowSessionDraft() {
 }
 
 onMounted(async () => {
-  if (!isSubWorkflowEditor) {
-    window.addEventListener(
-      'bioimageflow:apply-sub-workflow-session',
-      handleApplySubWorkflowSessionEvent as EventListener,
-    )
-  }
+  window.addEventListener(
+    'bioimageflow:apply-sub-workflow-session',
+    handleApplySubWorkflowSessionEvent as EventListener,
+  )
   window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
   window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   window.addEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
@@ -1282,12 +1295,10 @@ onBeforeUnmount(() => {
   disposeCanvasPersistence()
   canvasCommands.dispose()
   uiStore.releaseCanvasPresentation(canvasId)
-  if (!isSubWorkflowEditor) {
-    window.removeEventListener(
-      'bioimageflow:apply-sub-workflow-session',
-      handleApplySubWorkflowSessionEvent as EventListener,
-    )
-  }
+  window.removeEventListener(
+    'bioimageflow:apply-sub-workflow-session',
+    handleApplySubWorkflowSessionEvent as EventListener,
+  )
   window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
   window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
   window.removeEventListener('bioimageflow:edit-command', handleEditCommandEvent as EventListener)
@@ -2165,11 +2176,12 @@ function vueFlowEdgeFromGraphEdge(e: GraphState['edges'][number]) {
 }
 
 function currentVueFlowState(): CanvasVueFlowState {
+  const publication = currentPublicationContext()
   return {
     nodes: getNodes.value.map((n: any) => ({ ...n })),
     edges: getEdges.value.map((e: any) => ({ ...e })),
-    published_inputs: rootPublishedInputs.value,
-    published_outputs: rootPublishedOutputs.value,
+    published_inputs: publication?.published_inputs ?? rootPublishedInputs.value,
+    published_outputs: publication?.published_outputs ?? rootPublishedOutputs.value,
   }
 }
 
@@ -2293,27 +2305,47 @@ function createSelectedSubWorkflow() {
   emitGraphChanged()
 }
 
-function openSubWorkflow(nodeId: string) {
+async function openSubWorkflow(nodeId: string) {
+  if (isLocked.value) return null
   const node = getNodes.value.find((n: any) => n.id === nodeId)
   if (!node?.data?.sub_workflow) return null
-  const session = subWorkflowSessionsStore.openSession({
-    parentWorkflowName: owningWorkflowId(),
-    parentSourceWorkflowName: node.data.source_workflow_name ?? null,
-    parentNodeId: node.id,
-    parentNodeName: node.data.name ?? node.id,
-    graph: node.data.sub_workflow,
-    published_inputs: node.data.published_inputs ?? [],
-    published_outputs: node.data.published_outputs ?? [],
-    readonlyReason: node.data.sub_workflow_readonly_reason ?? null,
-  })
-  window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
-    detail: {
-      sessionId: session.id,
+  try {
+    const owner = props.subWorkflowSessionId
+      ? { kind: 'nested' as const, session_id: props.subWorkflowSessionId }
+      : {
+          kind: 'root' as const,
+          canvas_id: canvasId,
+          workflow_id: owningWorkflowId(),
+        }
+    const session = await subWorkflowSessionsStore.openDurableSession({
+      owner,
+      parentCanvasId: canvasId,
+      parentWorkflowName: owningWorkflowId(),
+      parentSourceWorkflowName: node.data.source_workflow_name ?? null,
       parentNodeId: node.id,
-      parentCanvasPanelId: canvasPanelId,
-    },
-  }))
-  return session
+      parentNodeName: node.data.name ?? node.id,
+      graph: node.data.sub_workflow,
+      published_inputs: node.data.published_inputs ?? [],
+      published_outputs: node.data.published_outputs ?? [],
+      readonlyReason: node.data.sub_workflow_readonly_reason ?? null,
+    })
+    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+      detail: {
+        sessionId: session.id,
+        parentNodeId: node.id,
+        parentCanvasPanelId: canvasPanelId,
+      },
+    }))
+    return session
+  } catch (error) {
+    reportError({
+      kind: 'graph_sync_error',
+      detail: error instanceof Error
+        ? error.message
+        : 'Failed to open nested workflow snapshot',
+    })
+    return null
+  }
 }
 
 function stablePublishedInputKey(input: PublishedInput): string {
@@ -2426,18 +2458,25 @@ function applySubWorkflowDraft(
     published_inputs?: PublishedInput[]
     published_outputs?: PublishedOutput[]
   } = {},
-) {
+): boolean {
+  if (isLocked.value) return false
   const node = getNodes.value.find((n: any) => n.id === parentNodeId)
-  if (!node?.data) return
+  if (!node?.data) return false
   const parentWasExecuted = canvasStatusProjection.statusForNode(parentNodeId)?.status
     === 'executed'
   const previousInputs = deepClone(node.data.published_inputs ?? []) as PublishedInput[]
   const previousOutputs = deepClone(node.data.published_outputs ?? []) as PublishedOutput[]
   const nextInputs = deepClone(
-    publishedInterface.published_inputs ?? node.data.published_inputs ?? [],
+    graph.published_inputs
+      ?? publishedInterface.published_inputs
+      ?? node.data.published_inputs
+      ?? [],
   ) as PublishedInput[]
   const nextOutputs = deepClone(
-    publishedInterface.published_outputs ?? node.data.published_outputs ?? [],
+    graph.published_outputs
+      ?? publishedInterface.published_outputs
+      ?? node.data.published_outputs
+      ?? [],
   ) as PublishedOutput[]
   reconcilePublishedParentState(
     parentNodeId,
@@ -2446,7 +2485,11 @@ function applySubWorkflowDraft(
     nextInputs,
     nextOutputs,
   )
-  node.data.sub_workflow = deepClone(graph)
+  node.data.sub_workflow = deepClone({
+    ...graph,
+    published_inputs: nextInputs,
+    published_outputs: nextOutputs,
+  })
   node.data.published_inputs = nextInputs
   node.data.published_outputs = nextOutputs
   canvasStatusProjection.markAllProvisional()
@@ -2459,35 +2502,62 @@ function applySubWorkflowDraft(
   }
   dataTableStore.clearCanvasCache(canvasId, parentNodeId)
   emitGraphChanged({ statusesAlreadyStaged: true })
+  return true
 }
 
-function saveSubWorkflowSession() {
+async function saveSubWorkflowSession(): Promise<void> {
+  if (isLocked.value) return
   const sessionId = props.subWorkflowSessionId
   if (!sessionId) return
   const session = subWorkflowSessionsStore.sessionById(sessionId)
   if (!session) return
-  const saved = subWorkflowSessionsStore.saveSession(sessionId)
-  uiStore.markCanvasClean(canvasId)
-  window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
-    detail: {
+  try {
+    const accepted = await flushNow()
+    if (!accepted) return
+    let acknowledged = false
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
+      detail: {
+        sessionId,
+        parentCanvasId: session.parentCanvasId,
+        parentNodeId: session.parentNodeId,
+        graph: accepted.graph,
+        acknowledge: () => { acknowledged = true },
+      },
+    }))
+    if (!acknowledged) return
+    subWorkflowSessionsStore.markSaved(
       sessionId,
-      parentNodeId: session.parentNodeId,
-      graph: saved.graph,
-      published_inputs: saved.published_inputs,
-      published_outputs: saved.published_outputs,
-    },
-  }))
+      accepted.graph,
+      accepted.snapshotRevision,
+      accepted.validation,
+    )
+    uiStore.markCanvasClean(canvasId)
+  } catch (error) {
+    reportError({
+      kind: 'graph_sync_error',
+      detail: error instanceof Error
+        ? error.message
+        : 'Failed to save nested workflow snapshot',
+    })
+  }
 }
 
 function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
+  parentCanvasId?: string
   parentNodeId?: string
+  acknowledge?: () => void
 } & Partial<SubWorkflowApplyPayload>>) {
   const detail = event.detail
-  if (!detail?.parentNodeId || !detail.graph) return
-  applySubWorkflowDraft(detail.parentNodeId, detail.graph, {
+  if (
+    detail?.parentCanvasId !== canvasId
+    || !detail.parentNodeId
+    || !detail.graph
+  ) return
+  const applied = applySubWorkflowDraft(detail.parentNodeId, detail.graph, {
     published_inputs: detail.published_inputs,
     published_outputs: detail.published_outputs,
   })
+  if (applied) detail.acknowledge?.()
 }
 
 function selectAll() {
@@ -2537,6 +2607,7 @@ function applyHistoryState(state: CanvasHistoryState) {
         serializeGraph(currentState) as GraphState,
       )
       subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
+      refreshPublicationContextOnNodes()
       uiStore.markCanvasDirty(canvasId)
     } else {
       markDirtyAndAutoSave(currentState)
@@ -2623,7 +2694,7 @@ function handleKeydown(event: KeyboardEvent) {
     event.preventDefault()
     if (locked) return
     if (isSubWorkflowEditor) {
-      saveSubWorkflowSession()
+      void saveSubWorkflowSession()
     }
     return
   }
@@ -2951,6 +3022,7 @@ function emitGraphChanged(options: GraphChangeOptions = {}) {
       serializeGraph(state) as GraphState,
     )
     subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
+    refreshPublicationContextOnNodes()
     uiStore.markCanvasDirty(canvasId)
     emit('graph-changed', publishedState)
     return

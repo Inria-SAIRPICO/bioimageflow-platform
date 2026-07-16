@@ -8,7 +8,7 @@ import type { GraphState, ValidationResult } from '@/api/types'
 import type { CanvasId } from '@/sessions/canvasSessionRegistry'
 
 export interface ExecutionGraphSync {
-  flushNow: () => Promise<void>
+  flushNow: () => Promise<unknown>
   validationResult: Ref<ValidationResult | null>
   currentGraph?: Ref<GraphState>
 }

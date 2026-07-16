@@ -66,6 +66,10 @@ contains A).
 - A sub-workflow tab uses the same canvas and side panels as a normal workflow tab. It does not add a special Apply/Close toolbar; saving uses the normal save command for the active tab.
 - **Save semantics:** Changes to the sub-workflow's internal DAG are applied to the parent on explicit save (Ctrl+S within the sub-workflow tab or the normal Save command while that tab is active). The parent workflow does not see intermediate edits. Closing the tab with unsaved changes shows a confirmation dialog: "Discard unsaved changes to sub-workflow '{name}'?"
 - Saving a sub-workflow tab applies both the internal DAG and the published interface to the parent node. Publishing-only changes mark the tab dirty. If a published pin is renamed, existing parent edges targeting the same internal field/output are moved to the new handle. If a pin is unpublished, parent edges and stale parent-level parameter values for that pin are removed.
+- Opening a sub-workflow resolves or creates a private durable snapshot before the editor mounts. Root-owned snapshots are identified by the exact parent canvas and optional workflow ID; deeper snapshots are owned by their parent snapshot session.
+- Every nested edit replaces one complete `GraphState`, including its published interface, through revision-checked background persistence. The parent graph remains unchanged until explicit Save.
+- Save first flushes all queued edits, then applies the exact graph accepted by the snapshot API only to the addressed parent canvas. The nested session becomes clean only after that parent acknowledges the apply.
+- A confirmed discard flushes the latest private edit and deletes the snapshot with its accepted revision before local state is dropped. A canceled discard retains the session, and a process restart recovers the last accepted private snapshot.
 - Closing the sub-workflow tab returns focus to the parent workflow tab.
 
 ### 1.4 Execution and Caching
@@ -121,6 +125,7 @@ The root `GraphState` carries `published_inputs` and `published_outputs` in addi
         "id": "segment_and_measure_1",
         "name": "Segment and Measure 1",
         "tool_name": "__sub_workflow__",
+        "source_workflow_name": "segment_and_measure",
         "position": [400, 300],
         "parameters": {
           "cellpose_segmenter_1.diameter": 30.0
@@ -727,6 +732,10 @@ New and modified endpoints introduced in v2:
 | 6 | `POST` | `/api/v1/editor/open` | Open file/folder in code editor | "Open" from Data Table path cells |
 | 7 | `POST` | `/api/v1/editor/open-tool` | Open workspace project and focus a tool file | "Open in editor" from Tools Panel or node source links |
 | 8 | `GET` | `/api/v1/editor/status` | Check code-server availability and URL | Code Editor Panel initialization |
+| 9 | `POST` | `/api/v1/nested-workflow-snapshots/open` | Resolve or create one private nested editor snapshot | Before a sub-workflow editor mounts |
+| 10 | `GET` | `/api/v1/nested-workflow-snapshots/{session_id}` | Read an accepted private nested snapshot | Recovery and diagnostics |
+| 11 | `PUT` | `/api/v1/nested-workflow-snapshots/{session_id}` | Replace the complete nested graph with revision CAS and validation | Background nested editing persistence |
+| 12 | `DELETE` | `/api/v1/nested-workflow-snapshots/{session_id}` | Delete a private snapshot with revision CAS | Confirmed close or discard |
 
 **Modified endpoints (behavioral changes only, same URL/method):**
 

@@ -411,6 +411,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nested-workflow-snapshots/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Nested Workflow Snapshot */
+        post: operations["open_nested_workflow_snapshot_api_v1_nested_workflow_snapshots_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nested-workflow-snapshots/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Nested Workflow Snapshot */
+        get: operations["get_nested_workflow_snapshot_api_v1_nested_workflow_snapshots__session_id__get"];
+        /** Put Nested Workflow Snapshot */
+        put: operations["put_nested_workflow_snapshot_api_v1_nested_workflow_snapshots__session_id__put"];
+        post?: never;
+        /** Delete Nested Workflow Snapshot */
+        delete: operations["delete_nested_workflow_snapshot_api_v1_nested_workflow_snapshots__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows": {
         parameters: {
             query?: never;
@@ -951,6 +987,100 @@ export interface components {
             pid?: number | null;
         };
         /**
+         * NestedSnapshotOwner
+         * @description Hierarchical identity of the canvas that owns a nested editor.
+         */
+        NestedSnapshotOwner: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "root" | "nested";
+            /** Canvas Id */
+            canvas_id?: string | null;
+            /** Workflow Id */
+            workflow_id?: string | null;
+            /** Session Id */
+            session_id?: string | null;
+        };
+        /**
+         * NestedWorkflowSnapshotConflictResponse
+         * @description Machine-readable optimistic revision conflict.
+         */
+        NestedWorkflowSnapshotConflictResponse: {
+            /**
+             * Error
+             * @default nested_snapshot_revision_conflict
+             * @constant
+             */
+            error: "nested_snapshot_revision_conflict";
+            /** Detail */
+            detail: string;
+            /** Expected Revision */
+            expected_revision: number;
+            /** Current Revision */
+            current_revision: number;
+        };
+        /**
+         * NestedWorkflowSnapshotLockedResponse
+         * @description Machine-readable global execution lock response.
+         */
+        NestedWorkflowSnapshotLockedResponse: {
+            /**
+             * Error
+             * @default workflow_locked
+             * @constant
+             */
+            error: "workflow_locked";
+            /** Detail */
+            detail: string;
+        };
+        /**
+         * NestedWorkflowSnapshotOpenRequest
+         * @description Resolve or create the private snapshot for one parent node.
+         */
+        NestedWorkflowSnapshotOpenRequest: {
+            owner: components["schemas"]["NestedSnapshotOwner"];
+            /** Parent Node Id */
+            parent_node_id: string;
+            graph: components["schemas"]["GraphState"];
+        };
+        /**
+         * NestedWorkflowSnapshotPutRequest
+         * @description Revision-checked replacement of a private nested snapshot.
+         */
+        NestedWorkflowSnapshotPutRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            graph: components["schemas"]["GraphState"];
+        };
+        /**
+         * NestedWorkflowSnapshotResponse
+         * @description One accepted, validated private nested-workflow document.
+         */
+        NestedWorkflowSnapshotResponse: {
+            /**
+             * Snapshot Version
+             * @default 1
+             * @constant
+             */
+            snapshot_version: 1;
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            owner: components["schemas"]["NestedSnapshotOwner"];
+            /** Parent Node Id */
+            parent_node_id: string;
+            /** Snapshot Revision */
+            snapshot_revision: number;
+            /** Updated At */
+            updated_at: string;
+            graph: components["schemas"]["GraphState"];
+            validation: components["schemas"]["ValidationResult"];
+        };
+        /**
          * NodeDataResponse
          * @description Paginated DataFrame payload for the Data Table panel.
          */
@@ -1046,6 +1176,8 @@ export interface components {
             published_outputs?: components["schemas"]["PublishedOutput"][];
             /** Sub Workflow Readonly Reason */
             sub_workflow_readonly_reason?: string | null;
+            /** Source Workflow Name */
+            source_workflow_name?: string | null;
         };
         /**
          * NodeStatus
@@ -1697,6 +1829,12 @@ export type MissingPackage = components['schemas']['MissingPackage'];
 export type MissingTool = components['schemas']['MissingTool'];
 export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
 export type NapariStatus = components['schemas']['NapariStatus'];
+export type NestedSnapshotOwner = components['schemas']['NestedSnapshotOwner'];
+export type NestedWorkflowSnapshotConflictResponse = components['schemas']['NestedWorkflowSnapshotConflictResponse'];
+export type NestedWorkflowSnapshotLockedResponse = components['schemas']['NestedWorkflowSnapshotLockedResponse'];
+export type NestedWorkflowSnapshotOpenRequest = components['schemas']['NestedWorkflowSnapshotOpenRequest'];
+export type NestedWorkflowSnapshotPutRequest = components['schemas']['NestedWorkflowSnapshotPutRequest'];
+export type NestedWorkflowSnapshotResponse = components['schemas']['NestedWorkflowSnapshotResponse'];
 export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeState = components['schemas']['NodeState'];
@@ -2488,6 +2626,181 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    open_nested_workflow_snapshot_api_v1_nested_workflow_snapshots_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NestedWorkflowSnapshotOpenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotLockedResponse"];
+                };
+            };
+        };
+    };
+    get_nested_workflow_snapshot_api_v1_nested_workflow_snapshots__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_nested_workflow_snapshot_api_v1_nested_workflow_snapshots__session_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NestedWorkflowSnapshotPutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotLockedResponse"];
+                };
+            };
+        };
+    };
+    delete_nested_workflow_snapshot_api_v1_nested_workflow_snapshots__session_id__delete: {
+        parameters: {
+            query: {
+                expected_revision: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NestedWorkflowSnapshotLockedResponse"];
                 };
             };
         };

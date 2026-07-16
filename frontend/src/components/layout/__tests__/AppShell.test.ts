@@ -952,4 +952,90 @@ describe('AppShell', () => {
     }))
     confirmSpy.mockRestore()
   })
+
+  it('deletes a confirmed discarded nested snapshot before dropping the session', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mountApp()
+    await flushPromises()
+    const sessions = useSubWorkflowSessionsStore()
+    const session = sessions.openSession({
+      parentCanvasId: 'canvas',
+      parentWorkflowName: null,
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+    })
+    sessions.updateDraft(session.id, {
+      nodes: [],
+      edges: [],
+      published_inputs: [],
+      published_outputs: [{
+        name: 'result',
+        internal_node_id: 'inner',
+        internal_output: 'result',
+        schema: { type: 'Path' },
+      }],
+    })
+    const deleteSession = vi.spyOn(sessions, 'deleteDurableSession').mockResolvedValue()
+    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+      detail: { sessionId: session.id },
+    }))
+    await flushPromises()
+    const panel = panels.get(`sub-workflow:${encodeURIComponent(session.id)}`)
+
+    emitDockviewPanelRemoved(panel)
+    await flushPromises()
+
+    expect(deleteSession).toHaveBeenCalledWith(session.id)
+    expect(sessions.sessionById(session.id)).toBeUndefined()
+  })
+
+  it('reopens a nested session when durable deletion fails', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mountApp()
+    await flushPromises()
+    const sessions = useSubWorkflowSessionsStore()
+    const session = sessions.openSession({
+      parentCanvasId: 'canvas',
+      parentWorkflowName: null,
+      parentNodeId: 'sub_1',
+      parentNodeName: 'Sub 1',
+      graph: { nodes: [], edges: [], published_inputs: [], published_outputs: [] },
+    })
+    sessions.updateDraft(session.id, {
+      nodes: [{
+        id: 'inner',
+        name: 'inner',
+        tool_name: 'tool',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+      published_inputs: [],
+      published_outputs: [],
+    })
+    vi.spyOn(sessions, 'deleteDurableSession').mockRejectedValue(new Error('delete failed'))
+    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+      detail: { sessionId: session.id },
+    }))
+    await flushPromises()
+    const panel = panels.get(`sub-workflow:${encodeURIComponent(session.id)}`)
+    const callsBeforeClose = mockDockviewApi.addPanel.mock.calls.length
+
+    emitDockviewPanelRemoved(panel)
+    await flushPromises()
+
+    expect(sessions.sessionById(session.id)).toBeDefined()
+    expect(mockDockviewApi.addPanel.mock.calls.length).toBeGreaterThan(callsBeforeClose)
+    const lastCall = mockDockviewApi.addPanel.mock.calls[
+      mockDockviewApi.addPanel.mock.calls.length - 1
+    ]
+    expect(lastCall?.[0].params).toEqual(
+      expect.objectContaining({ sessionId: session.id }),
+    )
+  })
 })

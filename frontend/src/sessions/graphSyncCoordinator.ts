@@ -52,6 +52,7 @@ export interface CreateGraphSyncCoordinatorOptions {
   transport: GraphSyncTransport
   debounceMs?: number
   initialGraph?: GraphState
+  initialValidation?: ValidationResult
   initialSemanticRevision?: number
   onOperationalError?: (
     error: unknown,
@@ -87,7 +88,9 @@ export function createGraphSyncCoordinator(
   options: CreateGraphSyncCoordinatorOptions,
 ): GraphSyncCoordinator {
   const debounceMs = options.debounceMs ?? 300
-  const validationResult = ref<ValidationResult | null>(null)
+  const validationResult = ref<ValidationResult | null>(
+    options.initialValidation ? cloneJson(options.initialValidation) : null,
+  )
   const currentGraph = ref<GraphState>(cloneJson(
     options.initialGraph ?? { nodes: [], edges: [] },
   )) as Ref<GraphState>
