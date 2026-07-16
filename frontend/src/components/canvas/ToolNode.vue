@@ -9,6 +9,7 @@ import type {
 } from '@/api/types'
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
+import { CANVAS_STATUS_PROJECTION_KEY } from '@/composables/useCanvasStatusProjection'
 
 export interface NodeData {
   name: string
@@ -35,6 +36,8 @@ const props = defineProps<{
   id: string
   data: NodeData
 }>()
+
+const statusProjection = inject(CANVAS_STATUS_PROJECTION_KEY, null)
 
 const emit = defineEmits<{
   'context-menu': [event: MouseEvent]
@@ -158,9 +161,15 @@ const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
   ])
 })
 
-const statusClass = computed(() => {
-  return `status-${props.data.status.replace(/_/g, '-')}`
-})
+const projectedStatus = computed(() => statusProjection?.statusForNode(props.id) ?? null)
+const displayedStatus = computed(() => (
+  projectedStatus.value?.status
+  ?? (props.data.enabled === false ? 'disabled' : 'unexecuted')
+))
+const isStatusProvisional = computed(() => projectedStatus.value?.provisional ?? false)
+const statusClass = computed(
+  () => `status-${displayedStatus.value.replace(/_/g, '-')}`,
+)
 
 const hasGpu = computed(() => {
   if (!props.data.tool) return false
@@ -197,7 +206,7 @@ function onDismissBadge(event: MouseEvent) {
       statusClass,
       {
         disabled: !data.enabled,
-        provisional: data.provisional,
+        provisional: isStatusProvisional,
         collapsed: data.collapsed,
         'sub-workflow': isSubWorkflow,
         'readonly-sub-workflow': isSubWorkflow && data.sub_workflow_readonly_reason,
@@ -232,7 +241,7 @@ function onDismissBadge(event: MouseEvent) {
           Missing
         </span>
         <span v-if="hasGpu" class="gpu-badge">GPU</span>
-        <span v-if="data.provisional" class="provisional-indicator">provisional</span>
+        <span v-if="isStatusProvisional" class="provisional-indicator">provisional</span>
         <button
           v-if="data.updatedBadge === true"
           type="button"

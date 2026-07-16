@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import Button from 'primevue/button'
-import { useExecutionStore } from '@/stores/execution'
+import { useCanvasStatusProjection } from '@/composables/useCanvasStatusProjection'
 
 const props = withDefaults(defineProps<{
   nodeId: string
@@ -9,10 +9,10 @@ const props = withDefaults(defineProps<{
 }>(), {
   active: true,
 })
-const executionStore = useExecutionStore()
+const statusProjection = useCanvasStatusProjection()
 
 const status = computed(() => (
-  props.active ? executionStore.nodeStatuses[props.nodeId] : undefined
+  props.active ? statusProjection.statusForNode(props.nodeId) : null
 ))
 const isFailed = computed(() => status.value?.status === 'failed')
 const error = computed(() => status.value?.error ?? null)
@@ -24,8 +24,8 @@ let copyResetTimer: ReturnType<typeof setTimeout> | null = null
 
 const rowInfo = computed(() => {
   if (!props.active) return null
-  const p = executionStore.progress
-  if (!p || p.node_id !== props.nodeId) return null
+  const p = statusProjection.progressForNode(props.nodeId)
+  if (!p) return null
   return { row: p.row, total: p.total_rows }
 })
 

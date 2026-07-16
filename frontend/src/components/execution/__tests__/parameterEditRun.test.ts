@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { computed } from 'vue'
 import PrimeVue from 'primevue/config'
 import Aura from '@primevue/themes/aura'
 import InputText from 'primevue/inputtext'
@@ -42,6 +43,10 @@ import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
+import {
+  _resetCanvasStatusProjectionForTest,
+  useCanvasStatusProjection,
+} from '@/composables/useCanvasStatusProjection'
 
 const mockedApi = api as unknown as {
   post: ReturnType<typeof vi.fn>
@@ -88,10 +93,12 @@ const tool = {
 
 describe('parameter edit followed immediately by Run', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     _resetGraphSyncForTest()
     _resetCanvasPersistenceForTest()
     _resetCanvasCommandsForTest()
+    _resetCanvasStatusProjectionForTest()
     vi.clearAllMocks()
     workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
     mockedApi.put.mockResolvedValue({
@@ -200,6 +207,23 @@ describe('parameter edit followed immediately by Run', () => {
     ])
     ui.setCanvasSelectedNodes(canvasId, ['files'])
     ui.setCanvasWorkflow(canvasId, 'parameter_edit', 'Parameter edit')
+    graphSync.validationResult.value = {
+      valid: true,
+      errors: [],
+      node_statuses: {
+        files: { node_id: 'files', status: 'executed', cached: false },
+        untouched: { node_id: 'untouched', status: 'executed', cached: false },
+      },
+    }
+    const statusProjection = useCanvasStatusProjection({
+      descriptor,
+      nodes: computed(() => canvasNodes.map(node => ({
+        id: node.id,
+        enabled: node.data.enabled !== false,
+      }))),
+      validationResult: graphSync.validationResult,
+      acceptedDraftRevision: canvasPersistence.acceptedDraftRevision,
+    })
     const canvasCommands = useCanvasCommands({
       descriptor,
       renameNode: () => false,
@@ -215,8 +239,12 @@ describe('parameter edit followed immediately by Run', () => {
         if (!selected?.data) return false
         const parameters = { ...selected.data.parameters, [key]: value }
         selected.data.parameters = parameters
-        selected.data.status = 'unexecuted'
-        for (const node of canvasNodes) node.data.provisional = true
+        statusProjection.markAllProvisional()
+        statusProjection.markProvisional(nodeId, {
+          node_id: nodeId,
+          status: 'unexecuted',
+          cached: false,
+        })
         canvasPersistence.queueGraph(serializeGraph({ nodes: canvasNodes, edges: [] }))
         return true
       },
@@ -246,10 +274,18 @@ describe('parameter edit followed immediately by Run', () => {
       .findComponent(InputText)
       .vm.$emit('update:modelValue', '/data/new')
 
-    expect(nodeData.status).toBe('unexecuted')
-    expect(nodeData.provisional).toBe(true)
+    expect(statusProjection.statusForNode('files')).toMatchObject({
+      status: 'unexecuted',
+      provisional: true,
+    })
+    expect(statusProjection.statusForNode('untouched')).toMatchObject({
+      status: 'executed',
+      provisional: true,
+    })
+    expect(nodeData.status).toBe('executed')
+    expect(nodeData.provisional).toBeUndefined()
     expect(untouchedNodeData.status).toBe('executed')
-    expect(untouchedNodeData.provisional).toBe(true)
+    expect(untouchedNodeData.provisional).toBeUndefined()
     expect(graphSync.currentGraph.value.nodes[0]?.parameters).toEqual({
       path: '/data/new',
     })

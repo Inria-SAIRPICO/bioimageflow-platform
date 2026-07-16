@@ -13,6 +13,7 @@ import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
+import { useCanvasStatusProjection } from '@/composables/useCanvasStatusProjection'
 import {
   useCanvasCommands,
   type CanvasPublicationCommandResult,
@@ -63,19 +64,13 @@ function fileTypesForField(type: string): string[] {
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
+const statusProjection = useCanvasStatusProjection()
 const loggerStore = useLoggerStore()
 const { validationResult } = useGraphSync()
 const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
 const fieldFocusTracker = useFieldFocusTracker()
 const isNodeEditingDisabled = computed(() => executionStore.isMutationLocked)
-const executionAppliesToActiveCanvas = computed(() => {
-  const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
-  if (activeCanvasId === null) {
-    return canvasSessionRegistry.sessionCount.value === 0
-  }
-  return executionStore.appliesToCanvas(activeCanvasId)
-})
 const focusedParameterRows = new Map<EventTarget, FieldFocusTarget>()
 
 const selectedNodeErrors = computed(() => {
@@ -120,10 +115,16 @@ watch(
 )
 
 const selectedNodeStatus = computed(() => {
-  if (!executionAppliesToActiveCanvas.value) return null
   const nodeId = selectedNode.value?.id
-  return nodeId ? executionStore.nodeStatuses[nodeId] ?? null : null
+  return nodeId ? statusProjection.statusForNode(nodeId) : null
 })
+const selectedNodeDisplayStatus = computed(() => (
+  selectedNodeStatus.value?.status
+  ?? (nodeData.value?.enabled === false ? 'disabled' : 'unexecuted')
+))
+const selectedNodeStatusClass = computed(() => (
+  `status-${selectedNodeDisplayStatus.value.replace(/_/g, '-')}`
+))
 
 const selectedNodeLogs = computed(() => activeNodeLogEntries.value?.value ?? [])
 
@@ -439,8 +440,8 @@ async function pickFolder(key: string) {
         </div>
         <div class="tool-info">
           <span class="tool-name">{{ nodeData.toolName }}</span>
-          <span class="status-badge" :class="`status-${nodeData.status}`">
-            {{ nodeData.status }}
+          <span class="status-badge" :class="selectedNodeStatusClass">
+            {{ selectedNodeDisplayStatus }}
           </span>
         </div>
         <!-- Fix 13: Package + version display. The active version is
@@ -656,7 +657,6 @@ async function pickFolder(key: string) {
       <NodeOutputErrorBlock
         v-if="uiStore.selectedNodeIds[0]"
         :node-id="uiStore.selectedNodeIds[0]"
-        :active="executionAppliesToActiveCanvas"
       />
 
       <!-- Outputs section (Fix 19: output template editing) -->

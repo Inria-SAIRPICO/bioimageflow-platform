@@ -3,6 +3,11 @@ import { computed, effectScope, onBeforeUnmount, ref, watch, type EffectScope } 
 import Button from 'primevue/button'
 import NodeDataTable from './NodeDataTable.vue'
 import { useGraphSync } from '@/composables/useGraphSync'
+import {
+  getCanvasStatusProjection,
+  useCanvasStatusProjection,
+  type CanvasStatusProjectionReader,
+} from '@/composables/useCanvasStatusProjection'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore } from '@/stores/dataTable'
@@ -15,6 +20,7 @@ import {
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
+const activeStatusProjection = useCanvasStatusProjection()
 const dataTableStore = useDataTableStore()
 const workflowStore = useWorkflowStore()
 const { currentGraph } = useGraphSync()
@@ -175,11 +181,12 @@ function currentDataTableTarget(): DataTableTarget {
   }
 }
 
-function executionAppliesToTarget(target: DataTableTarget): boolean {
-  if (target.canvasId === null) {
-    return canvasSessionRegistry.sessionCount.value === 0
-  }
-  return executionStore.appliesToCanvas(target.canvasId)
+function statusProjectionForTarget(
+  target: DataTableTarget,
+): CanvasStatusProjectionReader | null {
+  return target.canvasId === null
+    ? activeStatusProjection
+    : getCanvasStatusProjection(target.canvasId)
 }
 
 function refreshEntry(entry: DataTableEntry, target: DataTableTarget): void {
@@ -217,15 +224,16 @@ watch(
   displayedEntries,
   (entries) => {
     const target = currentDataTableTarget()
+    const statusProjection = statusProjectionForTarget(target)
     scope?.stop()
     scope = effectScope()
     scope.run(() => {
       for (const entry of entries) {
         fetchIfMissing(entry)
+        if (statusProjection === null) continue
         watch(
-          () => executionStore.nodeStatuses[entry.dataNodeId]?.status,
+          () => statusProjection.statusForNode(entry.dataNodeId)?.status,
           (next, prev) => {
-            if (!executionAppliesToTarget(target)) return
             if (prev !== 'executed' && next === 'executed') {
               refreshEntry(entry, target)
             } else if (next === 'out_of_date' || next === 'unexecuted') {
@@ -244,12 +252,13 @@ watch(
   (result) => {
     if (!result?.success) return
     const target = currentDataTableTarget()
-    if (!executionAppliesToTarget(target)) return
+    const statusProjection = statusProjectionForTarget(target)
+    if (statusProjection === null) return
     const refreshed = new Set<string>()
     for (const entry of displayedEntries.value) {
       if (refreshed.has(entry.dataNodeId)) continue
-      const status = result.node_statuses?.[entry.dataNodeId]
-      if (status?.status === 'executed') {
+      const status = statusProjection.statusForNode(entry.dataNodeId)
+      if (status?.source === 'execution' && status.status === 'executed') {
         refreshed.add(entry.dataNodeId)
         refreshEntry(entry, target)
       }

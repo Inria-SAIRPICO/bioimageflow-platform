@@ -3,6 +3,8 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, computed } from 'vue'
 import ToolNode from '../ToolNode.vue'
 import type { ToolMetadata } from '@/api/types'
+import { CANVAS_STATUS_PROJECTION_KEY } from '@/composables/useCanvasStatusProjection'
+import type { ProjectedNodeStatus } from '@/sessions/nodeStatusProjection'
 
 vi.mock('@vue-flow/core', () => ({
   Handle: defineComponent({
@@ -56,9 +58,34 @@ function makeData(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function factory(data = makeData()) {
+function factory(
+  data = makeData(),
+  projectedStatus?: ProjectedNodeStatus,
+) {
+  const provisional = (data as { provisional?: boolean }).provisional === true
+  const status = projectedStatus ?? {
+    node_id: 'node-1',
+    status: data.enabled === false
+      ? 'disabled'
+      : data.status as ProjectedNodeStatus['status'],
+    cached: false,
+    provisional,
+    source: provisional ? 'provisional' : 'validation',
+  } satisfies ProjectedNodeStatus
   return mount(ToolNode, {
     props: { id: 'node-1', data } as any,
+    global: {
+      provide: {
+        [CANVAS_STATUS_PROJECTION_KEY as symbol]: {
+          canvasId: null,
+          statuses: computed(() => ({ 'node-1': status })),
+          statusForNode: (nodeId: string) => (
+            nodeId === 'node-1' ? status : null
+          ),
+          progressForNode: () => null,
+        },
+      },
+    },
   })
 }
 
@@ -139,6 +166,23 @@ describe('ToolNode', () => {
   it('applies provisional class', () => {
     const w = factory(makeData({ provisional: true }))
     expect(w.find('.tool-node').classes()).toContain('provisional')
+  })
+
+  it('uses the injected canvas projection instead of mutable node data', () => {
+    const w = factory(
+      makeData({ status: 'executed', provisional: false }),
+      {
+        node_id: 'node-1',
+        status: 'out_of_date',
+        cached: false,
+        provisional: true,
+        source: 'provisional',
+      },
+    )
+
+    expect(w.find('.tool-node').classes()).toContain('status-out-of-date')
+    expect(w.find('.tool-node').classes()).toContain('provisional')
+    expect(w.find('.provisional-indicator').exists()).toBe(true)
   })
 
   it('emits context-menu on right-click', async () => {

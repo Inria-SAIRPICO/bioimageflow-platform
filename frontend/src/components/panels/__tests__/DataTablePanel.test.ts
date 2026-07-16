@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { defineComponent, h, inject, nextTick, provide, type VNodeChild } from 'vue'
+import { computed, defineComponent, h, inject, nextTick, provide, ref, type VNodeChild } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import DataTablePanel from '../DataTablePanel.vue'
@@ -16,7 +16,15 @@ import {
 } from '@/composables/useGraphSync'
 import { api } from '@/api/client'
 import { useWorkflowStore } from '@/stores/workflow'
-import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
+import {
+  _resetCanvasStatusProjectionForTest,
+  useCanvasStatusProjection,
+} from '@/composables/useCanvasStatusProjection'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -61,15 +69,96 @@ const ImageCellStub = defineComponent({
   template: '<div data-testid="image-cell">{{ value }}</div>',
 })
 
+function registerStatusProjection(
+  canvasId: CanvasId,
+  workflowId: string,
+  graphSync: ReturnType<typeof useGraphSync>,
+) {
+  return useCanvasStatusProjection({
+    descriptor: { kind: 'root', canvasId, workflowId },
+    nodes: computed(() => graphSync.currentGraph.value.nodes.map(node => ({
+      id: node.id,
+      enabled: node.enabled !== false,
+    }))),
+    validationResult: graphSync.validationResult,
+    acceptedDraftRevision: ref(null),
+  })
+}
+
 describe('DataTablePanel', () => {
   beforeEach(() => {
+    canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     _resetGraphSyncForTest()
+    _resetCanvasStatusProjectionForTest()
     vi.clearAllMocks()
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
     })
+  })
+
+  it('clears canvas data when the projected status becomes unexecuted', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const descriptor = { kind: 'root' as const, canvasId, workflowId: 'a' }
+    const graphSync = useGraphSync({ descriptor, getWorkflowId: () => 'a' })
+    graphSync.syncGraphState({
+      nodes: [{
+        id: 'node-1',
+        name: 'Files 1',
+        tool_name: 'files',
+        position: [0, 0],
+        parameters: {},
+        resources: {},
+        output_templates: {},
+        enabled: true,
+        collapsed: false,
+      }],
+      edges: [],
+    })
+    graphSync.validationResult.value = {
+      valid: true,
+      errors: [],
+      node_statuses: {
+        'node-1': { node_id: 'node-1', status: 'executed', cached: false },
+      },
+    }
+    const projection = useCanvasStatusProjection({
+      descriptor,
+      nodes: computed(() => graphSync.currentGraph.value.nodes.map(node => ({
+        id: node.id,
+        enabled: node.enabled !== false,
+      }))),
+      validationResult: graphSync.validationResult,
+      acceptedDraftRevision: ref(7),
+    })
+    const ui = useUIStore()
+    ui.setCanvasWorkflow(canvasId, 'a', 'Workflow A')
+    ui.setCanvasSelectedNodes(canvasId, ['node-1'])
+    canvasSessionRegistry.activate(canvasId)
+    const store = useDataTableStore()
+    vi.spyOn(store, 'fetchCanvasNodeData').mockResolvedValue(undefined)
+    const clearCanvasCache = vi.spyOn(store, 'clearCanvasCache')
+    const wrapper = mount(DataTablePanel, {
+      global: {
+        plugins: [pinia, PrimeVue],
+        stubs: { Button: true, NodeDataTable: true },
+      },
+    })
+    await flushPromises()
+    clearCanvasCache.mockClear()
+
+    projection.markProvisional('node-1', {
+      node_id: 'node-1',
+      status: 'unexecuted',
+      cached: false,
+    })
+    await nextTick()
+
+    expect(clearCanvasCache).toHaveBeenCalledWith(canvasId, 'node-1')
+    wrapper.unmount()
   })
 
   afterEach(() => {
@@ -196,6 +285,8 @@ describe('DataTablePanel', () => {
     }
     graphA.syncGraphState(graph)
     graphB.syncGraphState(graph)
+    registerStatusProjection(canvasA, 'a', graphA)
+    registerStatusProjection(canvasB, 'b', graphB)
     const ui = useUIStore()
     ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
     ui.setCanvasSelectedNodes(canvasA, ['shared'])
