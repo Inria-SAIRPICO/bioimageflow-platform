@@ -30,6 +30,42 @@ async function createAndOpenWorkflow(page: Page): Promise<string> {
   return name
 }
 
+async function installWebSocketProbe(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type WebSocketProbeWindow = Window & {
+      __errorHandlingWsMessages?: unknown[]
+    }
+    const probeWindow = window as WebSocketProbeWindow
+    probeWindow.__errorHandlingWsMessages = []
+
+    const NativeWebSocket = window.WebSocket
+    window.WebSocket = class InstrumentedWebSocket extends NativeWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols)
+        this.addEventListener('message', (event) => {
+          if (typeof event.data !== 'string') return
+          try {
+            probeWindow.__errorHandlingWsMessages?.push(JSON.parse(event.data))
+          } catch {
+            /* Non-JSON frames are irrelevant to the application protocol. */
+          }
+        })
+      }
+    }
+  })
+}
+
+async function waitForLogSubscription(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => {
+    const messages = window.__errorHandlingWsMessages ?? []
+    return messages.some((message) => (
+      typeof message === 'object'
+      && message !== null
+      && (message as { type?: unknown }).type === 'ack'
+    ))
+  })).toBe(true)
+}
+
 /**
  * E2E coverage for the three-level error handling system (spec §3.11).
  *
@@ -42,9 +78,11 @@ test.describe('error handling', () => {
   let workflowName = ''
 
   test.beforeEach(async ({ page }) => {
+    await installWebSocketProbe(page)
     const seed = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
     expect(seed.ok()).toBeTruthy()
     workflowName = await createAndOpenWorkflow(page)
+    await waitForLogSubscription(page)
   })
 
   test.afterEach(async ({ page }) => {
@@ -70,55 +108,39 @@ test.describe('error handling', () => {
     expect(draftResponse.ok()).toBeTruthy()
     const draftRevision = (await draftResponse.json()).draft_revision as number
 
-    const result = await page.evaluate(
-      async ({ workflowId, revision }) => {
-        const { useExecutionStore } = await import('/src/stores/execution.ts')
-        const { useLoggerStore } = await import('/src/stores/logger.ts')
-        const execution = useExecutionStore()
-        const logger = useLoggerStore()
-        const executionId = `error-e2e-${Date.now()}`
-        const nodeId = 'failed_node'
-
-        // Worker logs are intentionally unscoped. A matching log can arrive
-        // before the contextual completion event, which must not duplicate it.
-        logger.addEntry({
-          level: 'ERROR',
-          message: 'boom\ntraceback-e2e',
-          nodeId,
-          timestamp: Date.now() / 1000,
-        })
-        execution.applyStatusSnapshot({
-          state: 'running',
-          last_result: null,
-          progress: null,
-          node_statuses: {},
+    const executionId = `error-e2e-${Date.now()}`
+    const failure = await page.request.post(
+      `${API_BASE}/api/v1/dev/e2e/execution-failure`,
+      {
+        data: {
           execution_id: executionId,
-          workflow_id: workflowId,
-          draft_revision: revision,
-        })
-        execution.applyExecutionComplete({
-          success: false,
-          errors: [],
-          node_statuses: {
-            [nodeId]: {
-              node_id: nodeId,
-              status: 'failed',
-              cached: false,
-              error: 'boom',
-              traceback: 'traceback-e2e',
-            },
-          },
-          execution_id: executionId,
-          workflow_id: workflowId,
-          draft_revision: revision,
-        })
-        return logger.entries.filter(
-          (entry) => entry.level === 'ERROR' && entry.nodeId === nodeId,
-        ).length
+          workflow_id: workflowName,
+          draft_revision: draftRevision,
+          node_id: 'failed_node',
+          error: 'boom',
+          traceback: 'traceback-e2e',
+        },
       },
-      { workflowId: workflowName, revision: draftRevision },
     )
-    expect(result).toBe(1)
+    expect(failure.ok()).toBeTruthy()
+
+    await expect.poll(() => page.evaluate((id) => {
+      const messages = window.__errorHandlingWsMessages ?? []
+      const logIndex = messages.findIndex((message) => (
+        typeof message === 'object'
+        && message !== null
+        && (message as { type?: unknown; message?: unknown }).type === 'log'
+        && (message as { message?: unknown }).message === 'boom\ntraceback-e2e'
+      ))
+      const completionIndex = messages.findIndex((message) => (
+        typeof message === 'object'
+        && message !== null
+        && (message as { type?: unknown; execution_id?: unknown }).type
+          === 'execution_complete'
+        && (message as { execution_id?: unknown }).execution_id === id
+      ))
+      return logIndex >= 0 && completionIndex > logIndex
+    }, executionId)).toBe(true)
 
     await expect(page.locator('.error-indicator')).toBeVisible({
       timeout: 5000,

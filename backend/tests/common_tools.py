@@ -9,7 +9,7 @@ from packaging.version import InvalidVersion, Version
 
 PACKAGE_NAME = "bioimageflow_common_tools"
 COMMON_TOOLS_MARK = pytest.mark.common_tools
-COMMON_TOOLS_SKIP_REASON = (
+COMMON_TOOLS_FAILURE_REASON = (
     f"{PACKAGE_NAME} certification tests require an installed tool store. "
     "Set BIOIMAGEFLOW_TOOL_STORE to a fixture store, or BIOIMAGEFLOW_HOME to "
     "a home containing tool_packages/bioimageflow_common_tools."
@@ -17,23 +17,23 @@ COMMON_TOOLS_SKIP_REASON = (
 
 
 def latest_common_tools_version() -> str:
-    """Return the newest installed common-tools version, or skip the test."""
+    """Return the newest installed common-tools version, or fail certification."""
     try:
         __import__("bioimageflow.paths")
     except ImportError:
-        _skip_common_tools()
+        _fail_common_tools("Could not import bioimageflow.paths.")
     from bioimageflow.paths import get_tool_store_path
 
     package_dir = get_tool_store_path() / PACKAGE_NAME
     if not package_dir.exists():
-        _skip_common_tools()
+        _fail_common_tools(f"Package directory does not exist: {package_dir}.")
 
     versions = sorted(
         (path.name for path in package_dir.iterdir() if path.is_dir()),
         key=_version_key,
     )
     if not versions:
-        _skip_common_tools()
+        _fail_common_tools(f"No installed versions were found in {package_dir}.")
     return versions[-1]
 
 
@@ -42,27 +42,25 @@ def load_common_tools_class(class_name: str) -> tuple[type, str]:
     try:
         __import__("bioimageflow.tool_loader")
     except ImportError:
-        _skip_common_tools()
+        _fail_common_tools("Could not import bioimageflow.tool_loader.")
     from bioimageflow.tool_loader import load_versioned_package
 
     version = latest_common_tools_version()
     try:
         module = load_versioned_package(PACKAGE_NAME, version)
     except Exception as exc:
-        pytest.skip(f"{COMMON_TOOLS_SKIP_REASON} Load failed for {version}: {exc}")
+        pytest.fail(
+            f"{COMMON_TOOLS_FAILURE_REASON} Load failed for {version}: {exc}",
+            pytrace=False,
+        )
 
     cls = getattr(module, class_name, None)
     if cls is None:
-        pytest.skip(f"{COMMON_TOOLS_SKIP_REASON} {class_name} is missing from {version}.")
+        pytest.fail(
+            f"{COMMON_TOOLS_FAILURE_REASON} {class_name} is missing from {version}.",
+            pytrace=False,
+        )
     return cls, version
-
-
-def maybe_load_common_tools_class(class_name: str) -> tuple[type, str] | None:
-    """Load a common-tools class, returning None for optional registrations."""
-    try:
-        return load_common_tools_class(class_name)
-    except pytest.skip.Exception:
-        return None
 
 
 def _version_key(version: str) -> Version:
@@ -72,12 +70,15 @@ def _version_key(version: str) -> Version:
         return Version("0")
 
 
-def _skip_common_tools() -> None:
+def _fail_common_tools(detail: str) -> None:
     configured_store = os.environ.get("BIOIMAGEFLOW_TOOL_STORE")
     configured_home = os.environ.get("BIOIMAGEFLOW_HOME")
-    detail = ""
+    configured_detail = ""
     if configured_store:
-        detail = f" Checked BIOIMAGEFLOW_TOOL_STORE={configured_store}."
+        configured_detail = f" Checked BIOIMAGEFLOW_TOOL_STORE={configured_store}."
     elif configured_home:
-        detail = f" Checked BIOIMAGEFLOW_HOME={configured_home}."
-    pytest.skip(f"{COMMON_TOOLS_SKIP_REASON}{detail}")
+        configured_detail = f" Checked BIOIMAGEFLOW_HOME={configured_home}."
+    pytest.fail(
+        f"{COMMON_TOOLS_FAILURE_REASON} {detail}{configured_detail}",
+        pytrace=False,
+    )

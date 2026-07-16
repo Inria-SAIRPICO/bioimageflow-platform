@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import bioimageflow_server.services.tool_registry as tool_registry_module
 from bioimageflow_server.models.tools import (
     InputFieldSchema,
     OutputFieldSchema,
@@ -119,6 +120,57 @@ def test_files_accepts_upstream_is_false():
     meta = _register("Files")
     assert meta.tool_type == "DataFrameTool"
     assert meta.accepts_upstream is False
+
+
+def test_register_tool_preserves_non_null_path_picker(monkeypatch):
+    """Keep the platform boundary covered without a mutable sibling package."""
+
+    class PathPickerFixtureTool:
+        display_name = "Path picker fixture"
+        documentation = "Repository-owned serializer boundary fixture."
+        tags = ["fixture"]
+        category = None
+        environment = None
+
+    monkeypatch.setattr(
+        tool_registry_module,
+        "serialize_tool_metadata",
+        lambda _tool_cls: {
+            "tool_type": "DataFrameTool",
+            "accepts_upstream": False,
+            "dynamic_outputs": False,
+            "dataframe_output": True,
+        },
+    )
+    monkeypatch.setattr(
+        tool_registry_module,
+        "serialize_input_schema",
+        lambda _tool_cls: {
+            "path": {
+                "type": "Path",
+                "required": True,
+                "nullable": False,
+                "connectable": "never",
+                "path_picker": "folder",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tool_registry_module,
+        "serialize_output_schema",
+        lambda _tool_cls: {},
+    )
+
+    reg = ToolRegistryService()
+    reg._register_tool_from_class(
+        PathPickerFixtureTool,
+        "PathPickerFixtureTool",
+        "repository-fixtures",
+        "1.0.0",
+    )
+
+    meta = reg.get_tool("PathPickerFixtureTool")
+    assert meta is not None
     assert meta.inputs["path"].path_picker == "folder"
 
 

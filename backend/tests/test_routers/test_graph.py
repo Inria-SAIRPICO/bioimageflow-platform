@@ -21,8 +21,7 @@ from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from tests.common_tools import (
     COMMON_TOOLS_MARK,
-    COMMON_TOOLS_SKIP_REASON,
-    maybe_load_common_tools_class,
+    load_common_tools_class,
 )
 
 pytestmark = pytest.mark.anyio
@@ -302,12 +301,9 @@ async def test_parameter_patch_endpoint_is_removed(client: httpx.AsyncClient) ->
 # Build a registry with real common-tools (Generate, Files, CrossJoin,
 # JoinOnColumn) so that serialize_resolved_outputs returns meaningful results.
 
-def _load_common_tools_class(class_name: str) -> type | None:
-    """Load a common-tools class, return None if unavailable."""
-    loaded = maybe_load_common_tools_class(class_name)
-    if loaded is None:
-        return None
-    cls, _version = loaded
+def _load_common_tools_class(class_name: str) -> type:
+    """Load a required common-tools class for external certification."""
+    cls, _version = load_common_tools_class(class_name)
     return cls
 
 
@@ -328,12 +324,10 @@ def _common_tools_registry() -> ToolRegistryService:
         )
     # Register real common-tools
     for tool_name in ("Files", "Generate", "CrossJoin", "JoinOnColumn"):
-        loaded = maybe_load_common_tools_class(tool_name)
-        if loaded is not None:
-            cls, version = loaded
-            reg._register_tool_from_class(
-                cls, tool_name, "bioimageflow_common_tools", version,
-            )
+        cls, version = load_common_tools_class(tool_name)
+        reg._register_tool_from_class(
+            cls, tool_name, "bioimageflow_common_tools", version,
+        )
     return reg
 
 
@@ -356,9 +350,8 @@ async def common_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         yield c
 
 
-def _skip_if_no_common_tools() -> None:
-    if _load_common_tools_class("Generate") is None:
-        pytest.skip(COMMON_TOOLS_SKIP_REASON)
+def _require_common_tools() -> None:
+    _load_common_tools_class("Generate")
 
 
 @COMMON_TOOLS_MARK
@@ -366,7 +359,7 @@ class TestOutputSchema:
     """POST /graph/nodes/{node_id}/output_schema — parity with library tests."""
 
     async def test_generate_resolved(self, common_client: httpx.AsyncClient) -> None:
-        _skip_if_no_common_tools()
+        _require_common_tools()
         body = {
             "nodes": [
                 {
@@ -391,7 +384,7 @@ class TestOutputSchema:
     async def test_generate_unresolved_no_column_name(
         self, common_client: httpx.AsyncClient,
     ) -> None:
-        _skip_if_no_common_tools()
+        _require_common_tools()
         # Generate requires column_name; omitting it makes it unresolvable.
         # However, Generate's column_name is a required param, so the graph
         # build may fail. The endpoint should return resolved=false, not 4xx.
@@ -418,7 +411,7 @@ class TestOutputSchema:
     async def test_cross_join_four_columns(
         self, common_client: httpx.AsyncClient, tmp_path: Path,
     ) -> None:
-        _skip_if_no_common_tools()
+        _require_common_tools()
         body = {
             "nodes": [
                 {
@@ -470,7 +463,7 @@ class TestOutputSchema:
     async def test_join_on_column_unresolved_then_resolved(
         self, common_client: httpx.AsyncClient, tmp_path: Path,
     ) -> None:
-        _skip_if_no_common_tools()
+        _require_common_tools()
         # Two Files as left/right; JoinOnColumn without join_column -> unresolved
         body_no_jc = {
             "nodes": [

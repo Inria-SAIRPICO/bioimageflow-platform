@@ -131,7 +131,7 @@ common-tools:external:
   extends: .backend-job
   stage: certification
   variables:
-    BIOIMAGEFLOW_COMMON_TOOLS_VERSION: "0.1.6"
+    BIOIMAGEFLOW_COMMON_TOOLS_VERSION: "0.1.5"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: always

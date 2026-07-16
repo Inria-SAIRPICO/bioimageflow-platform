@@ -1,7 +1,24 @@
 # Test lanes
 
-Run these commands from a checkout with the repository's sibling source links in place.
-They are the same checks used by repository CI.
+Run the local development commands from a checkout with the repository's sibling source links in place.
+Those links use whichever sibling revisions are currently checked out, while CI bootstraps exact source revisions before installing the backend environment.
+
+## Exact CI source bootstrap
+
+CI does not use arbitrary local sibling revisions.
+It checks out the full commit SHAs configured in `.gitlab-ci.yml` so required jobs are reproducible.
+
+From a fresh checkout without existing sibling source paths or worktree source links, reproduce that bootstrap with:
+
+```bash
+export BIOIMAGEFLOW_SOURCE_REVISION=30473f203fd6dee81b476f20c0b2566675da44aa
+export LAUNCHER_SOURCE_REVISION=54c38b5e404bac9f3db5203ac29fa75b2b7c5df3
+export WETLANDS_SOURCE_REVISION=d0780c44a15c894cb69bed83562e864cc62c6288
+bash scripts/ci/bootstrap_backend_sources.sh
+```
+
+The bootstrap script reuses only clean repositories already at the requested commit and refuses to replace any other existing path.
+Keep using the repository's documented source links for ordinary development, and use a fresh checkout when exact CI source reproduction would conflict with those links.
 
 ## Required backend checks
 
@@ -50,12 +67,17 @@ The live package-index lane is intentionally separate from required deterministi
 It installs a pinned published package into an empty tool store and requires an explicit pytest option:
 
 ```bash
-export BIOIMAGEFLOW_COMMON_TOOLS_VERSION=0.1.6
+cd backend
+uv sync --extra dev --frozen
+cd ..
+export BIOIMAGEFLOW_COMMON_TOOLS_VERSION=0.1.5
 export BIOIMAGEFLOW_TOOL_STORE=/tmp/bioimageflow-common-tools-certification/tool_packages
 bash scripts/ci/install_common_tools_from_index.sh
 cd backend
 uv run --frozen pytest --run-common-tools -m common_tools
 ```
 
+The installer requires the backend virtual environment at `backend/.venv`, so run `uv sync` before invoking it.
 Use a new empty `BIOIMAGEFLOW_TOOL_STORE` for every certification run.
+With `--run-common-tools`, a missing store, import, package load, or expected class fails certification instead of being skipped.
 An external failure does not replace or invalidate the repository-owned fixture coverage in the required backend lane.

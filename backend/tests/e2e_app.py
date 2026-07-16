@@ -4,13 +4,27 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 from bioimageflow_server.app import create_app as create_platform_app
+from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.settings_store import SettingsStore
+
+
+class ExecutionFailureEvent(BaseModel):
+    """Contextual worker failure emitted by the Playwright WebSocket fixture."""
+
+    execution_id: str
+    workflow_id: str
+    draft_revision: int
+    node_id: str
+    error: str
+    traceback: str
 
 
 def create_app() -> FastAPI:
@@ -30,7 +44,7 @@ def create_app() -> FastAPI:
     if hot_reload_fixture:
         _write_hot_reload_fixture(Path(hot_reload_fixture))
 
-    return create_platform_app(
+    app = create_platform_app(
         AppConfig(
             settings_store=SettingsStore(path=root / "settings.json"),
             storage_path=root / "storage",
@@ -40,6 +54,39 @@ def create_app() -> FastAPI:
             enable_dev_router=True,
         )
     )
+
+    @app.post("/api/v1/dev/e2e/execution-failure")
+    async def broadcast_execution_failure(event: ExecutionFailureEvent) -> dict[str, str]:
+        """Broadcast a worker log and completion through the real WS manager."""
+        manager = app.state.connection_manager
+        context = ExecutionContext(
+            execution_id=event.execution_id,
+            workflow_id=event.workflow_id,
+            draft_revision=event.draft_revision,
+        )
+        await manager.broadcast_log(
+            "ERROR",
+            f"{event.error}\n{event.traceback}",
+            event.node_id,
+            time.time(),
+        )
+        await manager.broadcast_execution_complete(
+            False,
+            [],
+            {
+                event.node_id: {
+                    "node_id": event.node_id,
+                    "status": "failed",
+                    "cached": False,
+                    "error": event.error,
+                    "traceback": event.traceback,
+                }
+            },
+            context=context,
+        )
+        return {"execution_id": event.execution_id}
+
+    return app
 
 
 def _write_hot_reload_fixture(fixture_path: Path) -> None:
