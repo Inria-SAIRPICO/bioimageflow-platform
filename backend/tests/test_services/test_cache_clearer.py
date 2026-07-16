@@ -22,7 +22,6 @@ from bioimageflow_server.models.graph import (
 )
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.execution import WorkflowBuildError, clear_node_cache
-from bioimageflow_server.services.session_manager import SessionManager
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
@@ -146,17 +145,14 @@ def test_clear_single_node_returns_unexecuted(
     assert result["a"].cached is False
 
 
-def test_clear_uses_request_graph_when_same_path_session_is_stale(
+def test_clear_derives_downstream_statuses_from_submitted_graph(
     tmp_path: Path,
     registry: ToolRegistryService,
 ) -> None:
-    stale_graph = _make_graph([("a", "SrcTool")], [])
     request_graph = _make_graph(
         [("a", "SrcTool"), ("b", "DstTool")],
         [("a", "b")],
     )
-    session_manager = SessionManager()
-    session_manager.load(stale_graph, registry, storage_path=tmp_path)
 
     result = clear_node_cache(
         ["a"],
