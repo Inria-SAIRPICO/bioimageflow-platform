@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     )
     root.mkdir(parents=True, exist_ok=True)
     tool_store = root / "tool_packages"
+    os.environ["BIOIMAGEFLOW_HOME"] = str(root)
     os.environ["BIOIMAGEFLOW_TOOL_STORE"] = str(tool_store)
     os.environ["BIOIMAGEFLOW_WETLANDS"] = str(root / "wetlands")
 

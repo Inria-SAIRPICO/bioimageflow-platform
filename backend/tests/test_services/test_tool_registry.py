@@ -685,9 +685,10 @@ def test_scan_tool_store_registers_common_tools():
     missing = expected - found
     pkg = reg.get_package(PACKAGE_NAME)
     if missing and pkg is not None and pkg.load_errors and not found:
-        pytest.skip(
+        pytest.fail(
             f"{PACKAGE_NAME} is installed but no version loads under the "
-            f"current runtime: {pkg.load_errors}"
+            f"current runtime: {pkg.load_errors}",
+            pytrace=False,
         )
     assert not missing, (
         f"common-tools registration regression: {missing} not registered. "
