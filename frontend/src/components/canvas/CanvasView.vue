@@ -3208,6 +3208,7 @@ defineExpose({
       :nodes-draggable="!isLocked"
       :edges-updatable="!isLocked"
       :fit-view-on-init="shouldFitViewOnInit"
+      multi-selection-key-code="Shift"
       @node-context-menu="onNodeContextMenu"
       @node-double-click="onNodeDoubleClick"
     >

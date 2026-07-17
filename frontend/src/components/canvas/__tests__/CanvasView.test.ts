@@ -138,7 +138,7 @@ const vueFlowMocks = vi.hoisted(() => ({
 vi.mock('@vue-flow/core', () => {
   const VueFlow = defineComponent({
     name: 'VueFlow',
-    props: ['id', 'nodes', 'edges', 'nodeTypes', 'edgeTypes', 'isValidConnection', 'selectionKeyCode', 'fitViewOnInit'],
+    props: ['id', 'nodes', 'edges', 'nodeTypes', 'edgeTypes', 'isValidConnection', 'selectionKeyCode', 'multiSelectionKeyCode', 'fitViewOnInit'],
     template: '<div class="vue-flow-mock"><slot /></div>',
   })
   return {
@@ -1713,6 +1713,13 @@ describe('CanvasView', () => {
       const edgeTypes = vueFlow.props('edgeTypes')
       expect(edgeTypes).toHaveProperty('column_ref')
       expect(edgeTypes).toHaveProperty('positional')
+      w.unmount()
+    })
+
+    it('uses Shift for additive node selection', () => {
+      const w = mountCanvas()
+      const vueFlow = w.findComponent({ name: 'VueFlow' })
+      expect(vueFlow.props('multiSelectionKeyCode')).toBe('Shift')
       w.unmount()
     })
 
