@@ -25,6 +25,11 @@ from bioimageflow_server.services.workflow_store import (
 )
 from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from tests.workflow_move_helpers import (
+    patch_workflow as _patch_workflow,
+    promote_folder as _promote_folder,
+    rename_folder as _rename_folder,
+)
 
 
 @pytest.fixture
@@ -202,7 +207,7 @@ def test_workflow_folders_create_delete_and_rename(store: WorkflowStoreService) 
     assert folder.path == "segmentation/quantification"
     assert (store.root_dir / "segmentation" / "quantification").is_dir()
 
-    renamed = store.rename_folder("segmentation/quantification", "analysis/intensity")
+    renamed = _rename_folder(store, "segmentation/quantification", "analysis/intensity")
     assert renamed.path == "analysis/intensity"
     assert not (store.root_dir / "segmentation" / "quantification").exists()
     assert (store.root_dir / "analysis" / "intensity").is_dir()
@@ -223,7 +228,8 @@ def test_workflow_folders_accept_spaces_and_move_children(
     )
     store.create_folder("Archive 2026")
 
-    moved = store.rename_folder(
+    moved = _rename_folder(
+        store,
         "My Project/Quality Control",
         "Archive 2026/Quality Control",
     )
@@ -265,7 +271,7 @@ def test_folder_api_rejects_workflow_internal_paths(store: WorkflowStoreService)
     with pytest.raises(FileNotFoundError):
         store.delete_folder("Untitled/tools")
     with pytest.raises(ValueError):
-        store.rename_folder("reports", "Untitled/reports")
+        _rename_folder(store, "reports", "Untitled/reports")
 
     assert (store.root_dir / "reports").is_dir()
     assert not (store.root_dir / "Untitled" / "tools" / "custom").exists()
@@ -275,7 +281,7 @@ def test_delete_folder_can_move_children_up(store: WorkflowStoreService) -> None
     store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
     store.create_folder("segmentation/reports")
 
-    store.delete_folder("segmentation", "move_children_up")
+    _promote_folder(store, "segmentation")
 
     assert (store.root_dir / "nuclei" / "workflow.json").exists()
     assert (store.root_dir / "reports").is_dir()
@@ -295,7 +301,7 @@ def test_folder_can_move_into_another_folder(store: WorkflowStoreService) -> Non
     store.create_folder("segmentation/reports")
     store.create_folder("archive")
 
-    moved = store.rename_folder("segmentation/reports", "archive/reports")
+    moved = _rename_folder(store, "segmentation/reports", "archive/reports")
 
     assert moved.path == "archive/reports"
     assert (store.root_dir / "archive" / "reports").is_dir()
@@ -315,7 +321,7 @@ def test_folder_move_updates_child_workflow_ids_and_managed_storage(
     storage_path.mkdir(parents=True)
     (storage_path / "result.txt").write_text("ok")
 
-    store.rename_folder("segmentation", "analysis")
+    _rename_folder(store, "segmentation", "analysis")
 
     moved = store.get_workflow("analysis/nuclei").info
     assert moved.id == "analysis/nuclei"
@@ -335,7 +341,7 @@ def test_delete_folder_move_children_up_updates_workflow_storage(
     storage_path.mkdir(parents=True)
     (storage_path / "result.txt").write_text("ok")
 
-    store.delete_folder("segmentation", "move_children_up")
+    _promote_folder(store, "segmentation")
 
     moved = store.get_workflow("nuclei").info
     assert moved.id == "nuclei"
@@ -361,13 +367,14 @@ def test_folder_cannot_move_into_itself(store: WorkflowStoreService) -> None:
     store.create_folder("segmentation/reports")
 
     with pytest.raises(ValueError):
-        store.rename_folder("segmentation", "segmentation/reports/archive")
+        _rename_folder(store, "segmentation", "segmentation/reports/archive")
 
 
 def test_move_workflow_between_folders(store: WorkflowStoreService) -> None:
     store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
 
-    moved = store.patch_workflow(
+    moved = _patch_workflow(
+        store,
         "segmentation/nuclei",
         WorkflowUpdate(action="update", folder="analysis"),
     )
@@ -455,7 +462,8 @@ def test_direct_workflow_move_rewrites_only_existing_draft_identity(
     store.create_workflow(WorkflowCreate(name=old_id))
     original = _write_draft(store, old_id)
 
-    moved = store.patch_workflow(
+    moved = _patch_workflow(
+        store,
         old_id,
         WorkflowUpdate(action="update", new_id=new_id),
     )
@@ -486,7 +494,7 @@ def test_folder_move_rewrites_all_child_draft_identities(
     no_draft_new_id = "archive/moved/no-draft"
     store.create_workflow(WorkflowCreate(name=no_draft_old_id))
 
-    store.rename_folder("project", "archive/moved")
+    _rename_folder(store, "project", "archive/moved")
 
     for old_id, new_id in moves.items():
         expected = {**originals[old_id], "workflow_id": new_id}
@@ -509,7 +517,7 @@ def test_delete_folder_promotes_child_drafts_with_new_identities(
         store.create_workflow(WorkflowCreate(name=old_id))
         originals[old_id] = _write_draft(store, old_id, revision)
 
-    store.delete_folder("project", "move_children_up")
+    _promote_folder(store, "project")
 
     for old_id, new_id in moves.items():
         expected = {**originals[old_id], "workflow_id": new_id}
@@ -525,7 +533,8 @@ def test_moving_workflow_without_draft_does_not_create_one(
     store.create_workflow(WorkflowCreate(name=old_id))
     assert not _draft_json(store, old_id).exists()
 
-    store.patch_workflow(
+    _patch_workflow(
+        store,
         old_id,
         WorkflowUpdate(action="update", new_id=new_id),
     )
@@ -545,7 +554,8 @@ def test_direct_move_rejects_malformed_draft_before_moving_workflow(
     draft_path.write_text("{not-json", encoding="utf-8")
 
     with pytest.raises(json.JSONDecodeError):
-        store.patch_workflow(
+        _patch_workflow(
+            store,
             old_id,
             WorkflowUpdate(action="update", new_id=new_id),
         )
@@ -566,7 +576,7 @@ def test_folder_move_preflights_all_child_drafts_before_renaming(
     invalid_path.write_text("[]", encoding="utf-8")
 
     with pytest.raises(ValueError, match="must contain a JSON object"):
-        store.rename_folder("project", "archive/moved")
+        _rename_folder(store, "project", "archive/moved")
 
     for workflow_id in workflow_ids:
         assert store.get_workflow(workflow_id).info.id == workflow_id
@@ -605,7 +615,8 @@ def test_move_workflow_to_folder_with_spaces(store: WorkflowStoreService) -> Non
     store.create_workflow(WorkflowCreate(name="segmentation/nuclei"))
     store.create_folder("Analysis Results")
 
-    moved = store.patch_workflow(
+    moved = _patch_workflow(
+        store,
         "segmentation/nuclei",
         WorkflowUpdate(action="update", folder="Analysis Results"),
     )
@@ -734,7 +745,7 @@ def test_folder_rename_moves_regular_json_files_without_treating_them_as_workflo
     unrelated_storage = store.storage_base_dir / "Analysis Results" / "notes"
     unrelated_storage.mkdir(parents=True)
 
-    store.rename_folder("Analysis Results", "Archive 2026")
+    _rename_folder(store, "Analysis Results", "Archive 2026")
 
     workflow = store.get_workflow("Archive 2026/nuclei").info
     assert workflow.id == "Archive 2026/nuclei"
@@ -770,14 +781,16 @@ def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:
     source_tool = store.root_dir / "wf" / "tools" / "custom_tool.py"
     source_tool.write_text("VALUE = 1\n", encoding="utf-8")
 
-    updated = store.patch_workflow(
+    updated = _patch_workflow(
+        store,
         "wf",
         WorkflowUpdate(action="update", display_name="Renamed", description="desc"),
     )
     assert updated.display_name == "Renamed"
     assert updated.description == "desc"
 
-    duplicate = store.patch_workflow(
+    duplicate = _patch_workflow(
+        store,
         updated.name,
         WorkflowUpdate(action="duplicate", new_name="copy", display_name="Copy"),
     )
@@ -788,7 +801,8 @@ def test_duplicate_and_update_metadata(store: WorkflowStoreService) -> None:
         encoding="utf-8"
     ) == "VALUE = 1\n"
 
-    duplicate_custom = store.patch_workflow(
+    duplicate_custom = _patch_workflow(
+        store,
         updated.name,
         WorkflowUpdate(
             action="duplicate",
@@ -808,7 +822,8 @@ def test_display_name_update_preserves_identity_and_managed_storage(
     marker = old_storage / "result.txt"
     marker.write_text("kept", encoding="utf-8")
 
-    updated = store.patch_workflow(
+    updated = _patch_workflow(
+        store,
         "Untitled",
         WorkflowUpdate(action="update", display_name="New workflow"),
     )
@@ -833,7 +848,8 @@ def test_display_name_update_ignores_unrelated_managed_storage_collision(
     target_storage = store.storage_base_dir / "new_workflow"
     target_storage.mkdir(parents=True)
 
-    updated = store.patch_workflow(
+    updated = _patch_workflow(
+        store,
         "Untitled",
         WorkflowUpdate(action="update", display_name="New workflow"),
     )
@@ -859,7 +875,8 @@ def test_display_name_update_preserves_custom_storage_path(
         )
     )
 
-    updated = store.patch_workflow(
+    updated = _patch_workflow(
+        store,
         "Untitled",
         WorkflowUpdate(action="update", display_name="New workflow"),
     )
@@ -873,7 +890,8 @@ def test_update_workflow_anchors_relative_storage_path_once(
 ) -> None:
     store.create_workflow(WorkflowCreate(name="wf"))
 
-    updated = store.patch_workflow(
+    updated = _patch_workflow(
+        store,
         "wf",
         WorkflowUpdate(action="update", storage_path="updated-relative-results"),
     )
@@ -900,7 +918,8 @@ def test_display_name_update_with_custom_storage_ignores_managed_target_collisio
     target_storage = store.storage_base_dir / "new_workflow"
     target_storage.mkdir(parents=True)
 
-    updated = store.patch_workflow(
+    updated = _patch_workflow(
+        store,
         "Untitled",
         WorkflowUpdate(action="update", display_name="New workflow"),
     )
@@ -916,7 +935,8 @@ def test_display_name_update_without_valid_slug_keeps_canonical_identity(
 ) -> None:
     info = store.create_workflow(WorkflowCreate(name="Untitled", display_name="Untitled"))
 
-    updated = store.patch_workflow(
+    updated = _patch_workflow(
+        store,
         "Untitled",
         WorkflowUpdate(action="update", display_name="测试"),
     )
@@ -962,7 +982,8 @@ def test_save_after_display_name_update_retains_graph_edges(store: WorkflowStore
         ],
     )
 
-    renamed = store.patch_workflow(
+    renamed = _patch_workflow(
+        store,
         "Untitled",
         WorkflowUpdate(action="update", display_name="New workflow"),
     )

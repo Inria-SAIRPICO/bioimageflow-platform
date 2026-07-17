@@ -126,6 +126,7 @@ class NestedWorkflowSnapshotService:
         while True:
             store = self._store()
             with self._lock:
+                store.ensure_workflow_mutations_available()
                 owner = self._canonicalize_open_owner_locked(store, owner)
                 root_context = self._root_validation_context_locked(store, owner)
                 existing = self._find_snapshot(store, owner, parent_node_id)
@@ -141,6 +142,7 @@ class NestedWorkflowSnapshotService:
                 )
             except Exception:
                 with self._lock:
+                    store.ensure_workflow_mutations_available()
                     existing = self._find_snapshot(store, owner, parent_node_id)
                     if existing is not None:
                         return existing
@@ -154,6 +156,7 @@ class NestedWorkflowSnapshotService:
                 raise
 
             with self._lock:
+                store.ensure_workflow_mutations_available()
                 existing = self._find_snapshot(store, owner, parent_node_id)
                 if existing is not None:
                     return existing
@@ -217,6 +220,7 @@ class NestedWorkflowSnapshotService:
         while True:
             with self._lock:
                 store = self._store()
+                store.ensure_workflow_mutations_available()
                 current = self._read(store, session_id)
                 self._ensure_revision(current, expected_revision)
                 root_context = self._root_validation_context_locked(
@@ -232,6 +236,7 @@ class NestedWorkflowSnapshotService:
                 )
             except Exception:
                 with self._lock:
+                    store.ensure_workflow_mutations_available()
                     current = self._read(store, session_id)
                     self._ensure_revision(current, expected_revision)
                     with self._root_validation_commit_locked(
@@ -244,6 +249,7 @@ class NestedWorkflowSnapshotService:
                 raise
 
             with self._lock:
+                store.ensure_workflow_mutations_available()
                 current = self._read(store, session_id)
                 self._ensure_revision(current, expected_revision)
                 with self._root_validation_commit_locked(
@@ -287,6 +293,7 @@ class NestedWorkflowSnapshotService:
     def delete_snapshot(self, session_id: UUID, *, expected_revision: int) -> None:
         with self._lock:
             store = self._store()
+            store.ensure_workflow_mutations_available()
             current = self._read(store, session_id)
             self._ensure_revision(current, expected_revision)
             dependents = self._dependent_session_ids(store, session_id)
@@ -323,6 +330,7 @@ class NestedWorkflowSnapshotService:
             return []
         with self._lock:
             store = self._store()
+            store.ensure_workflow_mutations_available()
             inventory = self._inventory_locked(store)
 
             removed = [
@@ -396,9 +404,7 @@ class NestedWorkflowSnapshotService:
                 move = (
                     legacy_move_by_old_workflow.get(owner.workflow_id)
                     if owner.identity_generation is None
-                    else move_by_old_identity.get(
-                        (owner.workflow_id, owner.identity_generation)
-                    )
+                    else move_by_old_identity.get((owner.workflow_id, owner.identity_generation))
                 )
                 if move is None:
                     continue
@@ -414,9 +420,7 @@ class NestedWorkflowSnapshotService:
                 moved_session_ids.append(session_id)
 
             projected_snapshots = dict(inventory.snapshots)
-            projected_snapshots.update(
-                {snapshot.session_id: snapshot for snapshot in replacements}
-            )
+            projected_snapshots.update({snapshot.session_id: snapshot for snapshot in replacements})
             losing_roots = self._canonical_root_collision_losers(
                 inventory,
                 projected_snapshots,
@@ -436,6 +440,10 @@ class NestedWorkflowSnapshotService:
                     inventory.paths[session_id].unlink()
                 except FileNotFoundError:
                     pass
+            if self._snapshot_dir(store).exists():
+                # Reaffirm an already-applied replacement before a recovery
+                # coordinator is allowed to clear its durable move journal.
+                self._fsync_directory(self._snapshot_dir(store))
             return [
                 session_id
                 for session_id in moved_session_ids
@@ -504,9 +512,7 @@ class NestedWorkflowSnapshotService:
                     replacements.append(snapshot.model_copy(update={"owner": canonical_owner}))
 
             projected_snapshots = dict(inventory.snapshots)
-            projected_snapshots.update(
-                {snapshot.session_id: snapshot for snapshot in replacements}
-            )
+            projected_snapshots.update({snapshot.session_id: snapshot for snapshot in replacements})
             collision_exclusions = set(invalid_session_ids)
             collision_exclusions.update(
                 session_id
@@ -539,15 +545,9 @@ class NestedWorkflowSnapshotService:
                     valid = session_id not in invalid_session_ids
                 else:
                     parent_id = snapshot.owner.session_id
-                    valid = (
-                        parent_id is not None
-                        and (
-                            parent_id in inventory.unreadable_session_ids
-                            or (
-                                parent_id in inventory.snapshots
-                                and has_valid_root(parent_id)
-                            )
-                        )
+                    valid = parent_id is not None and (
+                        parent_id in inventory.unreadable_session_ids
+                        or (parent_id in inventory.snapshots and has_valid_root(parent_id))
                     )
                 if not valid:
                     invalid_session_ids.add(session_id)
@@ -661,8 +661,7 @@ class NestedWorkflowSnapshotService:
             descendants = {
                 session_id
                 for session_id, snapshot in inventory.snapshots.items()
-                if snapshot.owner.kind == "nested"
-                and snapshot.owner.session_id in removed
+                if snapshot.owner.kind == "nested" and snapshot.owner.session_id in removed
             }
             expanded = removed | descendants
             if expanded == removed:
@@ -973,6 +972,7 @@ class NestedWorkflowSnapshotService:
             for temporary_path, path in staged:
                 os.replace(temporary_path, path)
                 replaced.append(path)
+            self._fsync_directory(paths[0].parent)
         except Exception:
             self._remove_staged_files(staged)
             rollback_error: Exception | None = None
@@ -985,6 +985,10 @@ class NestedWorkflowSnapshotService:
                         self._replace_bytes(path, original)
                 except Exception as error:
                     rollback_error = error
+            try:
+                self._fsync_directory(paths[0].parent)
+            except Exception as error:
+                rollback_error = error
             if rollback_error is not None:
                 raise RuntimeError(
                     "Retained snapshot write failed and could not be rolled back"
@@ -1037,6 +1041,14 @@ class NestedWorkflowSnapshotService:
             except FileNotFoundError:
                 pass
             raise
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
     @staticmethod
     def _remove_staged_files(staged: list[tuple[Path, Path]]) -> None:

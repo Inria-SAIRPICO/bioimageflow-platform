@@ -22,6 +22,10 @@ from bioimageflow_server.services.nested_workflow_snapshot import (
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from tests.workflow_move_helpers import (
+    execute_workflow_patch,
+    finish_move_without_retained_snapshots,
+)
 
 
 def _graph(node_id: str, published_name: str = "image") -> GraphState:
@@ -355,7 +359,8 @@ def test_move_rewrites_only_root_owner_and_descendant_stays_editable(
     )
     child_path = _snapshot_path(store, child.session_id)
     child_before = child_path.read_bytes()
-    moved_workflow = store.patch_workflow(
+    moved_workflow, operation_id = execute_workflow_patch(
+        store,
         "root-a",
         WorkflowUpdate(action="update", new_id="archive/root-a"),
     )
@@ -370,6 +375,7 @@ def test_move_rewrites_only_root_owner_and_descendant_stays_editable(
             )
         ]
     )
+    finish_move_without_retained_snapshots(store, operation_id)
     recovered_parent = service.get_snapshot(parent.session_id)
 
     assert moved_ids == [parent.session_id]
@@ -407,7 +413,8 @@ def test_move_normalizes_safe_generationless_root_when_startup_cleanup_was_skipp
             "workflow_id": "root-a",
         },
     )
-    moved_workflow = store.patch_workflow(
+    moved_workflow, operation_id = execute_workflow_patch(
+        store,
         "root-a",
         WorkflowUpdate(action="update", new_id="archive/root-a"),
     )
@@ -422,6 +429,7 @@ def test_move_normalizes_safe_generationless_root_when_startup_cleanup_was_skipp
             )
         ]
     )
+    finish_move_without_retained_snapshots(store, operation_id)
 
     assert moved_ids == [parent.session_id]
     assert service.get_snapshot(parent.session_id).owner == NestedSnapshotOwner(
@@ -461,7 +469,8 @@ def test_move_resolves_skipped_startup_collision_and_removes_losing_tree(
     legacy_payload["updated_at"] = "2099-01-01T00:00:00Z"
     legacy_payload["graph"] = _graph("newer_legacy_state").model_dump(mode="json")
     legacy_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
-    moved_workflow = store.patch_workflow(
+    moved_workflow, operation_id = execute_workflow_patch(
+        store,
         "root-a",
         WorkflowUpdate(action="update", new_id="archive/root-a"),
     )
@@ -476,6 +485,7 @@ def test_move_resolves_skipped_startup_collision_and_removes_losing_tree(
             )
         ]
     )
+    finish_move_without_retained_snapshots(store, operation_id)
 
     assert moved_ids == [legacy_session_id]
     assert not _snapshot_path(store, canonical.session_id).exists()
@@ -546,7 +556,8 @@ def test_move_replace_failure_keeps_original_and_cleans_temporary_file(
     paths = sorted(_snapshot_path(store, item.session_id) for item in (parent, sibling))
     before = {path: path.read_bytes() for path in paths}
     failing_path = paths[1]
-    moved_workflow = store.patch_workflow(
+    moved_workflow, _operation_id = execute_workflow_patch(
+        store,
         "root-a",
         WorkflowUpdate(action="update", new_id="archive/root-a"),
     )

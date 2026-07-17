@@ -49,6 +49,7 @@ from bioimageflow_server.services.workflow_draft import (
     WorkflowDraftService,
 )
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from tests.workflow_move_helpers import patch_workflow as _patch_workflow
 
 
 # ---- Mock tool classes (module-level so from_dict can re-import) -----------
@@ -708,7 +709,8 @@ async def test_run_returns_not_found_when_workflow_disappears_before_start(
         workflow_store=workflow_store,
     )
     if race == "moved":
-        workflow_store.patch_workflow(
+        _patch_workflow(
+            workflow_store,
             "wf",
             WorkflowUpdate(action="update", new_id="archive/wf"),
         )

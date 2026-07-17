@@ -581,6 +581,7 @@ class WorkflowDraftService:
         store: WorkflowStoreService,
         workflow_id: str,
     ) -> WorkflowDraftResponse | None:
+        store.ensure_workflow_mutations_available()
         raw = normalize_workflow_draft_identity(
             store.workflow_dir(workflow_id),
             workflow_id,

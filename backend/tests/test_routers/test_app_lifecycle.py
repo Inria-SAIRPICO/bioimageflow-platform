@@ -13,11 +13,15 @@ from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
 from bioimageflow_server.routers.graph import get_dev_mode as graph_get_dev_mode
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
 )
 from bioimageflow_server.services.settings_store import SettingsStore
+from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_move_recovery import WorkflowMoveRecoveryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
 pytestmark = pytest.mark.anyio
@@ -51,7 +55,7 @@ async def test_lifespan_loads_pre_existing_settings(tmp_path: Path) -> None:
         assert resp.json()["external_editor"] == "code"
 
 
-async def test_lifespan_load_and_snapshot_cleanup_run_before_catalog_refresh(
+async def test_lifespan_move_recovery_and_snapshot_cleanup_precede_catalog_refresh(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -66,6 +70,15 @@ async def test_lifespan_load_and_snapshot_cleanup_run_before_catalog_refresh(
         return await real_load()
 
     store.load = wrapped_load  # type: ignore[method-assign]
+
+    def recover_move(_service: WorkflowMoveRecoveryService) -> None:
+        order.append("move_recovery")
+
+    monkeypatch.setattr(
+        WorkflowMoveRecoveryService,
+        "recover_pending_move",
+        recover_move,
+    )
 
     def cleanup_snapshots(_service: NestedWorkflowSnapshotService) -> list[Any]:
         order.append("snapshot_cleanup")
@@ -93,7 +106,113 @@ async def test_lifespan_load_and_snapshot_cleanup_run_before_catalog_refresh(
     async with app.router.lifespan_context(app):
         pass
 
-    assert order == ["load", "snapshot_cleanup", "refresh"], order
+    assert order == ["load", "move_recovery", "snapshot_cleanup", "refresh"], order
+
+
+async def test_lifespan_move_recovery_failure_is_fatal_before_snapshot_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_called = False
+    refreshed = False
+
+    def fail_recovery(_service: WorkflowMoveRecoveryService) -> None:
+        raise OSError("ambiguous workflow move journal")
+
+    def cleanup_snapshots(_service: NestedWorkflowSnapshotService) -> list[Any]:
+        nonlocal cleanup_called
+        cleanup_called = True
+        return []
+
+    class _RecordingCatalog:
+        async def refresh(self) -> None:
+            nonlocal refreshed
+            refreshed = True
+
+        def list_packages(self):
+            return []
+
+    monkeypatch.setattr(
+        WorkflowMoveRecoveryService,
+        "recover_pending_move",
+        fail_recovery,
+    )
+    monkeypatch.setattr(
+        NestedWorkflowSnapshotService,
+        "cleanup_orphaned_snapshots",
+        cleanup_snapshots,
+    )
+    app = create_app(
+        AppConfig(
+            workspace_path=tmp_path / "workspace",
+            storage_path=tmp_path / "storage",
+            package_catalog=_RecordingCatalog(),  # type: ignore[arg-type]
+            disable_hot_reload=True,
+        )
+    )
+
+    with pytest.raises(OSError, match="ambiguous workflow move journal"):
+        async with app.router.lifespan_context(app):
+            pass
+
+    assert cleanup_called is False
+    assert refreshed is False
+
+
+async def test_lifespan_completes_real_pending_move_before_serving(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    storage = tmp_path / "storage"
+    seed = WorkflowStoreService(
+        root_dir=workspace / "workflows",
+        tool_registry=ToolRegistryService(),
+        storage_base_dir=storage / "workflows",
+    )
+    seed.create_workflow(WorkflowCreate(name="old"))
+    patch = WorkflowUpdate(action="update", new_id="new")
+    operation_id = seed.prepare_workflow_patch_move("old", patch)
+    assert operation_id is not None
+
+    def fail_after_generation_commit(_old_name: str, _new_name: str) -> str:
+        raise OSError("injected startup recovery boundary")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(seed, "_move_managed_storage", fail_after_generation_commit)
+        with pytest.raises(OSError, match="startup recovery boundary"):
+            seed.patch_workflow(
+                "old",
+                patch,
+                move_operation_id=operation_id,
+            )
+
+    class _OfflineCatalog:
+        async def refresh(self) -> None:
+            return None
+
+        def list_packages(self):
+            return []
+
+    app = create_app(
+        AppConfig(
+            workspace_path=workspace,
+            storage_path=storage,
+            package_catalog=_OfflineCatalog(),  # type: ignore[arg-type]
+            disable_hot_reload=True,
+        )
+    )
+    async with app.router.lifespan_context(app):
+        pass
+
+    restarted = WorkflowStoreService(
+        root_dir=workspace / "workflows",
+        tool_registry=ToolRegistryService(),
+        storage_base_dir=storage / "workflows",
+    )
+    assert restarted.pending_workflow_move() is None
+    assert not restarted.workflow_dir("old").exists()
+    assert restarted.get_workflow("new").info.id == "new"
 
 
 async def test_lifespan_snapshot_cleanup_failure_is_logged_and_nonfatal(

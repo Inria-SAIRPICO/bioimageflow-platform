@@ -27,6 +27,10 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowGenerationChangedError,
     WorkflowStoreService,
 )
+from tests.workflow_move_helpers import (
+    patch_workflow as _patch_workflow,
+    rename_folder as _rename_folder,
+)
 
 
 @pytest.fixture
@@ -221,7 +225,8 @@ def test_delete_captured_before_workflow_move_cannot_delete_moved_identity(
         delete_future = pool.submit(delete_old_identity)
         assert delete_generation_captured.wait(timeout=5)
         try:
-            moved = store.patch_workflow(
+            moved = _patch_workflow(
+                store,
                 old_id,
                 WorkflowUpdate(action="update", new_id=new_id),
             )
@@ -265,7 +270,7 @@ def test_folder_move_waits_for_draft_write_and_rewrites_the_accepted_identity(
 
     def rename() -> None:
         rename_started.set()
-        store.rename_folder("project", "archive")
+        _rename_folder(store, "project", "archive")
 
     monkeypatch.setattr(workflow_draft_module, "_json_dump_atomic", blocking_dump)
     monkeypatch.setattr(Path, "rename", monitored_rename)

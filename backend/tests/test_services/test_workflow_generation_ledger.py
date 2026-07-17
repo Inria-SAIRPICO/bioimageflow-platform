@@ -22,6 +22,10 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowGenerationLedgerError,
     WorkflowStoreService,
 )
+from tests.workflow_move_helpers import (
+    patch_workflow as _patch_workflow,
+    rename_folder as _rename_folder,
+)
 
 
 def _store(tmp_path: Path) -> WorkflowStoreService:
@@ -147,7 +151,8 @@ def test_direct_move_preserves_old_tombstone_and_new_generation_after_restart(
 ) -> None:
     first = _store(tmp_path)
     created = first.create_workflow(WorkflowCreate(name="project/wf"))
-    moved = first.patch_workflow(
+    moved = _patch_workflow(
+        first,
         "project/wf",
         WorkflowUpdate(action="update", new_id="archive/wf"),
     )
@@ -169,7 +174,7 @@ def test_folder_move_generations_and_tombstones_survive_restart(tmp_path: Path) 
     first.create_workflow(WorkflowCreate(name="project/a"))
     first.create_workflow(WorkflowCreate(name="project/nested/b"))
 
-    first.rename_folder("project", "archive")
+    _rename_folder(first, "project", "archive")
     old_generations = {
         workflow_id: first.workflow_generation(workflow_id)
         for workflow_id in ("project/a", "project/nested/b")
@@ -195,7 +200,8 @@ def test_folder_move_generations_and_tombstones_survive_restart(tmp_path: Path) 
 def test_create_duplicate_and_import_generations_survive_restart(tmp_path: Path) -> None:
     first = _store(tmp_path)
     source = first.create_workflow(WorkflowCreate(name="source"))
-    duplicate = first.patch_workflow(
+    duplicate = _patch_workflow(
+        first,
         "source",
         WorkflowUpdate(action="duplicate", new_name="copy"),
     )
@@ -222,13 +228,15 @@ def test_tombstoned_targets_advance_for_duplicate_import_and_move(tmp_path: Path
         store.create_workflow(WorkflowCreate(name=target))
         tombstones[target] = store.delete_workflow(target)
 
-    duplicate = store.patch_workflow(
+    duplicate = _patch_workflow(
+        store,
         "source",
         WorkflowUpdate(action="duplicate", new_name="copy"),
     )
     imported = store.import_workflow(exported, name_override="imported")
     store.create_workflow(WorkflowCreate(name="move-source"))
-    moved = store.patch_workflow(
+    moved = _patch_workflow(
+        store,
         "move-source",
         WorkflowUpdate(action="update", new_id="moved"),
     )
@@ -255,7 +263,7 @@ def test_folder_move_advances_tombstoned_destination_after_restart(
     first.delete_folder("archive")
     first.create_workflow(WorkflowCreate(name="project/a"))
 
-    first.rename_folder("project", "archive")
+    _rename_folder(first, "project", "archive")
     moved_generation = first.workflow_generation("archive/a")
 
     assert moved_generation > destination_tombstone

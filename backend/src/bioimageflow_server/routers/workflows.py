@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
-from typing import Any
+from typing import Any, Never
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse, Response
@@ -29,8 +30,9 @@ from bioimageflow_server.services.nested_workflow_snapshot import (
 from bioimageflow_server.services.workflow_store import (
     WorkflowArchiveError,
     WorkflowGenerationChangedError,
-    WorkflowIdentityMovePlan,
     WorkflowIdentityGenerationConflictError,
+    WorkflowIdentityMovePlan,
+    WorkflowMoveRecoveryError,
     WorkflowStoreService,
 )
 
@@ -73,11 +75,17 @@ def _publish_workflow_tree_changed(
 ) -> None:
     if connection_manager is None:
         return
-    connection_manager.publish_workflow_tree_changed(
-        action=action,
-        workflow_id=workflow_id,
-        identity_generation=identity_generation,
-    )
+    try:
+        connection_manager.publish_workflow_tree_changed(
+            action=action,
+            workflow_id=workflow_id,
+            identity_generation=identity_generation,
+        )
+    except Exception:
+        logger.exception(
+            "Workflow tree change '%s' committed but could not be published",
+            action,
+        )
 
 
 def _publish_active_workflow_changed(
@@ -155,6 +163,51 @@ def _preflight_root_workflow_snapshot_moves(
         nested_snapshot_service.preflight_root_workflow_moves()
 
 
+def _finish_workflow_move(
+    store: WorkflowStoreService,
+    nested_snapshot_service: NestedWorkflowSnapshotService | None,
+    move_plans: list[WorkflowIdentityMovePlan],
+    operation_id: UUID | None,
+) -> None:
+    """Finish the store-to-snapshot move boundary before clearing its journal."""
+
+    if operation_id is not None:
+        store.mark_workflow_move_phase(operation_id, "artifacts_rewritten")
+    _move_root_workflow_snapshots(store, nested_snapshot_service, move_plans)
+    if operation_id is not None:
+        store.mark_workflow_move_phase(operation_id, "snapshots_rewritten")
+        store.complete_workflow_move(operation_id)
+
+
+def _discard_unstarted_workflow_move(
+    store: WorkflowStoreService,
+    operation_id: UUID | None,
+) -> bool:
+    """Drop prepared intent only when no durable identity mutation occurred."""
+
+    if operation_id is None:
+        return True
+    try:
+        store.discard_workflow_move_if_unstarted(operation_id)
+        return True
+    except Exception:
+        logger.exception(
+            "Could not determine whether prepared workflow move %s was still unstarted",
+            operation_id,
+        )
+        return False
+
+
+def _raise_move_recovery_required(exc: WorkflowMoveRecoveryError) -> Never:
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "error": "workflow_move_recovery_required",
+            "detail": str(exc),
+        },
+    ) from exc
+
+
 @router.get("", response_model=list[WorkflowInfo])
 async def list_workflows(
     store: WorkflowStoreService = Depends(get_workflow_store),
@@ -214,17 +267,30 @@ async def rename_folder(
             else nullcontext()
         )
         with snapshot_mutation, store.workflow_structure_mutation():
-            move_plans = (
-                store.plan_folder_rename_moves(path, body.new_path)
-                if nested_snapshot_service is not None
-                else []
-            )
+            move_plans = store.plan_folder_rename_moves(path, body.new_path)
             _preflight_root_workflow_snapshot_moves(
                 nested_snapshot_service,
                 move_plans,
             )
-            folder = store.rename_folder(path, body.new_path)
-            _move_root_workflow_snapshots(store, nested_snapshot_service, move_plans)
+            operation_id = store.prepare_folder_rename_move(path, body.new_path)
+            try:
+                folder = store.rename_folder(
+                    path,
+                    body.new_path,
+                    move_operation_id=operation_id,
+                )
+                _finish_workflow_move(
+                    store,
+                    nested_snapshot_service,
+                    move_plans,
+                    operation_id,
+                )
+            except Exception as exc:
+                if not _discard_unstarted_workflow_move(store, operation_id):
+                    raise WorkflowMoveRecoveryError(
+                        f"Workflow move {operation_id} must recover before further moves"
+                    ) from exc
+                raise
         _publish_workflow_tree_changed(
             connection_manager,
             action="folder_updated",
@@ -237,6 +303,8 @@ async def rename_folder(
             status_code=409,
             content={"error": "conflict", "detail": f"Folder '{body.new_path}' already exists"},
         )
+    except WorkflowMoveRecoveryError as exc:
+        _raise_move_recovery_required(exc)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -264,30 +332,46 @@ async def delete_folder(
                 removed_workflow_ids = (
                     store.workflow_names_in_folder(path) if body.policy == "delete_children" else []
                 )
-                move_plans = (
-                    store.plan_folder_delete_moves(path, body)
-                    if nested_snapshot_service is not None
-                    else []
-                )
+                move_plans = store.plan_folder_delete_moves(path, body)
                 _preflight_root_workflow_snapshot_moves(
                     nested_snapshot_service,
                     move_plans,
                 )
+                operation_id = (
+                    store.prepare_folder_promotion_move(path)
+                    if body.policy == "move_children_up"
+                    else None
+                )
                 with store.workflow_mutations(removed_workflow_ids):
-                    store.delete_folder(path, body)
-                    if nested_snapshot_service is not None:
-                        try:
-                            nested_snapshot_service.delete_for_root_workflows(removed_workflow_ids)
-                        except Exception:
-                            logger.exception(
-                                "Folder '%s' was deleted but retained nested snapshot cleanup failed",
-                                path,
-                            )
-                    _move_root_workflow_snapshots(
-                        store,
-                        nested_snapshot_service,
-                        move_plans,
-                    )
+                    try:
+                        store.delete_folder(
+                            path,
+                            body,
+                            move_operation_id=operation_id,
+                        )
+                        if nested_snapshot_service is not None:
+                            try:
+                                nested_snapshot_service.delete_for_root_workflows(
+                                    removed_workflow_ids
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "Folder '%s' was deleted but retained nested snapshot "
+                                    "cleanup failed",
+                                    path,
+                                )
+                        _finish_workflow_move(
+                            store,
+                            nested_snapshot_service,
+                            move_plans,
+                            operation_id,
+                        )
+                    except Exception as exc:
+                        if not _discard_unstarted_workflow_move(store, operation_id):
+                            raise WorkflowMoveRecoveryError(
+                                f"Workflow move {operation_id} must recover before further moves"
+                            ) from exc
+                        raise
         _publish_workflow_tree_changed(
             connection_manager,
             action="folder_deleted",
@@ -302,6 +386,8 @@ async def delete_folder(
                 "detail": "Folder is not empty or contains colliding child names",
             },
         )
+    except WorkflowMoveRecoveryError as exc:
+        _raise_move_recovery_required(exc)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"deleted": True}
@@ -497,17 +583,30 @@ async def patch_workflow(
             else nullcontext()
         )
         with snapshot_mutation, store.workflow_structure_mutation():
-            move_plans = (
-                store.plan_workflow_update_moves(name, body)
-                if nested_snapshot_service is not None
-                else []
-            )
+            move_plans = store.plan_workflow_update_moves(name, body)
             _preflight_root_workflow_snapshot_moves(
                 nested_snapshot_service,
                 move_plans,
             )
-            info = store.patch_workflow(name, body)
-            _move_root_workflow_snapshots(store, nested_snapshot_service, move_plans)
+            operation_id = store.prepare_workflow_patch_move(name, body)
+            try:
+                info = store.patch_workflow(
+                    name,
+                    body,
+                    move_operation_id=operation_id,
+                )
+                _finish_workflow_move(
+                    store,
+                    nested_snapshot_service,
+                    move_plans,
+                    operation_id,
+                )
+            except Exception as exc:
+                if not _discard_unstarted_workflow_move(store, operation_id):
+                    raise WorkflowMoveRecoveryError(
+                        f"Workflow move {operation_id} must recover before further moves"
+                    ) from exc
+                raise
         _publish_workflow_tree_changed(
             connection_manager,
             action="workflow_updated",
@@ -527,6 +626,8 @@ async def patch_workflow(
                 "suggested_name": store.suggest_name(new_name),
             },
         )
+    except WorkflowMoveRecoveryError as exc:
+        _raise_move_recovery_required(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

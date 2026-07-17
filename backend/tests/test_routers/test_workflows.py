@@ -166,6 +166,27 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert deleted.json() == {"deleted": True, "identity_generation": 2}
 
 
+async def test_empty_folder_promotion_needs_no_move_journal(
+    client: httpx.AsyncClient,
+) -> None:
+    created = await client.post(
+        "/api/v1/workflows/folders",
+        json={"path": "empty"},
+    )
+    assert created.status_code == 201
+
+    deleted = await client.request(
+        "DELETE",
+        "/api/v1/workflows/folders/empty",
+        json={"policy": "move_children_up"},
+    )
+
+    assert deleted.status_code == 200
+    assert deleted.json() == {"deleted": True}
+    tree = await client.get("/api/v1/workflows/tree")
+    assert all(folder["path"] != "empty" for folder in tree.json()["folders"])
+
+
 async def test_delete_workflow_removes_its_retained_nested_snapshot_tree(
     client: httpx.AsyncClient,
 ) -> None:
@@ -435,11 +456,18 @@ async def test_workflow_move_holds_snapshot_then_structure_boundaries(
         store: WorkflowStoreService,
         name: str,
         body: Any,
+        *,
+        move_operation_id: Any = None,
     ) -> Any:
         assert snapshot_depth > 0
         assert structure_depth > 0
         assert preflight_complete is True
-        return original_patch(store, name, body)
+        return original_patch(
+            store,
+            name,
+            body,
+            move_operation_id=move_operation_id,
+        )
 
     def observed_preflight(service: NestedWorkflowSnapshotService) -> None:
         nonlocal preflight_complete
@@ -533,6 +561,98 @@ async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> 
             "identity_generation": 3,
         },
     ]
+
+
+async def test_committed_move_ignores_tree_change_publish_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    connection_manager = _ConnectionManager()
+    original_publish = connection_manager.publish_workflow_tree_changed
+
+    def fail_update_publish(
+        *,
+        action: str,
+        workflow_id: str | None = None,
+        identity_generation: int | None = None,
+    ) -> None:
+        if action == "workflow_updated":
+            raise OSError("notification transport unavailable")
+        original_publish(
+            action=action,
+            workflow_id=workflow_id,
+            identity_generation=identity_generation,
+        )
+
+    monkeypatch.setattr(connection_manager, "publish_workflow_tree_changed", fail_update_publish)
+    async for client in _client(tmp_path, connection_manager=connection_manager):
+        assert (await client.post("/api/v1/workflows", json={"name": "old"})).status_code == 201
+        with caplog.at_level("ERROR", logger="bioimageflow_server.routers.workflows"):
+            moved = await client.patch(
+                "/api/v1/workflows/old",
+                json={"action": "update", "new_id": "new"},
+            )
+
+    assert moved.status_code == 200
+    assert (tmp_path / "workflows" / "new" / "workflow.json").exists()
+    assert not (tmp_path / ".bioimageflow" / "workflow-move-journal.json").exists()
+    assert "committed but could not be published" in caplog.text
+
+
+async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_snapshot_move(
+        _service: NestedWorkflowSnapshotService,
+        _moves: list[RootWorkflowSnapshotMove],
+    ) -> list[Any]:
+        raise OSError("snapshot storage unavailable")
+
+    monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", fail_snapshot_move)
+    async for client in _client(tmp_path):
+        assert (await client.post("/api/v1/workflows", json={"name": "old"})).status_code == 201
+        interrupted = await client.patch(
+            "/api/v1/workflows/old",
+            json={"action": "update", "new_id": "new"},
+        )
+        blocked = await client.patch(
+            "/api/v1/workflows/new",
+            json={"action": "update", "new_id": "later"},
+        )
+        blocked_save = await client.put(
+            "/api/v1/workflows/new",
+            json={"graph": {"nodes": [], "edges": []}},
+        )
+        blocked_delete = await client.delete("/api/v1/workflows/new")
+        blocked_create = await client.post(
+            "/api/v1/workflows",
+            json={"name": "other"},
+        )
+        blocked_tool_create = await client.post(
+            "/api/v1/tools",
+            params={"workflow_name": "old"},
+            json={"name": "UnsafeTool", "tool_type": "ProcessingTool"},
+        )
+
+    assert interrupted.status_code == 503
+    assert interrupted.json()["error"] == "workflow_move_recovery_required"
+    assert blocked.status_code == 503
+    assert blocked.json()["error"] == "workflow_move_recovery_required"
+    for response in (
+        blocked_save,
+        blocked_delete,
+        blocked_create,
+        blocked_tool_create,
+    ):
+        assert response.status_code == 503
+        assert response.json()["error"] == "workflow_move_recovery_required"
+    assert (tmp_path / "workflows" / "new" / "workflow.json").exists()
+    assert not (tmp_path / "workflows" / "later").exists()
+    assert not (tmp_path / "workflows" / "other").exists()
+    assert not (tmp_path / "workflows" / "old").exists()
+    assert (tmp_path / ".bioimageflow" / "workflow-move-journal.json").exists()
 
 
 async def test_delete_rejects_stale_expected_identity_generation_without_event(

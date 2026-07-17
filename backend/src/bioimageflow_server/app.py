@@ -6,7 +6,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from bioimageflow.env_manager import configure_wetlands
 from bioimageflow.paths import get_home, get_wetlands_path
@@ -134,7 +134,11 @@ from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 from bioimageflow_server.services.tool_environments import ToolEnvironmentService
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_store import (
+    WorkflowMoveRecoveryError,
+    WorkflowStoreService,
+)
+from bioimageflow_server.services.workflow_move_recovery import WorkflowMoveRecoveryService
 from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
 from bioimageflow_server.services.workspace import WorkspaceService
@@ -220,9 +224,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     except RuntimeError:
         store_settings = None
     resolved_settings: Settings = (
-        store_settings
-        or config.settings
-        or Settings(deployment_mode=_deployment_mode)
+        store_settings or config.settings or Settings(deployment_mode=_deployment_mode)
     )
 
     def _live_settings() -> Settings:
@@ -261,6 +263,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     workflow_store_cache: dict[tuple[str, str], WorkflowStoreService] = {
         (str(workflow_root), str(workflow_storage_base)): workflow_store
     }
+    workflow_store_initializer: Callable[[WorkflowStoreService], None] | None = None
 
     def _register_workflow_custom_tools(store: WorkflowStoreService) -> None:
         for workflow_info in store.list_workflows():
@@ -297,12 +300,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 storage_base_dir=current_storage_base,
             )
             workflow_store_cache[cache_key] = cached
-            _register_workflow_custom_tools(cached)
+            try:
+                if workflow_store_initializer is not None:
+                    workflow_store_initializer(cached)
+            except Exception:
+                workflow_store_cache.pop(cache_key, None)
+                raise
             if hot_reload is not None:
                 hot_reload.add_watch_root(current_root)
         return cached
-
-    _register_workflow_custom_tools(workflow_store)
 
     def _live_dev_mode() -> bool:
         if config.settings_store is not None:
@@ -320,6 +326,35 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         dev_mode_provider=_live_dev_mode,
         settings_provider=_live_settings,
     )
+    workflow_move_recovery_service = WorkflowMoveRecoveryService(
+        _current_workflow_store,
+        nested_workflow_snapshot_service,
+    )
+    initialized_workflow_stores: set[tuple[str, str]] = set()
+
+    def _initialize_workflow_store(store: WorkflowStoreService) -> None:
+        key = (str(store.root_dir), str(store.storage_base_dir))
+        if key in initialized_workflow_stores:
+            return
+        workflow_move_recovery_service.recover_pending_move()
+        try:
+            nested_workflow_snapshot_service.cleanup_orphaned_snapshots()
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning(
+                "Retained nested snapshot orphan cleanup failed at startup: %r",
+                exc,
+                exc_info=exc,
+            )
+        _register_workflow_custom_tools(store)
+        initialized_workflow_stores.add(key)
+
+    workflow_store_initializer = _initialize_workflow_store
+
+    # Keep factory-only consumers compatible without exposing tools from an
+    # identity whose durable move still needs startup recovery. The lifespan
+    # path always performs the full recovery/cleanup/registration sequence.
+    if workflow_store.pending_workflow_move() is None:
+        _register_workflow_custom_tools(workflow_store)
 
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
         cache_dir=resolved_storage_path / ".thumbnails",
@@ -398,14 +433,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # catalog might consult (tool_store_path, etc.) are in place.
         if config.settings_store is not None:
             await config.settings_store.load()
-        try:
-            await asyncio.to_thread(nested_workflow_snapshot_service.cleanup_orphaned_snapshots)
-        except Exception as exc:  # noqa: BLE001
-            _logger.warning(
-                "Retained nested snapshot orphan cleanup failed at startup: %r",
-                exc,
-                exc_info=exc,
-            )
+        current_workflow_store = _current_workflow_store()
+        await asyncio.to_thread(_initialize_workflow_store, current_workflow_store)
         try:
             await asyncio.to_thread(ensure_agent_workspace_context, workspace_path)
         except Exception as exc:  # noqa: BLE001
@@ -487,6 +516,25 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     app = FastAPI(title="BioImageFlow Server", version="0.1.0", lifespan=_lifespan)
 
+    workspace_mutation_request_lock = asyncio.Lock()
+
+    @app.middleware("http")
+    async def pending_workflow_move_fence(request: Request, call_next: Any) -> Any:
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"} or not (
+            request.url.path.startswith("/api/v1/")
+        ):
+            return await call_next(request)
+        async with workspace_mutation_request_lock:
+            try:
+                _current_workflow_store().ensure_workflow_mutations_available()
+            except WorkflowMoveRecoveryError as exc:
+                body = ErrorResponse(
+                    error="workflow_move_recovery_required",
+                    detail=str(exc),
+                )
+                return JSONResponse(status_code=503, content=body.model_dump())
+            return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -523,6 +571,25 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             )
         _log_http_exception(request, exc, body)
         return JSONResponse(status_code=exc.status_code, content=body.model_dump())
+
+    @app.exception_handler(WorkflowMoveRecoveryError)
+    async def workflow_move_recovery_exception_handler(
+        request: Request,
+        exc: WorkflowMoveRecoveryError,
+    ) -> JSONResponse:
+        return await http_exception_handler(
+            request,
+            HTTPException(
+                status_code=503,
+                detail=cast(
+                    Any,
+                    {
+                        "error": "workflow_move_recovery_required",
+                        "detail": str(exc),
+                    },
+                ),
+            ),
+        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
@@ -586,38 +653,30 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_workflow_store] = _current_workflow_store
-    app.dependency_overrides[
-        execution_get_workflow_draft_service
-    ] = lambda: workflow_draft_service
+    app.dependency_overrides[execution_get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[execution_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[execution_get_settings] = _live_settings
     app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store
-    app.dependency_overrides[workflows_get_nested_snapshot_service] = (
-        lambda: nested_workflow_snapshot_service
+    app.dependency_overrides[workflows_get_nested_snapshot_service] = lambda: (
+        nested_workflow_snapshot_service
     )
     app.dependency_overrides[get_workspace_service] = _current_workspace_service
     app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflows_get_connection_manager] = lambda: ws_manager
     app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
-    app.dependency_overrides[get_nested_workflow_snapshot_service] = (
-        lambda: nested_workflow_snapshot_service
+    app.dependency_overrides[get_nested_workflow_snapshot_service] = lambda: (
+        nested_workflow_snapshot_service
     )
-    app.dependency_overrides[nested_snapshots_get_execution_manager] = (
-        lambda: execution_manager
-    )
+    app.dependency_overrides[nested_snapshots_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflow_drafts_get_connection_manager] = lambda: ws_manager
-    app.dependency_overrides[
-        get_workflow_draft_operations_service
-    ] = lambda: workflow_draft_service
+    app.dependency_overrides[get_workflow_draft_operations_service] = lambda: workflow_draft_service
     app.dependency_overrides[workflow_draft_operations_get_tool_registry] = lambda: registry
-    app.dependency_overrides[
-        workflow_draft_operations_get_execution_manager
-    ] = lambda: execution_manager
-    app.dependency_overrides[
-        workflow_draft_operations_get_connection_manager
-    ] = lambda: ws_manager
+    app.dependency_overrides[workflow_draft_operations_get_execution_manager] = lambda: (
+        execution_manager
+    )
+    app.dependency_overrides[workflow_draft_operations_get_connection_manager] = lambda: ws_manager
 
     app.dependency_overrides[graph_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[graph_get_settings] = _live_settings
@@ -631,8 +690,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_workflow_root] = _current_workflow_root
 
     app.dependency_overrides[get_deployment_mode] = lambda: config.deployment_mode
-    app.dependency_overrides[get_unsafe_webapp_features_enabled] = (
-        lambda: _live_settings().enable_unsafe_webapp_features
+    app.dependency_overrides[get_unsafe_webapp_features_enabled] = lambda: (
+        _live_settings().enable_unsafe_webapp_features
     )
     app.dependency_overrides[get_package_installer] = lambda: installer
     app.dependency_overrides[get_known_packages] = lambda: known

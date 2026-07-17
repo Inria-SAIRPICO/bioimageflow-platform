@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any, Protocol, cast
+from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
@@ -35,6 +36,14 @@ from bioimageflow_server.models.workflow import (
     validate_workflow_id,
 )
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
+from bioimageflow_server.models.workflow_move_recovery import (
+    WorkflowArtifactMove,
+    WorkflowManagedStorageMove,
+    WorkflowMoveJournal,
+    WorkflowMoveKind,
+    WorkflowMovePhase,
+    WorkflowPromotionChildMove,
+)
 from bioimageflow_server.services.graph_translator import (
     collect_required_packages,
     _detect_missing_packages,
@@ -77,6 +86,10 @@ class WorkflowGenerationLedgerError(RuntimeError):
     """Raised when durable workflow identity generations cannot be trusted."""
 
 
+class WorkflowMoveRecoveryError(RuntimeError):
+    """Raised when an interrupted workflow move cannot be trusted or completed."""
+
+
 @dataclass(frozen=True)
 class WorkflowIdentityMovePlan:
     """One root workflow identity move captured before filesystem mutation."""
@@ -88,6 +101,7 @@ class WorkflowIdentityMovePlan:
 
 _WORKFLOW_GENERATION_LEDGER_VERSION = 1
 _WORKFLOW_GENERATION_LEDGER_NAME = "workflow-identity-generations.json"
+_WORKFLOW_MOVE_JOURNAL_NAME = "workflow-move-journal.json"
 logger = logging.getLogger(__name__)
 
 
@@ -133,6 +147,39 @@ def _identity_locked(method: Any) -> Any:
     return wrapped
 
 
+def _fsync_file(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _ensure_directory_durable(path: Path, *, anchor: Path) -> None:
+    """Create and reaffirm a directory chain through one known authority root."""
+
+    try:
+        path.relative_to(anchor)
+    except ValueError as exc:
+        raise ValueError(f"Directory {path} is outside durable anchor {anchor}") from exc
+    path.mkdir(parents=True, exist_ok=True)
+    current = path
+    while True:
+        _fsync_directory(current)
+        if current == anchor:
+            _fsync_directory(anchor.parent)
+            return
+        current = current.parent
+
+
 def _prepared_workflow_draft_identity(
     workflow_dir: Path,
     workflow_id: str,
@@ -175,7 +222,10 @@ def normalize_workflow_draft_identity(
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(normalized, handle, indent=2, sort_keys=True)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp_name, draft_path)
+        _fsync_directory(draft_path.parent)
     except Exception:
         try:
             os.unlink(tmp_name)
@@ -251,6 +301,9 @@ class WorkflowStoreService:
         self.archive_adapter = archive_adapter or BioImageFlowWorkflowArchiveAdapter()
         self._workflow_generation_ledger_path = (
             self.workspace_dir / ".bioimageflow" / _WORKFLOW_GENERATION_LEDGER_NAME
+        )
+        self._workflow_move_journal_path = (
+            self.workspace_dir / ".bioimageflow" / _WORKFLOW_MOVE_JOURNAL_NAME
         )
         coordination_key = (
             self.root_dir.resolve(strict=False),
@@ -383,7 +436,7 @@ class WorkflowStoreService:
 
     def _write_workflow_generation_ledger(self, generations: dict[str, int]) -> None:
         path = self._workflow_generation_ledger_path
-        path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_directory_durable(path.parent)
         fd, tmp_name = tempfile.mkstemp(
             dir=str(path.parent),
             prefix=f".{path.stem}.",
@@ -404,6 +457,7 @@ class WorkflowStoreService:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp_name, path)
+            self._fsync_directory(path.parent)
         except Exception:
             try:
                 os.unlink(tmp_name)
@@ -441,6 +495,618 @@ class WorkflowStoreService:
 
         safe_name = self._validate_name(name)
         self._ensure_workflow_generations_current({safe_name: expected})
+
+    def pending_workflow_move(self) -> WorkflowMoveJournal | None:
+        """Return the exclusive durable move journal, rejecting untrusted records."""
+
+        path = self._workflow_move_journal_path
+        if not path.exists():
+            return None
+        try:
+            journal = WorkflowMoveJournal.model_validate_json(path.read_text(encoding="utf-8"))
+            self._validate_workflow_move_journal_authority(journal)
+        except (OSError, ValidationError, ValueError) as exc:
+            raise WorkflowMoveRecoveryError(
+                f"Cannot trust pending workflow move journal: {path}"
+            ) from exc
+        return journal
+
+    def ensure_workflow_mutations_available(
+        self,
+        *,
+        move_operation_id: UUID | None = None,
+    ) -> None:
+        """Fence ordinary writes while an interrupted identity move is pending."""
+
+        pending = self.pending_workflow_move()
+        if pending is None:
+            if move_operation_id is not None:
+                raise WorkflowMoveRecoveryError(
+                    f"Workflow move journal {move_operation_id} does not exist"
+                )
+            return
+        if move_operation_id != pending.operation_id:
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move {pending.operation_id} must recover before workspace mutation"
+            )
+
+    def _require_prepared_workflow_move(
+        self,
+        operation_id: UUID | None,
+        *,
+        operation_kind: WorkflowMoveKind,
+        source_path: str,
+        destination_path: str,
+    ) -> WorkflowMoveJournal:
+        if operation_id is None:
+            raise WorkflowMoveRecoveryError(
+                f"{operation_kind} requires a prepared workflow move journal"
+            )
+        self.ensure_workflow_mutations_available(move_operation_id=operation_id)
+        journal = self._required_workflow_move(operation_id)
+        if (
+            journal.phase != "prepared"
+            or journal.operation_kind != operation_kind
+            or journal.source_path != source_path
+            or journal.destination_path != destination_path
+        ):
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move {operation_id} does not authorize "
+                f"{source_path!r} -> {destination_path!r}"
+            )
+        return journal
+
+    def _validate_prepared_move_execution(
+        self,
+        journal: WorkflowMoveJournal,
+        moves: list[tuple[str, str]],
+        *,
+        patches: dict[str, WorkflowUpdate] | None = None,
+    ) -> None:
+        """Prove the live executor inputs still equal the recorded prepared intent."""
+
+        if not self._workflow_move_is_unstarted(journal):
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move {journal.operation_id} already crossed its commit boundary"
+            )
+        recorded_moves = [
+            (move.source_workflow_id, move.destination_workflow_id) for move in journal.moves
+        ]
+        if recorded_moves != moves:
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move {journal.operation_id} does not match the current workflow tree"
+            )
+        generations = {
+            identity: generation
+            for move in journal.moves
+            for identity, generation in (
+                (move.source_workflow_id, move.source_generation_before),
+                (move.destination_workflow_id, move.destination_generation_before),
+            )
+        }
+        expected_artifacts = [
+            self._prepare_workflow_artifact_move(
+                old_name,
+                new_name,
+                generations,
+                patch=(patches or {}).get(old_name),
+            )
+            for old_name, new_name in moves
+        ]
+        if expected_artifacts != journal.moves:
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move {journal.operation_id} metadata no longer matches its journal"
+            )
+
+    def mark_workflow_move_phase(
+        self,
+        operation_id: UUID,
+        phase: WorkflowMovePhase,
+    ) -> None:
+        """Durably advance one journal without permitting skips or reversal."""
+
+        with self.workflow_structure_mutation():
+            journal = self._required_workflow_move(operation_id)
+            phase_order: dict[WorkflowMovePhase, int] = {
+                "prepared": 0,
+                "artifacts_rewritten": 1,
+                "snapshots_rewritten": 2,
+            }
+            current_index = phase_order[journal.phase]
+            requested_index = phase_order[phase]
+            if requested_index == current_index:
+                return
+            if requested_index != current_index + 1:
+                raise WorkflowMoveRecoveryError(
+                    f"Cannot advance workflow move {operation_id} from "
+                    f"{journal.phase!r} to {phase!r}"
+                )
+            self._write_workflow_move_journal(journal.model_copy(update={"phase": phase}))
+
+    def discard_workflow_move_if_unstarted(self, operation_id: UUID) -> None:
+        """Discard a prepared record only while every durable artifact is untouched."""
+
+        with self.workflow_structure_mutation():
+            journal = self._required_workflow_move(operation_id)
+            if journal.phase != "prepared" or not self._workflow_move_is_unstarted(journal):
+                raise WorkflowMoveRecoveryError(
+                    f"Workflow move {operation_id} has durable mutations and must recover"
+                )
+            self._remove_workflow_move_journal()
+
+    def recover_pending_workflow_move(self) -> WorkflowMoveJournal | None:
+        """Forward-complete all non-snapshot artifacts for an interrupted move."""
+
+        journal = self.pending_workflow_move()
+        if journal is None:
+            return None
+        workflow_ids = [
+            workflow_id
+            for move in journal.moves
+            for workflow_id in (
+                move.source_workflow_id,
+                move.destination_workflow_id,
+            )
+        ]
+        with self.workflow_structure_mutation(), self.workflow_mutations(workflow_ids):
+            current = self._required_workflow_move(journal.operation_id)
+            try:
+                if self._abandon_uncommitted_workflow_move(current):
+                    self._remove_workflow_move_journal()
+                    return None
+                self._preflight_workflow_move_recovery(current)
+                self._recover_workflow_move_generations(current)
+                self._recover_workflow_move_storage(current)
+                self._recover_workflow_move_paths(current)
+                self._recover_workflow_move_documents(current)
+            except WorkflowMoveRecoveryError:
+                raise
+            except Exception as exc:
+                raise WorkflowMoveRecoveryError(
+                    f"Could not forward-complete workflow move {current.operation_id}"
+                ) from exc
+
+            if current.phase == "prepared":
+                current = current.model_copy(update={"phase": "artifacts_rewritten"})
+                self._write_workflow_move_journal(current)
+            return current
+
+    def complete_workflow_move(self, operation_id: UUID) -> None:
+        """Remove a fully completed move journal after retained snapshots commit."""
+
+        with self.workflow_structure_mutation():
+            journal = self._required_workflow_move(operation_id)
+            if journal.phase != "snapshots_rewritten":
+                raise WorkflowMoveRecoveryError(
+                    f"Workflow move {operation_id} cannot complete from phase {journal.phase!r}"
+                )
+            self._remove_workflow_move_journal()
+
+    def _required_workflow_move(self, operation_id: UUID) -> WorkflowMoveJournal:
+        journal = self.pending_workflow_move()
+        if journal is None:
+            raise WorkflowMoveRecoveryError(f"Workflow move journal {operation_id} does not exist")
+        if journal.operation_id != operation_id:
+            raise WorkflowMoveRecoveryError(
+                f"Pending workflow move is {journal.operation_id}, not {operation_id}"
+            )
+        return journal
+
+    def _write_new_workflow_move_journal(self, journal: WorkflowMoveJournal) -> None:
+        if self._workflow_move_journal_path.exists():
+            pending = self.pending_workflow_move()
+            assert pending is not None
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move {pending.operation_id} must complete before another move"
+            )
+        self._write_workflow_move_journal(journal)
+
+    def _write_workflow_move_journal(self, journal: WorkflowMoveJournal) -> None:
+        path = self._workflow_move_journal_path
+        self._ensure_directory_durable(path.parent)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent),
+            prefix=f".{path.stem}.",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(journal.model_dump(mode="json"), handle, indent=2, sort_keys=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, path)
+            self._fsync_directory(path.parent)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except FileNotFoundError:
+                pass
+            raise
+
+    def _remove_workflow_move_journal(self) -> None:
+        try:
+            self._workflow_move_journal_path.unlink()
+        except FileNotFoundError:
+            return
+        self._fsync_directory(self._workflow_move_journal_path.parent)
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        _fsync_directory(path)
+
+    @staticmethod
+    def _fsync_file(path: Path) -> None:
+        _fsync_file(path)
+
+    def _ensure_directory_durable(self, path: Path) -> None:
+        anchors = (
+            self.root_dir,
+            self.storage_base_dir,
+            self.workspace_dir,
+        )
+        anchor = next(
+            (candidate for candidate in anchors if path.is_relative_to(candidate)),
+            path,
+        )
+        _ensure_directory_durable(path, anchor=anchor)
+
+    def _validate_workflow_move_journal_authority(
+        self,
+        journal: WorkflowMoveJournal,
+    ) -> None:
+        if journal.operation_kind == "folder_rename":
+            source_prefix = f"{journal.source_path}/"
+            destination_prefix = f"{journal.destination_path}/"
+            for move in journal.moves:
+                if not move.source_workflow_id.startswith(source_prefix):
+                    raise ValueError("Folder move source is outside the recorded folder")
+                suffix = move.source_workflow_id[len(source_prefix) :]
+                if move.destination_workflow_id != f"{destination_prefix}{suffix}":
+                    raise ValueError("Folder move destination does not preserve its relative id")
+        elif journal.operation_kind == "folder_promotion":
+            source_prefix = f"{journal.source_path}/"
+            destination_prefix = f"{journal.destination_path}/" if journal.destination_path else ""
+            for move in journal.moves:
+                if not move.source_workflow_id.startswith(source_prefix):
+                    raise ValueError("Promoted workflow is outside the removed folder")
+                suffix = move.source_workflow_id[len(source_prefix) :]
+                if move.destination_workflow_id != f"{destination_prefix}{suffix}":
+                    raise ValueError("Promoted workflow does not preserve its relative id")
+
+        for move in journal.moves:
+            managed = move.managed_storage
+            if managed is None:
+                continue
+            if managed.source_path != str(
+                self._managed_storage_path(move.source_workflow_id)
+            ) or managed.destination_path != str(
+                self._managed_storage_path(move.destination_workflow_id)
+            ):
+                raise ValueError("Managed storage move is outside configured workflow storage")
+            if move.target_metadata.get("storage_path") != managed.destination_path:
+                raise ValueError("Managed storage destination must match target metadata")
+
+    def _workflow_move_is_unstarted(self, journal: WorkflowMoveJournal) -> bool:
+        before, _ = self._workflow_move_generation_states(journal)
+        try:
+            persisted = self._load_workflow_generation_ledger()
+        except WorkflowGenerationLedgerError as exc:
+            raise WorkflowMoveRecoveryError(
+                "Cannot discard a move while workflow generations are unreadable"
+            ) from exc
+        if any(persisted.get(name, 0) != generation for name, generation in before.items()):
+            return False
+
+        if journal.operation_kind == "folder_promotion":
+            source_folder = self._journal_workflow_path(journal.source_path)
+            if not source_folder.exists():
+                return False
+            if not self._promotion_source_inventory_is_exact(journal):
+                return False
+            for child in journal.promotion_children:
+                source = self._journal_workflow_path(child.source_relative_path)
+                destination = self._journal_workflow_path(child.destination_relative_path)
+                if not source.exists() or destination.exists():
+                    return False
+        else:
+            source = self._journal_workflow_path(journal.source_path)
+            destination = self._journal_workflow_path(journal.destination_path)
+            if not source.exists() or destination.exists():
+                return False
+
+        for move in journal.moves:
+            managed = move.managed_storage
+            if managed is None:
+                continue
+            source_exists = Path(managed.source_path).exists()
+            destination_exists = Path(managed.destination_path).exists()
+            if managed.source_existed:
+                if not source_exists or destination_exists:
+                    return False
+            elif source_exists or destination_exists:
+                return False
+        return True
+
+    def _preflight_workflow_move_recovery(self, journal: WorkflowMoveJournal) -> None:
+        before, after = self._workflow_move_generation_states(journal)
+        persisted = self._load_workflow_generation_ledger()
+        if before:
+            before_matches = all(
+                persisted.get(name, 0) == generation for name, generation in before.items()
+            )
+            after_matches = all(
+                persisted.get(name, 0) == generation for name, generation in after.items()
+            )
+            if not before_matches and not after_matches:
+                raise WorkflowMoveRecoveryError(
+                    "Workflow move generations are mixed or outside the recorded transition"
+                )
+
+        for move in journal.moves:
+            managed = move.managed_storage
+            if managed is None:
+                continue
+            source_exists = Path(managed.source_path).exists()
+            destination_exists = Path(managed.destination_path).exists()
+            if managed.source_existed:
+                if source_exists == destination_exists:
+                    raise WorkflowMoveRecoveryError(
+                        "Managed storage recovery requires exactly one recorded path: "
+                        f"{managed.source_path} -> {managed.destination_path}"
+                    )
+            elif source_exists or destination_exists:
+                raise WorkflowMoveRecoveryError(
+                    "Managed storage appeared after preparation recorded it as absent: "
+                    f"{managed.source_path} -> {managed.destination_path}"
+                )
+
+        if journal.operation_kind == "folder_promotion":
+            if not self._promotion_source_inventory_is_exact(journal):
+                raise WorkflowMoveRecoveryError(
+                    "Promotion source folder contains an unrecorded child"
+                )
+            for child in journal.promotion_children:
+                source_exists = self._journal_workflow_path(child.source_relative_path).exists()
+                destination_exists = self._journal_workflow_path(
+                    child.destination_relative_path
+                ).exists()
+                if source_exists == destination_exists:
+                    raise WorkflowMoveRecoveryError(
+                        "Promotion recovery requires exactly one child path for "
+                        f"{child.source_relative_path}"
+                    )
+        else:
+            source_exists = self._journal_workflow_path(journal.source_path).exists()
+            destination_exists = self._journal_workflow_path(journal.destination_path).exists()
+            if source_exists == destination_exists:
+                raise WorkflowMoveRecoveryError(
+                    "Move recovery requires exactly one source/destination path: "
+                    f"{journal.source_path} -> {journal.destination_path}"
+                )
+
+        for move in journal.moves:
+            source_document = self._path_for(move.source_workflow_id)
+            destination_document = self._path_for(move.destination_workflow_id)
+            if source_document.exists() == destination_document.exists():
+                raise WorkflowMoveRecoveryError(
+                    "Move recovery requires exactly one workflow document for "
+                    f"{move.source_workflow_id} -> {move.destination_workflow_id}"
+                )
+            current_document = source_document if source_document.exists() else destination_document
+            try:
+                raw = json.loads(current_document.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict):
+                    raise ValueError("Workflow document must contain a JSON object")
+                _prepared_workflow_draft_identity(
+                    current_document.parent,
+                    move.destination_workflow_id,
+                )
+            except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+                raise WorkflowMoveRecoveryError(
+                    f"Cannot trust workflow artifacts at {current_document.parent}"
+                ) from exc
+
+    def _promotion_source_inventory_is_exact(
+        self,
+        journal: WorkflowMoveJournal,
+    ) -> bool:
+        source_folder = self._journal_workflow_path(journal.source_path)
+        actual = (
+            {child.relative_to(self.root_dir).as_posix() for child in source_folder.iterdir()}
+            if source_folder.exists()
+            else set()
+        )
+        expected = {
+            child.source_relative_path
+            for child in journal.promotion_children
+            if self._journal_workflow_path(child.source_relative_path).exists()
+        }
+        return actual == expected
+
+    def _abandon_uncommitted_workflow_move(self, journal: WorkflowMoveJournal) -> bool:
+        before, after = self._workflow_move_generation_states(journal)
+        if not before:
+            unstarted = self._workflow_move_is_unstarted(journal)
+            if unstarted and journal.phase != "prepared":
+                raise WorkflowMoveRecoveryError(
+                    "Workflow move phase claims committed artifacts but topology is untouched"
+                )
+            return unstarted
+
+        persisted = self._load_workflow_generation_ledger()
+        before_matches = all(
+            persisted.get(name, 0) == generation for name, generation in before.items()
+        )
+        after_matches = all(
+            persisted.get(name, 0) == generation for name, generation in after.items()
+        )
+        if after_matches:
+            return False
+        if not before_matches:
+            raise WorkflowMoveRecoveryError(
+                "Workflow move generations are mixed or outside the recorded transition"
+            )
+        if not self._workflow_move_is_unstarted(journal):
+            raise WorkflowMoveRecoveryError(
+                "Workflow move artifacts changed before its generation commit point"
+            )
+        if journal.phase != "prepared":
+            raise WorkflowMoveRecoveryError(
+                "Workflow move phase claims committed artifacts but generations are untouched"
+            )
+        return True
+
+    @staticmethod
+    def _workflow_move_generation_states(
+        journal: WorkflowMoveJournal,
+    ) -> tuple[dict[str, int], dict[str, int]]:
+        before: dict[str, int] = {}
+        after: dict[str, int] = {}
+        for move in journal.moves:
+            before[move.source_workflow_id] = move.source_generation_before
+            after[move.source_workflow_id] = move.source_generation_after
+            before[move.destination_workflow_id] = move.destination_generation_before
+            after[move.destination_workflow_id] = move.destination_generation_after
+        return before, after
+
+    def _recover_workflow_move_generations(self, journal: WorkflowMoveJournal) -> None:
+        before, after = self._workflow_move_generation_states(journal)
+        if not before:
+            return
+        with self._workflow_generations_guard:
+            persisted = self._load_workflow_generation_ledger()
+            before_matches = all(
+                persisted.get(name, 0) == generation for name, generation in before.items()
+            )
+            after_matches = all(
+                persisted.get(name, 0) == generation for name, generation in after.items()
+            )
+            if not before_matches and not after_matches:
+                actual = {name: persisted.get(name, 0) for name in before}
+                raise WorkflowMoveRecoveryError(
+                    "Workflow move generation state is neither its exact prepared nor "
+                    f"committed value: {actual}"
+                )
+
+            if before_matches:
+                updated = dict(persisted)
+                for name, generation in self._workflow_generations.items():
+                    if generation > updated.get(name, 0):
+                        updated[name] = generation
+                updated.update(after)
+                self._write_workflow_generation_ledger(updated)
+                persisted = updated
+
+            self._fsync_file(self._workflow_generation_ledger_path)
+            self._fsync_directory(self._workflow_generation_ledger_path.parent)
+
+            for name, generation in persisted.items():
+                if generation > self._workflow_generations.get(name, 0):
+                    self._workflow_generations[name] = generation
+            for name, generation in after.items():
+                self._workflow_generations[name] = generation
+
+    def _recover_workflow_move_storage(self, journal: WorkflowMoveJournal) -> None:
+        for move in journal.moves:
+            managed = move.managed_storage
+            if managed is None:
+                continue
+            source = Path(managed.source_path)
+            destination = Path(managed.destination_path)
+            source_exists = source.exists()
+            destination_exists = destination.exists()
+            if not managed.source_existed:
+                if source_exists or destination_exists:
+                    raise WorkflowMoveRecoveryError(
+                        "Managed storage appeared after a move recorded it as absent: "
+                        f"{source} -> {destination}"
+                    )
+                continue
+            if source_exists and destination_exists:
+                raise WorkflowMoveRecoveryError(
+                    f"Both managed storage paths exist: {source} and {destination}"
+                )
+            if not source_exists and not destination_exists:
+                raise WorkflowMoveRecoveryError(
+                    f"Both managed storage paths are missing: {source} and {destination}"
+                )
+            if source_exists:
+                self._ensure_directory_durable(destination.parent)
+                source.rename(destination)
+            if source.parent.exists():
+                self._fsync_directory(source.parent)
+            self._fsync_directory(destination.parent)
+
+    def _recover_workflow_move_paths(self, journal: WorkflowMoveJournal) -> None:
+        if journal.operation_kind == "folder_promotion":
+            for child in journal.promotion_children:
+                self._recover_one_workflow_move_path(
+                    self._journal_workflow_path(child.source_relative_path),
+                    self._journal_workflow_path(child.destination_relative_path),
+                )
+            source_folder = self._journal_workflow_path(journal.source_path)
+            if source_folder.exists():
+                try:
+                    source_folder.rmdir()
+                except OSError as exc:
+                    raise WorkflowMoveRecoveryError(
+                        f"Promoted source folder still contains unrecorded artifacts: "
+                        f"{source_folder}"
+                    ) from exc
+            self._fsync_directory(source_folder.parent)
+            return
+
+        self._recover_one_workflow_move_path(
+            self._journal_workflow_path(journal.source_path),
+            self._journal_workflow_path(journal.destination_path),
+        )
+
+    def _recover_one_workflow_move_path(self, source: Path, destination: Path) -> None:
+        source_exists = source.exists()
+        destination_exists = destination.exists()
+        if source_exists and destination_exists:
+            raise WorkflowMoveRecoveryError(
+                f"Both workflow move paths exist: {source} and {destination}"
+            )
+        if not source_exists and not destination_exists:
+            raise WorkflowMoveRecoveryError(
+                f"Both workflow move paths are missing: {source} and {destination}"
+            )
+        if source_exists:
+            self._ensure_directory_durable(destination.parent)
+            source.rename(destination)
+        if source.parent.exists():
+            self._fsync_directory(source.parent)
+        self._fsync_directory(destination.parent)
+
+    def _recover_workflow_move_documents(self, journal: WorkflowMoveJournal) -> None:
+        for move in journal.moves:
+            destination = self._workflow_dir(move.destination_workflow_id)
+            normalize_workflow_draft_identity(
+                destination,
+                move.destination_workflow_id,
+            )
+            draft_path = destination / ".bioimageflow" / "draft.json"
+            if draft_path.exists():
+                self._fsync_file(draft_path)
+                self._fsync_directory(draft_path.parent)
+            raw = self._read_raw(move.destination_workflow_id)
+            recovered = cast(dict[str, Any], json.loads(json.dumps(raw)))
+            recovered["metadata"] = json.loads(json.dumps(move.target_metadata))
+            storage_path = move.target_metadata.get("storage_path")
+            if isinstance(storage_path, str) and storage_path:
+                self._set_workflow_storage_path(recovered, storage_path)
+            if recovered != raw:
+                self._write_raw(move.destination_workflow_id, recovered)
+            workflow_path = self._path_for(move.destination_workflow_id)
+            self._fsync_file(workflow_path)
+            self._fsync_directory(workflow_path.parent)
+
+    def _journal_workflow_path(self, relative_path: str) -> Path:
+        if relative_path == "":
+            return self.root_dir
+        return self.root_dir.joinpath(*relative_path.split("/"))
 
     @contextmanager
     def workflow_structure_mutation(self) -> Iterator[None]:
@@ -483,7 +1149,7 @@ class WorkflowStoreService:
         return self._workflow_tools_dir(name)
 
     def _ensure_workflow_layout(self, name: str) -> None:
-        self._workflow_tools_dir(name).mkdir(parents=True, exist_ok=True)
+        self._ensure_directory_durable(self._workflow_tools_dir(name))
 
     def _existing_path_for(self, name: str) -> Path:
         path = self._path_for(name)
@@ -517,8 +1183,11 @@ class WorkflowStoreService:
         if new_storage.exists():
             raise FileExistsError(new_name)
         if old_storage.exists():
-            new_storage.parent.mkdir(parents=True, exist_ok=True)
+            self._ensure_directory_durable(new_storage.parent)
             old_storage.rename(new_storage)
+            if old_storage.parent.exists():
+                self._fsync_directory(old_storage.parent)
+            self._fsync_directory(new_storage.parent)
         return str(new_storage)
 
     def _delete_managed_storage_best_effort(self, name: str) -> None:
@@ -649,6 +1318,220 @@ class WorkflowStoreService:
             if old_name != new_name
         ]
 
+    def prepare_workflow_patch_move(
+        self,
+        name: str,
+        patch: WorkflowUpdate,
+    ) -> UUID | None:
+        """Preflight and durably describe a direct identity move before mutation."""
+
+        with self.workflow_structure_mutation():
+            self._ensure_no_pending_workflow_move()
+            safe_name = self._validate_name(name)
+            new_name = self._updated_workflow_name(safe_name, patch)
+            if patch.action == "duplicate" or new_name == safe_name:
+                return None
+            with self.workflow_mutations([safe_name, new_name]):
+                self._existing_path_for(safe_name)
+                if self._has_name_collision(new_name):
+                    raise FileExistsError(new_name)
+                moves = [(safe_name, new_name)]
+                self._ensure_moved_workflow_storage_available(moves)
+                return self._persist_prepared_workflow_move(
+                    operation_kind="direct_workflow_move",
+                    source_path=safe_name,
+                    destination_path=new_name,
+                    moves=moves,
+                    patches={safe_name: patch},
+                )
+
+    def prepare_folder_rename_move(self, path: str, new_path: str) -> UUID | None:
+        """Preflight and durably describe an entire folder rename."""
+
+        with self.workflow_structure_mutation():
+            self._ensure_no_pending_workflow_move()
+            old_folder = self._folder_path(path)
+            new_folder = self._folder_path(new_path)
+            if (
+                not old_folder.exists()
+                or not old_folder.is_dir()
+                or (old_folder / "workflow.json").exists()
+                or self._is_inside_workflow_dir(old_folder)
+            ):
+                raise FileNotFoundError(path)
+            if self._is_inside_workflow_dir(new_folder):
+                raise ValueError(
+                    "Folders must stay under the workflows root, not inside a workflow"
+                )
+            if new_folder.exists():
+                raise FileExistsError(new_path)
+            try:
+                new_folder.relative_to(old_folder)
+            except ValueError:
+                pass
+            else:
+                raise ValueError("Cannot move a folder into itself")
+
+            safe_old = validate_workflow_id(path)
+            safe_new = validate_workflow_id(new_path)
+            moves = self._renamed_workflow_moves(old_folder, safe_old, safe_new)
+            identities = [identity for move in moves for identity in move]
+            with self.workflow_mutations(identities):
+                self._ensure_moved_workflow_storage_available(moves)
+                return self._persist_prepared_workflow_move(
+                    operation_kind="folder_rename",
+                    source_path=safe_old,
+                    destination_path=safe_new,
+                    moves=moves,
+                )
+
+    def prepare_folder_promotion_move(self, path: str) -> UUID | None:
+        """Preflight and durably describe moving a folder's children to its parent."""
+
+        with self.workflow_structure_mutation():
+            self._ensure_no_pending_workflow_move()
+            folder = self._folder_path(path)
+            if (
+                not folder.exists()
+                or not folder.is_dir()
+                or (folder / "workflow.json").exists()
+                or self._is_inside_workflow_dir(folder)
+            ):
+                raise FileNotFoundError(path)
+            children = sorted(folder.iterdir(), key=lambda child: child.name)
+            if not children:
+                return None
+            for child in children:
+                destination = folder.parent / child.name
+                if destination.exists():
+                    raise FileExistsError(destination.name)
+
+            safe_path = validate_workflow_id(path)
+            parent_path, _, _ = safe_path.rpartition("/")
+            moves = self._promoted_workflow_moves(safe_path, folder)
+            identities = [identity for move in moves for identity in move]
+            promotion_children = [
+                WorkflowPromotionChildMove(
+                    source_relative_path=child.relative_to(self.root_dir).as_posix(),
+                    destination_relative_path=(folder.parent / child.name)
+                    .relative_to(self.root_dir)
+                    .as_posix(),
+                )
+                for child in children
+            ]
+            with self.workflow_mutations(identities):
+                self._ensure_moved_workflow_storage_available(moves)
+                return self._persist_prepared_workflow_move(
+                    operation_kind="folder_promotion",
+                    source_path=safe_path,
+                    destination_path=parent_path,
+                    moves=moves,
+                    promotion_children=promotion_children,
+                )
+
+    def _ensure_no_pending_workflow_move(self) -> None:
+        pending = self.pending_workflow_move()
+        if pending is not None:
+            raise WorkflowMoveRecoveryError(
+                f"Workflow move {pending.operation_id} must complete before another move"
+            )
+
+    def _persist_prepared_workflow_move(
+        self,
+        *,
+        operation_kind: WorkflowMoveKind,
+        source_path: str,
+        destination_path: str,
+        moves: list[tuple[str, str]],
+        patches: dict[str, WorkflowUpdate] | None = None,
+        promotion_children: list[WorkflowPromotionChildMove] | None = None,
+    ) -> UUID:
+        generations = self._workflow_move_current_generations(moves)
+        artifacts = [
+            self._prepare_workflow_artifact_move(
+                old_name,
+                new_name,
+                generations,
+                patch=(patches or {}).get(old_name),
+            )
+            for old_name, new_name in moves
+        ]
+        operation_id = uuid4()
+        journal = WorkflowMoveJournal(
+            operation_id=operation_id,
+            operation_kind=operation_kind,
+            source_path=source_path,
+            destination_path=destination_path,
+            moves=artifacts,
+            promotion_children=promotion_children or [],
+        )
+        self._write_new_workflow_move_journal(journal)
+        return operation_id
+
+    def _workflow_move_current_generations(
+        self,
+        moves: list[tuple[str, str]],
+    ) -> dict[str, int]:
+        names = sorted({identity for move in moves for identity in move})
+        with self._workflow_generations_guard:
+            persisted = self._load_workflow_generation_ledger()
+            return {
+                name: max(
+                    self._workflow_generations.get(name, 0),
+                    persisted.get(name, 0),
+                )
+                for name in names
+            }
+
+    def _prepare_workflow_artifact_move(
+        self,
+        old_name: str,
+        new_name: str,
+        generations: dict[str, int],
+        *,
+        patch: WorkflowUpdate | None,
+    ) -> WorkflowArtifactMove:
+        raw = self._read_raw(old_name)
+        raw_metadata = raw.get("metadata", {})
+        metadata = (
+            cast(dict[str, Any], json.loads(json.dumps(raw_metadata)))
+            if isinstance(raw_metadata, dict)
+            else {}
+        )
+        managed_storage: WorkflowManagedStorageMove | None = None
+
+        if patch is not None and patch.display_name is not None:
+            metadata["display_name"] = patch.display_name
+        if patch is not None and patch.description is not None:
+            metadata["description"] = patch.description
+        if patch is not None and patch.storage_path is not None:
+            metadata["storage_path"] = self._storage_path_string(patch.storage_path)
+        elif self._is_managed_storage_path(
+            old_name,
+            cast(str | None, metadata.get("storage_path")),
+        ):
+            old_storage = self._managed_storage_path(old_name)
+            new_storage = self._managed_storage_path(new_name)
+            metadata["storage_path"] = str(new_storage)
+            managed_storage = WorkflowManagedStorageMove(
+                source_path=str(old_storage),
+                destination_path=str(new_storage),
+                source_existed=old_storage.exists(),
+            )
+
+        source_generation = generations[old_name]
+        destination_generation = generations[new_name]
+        return WorkflowArtifactMove(
+            source_workflow_id=old_name,
+            destination_workflow_id=new_name,
+            source_generation_before=source_generation,
+            source_generation_after=source_generation + 1,
+            destination_generation_before=destination_generation,
+            destination_generation_after=destination_generation + 1,
+            target_metadata=metadata,
+            managed_storage=managed_storage,
+        )
+
     def _metadata_from_raw(
         self,
         name: str,
@@ -707,7 +1590,10 @@ class WorkflowStoreService:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(raw, handle, indent=2, sort_keys=True)
                 handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp_name, path)
+            self._fsync_directory(path.parent)
         except Exception:
             try:
                 os.unlink(tmp_name)
@@ -817,6 +1703,7 @@ class WorkflowStoreService:
             name_override or self._archive_name_from_filename(filename)
         )
         with self.workflow_structure_mutation(), self.workflow_mutation(imported_name):
+            self.ensure_workflow_mutations_available()
             if self._has_name_collision(imported_name):
                 raise FileExistsError(imported_name)
             self._reserve_workflow_generations([imported_name])
@@ -883,6 +1770,7 @@ class WorkflowStoreService:
     ) -> WorkflowImportResponse:
         imported_name = self._validate_name(name_override or document.workflow.name)
         with self.workflow_structure_mutation(), self.workflow_mutation(imported_name):
+            self.ensure_workflow_mutations_available()
             if self._has_name_collision(imported_name):
                 raise FileExistsError(imported_name)
             GraphState.model_validate(document.workflow.graph)
@@ -983,6 +1871,7 @@ class WorkflowStoreService:
 
     def create_folder(self, path: str) -> WorkflowFolderInfo:
         with self.workflow_structure_mutation():
+            self.ensure_workflow_mutations_available()
             folder = self._folder_path(path)
             if self._is_inside_workflow_dir(folder):
                 raise ValueError(
@@ -1040,9 +1929,51 @@ class WorkflowStoreService:
         self,
         path: str,
         policy: WorkflowFolderDelete | str = "empty",
+        *,
+        move_operation_id: UUID | None = None,
     ) -> None:
         with self.workflow_structure_mutation():
+            policy_name = policy.policy if isinstance(policy, WorkflowFolderDelete) else policy
+            if policy_name == "move_children_up":
+                safe_path = validate_workflow_id(path)
+                parent_path, _, _ = safe_path.rpartition("/")
+                if move_operation_id is None:
+                    self.ensure_workflow_mutations_available()
+                    folder = self._folder_path(safe_path)
+                    is_plain_folder = (
+                        folder.exists()
+                        and folder.is_dir()
+                        and not (folder / "workflow.json").exists()
+                        and not self._is_inside_workflow_dir(folder)
+                    )
+                    if is_plain_folder and any(folder.iterdir()):
+                        raise WorkflowMoveRecoveryError(
+                            "Non-empty folder promotion requires a prepared move journal"
+                        )
+                else:
+                    journal = self._require_prepared_workflow_move(
+                        move_operation_id,
+                        operation_kind="folder_promotion",
+                        source_path=safe_path,
+                        destination_path=parent_path,
+                    )
+                    folder = self._folder_path(safe_path)
+                    self._validate_prepared_move_execution(
+                        journal,
+                        self._promoted_workflow_moves(safe_path, folder),
+                    )
+            else:
+                self.ensure_workflow_mutations_available()
+                if move_operation_id is not None:
+                    raise WorkflowMoveRecoveryError(
+                        "Only folder promotion accepts a workflow move operation"
+                    )
             self._delete_folder_locked(path, policy)
+            if move_operation_id is not None:
+                self.mark_workflow_move_phase(
+                    move_operation_id,
+                    "artifacts_rewritten",
+                )
 
     def _delete_folder_locked(
         self,
@@ -1084,13 +2015,46 @@ class WorkflowStoreService:
                         raise FileExistsError(destination.name)
                 self._reserve_workflow_generations(identities)
                 for child in children:
-                    child.rename(folder.parent / child.name)
+                    destination = folder.parent / child.name
+                    child.rename(destination)
+                    self._fsync_directory(folder)
+                    self._fsync_directory(destination.parent)
                 self._rewrite_moved_workflows(moves)
         folder.rmdir()
+        self._fsync_directory(folder.parent)
 
-    def rename_folder(self, path: str, new_path: str) -> WorkflowFolderInfo:
+    def rename_folder(
+        self,
+        path: str,
+        new_path: str,
+        *,
+        move_operation_id: UUID | None = None,
+    ) -> WorkflowFolderInfo:
         with self.workflow_structure_mutation():
-            return self._rename_folder_locked(path, new_path)
+            safe_path = validate_workflow_id(path)
+            safe_new_path = validate_workflow_id(new_path)
+            journal = self._require_prepared_workflow_move(
+                move_operation_id,
+                operation_kind="folder_rename",
+                source_path=safe_path,
+                destination_path=safe_new_path,
+            )
+            old_folder = self._folder_path(safe_path)
+            self._validate_prepared_move_execution(
+                journal,
+                self._renamed_workflow_moves(
+                    old_folder,
+                    safe_path,
+                    safe_new_path,
+                ),
+            )
+            folder = self._rename_folder_locked(path, new_path)
+            assert move_operation_id is not None
+            self.mark_workflow_move_phase(
+                move_operation_id,
+                "artifacts_rewritten",
+            )
+            return folder
 
     def plan_folder_rename_moves(
         self,
@@ -1157,13 +2121,17 @@ class WorkflowStoreService:
         with self.workflow_mutations(identities):
             self._ensure_moved_workflow_storage_available(moves)
             self._reserve_workflow_generations(identities)
-            new_folder.parent.mkdir(parents=True, exist_ok=True)
+            self._ensure_directory_durable(new_folder.parent)
             old_folder.rename(new_folder)
+            if old_folder.parent.exists():
+                self._fsync_directory(old_folder.parent)
+            self._fsync_directory(new_folder.parent)
             self._rewrite_moved_workflows(moves)
         return WorkflowFolderInfo(path=safe_new, display_name=safe_new.split("/")[-1])
 
     def create_workflow(self, data: WorkflowCreate) -> WorkflowInfo:
         with self.workflow_structure_mutation(), self.workflow_mutation(data.name):
+            self.ensure_workflow_mutations_available()
             path = self._path_for(data.name)
             if path.exists() or self._workflow_dir(data.name).exists():
                 raise FileExistsError(data.name)
@@ -1203,6 +2171,7 @@ class WorkflowStoreService:
 
     @_identity_locked
     def save_workflow(self, name: str, data: WorkflowSaveBody) -> WorkflowInfo:
+        self.ensure_workflow_mutations_available()
         path = self._existing_path_for(name)
         raw = self._read_raw(name)
         metadata = raw.get("metadata", {})
@@ -1235,6 +2204,7 @@ class WorkflowStoreService:
         expected_identity_generation: int | None = None,
     ) -> int:
         with self.workflow_structural_mutations([name]):
+            self.ensure_workflow_mutations_available()
             path = self._path_for(name)
             if not path.exists():
                 raise FileNotFoundError(name)
@@ -1262,10 +2232,40 @@ class WorkflowStoreService:
             self._delete_managed_storage_best_effort(name)
             return generation
 
-    def patch_workflow(self, name: str, patch: WorkflowUpdate) -> WorkflowInfo:
+    def patch_workflow(
+        self,
+        name: str,
+        patch: WorkflowUpdate,
+        *,
+        move_operation_id: UUID | None = None,
+    ) -> WorkflowInfo:
         new_name = self._updated_workflow_name(name, patch)
         with self.workflow_structural_mutations([name, new_name]):
-            return self._patch_workflow_locked(name, patch, new_name)
+            if patch.action != "duplicate" and new_name != self._validate_name(name):
+                journal = self._require_prepared_workflow_move(
+                    move_operation_id,
+                    operation_kind="direct_workflow_move",
+                    source_path=self._validate_name(name),
+                    destination_path=new_name,
+                )
+                self._validate_prepared_move_execution(
+                    journal,
+                    [(self._validate_name(name), new_name)],
+                    patches={self._validate_name(name): patch},
+                )
+            else:
+                self.ensure_workflow_mutations_available()
+                if move_operation_id is not None:
+                    raise WorkflowMoveRecoveryError(
+                        "Only an identity-changing workflow patch accepts a move operation"
+                    )
+            info = self._patch_workflow_locked(name, patch, new_name)
+            if move_operation_id is not None:
+                self.mark_workflow_move_phase(
+                    move_operation_id,
+                    "artifacts_rewritten",
+                )
+            return info
 
     def plan_workflow_update_moves(
         self,
@@ -1366,8 +2366,11 @@ class WorkflowStoreService:
             self._set_workflow_storage_path(raw, storage_path)
         if new_name != name:
             destination = self._workflow_dir(new_name)
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            self._ensure_directory_durable(destination.parent)
             path.parent.rename(destination)
+            if path.parent.parent.exists():
+                self._fsync_directory(path.parent.parent)
+            self._fsync_directory(destination.parent)
             normalize_workflow_draft_identity(destination, new_name)
         self._write_raw(new_name, raw)
         return self._metadata_from_raw(
@@ -1378,6 +2381,7 @@ class WorkflowStoreService:
 
     @_identity_locked
     def rebind_versions(self, name: str) -> WorkflowFile:
+        self.ensure_workflow_mutations_available()
         raw = self._read_raw(name)
         workflow_data = raw.get("workflow", {})
         if not isinstance(workflow_data, dict):
