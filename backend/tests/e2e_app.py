@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
             f"{event.error}\n{event.traceback}",
             event.node_id,
             time.time(),
+            context=context,
         )
         await manager.broadcast_execution_complete(
             False,

@@ -8,6 +8,9 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.services.log_context import execution_log_context_for_record
+
 if TYPE_CHECKING:
     from bioimageflow_server.ws.handler import ConnectionManager  # pragma: no cover
 
@@ -53,14 +56,20 @@ class WebSocketLogHandler(logging.Handler):
         token = _EMITTING.set(True)
         try:
             message = self.format(record)
+            context = execution_log_context_for_record(record)
             node_id = _extract_node_id(record.name)
             if node_id is None:
-                node_id = self._extract_wetlands_node_id(record.name, message)
+                node_id = self._extract_wetlands_node_id(
+                    record.name,
+                    message,
+                    context,
+                )
             payload = (
                 record.levelname,
                 message,
                 node_id,
                 record.created,
+                context,
             )
             self._schedule_broadcast(*payload)
         finally:
@@ -70,24 +79,32 @@ class WebSocketLogHandler(logging.Handler):
         self,
         logger_name: str,
         message: str,
+        context: ExecutionContext | None,
     ) -> str | None:
         if not _is_wetlands_record(logger_name):
             return None
 
-        key = _wetlands_context_key(logger_name, message)
+        context_key = context.execution_id if context is not None else "global"
+        context_prefix = f"{context_key}:"
+        key = f"{context_prefix}{_wetlands_context_key(logger_name, message)}"
         parsed = _extract_node_id_from_wetlands_message(message)
         if parsed is not None:
             self._wetlands_active_nodes[key] = parsed
             return parsed
 
         active = self._wetlands_active_nodes.get(key)
-        if active is None and len(set(self._wetlands_active_nodes.values())) == 1:
-            active = next(iter(self._wetlands_active_nodes.values()))
+        context_nodes = {
+            active_node
+            for active_key, active_node in self._wetlands_active_nodes.items()
+            if active_key.startswith(context_prefix)
+        }
+        if active is None and len(context_nodes) == 1:
+            active = next(iter(context_nodes))
 
         if active is not None and _is_wetlands_context_terminal(message):
             self._wetlands_active_nodes.pop(key, None)
             for active_key, active_node in list(self._wetlands_active_nodes.items()):
-                if active_node == active:
+                if active_key.startswith(context_prefix) and active_node == active:
                     self._wetlands_active_nodes.pop(active_key, None)
             if not self._wetlands_active_nodes:
                 self._wetlands_active_nodes.clear()
@@ -100,6 +117,7 @@ class WebSocketLogHandler(logging.Handler):
         message: str,
         node_id: str | None,
         timestamp: float,
+        context: ExecutionContext | None,
     ) -> None:
         loop = self._loop
         if loop is None or loop.is_closed():
@@ -107,7 +125,13 @@ class WebSocketLogHandler(logging.Handler):
             # crash the logger in tests or during shutdown.
             return
         try:
-            coro = self._manager.broadcast_log(level, message, node_id, timestamp)
+            coro = self._manager.broadcast_log(
+                level,
+                message,
+                node_id,
+                timestamp,
+                context=context,
+            )
             asyncio.run_coroutine_threadsafe(coro, loop)
         except RuntimeError:
             # Loop just closed between the `is_closed` check and the schedule.
@@ -118,7 +142,7 @@ def _extract_node_id(logger_name: str) -> str | None:
     """Return the node name from a ``bioimageflow.node.<name>`` logger, else None."""
     prefix = "bioimageflow.node."
     if logger_name.startswith(prefix):
-        suffix = logger_name[len(prefix):]
+        suffix = logger_name[len(prefix) :]
         # Only take the first segment so nested loggers still map to their node.
         return suffix.split(".", 1)[0] if suffix else None
     return None
@@ -136,16 +160,16 @@ def _is_wetlands_record(logger_name: str) -> bool:
     return logger_name == "wetlands" or logger_name.startswith("wetlands.")
 
 
-_WETLANDS_DATA_NODE_RE = re.compile(r"(?:^|[\\/])data[\\/]([^\\/'\"),\s]+)[\\/]")
-_WETLANDS_CHANNEL_RE = re.compile(
-    r"\b(?:DEBUG|INFO|WARNING|ERROR|CRITICAL):\d+:([^:]+):"
+_WETLANDS_DATA_NODE_RE = re.compile(
+    r"(?:^|[\\/])data[\\/]([^'\"),\s]+?)[\\/]run(?:[\\/'\"),\s}]|$)"
 )
+_WETLANDS_CHANNEL_RE = re.compile(r"\b(?:DEBUG|INFO|WARNING|ERROR|CRITICAL):\d+:([^:]+):")
 
 
 def _extract_node_id_from_wetlands_message(message: str) -> str | None:
     match = _WETLANDS_DATA_NODE_RE.search(message)
     if match:
-        return match.group(1)
+        return match.group(1).replace("\\", "/")
     return None
 
 

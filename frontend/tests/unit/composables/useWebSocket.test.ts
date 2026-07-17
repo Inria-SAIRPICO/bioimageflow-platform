@@ -230,6 +230,9 @@ describe('useWebSocket', () => {
       message: 'hi',
       node_id: 'n1',
       timestamp: 1.5,
+      execution_id: 'exec-a',
+      workflow_id: 'workflow-a',
+      draft_revision: 4,
     })
 
     expect(loggerStoreMock.addEntry).toHaveBeenCalledWith({
@@ -237,6 +240,9 @@ describe('useWebSocket', () => {
       message: 'hi',
       nodeId: 'n1',
       timestamp: 1.5,
+      executionId: 'exec-a',
+      workflowId: 'workflow-a',
+      draftRevision: 4,
     })
   })
 
@@ -249,6 +255,13 @@ describe('useWebSocket', () => {
     latestSocket().receive({ type: 'log', message: 'missing level', timestamp: 1 })
     latestSocket().receive({ type: 'log', level: 'INFO', timestamp: 1 })
     latestSocket().receive({ type: 'log', level: 'INFO', message: 'bad timestamp', timestamp: Number.NaN })
+    latestSocket().receive({
+      type: 'log',
+      level: 'INFO',
+      message: 'partial context',
+      timestamp: 1,
+      execution_id: 'exec-without-workflow',
+    })
 
     expect(loggerStoreMock.addEntry).not.toHaveBeenCalled()
   })

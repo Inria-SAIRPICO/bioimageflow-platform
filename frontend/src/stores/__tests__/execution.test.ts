@@ -52,6 +52,9 @@ describe('execution store', () => {
       nodeId: 'node_a',
       message: 'Node node_a failed: segmentation failed\nTraceback...\nValueError: bad image',
       timestamp: 1,
+      executionId: EXECUTION_CONTEXT.execution_id,
+      workflowId: EXECUTION_CONTEXT.workflow_id,
+      draftRevision: EXECUTION_CONTEXT.draft_revision,
     })
 
     establishRunningExecution(execution)
@@ -77,6 +80,51 @@ describe('execution store', () => {
       detail: 'node_a: segmentation failed',
       nodeId: 'node_a',
       fullDetail: expect.stringContaining('ValueError: bad image'),
+    })
+  })
+
+  it('does not deduplicate the same node failure across workflows', () => {
+    const execution = useExecutionStore()
+    const logger = useLoggerStore()
+    logger.addEntry({
+      level: 'ERROR',
+      nodeId: 'shared',
+      message: 'shared: identical failure',
+      timestamp: 1,
+      executionId: 'exec-a',
+      workflowId: 'a',
+      draftRevision: 1,
+    })
+    execution.applyStatusSnapshot({
+      state: 'running',
+      last_result: null,
+      progress: null,
+      node_statuses: {},
+      execution_id: 'exec-b',
+      workflow_id: 'b',
+      draft_revision: 1,
+    })
+    execution.applyExecutionComplete({
+      success: false,
+      errors: [],
+      node_statuses: {
+        shared: {
+          node_id: 'shared',
+          status: 'failed',
+          cached: false,
+          error: 'identical failure',
+        },
+      },
+      execution_id: 'exec-b',
+      workflow_id: 'b',
+      draft_revision: 1,
+    })
+
+    expect(logger.entries).toHaveLength(2)
+    expect(logger.entries[1]).toMatchObject({
+      nodeId: 'shared',
+      executionId: 'exec-b',
+      workflowId: 'b',
     })
   })
 

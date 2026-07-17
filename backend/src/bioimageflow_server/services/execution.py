@@ -37,6 +37,7 @@ from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
 from bioimageflow_server.services.graph_validator import GraphValidationService
+from bioimageflow_server.services.log_context import bind_execution_log_context
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,8 @@ class ExecutionEventBus(Protocol):
         message: str,
         node_id: str | None,
         timestamp: float,
+        *,
+        context: ExecutionContext | None = None,
     ) -> None: ...
 
     def publish_environment_status(self, env_name: str, status: str) -> None: ...
@@ -158,6 +161,8 @@ class NullEventBus:
         message: str,
         node_id: str | None,
         timestamp: float,
+        *,
+        context: ExecutionContext | None = None,
     ) -> None:
         return None
 
@@ -396,19 +401,21 @@ class ExecutionManager:
             f"Execution started for {target_label}",
             None,
             time.time(),
+            context=context,
         )
 
         def _run_sync() -> Any:
-            use_explicit_engine = callable(getattr(workflow, "_make_engine", None))
-            engine = self._make_execution_engine(workflow)
-            self._attach_environment_status_hook(engine)
-            if engine is None or not use_explicit_engine:
-                return workflow.compute(*targets, dev_mode=dev_mode)
-            return workflow.compute(
-                *targets,
-                dev_mode=dev_mode,
-                engine=engine,
-            )
+            with bind_execution_log_context(context):
+                use_explicit_engine = callable(getattr(workflow, "_make_engine", None))
+                engine = self._make_execution_engine(workflow)
+                self._attach_environment_status_hook(engine)
+                if engine is None or not use_explicit_engine:
+                    return workflow.compute(*targets, dev_mode=dev_mode)
+                return workflow.compute(
+                    *targets,
+                    dev_mode=dev_mode,
+                    engine=engine,
+                )
 
         loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
@@ -425,7 +432,13 @@ class ExecutionManager:
         async with self._preparation_lock:
             if self._workflow is None or self.state != "running":
                 return
-            self.event_bus.publish_log("INFO", "Execution stop requested", None, time.time())
+            self.event_bus.publish_log(
+                "INFO",
+                "Execution stop requested",
+                None,
+                time.time(),
+                context=self.context,
+            )
             try:
                 self._workflow.cancel()
             except Exception:  # pragma: no cover — defensive
@@ -511,6 +524,7 @@ class ExecutionManager:
                     f"Node {node_id} started",
                     node_id,
                     timestamp,
+                    context=context,
                 )
                 return
 
@@ -539,6 +553,7 @@ class ExecutionManager:
                     f"Node {node_id} row progress {current}/{maximum}",
                     node_id,
                     timestamp,
+                    context=context,
                 )
                 return
 
@@ -567,6 +582,7 @@ class ExecutionManager:
                     f"Node {node_id} completed row {row}/{total_rows}",
                     node_id,
                     timestamp,
+                    context=context,
                 )
                 return
 
@@ -593,6 +609,7 @@ class ExecutionManager:
                     f"Node {node_id} completed",
                     node_id,
                     timestamp,
+                    context=context,
                 )
                 return
 
@@ -619,6 +636,7 @@ class ExecutionManager:
                     f"Node {node_id} used cached result",
                     node_id,
                     timestamp,
+                    context=context,
                 )
                 return
 
@@ -649,6 +667,7 @@ class ExecutionManager:
                     _format_node_failure_message(node_id, message, tb),
                     node_id,
                     timestamp or time.time(),
+                    context=context,
                 )
                 return
 
@@ -850,6 +869,7 @@ class ExecutionManager:
                         else _format_workflow_failure_message(detail, tb),
                         target_id,
                         time.time(),
+                        context=context,
                     )
 
         self.last_result = ExecutionResult(
@@ -870,6 +890,7 @@ class ExecutionManager:
                 "Workflow execution completed successfully",
                 None,
                 time.time(),
+                context=context,
             )
 
         self.state = "idle"

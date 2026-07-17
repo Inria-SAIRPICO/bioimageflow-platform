@@ -109,6 +109,7 @@ class RecordingEventBus:
         self.node_state_contexts: list[ExecutionContext] = []
         self.complete_contexts: list[ExecutionContext] = []
         self.log_events: list[tuple[str, str, str | None, float]] = []
+        self.log_contexts: list[ExecutionContext | None] = []
         self.environment_events: list[tuple[str, str]] = []
 
     def publish_progress(
@@ -160,8 +161,11 @@ class RecordingEventBus:
         message: str,
         node_id: str | None,
         timestamp: float,
+        *,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.log_events.append((level, message, node_id, timestamp))
+        self.log_contexts.append(context)
 
     def publish_environment_status(self, env_name: str, status: str) -> None:
         self.environment_events.append((env_name, status))
@@ -378,12 +382,18 @@ class TestExecutionManagerLifecycle:
         _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(bus, MagicMock(), _settings())
 
-        await em.start(_graph_with([("n1", True)]), workflow_id="wf-test")
+        context = await em.start(
+            _graph_with([("n1", True)]),
+            workflow_id="wf-test",
+            draft_revision=3,
+        )
         await _drain(em)
 
         messages = [event[1] for event in bus.log_events]
         assert any("Execution started for workflow terminals" in message for message in messages)
         assert any("Workflow execution completed successfully" in message for message in messages)
+        assert bus.log_contexts
+        assert all(item == context for item in bus.log_contexts)
 
     async def test_execution_publishes_environment_status_from_wetlands_start(
         self, monkeypatch: pytest.MonkeyPatch

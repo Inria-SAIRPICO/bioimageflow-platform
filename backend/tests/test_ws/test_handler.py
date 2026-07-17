@@ -241,6 +241,35 @@ async def test_broadcast_log_no_filter_sends_everything() -> None:
     assert len(ws.sent) == 3
 
 
+async def test_broadcast_log_preserves_execution_context_and_global_logs() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+
+    await mgr.broadcast_log(
+        "INFO",
+        "node message",
+        "shared",
+        1.0,
+        context=_TEST_CONTEXT,
+    )
+    await mgr.broadcast_log("INFO", "system message", None, 2.0)
+    await _drain(mgr)
+
+    assert ws.sent[0] == {
+        "type": "log",
+        "level": "INFO",
+        "message": "node message",
+        "node_id": "shared",
+        "timestamp": 1.0,
+        **_TEST_CONTEXT.model_dump(),
+    }
+    assert "execution_id" not in ws.sent[1]
+    assert "workflow_id" not in ws.sent[1]
+
+
 async def test_broadcast_log_filters_by_node_id() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 

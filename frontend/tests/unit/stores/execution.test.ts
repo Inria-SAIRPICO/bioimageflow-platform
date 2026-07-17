@@ -697,6 +697,9 @@ describe('execution store', () => {
         message: 'Node b failed: b broke\ntb',
         nodeId: 'b',
         timestamp: 1,
+        executionId: 'exec-1',
+        workflowId: 'wf_a',
+        draftRevision: null,
       })
 
       store.applyExecutionComplete(contextual({

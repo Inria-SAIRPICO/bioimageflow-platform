@@ -192,11 +192,30 @@ function dispatch(raw: unknown) {
       ) {
         break
       }
+      const hasContext = msg.execution_id !== undefined
+        || msg.workflow_id !== undefined
+        || msg.draft_revision !== undefined
+      const validContext = typeof msg.execution_id === 'string'
+        && msg.execution_id.length > 0
+        && typeof msg.workflow_id === 'string'
+        && msg.workflow_id.length > 0
+        && (
+          msg.draft_revision === null
+          || (
+            typeof msg.draft_revision === 'number'
+            && Number.isInteger(msg.draft_revision)
+            && msg.draft_revision >= 0
+          )
+        )
+      if (hasContext && !validContext) break
       const entry: LogEntry = {
         level: msg.level,
         message: msg.message,
         nodeId: typeof msg.node_id === 'string' ? msg.node_id : null,
         timestamp: msg.timestamp,
+        executionId: validContext ? msg.execution_id as string : null,
+        workflowId: validContext ? msg.workflow_id as string : null,
+        draftRevision: validContext ? msg.draft_revision as number | null : null,
       }
       useLoggerStore().addEntry(entry)
       break

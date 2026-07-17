@@ -137,10 +137,18 @@ test.describe('error handling', () => {
         && message !== null
         && (message as { type?: unknown; execution_id?: unknown }).type
           === 'execution_complete'
-        && (message as { execution_id?: unknown }).execution_id === id
+        && (message as { execution_id?: unknown }).execution_id === id.executionId
       ))
-      return logIndex >= 0 && completionIndex > logIndex
-    }, executionId)).toBe(true)
+      if (logIndex < 0 || completionIndex <= logIndex) return false
+      const log = messages[logIndex] as {
+        execution_id?: unknown
+        workflow_id?: unknown
+        draft_revision?: unknown
+      }
+      return log.execution_id === id.executionId
+        && log.workflow_id === id.workflowId
+        && log.draft_revision === id.draftRevision
+    }, { executionId, workflowId: workflowName, draftRevision })).toBe(true)
 
     await expect(page.locator('.error-indicator')).toBeVisible({
       timeout: 5000,

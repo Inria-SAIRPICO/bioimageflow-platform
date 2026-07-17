@@ -161,6 +161,8 @@ Draft, semantic-operation, nested-snapshot, and transient graph-validation reque
 
 Run reports an explicit `starting` status with its pending execution identity, without attaching prior execution results, until its exact graph has compiled, validated, and passed a single final workflow generation, storage-context, draft-revision, and exact-draft-graph authority recheck. Cache Clear is serialized with Run, validates outside workflow locks, and performs cache invalidation only while the captured identity generation and storage context remain current.
 
+Every execution-related log carries the same immutable `execution_id`, `workflow_id`, and `draft_revision` as its progress and terminal events, including BioImageFlow and Wetlands worker-thread output captured during that run. Non-execution tool, environment, thumbnail, and platform logs remain contextless and global. The global Logger Panel retains both kinds, while a Node Panel execution-output view matches the owning workflow plus the exact or descendant-scoped node ID and narrows to the retained execution identity when that canvas owns one; identical node IDs in another workflow or execution cannot appear in that view or suppress its failure record.
+
 ### 1.9 Integration with v1 Features
 
 - **Undo/redo:** Creating a sub-workflow from selection is a single undo step. Undoing restores all internal nodes, edges, and canvas positions, and removes the SubWorkflowNode.

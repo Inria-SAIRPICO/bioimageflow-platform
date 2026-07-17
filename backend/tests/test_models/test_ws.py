@@ -164,6 +164,66 @@ class TestLogMessage:
         )
         assert msg.node_id == "segmenter_1"
 
+    def test_carries_execution_context(self) -> None:
+        msg = LogMessage(
+            level="INFO",
+            message="running",
+            node_id="segmenter_1",
+            timestamp=2.0,
+            draft_revision=7,
+            **EXECUTION_CONTEXT,
+        )
+
+        assert msg.execution_id == EXECUTION_CONTEXT["execution_id"]
+        assert msg.workflow_id == EXECUTION_CONTEXT["workflow_id"]
+        assert msg.draft_revision == 7
+
+    @pytest.mark.parametrize(
+        "partial",
+        [
+            {"execution_id": "exec-123"},
+            {"workflow_id": "wf_a"},
+            {"draft_revision": 7},
+        ],
+    )
+    def test_rejects_partial_execution_context(self, partial: dict[str, object]) -> None:
+        with pytest.raises(ValidationError):
+            LogMessage(level="INFO", message="partial", timestamp=1.0, **partial)
+
+    @pytest.mark.parametrize(
+        ("execution_id", "workflow_id"),
+        [
+            ("", "wf_a"),
+            ("exec-123", ""),
+            ("exec-123", "wf_a//nested"),
+            ("exec-123", "../wf_a"),
+        ],
+    )
+    def test_rejects_invalid_execution_context(
+        self,
+        execution_id: str,
+        workflow_id: str,
+    ) -> None:
+        with pytest.raises(ValidationError):
+            LogMessage(
+                level="INFO",
+                message="invalid",
+                timestamp=1.0,
+                execution_id=execution_id,
+                workflow_id=workflow_id,
+            )
+
+    def test_normalizes_workflow_id_like_execution_context(self) -> None:
+        msg = LogMessage(
+            level="INFO",
+            message="normalized",
+            timestamp=1.0,
+            execution_id="exec-123",
+            workflow_id=r"folder\workflow",
+        )
+
+        assert msg.workflow_id == "folder/workflow"
+
 
 class TestExecutionCompleteMessage:
     def test_success(self) -> None:

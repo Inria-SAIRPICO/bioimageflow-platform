@@ -11,6 +11,7 @@ import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
+import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useCanvasStatusProjection } from '@/composables/useCanvasStatusProjection'
@@ -23,7 +24,10 @@ import {
   useFieldFocusTracker,
   type FieldFocusTarget,
 } from '@/composables/useFieldFocusTracker'
-import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
+import {
+  canvasSessionRegistry,
+  type CanvasId,
+} from '@/sessions/canvasSessionRegistry'
 import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
 import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
 import type {
@@ -68,6 +72,7 @@ const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const statusProjection = useCanvasStatusProjection()
 const loggerStore = useLoggerStore()
+const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const { validationResult } = useGraphSync()
 const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
@@ -108,10 +113,54 @@ const executionOutputCollapsed = ref(false)
 const nodeLogLevels = ref(new Set<string>(['INFO', 'WARNING', 'ERROR']))
 const activeNodeLogEntries = shallowRef<ComputedRef<LogEntry[]> | null>(null)
 
+const selectedNodeLogTarget = computed<{
+  nodeId: string
+  executionCanvasId: CanvasId
+} | null>(() => {
+  const selectedNodeId = selectedNode.value?.id
+  const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
+  if (!selectedNodeId || activeCanvasId === null) return null
+
+  let canvasId = activeCanvasId
+  const segments = [selectedNodeId]
+  const visitedCanvasIds = new Set<string>()
+  while (!visitedCanvasIds.has(canvasId)) {
+    visitedCanvasIds.add(canvasId)
+    const descriptor = canvasSessionRegistry.get(canvasId)?.descriptor
+    if (!descriptor) return null
+    if (descriptor.kind === 'root') {
+      return { nodeId: segments.join('/'), executionCanvasId: descriptor.canvasId }
+    }
+    const session = subWorkflowSessionsStore.sessionById(descriptor.sessionId)
+    if (!session) return null
+    segments.unshift(session.parentNodeId)
+    canvasId = descriptor.parentCanvasId
+  }
+  return null
+})
+
 watch(
-  () => selectedNode.value?.id ?? null,
-  (nodeId) => {
-    activeNodeLogEntries.value = nodeId ? loggerStore.nodeEntries(nodeId) : null
+  [
+    () => selectedNodeLogTarget.value?.nodeId ?? null,
+    () => selectedNodeLogTarget.value?.executionCanvasId ?? null,
+    () => uiStore.activeWorkflowId,
+    () => executionStore.executionId,
+    () => executionStore.executionWorkflowId,
+  ],
+  ([nodeId, executionCanvasId, workflowId]) => {
+    if (!nodeId) {
+      activeNodeLogEntries.value = null
+      return
+    }
+    const executionId = executionCanvasId !== null
+      && executionStore.executionId !== null
+      && executionStore.appliesToCanvas(executionCanvasId)
+      ? executionStore.executionId
+      : undefined
+    activeNodeLogEntries.value = loggerStore.nodeEntries(nodeId, {
+      workflowId,
+      ...(executionId === undefined ? {} : { executionId }),
+    })
   },
   { immediate: true },
 )

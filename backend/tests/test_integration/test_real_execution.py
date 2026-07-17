@@ -158,6 +158,8 @@ class RecordingEventBus:
         message: str,
         node_id: str | None,
         timestamp: float,
+        *,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.log_events.append((level, message, node_id, timestamp))
 

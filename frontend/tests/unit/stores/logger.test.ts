@@ -84,6 +84,38 @@ describe('logger store', () => {
     expect(store.nodeEntries('missing').value).toEqual([])
   })
 
+  it('scopes same-node history by workflow and optionally execution', () => {
+    const store = useLoggerStore()
+    store.addEntry({
+      ...entry('workflow a, first run', 'INFO', 'shared', 1),
+      workflowId: 'a',
+      executionId: 'exec-a-1',
+      draftRevision: 1,
+    })
+    store.addEntry({
+      ...entry('workflow b', 'INFO', 'shared', 2),
+      workflowId: 'b',
+      executionId: 'exec-b',
+      draftRevision: 2,
+    })
+    store.addEntry({
+      ...entry('workflow a, second run', 'INFO', 'shared', 3),
+      workflowId: 'a',
+      executionId: 'exec-a-2',
+      draftRevision: 3,
+    })
+
+    expect(
+      store.nodeEntries('shared', { workflowId: 'a' }).value.map(item => item.message),
+    ).toEqual(['workflow a, first run', 'workflow a, second run'])
+    expect(
+      store.nodeEntries('shared', {
+        workflowId: 'a',
+        executionId: 'exec-a-2',
+      }).value.map(item => item.message),
+    ).toEqual(['workflow a, second run'])
+  })
+
   it('merges filter updates, toggles levels, and preserves settings on clear', () => {
     const store = useLoggerStore()
     const initialLevels = new Set(store.filter.levels)

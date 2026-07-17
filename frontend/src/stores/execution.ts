@@ -180,6 +180,7 @@ function hasExistingFailureLog(
   nodeId: string | undefined,
   detail: string,
   fullDetail: string | undefined,
+  context: RequiredExecutionContextFields,
 ): boolean {
   const logger = useLoggerStore()
   const errorText = detail.includes(': ') ? detail.split(': ').slice(1).join(': ') : detail
@@ -187,6 +188,8 @@ function hasExistingFailureLog(
   return logger.entries.some((entry) => {
     if (entry.level !== 'ERROR') return false
     if ((nodeId ?? null) !== entry.nodeId) return false
+    if (entry.executionId !== context.execution_id) return false
+    if (entry.workflowId !== context.workflow_id) return false
     if (!entry.message.includes(errorText)) return false
     return !traceback || entry.message.includes(traceback)
   })
@@ -753,7 +756,7 @@ export const useExecutionStore = defineStore('execution', () => {
     }
   }
 
-  function _reportFailure(payload: ExecutionResult): void {
+  function _reportFailure(payload: ExecutionCompletePayload): void {
     const failedEntries = Object.entries(payload.node_statuses ?? {}).filter(
       ([, s]) => s.status === 'failed',
     )
@@ -783,14 +786,31 @@ export const useExecutionStore = defineStore('execution', () => {
     }
 
     try {
+      const alreadyLogged = hasExistingFailureLog(
+        nodeId,
+        detail,
+        fullDetail,
+        payload,
+      )
       const { reportError } = useErrorReporting()
       reportError({
         kind: 'execution_failed',
         detail,
         ...(fullDetail ? { fullDetail } : {}),
         ...(nodeId ? { nodeId } : {}),
-        logToLogger: !hasExistingFailureLog(nodeId, detail, fullDetail),
+        logToLogger: false,
       })
+      if (!alreadyLogged) {
+        useLoggerStore().addEntry({
+          level: 'ERROR',
+          message: fullDetail ?? detail,
+          nodeId: nodeId ?? null,
+          timestamp: Date.now() / 1000,
+          executionId: payload.execution_id,
+          workflowId: payload.workflow_id,
+          draftRevision: payload.draft_revision,
+        })
+      }
     } catch (e) {
       // Best-effort: in test contexts the composable may not have access
       // to a Toast provider. Surface unexpected failures so real bugs in

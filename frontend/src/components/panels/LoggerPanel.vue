@@ -173,9 +173,12 @@ function rowClass(entry: LogEntry): string {
   return `log-entry--${normalizedLevel(entry).toLowerCase()}`
 }
 
-function nodeLabel(nodeId: string | null): string {
-  if (nodeId === null) return ''
-  return graphNodeLabels.value.get(nodeId) ?? nodeId
+function nodeLabel(entry: LogEntry): string {
+  if (entry.nodeId === null) return ''
+  if (entry.workflowId === null || entry.workflowId !== ui.activeWorkflowId) {
+    return entry.nodeId
+  }
+  return graphNodeLabels.value.get(entry.nodeId) ?? entry.nodeId
 }
 
 function setColumnWidth(column: ResizableLogColumn, width: number) {
@@ -449,7 +452,7 @@ watch(
           data-testid="log-node-name"
           role="cell"
         >
-          {{ nodeLabel(entry.nodeId) }}
+          {{ nodeLabel(entry) }}
         </span>
         <span v-else class="logger-panel__node" role="cell" />
         <span class="logger-panel__message" data-testid="log-message" role="cell">

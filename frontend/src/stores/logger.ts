@@ -6,6 +6,17 @@ export interface LogEntry {
   message: string
   nodeId: string | null
   timestamp: number
+  executionId: string | null
+  workflowId: string | null
+  draftRevision: number | null
+}
+
+export type LogEntryInput = Omit<LogEntry, 'executionId' | 'workflowId' | 'draftRevision'>
+  & Partial<Pick<LogEntry, 'executionId' | 'workflowId' | 'draftRevision'>>
+
+export interface NodeLogContext {
+  workflowId?: string | null
+  executionId?: string | null
 }
 
 export interface LogFilter {
@@ -84,11 +95,14 @@ export const useLoggerStore = defineStore('logger', () => {
     )
   })
 
-  function addEntry(entry: LogEntry): void {
+  function addEntry(entry: LogEntryInput): void {
     entries.value.push({
       ...entry,
       level: normalizeLevel(entry.level),
       nodeId: entry.nodeId ?? null,
+      executionId: entry.executionId ?? null,
+      workflowId: entry.workflowId ?? null,
+      draftRevision: entry.draftRevision ?? null,
     })
     if (entries.value.length > maxEntries) {
       entries.value.splice(0, entries.value.length - maxEntries)
@@ -122,10 +136,19 @@ export const useLoggerStore = defineStore('logger', () => {
     autoScroll.value = enabled
   }
 
-  function nodeEntries(nodeId: string) {
-    return computed(() => entries.value.filter((entry) => (
-      entry.nodeId === nodeId || entry.nodeId?.startsWith(`${nodeId}/`)
-    )))
+  function nodeEntries(nodeId: string, context: NodeLogContext = {}) {
+    return computed(() => entries.value.filter((entry) => {
+      if (entry.nodeId !== nodeId && !entry.nodeId?.startsWith(`${nodeId}/`)) {
+        return false
+      }
+      if ('workflowId' in context && entry.workflowId !== context.workflowId) {
+        return false
+      }
+      if ('executionId' in context && entry.executionId !== context.executionId) {
+        return false
+      }
+      return true
+    }))
   }
 
   function getLastSubscription(): LogSubscription {

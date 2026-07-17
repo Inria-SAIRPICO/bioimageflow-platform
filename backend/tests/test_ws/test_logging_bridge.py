@@ -29,8 +29,10 @@ class _StubManager:
         message: str,
         node_id: str | None,
         timestamp: float,
+        *,
+        context: Any | None = None,
     ) -> None:
-        self.broadcast_calls.append((level, message, node_id, timestamp))
+        self.broadcast_calls.append((level, message, node_id, timestamp, context))
 
 
 def _remove_handler(logger_name: str, handler: logging.Handler) -> None:
@@ -64,7 +66,7 @@ async def test_extracts_node_id_from_logger_name() -> None:
             break
 
     assert len(mgr.broadcast_calls) == 1
-    level, message, node_id, _ = mgr.broadcast_calls[0]
+    level, message, node_id, _, _ = mgr.broadcast_calls[0]
     assert level == "INFO"
     assert message == "msg"
     assert node_id == "segmenter_1"
@@ -95,6 +97,311 @@ async def test_node_id_none_for_non_node_logger() -> None:
 
     assert mgr.broadcast_calls[0][2] is None
     assert mgr.broadcast_calls[0][0] == "WARNING"
+
+
+async def test_execution_context_is_attached_only_while_bound() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context = ExecutionContext(
+        execution_id="exec-a",
+        workflow_id="workflow-a",
+        draft_revision=4,
+    )
+    logger = logging.getLogger("bioimageflow.node.shared")
+
+    with bind_execution_log_context(context):
+        handler.emit(logger.makeRecord(logger.name, logging.INFO, "f", 1, "bound", None, None))
+    handler.emit(logger.makeRecord(logger.name, logging.INFO, "f", 2, "global", None, None))
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if len(mgr.broadcast_calls) == 2:
+            break
+
+    assert mgr.broadcast_calls[0][4] == context
+    assert mgr.broadcast_calls[1][4] is None
+
+
+async def test_bound_execution_context_reaches_engine_worker_threads() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context = ExecutionContext(
+        execution_id="exec-threaded",
+        workflow_id="workflow-threaded",
+        draft_revision=2,
+    )
+    logger = logging.getLogger("bioimageflow.node.shared")
+
+    with bind_execution_log_context(context):
+        worker = threading.Thread(
+            target=lambda: handler.emit(
+                logger.makeRecord(logger.name, logging.INFO, "f", 1, "threaded", None, None)
+            )
+        )
+        worker.start()
+        worker.join(timeout=1.0)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] == context
+
+
+async def test_wetlands_environment_log_stays_global_during_execution() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context = ExecutionContext(
+        execution_id="exec-a",
+        workflow_id="workflow-a",
+        draft_revision=1,
+    )
+    logger = logging.getLogger("wetlands.environment")
+    record = logger.makeRecord(
+        logger.name,
+        logging.INFO,
+        "f",
+        1,
+        "environment ready",
+        None,
+        None,
+        extra={"log_source": "environment", "env_name": "tool-env"},
+    )
+
+    with bind_execution_log_context(context):
+        handler.emit(record)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] is None
+
+
+@pytest.mark.parametrize(
+    ("logger_name", "message"),
+    [
+        ("bioimageflow", "environment created"),
+        ("bioimageflow.engine", "engine lifecycle event"),
+        ("bioimageflow.registry", "tool registered"),
+    ],
+)
+async def test_bare_bioimageflow_logs_stay_global_during_execution(
+    logger_name: str,
+    message: str,
+) -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context = ExecutionContext(
+        execution_id="exec-a",
+        workflow_id="workflow-a",
+        draft_revision=1,
+    )
+    logger = logging.getLogger(logger_name)
+
+    with bind_execution_log_context(context):
+        handler.emit(logger.makeRecord(logger.name, logging.INFO, "f", 1, message, None, None))
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] is None
+
+
+async def test_bioimageflow_engine_diagnostic_carries_bound_execution_context() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context = ExecutionContext(
+        execution_id="exec-engine",
+        workflow_id="workflow-engine",
+        draft_revision=3,
+    )
+    logger = logging.getLogger("bioimageflow")
+
+    with bind_execution_log_context(context):
+        record = logger.makeRecord(
+            logger.name,
+            logging.INFO,
+            "/package/bioimageflow/engine.py",
+            809,
+            "Skipping node 'disabled' (disabled or upstream disabled)",
+            None,
+            None,
+        )
+        handler.emit(record)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] == context
+
+
+async def test_wetlands_record_without_execution_metadata_stays_global() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context = ExecutionContext(
+        execution_id="exec-a",
+        workflow_id="workflow-a",
+        draft_revision=1,
+    )
+    logger = logging.getLogger("wetlands.worker")
+
+    with bind_execution_log_context(context):
+        record = logger.makeRecord(
+            logger.name,
+            logging.INFO,
+            "f",
+            1,
+            "bare worker lifecycle output",
+            None,
+            None,
+        )
+        handler.emit(record)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] is None
+
+
+async def test_thumbnail_worker_log_stays_global_during_execution() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context = ExecutionContext(
+        execution_id="exec-a",
+        workflow_id="workflow-a",
+        draft_revision=1,
+    )
+    logger = logging.getLogger("wetlands.execution")
+    record = logger.makeRecord(
+        logger.name,
+        logging.INFO,
+        "f",
+        1,
+        "thumbnail generated",
+        None,
+        None,
+        extra={
+            "log_source": "execution",
+            "call_target": "thumbnail_generator:generate_thumbnail",
+        },
+    )
+
+    with bind_execution_log_context(context):
+        handler.emit(record)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] is None
+
+
+async def test_record_provenance_cannot_be_relabelled_by_a_later_execution() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context_a = ExecutionContext(execution_id="exec-a", workflow_id="a", draft_revision=1)
+    context_b = ExecutionContext(execution_id="exec-b", workflow_id="b", draft_revision=2)
+    logger = logging.getLogger("wetlands.execution")
+    with bind_execution_log_context(context_a):
+        delayed_a = logger.makeRecord(
+            logger.name,
+            logging.INFO,
+            "f",
+            1,
+            "late A",
+            None,
+            None,
+            extra={
+                "log_source": "execution",
+                "call_target": "worker:run_process_row",
+            },
+        )
+
+    with bind_execution_log_context(context_b):
+        handler.emit(delayed_a)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] == context_a
+
+
+async def test_unattributed_worker_record_is_not_claimed_by_a_later_execution() -> None:
+    from bioimageflow_server.models.execution import ExecutionContext
+    from bioimageflow_server.services.log_context import bind_execution_log_context
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    context_b = ExecutionContext(execution_id="exec-b", workflow_id="b", draft_revision=2)
+    logger = logging.getLogger("wetlands.execution")
+    unattributed = logger.makeRecord(
+        logger.name,
+        logging.INFO,
+        "f",
+        1,
+        "late unattributed output",
+        None,
+        None,
+        extra={
+            "log_source": "execution",
+            "call_target": "worker:run_process_row",
+        },
+    )
+
+    with bind_execution_log_context(context_b):
+        handler.emit(unattributed)
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][4] is None
 
 
 async def test_handler_passes_timestamp_from_record() -> None:
@@ -198,7 +505,7 @@ async def test_emit_via_logger_triggers_broadcast() -> None:
                 break
 
         assert len(mgr.broadcast_calls) == 1
-        level, message, node_id, _ = mgr.broadcast_calls[0]
+        level, message, node_id, _, _ = mgr.broadcast_calls[0]
         assert level == "INFO"
         assert message == "hello"
         assert node_id == "test_node"
@@ -223,7 +530,7 @@ async def test_emit_framework_logger_triggers_broadcast_with_null_node() -> None
                 break
 
         assert len(mgr.broadcast_calls) == 1
-        level, message, node_id, _ = mgr.broadcast_calls[0]
+        level, message, node_id, _, _ = mgr.broadcast_calls[0]
         assert level == "WARNING"
         assert message == "framework warning"
         assert node_id is None
@@ -248,7 +555,7 @@ async def test_emit_wetlands_logger_triggers_broadcast_with_null_node() -> None:
                 break
 
         assert len(mgr.broadcast_calls) == 1
-        level, message, node_id, _ = mgr.broadcast_calls[0]
+        level, message, node_id, _, _ = mgr.broadcast_calls[0]
         assert level == "INFO"
         assert message == "env ready"
         assert node_id is None
@@ -292,6 +599,85 @@ async def test_wetlands_execute_context_scopes_following_output_to_node() -> Non
             break
 
     assert [call[2] for call in mgr.broadcast_calls] == ["atlas_1", "atlas_1"]
+
+
+async def test_wetlands_execute_path_preserves_nested_node_scope() -> None:
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    logger = logging.getLogger("wetlands.worker")
+    handler.emit(
+        logger.makeRecord(
+            logger.name,
+            logging.INFO,
+            "f",
+            1,
+            "Execute worker.run(({'run_dir': 'bif_data/workflows/w/data/outer/inner/run'},))",
+            None,
+            None,
+        )
+    )
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if mgr.broadcast_calls:
+            break
+
+    assert mgr.broadcast_calls[0][2] == "outer/inner"
+
+
+async def test_wetlands_node_fallback_does_not_cross_execution_identity() -> None:
+    from bioimageflow_server.ws.logging_bridge import WebSocketLogHandler
+
+    mgr = _StubManager()
+    handler = WebSocketLogHandler(mgr, loop=asyncio.get_running_loop())
+    logger = logging.getLogger("wetlands.worker")
+    context_a = {
+        "log_source": "execution",
+        "call_target": "worker:run_process_row",
+        "execution_id": "exec-a",
+        "workflow_id": "a",
+        "draft_revision": 1,
+    }
+    context_b = {
+        "log_source": "execution",
+        "call_target": "worker:run_process_row",
+        "execution_id": "exec-b",
+        "workflow_id": "b",
+        "draft_revision": 1,
+    }
+    handler.emit(
+        logger.makeRecord(
+            logger.name,
+            logging.INFO,
+            "f",
+            1,
+            "Execute worker.run(({'run_dir': 'bif_data/workflows/a/data/shared/run'},))",
+            None,
+            None,
+            extra=context_a,
+        )
+    )
+    handler.emit(
+        logger.makeRecord(
+            logger.name,
+            logging.INFO,
+            "f",
+            2,
+            "output without a node path",
+            None,
+            None,
+            extra=context_b,
+        )
+    )
+
+    for _ in range(20):
+        await asyncio.sleep(0.01)
+        if len(mgr.broadcast_calls) == 2:
+            break
+
+    assert [call[2] for call in mgr.broadcast_calls] == ["shared", None]
 
 
 async def test_wetlands_exit_clears_fallback_node_scope() -> None:
@@ -443,12 +829,12 @@ async def test_recursion_guard_prevents_infinite_loop() -> None:
             message: str,
             node_id: str | None,
             timestamp: float,
+            *,
+            context: Any | None = None,
         ) -> None:
             emit_count["n"] += 1
             # Simulate a downstream failure that logs via a node logger.
-            logging.getLogger("bioimageflow.node.recursion_trap").error(
-                "failure inside broadcast"
-            )
+            logging.getLogger("bioimageflow.node.recursion_trap").error("failure inside broadcast")
 
     mgr = _RecursiveStub()
     loop = asyncio.get_running_loop()
@@ -480,9 +866,7 @@ async def test_internal_ws_logger_is_not_captured() -> None:
     loop = asyncio.get_running_loop()
     handler = attach_ws_log_handler(mgr, loop)
     try:
-        logging.getLogger("bioimageflow_server.ws.handler").warning(
-            "an internal diagnostic"
-        )
+        logging.getLogger("bioimageflow_server.ws.handler").warning("an internal diagnostic")
         # Give the loop ample chance to schedule something if it would.
         for _ in range(10):
             await asyncio.sleep(0.01)

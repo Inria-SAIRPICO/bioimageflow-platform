@@ -191,6 +191,9 @@ describe('LoggerPanel', () => {
       message: '<script>alert(1)</script>\nline two',
       nodeId: 'n1',
       timestamp: 1.234,
+      executionId: 'exec-logger',
+      workflowId: 'logger-workflow',
+      draftRevision: 1,
     })
     await w.vm.$nextTick()
 
@@ -201,6 +204,25 @@ describe('LoggerPanel', () => {
     expect(row.find('[data-testid="log-node-name"]').text()).toBe('Blur 1')
     expect(row.find('[data-testid="log-message"]').text()).toContain('<script>alert(1)</script>')
     expect(row.find('script').exists()).toBe(false)
+  })
+
+  it('does not label another workflow log from the active graph', async () => {
+    const w = mountPanel()
+    const ui = useUIStore()
+    const store = useLoggerStore()
+    ui.setGraphNodes([{ id: 'shared', data: { name: 'Active workflow label' } }])
+    store.addEntry({
+      level: 'INFO',
+      message: 'retained workflow log',
+      nodeId: 'shared',
+      timestamp: 1,
+      executionId: 'exec-other',
+      workflowId: 'other-workflow',
+      draftRevision: 1,
+    })
+    await w.vm.$nextTick()
+
+    expect(w.find('[data-testid="log-node-name"]').text()).toBe('shared')
   })
 
   it('labels each log column and exposes resizable column boundaries', async () => {

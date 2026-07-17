@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow_draft import DraftWriter
 
@@ -61,6 +62,25 @@ class LogMessage(_MessageBase):
     message: str
     node_id: str | None = None
     timestamp: float
+    execution_id: str | None = None
+    workflow_id: str | None = None
+    draft_revision: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_execution_context(self) -> "LogMessage":
+        if (self.execution_id is None) != (self.workflow_id is None):
+            raise ValueError("execution_id and workflow_id must be supplied together")
+        if self.execution_id is None and self.draft_revision is not None:
+            raise ValueError("draft_revision requires execution context")
+        if self.execution_id is not None:
+            assert self.workflow_id is not None
+            context = ExecutionContext(
+                execution_id=self.execution_id,
+                workflow_id=self.workflow_id,
+                draft_revision=self.draft_revision,
+            )
+            self.workflow_id = context.workflow_id
+        return self
 
 
 class ExecutionCompleteMessage(_MessageBase):

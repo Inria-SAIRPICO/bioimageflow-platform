@@ -7,6 +7,10 @@ import NodePanel from '../NodePanel.vue'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore } from '@/stores/logger'
+import {
+  useSubWorkflowSessionsStore,
+  type SubWorkflowSession,
+} from '@/stores/subWorkflowSessions'
 import { useGraphSync, _resetGraphSyncForTest } from '@/composables/useGraphSync'
 import {
   _resetCanvasCommandsForTest,
@@ -1359,6 +1363,136 @@ describe('NodePanel', () => {
       canvasSessionRegistry.activate(canvasB)
       await w.vm.$nextTick()
       expect(w.find('[data-testid="node-runtime-error"]').text()).toContain('B failed')
+      w.unmount()
+    })
+
+    it('does not render another workflow log history for the same node id', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const canvasA = canvasIdFromPanelId('workflow:log-a')
+      const canvasB = canvasIdFromPanelId('workflow:log-b')
+      const ui = useUIStore()
+      for (const [canvasId, workflowId] of [[canvasA, 'log-a'], [canvasB, 'log-b']] as const) {
+        canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId })
+        ui.setCanvasWorkflow(canvasId, workflowId, workflowId)
+        ui.setCanvasSelectedNodes(canvasId, ['shared'])
+        ui.setCanvasGraphNodes(canvasId, [{ id: 'shared', data: makeNodeData() }])
+        useCanvasStatusProjection({
+          descriptor: { kind: 'root', canvasId, workflowId },
+          nodes: ref([{ id: 'shared', enabled: true }]),
+          validationResult: ref(null),
+          acceptedDraftRevision: ref(1),
+        })
+      }
+      const logger = useLoggerStore()
+      logger.addEntry({
+        level: 'INFO',
+        message: 'only workflow A',
+        nodeId: 'shared',
+        timestamp: 1,
+        workflowId: 'log-a',
+        executionId: 'exec-a',
+        draftRevision: 1,
+      })
+      logger.addEntry({
+        level: 'INFO',
+        message: 'only workflow B',
+        nodeId: 'shared',
+        timestamp: 2,
+        workflowId: 'log-b',
+        executionId: 'exec-b',
+        draftRevision: 1,
+      })
+      canvasSessionRegistry.activate(canvasA)
+      const w = mount(NodePanel, { global: { plugins: [pinia, PrimeVue] } })
+
+      expect(w.find('[data-testid="node-log-list"]').text()).toContain('only workflow A')
+      expect(w.find('[data-testid="node-log-list"]').text()).not.toContain('only workflow B')
+      canvasSessionRegistry.activate(canvasB)
+      await w.vm.$nextTick()
+      expect(w.find('[data-testid="node-log-list"]').text()).toContain('only workflow B')
+      expect(w.find('[data-testid="node-log-list"]').text()).not.toContain('only workflow A')
+      w.unmount()
+    })
+
+    it('renders root-scoped logs for a node selected in a nested canvas', async () => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      const rootCanvas = canvasIdFromPanelId('workflow:nested-log-root')
+      const nestedCanvas = canvasIdFromPanelId('sub-workflow:nested-log-session')
+      canvasSessionRegistry.register({
+        kind: 'root',
+        canvasId: rootCanvas,
+        workflowId: 'nested-log-root',
+      })
+      canvasSessionRegistry.register({
+        kind: 'nested',
+        canvasId: nestedCanvas,
+        sessionId: 'nested-log-session',
+        parentCanvasId: rootCanvas,
+      })
+      useSubWorkflowSessionsStore().sessions.push({
+        id: 'nested-log-session',
+        owner: {
+          kind: 'root',
+          canvas_id: rootCanvas,
+          workflow_id: 'nested-log-root',
+        },
+        parentCanvasId: rootCanvas,
+        parentWorkflowName: 'nested-log-root',
+        parentSourceWorkflowName: 'nested-log-root',
+        parentNodeId: 'outer',
+        parentNodeName: 'Outer',
+        draft: { nodes: [], edges: [] },
+        savedSnapshot: { nodes: [], edges: [] },
+        acceptedSnapshot: { nodes: [], edges: [] },
+        parentApplyConflict: null,
+        snapshotRevision: 0,
+        updatedAt: '2026-07-17T00:00:00Z',
+        validation: { valid: true, errors: [], warnings: [], node_statuses: {} },
+        published_inputs: [],
+        published_outputs: [],
+      } as SubWorkflowSession)
+      const ui = useUIStore()
+      ui.setCanvasWorkflow(rootCanvas, 'nested-log-root', 'Nested log root')
+      ui.setCanvasWorkflow(nestedCanvas, 'nested-log-root', 'Nested log root')
+      ui.setCanvasSelectedNodes(nestedCanvas, ['inner'])
+      ui.setCanvasGraphNodes(nestedCanvas, [{ id: 'inner', data: makeNodeData() }])
+      const logger = useLoggerStore()
+      logger.addEntry({
+        level: 'INFO',
+        message: 'previous execution nested log',
+        nodeId: 'outer/inner',
+        timestamp: 1,
+        workflowId: 'nested-log-root',
+        executionId: 'exec-previous',
+        draftRevision: 1,
+      })
+      logger.addEntry({
+        level: 'INFO',
+        message: 'current execution nested log',
+        nodeId: 'outer/inner',
+        timestamp: 2,
+        workflowId: 'nested-log-root',
+        executionId: 'exec-current',
+        draftRevision: 1,
+      })
+      useExecutionStore().applyStatusSnapshot({
+        type: 'status_snapshot',
+        execution_id: 'exec-current',
+        workflow_id: 'nested-log-root',
+        draft_revision: 1,
+        state: 'idle',
+        progress: null,
+        last_result: null,
+        node_statuses: {},
+      })
+      canvasSessionRegistry.activate(nestedCanvas)
+      const w = mount(NodePanel, { global: { plugins: [pinia, PrimeVue] } })
+
+      const list = w.find('[data-testid="node-log-list"]')
+      expect(list.text()).toContain('current execution nested log')
+      expect(list.text()).not.toContain('previous execution nested log')
       w.unmount()
     })
 

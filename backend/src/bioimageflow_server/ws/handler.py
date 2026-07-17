@@ -220,6 +220,8 @@ class ConnectionManager:
         message: str,
         node_id: str | None,
         timestamp: float,
+        *,
+        context: ExecutionContext | None = None,
     ) -> None:
         payload = {
             "type": "log",
@@ -228,6 +230,8 @@ class ConnectionManager:
             "node_id": node_id,
             "timestamp": timestamp,
         }
+        if context is not None:
+            payload.update(_context_payload(context))
         for state in list(self._states.values()):
             if not self._matches_subscription(state, level=level, node_id=node_id):
                 continue
@@ -435,9 +439,17 @@ class ConnectionManager:
         message: str,
         node_id: str | None,
         timestamp: float,
+        *,
+        context: ExecutionContext | None = None,
     ) -> None:
         self._schedule(
-            self.broadcast_log(level, message, node_id, timestamp),
+            self.broadcast_log(
+                level,
+                message,
+                node_id,
+                timestamp,
+                context=context,
+            ),
             "log",
         )
 
