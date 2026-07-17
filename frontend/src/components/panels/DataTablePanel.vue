@@ -2,6 +2,8 @@
 import { computed, effectScope, onBeforeUnmount, onMounted, ref, watch, type EffectScope } from 'vue'
 import type { DockviewIDisposable, DockviewPanelApi } from 'dockview-core'
 import Button from 'primevue/button'
+import InputNumber from 'primevue/inputnumber'
+import MergedDataTable from './MergedDataTable.vue'
 import NodeDataTable from './NodeDataTable.vue'
 import { useGraphSync } from '@/composables/useGraphSync'
 import {
@@ -11,40 +13,22 @@ import {
 } from '@/composables/useCanvasStatusProjection'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
-import { useDataTableStore } from '@/stores/dataTable'
+import { useDataTableStore, type DataTableSourceRequest } from '@/stores/dataTable'
 import type { NodeState, PublishedOutput } from '@/api/types'
 import {
-  canvasSessionRegistry,
-  type CanvasId,
-} from '@/sessions/canvasSessionRegistry'
+  maximumUpstreamDepth,
+  resolveDataTableNodes,
+  selectedAnchorsAreRelated,
+} from '@/utils/dataTableSources'
+import { canvasSessionRegistry, type CanvasId } from '@/sessions/canvasSessionRegistry'
 
-const props = defineProps<{
-  params?: {
-    api?: DockviewPanelApi
-  }
-}>()
-
+const props = defineProps<{ params?: { api?: DockviewPanelApi } }>()
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const activeStatusProjection = useCanvasStatusProjection()
 const dataTableStore = useDataTableStore()
 const { currentGraph } = useGraphSync()
-
 const showAll = ref(false)
-
-const graphNodes = computed(() => currentGraph.value.nodes)
-const activeWorkflowId = computed(() => uiStore.activeWorkflowId)
-
-const nodeById = computed<Record<string, NodeState>>(() => {
-  const out: Record<string, NodeState> = {}
-  for (const node of graphNodes.value) out[node.id] = node
-  return out
-})
-
-const displayedNodeIds = computed(() => {
-  if (uiStore.selectedNodeIds.length > 0) return uiStore.selectedNodeIds
-  return []
-})
 
 interface DataTableEntry {
   key: string
@@ -56,6 +40,7 @@ interface DataTableEntry {
   disabled: boolean
   columnAliases: Record<string, string>
   columnFilter?: string[]
+  role?: 'anchor' | 'context'
 }
 
 interface ResolvedPublishedOutput {
@@ -69,6 +54,27 @@ interface DataTableTarget {
   workflowName: string | null
 }
 
+const graphNodes = computed(() => currentGraph.value.nodes)
+const activeWorkflowId = computed(() => uiStore.activeWorkflowId)
+const displayedNodeIds = computed(() => [...uiStore.selectedNodeIds])
+const nodeById = computed<Record<string, NodeState>>(() => Object.fromEntries(
+  graphNodes.value.map((node) => [node.id, node]),
+))
+const maximumDepth = computed(() => maximumUpstreamDepth(currentGraph.value, displayedNodeIds.value))
+const upstreamDepth = computed({
+  get: () => Math.min(dataTableStore.upstreamDepth, maximumDepth.value),
+  set: (value: number | null) => dataTableStore.setUpstreamDepth(Math.min(value ?? 0, maximumDepth.value)),
+})
+const anchorsRelated = computed(() => selectedAnchorsAreRelated(
+  currentGraph.value,
+  displayedNodeIds.value,
+))
+const resolvedNodes = computed(() => resolveDataTableNodes(
+  currentGraph.value,
+  displayedNodeIds.value,
+  upstreamDepth.value,
+))
+
 function isSubWorkflowNode(node: NodeState | null | undefined): boolean {
   return node?.tool_name === '__sub_workflow__'
 }
@@ -77,14 +83,14 @@ function findNode(graph: { nodes?: NodeState[] } | null | undefined, nodeId: str
   return graph?.nodes?.find((node) => node.id === nodeId) ?? null
 }
 
-function resolvePublishedOutput(
-  parent: NodeState,
-  published: PublishedOutput,
-): ResolvedPublishedOutput {
+function nodeLabel(nodeId: string): string {
+  return nodeById.value[nodeId]?.name ?? nodeId
+}
+
+function resolvePublishedOutput(parent: NodeState, published: PublishedOutput): ResolvedPublishedOutput {
   const scopedIds = [parent.id]
   let graph = parent.sub_workflow
   let current = published
-
   while (true) {
     scopedIds.push(current.internal_node_id)
     const target = findNode(graph, current.internal_node_id)
@@ -118,13 +124,11 @@ function entriesForSubWorkflow(node: NodeState): DataTableEntry[] {
       columnAliases: {},
       columnFilter: [],
     }
-    entry.columnAliases[published.name] = published.name
-    entry.columnAliases[published.internal_output] = published.name
     entry.columnAliases[resolved.column] = published.name
     entry.columnFilter?.push(resolved.column)
     byDataNode.set(resolved.dataNodeId, entry)
   }
-  return Array.from(byDataNode.values())
+  return [...byDataNode.values()]
 }
 
 function entryForNode(nodeId: string): DataTableEntry[] {
@@ -143,36 +147,32 @@ function entryForNode(nodeId: string): DataTableEntry[] {
   }]
 }
 
-const displayedEntries = computed(() => displayedNodeIds.value.flatMap(entryForNode))
-
-const visibleEntries = computed(() => {
-  if (displayedEntries.value.length > 5 && !showAll.value) {
-    return displayedEntries.value.slice(0, 5)
-  }
-  return displayedEntries.value
-})
-
-const allTerminalDisabled = computed(() =>
-  displayedNodeIds.value.length > 0 &&
-  displayedNodeIds.value.every((id) => nodeById.value[id]?.enabled === false),
-)
-
-const allDisplayedWithoutData = computed(() =>
-  displayedNodeIds.value.length > 0 &&
-  (
-    displayedEntries.value.length === 0 ||
-    displayedEntries.value.every((entry) =>
-      !dataTableStore.getNodeData(entry.dataNodeId) &&
-      !dataTableStore.isLoading(entry.dataNodeId) &&
-      !dataTableStore.isPending(entry.dataNodeId) &&
-      !dataTableStore.getError(entry.dataNodeId),
-    )
-  ),
-)
-
-function nodeLabel(nodeId: string): string {
-  return nodeById.value[nodeId]?.name ?? nodeId
-}
+const sourceEntries = computed(() => resolvedNodes.value.flatMap(({ nodeId, role }) =>
+  entryForNode(nodeId).map((entry) => ({ ...entry, role })),
+))
+const projectionSources = computed<DataTableSourceRequest[]>(() => sourceEntries.value.map((entry) => ({
+  node_id: entry.dataNodeId,
+  role: entry.role ?? 'context',
+  label: entry.label,
+  tool_name: entry.toolName,
+  columns: entry.columnFilter ?? null,
+  column_aliases: entry.columnAliases,
+})))
+const projectionKey = computed(() => JSON.stringify({
+  workflow_id: activeWorkflowId.value,
+  sources: projectionSources.value,
+}))
+const localFallback = computed(() => displayedNodeIds.value.length > 1 && !anchorsRelated.value)
+const isStacked = computed(() => localFallback.value || dataTableStore.projection?.mode === 'stacked')
+const fallbackMessage = computed(() => localFallback.value
+  ? 'The selected nodes are independent in this workflow, so their DataFrames are shown separately.'
+  : dataTableStore.projection?.mode === 'stacked' ? dataTableStore.projection.message : null)
+const stackedEntries = computed(() => isStacked.value ? sourceEntries.value : [])
+const visibleStackedEntries = computed(() => showAll.value
+  ? stackedEntries.value
+  : stackedEntries.value.slice(0, 5))
+const allSelectedDisabled = computed(() => displayedNodeIds.value.length > 0
+  && displayedNodeIds.value.every((id) => nodeById.value[id]?.enabled === false))
 
 function currentDataTableTarget(): DataTableTarget {
   return {
@@ -181,27 +181,13 @@ function currentDataTableTarget(): DataTableTarget {
   }
 }
 
-function statusProjectionForTarget(
-  target: DataTableTarget,
-): CanvasStatusProjectionReader | null {
+function statusProjectionForTarget(target: DataTableTarget): CanvasStatusProjectionReader | null {
   return target.canvasId === null
     ? activeStatusProjection
     : getCanvasStatusProjection(target.canvasId)
 }
 
-function refreshEntry(entry: DataTableEntry, target: DataTableTarget): void {
-  const options = {
-    toolName: entry.toolName,
-    workflowName: target.workflowName,
-  }
-  if (target.canvasId === null) {
-    void dataTableStore.fetchNodeData(entry.dataNodeId, options)
-  } else {
-    void dataTableStore.fetchCanvasNodeData(target.canvasId, entry.dataNodeId, options)
-  }
-}
-
-function fetchIfMissing(entry: DataTableEntry): void {
+function fetchEntry(entry: DataTableEntry): void {
   if (!dataTableStore.getNodeData(entry.dataNodeId) && !dataTableStore.isLoading(entry.dataNodeId)) {
     void dataTableStore.fetchNodeData(entry.dataNodeId, {
       toolName: entry.toolName,
@@ -210,78 +196,55 @@ function fetchIfMissing(entry: DataTableEntry): void {
   }
 }
 
-function clearEntry(entry: DataTableEntry, target: DataTableTarget): void {
-  if (target.canvasId === null) {
-    dataTableStore.clearCache(entry.dataNodeId)
-  } else {
-    dataTableStore.clearCanvasCache(target.canvasId, entry.dataNodeId)
+function refreshProjection(): void {
+  if (projectionSources.value.length === 0 || localFallback.value) {
+    dataTableStore.clearProjection()
+    return
   }
+  void dataTableStore.fetchProjection({
+    workflow_id: activeWorkflowId.value,
+    sources: projectionSources.value,
+  })
 }
 
-function refreshExecutedEntries(): void {
-  const target = currentDataTableTarget()
-  const statusProjection = statusProjectionForTarget(target)
-  if (statusProjection === null) return
-  const refreshed = new Set<string>()
-  for (const entry of displayedEntries.value) {
-    if (refreshed.has(entry.dataNodeId)) continue
-    const status = statusProjection.statusForNode(entry.dataNodeId)
-    if (status?.source === 'execution' && status.status === 'executed') {
-      refreshed.add(entry.dataNodeId)
-      refreshEntry(entry, target)
-    }
-  }
-}
+watch(maximumDepth, (maximum) => {
+  if (dataTableStore.upstreamDepth > maximum) dataTableStore.setUpstreamDepth(maximum)
+})
+watch(projectionKey, refreshProjection, { immediate: true })
+watch(stackedEntries, (entries) => entries.forEach(fetchEntry), { immediate: true })
+watch(() => executionStore.lastResult, (result) => {
+  if (result?.success) refreshProjection()
+})
 
 let scope: EffectScope | null = null
 let activeChangeDisposable: DockviewIDisposable | null = null
-
-watch(
-  displayedEntries,
-  (entries) => {
-    const target = currentDataTableTarget()
-    const statusProjection = statusProjectionForTarget(target)
-    scope?.stop()
-    scope = effectScope()
-    scope.run(() => {
-      for (const entry of entries) {
-        const initialStatus = statusProjection?.statusForNode(entry.dataNodeId) ?? null
-        if (initialStatus?.source === 'execution' && initialStatus.status === 'executed') {
-          refreshEntry(entry, target)
-        } else {
-          fetchIfMissing(entry)
-        }
-        if (statusProjection === null) continue
-        watch(
-          () => statusProjection.statusForNode(entry.dataNodeId)?.status,
-          (next, prev) => {
-            if (prev !== 'executed' && next === 'executed') {
-              refreshEntry(entry, target)
-            } else if (next === 'out_of_date' || next === 'unexecuted') {
-              clearEntry(entry, target)
-            }
-          },
-        )
-      }
-    })
-  },
-  { immediate: true },
-)
-
-watch(
-  () => executionStore.lastResult,
-  (result) => {
-    if (!result?.success) return
-    refreshExecutedEntries()
-  },
-)
+watch(sourceEntries, (entries) => {
+  const target = currentDataTableTarget()
+  const statusProjection = statusProjectionForTarget(target)
+  scope?.stop()
+  scope = effectScope()
+  scope.run(() => {
+    for (const entry of entries) {
+      if (statusProjection === null) continue
+      watch(
+        () => statusProjection.statusForNode(entry.dataNodeId)?.status,
+        (next, previous) => {
+          if (previous !== 'executed' && next === 'executed') refreshProjection()
+          if (next === 'out_of_date' || next === 'unexecuted') {
+            dataTableStore.clearCache(entry.dataNodeId)
+            dataTableStore.clearProjection()
+          }
+        },
+      )
+    }
+  })
+}, { immediate: true })
 
 onMounted(() => {
   activeChangeDisposable = props.params?.api?.onDidActiveChange(({ isActive }) => {
-    if (isActive) refreshExecutedEntries()
+    if (isActive) refreshProjection()
   }) ?? null
 })
-
 onBeforeUnmount(() => {
   scope?.stop()
   activeChangeDisposable?.dispose()
@@ -289,72 +252,77 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    class="data-table-panel"
-    data-testid="data-table-panel"
-  >
-    <div
-      v-if="graphNodes.length === 0"
-      class="data-table-panel__placeholder"
-    >
+  <div class="data-table-panel" data-testid="data-table-panel">
+    <div v-if="graphNodes.length === 0" class="data-table-panel__placeholder">
       No nodes in the workflow.
     </div>
-    <div
-      v-else-if="displayedNodeIds.length === 0"
-      class="data-table-panel__placeholder"
-    >
+    <div v-else-if="displayedNodeIds.length === 0" class="data-table-panel__placeholder">
       No node selected.
     </div>
-    <div
-      v-else-if="allTerminalDisabled"
-      class="data-table-panel__placeholder"
-    >
-      All terminal nodes are disabled.
+    <div v-else-if="allSelectedDisabled" class="data-table-panel__placeholder">
+      All selected nodes are disabled.
     </div>
-    <div
-      v-else-if="allDisplayedWithoutData"
-      class="data-table-panel__placeholder"
-    >
-      No output data available. Execute the workflow to view results.
-    </div>
-
     <template v-else>
-      <div
-        v-if="displayedEntries.length > 5"
-        class="data-table-panel__limit"
-      >
-        <Button
+      <div class="data-table-panel__controls">
+        <label for="data-table-upstream-depth">Upstream levels</label>
+        <InputNumber
+          input-id="data-table-upstream-depth"
+          v-model="upstreamDepth"
+          :min="0"
+          :max="maximumDepth"
+          :step="1"
+          show-buttons
           size="small"
-          text
-          :label="showAll ? 'Show first 5' : `Show all (${displayedEntries.length})`"
-          @click="showAll = !showAll"
+          data-testid="upstream-depth"
         />
       </div>
-
-      <section
-        v-for="entry in visibleEntries"
-        :key="entry.key"
-        class="data-table-panel__node"
+      <div v-if="dataTableStore.projectionError" class="data-table-panel__error">
+        {{ dataTableStore.projectionError }}
+      </div>
+      <div
+        v-else-if="dataTableStore.projectionLoading && !dataTableStore.projection"
+        class="data-table-panel__placeholder"
       >
-        <header class="data-table-panel__header">
-          <h3>{{ entry.label }}</h3>
-          <span class="data-table-panel__id">{{ entry.subtitle }}</span>
-        </header>
-        <div
-          v-if="entry.disabled"
-          class="data-table-panel__disabled"
-        >
-          This node is disabled.
+        Loading consolidated data...
+      </div>
+      <MergedDataTable
+        v-else-if="dataTableStore.projection?.mode === 'merged'"
+        :workflow-id="activeWorkflowId"
+      />
+      <template v-else-if="isStacked">
+        <div class="data-table-panel__info" data-testid="data-table-fallback">
+          {{ fallbackMessage }}
         </div>
-        <NodeDataTable
-          :node-id="entry.dataNodeId"
-          :tool-name="entry.toolName"
-          :workflow-name="activeWorkflowId"
-          :disabled="entry.disabled"
-          :column-aliases="entry.columnAliases"
-          :column-filter="entry.columnFilter"
-        />
-      </section>
+        <div v-if="stackedEntries.length > 5" class="data-table-panel__limit">
+          <Button
+            size="small"
+            text
+            :label="showAll ? 'Show first 5' : `Show all (${stackedEntries.length})`"
+            @click="showAll = !showAll"
+          />
+        </div>
+        <section
+          v-for="entry in visibleStackedEntries"
+          :key="entry.key"
+          class="data-table-panel__node"
+        >
+          <header class="data-table-panel__header">
+            <h3>{{ entry.label }}</h3>
+            <span class="data-table-panel__id">{{ entry.subtitle }}</span>
+          </header>
+          <div v-if="entry.disabled" class="data-table-panel__disabled">
+            This node is disabled.
+          </div>
+          <NodeDataTable
+            :node-id="entry.dataNodeId"
+            :tool-name="entry.toolName"
+            :workflow-name="activeWorkflowId"
+            :disabled="entry.disabled"
+            :column-aliases="entry.columnAliases"
+            :column-filter="entry.columnFilter"
+          />
+        </section>
+      </template>
     </template>
   </div>
 </template>
@@ -369,6 +337,35 @@ onBeforeUnmount(() => {
 .data-table-panel__placeholder {
   color: var(--p-text-muted-color);
   padding: 1.5rem;
+}
+
+.data-table-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.data-table-panel__controls :deep(.p-inputnumber-input) {
+  width: 5rem;
+}
+
+.data-table-panel__info,
+.data-table-panel__error {
+  border: 1px solid var(--bif-border-strong);
+  border-radius: 0.25rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.data-table-panel__info {
+  background: var(--p-blue-50);
+  color: var(--p-blue-800);
+}
+
+.data-table-panel__error {
+  background: var(--p-red-50);
+  color: var(--p-red-800);
 }
 
 .data-table-panel__limit {

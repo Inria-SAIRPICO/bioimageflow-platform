@@ -14,6 +14,53 @@ export interface DataTablePageState {
   sortOrder: 'asc' | 'desc'
 }
 
+export interface DataTableSourceRequest {
+  node_id: string
+  role: 'anchor' | 'context'
+  label: string
+  tool_name?: string | null
+  columns?: string[] | null
+  column_aliases: Record<string, string>
+}
+
+export interface ConsolidatedDataTableColumn {
+  id: string
+  label: string
+  type: string
+  source_node_id: string
+  source_column: string
+}
+
+export interface ConsolidatedDataTableRow {
+  index: string
+  values: Record<string, unknown>
+  source_rows: Record<string, number>
+}
+
+export interface MergedDataTableResponse {
+  mode: 'merged'
+  sources: DataTableSourceRequest[]
+  columns: ConsolidatedDataTableColumn[]
+  rows: ConsolidatedDataTableRow[]
+  total_rows: number
+  page: number
+  page_size: number
+}
+
+export interface StackedDataTableResponse {
+  mode: 'stacked'
+  sources: DataTableSourceRequest[]
+  reason: string
+  message: string
+}
+
+export type DataTableProjectionResponse = MergedDataTableResponse | StackedDataTableResponse
+
+export interface DataTableProjectionRequest {
+  workflow_id: string | null
+  sources: DataTableSourceRequest[]
+}
+
 interface FetchOpts {
   toolName?: string | null
   workflowName?: string | null
@@ -30,6 +77,12 @@ interface DataTableState {
   loading: Record<string, boolean>
   errors: Record<string, string | null>
   pending: Record<string, boolean>
+  upstreamDepth: number
+  projection: DataTableProjectionResponse | null
+  projectionRequest: DataTableProjectionRequest | null
+  projectionPage: DataTablePageState
+  projectionLoading: boolean
+  projectionError: string | null
 }
 
 interface DataTableContext {
@@ -37,6 +90,9 @@ interface DataTableContext {
   readonly inflightControllers: Map<string, AbortController>
   readonly requestIds: Map<string, number>
   readonly retryTimers: Map<string, ReturnType<typeof setTimeout>>
+  projectionController: AbortController | null
+  projectionRetryTimer: ReturnType<typeof setTimeout> | null
+  projectionRequestId: number
   released: boolean
 }
 
@@ -62,10 +118,19 @@ function createContext(): DataTableContext {
       loading: {},
       errors: {},
       pending: {},
+      upstreamDepth: 0,
+      projection: null,
+      projectionRequest: null,
+      projectionPage: defaultPageState(),
+      projectionLoading: false,
+      projectionError: null,
     }) as DataTableState,
     inflightControllers: new Map(),
     requestIds: new Map(),
     retryTimers: new Map(),
+    projectionController: null,
+    projectionRetryTimer: null,
+    projectionRequestId: 0,
     released: false,
   }
 }
@@ -136,6 +201,148 @@ export const useDataTableStore = defineStore('dataTable', () => {
   const loading = computed(() => activeContext(false)?.state.loading ?? EMPTY_FLAGS)
   const errors = computed(() => activeContext(false)?.state.errors ?? EMPTY_ERRORS)
   const pending = computed(() => activeContext(false)?.state.pending ?? EMPTY_FLAGS)
+  const upstreamDepth = computed(() => activeContext(false)?.state.upstreamDepth ?? 0)
+  const projection = computed(() => activeContext(false)?.state.projection ?? null)
+  const projectionLoading = computed(() => activeContext(false)?.state.projectionLoading ?? false)
+  const projectionError = computed(() => activeContext(false)?.state.projectionError ?? null)
+  const projectionPage = computed(() => activeContext(false)?.state.projectionPage ?? defaultPageState())
+
+  function setUpstreamDepth(value: number): void {
+    const context = activeContext(true)
+    if (context) context.state.upstreamDepth = Math.max(0, Math.floor(value))
+  }
+
+  function invalidateProjection(context: DataTableContext): void {
+    context.projectionRequestId += 1
+    context.projectionController?.abort()
+    context.projectionController = null
+    if (context.projectionRetryTimer !== null) {
+      clearTimeout(context.projectionRetryTimer)
+      context.projectionRetryTimer = null
+    }
+    context.state.projectionLoading = false
+  }
+
+  async function fetchProjectionInContext(
+    context: DataTableContext,
+    request: DataTableProjectionRequest,
+    pageState: DataTablePageState = context.state.projectionPage,
+    retryAttempt = 0,
+  ): Promise<void> {
+    if (context.released) return
+    invalidateProjection(context)
+    const controller = new AbortController()
+    context.projectionController = controller
+    const requestId = context.projectionRequestId
+    context.state.projectionRequest = request
+    context.state.projectionPage = { ...pageState }
+    context.state.projectionLoading = true
+    context.state.projectionError = null
+    let retryScheduled = false
+    try {
+      const { data } = await api.post<DataTableProjectionResponse>(
+        '/api/v1/data-table/query',
+        {
+          ...request,
+          page: pageState.page,
+          page_size: pageState.pageSize,
+          sort_by: pageState.sortBy,
+          sort_order: pageState.sortOrder,
+        },
+        { signal: controller.signal },
+      )
+      if (!context.released && context.projectionRequestId === requestId) {
+        context.state.projection = data
+      }
+    } catch (exc: unknown) {
+      if (!isCanceled(exc) && !context.released && context.projectionRequestId === requestId) {
+        if (errorStatus(exc) === 409 && retryAttempt < NOT_READY_RETRY_DELAYS_MS.length) {
+          retryScheduled = true
+          const timer = setTimeout(() => {
+            if (context.projectionRetryTimer === timer) context.projectionRetryTimer = null
+            if (!context.released && context.projectionRequestId === requestId) {
+              void fetchProjectionInContext(context, request, pageState, retryAttempt + 1)
+            }
+          }, NOT_READY_RETRY_DELAYS_MS[retryAttempt])
+          context.projectionRetryTimer = timer
+        } else {
+          context.state.projection = null
+          context.state.projectionError = errorMessage(exc)
+        }
+      }
+    } finally {
+      if (!context.released && context.projectionRequestId === requestId) {
+        context.state.projectionLoading = retryScheduled
+        context.projectionController = null
+      }
+    }
+  }
+
+  function fetchProjection(request: DataTableProjectionRequest): Promise<void> {
+    const context = activeContext(true)
+    if (!context) return Promise.resolve()
+    return fetchProjectionInContext(context, request, defaultPageState())
+  }
+
+  function clearProjection(): void {
+    const context = activeContext(false)
+    if (!context) return
+    invalidateProjection(context)
+    context.state.projection = null
+    context.state.projectionRequest = null
+    context.state.projectionError = null
+    context.state.projectionPage = defaultPageState()
+  }
+
+  function setProjectionPage(page: number, pageSize?: number): Promise<void> {
+    const context = activeContext(true)
+    if (!context?.state.projectionRequest) return Promise.resolve()
+    return fetchProjectionInContext(context, context.state.projectionRequest, {
+      ...context.state.projectionPage,
+      page: pageSize === undefined ? page : 0,
+      pageSize: pageSize ?? context.state.projectionPage.pageSize,
+    })
+  }
+
+  function setProjectionSort(sortBy: string, sortOrder: 'asc' | 'desc'): Promise<void> {
+    const context = activeContext(true)
+    if (!context?.state.projectionRequest) return Promise.resolve()
+    return fetchProjectionInContext(context, context.state.projectionRequest, {
+      ...context.state.projectionPage,
+      page: 0,
+      sortBy,
+      sortOrder,
+    })
+  }
+
+  async function downloadProjectionCsv(): Promise<void> {
+    const context = activeContext(false)
+    const request = context?.state.projectionRequest
+    if (!context || !request) return
+    context.state.projectionError = null
+    try {
+      const { data } = await api.post(
+        '/api/v1/data-table/csv',
+        {
+          ...request,
+          sort_by: context.state.projectionPage.sortBy,
+          sort_order: context.state.projectionPage.sortOrder,
+        },
+        { responseType: 'blob' },
+      )
+      const href = URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href = href
+      link.download = 'data-table.csv'
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(href)
+    } catch (exc: unknown) {
+      context.state.projectionError = errorMessage(exc)
+    }
+  }
 
   function stateFor(context: DataTableContext, nodeId: string): DataTablePageState {
     if (!context.state.paginationState[nodeId]) {
@@ -450,6 +657,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
     const context = existingCanvasContext(canvasId)
     if (!context) return
     context.released = true
+    invalidateProjection(context)
     clearContextCache(context)
     context.requestIds.clear()
     canvasContexts.delete(canvasId)
@@ -461,6 +669,17 @@ export const useDataTableStore = defineStore('dataTable', () => {
     loading,
     errors,
     pending,
+    upstreamDepth,
+    projection,
+    projectionLoading,
+    projectionError,
+    projectionPage,
+    setUpstreamDepth,
+    fetchProjection,
+    clearProjection,
+    setProjectionPage,
+    setProjectionSort,
+    downloadProjectionCsv,
     registerCanvas,
     fetchNodeData,
     fetchCanvasNodeData,

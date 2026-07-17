@@ -10,10 +10,11 @@ import {
 } from '@/sessions/canvasSessionRegistry'
 
 vi.mock('@/api/client', () => ({
-  api: { get: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn() },
 }))
 
 const mockedGet = vi.mocked(api.get)
+const mockedPost = vi.mocked(api.post)
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -51,10 +52,12 @@ describe('dataTable store canvas ownership', () => {
     canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
     mockedGet.mockReset()
+    mockedPost.mockReset()
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('keeps response, page, loading, error, and pending state independent for identical node ids', async () => {
@@ -233,5 +236,162 @@ describe('dataTable store canvas ownership', () => {
     expect(store.getCanvasNodeData(canvasA, 'shared')?.rows[0]?.path).toBe(
       '/remounted-a.csv',
     )
+  })
+
+  it('keeps upstream depth as per-canvas session state', () => {
+    const [canvasA, canvasB] = registerCanvases()
+    const store = useDataTableStore()
+    canvasSessionRegistry.activate(canvasA)
+    store.setUpstreamDepth(3)
+    expect(store.upstreamDepth).toBe(3)
+
+    canvasSessionRegistry.activate(canvasB)
+    expect(store.upstreamDepth).toBe(0)
+    store.setUpstreamDepth(1)
+
+    canvasSessionRegistry.activate(canvasA)
+    expect(store.upstreamDepth).toBe(3)
+  })
+
+  it('cancels stale consolidated queries and ignores their responses', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    const first = deferred<{ data: any }>()
+    const second = deferred<{ data: any }>()
+    const signals: AbortSignal[] = []
+    mockedPost.mockImplementation((_url, _body, config) => {
+      signals.push(config!.signal as AbortSignal)
+      return (signals.length === 1 ? first.promise : second.promise) as any
+    })
+    const request = {
+      workflow_id: 'a',
+      sources: [{ node_id: 'node', role: 'anchor' as const, label: 'Node', column_aliases: {} }],
+    }
+
+    const firstFetch = store.fetchProjection(request)
+    const secondFetch = store.fetchProjection(request)
+    expect(signals[0].aborted).toBe(true)
+    second.resolve({ data: {
+      mode: 'stacked',
+      sources: request.sources,
+      reason: 'new',
+      message: 'new response',
+    } })
+    await secondFetch
+    first.resolve({ data: {
+      mode: 'stacked',
+      sources: request.sources,
+      reason: 'old',
+      message: 'stale response',
+    } })
+    await firstFetch
+
+    expect(store.projection?.mode).toBe('stacked')
+    expect(store.projection?.mode === 'stacked' ? store.projection.message : '').toBe('new response')
+  })
+
+  it('requeries the full projection when sorting or paging changes', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    mockedPost.mockResolvedValue({ data: {
+      mode: 'merged',
+      sources: [],
+      columns: [],
+      rows: [],
+      total_rows: 0,
+      page: 0,
+      page_size: 50,
+    } } as any)
+    await store.fetchProjection({
+      workflow_id: 'a',
+      sources: [{ node_id: 'node', role: 'anchor', label: 'Node', column_aliases: {} }],
+    })
+    await store.setProjectionSort('s0:value', 'desc')
+    await store.setProjectionPage(2)
+
+    expect(mockedPost.mock.calls[1][1]).toMatchObject({
+      page: 0,
+      sort_by: 's0:value',
+      sort_order: 'desc',
+    })
+    expect(mockedPost.mock.calls[2][1]).toMatchObject({
+      page: 2,
+      sort_by: 's0:value',
+      sort_order: 'desc',
+    })
+  })
+
+  it('retries a consolidated query while immutable result data is being published', async () => {
+    vi.useFakeTimers()
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    mockedPost
+      .mockRejectedValueOnce({ response: { status: 409, data: { detail: 'Preparing data' } } })
+      .mockResolvedValueOnce({ data: {
+        mode: 'merged',
+        sources: [],
+        columns: [],
+        rows: [],
+        total_rows: 0,
+        page: 0,
+        page_size: 50,
+      } } as any)
+
+    await store.fetchProjection({
+      workflow_id: 'a',
+      sources: [{ node_id: 'node', role: 'anchor', label: 'Node', column_aliases: {} }],
+    })
+    expect(store.projectionLoading).toBe(true)
+    expect(store.projectionError).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(mockedPost).toHaveBeenCalledTimes(2)
+    expect(store.projection?.mode).toBe('merged')
+    expect(store.projectionLoading).toBe(false)
+  })
+
+  it('downloads merged CSV with the current source and sort contract', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    const merged = {
+      mode: 'merged',
+      sources: [],
+      columns: [],
+      rows: [],
+      total_rows: 0,
+      page: 0,
+      page_size: 50,
+    }
+    mockedPost
+      .mockResolvedValueOnce({ data: merged } as any)
+      .mockResolvedValueOnce({ data: merged } as any)
+      .mockResolvedValueOnce({ data: new Blob(['csv']) } as any)
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:csv'),
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    await store.fetchProjection({
+      workflow_id: 'a',
+      sources: [{ node_id: 'node', role: 'anchor', label: 'Node', column_aliases: {} }],
+    })
+    await store.setProjectionSort('s0:value', 'desc')
+    await store.downloadProjectionCsv()
+
+    expect(mockedPost.mock.calls[2][0]).toBe('/api/v1/data-table/csv')
+    expect(mockedPost.mock.calls[2][1]).toMatchObject({
+      workflow_id: 'a',
+      sort_by: 's0:value',
+      sort_order: 'desc',
+    })
+    expect(mockedPost.mock.calls[2][1]).not.toHaveProperty('page')
   })
 })

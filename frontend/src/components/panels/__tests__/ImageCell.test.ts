@@ -198,18 +198,18 @@ describe('ImageCell', () => {
     )
   })
 
-  it('fails silently when a path is not known to be an image', async () => {
+  it('does not request a thumbnail when image behavior is disabled', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('unsupported file'))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell({
       value: '/tmp/measurements.csv',
-      hideThumbnailFallback: true,
+      thumbnailEnabled: false,
       showImageActions: false,
     })
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="image-thumbnail"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="path-display"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="open-napari-0-mask"]').exists()).toBe(false)
@@ -218,11 +218,15 @@ describe('ImageCell', () => {
     expect(wrapper.find('[data-testid="path-copy"]').exists()).toBe(true)
   })
 
-  it('renders a successful thumbnail when fallback UI is hidden', async () => {
+  it('starts thumbnail loading when image behavior becomes enabled', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
     vi.stubGlobal('fetch', fetchMock)
 
-    const wrapper = mountCell({ hideThumbnailFallback: true })
+    const wrapper = mountCell({ thumbnailEnabled: false })
+    await flushPromises()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ thumbnailEnabled: true })
     await flushPromises()
 
     expect(wrapper.find('img.image-cell__thumb').exists()).toBe(true)

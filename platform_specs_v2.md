@@ -798,7 +798,152 @@ In browser mode server-folder browsing is unsupported, so folder-only fields kee
 
 ---
 
-## 6. Updated API Endpoint Summary
+## 6. Consolidated Data Table Views
+
+### 6.1 Source Resolution and Upstream Depth
+
+The Data Table Panel shows one consolidated table when the selected DataFrame outputs have an obvious lossless alignment.
+Every explicitly selected output is an **anchor**, and every output added only by upstream traversal is **context**.
+Rows belonging to anchors must never be silently discarded.
+Context rows that are unrelated to the anchor rows may be omitted.
+
+The panel provides an integer **Upstream levels** spinbox with minimum `0`, default `0`, and a maximum equal to the greatest reachable upstream distance from the current selection.
+The frontend follows incoming column-reference and positional edges through the active workflow graph, includes all branches up to the requested depth, deduplicates outputs, and orders them deterministically from upstream to downstream.
+The value is local UI state for each open workflow editor, is discarded when that editor context is released, and is not persisted in the workflow or sent as a canvas/session identifier.
+
+For `A > B > C > D`, selecting only `D` with depth `2` sends `B` and `C` as context and `D` as the anchor.
+Selecting `A`, `B`, and `C` makes all three outputs anchors even when the depth is `0`.
+If explicitly selected anchors belong to independent connected components, the frontend skips consolidation and immediately displays the stacked fallback.
+
+Published sub-workflow outputs are resolved by the frontend to scoped internal node IDs.
+Only published columns are requested, and their published names are supplied as presentation aliases.
+
+### 6.2 Obvious Merge Rules
+
+The frontend owns graph traversal and sends an explicit ordered source list.
+The backend owns record loading, index alignment, column construction, sorting, and pagination.
+The query API therefore needs a workflow identifier but no canvas identifier, editor session, snapshot session, graph, or revision.
+
+Before loading data, the backend resolves the latest immutable result record for every source.
+It then loads those exact records so one response cannot mix record generations when `latest` pointers change during the request.
+
+A consolidation is obvious when every source has unique stringified indices and each output row can be aligned using either an exact index or one unambiguous nearest ancestor in the `::` lineage.
+The backend uses the BioImageFlow core lineage parser so execution and display interpret exploded indices identically.
+Parent values are repeated for descendant rows, and the finest selected anchor supplies the candidate output index.
+
+Every row from every anchor must be represented by that candidate index, and every candidate row must resolve against every anchor.
+This makes exact-index transforms and parent-to-child explosions mergeable while forcing filtered, aggregated, reindexed, duplicated, or divergent selected results to fall back when their alignment would hide selected data.
+Extra rows from context sources do not have to appear.
+
+When all requested sources are empty, the backend returns a merged empty table with its columns.
+Mixed empty and non-empty anchors fall back, and an empty anchor with non-empty context also falls back.
+
+Columns remain in source order and original DataFrame column order.
+If two columns have the same aliased display name, both are retained and qualified with their source label.
+The API uses opaque unique column IDs for values and sorting rather than using display labels as identifiers.
+No columns are coalesced implicitly.
+
+The complete merged projection is constructed and sorted with a stable sort before pagination.
+Every returned row records the original absolute row position for every source, allowing image thumbnails, Napari, Avivator, reveal, and copy actions to address the original node result.
+
+The platform does not offer outer, inner, left, Cartesian, aggregation, or other user-selectable join strategies in this panel.
+Users who need a semantic join must add an explicit DataFrame tool to the workflow.
+
+### 6.3 Automatic Stacked Fallback
+
+Expected merge incompatibilities return HTTP 200 with `mode: "stacked"`, a stable reason code, and a user-facing explanation.
+Reasons include non-unique indices, anchor rows that would be lost, incompatible lineage, and incompatible empty results.
+The frontend displays an information banner and then renders the existing per-source DataFrames vertically, including their individual pagination and CSV controls.
+The existing five-table display limit remains active in stacked mode.
+
+Invalid source IDs, missing outputs, unknown columns, invalid sorting fields, and storage failures remain request errors rather than merge fallbacks.
+HTTP 409 while immutable result data is still being published uses the existing bounded retry behavior and keeps any previous projection visible until a current response arrives.
+An obsolete query response must not replace a newer selection, depth, sort, page, workflow, or editor-context request.
+
+### 6.4 Query and CSV Contracts
+
+`POST /api/v1/data-table/query` accepts a frontend-resolved source list and view state:
+
+```json
+{
+  "workflow_id": "segmentation/nuclei",
+  "sources": [
+    {
+      "node_id": "files_1",
+      "role": "context",
+      "label": "Input files",
+      "tool_name": "Files",
+      "columns": null,
+      "column_aliases": {}
+    },
+    {
+      "node_id": "measure_1",
+      "role": "anchor",
+      "label": "Measure",
+      "tool_name": "MeasureObjects",
+      "columns": ["area"],
+      "column_aliases": {"area": "published_area"}
+    }
+  ],
+  "page": 0,
+  "page_size": 50,
+  "sort_by": null,
+  "sort_order": "asc"
+}
+```
+
+At least one source must be an anchor, and `node_id` values must be unique within a request.
+`columns: null` selects every column, while a list selects and orders only those columns.
+
+A merged response has this shape:
+
+```json
+{
+  "mode": "merged",
+  "sources": [],
+  "columns": [
+    {
+      "id": "s0:path",
+      "label": "path",
+      "type": "Path",
+      "source_node_id": "files_1",
+      "source_column": "path"
+    }
+  ],
+  "rows": [
+    {
+      "index": "image_001::object_2",
+      "values": {"s0:path": "/data/image_001.tif"},
+      "source_rows": {"files_1": 0, "measure_1": 12}
+    }
+  ],
+  "total_rows": 1,
+  "page": 0,
+  "page_size": 50
+}
+```
+
+A stacked response has `mode: "stacked"`, echoes the resolved sources, and provides `reason` and `message` fields.
+
+`POST /api/v1/data-table/csv` accepts the same workflow, sources, and sorting fields without pagination.
+It uses the same consolidation service and streams the complete sorted projection as CSV.
+If consolidation is not possible, it returns HTTP 409 and the frontend retains the individual CSV actions shown by stacked mode.
+
+### 6.5 Image-Valued Plain Paths
+
+Typed `ImageFile`, `ImageShared`, and `MaskPath` columns retain their existing image behavior independently of filename suffix.
+For an ordinary `Path` column, image behavior is determined per cell and never inferred for an ordinary `str` column.
+
+The recognized case-insensitive suffixes are `.tif`, `.tiff`, `.ome.tif`, `.ome.tiff`, `.png`, `.jpg`, `.jpeg`, `.czi`, `.lsm`, and `.nd2`.
+A matching plain `Path` cell displays the thumbnail with its pending or unavailable state and shows the existing Napari, Avivator, reveal, and copy actions.
+A non-matching `Path` cell shows the path, reveal, and copy actions without issuing a thumbnail request.
+
+This feature uses the filename heuristic only.
+It does not add a dynamic `Files` output type, persist a resolved result schema, or infer an image type from DataFrame contents.
+
+---
+
+## 7. Updated API Endpoint Summary
 
 New and modified endpoints introduced in v2:
 
@@ -816,6 +961,8 @@ New and modified endpoints introduced in v2:
 | 10 | `GET` | `/api/v1/nested-workflow-snapshots/{session_id}` | Read an accepted private nested snapshot | Recovery and diagnostics |
 | 11 | `PUT` | `/api/v1/nested-workflow-snapshots/{session_id}` | Replace the complete nested graph with revision CAS and validation | Background nested editing persistence |
 | 12 | `DELETE` | `/api/v1/nested-workflow-snapshots/{session_id}` | Delete a private snapshot with revision CAS | Confirmed close or discard |
+| 13 | `POST` | `/api/v1/data-table/query` | Return a paginated merged Data Table projection or an automatic stacked fallback | Selection, upstream depth, sorting, or pagination changes |
+| 14 | `POST` | `/api/v1/data-table/csv` | Download the complete sorted merged projection as CSV | CSV action in merged mode |
 
 **Modified endpoints (behavioral changes only, same URL/method):**
 
@@ -828,7 +975,7 @@ New and modified endpoints introduced in v2:
 
 ---
 
-## 7. Updated Keyboard Shortcuts
+## 8. Updated Keyboard Shortcuts
 
 No new keyboard shortcuts are introduced in v2. All existing shortcuts from v1 apply unchanged:
 
