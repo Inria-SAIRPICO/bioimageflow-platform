@@ -5,21 +5,25 @@ import type { NestedWorkflowSnapshotResponse } from '@/api/nestedWorkflowSnapsho
 import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
 
 const snapshotApiMocks = vi.hoisted(() => ({
+  get: vi.fn(),
   put: vi.fn(),
   delete: vi.fn(),
 }))
 
 vi.mock('@/api/nestedWorkflowSnapshots', () => ({
+  getNestedWorkflowSnapshot: snapshotApiMocks.get,
   putNestedWorkflowSnapshot: snapshotApiMocks.put,
   deleteNestedWorkflowSnapshot: snapshotApiMocks.delete,
 }))
 
 import {
   _resetGraphSyncForTest,
+  activateGraphSyncCanvas,
   forgetRetainedNestedSnapshot,
   flushRetainedNestedSnapshot,
   useGraphSync,
 } from '../useGraphSync'
+import { NestedSnapshotPersistenceConflictError } from '@/sessions/nestedSnapshotPersistence'
 
 function graph(value: string): GraphState {
   return {
@@ -62,6 +66,7 @@ describe('retained nested snapshot graph sync', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     snapshotApiMocks.put.mockReset()
+    snapshotApiMocks.get.mockReset()
     snapshotApiMocks.delete.mockReset()
     _resetGraphSyncForTest()
   })
@@ -133,6 +138,99 @@ describe('retained nested snapshot graph sync', () => {
     expect(forgetRetainedNestedSnapshot(sessionId)).toBe(true)
     expect(forgetRetainedNestedSnapshot(sessionId)).toBe(false)
     await expect(flushRetainedNestedSnapshot(sessionId)).resolves.toBeUndefined()
+  })
+
+  it('exposes only the latest nested persistence failure through fixed and active APIs', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000001'
+    const canvasId = canvasIdFromPanelId(`sub-workflow:${sessionId}`)
+    const failure = new Error('nested snapshot unavailable')
+    const recovered = graph('recovered')
+    snapshotApiMocks.put
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(snapshot(2, recovered))
+    const sync = useGraphSync({
+      descriptor: {
+        kind: 'nested',
+        canvasId,
+        sessionId,
+        parentCanvasId: canvasIdFromPanelId('workflow:parent'),
+      },
+      getWorkflowId: () => 'parent',
+      nestedSnapshot: { initialSnapshot: snapshot(1, graph('initial')) },
+    })
+    const active = useGraphSync()
+    activateGraphSyncCanvas(canvasId)
+
+    sync.syncGraphState(graph('failed'))
+    await expect(sync.flushNow()).rejects.toBe(failure)
+
+    expect(sync.lastError.value).toBe(failure)
+    expect(active.lastError.value).toBe(failure)
+
+    sync.syncGraphState(recovered)
+    expect(sync.lastError.value).toBeNull()
+    expect(active.lastError.value).toBeNull()
+
+    await expect(sync.flushNow()).resolves.toMatchObject({
+      graph: recovered,
+      snapshotRevision: 2,
+    })
+    expect(sync.lastError.value).toBeNull()
+    expect(active.lastError.value).toBeNull()
+  })
+
+  it('routes an explicit nested conflict resolution through the fixed and active APIs', async () => {
+    const sessionId = '00000000-0000-4000-8000-000000000001'
+    const canvasId = canvasIdFromPanelId(`sub-workflow:${sessionId}`)
+    const conflict = {
+      response: {
+        status: 409,
+        data: { detail: 'revision conflict', current_revision: 2 },
+      },
+    }
+    const latest = graph('latest-local')
+    snapshotApiMocks.put
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce(snapshot(3, latest))
+    snapshotApiMocks.get.mockResolvedValueOnce(snapshot(2, graph('remote')))
+    const sync = useGraphSync({
+      descriptor: {
+        kind: 'nested',
+        canvasId,
+        sessionId,
+        parentCanvasId: canvasIdFromPanelId('workflow:parent'),
+      },
+      getWorkflowId: () => 'parent',
+      nestedSnapshot: { initialSnapshot: snapshot(1, graph('initial')) },
+    })
+    const active = useGraphSync()
+    activateGraphSyncCanvas(canvasId)
+
+    sync.syncGraphState(graph('conflicting'))
+    await expect(sync.flushNow()).rejects.toBeInstanceOf(
+      NestedSnapshotPersistenceConflictError,
+    )
+    expect(sync.syncState.value).toBe('conflict')
+    expect(active.syncState.value).toBe('conflict')
+    await expect(active.flushNow()).rejects.toBe(sync.lastError.value)
+    expect(snapshotApiMocks.put).toHaveBeenCalledOnce()
+
+    sync.syncGraphState(latest)
+    await expect(active.resolveConflictKeepingLocal()).resolves.toMatchObject({
+      graph: latest,
+      snapshotRevision: 3,
+    })
+    expect(snapshotApiMocks.get).toHaveBeenCalledWith(
+      sessionId,
+      expect.any(AbortSignal),
+    )
+    expect(snapshotApiMocks.put).toHaveBeenLastCalledWith(
+      sessionId,
+      { expected_revision: 2, graph: latest },
+      expect.any(AbortSignal),
+    )
+    expect(sync.syncState.value).toBe('idle')
+    expect(active.lastError.value).toBeNull()
   })
 
   it('rejects a nested canvas without an accepted durable snapshot', () => {

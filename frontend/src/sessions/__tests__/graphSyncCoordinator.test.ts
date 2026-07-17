@@ -197,6 +197,7 @@ describe('graph sync coordinator', () => {
     coordinator.queue(graph('retry'), { semanticRevision: 7 })
     await expect(coordinator.flushLatest()).rejects.toBe(failure)
     expect(coordinator.syncState.value).toBe('error')
+    expect(coordinator.lastError.value).toBe(failure)
     expect(coordinator.validationResult.value).toEqual(previousValidation)
     expect(coordinator.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'retry' })
 
@@ -204,6 +205,7 @@ describe('graph sync coordinator', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(coordinator.isPending.value).toBe(true)
     expect(coordinator.syncState.value).toBe('pending')
+    expect(coordinator.lastError.value).toBe(failure)
     recovery.resolve(validation(true))
     await expect(recoveryFlush).resolves.toMatchObject({
       semanticRevision: 7,
@@ -211,6 +213,49 @@ describe('graph sync coordinator', () => {
     })
     expect(transport).toHaveBeenCalledTimes(3)
     expect(coordinator.syncState.value).toBe('idle')
+    expect(coordinator.lastError.value).toBeNull()
+  })
+
+  it('holds a conflict without replaying its stale request and resumes the latest graph explicitly', async () => {
+    const conflict = { kind: 'revision-conflict' }
+    const transport = vi.fn()
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce(validation(true))
+    const coordinator = createGraphSyncCoordinator({
+      canvasId: canvasIdFromPanelId('workflow:a'),
+      workflowId: 'a',
+      transport,
+      isConflict: error => error === conflict,
+    })
+
+    coordinator.queue(graph('stale'))
+    await expect(coordinator.flushLatest()).rejects.toBe(conflict)
+
+    expect(coordinator.syncState.value).toBe('conflict')
+    expect(coordinator.isPending.value).toBe(true)
+    expect(coordinator.lastError.value).toBe(conflict)
+    await expect(coordinator.flushLatest()).rejects.toBe(conflict)
+    expect(transport).toHaveBeenCalledOnce()
+
+    coordinator.queue(graph('latest'))
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(coordinator.syncState.value).toBe('conflict')
+    expect(coordinator.lastError.value).toBe(conflict)
+    expect(transport).toHaveBeenCalledOnce()
+
+    expect(coordinator.resumeAfterConflict()).toBe(true)
+    await expect(coordinator.flushLatest()).resolves.toMatchObject({
+      semanticRevision: 2,
+      graph: graph('latest'),
+    })
+    expect(transport).toHaveBeenCalledTimes(2)
+    expect(transport.mock.calls[1]?.[0]).toMatchObject({
+      semanticRevision: 2,
+      graph: graph('latest'),
+    })
+    expect(coordinator.syncState.value).toBe('idle')
+    expect(coordinator.isPending.value).toBe(false)
+    expect(coordinator.lastError.value).toBeNull()
   })
 
   it('shares one serialized drain between concurrent flush callers', async () => {
@@ -252,6 +297,12 @@ describe('graph sync coordinator', () => {
       expect.objectContaining({ workflowId: 'a', semanticRevision: 1 }),
     )
     expect(coordinator.syncState.value).toBe('error')
+    expect(coordinator.lastError.value).toBe(failure)
+
+    coordinator.queue(graph('newer'))
+
+    expect(coordinator.lastError.value).toBeNull()
+    coordinator.dispose()
   })
 
   it('continues with a newer revision when the superseded request fails', async () => {
@@ -272,7 +323,8 @@ describe('graph sync coordinator', () => {
     coordinator.queue(graph('new'), { semanticRevision: 2 })
     await vi.advanceTimersByTimeAsync(300)
 
-    oldRequest.reject(new Error('old request failed'))
+    const oldFailure = new Error('old request failed')
+    oldRequest.reject(oldFailure)
     await vi.advanceTimersByTimeAsync(0)
 
     expect(transport).toHaveBeenCalledTimes(2)
@@ -285,6 +337,7 @@ describe('graph sync coordinator', () => {
     expect(coordinator.acceptedRevision.value).toBe(2)
     expect(coordinator.validationResult.value).toEqual(validation(true))
     expect(coordinator.isPending.value).toBe(false)
+    expect(coordinator.lastError.value).toBeNull()
     expect(onOperationalError).not.toHaveBeenCalled()
   })
 

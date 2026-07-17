@@ -27,6 +27,21 @@ type WorkflowDraft = {
   }
 }
 
+type ParameterFeedbackSample = {
+  className: string
+  filter: string
+  noticeVisible: boolean
+  statusClass: string | null
+  text: string
+}
+
+type ParameterFeedbackProbe = {
+  capture(): void
+  intervalId: number
+  observer: MutationObserver
+  samples: ParameterFeedbackSample[]
+}
+
 function uniqueName(prefix: string): string {
   const project = test.info().project.name.replace(/[^a-zA-Z0-9_-]/g, '_')
   return `${prefix}_${project}_${Date.now()}_${Math.floor(Math.random() * 10000)}`
@@ -380,6 +395,190 @@ test.describe('critical operation race contracts', () => {
     expect(executionPayload!.workflow_name).toBe(workflowName)
     expect(executionPayload!.draft_revision).toBe(latestDraft.draft_revision)
     expect(graphParameter(executionPayload!.graph, nodeId, 'sigma')).toBe(3)
+  })
+
+  test('delayed parameter persistence keeps node presentation stable and success quiet', async ({ page }) => {
+    const workflowName = uniqueName('parameter_feedback')
+    const displayName = `Parameter Feedback ${workflowName}`
+    const nodeId = 'blur_parameter_feedback'
+    await createWorkflow(page, workflowName, displayName, gaussianGraph(nodeId, 1))
+
+    let releaseDraftPut!: () => void
+    const draftPutGate = new Promise<void>((resolve) => {
+      releaseDraftPut = resolve
+    })
+    let resolveDraftPutHeld!: () => void
+    const draftPutHeld = new Promise<void>((resolve) => {
+      resolveDraftPutHeld = resolve
+    })
+    let heldEditedDraft = false
+    await page.route(`**/api/v1/workflow-drafts/${workflowName}`, async (route) => {
+      if (route.request().method() === 'GET') {
+        const response = await route.fetch()
+        const body = await response.json() as WorkflowDraft
+        body.validation.node_statuses = {
+          ...body.validation.node_statuses,
+          [nodeId]: {
+            node_id: nodeId,
+            status: 'executed',
+            cached: false,
+          },
+        }
+        await route.fulfill({ response, json: body })
+        return
+      }
+      if (route.request().method() !== 'PUT' || heldEditedDraft) {
+        await route.continue()
+        return
+      }
+      const request = route.request().postDataJSON() as { graph?: GraphState } | null
+      if (
+        request?.graph === undefined
+        || graphParameter(request.graph, nodeId, 'sigma') !== 2
+      ) {
+        await route.continue()
+        return
+      }
+
+      heldEditedDraft = true
+      const response = await route.fetch()
+      const body = await response.json() as WorkflowDraft
+      body.validation.node_statuses = {
+        ...body.validation.node_statuses,
+        [nodeId]: {
+          node_id: nodeId,
+          status: 'out_of_date',
+          cached: false,
+        },
+      }
+      resolveDraftPutHeld()
+      await draftPutGate
+      await route.fulfill({ response, json: body })
+    })
+
+    await page.goto('/')
+    await expect(page.locator('#bioimageflow-app')).toBeVisible()
+    await openWorkflow(page, workflowName, displayName)
+    const sigmaInput = await selectSigmaField(page, nodeId)
+    const toolNode = page.locator(
+      `.vue-flow__node[data-id="${nodeId}"] .tool-node`,
+    )
+    await expect(toolNode).toHaveClass(/status-executed/)
+
+    await page.evaluate((targetNodeId) => {
+      const target = document.querySelector(
+        `.vue-flow__node[data-id="${targetNodeId}"] .tool-node`,
+      )
+      if (!(target instanceof HTMLElement)) throw new Error('Tool node not found')
+      const canvas = target.closest('.canvas-view')
+      if (!(canvas instanceof HTMLElement)) throw new Error('Canvas not found')
+      const samples: ParameterFeedbackSample[] = []
+      let previous = ''
+      const capture = () => {
+        const sample: ParameterFeedbackSample = {
+          className: target.className,
+          filter: getComputedStyle(target).filter,
+          noticeVisible: Boolean(canvas.querySelector([
+            '[data-testid="canvas-persistence-issue"]',
+            '.workflow-draft-conflict',
+            '.workflow-draft-resolution',
+          ].join(', '))) || Boolean(document.querySelector('.p-toast-message-success')),
+          statusClass: [...target.classList]
+            .find(className => className.startsWith('status-')) ?? null,
+          text: target.textContent ?? '',
+        }
+        const signature = JSON.stringify(sample)
+        if (signature === previous) return
+        previous = signature
+        samples.push(sample)
+      }
+      const observer = new MutationObserver(capture)
+      observer.observe(canvas, {
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+        childList: true,
+        characterData: true,
+        subtree: true,
+      })
+      const intervalId = window.setInterval(capture, 16)
+      const probeWindow = window as typeof window & {
+        __parameterFeedbackProbe?: ParameterFeedbackProbe
+      }
+      probeWindow.__parameterFeedbackProbe = {
+        capture,
+        intervalId,
+        observer,
+        samples,
+      }
+      capture()
+    }, nodeId)
+
+    const acceptedResponse = page.waitForResponse((response) => (
+      responseCarriesParameter(response, workflowName, nodeId, 2)
+    ))
+    try {
+      await editSigma(sigmaInput, 2)
+      await draftPutHeld
+
+      const saving = page.getByTestId('canvas-persistence-saving')
+      await expect(saving).toBeVisible({ timeout: 3000 })
+      await expect(toolNode).toHaveClass(/status-executed/)
+      await expect(toolNode).not.toHaveClass(/provisional/)
+      await expect(toolNode).not.toContainText(/provisional/i)
+      await expect(toolNode).toHaveCSS('filter', 'none')
+      await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+      await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
+      await expect(page.locator('.workflow-draft-resolution')).toHaveCount(0)
+
+      const pendingSamples = await page.evaluate(() => {
+        const probeWindow = window as typeof window & {
+          __parameterFeedbackProbe?: ParameterFeedbackProbe
+        }
+        return probeWindow.__parameterFeedbackProbe?.samples ?? []
+      })
+      expect([...new Set(pendingSamples.map(sample => sample.statusClass))]).toEqual([
+        'status-executed',
+      ])
+
+      releaseDraftPut()
+      await acceptedResponse
+      await expect(toolNode).toHaveClass(/status-out-of-date/)
+      await expect(saving).toHaveCount(0)
+      await expect(page.getByTestId('canvas-persistence-issue')).toHaveCount(0)
+      await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
+      await expect(page.locator('.workflow-draft-resolution')).toHaveCount(0)
+      await expect(page.locator('.p-toast-message-success')).toHaveCount(0)
+    } finally {
+      releaseDraftPut()
+    }
+
+    const samples = await page.evaluate(() => {
+      const probeWindow = window as typeof window & {
+        __parameterFeedbackProbe?: ParameterFeedbackProbe
+      }
+      const probe = probeWindow.__parameterFeedbackProbe
+      if (!probe) return []
+      probe.capture()
+      window.clearInterval(probe.intervalId)
+      probe.observer.disconnect()
+      delete probeWindow.__parameterFeedbackProbe
+      return probe.samples
+    })
+    expect(samples.length).toBeGreaterThan(1)
+    expect(samples.every(sample => (
+      !sample.className.split(/\s+/).includes('provisional')
+      && !sample.text.toLowerCase().includes('provisional')
+      && !sample.filter.includes('saturate')
+      && !sample.noticeVisible
+    ))).toBe(true)
+    const statusTransitions = samples
+      .map(sample => sample.statusClass)
+      .filter((status): status is string => status !== null)
+      .filter((status, index, values) => index === 0 || status !== values[index - 1])
+    expect(statusTransitions).toEqual([
+      'status-executed',
+      'status-out-of-date',
+    ])
   })
 
   test('immediate Node Panel parameter edit is the exact accepted Run input', async ({ page }) => {

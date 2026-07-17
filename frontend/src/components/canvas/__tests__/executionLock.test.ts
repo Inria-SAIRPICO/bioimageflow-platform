@@ -412,7 +412,7 @@ describe('CanvasView execution lock', () => {
     w.unmount()
   })
 
-  it('does not let idle execution statuses overwrite a provisional parameter edit', async () => {
+  it('does not let idle execution statuses overwrite a pending parameter edit', async () => {
     mockNodes = [
       {
         id: 'n1',
@@ -435,10 +435,11 @@ describe('CanvasView execution lock', () => {
 
     expect(projectedStatusesOf(w).n1).toMatchObject({
       status: 'unexecuted',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
     expect(mockNodes[0].data.status).toBe('unexecuted')
-    expect(mockNodes[0].data.provisional).toBeUndefined()
+    expect(mockNodes[0].data).not.toHaveProperty('provisional')
     w.unmount()
   })
 
@@ -527,16 +528,18 @@ describe('CanvasView execution lock', () => {
 
     expect(projectedStatusesOf(canvas).edited).toMatchObject({
       status: 'unexecuted',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
     expect(projectedStatusesOf(canvas).untouched).toMatchObject({
       status: 'executed',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
     expect(mockNodes[0].data.status).toBe('executed')
-    expect(mockNodes[0].data.provisional).toBeUndefined()
+    expect(mockNodes[0].data).not.toHaveProperty('provisional')
     expect(mockNodes[1].data.status).toBe('executed')
-    expect(mockNodes[1].data.provisional).toBeUndefined()
+    expect(mockNodes[1].data).not.toHaveProperty('provisional')
 
     panel.unmount()
     canvas.unmount()
@@ -571,7 +574,7 @@ describe('CanvasView execution lock', () => {
     w.unmount()
   })
 
-  it('keeps authoritative statuses while marking a graph edit provisional', async () => {
+  it('keeps authoritative presentation while staging a graph edit', async () => {
     mockNodes = [
       {
         id: 'source',
@@ -617,14 +620,16 @@ describe('CanvasView execution lock', () => {
 
     expect(projectedStatusesOf(w).source).toMatchObject({
       status: 'executed',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
     expect(projectedStatusesOf(w).target).toMatchObject({
       status: 'executed',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
-    expect(mockNodes[0].data.provisional).toBeUndefined()
-    expect(mockNodes[1].data.provisional).toBeUndefined()
+    expect(mockNodes[0].data).not.toHaveProperty('provisional')
+    expect(mockNodes[1].data).not.toHaveProperty('provisional')
     w.unmount()
   })
 })

@@ -1,8 +1,8 @@
-import { ref, type Ref } from 'vue'
+import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
 import type { GraphState, ValidationResult } from '@/api/types'
 import type { CanvasId, DisposableCanvasResource } from './canvasSessionRegistry'
 
-export type SyncState = 'idle' | 'pending' | 'error'
+export type SyncState = 'idle' | 'pending' | 'error' | 'conflict'
 
 export interface GraphSyncRequest {
   canvasId: CanvasId
@@ -39,9 +39,15 @@ export interface GraphSyncCoordinator extends DisposableCanvasResource {
   readonly acceptedRevision: Ref<number | null>
   readonly isPending: Ref<boolean>
   readonly syncState: Ref<SyncState>
+  readonly lastError: ShallowRef<unknown | null>
   readonly isDisposed: Ref<boolean>
   queue(graph: GraphState, options?: QueueGraphOptions): number
   flushLatest(): Promise<GraphSyncAcceptance | null>
+  resumeAfterConflict(): boolean
+  acceptAuthoritativeSnapshot(
+    graph: GraphState,
+    validation: ValidationResult,
+  ): GraphSyncAcceptance
 }
 
 export interface CreateGraphSyncCoordinatorOptions {
@@ -58,6 +64,7 @@ export interface CreateGraphSyncCoordinatorOptions {
     error: unknown,
     request: Omit<GraphSyncRequest, 'signal'>,
   ) => void
+  isConflict?: (error: unknown) => boolean
 }
 
 interface QueuedGraph {
@@ -98,6 +105,7 @@ export function createGraphSyncCoordinator(
   const acceptedRevision = ref<number | null>(null)
   const isPending = ref(false)
   const syncState = ref<SyncState>('idle')
+  const lastError = shallowRef<unknown | null>(null)
   const isDisposed = ref(false)
 
   let latest: QueuedGraph | null = null
@@ -126,6 +134,7 @@ export function createGraphSyncCoordinator(
 
   function queue(graph: GraphState, queueOptions: QueueGraphOptions = {}): number {
     assertUsable()
+    const hasConflict = syncState.value === 'conflict'
     const nextRevision = queueOptions.semanticRevision
       ?? semanticRevision.value + 1
     if (nextRevision <= semanticRevision.value) {
@@ -146,9 +155,11 @@ export function createGraphSyncCoordinator(
     currentGraph.value = cloneJson(graphSnapshot)
     semanticRevision.value = nextRevision
     isPending.value = true
-    syncState.value = 'pending'
-
     clearTimer()
+    if (hasConflict) return nextRevision
+
+    syncState.value = 'pending'
+    lastError.value = null
     timer = setTimeout(() => {
       timer = null
       void flushLatest().catch(() => {
@@ -186,6 +197,7 @@ export function createGraphSyncCoordinator(
           acceptedRevision.value = snapshot.semanticRevision
           lastAcceptance = acceptance
         }
+        lastError.value = null
         if (latest?.semanticRevision === snapshot.semanticRevision) {
           validationResult.value = cloneJson(validation)
           isPending.value = false
@@ -200,15 +212,22 @@ export function createGraphSyncCoordinator(
         if (isDisposed.value) {
           throw new CanvasSessionDisposedError(options.canvasId)
         }
+        const isConflict = options.isConflict?.(error) === true
         const isCurrentRevision = latest?.semanticRevision === snapshot.semanticRevision
-        if (isCurrentRevision) {
+        if (isConflict) {
+          clearTimer()
+          isPending.value = true
+          syncState.value = 'conflict'
+          lastError.value = error
+        } else if (isCurrentRevision) {
           isPending.value = false
           syncState.value = 'error'
+          lastError.value = error
         } else {
           isPending.value = true
           syncState.value = 'pending'
         }
-        if (isCurrentRevision) {
+        if (isCurrentRevision && !isConflict) {
           options.onOperationalError?.(error, {
             canvasId: request.canvasId,
             workflowId: request.workflowId,
@@ -235,6 +254,9 @@ export function createGraphSyncCoordinator(
 
     while (true) {
       assertUsable()
+      if (syncState.value === 'conflict' && lastError.value !== null) {
+        throw lastError.value
+      }
       const target = latest
       if (target === null) return lastAcceptance
       if (
@@ -263,6 +285,41 @@ export function createGraphSyncCoordinator(
     }
   }
 
+  function resumeAfterConflict(): boolean {
+    assertUsable()
+    if (syncState.value !== 'conflict') return false
+    lastError.value = null
+    syncState.value = isPending.value ? 'pending' : 'idle'
+    return true
+  }
+
+  function acceptAuthoritativeSnapshot(
+    graph: GraphState,
+    nextValidation: ValidationResult,
+  ): GraphSyncAcceptance {
+    assertUsable()
+    if (inflight !== null) {
+      throw new Error('Cannot replace a graph snapshot while a request is in flight')
+    }
+    clearTimer()
+    const acceptance: GraphSyncAcceptance = {
+      canvasId: options.canvasId,
+      workflowId: options.getWorkflowId ? options.getWorkflowId() : options.workflowId,
+      semanticRevision: semanticRevision.value,
+      graph: cloneJson(graph),
+      validation: cloneJson(nextValidation),
+    }
+    latest = null
+    lastAcceptance = acceptance
+    acceptedRevision.value = semanticRevision.value
+    currentGraph.value = cloneJson(graph)
+    validationResult.value = cloneJson(nextValidation)
+    isPending.value = false
+    syncState.value = 'idle'
+    lastError.value = null
+    return cloneJson(acceptance)
+  }
+
   function dispose(): void {
     if (isDisposed.value) return
     isDisposed.value = true
@@ -283,9 +340,12 @@ export function createGraphSyncCoordinator(
     acceptedRevision,
     isPending,
     syncState,
+    lastError,
     isDisposed,
     queue,
     flushLatest,
+    resumeAfterConflict,
+    acceptAuthoritativeSnapshot,
     dispose,
   }
 }

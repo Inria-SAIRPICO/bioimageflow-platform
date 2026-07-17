@@ -7,6 +7,7 @@ import ToolNode from './ToolNode.vue'
 import ColumnRefEdge from './ColumnRefEdge.vue'
 import PositionalEdge from './PositionalEdge.vue'
 import CanvasErrorBanner from './CanvasErrorBanner.vue'
+import CanvasPersistenceFeedback from './CanvasPersistenceFeedback.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useUIStore } from '@/stores/ui'
@@ -20,7 +21,11 @@ import {
 } from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
 import { serializeGraph, useGraphSync } from '@/composables/useGraphSync'
-import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
+import {
+  useCanvasPersistence,
+  type CanvasPersistenceIssue,
+  type CanvasPersistenceState,
+} from '@/composables/useCanvasPersistence'
 import {
   useCanvasCommands,
   type CanvasPublicationCommandResult,
@@ -61,6 +66,7 @@ import {
   type CanvasSessionDescriptor,
 } from '@/sessions/canvasSessionRegistry'
 import { graphDocumentsEqual } from '@/sessions/graphDocument'
+import { isNestedSnapshotPersistenceConflict } from '@/sessions/nestedSnapshotPersistence'
 import { connectionSourceLabel } from '@/utils/displayNames'
 
 const emit = defineEmits<{
@@ -248,10 +254,13 @@ const {
   syncGraphState,
   revalidateGraphState,
   flushNow,
+  resolveConflictKeepingLocal,
+  resolveConflictUsingRemote,
   validationResult,
   syncState,
   dispose: disposeGraphSync,
 } = graphSync
+const graphSyncLastError = graphSync.lastError ?? ref<unknown | null>(null)
 const {
   queueGraph: queueCanvasPersistence,
   initializeFromDraft: initializeCanvasPersistenceFromDraft,
@@ -259,14 +268,24 @@ const {
   isPending: isCanvasPersistencePending,
   dispose: disposeCanvasPersistence,
 } = canvasPersistence
+const rootPersistenceState = canvasPersistence.persistenceState
+  ?? ref<CanvasPersistenceState>('idle')
+const rootPersistenceIssue = canvasPersistence.persistenceIssue
+  ?? ref<CanvasPersistenceIssue | null>(null)
+const rootPersistenceHasConflict = canvasPersistence.hasConflict ?? ref(false)
 const { edgeErrors } = useValidationErrors(validationResult)
 const { reportError } = useErrorReporting()
 const undoRedo = useUndoRedo<CanvasHistoryState>()
 const executionLock = useExecutionLock()
 const canvasLifecycleStore = useCanvasLifecycleStore()
 const lifecycleOperation = computed(() => canvasLifecycleStore.operationFor(canvasId))
+const nestedConflictResolution = ref<'keep-local' | 'use-remote' | null>(null)
+const isInstallingAuthoritativeDraft = ref(false)
 const isLocked = computed(() => (
-  executionLock.isLocked.value || lifecycleOperation.value !== null
+  executionLock.isLocked.value
+  || lifecycleOperation.value !== null
+  || nestedConflictResolution.value !== null
+  || isInstallingAuthoritativeDraft.value
 ))
 const executionStore = useExecutionStore()
 const fieldFocusTracker = useFieldFocusTracker()
@@ -313,9 +332,13 @@ const hasLoadedGraphState = ref(false)
 const remoteDraftAction = ref<'apply' | 'keep' | 'copy' | null>(null)
 const remoteDraftActionError = ref<string | null>(null)
 const remoteDraftResolutionMessage = ref<string | null>(null)
+const nestedPersistenceIssue = ref<CanvasPersistenceIssue | null>(null)
+let nestedPersistenceIssueVersion = 0
+let nestedPersistenceError: unknown = null
 let isApplyingGraphState = false
 let isCanvasUnmounted = false
 let isAutoApplyingRemoteDraft = false
+let rootEditEpoch = 0
 let hotReloadToast: ReturnType<typeof useToast> | null = null
 let clipboardToast: ReturnType<typeof useToast> | null = null
 
@@ -323,17 +346,181 @@ const hasLocalRemoteDraftConflict = computed(() => (
   uiStore.canvasHasUnsavedChanges(canvasId) || isCanvasPersistencePending.value
 ))
 
+const isPendingFrontendDraftEcho = computed(() => (
+  rootPersistenceState.value === 'saving'
+  && workflowDraftStore.remoteUpdatedBy === 'frontend'
+  && !rootPersistenceHasConflict.value
+))
+
 const shouldShowRemoteDraftConflict = computed(() => {
   if (isSubWorkflowEditor) return false
   if (!isActiveCanvasTab.value) return false
   if (!hasLoadedGraphState.value) return false
-  if (workflowDraftStore.remoteAvailableRevision === null) return false
+  if (
+    workflowDraftStore.remoteAvailableRevision === null
+    && !rootPersistenceHasConflict.value
+  ) return false
+  if (isPendingFrontendDraftEcho.value) return false
   if (!hasLocalRemoteDraftConflict.value) return false
   const workflowName = workflowIdentity().workflowName
   return typeof workflowName === 'string'
     && workflowName.length > 0
     && workflowDraftStore.workflowId === workflowName
 })
+
+const nestedPersistenceState = computed<CanvasPersistenceState>(() => {
+  if (!isSubWorkflowEditor) return 'idle'
+  if (syncState.value === 'pending') return 'saving'
+  if (syncState.value === 'conflict') return 'conflict'
+  if (syncState.value === 'error') return 'error'
+  return 'idle'
+})
+
+watch(
+  [syncState, graphSyncLastError],
+  ([state, error]) => {
+    if (
+      !isSubWorkflowEditor
+      || (state !== 'error' && state !== 'conflict')
+    ) {
+      nestedPersistenceError = null
+      nestedPersistenceIssue.value = null
+      return
+    }
+    if (
+      nestedPersistenceIssue.value !== null
+      && nestedPersistenceError === error
+    ) return
+    nestedPersistenceError = error
+    nestedPersistenceIssueVersion += 1
+    const isConflict = state === 'conflict'
+      && isNestedSnapshotPersistenceConflict(error)
+    const errorDetail = error instanceof Error ? error.message.trim() : ''
+    const conflictRevision = isConflict ? error.currentRevision : null
+    const detail = isConflict
+      ? `${errorDetail || 'The nested workflow changed elsewhere.'} `
+        + `${conflictRevision === null ? '' : `The current revision is ${conflictRevision}. `}`
+        + 'Use latest snapshot replaces this canvas with that version. '
+        + 'Keep my changes retries the latest local snapshot against that revision.'
+      : errorDetail.length > 0
+        ? `Your latest nested-workflow changes remain on this canvas. ${errorDetail}`
+        : 'Your latest nested-workflow changes remain on this canvas.'
+    nestedPersistenceIssue.value = {
+      id: `${canvasId}:nested-persistence:${nestedPersistenceIssueVersion}`,
+      version: nestedPersistenceIssueVersion,
+      kind: isConflict ? 'conflict' : 'error',
+      source: 'draft',
+      summary: isConflict
+        ? 'Nested workflow changes need attention'
+        : 'Nested workflow changes could not be saved',
+      detail,
+      dismissed: false,
+    }
+  },
+  { flush: 'sync', immediate: true },
+)
+
+const canvasPersistenceFeedbackState = computed<CanvasPersistenceState>(() => {
+  if (lifecycleOperation.value !== null || shouldShowRemoteDraftConflict.value) {
+    return 'idle'
+  }
+  if (isSubWorkflowEditor) return nestedPersistenceState.value
+  return rootPersistenceState.value === 'conflict'
+    ? 'idle'
+    : rootPersistenceState.value
+})
+
+const canvasPersistenceFeedbackIssue = computed<CanvasPersistenceIssue | null>(() => {
+  if (shouldShowRemoteDraftConflict.value) return null
+  const issue = isSubWorkflowEditor
+    ? nestedPersistenceIssue.value
+    : rootPersistenceIssue.value
+  return !isSubWorkflowEditor && issue?.kind === 'conflict' ? null : issue
+})
+
+async function retryCanvasPersistence(issueId: string): Promise<void> {
+  const issue = canvasPersistenceFeedbackIssue.value
+  if (issue === null || issue.id !== issueId) return
+  try {
+    if (isSubWorkflowEditor) {
+      await flushNow()
+    } else {
+      await canvasPersistence.retryPersistence()
+    }
+  } catch {
+    // The canonical persistence resource retains and republishes the issue.
+  }
+}
+
+async function resolveCanvasPersistenceConflict(issueId: string): Promise<void> {
+  const issue = canvasPersistenceFeedbackIssue.value
+  if (
+    !isSubWorkflowEditor
+    || issue === null
+    || issue.id !== issueId
+    || issue.kind !== 'conflict'
+    || nestedConflictResolution.value !== null
+  ) return
+  nestedConflictResolution.value = 'keep-local'
+  try {
+    await resolveConflictKeepingLocal()
+  } catch {
+    // The canonical nested persistence resource retains the unresolved issue.
+  } finally {
+    nestedConflictResolution.value = null
+  }
+}
+
+async function useLatestNestedPersistenceSnapshot(issueId: string): Promise<void> {
+  const issue = canvasPersistenceFeedbackIssue.value
+  const sessionId = props.subWorkflowSessionId
+  if (
+    !isSubWorkflowEditor
+    || !sessionId
+    || issue === null
+    || issue.id !== issueId
+    || issue.kind !== 'conflict'
+    || nestedConflictResolution.value !== null
+  ) return
+  nestedConflictResolution.value = 'use-remote'
+  try {
+    const accepted = await resolveConflictUsingRemote()
+    if (accepted === null || isCanvasUnmounted) return
+    subWorkflowSessionsStore.updateDraft(sessionId, accepted.graph)
+    await applyGraphState(accepted.graph, [], false, false)
+    if (subWorkflowSessionsStore.isDirty(sessionId)) {
+      uiStore.markCanvasDirty(canvasId)
+    } else {
+      uiStore.markCanvasClean(canvasId)
+    }
+  } catch {
+    // The canonical nested persistence resource retains the unresolved issue.
+  } finally {
+    nestedConflictResolution.value = null
+  }
+}
+
+function dismissCanvasPersistenceIssue(issueId: string): void {
+  if (isSubWorkflowEditor) {
+    const issue = nestedPersistenceIssue.value
+    if (issue === null || issue.id !== issueId || issue.dismissed) return
+    nestedPersistenceIssue.value = { ...issue, dismissed: true }
+    return
+  }
+  canvasPersistence.dismissPersistenceIssue(issueId)
+}
+
+function reopenCanvasPersistenceConflict(issueId: string): void {
+  if (!isSubWorkflowEditor) return
+  const issue = nestedPersistenceIssue.value
+  if (
+    issue === null
+    || issue.id !== issueId
+    || issue.kind !== 'conflict'
+    || !issue.dismissed
+  ) return
+  nestedPersistenceIssue.value = { ...issue, dismissed: false }
+}
 
 const isResolvingRemoteDraftConflict = computed(() => remoteDraftAction.value !== null)
 
@@ -565,6 +752,7 @@ async function applyGraphState(
   graph: GraphState,
   missingTools: MissingTool[] = [],
   dirty = false,
+  synchronize = true,
 ) {
   if (isCanvasUnmounted) return
   if (!isSubWorkflowEditor) {
@@ -595,7 +783,7 @@ async function applyGraphState(
     applyValidationEdgeErrors()
     if (isCanvasUnmounted) return
     const authoritativeGraph = rememberAuthoritativeGraph(graph)
-    syncGraphState(authoritativeGraph)
+    if (synchronize) syncGraphState(authoritativeGraph)
     undoRedo.clear()
     undoRedo.push(canvasHistoryState(currentVueFlowState(), authoritativeGraph))
     if (!isSubWorkflowEditor) {
@@ -709,20 +897,56 @@ function markWorkflowDirtyFromDraft(dirty: boolean): void {
   }
 }
 
-async function applyAgentDraftChanges(): Promise<void> {
-  const workflowName = currentWorkflowName()
-  if (!workflowName || isResolvingRemoteDraftConflict.value) return
-  remoteDraftAction.value = 'apply'
-  remoteDraftActionError.value = null
-  remoteDraftResolutionMessage.value = null
+function remoteDraftActionSupersededMessage(): void {
+  remoteDraftActionError.value = 'The canvas changed while that request was pending. Review the latest canvas and choose again.'
+}
+
+async function installAuthoritativeRootDraft(
+  draft: WorkflowDraftResponse,
+): Promise<boolean> {
+  if (isCanvasUnmounted) return false
+  isInstallingAuthoritativeDraft.value = true
   try {
-    const draft = await workflowDraftStore.loadDraft(workflowName)
-    resolveCanvasPersistenceFromDraft(draft)
     await applyGraphState(
       draft.graph,
       workflowStore.missingTools,
       draft.dirty_against_saved,
     )
+    if (isCanvasUnmounted) return false
+    resolveCanvasPersistenceFromDraft(draft)
+    workflowDraftStore.acknowledgeAcceptedDraft(draft)
+    return true
+  } finally {
+    isInstallingAuthoritativeDraft.value = false
+    requestToolReconciliation()
+  }
+}
+
+async function applyAgentDraftChanges(): Promise<void> {
+  const workflowName = currentWorkflowName()
+  if (!workflowName || isResolvingRemoteDraftConflict.value) return
+  const editEpoch = rootEditEpoch
+  remoteDraftAction.value = 'apply'
+  remoteDraftActionError.value = null
+  remoteDraftResolutionMessage.value = null
+  try {
+    const draft = await workflowDraftStore.fetchLatestDraft(workflowName)
+    const currentRemoteRevision = workflowDraftStore.remoteAvailableRevision
+    if (
+      isCanvasUnmounted
+      || rootEditEpoch !== editEpoch
+      || lifecycleOperation.value !== null
+      || currentWorkflowName() !== workflowName
+      || workflowDraftStore.workflowId !== workflowName
+      || (
+        currentRemoteRevision !== null
+        && draft.draft_revision < currentRemoteRevision
+      )
+    ) {
+      remoteDraftActionSupersededMessage()
+      return
+    }
+    await installAuthoritativeRootDraft(draft)
   } catch (err) {
     showRemoteDraftActionError('Could not apply agent changes', err)
   } finally {
@@ -733,16 +957,26 @@ async function applyAgentDraftChanges(): Promise<void> {
 async function keepCurrentCanvasDraft(): Promise<void> {
   const workflowName = currentWorkflowName()
   if (!workflowName || isResolvingRemoteDraftConflict.value) return
+  const editEpoch = rootEditEpoch
+  const submittedGraph = currentSerializedGraph()
   remoteDraftAction.value = 'keep'
   remoteDraftActionError.value = null
   remoteDraftResolutionMessage.value = null
   try {
     const response = await workflowDraftStore.overwriteDraftWithGraph(
       workflowName,
-      currentSerializedGraph(),
+      submittedGraph,
     )
+    if (isCanvasUnmounted) return
+    const hasNewerLocalEdit = rootEditEpoch !== editEpoch
+    const latestGraph = hasNewerLocalEdit ? currentSerializedGraph() : null
     resolveCanvasPersistenceFromDraft(response)
-    markWorkflowDirtyFromDraft(response.dirty_against_saved)
+    if (latestGraph !== null) {
+      queueCanvasPersistence(latestGraph)
+      uiStore.markCanvasDirty(canvasId)
+    } else {
+      markWorkflowDirtyFromDraft(response.dirty_against_saved)
+    }
   } catch (err) {
     showRemoteDraftActionError('Could not keep your canvas', err)
   } finally {
@@ -1030,21 +1264,34 @@ async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
   if (!isActiveCanvasTab.value) return
   if (lifecycleOperation.value !== null) return
   if (hasLocalRemoteDraftConflict.value) return
+  if (isResolvingRemoteDraftConflict.value) return
+  if (isInstallingAuthoritativeDraft.value) return
   if (isAutoApplyingRemoteDraft) return
 
   const workflowName = workflowIdentity().workflowName
   if (typeof workflowName !== 'string' || workflowName.length === 0) return
   if (workflowDraftStore.workflowId !== workflowName) return
 
+  const editEpoch = rootEditEpoch
   isAutoApplyingRemoteDraft = true
   try {
-    const draft = await workflowDraftStore.loadDraft(workflowName)
-    resolveCanvasPersistenceFromDraft(draft)
-    await applyGraphState(
-      draft.graph,
-      workflowStore.missingTools,
-      draft.dirty_against_saved,
-    )
+    const draft = await workflowDraftStore.fetchLatestDraft(workflowName)
+    const currentRemoteRevision = workflowDraftStore.remoteAvailableRevision
+    if (
+      isCanvasUnmounted
+      || rootEditEpoch !== editEpoch
+      || !isActiveCanvasTab.value
+      || lifecycleOperation.value !== null
+      || hasLocalRemoteDraftConflict.value
+      || isResolvingRemoteDraftConflict.value
+      || isInstallingAuthoritativeDraft.value
+      || currentWorkflowName() !== workflowName
+      || workflowDraftStore.workflowId !== workflowName
+      || currentRemoteRevision === null
+      || draft.draft_revision < currentRemoteRevision
+      || draft.draft_revision < remoteRevision
+    ) return
+    await installAuthoritativeRootDraft(draft)
   } catch (err) {
     console.warn('[canvas] Failed to auto-apply remote workflow draft:', err)
   } finally {
@@ -2478,9 +2725,9 @@ function applySubWorkflowDraft(
   })
   node.data.published_inputs = nextInputs
   node.data.published_outputs = nextOutputs
-  canvasStatusProjection.markAllProvisional()
+  canvasStatusProjection.stageCurrentSemanticStatuses()
   if (parentWasExecuted) {
-    canvasStatusProjection.markProvisional(parentNodeId, {
+    canvasStatusProjection.stageSemanticStatus(parentNodeId, {
       node_id: parentNodeId,
       status: 'out_of_date',
       cached: false,
@@ -2793,6 +3040,7 @@ function markDirtyAndAutoSave(
 ) {
   const name = owningWorkflowId()
   if (!name) return
+  rootEditEpoch += 1
   const graph = graphOverride ?? rememberAuthoritativeGraph(
     serializeGraph(state) as GraphState,
   )
@@ -3050,22 +3298,25 @@ function updateNodeParameter(
   if (isLocked.value) return false
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
   if (!node?.data) return false
+  const presentationStatus = canvasStatusProjection
+    .statusForNode(nodeId)
+    ?.presentationStatus
   node.data.parameters = {
     ...(node.data.parameters ?? {}),
     [key]: value,
   }
-  canvasStatusProjection.markAllProvisional()
-  canvasStatusProjection.markProvisional(nodeId, {
+  canvasStatusProjection.stageCurrentSemanticStatuses()
+  canvasStatusProjection.stageSemanticStatus(nodeId, {
     node_id: nodeId,
     status: 'unexecuted',
     cached: false,
-  })
+  }, presentationStatus)
   emitGraphChanged({ statusesAlreadyStaged: true })
   return true
 }
 
 function stageGraphValidation(): void {
-  canvasStatusProjection.markAllProvisional()
+  canvasStatusProjection.stageCurrentSemanticStatuses()
 }
 
 function emitGraphChanged(options: GraphChangeOptions = {}) {
@@ -3129,7 +3380,7 @@ defineExpose({
     @dragover="onDragOver"
     @keydown="handleKeydown"
     tabindex="0"
-    :aria-busy="lifecycleOperation !== null"
+    :aria-busy="lifecycleOperation !== null || isInstallingAuthoritativeDraft"
   >
     <div
       v-if="lifecycleOperation"
@@ -3145,10 +3396,27 @@ defineExpose({
           : 'Deleting workflow…' }}
     </div>
     <CanvasErrorBanner :validation-result="validationResult" />
+    <CanvasPersistenceFeedback
+      class="canvas-persistence-feedback-host"
+      :state="canvasPersistenceFeedbackState"
+      :issue="canvasPersistenceFeedbackIssue"
+      :conflict-action-label="isSubWorkflowEditor ? 'Keep my changes' : undefined"
+      :conflict-secondary-action-label="isSubWorkflowEditor ? 'Use latest snapshot' : null"
+      :conflict-reopen-label="isSubWorkflowEditor ? 'Resolve nested save conflict' : null"
+      :conflict-actions-disabled="nestedConflictResolution !== null"
+      @retry="retryCanvasPersistence"
+      @resolve-conflict="resolveCanvasPersistenceConflict"
+      @use-latest="useLatestNestedPersistenceSnapshot"
+      @dismiss="dismissCanvasPersistenceIssue"
+      @reopen-conflict="reopenCanvasPersistenceConflict"
+    />
     <div
       v-if="shouldShowRemoteDraftConflict"
       class="workflow-draft-conflict"
       role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+      tabindex="0"
     >
       <div class="workflow-draft-conflict__copy">
         <strong>This workflow changed outside the canvas.</strong>
@@ -3251,6 +3519,14 @@ defineExpose({
   position: absolute;
   top: 0.75rem;
   transform: translateX(-50%);
+  z-index: 20;
+}
+
+.canvas-persistence-feedback-host {
+  bottom: 0.75rem;
+  max-width: min(42rem, calc(100% - 1.5rem));
+  position: absolute;
+  right: 0.75rem;
   z-index: 20;
 }
 

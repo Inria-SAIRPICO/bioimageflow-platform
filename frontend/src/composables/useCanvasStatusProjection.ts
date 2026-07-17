@@ -42,15 +42,23 @@ export interface CanvasStatusProjectionReader {
 }
 
 export interface CanvasStatusProjectionApi extends CanvasStatusProjectionReader {
-  markProvisional(nodeId: string, value: NodeStatus): void
-  markAllProvisional(): void
+  stageSemanticStatus(
+    nodeId: string,
+    value: NodeStatus,
+    presentationStatus?: NodeStatus['status'],
+  ): void
+  stageCurrentSemanticStatuses(): void
   dispose(): void
 }
 
 interface CanvasStatusProjectionResource
   extends CanvasStatusProjectionReader, DisposableCanvasResource {
-  markProvisional(nodeId: string, value: NodeStatus): void
-  markAllProvisional(): void
+  stageSemanticStatus(
+    nodeId: string,
+    value: NodeStatus,
+    presentationStatus?: NodeStatus['status'],
+  ): void
+  stageCurrentSemanticStatuses(): void
 }
 
 export const CANVAS_STATUS_PROJECTION_KEY:
@@ -99,21 +107,24 @@ function createCanvasStatusProjectionResource(
   options: CanvasStatusProjectionOptions,
 ): CanvasStatusProjectionResource {
   const execution = useExecutionStore()
-  const provisionalOverrides = ref<Record<string, NodeStatus>>({})
+  const semanticOverrides = ref<Record<string, {
+    value: NodeStatus
+    presentationStatus: NodeStatus['status']
+  }>>({})
   const disposed = ref(false)
 
   const stopValidationWatch = watch(
     options.validationResult,
     (result) => {
       if (!result?.node_statuses) return
-      const next = { ...provisionalOverrides.value }
+      const next = { ...semanticOverrides.value }
       let changed = false
       for (const nodeId of Object.keys(result.node_statuses)) {
         if (!(nodeId in next)) continue
         delete next[nodeId]
         changed = true
       }
-      if (changed) provisionalOverrides.value = next
+      if (changed) semanticOverrides.value = next
     },
     { deep: true, flush: 'sync' },
   )
@@ -131,7 +142,9 @@ function createCanvasStatusProjectionResource(
     const projected = projectNodeStatus({
       nodeId,
       enabled: node?.enabled ?? true,
-      provisionalOverride: provisionalOverrides.value[nodeId] ?? null,
+      semanticOverride: semanticOverrides.value[nodeId]?.value ?? null,
+      semanticPresentationStatus:
+        semanticOverrides.value[nodeId]?.presentationStatus ?? null,
       executionStatus: execution.nodeStatuses[nodeId] ?? null,
       validationStatus:
         options.validationResult.value?.node_statuses?.[nodeId] ?? null,
@@ -153,7 +166,7 @@ function createCanvasStatusProjectionResource(
     for (const candidates of [
       Object.keys(options.validationResult.value?.node_statuses ?? {}),
       Object.keys(execution.nodeStatuses),
-      Object.keys(provisionalOverrides.value),
+      Object.keys(semanticOverrides.value),
     ]) {
       for (const nodeId of candidates) {
         if (isOwnedScopedNodeId(nodeId)) ids.add(nodeId)
@@ -180,21 +193,31 @@ function createCanvasStatusProjectionResource(
     if (disposed.value) throw new Error('Canvas status projection has been disposed')
   }
 
-  function markProvisional(nodeId: string, value: NodeStatus): void {
+  function stageSemanticStatus(
+    nodeId: string,
+    value: NodeStatus,
+    presentationStatus: NodeStatus['status'] = value.status,
+  ): void {
     assertActive()
-    provisionalOverrides.value = {
-      ...provisionalOverrides.value,
-      [nodeId]: { ...value },
+    semanticOverrides.value = {
+      ...semanticOverrides.value,
+      [nodeId]: {
+        value: { ...value },
+        presentationStatus,
+      },
     }
   }
 
-  function markAllProvisional(): void {
+  function stageCurrentSemanticStatuses(): void {
     assertActive()
-    const next = { ...provisionalOverrides.value }
+    const next = { ...semanticOverrides.value }
     for (const [nodeId, current] of Object.entries(statuses.value)) {
-      next[nodeId] = statusValue(current)
+      next[nodeId] = {
+        value: statusValue(current),
+        presentationStatus: current.presentationStatus,
+      }
     }
-    provisionalOverrides.value = next
+    semanticOverrides.value = next
   }
 
   return {
@@ -210,12 +233,12 @@ function createCanvasStatusProjectionResource(
       const current = execution.progress
       return current?.node_id === nodeId ? current : null
     },
-    markProvisional,
-    markAllProvisional,
+    stageSemanticStatus,
+    stageCurrentSemanticStatuses,
     dispose: () => {
       if (disposed.value) return
       disposed.value = true
-      provisionalOverrides.value = {}
+      semanticOverrides.value = {}
       stopValidationWatch()
     },
   }
@@ -230,8 +253,10 @@ function fixedFacade(
     statuses: resource.statuses,
     statusForNode: nodeId => resource.statusForNode(nodeId),
     progressForNode: nodeId => resource.progressForNode(nodeId),
-    markProvisional: (nodeId, value) => resource.markProvisional(nodeId, value),
-    markAllProvisional: () => resource.markAllProvisional(),
+    stageSemanticStatus: (nodeId, value, presentationStatus) => (
+      resource.stageSemanticStatus(nodeId, value, presentationStatus)
+    ),
+    stageCurrentSemanticStatuses: () => resource.stageCurrentSemanticStatuses(),
     dispose: () => canvasSessionRegistry.unregister(canvasId),
   }
 }
@@ -252,11 +277,11 @@ function createActiveFacade(): CanvasStatusProjectionApi {
       ?? null
     ),
     progressForNode: nodeId => activeResource()?.progressForNode(nodeId) ?? null,
-    markProvisional: (nodeId, value) => {
-      activeResource()?.markProvisional(nodeId, value)
+    stageSemanticStatus: (nodeId, value, presentationStatus) => {
+      activeResource()?.stageSemanticStatus(nodeId, value, presentationStatus)
     },
-    markAllProvisional: () => {
-      activeResource()?.markAllProvisional()
+    stageCurrentSemanticStatuses: () => {
+      activeResource()?.stageCurrentSemanticStatuses()
     },
     dispose: () => {
       const canvasId = canvasSessionRegistry.activeCanvasId.value
@@ -275,6 +300,10 @@ function activeResource(): CanvasStatusProjectionResource | null {
 }
 
 function statusValue(value: ProjectedNodeStatus): NodeStatus {
-  const { provisional: _provisional, source: _source, ...status } = value
+  const {
+    presentationStatus: _presentationStatus,
+    source: _source,
+    ...status
+  } = value
   return status
 }

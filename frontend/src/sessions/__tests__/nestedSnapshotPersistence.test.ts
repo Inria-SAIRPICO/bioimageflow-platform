@@ -4,6 +4,7 @@ import type { NestedWorkflowSnapshotResponse } from '@/api/nestedWorkflowSnapsho
 import { canvasIdFromPanelId } from '../canvasSessionRegistry'
 import {
   createNestedSnapshotPersistence,
+  NestedSnapshotPersistenceConflictError,
   type NestedSnapshotPersistenceTransport,
 } from '../nestedSnapshotPersistence'
 
@@ -74,6 +75,7 @@ describe('nested snapshot persistence', () => {
     const first = deferred<NestedWorkflowSnapshotResponse>()
     const second = deferred<NestedWorkflowSnapshotResponse>()
     const transport: NestedSnapshotPersistenceTransport = {
+      get: vi.fn(),
       put: vi.fn()
         .mockReturnValueOnce(first.promise)
         .mockReturnValueOnce(second.promise),
@@ -121,6 +123,7 @@ describe('nested snapshot persistence', () => {
 
   it('deletes only after flushing and uses the newest accepted revision', async () => {
     const transport: NestedSnapshotPersistenceTransport = {
+      get: vi.fn(),
       put: vi.fn().mockResolvedValue(response(3, graph('changed'))),
       delete: vi.fn().mockResolvedValue(undefined),
     }
@@ -138,5 +141,120 @@ describe('nested snapshot persistence', () => {
       sessionId: 'f16fd9d4-18e5-4d73-a9df-b7675ef44c9e',
       expectedRevision: 3,
     }))
+  })
+
+  it('holds a revision conflict and rebases the latest local graph only after an explicit action', async () => {
+    const rawConflict = {
+      response: {
+        status: 409,
+        data: {
+          detail: 'Nested snapshot revision conflict: expected 4, current is 5',
+          expected_revision: 4,
+          current_revision: 5,
+        },
+      },
+    }
+    const remote = response(5, graph('remote'))
+    const latestLocal = graph('latest-local')
+    const transport: NestedSnapshotPersistenceTransport = {
+      get: vi.fn().mockResolvedValue(remote),
+      put: vi.fn()
+        .mockRejectedValueOnce(rawConflict)
+        .mockResolvedValueOnce(response(6, latestLocal)),
+      delete: vi.fn(),
+    }
+    const accepted = vi.fn()
+    const resource = createNestedSnapshotPersistence({
+      canvasId: canvasIdFromPanelId('sub-workflow:session'),
+      initialSnapshot: response(4, graph('initial')),
+      transport,
+      debounceMs: 60_000,
+      onAccepted: accepted,
+    })
+
+    resource.queue(graph('conflicting-local'))
+    const firstFlush = resource.flushLatest()
+    await expect(firstFlush).rejects.toMatchObject({
+      expectedRevision: 4,
+      currentRevision: 5,
+    })
+    const conflict = resource.coordinator.lastError.value
+    expect(conflict).toBeInstanceOf(NestedSnapshotPersistenceConflictError)
+    expect(resource.coordinator.syncState.value).toBe('conflict')
+
+    await expect(resource.flushLatest()).rejects.toBe(conflict)
+    expect(transport.put).toHaveBeenCalledOnce()
+
+    resource.queue(latestLocal)
+    expect(resource.coordinator.syncState.value).toBe('conflict')
+    expect(transport.put).toHaveBeenCalledOnce()
+
+    await expect(resource.resolveConflictKeepingLocal()).resolves.toEqual({
+      graph: latestLocal,
+      validation: validation('latest-local'),
+      snapshotRevision: 6,
+    })
+    expect(transport.get).toHaveBeenCalledWith({
+      sessionId: 'f16fd9d4-18e5-4d73-a9df-b7675ef44c9e',
+      signal: expect.any(AbortSignal),
+    })
+    expect(transport.put).toHaveBeenLastCalledWith(expect.objectContaining({
+      expectedRevision: 5,
+      graph: latestLocal,
+    }))
+    expect(accepted).toHaveBeenNthCalledWith(1, remote)
+    expect(accepted).toHaveBeenLastCalledWith(response(6, latestLocal))
+    expect(resource.coordinator.syncState.value).toBe('idle')
+    expect(resource.coordinator.lastError.value).toBeNull()
+  })
+
+  it('replaces conflicted local work with the explicitly selected latest snapshot without another PUT', async () => {
+    const rawConflict = {
+      response: {
+        status: 409,
+        data: { detail: 'revision conflict', current_revision: 5 },
+      },
+    }
+    const remote = response(5, graph('remote'))
+    const transport: NestedSnapshotPersistenceTransport = {
+      get: vi.fn().mockResolvedValue(remote),
+      put: vi.fn().mockRejectedValueOnce(rawConflict),
+      delete: vi.fn(),
+    }
+    const accepted = vi.fn()
+    const resource = createNestedSnapshotPersistence({
+      canvasId: canvasIdFromPanelId('sub-workflow:session'),
+      initialSnapshot: response(4, graph('initial')),
+      transport,
+      debounceMs: 60_000,
+      onAccepted: accepted,
+    })
+
+    resource.queue(graph('discarded-local'))
+    await expect(resource.flushLatest()).rejects.toBeInstanceOf(
+      NestedSnapshotPersistenceConflictError,
+    )
+    const conflict = resource.coordinator.lastError.value
+    await expect(resource.flushLatest()).rejects.toBe(conflict)
+    expect(transport.put).toHaveBeenCalledOnce()
+
+    await expect(resource.resolveConflictUsingRemote()).resolves.toEqual({
+      graph: remote.graph,
+      validation: remote.validation,
+      snapshotRevision: 5,
+    })
+    expect(resource.currentGraph.value).toEqual(remote.graph)
+    expect(resource.validationResult.value).toEqual(remote.validation)
+    expect(resource.coordinator.syncState.value).toBe('idle')
+    expect(resource.coordinator.isPending.value).toBe(false)
+    expect(resource.coordinator.lastError.value).toBeNull()
+    await expect(resource.flushLatest()).resolves.toEqual({
+      graph: remote.graph,
+      validation: remote.validation,
+      snapshotRevision: 5,
+    })
+    expect(transport.put).toHaveBeenCalledOnce()
+    expect(accepted).toHaveBeenCalledOnce()
+    expect(accepted).toHaveBeenCalledWith(remote)
   })
 })

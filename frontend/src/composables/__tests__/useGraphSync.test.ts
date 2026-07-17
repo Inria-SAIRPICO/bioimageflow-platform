@@ -361,7 +361,14 @@ describe('useGraphSync', () => {
   })
 
   it('syncState transitions to "error" on PUT failure; validationResult is preserved', async () => {
-    const { syncGraph, flushNow, syncState, validationResult } = canonicalGraphSync()
+    const {
+      syncGraph,
+      flushNow,
+      syncState,
+      lastError,
+      validationResult,
+    } = canonicalGraphSync()
+    const persistence = useCanvasPersistence()
     syncGraph(makeVueFlowGraph())
     await vi.advanceTimersByTimeAsync(300)
     const previous = validationResult.value
@@ -371,8 +378,15 @@ describe('useGraphSync', () => {
     await expect(flushNow()).rejects.toMatchObject({ message: 'network boom' })
 
     expect(syncState.value).toBe('error')
+    expect(lastError.value).toBe(persistence.persistenceIssue.value)
+    expect(lastError.value).toMatchObject({ kind: 'error', source: 'draft' })
     // Previous result is kept visible
     expect(validationResult.value).toEqual(previous)
+
+    syncGraph(makeVueFlowGraph('3'))
+    expect(lastError.value).toBeNull()
+    await flushNow()
+    expect(lastError.value).toBeNull()
   })
 
   it('keeps the canonical canvas workflow identity when global selection changes', async () => {

@@ -158,19 +158,21 @@ describe('canvas status projection resource', () => {
     expect(projection.statusForNode('other/child')).toBeNull()
     expect(projection.statuses.value['other/child']).toBeUndefined()
 
-    projection.markAllProvisional()
+    projection.stageCurrentSemanticStatuses()
 
     expect(projection.statuses.value['parent/child']).toMatchObject({
       status: 'executed',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
     expect(projection.statuses.value['parent/validated']).toMatchObject({
       status: 'out_of_date',
-      provisional: true,
+      presentationStatus: 'out_of_date',
+      source: 'semantic',
     })
   })
 
-  it('keeps a provisional edit synchronous and clears only covered ids on validation', () => {
+  it('keeps a semantic edit synchronous and clears only covered ids on validation', () => {
     const canvasId = canvasIdFromPanelId('workflow:a')
     const nextValidation = ref<ValidationResult | null>(null)
     const projection = useCanvasStatusProjection({
@@ -180,22 +182,53 @@ describe('canvas status projection resource', () => {
       acceptedDraftRevision: ref(7),
     })
 
-    projection.markProvisional('a', status('a', 'unexecuted'))
-    projection.markProvisional('b', status('b', 'out_of_date'))
+    projection.stageSemanticStatus('a', status('a', 'unexecuted'), 'executed')
+    projection.stageSemanticStatus('b', status('b', 'out_of_date'), 'executed')
     expect(projection.statusForNode('a')).toMatchObject({
       status: 'unexecuted',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
 
-    nextValidation.value = validation({ a: status('a', 'executed') })
+    nextValidation.value = validation({ a: status('a', 'out_of_date') })
 
     expect(projection.statusForNode('a')).toMatchObject({
-      status: 'executed',
-      provisional: false,
+      status: 'out_of_date',
+      presentationStatus: 'out_of_date',
+      source: 'validation',
     })
     expect(projection.statusForNode('b')).toMatchObject({
       status: 'out_of_date',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
+    })
+  })
+
+  it('retains the accepted presentation across consecutive semantic edits', () => {
+    const canvasId = canvasIdFromPanelId('workflow:a')
+    const validationResult = ref<ValidationResult | null>(
+      validation({ a: status('a', 'executed') }),
+    )
+    const projection = useCanvasStatusProjection({
+      descriptor: { kind: 'root', canvasId, workflowId: 'wf_a' },
+      nodes: ref([node('a')]),
+      validationResult,
+      acceptedDraftRevision: ref(7),
+    })
+
+    projection.stageCurrentSemanticStatuses()
+    projection.stageSemanticStatus('a', status('a', 'unexecuted'), 'executed')
+    projection.stageCurrentSemanticStatuses()
+    projection.stageSemanticStatus(
+      'a',
+      status('a', 'unexecuted'),
+      projection.statusForNode('a')?.presentationStatus,
+    )
+
+    expect(projection.statusForNode('a')).toMatchObject({
+      status: 'unexecuted',
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
   })
 

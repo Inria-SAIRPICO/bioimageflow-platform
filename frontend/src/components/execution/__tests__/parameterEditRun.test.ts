@@ -148,7 +148,6 @@ describe('parameter edit followed immediately by Run', () => {
       toolName: 'files',
       tool,
       status: 'executed',
-      provisional: undefined as boolean | undefined,
       parameters: { path: '/data/old' },
       resources: {},
       output_templates: {},
@@ -204,14 +203,17 @@ describe('parameter edit followed immediately by Run', () => {
       updateParameter: (nodeId, key, value) => {
         const selected = canvasNodes.find(node => node.id === nodeId)
         if (!selected?.data) return false
+        const presentationStatus = statusProjection
+          .statusForNode(nodeId)
+          ?.presentationStatus
         const parameters = { ...selected.data.parameters, [key]: value }
         selected.data.parameters = parameters
-        statusProjection.markAllProvisional()
-        statusProjection.markProvisional(nodeId, {
+        statusProjection.stageCurrentSemanticStatuses()
+        statusProjection.stageSemanticStatus(nodeId, {
           node_id: nodeId,
           status: 'unexecuted',
           cached: false,
-        })
+        }, presentationStatus)
         canvasPersistence.queueGraph(serializeGraph({ nodes: canvasNodes, edges: [] }))
         return true
       },
@@ -235,16 +237,18 @@ describe('parameter edit followed immediately by Run', () => {
 
     expect(statusProjection.statusForNode('files')).toMatchObject({
       status: 'unexecuted',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
     expect(statusProjection.statusForNode('untouched')).toMatchObject({
       status: 'executed',
-      provisional: true,
+      presentationStatus: 'executed',
+      source: 'semantic',
     })
     expect(nodeData.status).toBe('executed')
-    expect(nodeData.provisional).toBeUndefined()
+    expect(nodeData).not.toHaveProperty('provisional')
     expect(untouchedNodeData.status).toBe('executed')
-    expect(untouchedNodeData.provisional).toBeUndefined()
+    expect(untouchedNodeData).not.toHaveProperty('provisional')
     expect(graphSync.currentGraph.value.nodes[0]?.parameters).toEqual({
       path: '/data/new',
     })

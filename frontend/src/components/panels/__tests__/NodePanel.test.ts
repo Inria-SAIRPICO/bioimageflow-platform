@@ -270,16 +270,19 @@ function mountPanel(
     updateParameter: (nodeId, key, value) => {
       const node = uiStore.graphNodes.find((candidate: any) => candidate.id === nodeId)
       if (!node?.data) return false
+      const presentationStatus = statusProjection
+        .statusForNode(nodeId)
+        ?.presentationStatus
       node.data.parameters = {
         ...node.data.parameters,
         [key]: value,
       }
-      statusProjection.markAllProvisional()
-      statusProjection.markProvisional(nodeId, {
+      statusProjection.stageCurrentSemanticStatuses()
+      statusProjection.stageSemanticStatus(nodeId, {
         node_id: nodeId,
         status: 'unexecuted',
         cached: false,
-      })
+      }, presentationStatus)
       return true
     },
   })
@@ -327,6 +330,18 @@ describe('NodePanel', () => {
     }
     await w.vm.$nextTick()
 
+    expect(w.find('.status-badge').text()).toBe('out_of_date')
+    expect(w.find('.status-badge').classes()).toContain('status-out-of-date')
+
+    const statusProjection = useCanvasStatusProjection()
+    statusProjection.stageSemanticStatus('node-1', {
+      node_id: 'node-1',
+      status: 'unexecuted',
+      cached: false,
+    }, 'out_of_date')
+    await w.vm.$nextTick()
+
+    expect(statusProjection.statusForNode('node-1')?.status).toBe('unexecuted')
     expect(w.find('.status-badge').text()).toBe('out_of_date')
     expect(w.find('.status-badge').classes()).toContain('status-out-of-date')
 

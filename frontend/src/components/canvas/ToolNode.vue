@@ -28,7 +28,6 @@ export interface NodeData {
   published_inputs?: PublishedInput[]
   published_outputs?: PublishedOutput[]
   sub_workflow_readonly_reason?: string | null
-  provisional?: boolean
   // Marks refreshed tool metadata; cleared when the user clicks the badge.
   updatedBadge?: boolean
 }
@@ -168,10 +167,9 @@ const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
 
 const projectedStatus = computed(() => statusProjection?.statusForNode(props.id) ?? null)
 const displayedStatus = computed(() => (
-  projectedStatus.value?.status
+  projectedStatus.value?.presentationStatus
   ?? (props.data.enabled === false ? 'disabled' : 'unexecuted')
 ))
-const isStatusProvisional = computed(() => projectedStatus.value?.provisional ?? false)
 const statusClass = computed(
   () => `status-${displayedStatus.value.replace(/_/g, '-')}`,
 )
@@ -211,7 +209,6 @@ function onDismissBadge(event: MouseEvent) {
       statusClass,
       {
         disabled: !data.enabled,
-        provisional: isStatusProvisional,
         collapsed: data.collapsed,
         'sub-workflow': isSubWorkflow,
         'readonly-sub-workflow': isSubWorkflow && data.sub_workflow_readonly_reason,
@@ -246,7 +243,6 @@ function onDismissBadge(event: MouseEvent) {
           Missing
         </span>
         <span v-if="hasGpu" class="gpu-badge">GPU</span>
-        <span v-if="isStatusProvisional" class="provisional-indicator">provisional</span>
         <button
           v-if="data.updatedBadge === true"
           type="button"
@@ -407,11 +403,6 @@ function onDismissBadge(event: MouseEvent) {
 .status-indicator.status-running { background: var(--p-blue-500); animation: pulse 1.5s ease-in-out infinite; }
 .status-indicator.status-failed { background: var(--p-red-500); }
 
-.provisional-indicator {
-  color: var(--p-text-muted-color, #999);
-  font-style: italic;
-}
-
 /* Status */
 .status-unexecuted {
   border-color: var(--p-blue-500);
@@ -438,14 +429,10 @@ function onDismissBadge(event: MouseEvent) {
   50% { opacity: 0.6; }
 }
 
-/* Disabled & provisional */
+/* Disabled */
 .disabled {
   opacity: 0.4;
 }
-.provisional {
-  filter: saturate(0.4);
-}
-
 .collapsed .node-header {
   border-bottom: none;
   border-radius: 6px;

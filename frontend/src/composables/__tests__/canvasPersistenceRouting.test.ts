@@ -100,10 +100,12 @@ function transports(
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
     resolve = res
+    reject = rej
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 describe('canvas persistence routing', () => {
@@ -154,6 +156,8 @@ describe('canvas persistence routing', () => {
     persistence.queueGraph(edited)
     edited.nodes[0]!.parameters = { value: 'mutated-after-queue' }
 
+    expect(persistence.persistenceState.value).toBe('saving')
+    expect(persistence.persistenceIssue.value).toBeNull()
     expect(sync.currentGraph.value).toEqual(graph('captured'))
     expect(sync.isPending.value).toBe(true)
     await Promise.all([persistence.flush(), sync.flushNow()])
@@ -170,6 +174,125 @@ describe('canvas persistence routing', () => {
     expect(sync.validationResult.value).toEqual(acceptedValidation)
     expect(sync.isPending.value).toBe(false)
     expect(persistence.acceptedDraftRevision.value).toBe(5)
+    expect(persistence.persistenceState.value).toBe('idle')
+    expect(persistence.persistenceIssue.value).toBeNull()
+  })
+
+  it('keeps a readable draft failure until retry succeeds or the exact issue is dismissed', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const firstFailure = new Error('offline')
+    const secondFailure = new Error('still offline')
+    const io = transports({ 'workflow-a': 1 })
+    io.putDraft
+      .mockRejectedValueOnce(firstFailure)
+      .mockRejectedValueOnce(secondFailure)
+    const persistence = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    persistence.initializeFromDraft(draft('workflow-a', 1, 'initial'))
+    persistence.queueGraph(graph('edited'))
+
+    expect(persistence.persistenceState.value).toBe('saving')
+    await expect(persistence.flush()).rejects.toBe(firstFailure)
+
+    expect(persistence.persistenceState.value).toBe('error')
+    const firstIssue = persistence.persistenceIssue.value
+    expect(firstIssue).toMatchObject({
+      version: 1,
+      kind: 'error',
+      source: 'draft',
+      summary: 'Changes could not be saved',
+      dismissed: false,
+    })
+    expect(firstIssue?.detail).toContain('still queued on this canvas')
+    expect(firstIssue?.detail).toContain('offline')
+
+    persistence.dismissPersistenceIssue('another-canvas:persistence:1')
+    expect(persistence.persistenceIssue.value?.dismissed).toBe(false)
+    persistence.dismissPersistenceIssue(firstIssue!.id)
+    expect(persistence.persistenceIssue.value?.dismissed).toBe(true)
+    expect(persistence.persistenceState.value).toBe('error')
+
+    await expect(persistence.retryPersistence()).rejects.toBe(secondFailure)
+    const secondIssue = persistence.persistenceIssue.value
+    expect(secondIssue).toMatchObject({
+      version: 2,
+      kind: 'error',
+      source: 'draft',
+      dismissed: false,
+    })
+    expect(secondIssue?.id).not.toBe(firstIssue?.id)
+
+    await expect(persistence.retryPersistence()).resolves.toBeUndefined()
+    expect(persistence.persistenceState.value).toBe('idle')
+    expect(persistence.persistenceIssue.value).toBeNull()
+    warning.mockRestore()
+  })
+
+  it('surfaces initialization failure and retries the retained graph', async () => {
+    const io = transports({ 'workflow-a': 4 })
+    const failure = new Error('draft endpoint unavailable')
+    io.fetchDraft
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(draft('workflow-a', 4, 'remote'))
+    const persistence = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+
+    persistence.queueGraph(graph('local'))
+    expect(persistence.persistenceState.value).toBe('saving')
+    await expect(persistence.flush()).rejects.toBe(failure)
+
+    expect(persistence.persistenceState.value).toBe('error')
+    expect(persistence.persistenceIssue.value).toMatchObject({
+      version: 1,
+      source: 'initialization',
+      dismissed: false,
+    })
+    expect(persistence.persistenceIssue.value?.detail).toContain(
+      'draft endpoint unavailable',
+    )
+
+    await expect(persistence.retryPersistence()).resolves.toBeUndefined()
+    expect(io.putDraft).toHaveBeenCalledWith('workflow-a', expect.objectContaining({
+      graph: graph('local'),
+      expected_revision: 4,
+    }))
+    expect(persistence.persistenceState.value).toBe('idle')
+    expect(persistence.persistenceIssue.value).toBeNull()
+  })
+
+  it('prioritizes conflict over concurrent recovery failure', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const conflict = {
+      response: { status: 409, data: { current_revision: 8 } },
+    }
+    const io = transports({ 'workflow-a': 7 })
+    io.putDraft.mockRejectedValueOnce(conflict)
+    io.writeRecovery.mockRejectedValueOnce(new Error('indexeddb unavailable'))
+    const persistence = useCanvasPersistence({
+      descriptor: root('workflow:a', 'workflow-a'),
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    persistence.initializeFromDraft(draft('workflow-a', 7, 'initial'))
+    persistence.queueGraph(graph('local'))
+
+    await expect(persistence.flush()).rejects.toBeDefined()
+    await vi.waitFor(() => {
+      expect(persistence.persistenceState.value).toBe('conflict')
+    })
+    expect(persistence.persistenceIssue.value).toMatchObject({
+      kind: 'conflict',
+      source: 'draft',
+      dismissed: false,
+    })
+    expect(persistence.persistenceIssue.value?.detail).toContain('revision 8')
+    warning.mockRestore()
   })
 
   it('projects the accepted response graph and validation as one authority', async () => {
@@ -277,12 +400,14 @@ describe('canvas persistence routing', () => {
     })
 
     persistence.queueGraph(graph('old'))
+    expect(persistence.persistenceState.value).toBe('saving')
     const persistenceFlush = persistence.flush()
     const graphFlush = sync.flushNow()
     await vi.advanceTimersByTimeAsync(0)
     expect(io.putDraft).toHaveBeenCalledOnce()
 
     persistence.queueGraph(graph('latest'))
+    expect(persistence.persistenceState.value).toBe('saving')
     expect(sync.isPending.value).toBe(true)
     first.resolve({
       ...draft('workflow-a', 2, 'old'),
@@ -294,6 +419,8 @@ describe('canvas persistence routing', () => {
     expect(io.putDraft).toHaveBeenCalledTimes(2)
     expect(sync.validationResult.value).toEqual(initial.validation)
     expect(sync.isPending.value).toBe(true)
+    expect(persistence.persistenceState.value).toBe('saving')
+    expect(persistence.persistenceIssue.value).toBeNull()
     expect(io.putDraft.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
       graph: graph('latest'),
       expected_revision: 2,
@@ -315,6 +442,10 @@ describe('canvas persistence routing', () => {
     expect(sync.currentGraph.value).toEqual(graph('latest'))
     expect(sync.validationResult.value).toEqual(latestValidation)
     expect(sync.isPending.value).toBe(false)
+    expect(persistence.persistenceState.value).toBe('saving')
+    await persistence.flush()
+    expect(persistence.persistenceState.value).toBe('idle')
+    expect(persistence.persistenceIssue.value).toBeNull()
   })
 
   it('seeds matching draft validation without writing and can force draft-only revalidation', async () => {
@@ -770,6 +901,63 @@ describe('canvas persistence routing', () => {
     expect(fixed.hasConflict.value).toBe(true)
   })
 
+  it('keeps feedback isolated by canonical canvas and routes the active facade', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const failure = new Error('workflow-a offline')
+    const heldB = deferred<WorkflowDraftResponse>()
+    const io = transports({ 'workflow-a': 1, 'workflow-b': 5 })
+    io.putDraft.mockImplementation((workflowId: string) => {
+      if (workflowId === 'workflow-a') return Promise.reject(failure)
+      return heldB.promise
+    })
+    const descriptorA = root('workflow:a', 'workflow-a')
+    const descriptorB = root('workflow:b', 'workflow-b')
+    const a = useCanvasPersistence({
+      descriptor: descriptorA,
+      getWorkflowId: () => 'workflow-a',
+      transports: io,
+    })
+    const b = useCanvasPersistence({
+      descriptor: descriptorB,
+      getWorkflowId: () => 'workflow-b',
+      transports: io,
+    })
+    a.initializeFromDraft(draft('workflow-a', 1, 'initial-a'))
+    b.initializeFromDraft(draft('workflow-b', 5, 'initial-b'))
+    const active = useCanvasPersistence()
+
+    a.queueGraph(graph('edited-a'))
+    b.queueGraph(graph('edited-b'))
+    const flushA = expect(a.flush()).rejects.toBe(failure)
+    const flushB = b.flush()
+    await vi.advanceTimersByTimeAsync(0)
+    await flushA
+
+    expect(a.persistenceState.value).toBe('error')
+    expect(a.persistenceIssue.value?.id).toContain('workflow:a')
+    expect(b.persistenceState.value).toBe('saving')
+    expect(b.persistenceIssue.value).toBeNull()
+
+    graphSyncCanvasSessions.activate(descriptorA.canvasId)
+    expect(active.persistenceState.value).toBe('error')
+    expect(active.persistenceIssue.value?.id).toBe(a.persistenceIssue.value?.id)
+    active.dismissPersistenceIssue(a.persistenceIssue.value!.id)
+    expect(a.persistenceIssue.value?.dismissed).toBe(true)
+
+    graphSyncCanvasSessions.activate(descriptorB.canvasId)
+    expect(active.persistenceState.value).toBe('saving')
+    expect(active.persistenceIssue.value).toBeNull()
+
+    heldB.resolve({
+      ...draft('workflow-b', 6, 'edited-b'),
+      graph: graph('edited-b'),
+    })
+    await flushB
+    expect(b.persistenceState.value).toBe('idle')
+    expect(a.persistenceState.value).toBe('error')
+    warning.mockRestore()
+  })
+
   it('flushes only the active root persistence session', async () => {
     const io = transports({ 'workflow-a': 1, 'workflow-b': 4 })
     const descriptorA = root('workflow:a', 'workflow-a')
@@ -789,11 +977,17 @@ describe('canvas persistence routing', () => {
     b.queueGraph(graph('b'))
     graphSyncCanvasSessions.activate(descriptorA.canvasId)
 
+    expect(active.persistenceState.value).toBe('saving')
+    expect(active.persistenceIssue.value).toBeNull()
+
     await expect(active.ensureFreshForCriticalOperation()).resolves.toBe(true)
 
+    expect(active.persistenceState.value).toBe('idle')
     expect(io.putDraft).toHaveBeenCalledTimes(1)
     expect(io.putDraft).toHaveBeenCalledWith('workflow-a', expect.anything())
     expect(b.isPending.value).toBe(true)
+    graphSyncCanvasSessions.activate(descriptorB.canvasId)
+    expect(active.persistenceState.value).toBe('saving')
   })
 
   it('does not fall through to a root when no canvas or a nested canvas is active', async () => {
@@ -807,6 +1001,8 @@ describe('canvas persistence routing', () => {
     rootSession.queueGraph(graph('a'))
     const active = useCanvasPersistence()
 
+    expect(active.persistenceState.value).toBe('idle')
+    expect(active.persistenceIssue.value).toBeNull()
     await expect(active.ensureFreshForCriticalOperation()).resolves.toBe(false)
 
     const nestedId = canvasIdFromPanelId('sub-workflow:nested')
@@ -818,6 +1014,8 @@ describe('canvas persistence routing', () => {
     })
     graphSyncCanvasSessions.activate(nestedId)
     expect(active.canvasId).toBe(nestedId)
+    expect(active.persistenceState.value).toBe('idle')
+    expect(active.persistenceIssue.value).toBeNull()
     await expect(active.ensureFreshForCriticalOperation()).resolves.toBe(false)
 
     expect(io.putDraft).not.toHaveBeenCalled()

@@ -62,15 +62,15 @@ function factory(
   data = makeData(),
   projectedStatus?: ProjectedNodeStatus,
 ) {
-  const provisional = (data as { provisional?: boolean }).provisional === true
+  const dataStatus = data.enabled === false
+    ? 'disabled'
+    : data.status as ProjectedNodeStatus['status']
   const status = projectedStatus ?? {
     node_id: 'node-1',
-    status: data.enabled === false
-      ? 'disabled'
-      : data.status as ProjectedNodeStatus['status'],
+    status: dataStatus,
     cached: false,
-    provisional,
-    source: provisional ? 'provisional' : 'validation',
+    presentationStatus: dataStatus,
+    source: 'validation',
   } satisfies ProjectedNodeStatus
   return mount(ToolNode, {
     props: { id: 'node-1', data } as any,
@@ -165,26 +165,22 @@ describe('ToolNode', () => {
     expect(body.isVisible()).toBe(false)
   })
 
-  it('applies provisional class', () => {
-    const w = factory(makeData({ provisional: true }))
-    expect(w.find('.tool-node').classes()).toContain('provisional')
-  })
-
-  it('uses the injected canvas projection instead of mutable node data', () => {
+  it('keeps the accepted presentation while a semantic edit is pending', () => {
     const w = factory(
-      makeData({ status: 'executed', provisional: false }),
+      makeData({ status: 'executed' }),
       {
         node_id: 'node-1',
-        status: 'out_of_date',
+        status: 'unexecuted',
         cached: false,
-        provisional: true,
-        source: 'provisional',
+        presentationStatus: 'executed',
+        source: 'semantic',
       },
     )
 
-    expect(w.find('.tool-node').classes()).toContain('status-out-of-date')
-    expect(w.find('.tool-node').classes()).toContain('provisional')
-    expect(w.find('.provisional-indicator').exists()).toBe(true)
+    expect(w.find('.tool-node').classes()).toContain('status-executed')
+    expect(w.find('.tool-node').classes()).not.toContain('status-unexecuted')
+    expect(w.find('.tool-node').classes()).not.toContain('provisional')
+    expect(w.text()).not.toContain('provisional')
   })
 
   it('emits context-menu on right-click', async () => {

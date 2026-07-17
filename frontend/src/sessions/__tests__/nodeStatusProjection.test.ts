@@ -25,7 +25,8 @@ function input(
   return {
     nodeId: 'same',
     enabled: true,
-    provisionalOverride: null,
+    semanticOverride: null,
+    semanticPresentationStatus: null,
     executionStatus: null,
     validationStatus: null,
     executionOriginMatches: false,
@@ -40,16 +41,21 @@ function input(
 describe('projectNodeStatus', () => {
   it.each([
     {
-      name: 'local provisional wins over exact execution and validation',
+      name: 'local semantic status wins while retaining its stable presentation',
       value: input({
-        provisionalOverride: status('same', 'unexecuted'),
+        semanticOverride: status('same', 'unexecuted'),
+        semanticPresentationStatus: 'executed',
         executionStatus: status('same', 'executed'),
         validationStatus: status('same', 'failed'),
         executionOriginMatches: true,
         executionDraftRevision: 4,
         acceptedDraftRevision: 4,
       }),
-      expected: { status: 'unexecuted', provisional: true, source: 'provisional' },
+      expected: {
+        status: 'unexecuted',
+        presentationStatus: 'executed',
+        source: 'semantic',
+      },
     },
     {
       name: 'exact contextual execution wins over validation',
@@ -60,7 +66,7 @@ describe('projectNodeStatus', () => {
         executionDraftRevision: 4,
         acceptedDraftRevision: 4,
       }),
-      expected: { status: 'running', provisional: false, source: 'execution' },
+      expected: { status: 'running', presentationStatus: 'running', source: 'execution' },
     },
     {
       name: 'mismatched execution revision falls back to validation',
@@ -71,7 +77,11 @@ describe('projectNodeStatus', () => {
         executionDraftRevision: 3,
         acceptedDraftRevision: 4,
       }),
-      expected: { status: 'out_of_date', provisional: false, source: 'validation' },
+      expected: {
+        status: 'out_of_date',
+        presentationStatus: 'out_of_date',
+        source: 'validation',
+      },
     },
     {
       name: 'contextual execution with unavailable revision is rejected',
@@ -82,7 +92,11 @@ describe('projectNodeStatus', () => {
         executionDraftRevision: null,
         acceptedDraftRevision: 4,
       }),
-      expected: { status: 'unexecuted', provisional: false, source: 'validation' },
+      expected: {
+        status: 'unexecuted',
+        presentationStatus: 'unexecuted',
+        source: 'validation',
+      },
     },
     {
       name: 'explicitly owned contextless legacy execution remains compatible',
@@ -93,7 +107,7 @@ describe('projectNodeStatus', () => {
         executionIsContextless: true,
         allowContextlessLegacyExecution: true,
       }),
-      expected: { status: 'running', provisional: false, source: 'execution' },
+      expected: { status: 'running', presentationStatus: 'running', source: 'execution' },
     },
     {
       name: 'unowned contextless execution never applies',
@@ -104,30 +118,39 @@ describe('projectNodeStatus', () => {
         executionIsContextless: true,
         allowContextlessLegacyExecution: true,
       }),
-      expected: { status: 'unexecuted', provisional: false, source: 'validation' },
+      expected: {
+        status: 'unexecuted',
+        presentationStatus: 'unexecuted',
+        source: 'validation',
+      },
     },
     {
       name: 'validation wins when there is no admissible overlay',
       value: input({ validationStatus: status('same', 'failed') }),
-      expected: { status: 'failed', provisional: false, source: 'validation' },
+      expected: { status: 'failed', presentationStatus: 'failed', source: 'validation' },
     },
     {
       name: 'disabled is the default for a disabled node',
       value: input({ enabled: false }),
-      expected: { status: 'disabled', provisional: false, source: 'default' },
+      expected: { status: 'disabled', presentationStatus: 'disabled', source: 'default' },
     },
     {
       name: 'unexecuted is the default for an enabled node',
       value: input(),
-      expected: { status: 'unexecuted', provisional: false, source: 'default' },
+      expected: {
+        status: 'unexecuted',
+        presentationStatus: 'unexecuted',
+        source: 'default',
+      },
     },
   ])('$name', ({ value, expected }) => {
     expect(projectNodeStatus(value)).toMatchObject(expected)
   })
 
   it('does not let a terminal execution repaint a semantic edit', () => {
-    const provisional = projectNodeStatus(input({
-      provisionalOverride: status('same', 'unexecuted'),
+    const semanticEdit = projectNodeStatus(input({
+      semanticOverride: status('same', 'unexecuted'),
+      semanticPresentationStatus: 'executed',
       executionStatus: status('same', 'executed'),
       validationStatus: status('same', 'executed'),
       executionOriginMatches: true,
@@ -142,10 +165,14 @@ describe('projectNodeStatus', () => {
       acceptedDraftRevision: 8,
     }))
 
-    expect(provisional).toMatchObject({ status: 'unexecuted', provisional: true })
+    expect(semanticEdit).toMatchObject({
+      status: 'unexecuted',
+      presentationStatus: 'executed',
+      source: 'semantic',
+    })
     expect(acceptedEdit).toMatchObject({
       status: 'unexecuted',
-      provisional: false,
+      presentationStatus: 'unexecuted',
       source: 'validation',
     })
   })

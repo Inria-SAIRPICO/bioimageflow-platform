@@ -59,6 +59,8 @@ function registerPersistence(
     validationSyncState: ref<'idle' | 'pending' | 'error'>('idle'),
     isPending: ref(false),
     hasConflict: ref(false),
+    persistenceState: ref<'idle' | 'saving' | 'error' | 'conflict'>('idle'),
+    persistenceIssue: ref(null),
     queueGraph: vi.fn((next: GraphState) => {
       resource.currentGraph.value = JSON.parse(JSON.stringify(next)) as GraphState
     }),
@@ -68,6 +70,8 @@ function registerPersistence(
     initializeFromDraft: vi.fn(),
     resolveFromDraft: vi.fn(),
     flush: vi.fn(async () => {}),
+    retryPersistence: vi.fn(async () => {}),
+    dismissPersistenceIssue: vi.fn(),
     ensureFreshForCriticalOperation: vi.fn(async () => true),
     discardToSaved: vi.fn(),
     dispose: vi.fn(),

@@ -53,9 +53,12 @@ export interface GraphSyncApi {
   syncGraphState(graph: GraphState): void
   revalidateGraphState(graph: GraphState): void
   flushNow(): Promise<AcceptedGraphSnapshot | null>
+  resolveConflictKeepingLocal(): Promise<AcceptedGraphSnapshot | null>
+  resolveConflictUsingRemote(): Promise<AcceptedGraphSnapshot | null>
   validationResult: Ref<ValidationResult | null>
   isPending: Ref<boolean>
   syncState: Ref<SyncState>
+  lastError: Readonly<Ref<unknown | null>>
   currentGraph: Ref<GraphState>
   dispose(): void
 }
@@ -291,9 +294,18 @@ function createNestedBoundApi(
       await nextTick()
       return resource.flushLatest()
     },
+    resolveConflictKeepingLocal: async () => {
+      await nextTick()
+      return resource.resolveConflictKeepingLocal()
+    },
+    resolveConflictUsingRemote: async () => {
+      await nextTick()
+      return resource.resolveConflictUsingRemote()
+    },
     validationResult: resource.validationResult,
     isPending: resource.coordinator.isPending,
     syncState: resource.coordinator.syncState,
+    lastError: resource.coordinator.lastError,
     currentGraph: resource.currentGraph,
     dispose,
   }
@@ -303,6 +315,16 @@ function createRootBoundApi(
   resource: RootCanvasPersistenceResource,
   dispose: () => void,
 ): GraphSyncApi {
+  const lastError = computed<unknown | null>(() => {
+    const issue = resource.persistenceIssue.value
+    if (
+      resource.validationSyncState.value !== 'error'
+      || issue?.kind !== 'error'
+      || issue.source !== 'draft'
+    ) return null
+    return issue
+  })
+
   function syncGraphState(graph: GraphState): void {
     resource.queueValidation(graph)
   }
@@ -322,9 +344,12 @@ function createRootBoundApi(
         snapshotRevision: null,
       }
     },
+    resolveConflictKeepingLocal: async () => null,
+    resolveConflictUsingRemote: async () => null,
     validationResult: resource.validationResult,
     isPending: resource.isValidationPending,
     syncState: resource.validationSyncState,
+    lastError,
     currentGraph: resource.currentGraph,
     dispose,
   }
@@ -370,6 +395,8 @@ function createActiveFacade(): GraphSyncApi {
     syncGraphState: graph => required().syncGraphState(graph),
     revalidateGraphState: graph => required().revalidateGraphState(graph),
     flushNow: () => required().flushNow(),
+    resolveConflictKeepingLocal: () => required().resolveConflictKeepingLocal(),
+    resolveConflictUsingRemote: () => required().resolveConflictUsingRemote(),
     validationResult: computed({
       get: () => selected()?.validationResult.value ?? null,
       set: value => { required().validationResult.value = value },
@@ -382,6 +409,7 @@ function createActiveFacade(): GraphSyncApi {
       get: () => selected()?.syncState.value ?? 'idle',
       set: value => { required().syncState.value = value },
     }),
+    lastError: computed(() => selected()?.lastError.value ?? null),
     currentGraph: computed({
       get: () => selected()?.currentGraph.value ?? emptyGraph,
       set: value => { required().currentGraph.value = value },

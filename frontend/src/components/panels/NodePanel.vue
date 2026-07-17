@@ -170,7 +170,7 @@ const selectedNodeStatus = computed(() => {
   return nodeId ? statusProjection.statusForNode(nodeId) : null
 })
 const selectedNodeDisplayStatus = computed(() => (
-  selectedNodeStatus.value?.status
+  selectedNodeStatus.value?.presentationStatus
   ?? (nodeData.value?.enabled === false ? 'disabled' : 'unexecuted')
 ))
 const selectedNodeStatusClass = computed(() => (

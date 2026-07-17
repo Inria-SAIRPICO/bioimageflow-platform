@@ -235,6 +235,8 @@ const graphSyncMocks = vi.hoisted(() => ({
   syncGraphState: vi.fn(),
   revalidateGraphState: vi.fn(),
   flushNow: vi.fn(),
+  resolveConflictKeepingLocal: vi.fn(),
+  resolveConflictUsingRemote: vi.fn(),
   dispose: vi.fn(),
   scopes: [] as any[],
   apis: [] as any[],
@@ -287,12 +289,24 @@ const persistenceMocks = vi.hoisted(() => ({
   initializeFromDraft: vi.fn(),
   resolveFromDraft: vi.fn(),
   flush: vi.fn().mockResolvedValue(undefined),
+  retryPersistence: vi.fn().mockResolvedValue(undefined),
+  dismissPersistenceIssue: vi.fn(),
   ensureFreshForCriticalOperation: vi.fn().mockResolvedValue(true),
   dispose: vi.fn(),
   scopes: [] as any[],
   apis: [] as any[],
   isPending: { value: false },
   hasConflict: { value: false },
+  persistenceState: { value: 'idle' as 'idle' | 'saving' | 'error' | 'conflict' },
+  persistenceIssue: { value: null as null | {
+    id: string
+    version: number
+    kind: 'error' | 'conflict'
+    source: 'initialization' | 'draft' | 'recovery'
+    summary: string
+    detail: string
+    dismissed: boolean
+  } },
   currentGraph: { value: { nodes: [], edges: [] } },
   workflowId: { value: null },
   acceptedDraftRevision: { value: 7 as number | null },
@@ -356,7 +370,7 @@ vi.mock('@/composables/useAutoSave', () => ({
 }))
 
 vi.mock('@/composables/useGraphSync', async () => {
-  const { ref } = await import('vue')
+  const { ref, shallowRef } = await import('vue')
   return {
     serializeGraph: graphSyncMocks.serializeGraph,
     useGraphSync: (options?: unknown) => {
@@ -369,9 +383,16 @@ vi.mock('@/composables/useGraphSync', async () => {
           graphSyncMocks.revalidateGraphState(...args)
         )),
         flushNow: vi.fn((...args: any[]) => graphSyncMocks.flushNow(...args)),
+        resolveConflictKeepingLocal: vi.fn((...args: any[]) => (
+          graphSyncMocks.resolveConflictKeepingLocal(...args)
+        )),
+        resolveConflictUsingRemote: vi.fn((...args: any[]) => (
+          graphSyncMocks.resolveConflictUsingRemote(...args)
+        )),
         validationResult: ref(null),
         isPending: ref(false),
         syncState: ref('idle'),
+        lastError: shallowRef(null),
       }
       graphSyncMocks.apis.push(scoped)
       return scoped
@@ -445,6 +466,7 @@ import {
   makeAcceptedNestedSnapshot,
   openAcceptedNestedSession,
 } from '@/test-utils/nestedSessionFixtures'
+import { NestedSnapshotPersistenceConflictError } from '@/sessions/nestedSnapshotPersistence'
 
 function mountCanvas(propsData: {
   nodes?: any[]
@@ -620,6 +642,8 @@ describe('CanvasView', () => {
     graphSyncMocks.syncGraphState.mockClear()
     graphSyncMocks.revalidateGraphState.mockClear()
     graphSyncMocks.flushNow.mockReset().mockResolvedValue(null)
+    graphSyncMocks.resolveConflictKeepingLocal.mockReset().mockResolvedValue(null)
+    graphSyncMocks.resolveConflictUsingRemote.mockReset().mockResolvedValue(null)
     graphSyncMocks.dispose.mockClear()
     graphSyncMocks.scopes.length = 0
     graphSyncMocks.apis.length = 0
@@ -629,11 +653,16 @@ describe('CanvasView', () => {
     persistenceMocks.initializeFromDraft.mockClear()
     persistenceMocks.resolveFromDraft.mockClear()
     persistenceMocks.flush.mockClear()
+    persistenceMocks.retryPersistence.mockClear()
+    persistenceMocks.dismissPersistenceIssue.mockClear()
     persistenceMocks.ensureFreshForCriticalOperation.mockClear()
     persistenceMocks.dispose.mockClear()
     persistenceMocks.scopes.length = 0
     persistenceMocks.apis.length = 0
     persistenceMocks.isPending.value = false
+    persistenceMocks.hasConflict.value = false
+    persistenceMocks.persistenceState.value = 'idle'
+    persistenceMocks.persistenceIssue.value = null
     persistenceMocks.acceptedDraftRevision.value = 7
     canvasCommandMocks.registrations.length = 0
     canvasCommandMocks.dispose.mockClear()
@@ -804,15 +833,17 @@ describe('CanvasView', () => {
       expect(mockNodes[0].data.parameters).toEqual({ sigma: 2 })
       expect(projectedStatusesOf(w).shared).toMatchObject({
         status: 'unexecuted',
-        provisional: true,
+        presentationStatus: 'executed',
+        source: 'semantic',
       })
       expect(projectedStatusesOf(w).untouched).toMatchObject({
         status: 'executed',
-        provisional: true,
+        presentationStatus: 'executed',
+        source: 'semantic',
       })
       expect(mockNodes[0].data.status).toBe('executed')
-      expect(mockNodes[0].data.provisional).toBeUndefined()
-      expect(mockNodes[1].data.provisional).toBeUndefined()
+      expect(mockNodes[0].data).not.toHaveProperty('provisional')
+      expect(mockNodes[1].data).not.toHaveProperty('provisional')
       expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
       expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
@@ -888,14 +919,16 @@ describe('CanvasView', () => {
         }
         expect(projectedStatusesOf(w).shared).toMatchObject({
           status: 'executed',
-          provisional: true,
+          presentationStatus: 'executed',
+          source: 'semantic',
         })
         expect(projectedStatusesOf(w).untouched).toMatchObject({
           status: 'executed',
-          provisional: true,
+          presentationStatus: 'executed',
+          source: 'semantic',
         })
-        expect(mockNodes[0].data.provisional).toBeUndefined()
-        expect(mockNodes[1].data.provisional).toBeUndefined()
+        expect(mockNodes[0].data).not.toHaveProperty('provisional')
+        expect(mockNodes[1].data).not.toHaveProperty('provisional')
         expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
         expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
         if (expectedSerialized) {
@@ -1601,6 +1634,134 @@ describe('CanvasView', () => {
           parentCanvasId: 'workflow:analysis',
         },
       })
+      w.unmount()
+    })
+
+    it('keeps a nested revision conflict visible and routes its explicit keep action', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+        parentCanvasId: 'workflow:analysis',
+        parentWorkflowName: 'analysis',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: { nodes: [], edges: [] },
+      })
+      const w = mountCanvas({
+        subWorkflowSessionId: session.id,
+        parentCanvasPanelId: 'workflow:analysis',
+      })
+      await flushPromises()
+      const sync = graphSyncMocks.apis[0]
+      sync.lastError.value = new NestedSnapshotPersistenceConflictError({
+        expectedRevision: 1,
+        currentRevision: 2,
+        detail: 'Nested snapshot revision conflict',
+        originalError: null,
+      })
+      sync.syncState.value = 'conflict'
+      await nextTick()
+
+      const issue = w.get('[data-testid="canvas-persistence-issue"]')
+      expect(issue.attributes('role')).toBe('alert')
+      expect(issue.text()).toContain('Nested workflow changes need attention')
+      expect(issue.text()).toContain('current revision is 2')
+      expect(issue.text()).toContain('Use latest snapshot')
+      expect(issue.text()).toContain('Keep my changes')
+      expect(w.find('[data-testid="canvas-persistence-retry"]').exists()).toBe(false)
+      expect(w.find('[data-testid="canvas-persistence-use-latest"]').exists()).toBe(true)
+
+      await w.get('[data-testid="canvas-persistence-dismiss"]').trigger('click')
+      await nextTick()
+
+      const reopen = w.get('[data-testid="canvas-persistence-reopen-conflict"]')
+      expect(reopen.element.tagName).toBe('BUTTON')
+      expect(reopen.text()).toContain('Resolve nested save conflict')
+      expect(document.activeElement).toBe(reopen.element)
+      expect(w.find('[data-testid="canvas-persistence-issue"]').exists()).toBe(false)
+      expect(sync.syncState.value).toBe('conflict')
+      expect(sync.lastError.value).toBeInstanceOf(NestedSnapshotPersistenceConflictError)
+      expect(sync.resolveConflictKeepingLocal).not.toHaveBeenCalled()
+      expect(sync.resolveConflictUsingRemote).not.toHaveBeenCalled()
+
+      await reopen.trigger('click')
+      await nextTick()
+
+      const reopenedIssue = w.get('[data-testid="canvas-persistence-issue"]')
+      expect(document.activeElement).toBe(reopenedIssue.element)
+      expect(w.find('[data-testid="canvas-persistence-use-latest"]').exists()).toBe(true)
+      expect(w.find('[data-testid="canvas-persistence-resolve-conflict"]').exists()).toBe(true)
+
+      await w.get('[data-testid="canvas-persistence-resolve-conflict"]').trigger('click')
+      await flushPromises()
+
+      expect(sync.resolveConflictKeepingLocal).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.resolveConflictKeepingLocal).toHaveBeenCalledOnce()
+      w.unmount()
+    })
+
+    it('installs the explicitly selected latest nested snapshot without requeueing it', async () => {
+      const sessions = useSubWorkflowSessionsStore()
+      const initialGraph: GraphState = {
+        nodes: [{
+          id: 'initial',
+          name: 'Initial',
+          tool_name: 'gaussian_blur',
+          position: [0, 0],
+          parameters: { sigma: 1 },
+          resources: {},
+          output_templates: {},
+          enabled: true,
+          collapsed: false,
+        }],
+        edges: [],
+      }
+      const remoteGraph: GraphState = {
+        ...initialGraph,
+        nodes: [{
+          ...initialGraph.nodes[0]!,
+          id: 'remote',
+          name: 'Remote',
+          parameters: { sigma: 9 },
+        }],
+      }
+      const session = await openAcceptedNestedSession(sessions, nestedSnapshotMocks.open, {
+        parentCanvasId: 'workflow:analysis',
+        parentWorkflowName: 'analysis',
+        parentNodeId: 'sub_1',
+        parentNodeName: 'Sub 1',
+        graph: initialGraph,
+      })
+      graphSyncMocks.resolveConflictUsingRemote.mockResolvedValueOnce({
+        graph: remoteGraph,
+        validation: { valid: true, node_statuses: {}, errors: [] },
+        snapshotRevision: 2,
+      })
+      const w = mountCanvas({
+        subWorkflowSessionId: session.id,
+        parentCanvasPanelId: 'workflow:analysis',
+      })
+      await flushPromises()
+      graphSyncMocks.syncGraphState.mockClear()
+      const sync = graphSyncMocks.apis[0]
+      sync.lastError.value = new NestedSnapshotPersistenceConflictError({
+        expectedRevision: 1,
+        currentRevision: 2,
+        detail: 'Nested snapshot revision conflict',
+        originalError: null,
+      })
+      sync.syncState.value = 'conflict'
+      await nextTick()
+
+      await w.get('[data-testid="canvas-persistence-use-latest"]').trigger('click')
+      await flushPromises()
+
+      expect(sync.resolveConflictUsingRemote).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.resolveConflictUsingRemote).toHaveBeenCalledOnce()
+      expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
+      expect(mockNodes.map(node => node.id)).toEqual(['remote'])
+      expect(sessions.sessionById(session.id)?.draft).toEqual(expect.objectContaining({
+        nodes: [expect.objectContaining({ id: 'remote', parameters: { sigma: 9 } })],
+      }))
       w.unmount()
     })
 
@@ -4776,7 +4937,8 @@ describe('CanvasView', () => {
       expect(subNode.data.published_outputs[0].name).toBe('label_count')
       expect(projectedStatusesOf(w).sub_1).toMatchObject({
         status: 'out_of_date',
-        provisional: true,
+        presentationStatus: 'out_of_date',
+        source: 'semantic',
       })
       expect(subNode.data.status).toBe('executed')
       expect(clearCanvasCache).toHaveBeenCalledWith('workflow:analysis', 'sub_1')
@@ -4812,7 +4974,8 @@ describe('CanvasView', () => {
 
       expect(projectedStatusesOf(w).sub_1).toMatchObject({
         status: 'unexecuted',
-        provisional: true,
+        presentationStatus: 'unexecuted',
+        source: 'semantic',
       })
       expect(mockNodes[0].data.status).toBe('executed')
       w.unmount()
@@ -5027,6 +5190,41 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('does not let a delayed automatic remote draft replace a newer local edit', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({ initialGraph })
+      apiMocks.get.mockClear()
+      const remoteDraft = deferred<{ data: WorkflowDraftResponse }>()
+      apiMocks.get.mockReturnValueOnce(remoteDraft.promise)
+
+      draftStore.noteRemoteChange(draftChanged(2, { dirty_against_saved: false }))
+      await vi.waitFor(() => {
+        expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf')
+      })
+
+      const commands = canvasCommandMocks.registrations[0]
+      expect(commands.updateParameter('old', 'sigma', 9)).toBe(true)
+      expect(mockNodes[0]?.data.parameters.sigma).toBe(9)
+
+      remoteDraft.resolve({ data: draftResponse(2, remoteGraph, false) })
+      await flushPromises()
+      await nextTick()
+      await flushPromises()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(mockNodes[0]?.data.parameters.sigma).toBe(9)
+      expect(persistenceMocks.resolveFromDraft).not.toHaveBeenCalled()
+      expect(graphSyncMocks.syncGraphState).not.toHaveBeenCalled()
+      expect(draftStore.appliedDraftRevision).toBe(1)
+      expect(draftStore.remoteAvailableRevision).toBe(2)
+      expect(useUIStore().canvasHasUnsavedChanges(
+        canvasIdFromPanelId('workflow:wf'),
+      )).toBe(true)
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(true)
+      w.unmount()
+    })
+
     it('shows conflict actions instead of auto-applying when the canvas has local edits', async () => {
       const initialGraph = { nodes: [graphNode('old')], edges: [] }
       const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
@@ -5054,10 +5252,87 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('suppresses the pending frontend echo from its own successful autosave', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      persistenceMocks.isPending.value = true
+      persistenceMocks.persistenceState.value = 'saving'
+      const { w, draftStore } = await mountActiveCanvasWithDraft({ initialGraph })
+      apiMocks.get.mockClear()
+
+      draftStore.noteRemoteChange(draftChanged(2, { updated_by: 'frontend' }))
+      await flushPromises()
+      await nextTick()
+
+      expect(draftStore.remoteAvailableRevision).toBe(2)
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
+      expect(apiMocks.get).not.toHaveBeenCalled()
+
+      draftStore.acknowledgeAcceptedDraft({
+        ...draftResponse(2, initialGraph, true),
+        updated_by: 'frontend',
+      })
+      await nextTick()
+
+      expect(draftStore.remoteAvailableRevision).toBeNull()
+      expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
+      expect(toastMocks.add).not.toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'success',
+      }))
+      w.unmount()
+    })
+
+    it('shows a resource-detected CAS conflict even before its WebSocket event', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      persistenceMocks.isPending.value = true
+      persistenceMocks.hasConflict.value = true
+      persistenceMocks.persistenceState.value = 'conflict'
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+
+      expect(draftStore.remoteAvailableRevision).toBeNull()
+      const conflict = w.get('.workflow-draft-conflict')
+      expect(conflict.attributes('role')).toBe('alert')
+      expect(conflict.attributes('aria-live')).toBe('assertive')
+      expect(conflict.attributes('aria-atomic')).toBe('true')
+      expect(buttonWithText(w, 'Apply agent changes')?.exists()).toBe(true)
+      expect(buttonWithText(w, 'Keep my canvas')?.exists()).toBe(true)
+      w.unmount()
+    })
+
+    it('routes a sticky persistence failure to the canonical resource actions', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      persistenceMocks.persistenceState.value = 'error'
+      persistenceMocks.persistenceIssue.value = {
+        id: 'workflow:wf:persistence:1',
+        version: 1,
+        kind: 'error',
+        source: 'draft',
+        summary: 'Changes could not be saved',
+        detail: 'Your latest changes remain queued on this canvas.',
+        dismissed: false,
+      }
+      const { w } = await mountActiveCanvasWithDraft({ initialGraph })
+
+      const notice = w.get('[data-testid="canvas-persistence-issue"]')
+      expect(notice.text()).toContain('Changes could not be saved')
+      await w.get('[data-testid="canvas-persistence-retry"]').trigger('click')
+      await flushPromises()
+      await w.get('[data-testid="canvas-persistence-dismiss"]').trigger('click')
+
+      expect(persistenceMocks.retryPersistence).toHaveBeenCalledOnce()
+      expect(persistenceMocks.dismissPersistenceIssue).toHaveBeenCalledWith(
+        'workflow:wf:persistence:1',
+      )
+      w.unmount()
+    })
+
     it('does not auto-apply while a local draft save is pending', async () => {
       const initialGraph = { nodes: [graphNode('old')], edges: [] }
       const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
       persistenceMocks.isPending.value = true
+      persistenceMocks.persistenceState.value = 'saving'
       const { w, draftStore } = await mountActiveCanvasWithDraft({ initialGraph })
       apiMocks.get.mockClear()
       apiMocks.get.mockResolvedValue({ data: draftResponse(2, remoteGraph) })
@@ -5068,6 +5343,7 @@ describe('CanvasView', () => {
       await flushPromises()
 
       expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(w.get('.canvas-view').attributes('aria-busy')).toBe('false')
       expect(apiMocks.get).not.toHaveBeenCalled()
       expect(draftStore.remoteAvailableRevision).toBe(2)
       expect(persistenceMocks.isPending.value).toBe(true)
@@ -5103,6 +5379,42 @@ describe('CanvasView', () => {
       expect(useUIStore().hasUnsavedChanges).toBe(false)
       expect(autoSaveMocks.scheduleAutoSave).not.toHaveBeenCalled()
       expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('keeps a newer local edit when applying agent changes is still loading', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+      apiMocks.get.mockClear()
+      const remoteDraft = deferred<{ data: WorkflowDraftResponse }>()
+      apiMocks.get.mockReturnValueOnce(remoteDraft.promise)
+
+      draftStore.noteRemoteChange(draftChanged(2, { dirty_against_saved: false }))
+      await nextTick()
+      await buttonWithText(w, 'Apply agent changes')!.trigger('click')
+      await vi.waitFor(() => {
+        expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflow-drafts/wf')
+      })
+
+      expect(canvasCommandMocks.registrations[0].updateParameter('old', 'sigma', 9)).toBe(true)
+      remoteDraft.resolve({ data: draftResponse(2, remoteGraph, false) })
+      await flushPromises()
+      await nextTick()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(mockNodes[0]?.data.parameters.sigma).toBe(9)
+      expect(persistenceMocks.resolveFromDraft).not.toHaveBeenCalled()
+      expect(draftStore.remoteAvailableRevision).toBe(2)
+      expect(useUIStore().canvasHasUnsavedChanges(
+        canvasIdFromPanelId('workflow:wf'),
+      )).toBe(true)
+      expect(w.get('.workflow-draft-conflict').text()).toContain(
+        'The canvas changed while that request was pending.',
+      )
       w.unmount()
     })
 
@@ -5143,6 +5455,51 @@ describe('CanvasView', () => {
         draftResponse(3, initialGraph, true),
       )
       expect(w.find('.workflow-draft-conflict').exists()).toBe(false)
+      w.unmount()
+    })
+
+    it('rebases and requeues an edit made while Keep my canvas is pending', async () => {
+      const initialGraph = { nodes: [graphNode('old')], edges: [] }
+      const remoteGraph = { nodes: [graphNode('remote', 120)], edges: [] }
+      const { w, draftStore } = await mountActiveCanvasWithDraft({
+        initialGraph,
+        initialDirty: true,
+      })
+      apiMocks.get.mockClear()
+      apiMocks.get.mockResolvedValueOnce({ data: draftResponse(2, remoteGraph, true) })
+      const keptDraft = deferred<{ data: WorkflowDraftResponse }>()
+      apiMocks.put.mockReturnValueOnce(keptDraft.promise)
+
+      draftStore.noteRemoteChange(draftChanged(2))
+      await nextTick()
+      await buttonWithText(w, 'Keep my canvas')!.trigger('click')
+      await vi.waitFor(() => expect(apiMocks.put).toHaveBeenCalledOnce())
+
+      expect(canvasCommandMocks.registrations[0].updateParameter('old', 'sigma', 9)).toBe(true)
+      expect(mockNodes[0]?.data.parameters.sigma).toBe(9)
+      keptDraft.resolve({ data: draftResponse(3, initialGraph, false) })
+      await flushPromises()
+      await nextTick()
+
+      expect(mockNodes.map((node: any) => node.id)).toEqual(['old'])
+      expect(mockNodes[0]?.data.parameters.sigma).toBe(9)
+      expect(persistenceMocks.resolveFromDraft).toHaveBeenCalledWith(
+        draftResponse(3, initialGraph, false),
+      )
+      expect(persistenceMocks.queueGraph).toHaveBeenLastCalledWith(expect.objectContaining({
+        nodes: [expect.objectContaining({
+          id: 'old',
+          parameters: { sigma: 9 },
+        })],
+      }))
+      const resolveCalls = persistenceMocks.resolveFromDraft.mock.invocationCallOrder
+      const requeueCalls = persistenceMocks.queueGraph.mock.invocationCallOrder
+      const resolveOrder = resolveCalls[resolveCalls.length - 1]!
+      const requeueOrder = requeueCalls[requeueCalls.length - 1]!
+      expect(requeueOrder).toBeGreaterThan(resolveOrder)
+      expect(useUIStore().canvasHasUnsavedChanges(
+        canvasIdFromPanelId('workflow:wf'),
+      )).toBe(true)
       w.unmount()
     })
 

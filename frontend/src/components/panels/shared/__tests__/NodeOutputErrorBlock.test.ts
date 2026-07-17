@@ -104,7 +104,7 @@ describe('NodeOutputErrorBlock', () => {
   it('hides a stale failure after the canvas projects an unexecuted edit', () => {
     const projection = useCanvasStatusProjection()
     setFailed('n1', 'Stale failure')
-    projection.markProvisional('n1', {
+    projection.stageSemanticStatus('n1', {
       node_id: 'n1',
       status: 'unexecuted',
       cached: false,

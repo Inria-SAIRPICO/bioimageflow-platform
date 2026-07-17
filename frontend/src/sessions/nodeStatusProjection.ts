@@ -1,20 +1,21 @@
 import type { NodeStatus } from '@/api/types'
 
 export type NodeStatusProjectionSource =
-  | 'provisional'
+  | 'semantic'
   | 'execution'
   | 'validation'
   | 'default'
 
 export interface ProjectedNodeStatus extends NodeStatus {
-  provisional: boolean
+  presentationStatus: NodeStatus['status']
   source: NodeStatusProjectionSource
 }
 
 export interface NodeStatusProjectionInput {
   nodeId: string
   enabled: boolean
-  provisionalOverride: NodeStatus | null
+  semanticOverride: NodeStatus | null
+  semanticPresentationStatus: NodeStatus['status'] | null
   executionStatus: NodeStatus | null
   validationStatus: NodeStatus | null
   executionOriginMatches: boolean
@@ -28,23 +29,27 @@ export interface NodeStatusProjectionInput {
 export function projectNodeStatus(
   input: NodeStatusProjectionInput,
 ): ProjectedNodeStatus {
-  if (input.provisionalOverride !== null) {
-    return projected(input.provisionalOverride, 'provisional', true)
+  if (input.semanticOverride !== null) {
+    return projected(
+      input.semanticOverride,
+      'semantic',
+      input.semanticPresentationStatus ?? input.semanticOverride.status,
+    )
   }
 
   if (executionMatchesCanvasDraft(input) && input.executionStatus !== null) {
-    return projected(input.executionStatus, 'execution', false)
+    return projected(input.executionStatus, 'execution')
   }
 
   if (input.validationStatus !== null) {
-    return projected(input.validationStatus, 'validation', false)
+    return projected(input.validationStatus, 'validation')
   }
 
   return projected({
     node_id: input.nodeId,
     status: input.enabled ? 'unexecuted' : 'disabled',
     cached: false,
-  }, 'default', false)
+  }, 'default')
 }
 
 function executionMatchesCanvasDraft(input: NodeStatusProjectionInput): boolean {
@@ -60,11 +65,11 @@ function executionMatchesCanvasDraft(input: NodeStatusProjectionInput): boolean 
 function projected(
   value: NodeStatus,
   source: NodeStatusProjectionSource,
-  provisional: boolean,
+  presentationStatus: NodeStatus['status'] = value.status,
 ): ProjectedNodeStatus {
   return {
     ...value,
-    provisional,
+    presentationStatus,
     source,
   }
 }
