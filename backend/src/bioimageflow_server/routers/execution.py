@@ -182,6 +182,11 @@ async def run_execution(
             body.workflow_name,
             body.draft_revision,
         ) as reserved_context:
+            # A Run that bypassed request-wide serialization because another
+            # admission was active may acquire the reservation after that
+            # state changes. Recheck the durable move fence while this
+            # reservation prevents a workflow move from being admitted.
+            workflow_store.ensure_workflow_mutations_available()
             runtime_context: _WorkflowRuntimeContext | None = None
             if body.draft_revision is not None:
                 assert workflow_draft_service is not None

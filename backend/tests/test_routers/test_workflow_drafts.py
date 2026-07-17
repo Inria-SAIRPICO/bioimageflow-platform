@@ -8,6 +8,7 @@ import sys
 import threading
 import tomllib
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.graph import GraphState
-from bioimageflow_server.models.workflow import WorkflowCreate
+from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowUpdate
 from bioimageflow_server.models.validation import ValidationResult
 from bioimageflow_server.routers.execution import (
     get_workflow_draft_service as execution_get_workflow_draft_service,
@@ -787,3 +788,70 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
         accepted = await first_run
 
     assert accepted.status_code == 202, accepted.text
+
+
+async def test_revisionless_run_rechecks_move_fence_after_reservation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ToolRegistryService()
+    store = WorkflowStoreService(
+        root_dir=tmp_path / "workspace" / "workflows",
+        tool_registry=registry,
+        storage_base_dir=tmp_path / "workspace" / "outputs",
+    )
+    store.create_workflow(WorkflowCreate(name="run-wf"))
+    store.create_workflow(WorkflowCreate(name="move-source"))
+    manager = ExecutionManager(
+        NullEventBus(),
+        registry,
+        Settings(
+            deployment_mode="desktop",
+            output_data_folder=str(tmp_path / "outputs"),
+        ),
+    )
+    original_reserve_start = manager.reserve_start
+    prepared_operation_ids: list[Any] = []
+
+    @asynccontextmanager
+    async def reserve_start_with_pending_move(
+        workflow_id: str,
+        draft_revision: int | None,
+    ) -> AsyncIterator[Any]:
+        async with original_reserve_start(workflow_id, draft_revision) as context:
+            operation_id = store.prepare_workflow_patch_move(
+                "move-source",
+                WorkflowUpdate(action="update", new_id="move-destination"),
+            )
+            assert operation_id is not None
+            prepared_operation_ids.append(operation_id)
+            yield context
+
+    monkeypatch.setattr(manager, "reserve_start", reserve_start_with_pending_move)
+    app = create_app(
+        AppConfig(
+            tool_registry=registry,
+            workflow_store=store,
+            execution_manager=manager,
+            settings=manager.settings,
+            storage_path=tmp_path / "outputs",
+            disable_hot_reload=True,
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        run = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": GraphState(nodes=[], edges=[]).model_dump(mode="json"),
+                "workflow_name": "run-wf",
+            },
+        )
+
+    assert prepared_operation_ids
+    assert store.pending_workflow_move() is not None
+    assert run.status_code == 503
+    assert run.json()["error"] == "workflow_move_recovery_required"
+    assert manager.is_running is False
+    assert manager.context is None

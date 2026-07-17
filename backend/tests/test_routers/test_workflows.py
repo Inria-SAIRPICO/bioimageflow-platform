@@ -635,6 +635,22 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
             params={"workflow_name": "old"},
             json={"name": "UnsafeTool", "tool_type": "ProcessingTool"},
         )
+        blocked_draft = await client.put(
+            "/api/v1/workflow-drafts/new",
+            json={
+                "graph": {"nodes": [], "edges": []},
+                "expected_revision": 0,
+                "updated_by": "frontend",
+            },
+        )
+        blocked_run = await client.post(
+            "/api/v1/execution/run",
+            json={
+                "graph": {"nodes": [], "edges": []},
+                "workflow_name": "new",
+                "draft_revision": 0,
+            },
+        )
 
     assert interrupted.status_code == 503
     assert interrupted.json()["error"] == "workflow_move_recovery_required"
@@ -645,6 +661,8 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
         blocked_delete,
         blocked_create,
         blocked_tool_create,
+        blocked_draft,
+        blocked_run,
     ):
         assert response.status_code == 503
         assert response.json()["error"] == "workflow_move_recovery_required"

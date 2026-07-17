@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -525,7 +525,21 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             request.url.path.startswith("/api/v1/")
         ):
             return await call_next(request)
-        async with workspace_mutation_request_lock:
+        # Draft mutations already serialize admission through the execution
+        # manager. A Run only bypasses the workspace request lock when that
+        # admission is already occupied, allowing the router to report the
+        # conflict immediately. The first Run remains serialized with moves.
+        internally_admitted = (
+            request.url.path.startswith("/api/v1/workflow-drafts/")
+            or (
+                request.url.path == "/api/v1/execution/run"
+                and bool(getattr(execution_manager, "is_running", False))
+            )
+        )
+        request_lock = (
+            nullcontext() if internally_admitted else workspace_mutation_request_lock
+        )
+        async with request_lock:
             try:
                 _current_workflow_store().ensure_workflow_mutations_available()
             except WorkflowMoveRecoveryError as exc:
