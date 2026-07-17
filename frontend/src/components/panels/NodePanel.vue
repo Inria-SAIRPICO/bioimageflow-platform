@@ -37,6 +37,7 @@ import type {
   PublishedOutput,
 } from '@/api/types'
 import { fieldDisplayName } from '@/utils/displayNames'
+import { IMAGE_PATH_GLOBS } from '@/utils/imagePaths'
 
 // `OutputFieldSchema` is not exposed in the generated OpenAPI types because
 // `ToolMetadata.outputs` is `dict[str, Any]` server-side (to accommodate the
@@ -59,11 +60,10 @@ function canConnect(field: InputFieldSchema): boolean {
 
 const { pickFile: pickFileNative, pickFolder: pickFolderNative, isDesktop } = usePathPicker()
 
-const IMAGE_EXTS = ['*.tif', '*.tiff', '*.png', '*.jpg', '*.jpeg', '*.czi', '*.lsm', '*.nd2', '*.ome.tif', '*.ome.tiff']
 const MASK_EXTS = ['*.tif', '*.tiff', '*.png']
 
 function fileTypesForField(type: string): string[] {
-  if (type === 'ImageFile') return IMAGE_EXTS
+  if (type === 'ImageFile') return [...IMAGE_PATH_GLOBS]
   if (type === 'MaskPath') return MASK_EXTS
   return []
 }

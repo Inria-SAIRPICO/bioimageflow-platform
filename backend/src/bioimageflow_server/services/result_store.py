@@ -29,9 +29,23 @@ class ResultStoreService:
     def get_latest_dataframe(
         self, node_id: str, storage_path: Path | None = None
     ) -> pd.DataFrame | None:
-        record_dir = self._latest_record_dir(node_id, storage_path=storage_path)
+        record_dir = self.get_latest_record_dir(node_id, storage_path=storage_path)
         if record_dir is None:
             return None
+        return self.get_dataframe_from_record(record_dir, node_id=node_id)
+
+    def get_latest_record_dir(
+        self, node_id: str, storage_path: Path | None = None
+    ) -> Path | None:
+        """Resolve the immutable record currently published for a node."""
+
+        return self._latest_record_dir(node_id, storage_path=storage_path)
+
+    def get_dataframe_from_record(
+        self, record_dir: Path, *, node_id: str
+    ) -> pd.DataFrame | None:
+        """Load a DataFrame from an already-resolved immutable record."""
+
         data_path = self._dataframe_path(record_dir)
         if data_path is None:
             return None

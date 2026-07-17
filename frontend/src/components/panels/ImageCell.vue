@@ -14,11 +14,11 @@ const props = withDefaults(defineProps<{
   value: string
   showPath?: boolean
   showImageActions?: boolean
-  hideThumbnailFallback?: boolean
+  thumbnailEnabled?: boolean
 }>(), {
   showPath: true,
   showImageActions: true,
-  hideThumbnailFallback: false,
+  thumbnailEnabled: true,
 })
 
 let toast: ReturnType<typeof useToast> | null = null
@@ -46,7 +46,7 @@ const AVIVATOR_HOST = 'avivator.gehlenborglab.org'
 const colSlug = computed(() => props.col.replace(/[^a-zA-Z0-9_-]/g, '_') || '_')
 const shouldShowPath = computed(() => props.showPath)
 const shouldShowImageActions = computed(() => props.showImageActions)
-const shouldShowThumbnailFallback = computed(() => !props.hideThumbnailFallback)
+const shouldShowThumbnail = computed(() => props.thumbnailEnabled)
 const thumbnailStyle = {
   width: `${THUMBNAIL_RENDER_SIZE}px`,
   height: `${THUMBNAIL_RENDER_SIZE}px`,
@@ -178,12 +178,12 @@ function reset() {
   thumbnailPending.value = false
   fetchFailed.value = false
   retryAttempt = 0
-  void fetchThumbnail()
+  if (props.thumbnailEnabled) void fetchThumbnail()
 }
 
 watch(
   () =>
-    `${props.nodeId}::${props.workflowName ?? ''}::${props.row}::${props.col}::${props.value}`,
+    `${props.nodeId}::${props.workflowName ?? ''}::${props.row}::${props.col}::${props.value}::${props.thumbnailEnabled}`,
   () => reset(),
   { immediate: true },
 )
@@ -263,7 +263,7 @@ async function reveal() {
 <template>
   <div class="image-cell">
     <img
-      v-if="blobUrl !== null && !fetchFailed"
+      v-if="shouldShowThumbnail && blobUrl !== null && !fetchFailed"
       class="image-cell__thumb"
       data-testid="image-thumbnail"
       :src="blobUrl"
@@ -271,14 +271,14 @@ async function reveal() {
       alt=""
     >
     <div
-      v-else-if="thumbnailPending && shouldShowThumbnailFallback"
+      v-else-if="shouldShowThumbnail && thumbnailPending"
       class="image-cell__pending"
       data-testid="image-thumbnail"
       aria-label="thumbnail generating"
       :style="thumbnailStyle"
     />
     <div
-      v-else-if="shouldShowThumbnailFallback"
+      v-else-if="shouldShowThumbnail"
       class="image-cell__unavailable"
       data-testid="image-thumbnail"
       aria-label="thumbnail unavailable"
