@@ -9,7 +9,7 @@ vi.mock('@/utils/nativeDialogs', () => ({
 
 import { isDesktop, selectFile, selectFolder } from '@/utils/nativeDialogs'
 import { usePathPicker, BrowserModeUnsupported } from '../usePathPicker'
-import { useDatasetBrowserStore } from '@/stores/datasetBrowser'
+import { useDatasetsStore } from '@/stores/datasets'
 
 const mockedIsDesktop = vi.mocked(isDesktop)
 const mockedSelectFile = vi.mocked(selectFile)
@@ -41,45 +41,44 @@ describe('usePathPicker.pickFile', () => {
     expect(result).toBeNull()
   })
 
-  it('opens the dataset browser store in browser mode', async () => {
+  it('opens the Datasets panel picker in browser mode', async () => {
     mockedIsDesktop.mockReturnValue(false)
     const { pickFile } = usePathPicker()
-    const store = useDatasetBrowserStore()
+    const store = useDatasetsStore()
 
     const promise = pickFile({ parameterName: 'input', fileTypes: ['*.tif'] })
-    expect(store.isOpen).toBe(true)
-    expect(store.options).toMatchObject({
-      mode: 'pick',
+    expect(store.picker).toMatchObject({
       parameterName: 'input',
-      fileTypeFilter: ['*.tif'],
+      fileTypes: ['*.tif'],
     })
+    expect(store.activationRequest).toBe(1)
 
-    store.onSelect('/server/path.tif')
+    store.finishPicker('/server/path.tif')
     const result = await promise
     expect(result).toBe('/server/path.tif')
   })
 
-  it('resolves null when the modal is closed in browser mode', async () => {
+  it('resolves null when the panel picker is cancelled', async () => {
     mockedIsDesktop.mockReturnValue(false)
     const { pickFile } = usePathPicker()
-    const store = useDatasetBrowserStore()
+    const store = useDatasetsStore()
 
     const promise = pickFile({ parameterName: 'input' })
-    store.onClose()
+    store.finishPicker(null)
     expect(await promise).toBeNull()
   })
 
   it('re-entry cancels the previous invocation with null and takes over', async () => {
     mockedIsDesktop.mockReturnValue(false)
     const { pickFile } = usePathPicker()
-    const store = useDatasetBrowserStore()
+    const store = useDatasetsStore()
 
     const first = pickFile({ parameterName: 'a' })
     const second = pickFile({ parameterName: 'b' })
 
     expect(await first).toBeNull()
 
-    store.onSelect('/p.tif')
+    store.finishPicker('/p.tif')
     expect(await second).toBe('/p.tif')
   })
 })

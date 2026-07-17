@@ -2,6 +2,7 @@
 import { defineComponent } from 'vue'
 import ToolsPanel from './components/panels/ToolsPanel.vue'
 import WorkflowsPanel from './components/panels/WorkflowsPanel.vue'
+import DatasetsPanel from './components/panels/DatasetsPanel.vue'
 import CanvasView from './components/canvas/CanvasView.vue'
 import NodePanel from './components/panels/NodePanel.vue'
 import SettingsPanel from './components/panels/SettingsPanel.vue'
@@ -19,6 +20,7 @@ export default defineComponent({
   components: {
     tools: ToolsPanel,
     workflows: WorkflowsPanel,
+    datasets: DatasetsPanel,
     canvasView: CanvasView,
     nodePanel: NodePanel,
     logger: LoggerPanel,
@@ -43,12 +45,11 @@ import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
-import DatasetBrowser from './components/panels/DatasetBrowser.vue'
 import ExecutionBanner from './components/execution/ExecutionBanner.vue'
 import NapariProgressBanner from './components/execution/NapariProgressBanner.vue'
 import EnvironmentRecoveryDialog from './components/execution/EnvironmentRecoveryDialog.vue'
 import { useUIStore } from './stores/ui'
-import { useDatasetBrowserStore } from './stores/datasetBrowser'
+import { useDatasetsStore } from './stores/datasets'
 import { useFileDrop } from './composables/useFileDrop'
 import { useExecutionLock } from './composables/useExecutionLock'
 import { useSettingsPanel } from './composables/useSettingsPanel'
@@ -118,7 +119,7 @@ function onPreferencesShortcut(event: KeyboardEvent) {
 const shortcutEnabled = isMac() || isPywebview()
 
 const uiStore = useUIStore()
-const datasetBrowserStore = useDatasetBrowserStore()
+const datasetsStore = useDatasetsStore()
 const websocket = useWebSocket()
 const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const workflowStore = useWorkflowStore()
@@ -232,19 +233,8 @@ onBeforeUnmount(() => {
   }
 })
 
-// Server-side upload cap default (2 GB, matches backend default). Used for
-// the client-side pre-upload size check in DatasetBrowser. The authoritative
-// cap lives on the server — the component adds 10% headroom.
-const DEFAULT_SERVER_CAP = 2 * 1024 ** 3
-
-// Window-level file drop → Dataset Browser (browser mode) or direct Files
-// node creation (desktop mode). The canvas listens for `bif:drop-paths` to
-// actually add the node at the viewport center.
-useFileDrop({
-  onPaths: (paths) => {
-    window.dispatchEvent(new CustomEvent('bif:drop-paths', { detail: paths }))
-  },
-})
+// Window-level file drops always become managed datasets, including on desktop.
+useFileDrop()
 
 // Sync document.title with uiStore.tabTitle
 watchEffect(() => {
@@ -258,6 +248,13 @@ watchEffect(() => {
 })
 
 const dockviewApi = shallowRef<DockviewApi | null>(null)
+watch(
+  () => datasetsStore.activationRequest,
+  () => {
+    uiStore.panels.datasets = true
+    nextTick(() => dockviewApi.value?.getPanel('datasets')?.api.setActive())
+  },
+)
 const dockviewDisposables: DockviewIDisposable[] = []
 const confirmedSubWorkflowPanelCloses = new Set<string>()
 const removedWorkflowSubWorkflowCloses = new Set<string>()
@@ -283,7 +280,7 @@ const dockviewTheme = computed(() => uiStore.isDarkTheme ? themeDark : themeLigh
 
 // --- Dockview setup ---
 
-const panelKeys = ['tools', 'workflows', 'nodePanel', 'dataTable', 'logger', 'codeEditor'] as const
+const panelKeys = ['tools', 'workflows', 'datasets', 'nodePanel', 'dataTable', 'logger', 'codeEditor'] as const
 type DockPanelKey = typeof panelKeys[number]
 
 function isDockPanelKey(id: string): id is DockPanelKey {
@@ -491,6 +488,13 @@ function onDockviewReady(event: DockviewReadyEvent) {
     id: 'workflows',
     component: 'workflows',
     title: 'Workflows',
+    position: { referencePanel: 'tools', direction: 'within' },
+  })
+
+  api.addPanel({
+    id: 'datasets',
+    component: 'datasets',
+    title: 'Datasets',
     position: { referencePanel: 'tools', direction: 'within' },
   })
 
@@ -1421,6 +1425,13 @@ function getPanelAddOptions(key: string) {
       }
       return { id: 'workflows', component: 'workflows', title: 'Workflows', initialWidth: 320, position: { direction: 'left' as const } }
     }
+    case 'datasets': {
+      const reference = dockviewApi.value?.getPanel('tools') ?? dockviewApi.value?.getPanel('workflows')
+      if (reference) {
+        return { id: 'datasets', component: 'datasets', title: 'Datasets', position: { referencePanel: reference.id, direction: 'within' as const } }
+      }
+      return { id: 'datasets', component: 'datasets', title: 'Datasets', initialWidth: 320, position: { direction: 'left' as const } }
+    }
     case 'nodePanel':
       return { id: 'nodePanel', component: 'nodePanel', title: 'Nodes', initialWidth: 320, position: { direction: 'right' as const } }
     case 'dataTable':
@@ -1524,19 +1535,6 @@ defineExpose({ dockviewApi })
       </template>
     </Dialog>
     <SettingsPanel />
-    <DatasetBrowser
-      v-if="datasetBrowserStore.isOpen && datasetBrowserStore.options"
-      :visible="datasetBrowserStore.isOpen"
-      :parameter-name="datasetBrowserStore.options.parameterName"
-      :mode="datasetBrowserStore.options.mode"
-      :file-type-filter="datasetBrowserStore.options.fileTypeFilter"
-      :initial-files="datasetBrowserStore.options.initialFiles"
-      :server-cap="DEFAULT_SERVER_CAP"
-      @select="datasetBrowserStore.onSelect"
-      @close="datasetBrowserStore.onClose"
-      @create-files-node="datasetBrowserStore.onCreateFilesNode"
-      @update:visible="(v: boolean) => { if (!v) datasetBrowserStore.onClose() }"
-    />
   </div>
 </template>
 

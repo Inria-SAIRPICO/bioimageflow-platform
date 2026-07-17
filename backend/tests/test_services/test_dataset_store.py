@@ -8,9 +8,12 @@ from pathlib import Path
 import pytest
 
 from bioimageflow_server.services.dataset_store import (
+    CatalogConflictError,
     DatasetNotFoundError,
     DatasetStore,
     FileTooLargeError,
+    InvalidMoveError,
+    NameConflictError,
     PathTraversalError,
 )
 
@@ -83,7 +86,7 @@ async def test_store_rejects_oversize(tmp_path: Path):
     with pytest.raises(FileTooLargeError):
         await store.store("big.bin", _bytes_stream([b"12", b"345"]))
     # No partial file left behind
-    assert list(store.root.iterdir()) == []
+    assert not any(path.is_file() and not path.name.startswith(".bioimageflow") for path in store.root.iterdir())
 
 
 async def test_store_cleans_up_on_error(tmp_path: Path):
@@ -95,7 +98,7 @@ async def test_store_cleans_up_on_error(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="boom"):
         await store.store("boom.bin", exploding())
-    assert list(store.root.iterdir()) == []
+    assert not any(path.is_file() and not path.name.startswith(".bioimageflow") for path in store.root.iterdir())
 
 
 async def test_store_sanitizes_path_traversal(tmp_path: Path):
@@ -177,7 +180,10 @@ async def test_store_disambiguates_colliding_names(tmp_path: Path, monkeypatch):
     meta1 = await store.store("cells.tif", _bytes_stream([b"a"]))
     meta2 = await store.store("cells.tif", _bytes_stream([b"b"]))
     assert meta1.path != meta2.path
-    names = sorted(p.name for p in store.root.iterdir())
+    names = sorted(
+        p.name for p in store.root.iterdir()
+        if p.is_file() and not p.name.startswith(".bioimageflow")
+    )
     assert names == [
         "20260421T143022_cells.tif",
         "20260421T143022_cells_1.tif",
@@ -240,3 +246,83 @@ async def test_id_round_trip(tmp_path: Path, name: str):
     # Delete works using the id derived from listing
     store.delete(row.id)
     assert store.list() == []
+
+
+# ---------------------------------------------------------------------------
+# Logical folders and catalog-backed dataset metadata
+# ---------------------------------------------------------------------------
+
+
+async def test_legacy_files_are_catalogued_without_moving(tmp_path: Path):
+    root = tmp_path / "datasets"
+    root.mkdir()
+    legacy = root / "20260101T010000_cells.tif"
+    legacy.write_bytes(b"cells")
+
+    store = DatasetStore(datasets_root=root, max_upload_size=1_000_000)
+
+    [dataset] = store.list()
+    assert Path(dataset.path) == legacy
+    assert dataset.display_name == "cells.tif"
+    assert dataset.folder_id is None
+
+
+async def test_folder_rename_and_move_do_not_change_dataset_path(tmp_path: Path):
+    store = _make_store(tmp_path)
+    parent = store.create_folder("Experiment")
+    child = store.create_folder("Controls", parent_id=parent.id)
+    dataset = await store.store("cells.tif", _bytes_stream([b"x"]), folder_id=child.id)
+    original_path = dataset.path
+
+    store.update_folder(child.id, name="Renamed")
+    store.update_folder(child.id, parent_id=None)
+    renamed = store.update_dataset(dataset.id, display_name="Control image.tif")
+
+    assert renamed.path == original_path
+    assert renamed.display_name == "Control image.tif"
+    assert renamed.folder_id == child.id
+
+
+async def test_sibling_names_are_case_insensitively_unique(tmp_path: Path):
+    store = _make_store(tmp_path)
+    store.create_folder("Controls")
+
+    with pytest.raises(NameConflictError):
+        store.create_folder("controls")
+
+
+async def test_folder_move_rejects_descendant_cycle(tmp_path: Path):
+    store = _make_store(tmp_path)
+    parent = store.create_folder("Parent")
+    child = store.create_folder("Child", parent_id=parent.id)
+
+    with pytest.raises(InvalidMoveError):
+        store.update_folder(parent.id, parent_id=child.id)
+
+
+async def test_resolve_selection_recurses_and_deduplicates(tmp_path: Path):
+    store = _make_store(tmp_path)
+    parent = store.create_folder("Experiment")
+    child = store.create_folder("Controls", parent_id=parent.id)
+    first = await store.store("b.tif", _bytes_stream([b"b"]), folder_id=parent.id)
+    second = await store.store("a.tif", _bytes_stream([b"a"]), folder_id=child.id)
+
+    resolved = store.resolve_selection([second.id], [parent.id])
+
+    assert [item.id for item in resolved] == [first.id, second.id]
+
+
+async def test_recursive_delete_requires_current_preview_revision(tmp_path: Path):
+    store = _make_store(tmp_path)
+    folder = store.create_folder("Experiment")
+    dataset = await store.store("a.tif", _bytes_stream([b"a"]), folder_id=folder.id)
+    preview = store.preview_delete([], [folder.id])
+    store.create_folder("Other")
+
+    with pytest.raises(CatalogConflictError):
+        store.delete_selection([], [folder.id], expected_revision=preview.revision)
+
+    fresh = store.preview_delete([], [folder.id])
+    result = store.delete_selection([], [folder.id], expected_revision=fresh.revision)
+    assert result.deleted_dataset_ids == [dataset.id]
+    assert result.deleted_folder_ids == [folder.id]

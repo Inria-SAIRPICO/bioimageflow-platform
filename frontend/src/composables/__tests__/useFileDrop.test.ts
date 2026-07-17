@@ -1,40 +1,25 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h } from 'vue'
-
-vi.mock('@/utils/nativeDialogs', () => ({
-  isDesktop: vi.fn(),
-}))
-
-import { isDesktop } from '@/utils/nativeDialogs'
 import { useFileDrop } from '../useFileDrop'
-import { useDatasetBrowserStore } from '@/stores/datasetBrowser'
+import { useDatasetsStore } from '@/stores/datasets'
 
-const mockedIsDesktop = vi.mocked(isDesktop)
-
-function mountHost(onPaths: (paths: string[]) => void) {
+function mountHost() {
   const Host = defineComponent({
     setup() {
-      useFileDrop({ onPaths })
+      useFileDrop()
       return () => h('div')
     },
   })
   return mount(Host, { global: { plugins: [createPinia()] } })
 }
 
-function makeDragEvent(opts: {
-  files?: File[]
-  types?: string[]
-}): DragEvent {
+function makeDragEvent(opts: { files?: File[]; types?: string[]; type?: string }): DragEvent {
   const files = opts.files ?? []
-  const types = opts.types ?? (files.length > 0 ? ['Files'] : [])
-  const event = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent
+  const event = new Event(opts.type ?? 'drop', { bubbles: true, cancelable: true }) as DragEvent
   Object.defineProperty(event, 'dataTransfer', {
-    value: {
-      files: Object.assign(files, { item: (i: number) => files[i] }),
-      types,
-    },
+    value: { files, types: opts.types ?? (files.length ? ['Files'] : []) },
   })
   return event
 }
@@ -43,92 +28,59 @@ describe('useFileDrop', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    mockedIsDesktop.mockReturnValue(false)
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
+  afterEach(() => vi.restoreAllMocks())
 
-  it('ignores palette-tool drops (application/bioimageflow-tool)', () => {
-    const onPaths = vi.fn()
-    const wrapper = mountHost(onPaths)
-    const store = useDatasetBrowserStore()
+  it('ignores palette tool drops', () => {
+    const wrapper = mountHost()
+    const store = useDatasetsStore()
+    const queue = vi.spyOn(store, 'queueUploads')
 
-    const event = makeDragEvent({
-      files: [],
-      types: ['application/bioimageflow-tool'],
-    })
-    window.dispatchEvent(event)
+    window.dispatchEvent(makeDragEvent({ types: ['application/bioimageflow-tool'] }))
 
-    expect(store.isOpen).toBe(false)
-    expect(onPaths).not.toHaveBeenCalled()
+    expect(queue).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('opens the dataset browser in browser mode with initialFiles', async () => {
-    const onPaths = vi.fn()
-    const wrapper = mountHost(onPaths)
-    const store = useDatasetBrowserStore()
-
+  it('queues dropped files as managed datasets and activates the panel', () => {
+    const wrapper = mountHost()
+    const store = useDatasetsStore()
+    const queue = vi.spyOn(store, 'queueUploads').mockImplementation(() => store.activate())
     const files = [new File(['x'], 'a.tif'), new File(['y'], 'b.tif')]
-    const event = makeDragEvent({ files })
-    window.dispatchEvent(event)
 
-    expect(store.isOpen).toBe(true)
-    expect(store.options?.mode).toBe('upload-and-pick')
-    expect(store.options?.initialFiles?.map((f) => f.name)).toEqual(['a.tif', 'b.tif'])
+    window.dispatchEvent(makeDragEvent({ files }))
 
-    // When the modal emits createFilesNode, onPaths is called with the paths
-    store.onCreateFilesNode(['/server/a.tif', '/server/b.tif'])
-    expect(onPaths).toHaveBeenCalledWith(['/server/a.tif', '/server/b.tif'])
+    expect(queue).toHaveBeenCalledWith(files)
+    expect(store.activationRequest).toBe(1)
     wrapper.unmount()
   })
 
-  it('uses File.path in desktop mode without opening the modal', () => {
-    mockedIsDesktop.mockReturnValue(true)
-    const onPaths = vi.fn()
-    const wrapper = mountHost(onPaths)
-    const store = useDatasetBrowserStore()
-
+  it('uses the managed upload flow even when desktop File.path is present', () => {
+    const wrapper = mountHost()
+    const store = useDatasetsStore()
+    const queue = vi.spyOn(store, 'queueUploads').mockImplementation(() => undefined)
     const file = new File(['x'], 'cells.tif')
     ;(file as File & { path?: string }).path = '/desktop/cells.tif'
-    const event = makeDragEvent({ files: [file] })
-    window.dispatchEvent(event)
 
-    expect(onPaths).toHaveBeenCalledWith(['/desktop/cells.tif'])
-    expect(store.isOpen).toBe(false)
+    window.dispatchEvent(makeDragEvent({ files: [file] }))
+
+    expect(queue).toHaveBeenCalledWith([file])
     wrapper.unmount()
   })
 
-  it('falls back to browser-mode flow in desktop when File.path is missing', () => {
-    mockedIsDesktop.mockReturnValue(true)
-    const onPaths = vi.fn()
-    const wrapper = mountHost(onPaths)
-    const store = useDatasetBrowserStore()
-
-    const file = new File(['x'], 'cells.tif')
-    // No .path injected
-    const event = makeDragEvent({ files: [file] })
-    window.dispatchEvent(event)
-
-    expect(store.isOpen).toBe(true)
-    expect(store.options).toMatchObject({ mode: 'upload-and-pick' })
-    wrapper.unmount()
-  })
-
-  it('prevents the browser from navigating on dragover+drop of files', () => {
-    const onPaths = vi.fn()
-    const wrapper = mountHost(onPaths)
-
+  it('prevents browser navigation for file dragover and drop', () => {
+    const wrapper = mountHost()
+    const store = useDatasetsStore()
+    vi.spyOn(store, 'queueUploads').mockImplementation(() => undefined)
     const file = new File(['x'], 'a.tif')
-    const dragover = makeDragEvent({ files: [file] })
-    Object.defineProperty(dragover, 'type', { value: 'dragover' })
-    window.dispatchEvent(dragover)
-    expect(dragover.defaultPrevented).toBe(true)
-
+    const dragover = makeDragEvent({ files: [file], type: 'dragover' })
     const drop = makeDragEvent({ files: [file] })
+
+    window.dispatchEvent(dragover)
     window.dispatchEvent(drop)
+
+    expect(dragover.defaultPrevented).toBe(true)
     expect(drop.defaultPrevented).toBe(true)
     wrapper.unmount()
   })

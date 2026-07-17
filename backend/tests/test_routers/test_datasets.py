@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -48,6 +49,18 @@ async def test_list_empty(client: httpx.AsyncClient):
     assert r.json() == []
 
 
+async def test_initial_file_and_folder_lists_can_load_concurrently(
+    client: httpx.AsyncClient,
+):
+    datasets, folders = await asyncio.gather(
+        client.get("/api/v1/datasets"),
+        client.get("/api/v1/datasets/folders"),
+    )
+
+    assert datasets.status_code == 200
+    assert folders.status_code == 200
+
+
 async def test_list_after_upload(client: httpx.AsyncClient):
     await client.post(
         "/api/v1/datasets/upload",
@@ -64,6 +77,8 @@ async def test_list_after_upload(client: httpx.AsyncClient):
     assert entry["id"].startswith("d_")
     assert entry["upload_date"].endswith("Z")
     assert entry["path"].endswith("cells.tif")
+    assert entry["display_name"] == "cells.tif"
+    assert entry["folder_id"] is None
 
 
 async def test_list_when_root_missing(tmp_path: Path):
@@ -243,3 +258,81 @@ async def test_openapi_has_datasets_tag(client: httpx.AsyncClient):
             for t in op.get("tags", []):
                 tags.add(t)
     assert "datasets" in tags
+
+
+async def test_folder_crud_upload_move_and_rename(client: httpx.AsyncClient):
+    created = await client.post(
+        "/api/v1/datasets/folders", json={"name": "Experiment", "parent_id": None}
+    )
+    assert created.status_code == 201
+    folder_id = created.json()["id"]
+
+    uploaded = await client.post(
+        "/api/v1/datasets/upload",
+        data={"folder_id": folder_id},
+        files={"files": ("cells.tif", b"x", "image/tiff")},
+    )
+    dataset = uploaded.json()["uploaded"][0]
+    original_path = dataset["path"]
+
+    renamed = await client.patch(
+        f"/api/v1/datasets/{dataset['id']}",
+        json={"display_name": "Control image.tif"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["display_name"] == "Control image.tif"
+    assert renamed.json()["path"] == original_path
+
+    folders = await client.get("/api/v1/datasets/folders")
+    assert [folder["id"] for folder in folders.json()] == [folder_id]
+
+
+async def test_upload_to_missing_folder_is_reported_per_file(
+    client: httpx.AsyncClient,
+):
+    uploaded = await client.post(
+        "/api/v1/datasets/upload",
+        data={"folder_id": "f_missing"},
+        files={"files": ("cells.tif", b"x", "image/tiff")},
+    )
+
+    assert uploaded.status_code == 200
+    assert uploaded.json()["uploaded"] == []
+    assert uploaded.json()["errors"] == [
+        {
+            "filename": "cells.tif",
+            "error": "folder_not_found",
+            "detail": "f_missing",
+        }
+    ]
+
+
+async def test_resolve_and_recursive_delete_selection(client: httpx.AsyncClient):
+    folder = (
+        await client.post(
+            "/api/v1/datasets/folders", json={"name": "Experiment"}
+        )
+    ).json()
+    uploaded = await client.post(
+        "/api/v1/datasets/upload",
+        data={"folder_id": folder["id"]},
+        files={"files": ("cells.tif", b"x", "image/tiff")},
+    )
+    dataset = uploaded.json()["uploaded"][0]
+    selection = {"dataset_ids": [dataset["id"]], "folder_ids": [folder["id"]]}
+
+    resolved = await client.post("/api/v1/datasets/actions/resolve", json=selection)
+    assert resolved.status_code == 200
+    assert [item["id"] for item in resolved.json()] == [dataset["id"]]
+
+    preview = await client.post(
+        "/api/v1/datasets/actions/delete-preview", json=selection
+    )
+    assert preview.json()["dataset_count"] == 1
+    assert preview.json()["folder_count"] == 1
+    deleted = await client.post(
+        "/api/v1/datasets/actions/delete",
+        json={**selection, "expected_revision": preview.json()["revision"]},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted_dataset_ids"] == [dataset["id"]]

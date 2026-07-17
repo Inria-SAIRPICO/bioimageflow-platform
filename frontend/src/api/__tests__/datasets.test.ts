@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Dataset, UploadResponse } from '../types'
 
 vi.mock('@/api/client', () => ({
   api: {
@@ -10,7 +9,13 @@ vi.mock('@/api/client', () => ({
 }))
 
 import { api } from '@/api/client'
-import { listDatasets, uploadDataset, deleteDataset } from '../datasets'
+import {
+  listDatasets,
+  uploadDataset,
+  deleteDataset,
+  type DatasetRecord,
+  type UploadResponseRecord,
+} from '../datasets'
 
 const mockedGet = vi.mocked(api.get)
 const mockedPost = vi.mocked(api.post)
@@ -24,14 +29,16 @@ beforeEach(() => {
 
 describe('listDatasets', () => {
   it('returns the parsed array', async () => {
-    const items: Dataset[] = [
+    const items: DatasetRecord[] = [
       {
         id: 'd_abc',
         original_filename: 'cells.tif',
+        display_name: 'Cells',
         path: '/srv/datasets/20260421T120000_cells.tif',
         size: 1024,
         upload_date: '2026-04-21T12:00:00Z',
         content_type: 'image/tiff',
+        folder_id: null,
       },
     ]
     mockedGet.mockResolvedValue({ data: items })
@@ -45,15 +52,17 @@ describe('listDatasets', () => {
 
 describe('uploadDataset', () => {
   it('posts a single-file multipart request and surfaces progress', async () => {
-    const response: UploadResponse = {
+    const response: UploadResponseRecord = {
       uploaded: [
         {
           id: 'd_xyz',
           original_filename: 'cells.tif',
+          display_name: 'Cells',
           path: '/srv/datasets/20260421T120000_cells.tif',
           size: 11,
           upload_date: '2026-04-21T12:00:00Z',
           content_type: 'image/tiff',
+          folder_id: 'f_images',
         },
       ],
       errors: [],
@@ -63,7 +72,10 @@ describe('uploadDataset', () => {
     const file = new File(['hello world'], 'cells.tif', { type: 'image/tiff' })
     const progressCallback = vi.fn()
 
-    const result = await uploadDataset(file, { onProgress: progressCallback })
+    const result = await uploadDataset(file, {
+      folderId: 'f_images',
+      onProgress: progressCallback,
+    })
 
     expect(mockedPost).toHaveBeenCalledTimes(1)
     const [url, formData, options] = mockedPost.mock.calls[0]
@@ -71,6 +83,7 @@ describe('uploadDataset', () => {
     expect(formData).toBeInstanceOf(FormData)
     // The multipart field name must be "files" to match the backend `UploadFile` param
     expect((formData as FormData).getAll('files')).toHaveLength(1)
+    expect((formData as FormData).get('folder_id')).toBe('f_images')
     expect(options).toHaveProperty('onUploadProgress')
 
     // Simulate axios firing the progress event

@@ -233,6 +233,7 @@ const graphSync = useGraphSync({
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
   save: isSubWorkflowEditor ? () => saveSubWorkflowSession() : undefined,
+  addToolNode: (toolName, parameters) => onAddNode({ toolName, parameters }),
   renameNode,
   setNodeEnabled,
   setInputPinned,
@@ -2089,13 +2090,15 @@ function onDragOver(event: DragEvent) {
 function onAddNode({
   toolName,
   position,
+  parameters: parameterOverrides,
 }: {
   toolName: string
   position?: { x: number; y: number }
-}) {
-  if (isLocked.value) return
+  parameters?: Record<string, unknown>
+}): string | null {
+  if (isLocked.value) return null
   const tool = toolRegistryStore.getToolByName(toolName)
-  if (!tool) return
+  if (!tool) return null
 
   const existingIds = getNodes.value.map((n: any) => n.id)
   const existingNames = getNodes.value.map((n: any) => n.data?.name ?? '')
@@ -2110,6 +2113,7 @@ function onAddNode({
       parameters[key] = field.default
     }
   }
+  Object.assign(parameters, parameterOverrides)
 
   // Build default pinned state from connectable inputs
   // Only default to pinned (true) for required Path-type fields
@@ -2144,6 +2148,7 @@ function onAddNode({
   attachPublicationContext(newNode)
   addNodes([newNode])
   emitGraphChanged()
+  return id
 }
 
 async function onAddWorkflowNode({

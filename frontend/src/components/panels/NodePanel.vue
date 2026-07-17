@@ -100,6 +100,7 @@ const selectedNode = computed(() => {
 
 const nodeData = computed(() => selectedNode.value?.data ?? null)
 const publishNameError = ref<string | null>(null)
+const listInputErrors = ref<Record<string, string>>({})
 
 const editingName = ref(false)
 const nameInput = ref('')
@@ -215,6 +216,21 @@ function updateParameter(key: string, value: unknown) {
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
   canvasCommands.updateParameter(nodeId, key, value)
+}
+
+function listParameterText(key: string, field: InputFieldSchema): string {
+  return JSON.stringify(nodeData.value.parameters[key] ?? field.default ?? [], null, 2)
+}
+
+function updateListParameter(key: string, event: Event) {
+  try {
+    const value = JSON.parse((event.target as HTMLTextAreaElement).value)
+    if (!Array.isArray(value)) throw new Error('Value must be a JSON array')
+    delete listInputErrors.value[key]
+    updateParameter(key, value)
+  } catch (error) {
+    listInputErrors.value[key] = error instanceof Error ? error.message : 'Invalid JSON array'
+  }
 }
 
 function trackParameterFocus(fieldName: string, event: FocusEvent): void {
@@ -617,6 +633,17 @@ async function pickFolder(key: string) {
             >
               Connect to upstream node
             </span>
+            <!-- Generic list editor. Lists remain editable even when their element type has no special widget. -->
+            <div v-else-if="(field as InputFieldSchema).type === 'list'" class="list-input-row">
+              <textarea
+                :value="listParameterText(key, field as InputFieldSchema)"
+                class="param-input list-input"
+                :disabled="isNodeEditingDisabled"
+                :data-testid="`list-input-${key}`"
+                @change="updateListParameter(key, $event)"
+              />
+              <small v-if="listInputErrors[key]" class="list-input-error">{{ listInputErrors[key] }}</small>
+            </div>
             <!-- Gap 3: Enum/Literal dropdown when choices are available -->
             <Select
               v-else-if="hasChoices(field as InputFieldSchema)"
@@ -1266,6 +1293,10 @@ h4 {
   min-width: 0;
   box-sizing: border-box;
 }
+
+.list-input-row { display: grid; gap: 4px; }
+.list-input { min-height: 7rem; resize: vertical; font: 12px ui-monospace, monospace; }
+.list-input-error { color: var(--p-red-700, #b91c1c); }
 
 .param-number {
   display: flex;

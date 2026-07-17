@@ -27,7 +27,7 @@ BioImageFlow v3 introduces a dual deployment model. The same codebase runs in tw
 
 - The FastAPI server is exposed behind a reverse proxy.
 - All API and WebSocket requests require authentication (see Section 2).
-- Path selection uses the Dataset Browser modal (see Section 3) instead of native file dialogs.
+- Path selection uses the Datasets panel (see Section 3) instead of native file dialogs.
 - Viv is the primary image viewer (in-browser, see Section 4).
 - Tool creation and source editing are disabled to prevent remote code execution.
 - Tool hot-reload is disabled.
@@ -35,7 +35,7 @@ BioImageFlow v3 introduces a dual deployment model. The same codebase runs in tw
 - CORS is configured to allow requests from the frontend's deployed origin. The allowed origins list is configurable at deployment time.
 - Rate limiting and request guards are active (see Section 9).
 - Dataset management endpoints are available (see Section 3).
-- Drag and drop triggers upload via the Dataset Browser (see Section 3.4).
+- Drag and drop queues managed uploads in the Datasets panel (see Section 3.4).
 
 ### 1.2.1 Webapp Workspace Root
 
@@ -141,7 +141,8 @@ bioimageflow-omero
 
 ## 3. Dataset Management — Multi-User Extensions
 
-Base dataset management (endpoints, Dataset Browser modal, drag-and-drop upload, filename sanitization, file size limit, path traversal prevention) is specified in **v1 Section 2.4.10 and Section 3.14** and is available in both deployment modes. v3 extends it for multi-user operation.
+Base dataset management (endpoints, Datasets panel, drag-and-drop upload, filename sanitization, file size limit, path traversal prevention, and logical folders) is specified in **v1 Section 2.4.10**, **v1 Section 3.14**, and **v2 Section 5.7** and is available in both deployment modes.
+V3 extends it for multi-user operation.
 
 ### 3.1 Per-User Storage Scoping
 
@@ -153,7 +154,8 @@ datasets/{user_id}/{timestamp}_{sanitized_filename}.{ext}
 
 - `{user_id}` is derived from the authenticated session token.
 - The per-user directory replaces v1's single shared `datasets_root/` directory.
-- Each user can only see and use their own datasets. The `GET /datasets` listing, the `POST /datasets/upload` target directory, and the `DELETE /datasets/{dataset_id}` authorization check are all scoped to the caller's `user_id`.
+- Each user can only see and use their own dataset catalog, folders, selections, and stored files.
+- Every endpoint under `/datasets`, including upload, folder mutation, selection resolution, and recursive deletion, is scoped to the caller's `user_id`.
 - `DELETE /datasets/{dataset_id}` returns HTTP 404 Not Found if the dataset exists but belongs to another user (same response as "not found", to avoid leaking IDs across users).
 - No quota system is implemented in v3.
 
@@ -165,11 +167,14 @@ v1's path traversal gate (`Path.resolve()` + prefix check) still applies, with t
 
 ### 3.3 Authenticated Access
 
-All dataset endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE /datasets/{dataset_id}`) require an `Authorization: Bearer <token>` header in webapp mode (Section 2). Unauthenticated requests receive HTTP 401.
+All dataset endpoints require an `Authorization: Bearer <token>` header in webapp mode (Section 2).
+Unauthenticated requests receive HTTP 401.
 
-### 3.4 Dataset Browser — Webapp-Only Behavior
+### 3.4 Datasets Panel — Webapp-Only Behavior
 
-The Dataset Browser modal UI is specified in v1 Section 3.14. In webapp mode it is the **only** path-selection mechanism (native file dialogs are unreachable — there is no pywebview runtime), so the v1 behavior of "shown in browser mode, bypassed in pywebview mode" collapses to "always shown" in webapp deployments. The UI itself is unchanged.
+The Datasets panel UI is specified in v2 Section 5.7.
+In webapp mode it is the only path-selection mechanism because native dialogs are unavailable.
+All dataset catalog records and logical folders remain scoped to the authenticated user.
 
 ---
 
@@ -690,7 +695,8 @@ The following table lists all endpoints that are **new or modified** in v3. Endp
 |---|--------|----------|------|-----------|
 | 1 | `POST` | `/api/v1/nodes/summary` | Both | Summary DataFrame for multi-node selection in Data Table |
 
-Node-image serving and tool-package refresh are current v1 endpoints. Dataset management endpoints (`GET /datasets`, `POST /datasets/upload`, `DELETE /datasets/{dataset_id}`) are also defined in v1 Section 2.4.10. v3 modifies these existing contracts with per-user scoping and authentication.
+Node-image serving and tool-package refresh are current v1 endpoints.
+Dataset management endpoints are defined in v1 Section 2.4.10 and v2 Section 5.7; v3 modifies all of those contracts with per-user scoping and authentication.
 
 ### 11.2 Modified Endpoints
 

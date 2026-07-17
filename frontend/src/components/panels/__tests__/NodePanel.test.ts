@@ -741,6 +741,46 @@ describe('NodePanel', () => {
     })
   })
 
+  describe('list parameter editing', () => {
+    it('renders and commits a generic JSON array editor', async () => {
+      const tool = makeTool({
+        inputs: {
+          files: {
+            type: 'list', required: false, nullable: true,
+            connectable: 'never', default: null, description: 'Explicit files',
+          },
+        },
+      })
+      const data = makeNodeData({ tool, parameters: { files: ['/data/a.tif'] } })
+      const w = mountPanel(data)
+      const editor = w.find('[data-testid="list-input-files"]')
+
+      expect((editor.element as HTMLTextAreaElement).value).toContain('/data/a.tif')
+      await editor.setValue('["/data/b.tif", "/data/c.tif"]')
+
+      expect(data.parameters.files).toEqual(['/data/b.tif', '/data/c.tif'])
+    })
+
+    it('reports invalid JSON without changing the parameter', async () => {
+      const tool = makeTool({
+        inputs: {
+          values: {
+            type: 'list', required: false, nullable: false,
+            connectable: 'never', default: [], description: 'Values',
+          },
+        },
+      })
+      const data = makeNodeData({ tool, parameters: { values: ['kept'] } })
+      const w = mountPanel(data)
+      const editor = w.find('[data-testid="list-input-values"]')
+
+      await editor.setValue('{"not": "an array"}')
+
+      expect(data.parameters.values).toEqual(['kept'])
+      expect(w.find('.list-input-error').text()).toContain('JSON array')
+    })
+  })
+
   // --- Fix 19: Output template editing ---
 
   describe('output template editing', () => {

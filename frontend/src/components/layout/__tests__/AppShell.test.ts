@@ -319,11 +319,12 @@ describe('AppShell', () => {
   it('registers the default panels on ready', async () => {
     const wrapper = mountApp()
     await flushPromises()
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(7)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
 
     const panelIds = mockDockviewApi.addPanel.mock.calls.map((call: any) => call[0].id)
     expect(panelIds).toContain('tools')
     expect(panelIds).toContain('workflows')
+    expect(panelIds).toContain('datasets')
     expect(panelIds).toContain('workflow:startup')
     expect(panelIds).toContain('canvas-loading')
     expect(panelIds).not.toContain('canvas')
@@ -376,6 +377,20 @@ describe('AppShell', () => {
     })
   })
 
+  it('datasets panel docks with the tools and workflows group', async () => {
+    mountApp()
+    await flushPromises()
+    const datasetsCall = mockDockviewApi.addPanel.mock.calls.find(
+      (call: any) => call[0].id === 'datasets',
+    )
+    expect(datasetsCall).toBeDefined()
+    expect(datasetsCall![0]).toMatchObject({
+      component: 'datasets',
+      title: 'Datasets',
+      position: { referencePanel: 'tools', direction: 'within' },
+    })
+  })
+
   it('nodePanel has initialWidth of 320', async () => {
     mountApp()
     await flushPromises()
@@ -412,9 +427,9 @@ describe('AppShell', () => {
     store.togglePanel('tools') // show again
     await flushPromises()
 
-    // Loading placeholder + five fixed panels + canonical startup + one re-add.
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    const lastCall = mockDockviewApi.addPanel.mock.calls[7][0]
+    // Loading placeholder + six fixed panels + canonical startup + one re-add.
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(9)
+    const lastCall = mockDockviewApi.addPanel.mock.calls[8][0]
     expect(lastCall.id).toBe('tools')
     expect(lastCall.initialWidth).toBe(320)
   })
@@ -439,8 +454,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(store.panels.tools).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('tools')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(9)
+    expect(mockDockviewApi.addPanel.mock.calls[8][0].id).toBe('tools')
   })
 
   it('syncs the Workflows panel with the View menu', async () => {
@@ -484,8 +499,8 @@ describe('AppShell', () => {
     await flushPromises()
 
     expect(useUIStore().codeEditorUrl).toBe('http://127.0.0.1:32344')
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[7][0]
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(9)
+    const codeEditorCall = mockDockviewApi.addPanel.mock.calls[8][0]
     expect(codeEditorCall.id).toBe('codeEditor')
     expect(codeEditorCall.tabComponent).toBe('codeEditorTab')
     expect(codeEditorCall.initialWidth).toBe(520)
@@ -522,7 +537,7 @@ describe('AppShell', () => {
     expect(store.codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace')
     expect(store.codeEditorPath).toBe('/workspace/tools/new.py')
     expect(store.codeEditorProjectPath).toBe('/workspace')
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(9)
     expect(panels.get('codeEditor').api.setActive).not.toHaveBeenCalled()
   })
 
@@ -564,9 +579,9 @@ describe('AppShell', () => {
     const store = useUIStore()
     expect(store.codeEditorPath).toBe('/tmp/tool.py')
     expect(store.codeEditorOpening).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
-    expect(mockDockviewApi.addPanel.mock.calls[7][0].id).toBe('codeEditor')
-    expect(mockDockviewApi.addPanel.mock.calls[7][0].tabComponent).toBe('codeEditorTab')
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(9)
+    expect(mockDockviewApi.addPanel.mock.calls[8][0].id).toBe('codeEditor')
+    expect(mockDockviewApi.addPanel.mock.calls[8][0].tabComponent).toBe('codeEditorTab')
     expect(panels.get('codeEditor').api.setActive).toHaveBeenCalled()
 
     window.dispatchEvent(new CustomEvent('bif:open-code-editor-loading-finished'))
@@ -596,7 +611,7 @@ describe('AppShell', () => {
     expect(store.codeEditorUrl).toBe('http://127.0.0.1:32344/?folder=%2Fworkspace')
     expect(store.codeEditorPath).toBe('/workspace/tools/tool.py')
     expect(store.codeEditorOpening).toBe(true)
-    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(8)
+    expect(mockDockviewApi.addPanel).toHaveBeenCalledTimes(9)
     expect(panels.get('codeEditor').api.setActive).not.toHaveBeenCalled()
   })
 

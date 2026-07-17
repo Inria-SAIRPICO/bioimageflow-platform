@@ -1,5 +1,5 @@
 import { isDesktop, selectFile, selectFolder } from '@/utils/nativeDialogs'
-import { useDatasetBrowserStore } from '@/stores/datasetBrowser'
+import { useDatasetsStore } from '@/stores/datasets'
 
 export interface PickFileOptions {
   parameterName: string
@@ -15,23 +15,19 @@ export class BrowserModeUnsupported extends Error {
 
 /**
  * Single choke point that routes Path-picking between pywebview native dialogs
- * (desktop runtime) and the Dataset Browser modal (browser runtime).
+ * (desktop runtime) and the Datasets panel (browser runtime).
  *
  * Callers never need try/catch for re-entry — newest request wins (the store
  * cancels the previous pending resolver with null).
  */
 export function usePathPicker() {
-  const store = useDatasetBrowserStore()
+  const store = useDatasetsStore()
 
   async function pickFile(opts: PickFileOptions): Promise<string | null> {
     if (isDesktop()) {
       return selectFile(`Select file for: ${opts.parameterName}`, opts.fileTypes ?? [])
     }
-    return store.open({
-      mode: 'pick',
-      parameterName: opts.parameterName,
-      fileTypeFilter: opts.fileTypes,
-    })
+    return store.openPicker(opts.parameterName, opts.fileTypes)
   }
 
   async function pickFolder(opts: PickFileOptions): Promise<string | null> {

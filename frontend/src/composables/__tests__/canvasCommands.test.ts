@@ -91,6 +91,22 @@ afterEach(() => {
 })
 
 describe('active canvas commands', () => {
+  it('routes tool creation with parameter overrides to the active canvas', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const addToolNode = vi.fn(() => 'files_1')
+    useCanvasCommands({
+      descriptor: { kind: 'root', canvasId: rootId, workflowId: 'root' },
+      addToolNode,
+      ...makeCanvasCommandHandlers(),
+      updateParameter: vi.fn(),
+    })
+    const active = useCanvasCommands()
+    graphSyncCanvasSessions.activate(rootId)
+
+    expect(active.addToolNode('Files', { files: ['/data/a.tif'] })).toBe('files_1')
+    expect(addToolNode).toHaveBeenCalledWith('Files', { files: ['/data/a.tif'] })
+  })
+
   it('routes Save to the active nested canvas command', async () => {
     const rootId = canvasIdFromPanelId('workflow:root')
     const nestedId = canvasIdFromPanelId('sub-workflow:nested')

@@ -29,6 +29,7 @@ export type CanvasPublicationCommandResult =
 export interface CanvasScopedCommandsOptions {
   descriptor: CanvasSessionDescriptor
   save?: () => void | Promise<void>
+  addToolNode?: (toolName: string, parameters?: Record<string, unknown>) => string | null
   renameNode: (nodeId: string, name: string) => boolean
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
@@ -56,6 +57,7 @@ export interface CanvasScopedCommandsOptions {
 
 export interface CanvasCommandsApi {
   routeSave(): Promise<CanvasSaveRoute>
+  addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
@@ -78,6 +80,7 @@ export interface CanvasCommandsApi {
 
 interface CanvasCommandResource extends DisposableCanvasResource {
   save?: () => Promise<void>
+  addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
@@ -127,6 +130,7 @@ export function useCanvasCommands(
       await resource.save!()
       return 'nested'
     },
+    addToolNode: (toolName, parameters) => resource.addToolNode(toolName, parameters),
     renameNode: (nodeId, name) => resource.renameNode(nodeId, name),
     setNodeEnabled: (nodeId, enabled) => (
       resource.setNodeEnabled(nodeId, enabled)
@@ -174,6 +178,10 @@ function createCommandResource(
           },
         }
       : {}),
+    addToolNode: (toolName, parameters) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.addToolNode?.(toolName, parameters) ?? null
+    },
     renameNode: (nodeId, name) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.renameNode(nodeId, name)
@@ -232,6 +240,9 @@ function createActiveFacade(): CanvasCommandsApi {
       await resource.save()
       return 'nested'
     },
+    addToolNode: (toolName, parameters) => (
+      activeCommandResource()?.addToolNode(toolName, parameters) ?? null
+    ),
     renameNode: (nodeId, name) => (
       activeCommandResource()?.renameNode(nodeId, name) ?? false
     ),

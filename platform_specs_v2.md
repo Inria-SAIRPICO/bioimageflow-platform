@@ -808,9 +808,66 @@ The library's canonical input schema serializes this as `path_picker: "file" | "
 The hint controls Node Panel picker actions only and does not validate the runtime filesystem value.
 Missing or `null` metadata remains backward-compatible: image path types use file selection and a plain `Path` allows both files and folders.
 
-The common-tools `Files.Inputs.path` field declares `path_picker="folder"` because it scans a directory.
-In desktop mode the Node Panel therefore shows only the **Select folder** action for that field.
-In browser mode server-folder browsing is unsupported, so folder-only fields keep manual text entry without a picker button; `"both"` fields retain the Dataset Browser file action.
+The common-tools `Files` tool accepts either an explicit `files: list[Path]` or the compatibility `path: Path` directory input.
+The two sources are mutually exclusive and execution fails explicitly when both or neither are set.
+Explicit files preserve their order and ignore `pattern` and `recursive`; directory scans apply the glob and may recurse.
+The directory field retains `path_picker="folder"` for desktop workflows.
+In browser mode server-folder browsing is unsupported, so folder-only fields keep manual text entry without a picker button; file picker actions activate the Datasets Panel described below.
+
+### 5.7 Managed Datasets Panel
+
+The application has a **Datasets** Dockview panel beside the **Tools** and **Workflows** panels and a matching View-menu toggle.
+It replaces the Dataset Browser and Upload Datasets modals.
+
+The panel is arranged vertically as follows:
+
+1. An **Upload files** button.
+2. An aggregate progress bar and persistent per-file queued, uploading, success, or error messages, with retry actions for failed uploads.
+3. A search input on its own line.
+4. A top toolbar with **Add folder**, **Rename**, and one unified **Delete** action.
+5. A root drop target followed by a PrimeVue-style draggable tree of folders and selectable files.
+6. A selection summary and **Create Files node from selection** action at the bottom.
+
+The tree has no synthetic root row.
+Top-level folders and files appear directly in the tree, folders sort before files, and names sort case-insensitively within each group.
+Selection is independent of expansion and supports any combination of files and folders without row action menus or hover-only controls.
+Search matches file display names, original filenames, and logical folder paths while retaining ancestors needed to show matching descendants.
+
+**Add folder** creates one child when exactly one folder is selected, creates a sibling when exactly one file is selected, and otherwise creates a top-level folder.
+**Rename** is enabled for exactly one selected item.
+Renaming a folder changes its logical name, while renaming a file changes only its display name and never its stable stored path.
+Sibling file and folder display names share one case-insensitive uniqueness namespace.
+
+Files and folders can be dragged onto a folder to move them, and the root drop target moves an item to the top level.
+Moving a folder into itself or one of its descendants is rejected.
+Manual sibling ordering is not persisted; the tree returns to its deterministic sort after a move.
+
+**Delete** applies to selected files and folders through one recursive operation.
+The server first returns a preview containing the affected file and folder counts plus a catalog revision.
+Confirmation submits that revision, and the server rejects the delete if the catalog changed after the preview.
+Folders whose files could not be deleted remain in the catalog and the response reports per-file failures.
+
+Selecting a folder for **Create Files node from selection** recursively includes its descendant files.
+The server deduplicates overlapping file and folder selections and returns a stable logical-path order.
+The frontend creates a `Files` node whose explicit `files` parameter is a snapshot of the resolved stable storage paths; later folder changes do not mutate the node.
+
+In browser mode a Node Panel file-picker action activates the Datasets panel in temporary single-file selection mode with the requested extension filter.
+The user completes the request with **Use file** or **Cancel**.
+Desktop Node Panel picker actions continue to use native dialogs.
+Operating-system file drops always enqueue managed uploads and activate the Datasets panel in both browser and desktop runtimes.
+
+The dataset catalog is logical metadata stored separately from immutable timestamped file blobs.
+Folders therefore organize datasets without moving physical files, and file display-name changes do not invalidate persisted workflow paths.
+On startup the catalog reconciles compatible legacy blobs in place.
+
+The dataset API adds these contracts under `/api/v1/datasets`:
+
+- `GET /folders`, `POST /folders`, and `PATCH /folders/{folder_id}` list, create, rename, and move logical folders.
+- `PATCH /{dataset_id}` changes a file display name or logical folder.
+- `POST /actions/resolve` expands and orders a file/folder selection.
+- `POST /actions/delete-preview` returns recursive counts and a catalog revision.
+- `POST /actions/delete` performs revision-checked recursive deletion.
+- Existing list, upload, and single-file delete endpoints remain compatible, with list/upload records extended by `display_name` and `folder_id` and upload accepting an optional `folder_id`.
 
 ---
 

@@ -2505,6 +2505,33 @@ describe('CanvasView', () => {
   // --- Task 7: Drop Handling + Node Creation ---
 
   describe('node creation', () => {
+    it('creates a tool through canvas commands with parameter overrides', () => {
+      const filesTool = makeTool({
+        name: 'files',
+        display_name: 'Files',
+        tool_type: 'DataFrameTool',
+        inputs: {
+          path: { type: 'Path', required: false, nullable: true, connectable: 'never', default: null },
+          files: { type: 'list', required: false, nullable: true, connectable: 'never', default: null },
+        },
+        outputs: { path: { type: 'Path' } },
+      })
+      useToolRegistryStore().tools = [filesTool] as any
+      const w = mountCanvas()
+
+      const id = canvasCommandMocks.registrations[0].addToolNode(
+        'files',
+        { files: ['/managed/a.tif', '/managed/b.tif'] },
+      )
+
+      expect(id).toBe('files_1')
+      expect(mockNodes[0].data.parameters).toEqual({
+        path: null,
+        files: ['/managed/a.tif', '/managed/b.tif'],
+      })
+      w.unmount()
+    })
+
     it('onAddNode creates node with correct structure', () => {
       const store = useToolRegistryStore()
       store.tools = [makeTool()] as any
