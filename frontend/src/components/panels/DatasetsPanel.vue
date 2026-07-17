@@ -20,37 +20,44 @@
     <InputText v-model="query" class="dataset-search" placeholder="Search files and folders" />
 
     <div class="dataset-toolbar">
-      <Button data-testid="dataset-add-folder" label="Add folder" icon="pi pi-folder-plus" :disabled="locked" @click="openAddFolder" />
-      <Button data-testid="dataset-rename" label="Rename" icon="pi pi-pencil" :disabled="locked || selectedNodes.length !== 1" @click="openRename" />
-      <Button data-testid="dataset-delete" label="Delete" icon="pi pi-trash" severity="danger" :disabled="locked || selectedNodes.length === 0" @click="confirmDelete" />
+      <Button data-testid="dataset-add-folder" label="Add folder" icon="pi pi-folder-plus" size="small" :disabled="locked" @click="openAddFolder" />
+      <Button data-testid="dataset-rename" label="Rename" icon="pi pi-pencil" size="small" :disabled="locked || selectedNodes.length !== 1" @click="openRename" />
+      <Button data-testid="dataset-delete" label="Delete" icon="pi pi-trash" size="small" severity="danger" :disabled="locked || selectedNodes.length === 0" @click="confirmDelete" />
+      <Button data-testid="dataset-clear-selection" label="Unselect all" icon="pi pi-times" size="small" text :disabled="selectedNodes.length === 0" @click="clearSelection" />
     </div>
 
-    <div class="root-drop-zone" @dragover.prevent @drop="dropAtRoot">Move to top level</div>
     <Tree
-      v-model:selectionKeys="store.selectionKeys"
+      v-model:expandedKeys="expandedKeys"
       :value="visibleNodes"
-      selection-mode="multiple"
-      :meta-key-selection="false"
       draggable-nodes
       droppable-nodes
       class="dataset-tree"
-      @dragstart.capture="rememberTreeDrag"
-      @node-select="onNodeSelect"
-      @node-unselect="onNodeUnselect"
       @node-drop="onNodeDrop"
     >
       <template #default="slotProps">
-        <span
-          class="dataset-node-label"
-          :data-dataset-id="slotProps.node.data.record.id"
-          :title="nodeTitle(slotProps.node)"
-        >{{ slotProps.node.label }}</span>
+        <span class="dataset-node" @click.stop>
+          <Checkbox
+            :model-value="isNodeSelected(slotProps.node)"
+            binary
+            :disabled="locked || (Boolean(store.picker) && slotProps.node.data.kind === 'folder')"
+            :data-testid="`dataset-checkbox-${slotProps.node.data.record.id}`"
+            :aria-label="`Select ${slotProps.node.label}`"
+            @click.stop
+            @update:model-value="setNodeSelected(slotProps.node, $event)"
+          />
+          <i :class="slotProps.node.data.kind === 'folder' ? 'pi pi-folder' : 'pi pi-file'" aria-hidden="true" />
+          <span
+            class="dataset-node-label"
+            :data-dataset-id="slotProps.node.data.record.id"
+            :title="nodeTitle(slotProps.node)"
+          >{{ slotProps.node.label }}</span>
+        </span>
       </template>
       <template #empty>No datasets found.</template>
     </Tree>
 
     <div class="dataset-footer">
-      <span data-testid="dataset-selection-summary" :data-selected-ids="Object.keys(store.selectionKeys).join(',')">{{ selectionSummary }}</span>
+      <span data-testid="dataset-selection-summary" :data-selected-ids="selectedNodeIds.join(',')">{{ selectionSummary }}</span>
       <template v-if="store.picker">
         <Button label="Cancel" text @click="store.finishPicker(null)" />
         <Button label="Use file" :disabled="!store.pickerSelectionId" @click="finishPicker" />
@@ -58,10 +65,18 @@
       <Button
         v-else
         data-testid="dataset-create-files-node"
-        label="Create Files node from selection"
+        label="Create Files node"
         icon="pi pi-plus"
         :disabled="locked || selectedNodes.length === 0"
         @click="createFilesNode"
+      />
+      <Button
+        v-if="!store.picker && selectedFilesNode"
+        data-testid="dataset-set-files-node"
+        :label="`Set files on “${selectedFilesNode.name}”`"
+        icon="pi pi-check"
+        :disabled="locked || selectedNodes.length === 0"
+        @click="setSelectedFilesNode"
       />
     </div>
 
@@ -93,8 +108,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import ProgressBar from 'primevue/progressbar'
@@ -114,6 +130,7 @@ import {
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useDatasetsStore, type UploadEntry } from '@/stores/datasets'
+import { useUIStore } from '@/stores/ui'
 
 type NodeData =
   | { kind: 'dataset'; record: DatasetRecord }
@@ -122,6 +139,7 @@ type NodeData =
 type DatasetTreeNode = TreeNode & { key: string; data: NodeData; children?: DatasetTreeNode[] }
 
 const store = useDatasetsStore()
+const uiStore = useUIStore()
 const commands = useCanvasCommands()
 const { isLocked: locked } = useExecutionLock()
 const query = ref('')
@@ -133,14 +151,15 @@ const actionBusy = ref(false)
 const actionError = ref('')
 const deleteVisible = ref(false)
 const deletePreview = ref<Awaited<ReturnType<typeof previewDatasetDelete>> | null>(null)
+const expandedKeys = ref<Record<string, boolean>>({})
 
 const nodeMap = computed(() => {
   const map = new Map<string, DatasetTreeNode>()
   for (const folder of store.folders) {
-    map.set(folder.id, { key: folder.id, label: folder.name, icon: 'pi pi-folder', data: { kind: 'folder', record: folder }, children: [] })
+    map.set(folder.id, { key: folder.id, label: folder.name, data: { kind: 'folder', record: folder }, children: [] })
   }
   for (const dataset of store.datasets) {
-    map.set(dataset.id, { key: dataset.id, label: dataset.display_name, icon: 'pi pi-file', leaf: true, data: { kind: 'dataset', record: dataset } })
+    map.set(dataset.id, { key: dataset.id, label: dataset.display_name, leaf: true, data: { kind: 'dataset', record: dataset } })
   }
   return map
 })
@@ -191,6 +210,16 @@ const selectedNodes = computed(() => Object.entries(store.selectionKeys)
   .map(([id]) => nodeMap.value.get(id))
   .filter((node): node is DatasetTreeNode => Boolean(node)))
 
+const selectedNodeIds = computed(() => selectedNodes.value.map(node => node.key))
+
+const selectedFilesNode = computed(() => {
+  if (!uiStore.isSingleSelection) return null
+  const nodeId = uiStore.selectedNodeIds[0]
+  const node = uiStore.graphNodes.find(item => item.id === nodeId)
+  if (String(node?.data?.toolName ?? '').toLocaleLowerCase() !== 'files') return null
+  return { id: nodeId, name: String(node.data?.name ?? nodeId) }
+})
+
 const selectionSummary = computed(() => {
   if (store.picker) return store.pickerSelectionId ? '1 file selected' : 'Select one file'
   const count = selectedNodes.value.length
@@ -205,6 +234,24 @@ const uploadFolderId = computed(() => {
 })
 
 onMounted(() => { void store.refresh() })
+
+watch(
+  () => [query.value, visibleNodes.value] as const,
+  ([search, nodes]) => {
+    if (!search.trim()) return
+    const next = { ...expandedKeys.value }
+    const expandParents = (items: DatasetTreeNode[]) => {
+      for (const node of items) {
+        if (node.data.kind === 'folder' && (node.children?.length ?? 0) > 0) {
+          next[node.key] = true
+          expandParents(node.children ?? [])
+        }
+      }
+    }
+    expandParents(nodes)
+    expandedKeys.value = next
+  },
+)
 
 function message(error: unknown): string {
   if (typeof error === 'object' && error && 'response' in error) {
@@ -250,18 +297,29 @@ function onFilesChosen(event: Event) {
   input.value = ''
 }
 
-function onNodeSelect(treeNode: TreeNode) {
-  if (!store.picker) return
+function isNodeSelected(treeNode: TreeNode): boolean {
   const node = treeNode as DatasetTreeNode
-  const id = node.data.record.id
-  store.pickerSelectionId = node.data.kind === 'dataset' ? id : null
-  store.selectionKeys = store.pickerSelectionId ? { [store.pickerSelectionId]: true } : {}
+  return store.selectionKeys[node.key] === true
 }
 
-function onNodeUnselect(treeNode: TreeNode) {
-  if (!store.picker) return
-  const id = (treeNode as DatasetTreeNode).data.record.id
-  if (store.pickerSelectionId === id) store.pickerSelectionId = null
+function setNodeSelected(treeNode: TreeNode, selected: boolean) {
+  if (locked.value) return
+  const node = treeNode as DatasetTreeNode
+  if (store.picker) {
+    if (node.data.kind === 'folder') return
+    store.pickerSelectionId = selected ? node.key : null
+    store.selectionKeys = selected ? { [node.key]: true } : {}
+    return
+  }
+  const next = { ...store.selectionKeys }
+  if (selected) next[node.key] = true
+  else delete next[node.key]
+  store.selectionKeys = next
+}
+
+function clearSelection() {
+  store.selectionKeys = {}
+  store.pickerSelectionId = null
 }
 
 function finishPicker() {
@@ -332,7 +390,7 @@ async function deleteConfirmed() {
   try {
     const result = await deleteDatasetSelection(store.selectedIds(), deletePreview.value.revision)
     if (result.errors.length) actionError.value = result.errors.map(item => item.detail).join('; ')
-    store.selectionKeys = {}
+    clearSelection()
     await store.refresh()
     if (!result.errors.length) deleteVisible.value = false
   } catch (error) {
@@ -343,6 +401,10 @@ async function deleteConfirmed() {
 }
 
 async function moveNode(node: DatasetTreeNode, folderId: string | null) {
+  const currentFolderId = node.data.kind === 'folder'
+    ? node.data.record.parent_id
+    : node.data.record.folder_id
+  if (currentFolderId === folderId) return
   if (node.data.kind === 'folder') {
     if (node.key === folderId) return
     await updateDatasetFolder(node.key, { parent_id: folderId })
@@ -355,28 +417,55 @@ async function moveNode(node: DatasetTreeNode, folderId: string | null) {
 function onNodeDrop(event: TreeNodeDropEvent) {
   const dragNode = event.dragNode as DatasetTreeNode
   const dropNode = event.dropNode as DatasetTreeNode
-  if (locked.value || !dragNode || dropNode?.data.kind !== 'folder') return
-  void moveNode(dragNode, dropNode.key).catch(error => { actionError.value = message(error) })
+  if (locked.value || !dragNode) return
+  const resultingParent = findTreeParent(
+    (event.value as DatasetTreeNode[] | undefined) ?? visibleNodes.value,
+    dragNode.key,
+  )
+  const folderId = resultingParent !== undefined
+    ? resultingParent
+    : dropNode?.data.kind === 'folder'
+      ? dropNode.key
+      : undefined
+  if (folderId === undefined) return
+  void moveNode(dragNode, folderId).catch(error => { actionError.value = message(error) })
 }
 
-function rememberTreeDrag(event: DragEvent) {
-  const row = (event.target as HTMLElement | null)?.closest('[role="treeitem"]')
-  const id = row?.querySelector<HTMLElement>('[data-dataset-id]')?.dataset.datasetId
-  if (id) event.dataTransfer?.setData('text/plain', id)
+function findTreeParent(
+  nodes: DatasetTreeNode[],
+  nodeId: string,
+  parentId: string | null = null,
+): string | null | undefined {
+  for (const node of nodes) {
+    if (node.key === nodeId) return parentId
+    const found = findTreeParent(node.children ?? [], nodeId, node.key)
+    if (found !== undefined) return found
+  }
+  return undefined
 }
 
-function dropAtRoot(event: DragEvent) {
-  if (locked.value) return
-  const id = event.dataTransfer?.getData('text/plain')
-  const node = id ? nodeMap.value.get(id) : undefined
-  if (node) void moveNode(node, null).catch(error => { actionError.value = message(error) })
+async function resolvedSelectedPaths(): Promise<string[]> {
+  const datasets = await resolveDatasetSelection(store.selectedIds())
+  return datasets.map(dataset => dataset.path)
 }
 
 async function createFilesNode() {
   actionError.value = ''
   try {
-    const datasets = await resolveDatasetSelection(store.selectedIds())
-    commands.addToolNode('Files', { files: datasets.map(dataset => dataset.path) })
+    commands.addToolNode('Files', { files: await resolvedSelectedPaths() })
+  } catch (error) {
+    actionError.value = message(error)
+  }
+}
+
+async function setSelectedFilesNode() {
+  const node = selectedFilesNode.value
+  if (!node) return
+  actionError.value = ''
+  try {
+    const files = await resolvedSelectedPaths()
+    commands.updateParameter(node.id, 'path', null)
+    commands.updateParameter(node.id, 'files', files)
   } catch (error) {
     actionError.value = message(error)
   }
@@ -400,8 +489,8 @@ function nodeTitle(treeNode: TreeNode): string {
 .upload-message.success { color: var(--p-green-500); }
 .dataset-search { width: 100%; }
 .dataset-toolbar, .dataset-footer { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-.root-drop-zone { padding: .3rem; border: 1px dashed var(--p-surface-400); border-radius: .25rem; text-align: center; color: var(--p-text-muted-color); font-size: .75rem; }
 .dataset-tree { flex: 1; min-height: 0; overflow: auto; }
+.dataset-node { display: inline-flex; align-items: center; gap: .45rem; min-width: 0; }
 .dataset-node-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dataset-footer { justify-content: flex-end; }
 .dataset-footer > span { margin-right: auto; color: var(--p-text-muted-color); font-size: .8rem; }

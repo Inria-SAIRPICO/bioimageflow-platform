@@ -233,7 +233,11 @@ const graphSync = useGraphSync({
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
   save: isSubWorkflowEditor ? () => saveSubWorkflowSession() : undefined,
-  addToolNode: (toolName, parameters) => onAddNode({ toolName, parameters }),
+  addToolNode: (toolName, parameters) => onAddNode({
+    toolName,
+    parameters,
+    position: canvasCenterPosition(),
+  }),
   renameNode,
   setNodeEnabled,
   setInputPinned,
@@ -2086,6 +2090,12 @@ function onDragOver(event: DragEvent) {
 }
 
 // --- Node creation ---
+
+function canvasCenterPosition(): { x: number; y: number } | undefined {
+  const rect = canvasRef.value?.getBoundingClientRect()
+  if (!rect) return undefined
+  return project({ x: rect.width / 2, y: rect.height / 2 })
+}
 
 function onAddNode({
   toolName,

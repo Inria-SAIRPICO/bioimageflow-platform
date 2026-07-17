@@ -2518,6 +2518,17 @@ describe('CanvasView', () => {
       })
       useToolRegistryStore().tools = [filesTool] as any
       const w = mountCanvas()
+      vi.spyOn(w.find('.canvas-view').element, 'getBoundingClientRect').mockReturnValue({
+        x: 20,
+        y: 30,
+        left: 20,
+        top: 30,
+        right: 820,
+        bottom: 630,
+        width: 800,
+        height: 600,
+        toJSON: () => ({}),
+      })
 
       const id = canvasCommandMocks.registrations[0].addToolNode(
         'files',
@@ -2529,6 +2540,7 @@ describe('CanvasView', () => {
         path: null,
         files: ['/managed/a.tif', '/managed/b.tif'],
       })
+      expect(mockNodes[0].position).toEqual({ x: 400, y: 300 })
       w.unmount()
     })
 

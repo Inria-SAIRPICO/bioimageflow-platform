@@ -822,34 +822,37 @@ It replaces the Dataset Browser and Upload Datasets modals.
 The panel is arranged vertically as follows:
 
 1. An **Upload files** button.
-2. An aggregate progress bar and persistent per-file queued, uploading, success, or error messages, with retry actions for failed uploads.
+2. An aggregate progress bar for the current upload batch and persistent per-file queued, uploading, success, or error messages, with retry actions for failed uploads.
 3. A search input on its own line.
-4. A top toolbar with **Add folder**, **Rename**, and one unified **Delete** action.
-5. A root drop target followed by a PrimeVue-style draggable tree of folders and selectable files.
-6. A selection summary and **Create Files node from selection** action at the bottom.
+4. A compact top toolbar with **Add folder**, **Rename**, one unified **Delete** action, and **Unselect all**.
+5. A PrimeVue-style draggable tree of folders and files with an independent checkbox for every item.
+6. A selection summary and **Create Files node** action at the bottom, plus **Set files on “Node name”** when exactly one `Files` node is selected on the active canvas.
 
 The tree has no synthetic root row.
 Top-level folders and files appear directly in the tree, folders sort before files, and names sort case-insensitively within each group.
-Selection is independent of expansion and supports any combination of files and folders without row action menus or hover-only controls.
-Search matches file display names, original filenames, and logical folder paths while retaining ancestors needed to show matching descendants.
+Checkboxes are the only selection control: clicking a row label does not select it, and selection remains independent of expansion and supports any combination of files and folders without row action menus or hover-only controls.
+Newly uploaded files are checked by default without clearing earlier checked items.
+Search matches file display names, original filenames, and logical folder paths while retaining and expanding ancestors needed to show matching descendants.
 
 **Add folder** creates one child when exactly one folder is selected, creates a sibling when exactly one file is selected, and otherwise creates a top-level folder.
 **Rename** is enabled for exactly one selected item.
 Renaming a folder changes its logical name, while renaming a file changes only its display name and never its stable stored path.
 Sibling file and folder display names share one case-insensitive uniqueness namespace.
 
-Files and folders can be dragged onto a folder to move them, and the root drop target moves an item to the top level.
+Files and folders can be dragged onto a folder to move them, and PrimeVue's top-level tree drop positions move an item to the top level without a separate synthetic drop area.
+Dropping above or below a sibling derives the move destination from the resulting tree parent, so every drop position within a folder moves the item into that folder.
 Moving a folder into itself or one of its descendants is rejected.
-Manual sibling ordering is not persisted; the tree returns to its deterministic sort after a move.
+Manual sibling ordering is ignored rather than persisted; the tree returns to its deterministic sort after a move.
 
 **Delete** applies to selected files and folders through one recursive operation.
 The server first returns a preview containing the affected file and folder counts plus a catalog revision.
 Confirmation submits that revision, and the server rejects the delete if the catalog changed after the preview.
 Folders whose files could not be deleted remain in the catalog and the response reports per-file failures.
 
-Selecting a folder for **Create Files node from selection** recursively includes its descendant files.
+Selecting a folder for **Create Files node** or **Set files on “Node name”** recursively includes its descendant files.
 The server deduplicates overlapping file and folder selections and returns a stable logical-path order.
-The frontend creates a `Files` node whose explicit `files` parameter is a snapshot of the resolved stable storage paths; later folder changes do not mutate the node.
+The frontend creates a `Files` node at the center of the active canvas whose explicit `files` parameter is a snapshot of the resolved stable storage paths; later folder changes do not mutate the node.
+The set action replaces the selected `Files` node's `files` parameter with the same snapshot and clears its compatibility `path` parameter so the mutually exclusive inputs remain valid.
 
 In browser mode a Node Panel file-picker action activates the Datasets panel in temporary single-file selection mode with the requested extension filter.
 The user completes the request with **Use file** or **Cancel**.

@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   listDatasets,
@@ -10,6 +10,7 @@ import {
 
 export interface UploadEntry {
   id: string
+  batchId: number
   file: File
   loaded: number
   total: number
@@ -32,13 +33,18 @@ export const useDatasetsStore = defineStore('datasets', () => {
   const uploads = ref<UploadEntry[]>([])
   const activationRequest = ref(0)
   let uploadCounter = 0
+  let currentBatchId = 0
   let runningUploads = 0
   let pickerPreviousSelection: Record<string, boolean> | null = null
   const queued: Array<{ entry: UploadEntry; folderId: string | null }> = []
 
   const progress = computed(() => {
-    const total = uploads.value.reduce((sum, item) => sum + item.total, 0)
-    const loaded = uploads.value.reduce((sum, item) => sum + item.loaded, 0)
+    const currentUploads = uploads.value.filter(item => item.batchId === currentBatchId)
+    const total = currentUploads.reduce((sum, item) => sum + Math.max(item.total, 1), 0)
+    const loaded = currentUploads.reduce((sum, item) => {
+      if (item.status === 'success' || item.status === 'error') return sum + Math.max(item.total, 1)
+      return sum + Math.min(item.loaded, Math.max(item.total, 1))
+    }, 0)
     return total ? Math.round((loaded / total) * 100) : 0
   })
 
@@ -77,11 +83,18 @@ export const useDatasetsStore = defineStore('datasets', () => {
   }
 
   function queueUploads(files: File[], folderId: string | null = null) {
+    if (!files.length) return
+    const hasActiveBatch = uploads.value.some(item => (
+      item.batchId === currentBatchId
+      && (item.status === 'queued' || item.status === 'uploading')
+    ))
+    if (!hasActiveBatch) currentBatchId += 1
     for (const file of files) {
-      const entry: UploadEntry = {
-        id: `upload-${++uploadCounter}`, file, loaded: 0, total: file.size,
+      const entry = reactive<UploadEntry>({
+        id: `upload-${++uploadCounter}`, batchId: currentBatchId,
+        file, loaded: 0, total: file.size,
         status: 'queued',
-      }
+      })
       uploads.value.push(entry)
       queued.push({ entry, folderId })
     }
@@ -90,6 +103,12 @@ export const useDatasetsStore = defineStore('datasets', () => {
   }
 
   function retryUpload(entry: UploadEntry, folderId: string | null = null) {
+    const hasActiveBatch = uploads.value.some(item => (
+      item.batchId === currentBatchId
+      && (item.status === 'queued' || item.status === 'uploading')
+    ))
+    if (!hasActiveBatch) currentBatchId += 1
+    entry.batchId = currentBatchId
     entry.loaded = 0
     entry.status = 'queued'
     entry.message = undefined

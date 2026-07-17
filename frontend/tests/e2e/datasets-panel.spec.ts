@@ -39,7 +39,7 @@ test.describe('Datasets panel', () => {
     await folderDialog.getByRole('button', { name: 'Save' }).click()
     await expect(page.locator('.dataset-tree')).toContainText('Experiment A')
 
-    await page.getByRole('button', { name: 'Create Files node from selection' }).click()
+    await page.getByRole('button', { name: 'Create Files node', exact: true }).click()
     await expect(page.locator('.vue-flow__node').filter({ hasText: 'Files' })).toHaveCount(1)
   })
 })

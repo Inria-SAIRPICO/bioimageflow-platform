@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
+import Tree from 'primevue/tree'
 
 const mocks = vi.hoisted(() => ({
   listDatasets: vi.fn().mockResolvedValue([]),
   listFolders: vi.fn().mockResolvedValue([]),
   resolveSelection: vi.fn(),
   addToolNode: vi.fn().mockReturnValue('files_1'),
+  updateParameter: vi.fn().mockReturnValue(true),
+  updateDataset: vi.fn(),
 }))
 
 vi.mock('@/api/datasets', () => ({
@@ -15,7 +18,7 @@ vi.mock('@/api/datasets', () => ({
   listDatasetFolders: mocks.listFolders,
   createDatasetFolder: vi.fn(),
   updateDatasetFolder: vi.fn(),
-  updateDataset: vi.fn(),
+  updateDataset: mocks.updateDataset,
   previewDatasetDelete: vi.fn(),
   deleteDatasetSelection: vi.fn(),
   resolveDatasetSelection: mocks.resolveSelection,
@@ -23,11 +26,19 @@ vi.mock('@/api/datasets', () => ({
 }))
 
 vi.mock('@/composables/useCanvasCommands', () => ({
-  useCanvasCommands: () => ({ addToolNode: mocks.addToolNode }),
+  useCanvasCommands: () => ({
+    addToolNode: mocks.addToolNode,
+    updateParameter: mocks.updateParameter,
+  }),
 }))
 
 import DatasetsPanel from '../DatasetsPanel.vue'
 import { useDatasetsStore } from '@/stores/datasets'
+import { useUIStore } from '@/stores/ui'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 
 const stubs = {
   Tree: {
@@ -41,6 +52,11 @@ const stubs = {
   },
   InputText: { props: ['modelValue'], template: '<input data-testid="datasets-search" />' },
   ProgressBar: { props: ['value'], template: '<div data-testid="datasets-progress">{{ value }}</div>' },
+  Checkbox: {
+    props: ['modelValue', 'disabled'],
+    emits: ['update:modelValue'],
+    template: '<input type="checkbox" :checked="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.checked)">',
+  },
   Dialog: { template: '<div><slot/><slot name="footer"/></div>' },
 }
 
@@ -50,6 +66,7 @@ describe('DatasetsPanel', () => {
     vi.clearAllMocks()
     mocks.listDatasets.mockResolvedValue([])
     mocks.listFolders.mockResolvedValue([])
+    canvasSessionRegistry.dispose()
   })
 
   it('renders tree management without a synthetic root or row menus', async () => {
@@ -59,8 +76,10 @@ describe('DatasetsPanel', () => {
     expect(wrapper.find('[data-testid="dataset-add-folder"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dataset-rename"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dataset-delete"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="dataset-clear-selection"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dataset-create-files-node"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Datasets root')
+    expect(wrapper.text()).not.toContain('Move to top level')
     expect(wrapper.find('[data-testid="dataset-row-menu"]').exists()).toBe(false)
   })
 
@@ -88,7 +107,7 @@ describe('DatasetsPanel', () => {
     expect(mocks.addToolNode).toHaveBeenCalledWith('Files', { files: ['/managed/a.tif'] })
   })
 
-  it('selects a real PrimeVue tree row from its visible label', async () => {
+  it('uses only independent checkboxes for selection', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const dataset = {
@@ -102,7 +121,96 @@ describe('DatasetsPanel', () => {
 
     await wrapper.find('.dataset-node-label').trigger('click')
 
+    expect(useDatasetsStore().selectionKeys).toEqual({})
+    await wrapper.find('[data-testid="dataset-checkbox-d_a"] input').setValue(true)
+
     expect(useDatasetsStore().selectionKeys).toEqual({ d_a: true })
     expect(wrapper.find('[data-testid="dataset-rename"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.find('[data-testid="dataset-clear-selection"]').trigger('click')
+    expect(useDatasetsStore().selectionKeys).toEqual({})
+  })
+
+  it('expands matching files parent folders while searching', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    mocks.listFolders.mockResolvedValue([
+      { id: 'f_parent', name: 'Parent', parent_id: null, created_at: '2026-01-01T00:00:00Z' },
+    ])
+    mocks.listDatasets.mockResolvedValue([{
+      id: 'd_a', original_filename: 'needle.tif', display_name: 'Needle image',
+      path: '/managed/needle.tif', size: 1, upload_date: '2026-01-01T00:00:00Z',
+      content_type: 'image/tiff', folder_id: 'f_parent',
+    }])
+    const wrapper = mount(DatasetsPanel, { global: { plugins: [pinia, PrimeVue] } })
+    await flushPromises()
+
+    await wrapper.find('input.dataset-search').setValue('needle')
+    await flushPromises()
+
+    expect(wrapper.findComponent(Tree).props('expandedKeys')).toMatchObject({ f_parent: true })
+    expect(wrapper.text()).toContain('Needle image')
+  })
+
+  it('derives a dragged item destination from its resulting tree parent', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const folder = { id: 'f_parent', name: 'Parent', parent_id: null, created_at: '2026-01-01T00:00:00Z' }
+    const dragged = {
+      id: 'd_dragged', original_filename: 'dragged.tif', display_name: 'Dragged',
+      path: '/managed/dragged.tif', size: 1, upload_date: '2026-01-01T00:00:00Z',
+      content_type: 'image/tiff', folder_id: null,
+    }
+    const sibling = { ...dragged, id: 'd_sibling', display_name: 'Sibling', folder_id: 'f_parent' }
+    mocks.listFolders.mockResolvedValue([folder])
+    mocks.listDatasets.mockResolvedValue([dragged, sibling])
+    const wrapper = mount(DatasetsPanel, { global: { plugins: [pinia], stubs } })
+    await flushPromises()
+    const vm = wrapper.vm as any
+    const draggedNode = vm.nodeMap.get('d_dragged')
+    const siblingNode = vm.nodeMap.get('d_sibling')
+    const folderNode = vm.nodeMap.get('f_parent')
+
+    vm.onNodeDrop({
+      dragNode: draggedNode,
+      dropNode: siblingNode,
+      value: [{ ...folderNode, children: [siblingNode, draggedNode] }],
+    })
+    await flushPromises()
+
+    expect(mocks.updateDataset).toHaveBeenCalledWith('d_dragged', { folder_id: 'f_parent' })
+  })
+
+  it('sets resolved files on the single selected Files node', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const canvasId = canvasIdFromPanelId('workflow:test')
+    canvasSessionRegistry.register({ kind: 'root', canvasId, workflowId: 'test' })
+    canvasSessionRegistry.activate(canvasId)
+    const ui = useUIStore()
+    ui.setCanvasGraphNodes(canvasId, [{
+      id: 'files_7',
+      data: { name: 'Input images', toolName: 'Files' },
+    }])
+    ui.setCanvasSelectedNodes(canvasId, ['files_7'])
+    const dataset = {
+      id: 'd_a', original_filename: 'a.tif', display_name: 'A image',
+      path: '/managed/a.tif', size: 1, upload_date: '2026-01-01T00:00:00Z',
+      content_type: 'image/tiff', folder_id: null,
+    }
+    mocks.listDatasets.mockResolvedValue([dataset])
+    mocks.resolveSelection.mockResolvedValue([dataset])
+    const store = useDatasetsStore()
+    store.selectionKeys = { d_a: true }
+    const wrapper = mount(DatasetsPanel, { global: { plugins: [pinia], stubs } })
+    await flushPromises()
+
+    const button = wrapper.find('[data-testid="dataset-set-files-node"]')
+    expect(button.text()).toBe('Set files on “Input images”')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(mocks.updateParameter).toHaveBeenNthCalledWith(1, 'files_7', 'path', null)
+    expect(mocks.updateParameter).toHaveBeenNthCalledWith(2, 'files_7', 'files', ['/managed/a.tif'])
   })
 })
