@@ -17,6 +17,7 @@ class NestedSnapshotOwner(BaseModel):
     kind: Literal["root", "nested"]
     canvas_id: str | None = Field(default=None, min_length=1)
     workflow_id: str | None = None
+    identity_generation: int | None = Field(default=None, ge=0, strict=True)
     session_id: UUID | None = None
 
     @model_validator(mode="after")
@@ -26,10 +27,18 @@ class NestedSnapshotOwner(BaseModel):
                 raise ValueError("Root nested snapshot owners require canvas_id")
             if self.session_id is not None:
                 raise ValueError("Root nested snapshot owners cannot carry session_id")
+            if self.workflow_id is None and self.identity_generation is not None:
+                raise ValueError(
+                    "Unsaved root nested snapshot owners cannot carry identity_generation"
+                )
         else:
             if self.session_id is None:
                 raise ValueError("Nested snapshot owners require session_id")
-            if self.canvas_id is not None or self.workflow_id is not None:
+            if (
+                self.canvas_id is not None
+                or self.workflow_id is not None
+                or self.identity_generation is not None
+            ):
                 raise ValueError(
                     "Nested snapshot owners are identified only by parent session_id"
                 )

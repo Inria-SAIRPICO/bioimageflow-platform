@@ -14,6 +14,9 @@ from httpx import ASGITransport
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.routers.graph import get_dev_mode as graph_get_dev_mode
+from bioimageflow_server.services.nested_workflow_snapshot import (
+    NestedWorkflowSnapshotService,
+)
 from bioimageflow_server.services.settings_store import SettingsStore
 
 
@@ -37,7 +40,7 @@ async def test_lifespan_loads_pre_existing_settings(tmp_path: Path) -> None:
         )
     )
     store = SettingsStore(path=path)
-    config = AppConfig(settings_store=store)
+    config = AppConfig(settings_store=store, disable_hot_reload=True)
     app = create_app(config)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
@@ -48,7 +51,10 @@ async def test_lifespan_loads_pre_existing_settings(tmp_path: Path) -> None:
         assert resp.json()["external_editor"] == "code"
 
 
-async def test_lifespan_load_runs_before_catalog_refresh(tmp_path: Path) -> None:
+async def test_lifespan_load_and_snapshot_cleanup_run_before_catalog_refresh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     path = tmp_path / "settings.json"
     store = SettingsStore(path=path)
     order: list[str] = []
@@ -61,6 +67,16 @@ async def test_lifespan_load_runs_before_catalog_refresh(tmp_path: Path) -> None
 
     store.load = wrapped_load  # type: ignore[method-assign]
 
+    def cleanup_snapshots(_service: NestedWorkflowSnapshotService) -> list[Any]:
+        order.append("snapshot_cleanup")
+        return []
+
+    monkeypatch.setattr(
+        NestedWorkflowSnapshotService,
+        "cleanup_orphaned_snapshots",
+        cleanup_snapshots,
+    )
+
     class _RecordingCatalog:
         async def refresh(self) -> None:
             order.append("refresh")
@@ -68,12 +84,57 @@ async def test_lifespan_load_runs_before_catalog_refresh(tmp_path: Path) -> None
         def list_packages(self):
             return []
 
-    config = AppConfig(settings_store=store, package_catalog=_RecordingCatalog())  # type: ignore[arg-type]
+    config = AppConfig(
+        settings_store=store,
+        package_catalog=_RecordingCatalog(),  # type: ignore[arg-type]
+        disable_hot_reload=True,
+    )
     app = create_app(config)
     async with app.router.lifespan_context(app):
         pass
 
-    assert order == ["load", "refresh"], order
+    assert order == ["load", "snapshot_cleanup", "refresh"], order
+
+
+async def test_lifespan_snapshot_cleanup_failure_is_logged_and_nonfatal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    refreshed = False
+
+    def fail_cleanup(_service: NestedWorkflowSnapshotService) -> list[Any]:
+        raise OSError("snapshot inventory unavailable")
+
+    class _RecordingCatalog:
+        async def refresh(self) -> None:
+            nonlocal refreshed
+            refreshed = True
+
+        def list_packages(self):
+            return []
+
+    monkeypatch.setattr(
+        NestedWorkflowSnapshotService,
+        "cleanup_orphaned_snapshots",
+        fail_cleanup,
+    )
+    app = create_app(
+        AppConfig(
+            workspace_path=tmp_path / "workspace",
+            storage_path=tmp_path / "storage",
+            package_catalog=_RecordingCatalog(),  # type: ignore[arg-type]
+            disable_hot_reload=True,
+        )
+    )
+
+    with caplog.at_level("WARNING", logger="bioimageflow_server.app"):
+        async with app.router.lifespan_context(app):
+            pass
+
+    assert refreshed is True
+    assert "Retained nested snapshot orphan cleanup failed at startup" in caplog.text
+    assert "snapshot inventory unavailable" in caplog.text
 
 
 async def test_lifespan_calls_flush_on_shutdown(tmp_path: Path) -> None:
@@ -81,7 +142,7 @@ async def test_lifespan_calls_flush_on_shutdown(tmp_path: Path) -> None:
     store = SettingsStore(path=path)
     flush_mock = AsyncMock()
     store.flush = flush_mock  # type: ignore[method-assign]
-    config = AppConfig(settings_store=store)
+    config = AppConfig(settings_store=store, disable_hot_reload=True)
     app = create_app(config)
     async with app.router.lifespan_context(app):
         flush_mock.assert_not_awaited()
@@ -92,7 +153,7 @@ async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     assert not path.exists()
     store = SettingsStore(path=path)
-    config = AppConfig(settings_store=store)
+    config = AppConfig(settings_store=store, disable_hot_reload=True)
     app = create_app(config)
     async with app.router.lifespan_context(app):
         pass
@@ -104,7 +165,7 @@ async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
 async def test_dev_mode_dependency_resolves_through_store(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     store = SettingsStore(path=path)
-    config = AppConfig(settings_store=store)
+    config = AppConfig(settings_store=store, disable_hot_reload=True)
     app = create_app(config)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
@@ -113,5 +174,3 @@ async def test_dev_mode_dependency_resolves_through_store(tmp_path: Path) -> Non
             await client.patch("/api/v1/settings", json={"dev_mode": True})
         # Dependency override should call into the store for live reads.
         assert app.dependency_overrides[graph_get_dev_mode]() is True
-
-

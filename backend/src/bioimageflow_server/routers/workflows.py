@@ -24,10 +24,12 @@ from bioimageflow_server.models.workflow import (
 )
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
+    RootWorkflowSnapshotMove,
 )
 from bioimageflow_server.services.workflow_store import (
     WorkflowArchiveError,
     WorkflowGenerationChangedError,
+    WorkflowIdentityMovePlan,
     WorkflowIdentityGenerationConflictError,
     WorkflowStoreService,
 )
@@ -121,6 +123,38 @@ def _delete_workflow_with_snapshots(
     return identity_generation
 
 
+def _move_root_workflow_snapshots(
+    store: WorkflowStoreService,
+    nested_snapshot_service: NestedWorkflowSnapshotService | None,
+    move_plans: list[WorkflowIdentityMovePlan],
+) -> None:
+    """Rewrite retained root ownership after the corresponding filesystem move."""
+
+    if nested_snapshot_service is None or not move_plans:
+        return
+    nested_snapshot_service.move_root_workflows(
+        [
+            RootWorkflowSnapshotMove(
+                old_workflow_id=plan.old_workflow_id,
+                old_identity_generation=plan.old_identity_generation,
+                new_workflow_id=plan.new_workflow_id,
+                new_identity_generation=store.workflow_generation(plan.new_workflow_id),
+            )
+            for plan in move_plans
+        ]
+    )
+
+
+def _preflight_root_workflow_snapshot_moves(
+    nested_snapshot_service: NestedWorkflowSnapshotService | None,
+    move_plans: list[WorkflowIdentityMovePlan],
+) -> None:
+    """Prove retained ownership is readable before the first filesystem rename."""
+
+    if nested_snapshot_service is not None and move_plans:
+        nested_snapshot_service.preflight_root_workflow_moves()
+
+
 @router.get("", response_model=list[WorkflowInfo])
 async def list_workflows(
     store: WorkflowStoreService = Depends(get_workflow_store),
@@ -168,10 +202,29 @@ async def rename_folder(
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
+    nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
+        get_nested_workflow_snapshot_service
+    ),
 ) -> WorkflowFolderInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:
-        folder = store.rename_folder(path, body.new_path)
+        snapshot_mutation = (
+            nested_snapshot_service.snapshot_mutation()
+            if nested_snapshot_service is not None
+            else nullcontext()
+        )
+        with snapshot_mutation, store.workflow_structure_mutation():
+            move_plans = (
+                store.plan_folder_rename_moves(path, body.new_path)
+                if nested_snapshot_service is not None
+                else []
+            )
+            _preflight_root_workflow_snapshot_moves(
+                nested_snapshot_service,
+                move_plans,
+            )
+            folder = store.rename_folder(path, body.new_path)
+            _move_root_workflow_snapshots(store, nested_snapshot_service, move_plans)
         _publish_workflow_tree_changed(
             connection_manager,
             action="folder_updated",
@@ -211,6 +264,15 @@ async def delete_folder(
                 removed_workflow_ids = (
                     store.workflow_names_in_folder(path) if body.policy == "delete_children" else []
                 )
+                move_plans = (
+                    store.plan_folder_delete_moves(path, body)
+                    if nested_snapshot_service is not None
+                    else []
+                )
+                _preflight_root_workflow_snapshot_moves(
+                    nested_snapshot_service,
+                    move_plans,
+                )
                 with store.workflow_mutations(removed_workflow_ids):
                     store.delete_folder(path, body)
                     if nested_snapshot_service is not None:
@@ -221,6 +283,11 @@ async def delete_folder(
                                 "Folder '%s' was deleted but retained nested snapshot cleanup failed",
                                 path,
                             )
+                    _move_root_workflow_snapshots(
+                        store,
+                        nested_snapshot_service,
+                        move_plans,
+                    )
         _publish_workflow_tree_changed(
             connection_manager,
             action="folder_deleted",
@@ -418,10 +485,29 @@ async def patch_workflow(
     store: WorkflowStoreService = Depends(get_workflow_store),
     execution_manager: Any | None = Depends(get_execution_manager),
     connection_manager: Any | None = Depends(get_connection_manager),
+    nested_snapshot_service: NestedWorkflowSnapshotService | None = Depends(
+        get_nested_workflow_snapshot_service
+    ),
 ) -> WorkflowInfo | JSONResponse:
     _ensure_unlocked(execution_manager)
     try:
-        info = store.patch_workflow(name, body)
+        snapshot_mutation = (
+            nested_snapshot_service.snapshot_mutation()
+            if nested_snapshot_service is not None
+            else nullcontext()
+        )
+        with snapshot_mutation, store.workflow_structure_mutation():
+            move_plans = (
+                store.plan_workflow_update_moves(name, body)
+                if nested_snapshot_service is not None
+                else []
+            )
+            _preflight_root_workflow_snapshot_moves(
+                nested_snapshot_service,
+                move_plans,
+            )
+            info = store.patch_workflow(name, body)
+            _move_root_workflow_snapshots(store, nested_snapshot_service, move_plans)
         _publish_workflow_tree_changed(
             connection_manager,
             action="workflow_updated",

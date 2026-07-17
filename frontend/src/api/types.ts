@@ -1023,6 +1023,8 @@ export interface components {
             canvas_id?: string | null;
             /** Workflow Id */
             workflow_id?: string | null;
+            /** Identity Generation */
+            identity_generation?: number | null;
             /** Session Id */
             session_id?: string | null;
         };

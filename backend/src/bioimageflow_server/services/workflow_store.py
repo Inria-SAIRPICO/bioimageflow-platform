@@ -10,6 +10,7 @@ import tempfile
 import threading
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
@@ -74,6 +75,15 @@ class WorkflowIdentityGenerationConflictError(ValueError):
 
 class WorkflowGenerationLedgerError(RuntimeError):
     """Raised when durable workflow identity generations cannot be trusted."""
+
+
+@dataclass(frozen=True)
+class WorkflowIdentityMovePlan:
+    """One root workflow identity move captured before filesystem mutation."""
+
+    old_workflow_id: str
+    old_identity_generation: int
+    new_workflow_id: str
 
 
 _WORKFLOW_GENERATION_LEDGER_VERSION = 1
@@ -623,6 +633,22 @@ class WorkflowStoreService:
         suffix = old_name[len(removed_prefix) :].lstrip("/")
         return f"{parent_prefix}/{suffix}" if parent_prefix else suffix
 
+    def _identity_move_plans(
+        self,
+        moves: list[tuple[str, str]],
+    ) -> list[WorkflowIdentityMovePlan]:
+        old_names = [old_name for old_name, new_name in moves if old_name != new_name]
+        old_generations = self._capture_workflow_generations(old_names)
+        return [
+            WorkflowIdentityMovePlan(
+                old_workflow_id=old_name,
+                old_identity_generation=old_generations[old_name],
+                new_workflow_id=new_name,
+            )
+            for old_name, new_name in moves
+            if old_name != new_name
+        ]
+
     def _metadata_from_raw(
         self,
         name: str,
@@ -977,6 +1003,39 @@ class WorkflowStoreService:
                 raise FileNotFoundError(path)
             return self._workflow_names_under_folder(folder)
 
+    def plan_folder_delete_moves(
+        self,
+        path: str,
+        policy: WorkflowFolderDelete | str,
+    ) -> list[WorkflowIdentityMovePlan]:
+        """Capture root identity moves caused by promoting a folder's children."""
+
+        with self.workflow_structure_mutation():
+            policy_name = policy.policy if isinstance(policy, WorkflowFolderDelete) else policy
+            if policy_name != "move_children_up":
+                return []
+            folder = self._folder_path(path)
+            if (
+                not folder.exists()
+                or not folder.is_dir()
+                or (folder / "workflow.json").exists()
+                or self._is_inside_workflow_dir(folder)
+            ):
+                raise FileNotFoundError(path)
+            return self._identity_move_plans(self._promoted_workflow_moves(path, folder))
+
+    def _promoted_workflow_moves(
+        self,
+        path: str,
+        folder: Path,
+    ) -> list[tuple[str, str]]:
+        safe_path = validate_workflow_id(path)
+        parent_prefix, _, _ = safe_path.rpartition("/")
+        return [
+            (name, self._promoted_child_path(name, safe_path, parent_prefix))
+            for name in self._workflow_names_under_folder(folder)
+        ]
+
     def delete_folder(
         self,
         path: str,
@@ -1014,12 +1073,7 @@ class WorkflowStoreService:
                     self._delete_managed_storage_best_effort(workflow_name)
             return
         if children and policy_name == "move_children_up":
-            safe_path = validate_workflow_id(path)
-            parent_prefix, _, _ = safe_path.rpartition("/")
-            moves = [
-                (name, self._promoted_child_path(name, safe_path, parent_prefix))
-                for name in self._workflow_names_under_folder(folder)
-            ]
+            moves = self._promoted_workflow_moves(path, folder)
             identities = [identity for move in moves for identity in move]
             with self.workflow_mutations(identities):
                 children = list(folder.iterdir())
@@ -1037,6 +1091,39 @@ class WorkflowStoreService:
     def rename_folder(self, path: str, new_path: str) -> WorkflowFolderInfo:
         with self.workflow_structure_mutation():
             return self._rename_folder_locked(path, new_path)
+
+    def plan_folder_rename_moves(
+        self,
+        path: str,
+        new_path: str,
+    ) -> list[WorkflowIdentityMovePlan]:
+        """Capture root identity moves caused by a folder rename."""
+
+        with self.workflow_structure_mutation():
+            old_folder = self._folder_path(path)
+            if (
+                not old_folder.exists()
+                or not old_folder.is_dir()
+                or (old_folder / "workflow.json").exists()
+                or self._is_inside_workflow_dir(old_folder)
+            ):
+                raise FileNotFoundError(path)
+            safe_old = validate_workflow_id(path)
+            safe_new = validate_workflow_id(new_path)
+            return self._identity_move_plans(
+                self._renamed_workflow_moves(old_folder, safe_old, safe_new)
+            )
+
+    def _renamed_workflow_moves(
+        self,
+        old_folder: Path,
+        safe_old: str,
+        safe_new: str,
+    ) -> list[tuple[str, str]]:
+        return [
+            (name, self._renamed_child_path(name, safe_old, safe_new))
+            for name in self._workflow_names_under_folder(old_folder)
+        ]
 
     def _rename_folder_locked(
         self,
@@ -1065,10 +1152,7 @@ class WorkflowStoreService:
             raise ValueError("Cannot move a folder into itself")
         safe_old = validate_workflow_id(path)
         safe_new = validate_workflow_id(new_path)
-        moves = [
-            (name, self._renamed_child_path(name, safe_old, safe_new))
-            for name in self._workflow_names_under_folder(old_folder)
-        ]
+        moves = self._renamed_workflow_moves(old_folder, safe_old, safe_new)
         identities = [identity for move in moves for identity in move]
         with self.workflow_mutations(identities):
             self._ensure_moved_workflow_storage_available(moves)
@@ -1182,6 +1266,21 @@ class WorkflowStoreService:
         new_name = self._updated_workflow_name(name, patch)
         with self.workflow_structural_mutations([name, new_name]):
             return self._patch_workflow_locked(name, patch, new_name)
+
+    def plan_workflow_update_moves(
+        self,
+        name: str,
+        patch: WorkflowUpdate,
+    ) -> list[WorkflowIdentityMovePlan]:
+        """Capture a direct root identity move without treating duplication as a move."""
+
+        with self.workflow_structure_mutation():
+            safe_name = self._validate_name(name)
+            new_name = self._updated_workflow_name(safe_name, patch)
+            if patch.action == "duplicate" or new_name == safe_name:
+                return []
+            self._existing_path_for(safe_name)
+            return self._identity_move_plans([(safe_name, new_name)])
 
     def _updated_workflow_name(self, name: str, patch: WorkflowUpdate) -> str:
         if patch.action == "duplicate":

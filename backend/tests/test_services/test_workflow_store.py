@@ -19,6 +19,7 @@ from bioimageflow_server.models.workflow import (
 )
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
 from bioimageflow_server.services.workflow_store import (
+    WorkflowIdentityMovePlan,
     WorkflowStoreService,
     normalize_workflow_draft_identity,
 )
@@ -376,6 +377,74 @@ def test_move_workflow_between_folders(store: WorkflowStoreService) -> None:
     assert store.workflow_generation("segmentation/nuclei") == 2
     assert (store.root_dir / "analysis" / "nuclei" / "workflow.json").exists()
     assert not (store.root_dir / "segmentation" / "nuclei").exists()
+
+
+def test_move_plans_capture_pre_move_identity_generations(
+    store: WorkflowStoreService,
+) -> None:
+    first = store.create_workflow(WorkflowCreate(name="project/one"))
+    second = store.create_workflow(WorkflowCreate(name="project/nested/two"))
+
+    direct = store.plan_workflow_update_moves(
+        "project/one",
+        WorkflowUpdate(action="update", new_id="project/renamed"),
+    )
+    folder = store.plan_folder_rename_moves("project", "archive")
+    promoted = store.plan_folder_delete_moves("project", "move_children_up")
+
+    assert direct == [
+        WorkflowIdentityMovePlan(
+            old_workflow_id="project/one",
+            old_identity_generation=first.identity_generation,
+            new_workflow_id="project/renamed",
+        )
+    ]
+    assert folder == [
+        WorkflowIdentityMovePlan(
+            old_workflow_id="project/nested/two",
+            old_identity_generation=second.identity_generation,
+            new_workflow_id="archive/nested/two",
+        ),
+        WorkflowIdentityMovePlan(
+            old_workflow_id="project/one",
+            old_identity_generation=first.identity_generation,
+            new_workflow_id="archive/one",
+        ),
+    ]
+    assert promoted == [
+        WorkflowIdentityMovePlan(
+            old_workflow_id="project/nested/two",
+            old_identity_generation=second.identity_generation,
+            new_workflow_id="nested/two",
+        ),
+        WorkflowIdentityMovePlan(
+            old_workflow_id="project/one",
+            old_identity_generation=first.identity_generation,
+            new_workflow_id="one",
+        ),
+    ]
+
+
+def test_non_identity_updates_do_not_create_move_plans(
+    store: WorkflowStoreService,
+) -> None:
+    store.create_workflow(WorkflowCreate(name="source"))
+
+    assert (
+        store.plan_workflow_update_moves(
+            "source",
+            WorkflowUpdate(action="update", display_name="Renamed"),
+        )
+        == []
+    )
+    assert (
+        store.plan_workflow_update_moves(
+            "source",
+            WorkflowUpdate(action="duplicate", new_name="copy"),
+        )
+        == []
+    )
+    assert store.plan_folder_delete_moves("source", "delete_children") == []
 
 
 def test_direct_workflow_move_rewrites_only_existing_draft_identity(

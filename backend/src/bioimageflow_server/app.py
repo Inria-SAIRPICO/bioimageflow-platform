@@ -399,6 +399,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         if config.settings_store is not None:
             await config.settings_store.load()
         try:
+            await asyncio.to_thread(nested_workflow_snapshot_service.cleanup_orphaned_snapshots)
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning(
+                "Retained nested snapshot orphan cleanup failed at startup: %r",
+                exc,
+                exc_info=exc,
+            )
+        try:
             await asyncio.to_thread(ensure_agent_workspace_context, workspace_path)
         except Exception as exc:  # noqa: BLE001
             logging.getLogger(__name__).warning(

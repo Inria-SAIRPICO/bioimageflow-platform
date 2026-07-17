@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
+from urllib.parse import quote
 from uuid import UUID
 
 from bioimageflow_server.models.graph import GraphState
@@ -22,6 +23,7 @@ from bioimageflow_server.models.nested_workflow_snapshot import (
 )
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import ValidationResult
+from bioimageflow_server.models.workflow import validate_workflow_id
 from bioimageflow_server.services.graph_validator import validate_graph
 from bioimageflow_server.services.graph_worker import run_graph_work
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -62,10 +64,30 @@ class NestedSnapshotHasDependents(ValueError):
 
 
 @dataclass(frozen=True)
+class RootWorkflowSnapshotMove:
+    """One durable root-workflow identity transition."""
+
+    old_workflow_id: str
+    old_identity_generation: int
+    new_workflow_id: str
+    new_identity_generation: int
+
+
+@dataclass(frozen=True)
 class _RootValidationContext:
     workflow_id: str | None
     identity_generation: int | None
     storage_path: Path | None
+
+
+@dataclass(frozen=True)
+class _SnapshotInventory:
+    snapshots: dict[UUID, NestedWorkflowSnapshotResponse]
+    paths: dict[UUID, Path]
+    unreadable_session_ids: tuple[UUID, ...]
+    discarded_paths: tuple[Path, ...]
+    discarded_session_ids: tuple[UUID, ...]
+    temporary_paths: tuple[Path, ...]
 
 
 class NestedWorkflowSnapshotService:
@@ -104,6 +126,7 @@ class NestedWorkflowSnapshotService:
         while True:
             store = self._store()
             with self._lock:
+                owner = self._canonicalize_open_owner_locked(store, owner)
                 root_context = self._root_validation_context_locked(store, owner)
                 existing = self._find_snapshot(store, owner, parent_node_id)
                 if existing is not None:
@@ -300,41 +323,459 @@ class NestedWorkflowSnapshotService:
             return []
         with self._lock:
             store = self._store()
-            snapshots: dict[UUID, NestedWorkflowSnapshotResponse] = {}
-            for path in self._snapshot_dir(store).glob("*.json"):
-                try:
-                    snapshot = self._read_path(path)
-                except (OSError, ValueError):
-                    # A malformed unrelated retained snapshot must not prevent
-                    # cleanup for a workflow that has already been deleted.
-                    continue
-                snapshots[snapshot.session_id] = snapshot
-
-            def root_id(snapshot: NestedWorkflowSnapshotResponse) -> str | None:
-                visited: set[UUID] = set()
-                current = snapshot
-                while current.owner.kind == "nested":
-                    parent_id = current.owner.session_id
-                    if parent_id is None or parent_id in visited:
-                        return None
-                    visited.add(parent_id)
-                    parent = snapshots.get(parent_id)
-                    if parent is None:
-                        return None
-                    current = parent
-                return current.owner.workflow_id
+            inventory = self._inventory_locked(store)
 
             removed = [
                 session_id
-                for session_id, snapshot in snapshots.items()
-                if root_id(snapshot) in target_ids
+                for session_id in inventory.snapshots
+                if self._inventory_root_workflow_id(inventory, session_id) in target_ids
             ]
             for session_id in removed:
                 try:
-                    self._path(store, session_id).unlink()
+                    inventory.paths[session_id].unlink()
                 except FileNotFoundError:
                     pass
             return removed
+
+    def preflight_root_workflow_moves(self) -> None:
+        """Reject a move before filesystem mutation if snapshot ownership is unreadable."""
+
+        with self._lock:
+            inventory = self._inventory_locked(self._store())
+            self._ensure_move_inventory_is_readable(inventory)
+
+    def move_root_workflows(
+        self,
+        moves: list[RootWorkflowSnapshotMove],
+    ) -> list[UUID]:
+        """Move retained root ownership without changing nested session identity."""
+
+        if not moves:
+            return []
+
+        move_by_old_identity: dict[tuple[str, int], RootWorkflowSnapshotMove] = {}
+        legacy_move_by_old_workflow: dict[str, RootWorkflowSnapshotMove] = {}
+        for move in moves:
+            key = (move.old_workflow_id, move.old_identity_generation)
+            conflicting = move_by_old_identity.get(key)
+            if conflicting is not None and conflicting != move:
+                raise ValueError(
+                    "Conflicting retained snapshot moves for "
+                    f"{move.old_workflow_id!r} generation "
+                    f"{move.old_identity_generation}"
+                )
+            move_by_old_identity[key] = move
+            if move.old_identity_generation in (0, 1):
+                conflicting_legacy = legacy_move_by_old_workflow.get(move.old_workflow_id)
+                if conflicting_legacy is not None and conflicting_legacy != move:
+                    raise ValueError(
+                        "Conflicting generation-less retained snapshot moves for "
+                        f"{move.old_workflow_id!r}"
+                    )
+                legacy_move_by_old_workflow[move.old_workflow_id] = move
+
+        with self._lock:
+            store = self._store()
+            for move in move_by_old_identity.values():
+                with store.workflow_mutation(move.new_workflow_id):
+                    workflow = store.get_workflow(move.new_workflow_id)
+                    if workflow.info.identity_generation != move.new_identity_generation:
+                        store.ensure_workflow_generation(
+                            move.new_workflow_id,
+                            move.new_identity_generation,
+                        )
+
+            inventory = self._inventory_locked(store)
+            self._ensure_move_inventory_is_readable(inventory)
+            replacements: list[NestedWorkflowSnapshotResponse] = []
+            moved_session_ids: list[UUID] = []
+            for session_id, snapshot in inventory.snapshots.items():
+                owner = snapshot.owner
+                if owner.kind != "root" or owner.workflow_id is None:
+                    continue
+                move = (
+                    legacy_move_by_old_workflow.get(owner.workflow_id)
+                    if owner.identity_generation is None
+                    else move_by_old_identity.get(
+                        (owner.workflow_id, owner.identity_generation)
+                    )
+                )
+                if move is None:
+                    continue
+                moved_owner = NestedSnapshotOwner(
+                    kind="root",
+                    canvas_id=self._canonical_root_canvas_id(move.new_workflow_id),
+                    workflow_id=move.new_workflow_id,
+                    identity_generation=move.new_identity_generation,
+                )
+                if moved_owner == owner:
+                    continue
+                replacements.append(snapshot.model_copy(update={"owner": moved_owner}))
+                moved_session_ids.append(session_id)
+
+            projected_snapshots = dict(inventory.snapshots)
+            projected_snapshots.update(
+                {snapshot.session_id: snapshot for snapshot in replacements}
+            )
+            losing_roots = self._canonical_root_collision_losers(
+                inventory,
+                projected_snapshots,
+            )
+            removed_session_ids = self._snapshot_descendant_closure(
+                inventory,
+                losing_roots,
+            )
+            replacements = [
+                snapshot
+                for snapshot in replacements
+                if snapshot.session_id not in removed_session_ids
+            ]
+            self._write_many(store, replacements)
+            for session_id in removed_session_ids:
+                try:
+                    inventory.paths[session_id].unlink()
+                except FileNotFoundError:
+                    pass
+            return [
+                session_id
+                for session_id in moved_session_ids
+                if session_id not in removed_session_ids
+            ]
+
+    def cleanup_orphaned_snapshots(self) -> list[UUID]:
+        """Remove snapshots that cannot be safely recovered after startup."""
+
+        store = self._store()
+        with self._lock, store.workflow_structure_mutation():
+            inventory = self._inventory_locked(store)
+            workflow_generations: dict[str, int] = {}
+            missing_workflow_ids: set[str] = set()
+            uncertain_workflow_ids: set[str] = set()
+            invalid_session_ids: set[UUID] = set()
+            replacements: list[NestedWorkflowSnapshotResponse] = []
+
+            for session_id, snapshot in inventory.snapshots.items():
+                owner = snapshot.owner
+                if owner.kind != "root":
+                    continue
+                workflow_id = owner.workflow_id
+                if workflow_id is None:
+                    invalid_session_ids.add(session_id)
+                    continue
+                try:
+                    if validate_workflow_id(workflow_id) != workflow_id:
+                        raise ValueError("Non-canonical retained root workflow identity")
+                except ValueError:
+                    invalid_session_ids.add(session_id)
+                    continue
+                if workflow_id in uncertain_workflow_ids:
+                    continue
+                if workflow_id in missing_workflow_ids:
+                    invalid_session_ids.add(session_id)
+                    continue
+                current_generation = workflow_generations.get(workflow_id)
+                if current_generation is None:
+                    try:
+                        workflow = store.get_workflow(workflow_id)
+                    except FileNotFoundError:
+                        missing_workflow_ids.add(workflow_id)
+                        invalid_session_ids.add(session_id)
+                        continue
+                    except (OSError, ValueError):
+                        uncertain_workflow_ids.add(workflow_id)
+                        continue
+                    current_generation = workflow.info.identity_generation
+                    workflow_generations[workflow_id] = current_generation
+                if owner.identity_generation is None:
+                    if current_generation not in (0, 1):
+                        invalid_session_ids.add(session_id)
+                        continue
+                elif owner.identity_generation != current_generation:
+                    invalid_session_ids.add(session_id)
+                    continue
+
+                canonical_owner = NestedSnapshotOwner(
+                    kind="root",
+                    canvas_id=self._canonical_root_canvas_id(workflow_id),
+                    workflow_id=workflow_id,
+                    identity_generation=current_generation,
+                )
+                if canonical_owner != owner:
+                    replacements.append(snapshot.model_copy(update={"owner": canonical_owner}))
+
+            projected_snapshots = dict(inventory.snapshots)
+            projected_snapshots.update(
+                {snapshot.session_id: snapshot for snapshot in replacements}
+            )
+            collision_exclusions = set(invalid_session_ids)
+            collision_exclusions.update(
+                session_id
+                for session_id, snapshot in projected_snapshots.items()
+                if snapshot.owner.workflow_id in uncertain_workflow_ids
+            )
+            invalid_session_ids.update(
+                self._canonical_root_collision_losers(
+                    inventory,
+                    projected_snapshots,
+                    excluded_session_ids=collision_exclusions,
+                )
+            )
+
+            visit_state: dict[UUID, int] = {}
+
+            def has_valid_root(session_id: UUID) -> bool:
+                if session_id in invalid_session_ids:
+                    return False
+                state = visit_state.get(session_id, 0)
+                if state == 1:
+                    invalid_session_ids.add(session_id)
+                    return False
+                if state == 2:
+                    return session_id not in invalid_session_ids
+
+                visit_state[session_id] = 1
+                snapshot = inventory.snapshots[session_id]
+                if snapshot.owner.kind == "root":
+                    valid = session_id not in invalid_session_ids
+                else:
+                    parent_id = snapshot.owner.session_id
+                    valid = (
+                        parent_id is not None
+                        and (
+                            parent_id in inventory.unreadable_session_ids
+                            or (
+                                parent_id in inventory.snapshots
+                                and has_valid_root(parent_id)
+                            )
+                        )
+                    )
+                if not valid:
+                    invalid_session_ids.add(session_id)
+                visit_state[session_id] = 2
+                return valid
+
+            for session_id in inventory.snapshots:
+                has_valid_root(session_id)
+
+            replacements = [
+                snapshot
+                for snapshot in replacements
+                if snapshot.session_id not in invalid_session_ids
+            ]
+            self._write_many(store, replacements)
+
+            discarded_paths = {
+                *inventory.discarded_paths,
+                *inventory.temporary_paths,
+                *(inventory.paths[session_id] for session_id in invalid_session_ids),
+            }
+            for path in sorted(discarded_paths):
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+
+            return sorted(
+                {
+                    *inventory.discarded_session_ids,
+                    *invalid_session_ids,
+                },
+                key=str,
+            )
+
+    @staticmethod
+    def _canonical_root_canvas_id(workflow_id: str) -> str:
+        return f"workflow:{quote(workflow_id, safe='')}"
+
+    @staticmethod
+    def _snapshot_collision_rank(
+        original: NestedWorkflowSnapshotResponse,
+        projected: NestedWorkflowSnapshotResponse,
+    ) -> tuple[datetime, int, bool, str]:
+        try:
+            updated_at = datetime.fromisoformat(projected.updated_at.replace("Z", "+00:00"))
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=UTC)
+            else:
+                updated_at = updated_at.astimezone(UTC)
+        except ValueError:
+            updated_at = datetime.min.replace(tzinfo=UTC)
+        return (
+            updated_at,
+            projected.snapshot_revision,
+            original.owner == projected.owner,
+            str(projected.session_id),
+        )
+
+    def _canonical_root_collision_losers(
+        self,
+        inventory: _SnapshotInventory,
+        projected_snapshots: dict[UUID, NestedWorkflowSnapshotResponse],
+        *,
+        excluded_session_ids: set[UUID] | None = None,
+    ) -> set[UUID]:
+        excluded = excluded_session_ids or set()
+        canonical_groups: dict[
+            tuple[str, str, int, str],
+            list[UUID],
+        ] = {}
+        for session_id, snapshot in projected_snapshots.items():
+            owner = snapshot.owner
+            if (
+                session_id in excluded
+                or owner.kind != "root"
+                or owner.canvas_id is None
+                or owner.workflow_id is None
+                or owner.identity_generation is None
+            ):
+                continue
+            key = (
+                owner.canvas_id,
+                owner.workflow_id,
+                owner.identity_generation,
+                snapshot.parent_node_id,
+            )
+            canonical_groups.setdefault(key, []).append(session_id)
+
+        losers: set[UUID] = set()
+        for session_ids in canonical_groups.values():
+            if len(session_ids) < 2:
+                continue
+            winner = max(
+                session_ids,
+                key=lambda session_id: self._snapshot_collision_rank(
+                    inventory.snapshots[session_id],
+                    projected_snapshots[session_id],
+                ),
+            )
+            losers.update(session_id for session_id in session_ids if session_id != winner)
+        return losers
+
+    @staticmethod
+    def _snapshot_descendant_closure(
+        inventory: _SnapshotInventory,
+        root_session_ids: set[UUID],
+    ) -> set[UUID]:
+        removed = set(root_session_ids)
+        while True:
+            descendants = {
+                session_id
+                for session_id, snapshot in inventory.snapshots.items()
+                if snapshot.owner.kind == "nested"
+                and snapshot.owner.session_id in removed
+            }
+            expanded = removed | descendants
+            if expanded == removed:
+                return removed
+            removed = expanded
+
+    @staticmethod
+    def _ensure_move_inventory_is_readable(inventory: _SnapshotInventory) -> None:
+        if inventory.unreadable_session_ids:
+            unreadable = ", ".join(map(str, inventory.unreadable_session_ids))
+            raise OSError(
+                "Cannot move workflow identities while retained snapshots are unreadable: "
+                f"{unreadable}"
+            )
+
+    def _canonicalize_open_owner_locked(
+        self,
+        store: WorkflowStoreService,
+        owner: NestedSnapshotOwner,
+    ) -> NestedSnapshotOwner:
+        if owner.kind != "root" or owner.workflow_id is None:
+            return owner
+        with store.workflow_mutation(owner.workflow_id):
+            workflow = store.get_workflow(owner.workflow_id)
+            return NestedSnapshotOwner(
+                kind="root",
+                canvas_id=self._canonical_root_canvas_id(workflow.info.id),
+                workflow_id=workflow.info.id,
+                identity_generation=workflow.info.identity_generation,
+            )
+
+    def _inventory_locked(
+        self,
+        store: WorkflowStoreService,
+    ) -> _SnapshotInventory:
+        snapshot_dir = self._snapshot_dir(store)
+        snapshots: dict[UUID, NestedWorkflowSnapshotResponse] = {}
+        paths: dict[UUID, Path] = {}
+        unreadable_session_ids: list[UUID] = []
+        discarded_paths: list[Path] = []
+        discarded_session_ids: list[UUID] = []
+        temporary_paths: list[Path] = []
+        if not snapshot_dir.exists():
+            return _SnapshotInventory(
+                snapshots=snapshots,
+                paths=paths,
+                unreadable_session_ids=(),
+                discarded_paths=(),
+                discarded_session_ids=(),
+                temporary_paths=(),
+            )
+
+        for path in sorted(snapshot_dir.iterdir()):
+            if not path.is_file():
+                continue
+            if path.suffix == ".tmp":
+                temporary_paths.append(path)
+                continue
+            if path.suffix != ".json":
+                continue
+            try:
+                filename_session_id = UUID(path.stem)
+            except ValueError:
+                discarded_paths.append(path)
+                continue
+            if path.name != f"{filename_session_id}.json":
+                discarded_paths.append(path)
+                discarded_session_ids.append(filename_session_id)
+                continue
+            try:
+                snapshot = self._read_path(path)
+            except OSError:
+                unreadable_session_ids.append(filename_session_id)
+                continue
+            except ValueError:
+                discarded_paths.append(path)
+                discarded_session_ids.append(filename_session_id)
+                continue
+            if snapshot.session_id != filename_session_id:
+                discarded_paths.append(path)
+                discarded_session_ids.append(filename_session_id)
+                continue
+            snapshots[filename_session_id] = snapshot
+            paths[filename_session_id] = path
+
+        return _SnapshotInventory(
+            snapshots=snapshots,
+            paths=paths,
+            unreadable_session_ids=tuple(unreadable_session_ids),
+            discarded_paths=tuple(discarded_paths),
+            discarded_session_ids=tuple(discarded_session_ids),
+            temporary_paths=tuple(temporary_paths),
+        )
+
+    @staticmethod
+    def _inventory_root_workflow_id(
+        inventory: _SnapshotInventory,
+        session_id: UUID,
+    ) -> str | None:
+        visited: set[UUID] = set()
+        current_session_id = session_id
+        while current_session_id not in visited:
+            visited.add(current_session_id)
+            snapshot = inventory.snapshots.get(current_session_id)
+            if snapshot is None:
+                return None
+            if snapshot.owner.kind == "root":
+                return snapshot.owner.workflow_id
+            parent_id = snapshot.owner.session_id
+            if parent_id is None:
+                return None
+            current_session_id = parent_id
+        return None
 
     def _find_snapshot(
         self,
@@ -409,8 +850,7 @@ class NestedWorkflowSnapshotService:
         owner: NestedSnapshotOwner,
     ) -> str | None:
         if owner.kind == "root":
-            if owner.workflow_id is not None:
-                store.get_workflow(owner.workflow_id)
+            self._ensure_root_owner_is_current(store, owner)
             return owner.workflow_id
 
         assert owner.session_id is not None
@@ -422,11 +862,30 @@ class NestedWorkflowSnapshotService:
             visited.add(current_session_id)
             parent = self._read(store, current_session_id)
             if parent.owner.kind == "root":
-                if parent.owner.workflow_id is not None:
-                    store.get_workflow(parent.owner.workflow_id)
+                self._ensure_root_owner_is_current(store, parent.owner)
                 return parent.owner.workflow_id
             assert parent.owner.session_id is not None
             current_session_id = parent.owner.session_id
+
+    @staticmethod
+    def _ensure_root_owner_is_current(
+        store: WorkflowStoreService,
+        owner: NestedSnapshotOwner,
+    ) -> None:
+        workflow_id = owner.workflow_id
+        if workflow_id is None:
+            return
+        with store.workflow_mutation(workflow_id):
+            workflow = store.get_workflow(workflow_id)
+            current_generation = workflow.info.identity_generation
+            if owner.identity_generation is None:
+                if current_generation not in (0, 1):
+                    raise FileNotFoundError(
+                        f"Retained snapshot targets an obsolete generation of "
+                        f"workflow '{workflow_id}'"
+                    )
+                return
+            store.ensure_workflow_generation(workflow_id, owner.identity_generation)
 
     def _validate(
         self,
@@ -487,7 +946,58 @@ class NestedWorkflowSnapshotService:
         store: WorkflowStoreService,
         snapshot: NestedWorkflowSnapshotResponse,
     ) -> None:
-        path = self._path(store, snapshot.session_id)
+        self._write_many(store, [snapshot])
+
+    def _write_many(
+        self,
+        store: WorkflowStoreService,
+        snapshots: list[NestedWorkflowSnapshotResponse],
+    ) -> None:
+        if not snapshots:
+            return
+
+        paths = [self._path(store, snapshot.session_id) for snapshot in snapshots]
+        if len(set(paths)) != len(paths):
+            raise ValueError("Cannot write the same retained snapshot more than once")
+        originals = {path: path.read_bytes() if path.exists() else None for path in paths}
+        staged: list[tuple[Path, Path]] = []
+        try:
+            for snapshot, path in zip(snapshots, paths, strict=True):
+                staged.append((self._stage_snapshot(path, snapshot), path))
+        except Exception:
+            self._remove_staged_files(staged)
+            raise
+
+        replaced: list[Path] = []
+        try:
+            for temporary_path, path in staged:
+                os.replace(temporary_path, path)
+                replaced.append(path)
+        except Exception:
+            self._remove_staged_files(staged)
+            rollback_error: Exception | None = None
+            for path in reversed(replaced):
+                try:
+                    original = originals[path]
+                    if original is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        self._replace_bytes(path, original)
+                except Exception as error:
+                    rollback_error = error
+            if rollback_error is not None:
+                raise RuntimeError(
+                    "Retained snapshot write failed and could not be rolled back"
+                ) from rollback_error
+            raise
+        finally:
+            self._remove_staged_files(staged)
+
+    @staticmethod
+    def _stage_snapshot(
+        path: Path,
+        snapshot: NestedWorkflowSnapshotResponse,
+    ) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(
             dir=str(path.parent),
@@ -498,6 +1008,28 @@ class NestedWorkflowSnapshotService:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(snapshot.model_dump(mode="json"), handle, indent=2, sort_keys=True)
                 handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except FileNotFoundError:
+                pass
+            raise
+        return Path(tmp_name)
+
+    @staticmethod
+    def _replace_bytes(path: Path, contents: bytes) -> None:
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent),
+            prefix=f".{path.stem}.",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(contents)
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(tmp_name, path)
         except Exception:
             try:
@@ -505,3 +1037,11 @@ class NestedWorkflowSnapshotService:
             except FileNotFoundError:
                 pass
             raise
+
+    @staticmethod
+    def _remove_staged_files(staged: list[tuple[Path, Path]]) -> None:
+        for temporary_path, _path in staged:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass

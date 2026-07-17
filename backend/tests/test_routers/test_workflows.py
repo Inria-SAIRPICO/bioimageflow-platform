@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services import workflow_store as workflow_store_module
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
+    RootWorkflowSnapshotMove,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -241,6 +243,247 @@ async def test_delete_folder_children_removes_each_retained_snapshot_tree(
     for session_id in session_ids:
         response = await client.get(f"/api/v1/nested-workflow-snapshots/{session_id}")
         assert response.status_code == 404
+
+
+async def test_direct_workflow_move_rewrites_snapshot_generation_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    move_calls: list[list[RootWorkflowSnapshotMove]] = []
+    original_move = NestedWorkflowSnapshotService.move_root_workflows
+
+    def observed_move(
+        service: NestedWorkflowSnapshotService,
+        moves: list[RootWorkflowSnapshotMove],
+    ) -> list[Any]:
+        move_calls.append(moves)
+        return original_move(service, moves)
+
+    monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
+    async for client in _client(tmp_path):
+        created = await client.post("/api/v1/workflows", json={"name": "project/wf"})
+        moved = await client.patch(
+            "/api/v1/workflows/project/wf",
+            json={"action": "update", "new_id": "archive/wf"},
+        )
+
+    assert moved.status_code == 200
+    assert move_calls == [
+        [
+            RootWorkflowSnapshotMove(
+                old_workflow_id="project/wf",
+                old_identity_generation=created.json()["identity_generation"],
+                new_workflow_id="archive/wf",
+                new_identity_generation=moved.json()["identity_generation"],
+            )
+        ]
+    ]
+
+
+async def test_folder_rename_rewrites_each_snapshot_generation_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    move_calls: list[list[RootWorkflowSnapshotMove]] = []
+    original_move = NestedWorkflowSnapshotService.move_root_workflows
+
+    def observed_move(
+        service: NestedWorkflowSnapshotService,
+        moves: list[RootWorkflowSnapshotMove],
+    ) -> list[Any]:
+        move_calls.append(moves)
+        return original_move(service, moves)
+
+    monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
+    async for client in _client(tmp_path):
+        first = await client.post("/api/v1/workflows", json={"name": "project/a"})
+        second = await client.post("/api/v1/workflows", json={"name": "project/nested/b"})
+        renamed = await client.patch(
+            "/api/v1/workflows/folders/project",
+            json={"new_path": "archive"},
+        )
+        moved_first = await client.get("/api/v1/workflows/archive/a")
+        moved_second = await client.get("/api/v1/workflows/archive/nested/b")
+
+    assert renamed.status_code == 200
+    assert move_calls == [
+        [
+            RootWorkflowSnapshotMove(
+                old_workflow_id="project/a",
+                old_identity_generation=first.json()["identity_generation"],
+                new_workflow_id="archive/a",
+                new_identity_generation=moved_first.json()["info"]["identity_generation"],
+            ),
+            RootWorkflowSnapshotMove(
+                old_workflow_id="project/nested/b",
+                old_identity_generation=second.json()["identity_generation"],
+                new_workflow_id="archive/nested/b",
+                new_identity_generation=moved_second.json()["info"]["identity_generation"],
+            ),
+        ]
+    ]
+
+
+async def test_folder_promotion_rewrites_each_snapshot_generation_mapping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    move_calls: list[list[RootWorkflowSnapshotMove]] = []
+    original_move = NestedWorkflowSnapshotService.move_root_workflows
+
+    def observed_move(
+        service: NestedWorkflowSnapshotService,
+        moves: list[RootWorkflowSnapshotMove],
+    ) -> list[Any]:
+        move_calls.append(moves)
+        return original_move(service, moves)
+
+    monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
+    async for client in _client(tmp_path):
+        first = await client.post("/api/v1/workflows", json={"name": "project/a"})
+        second = await client.post("/api/v1/workflows", json={"name": "project/nested/b"})
+        deleted = await client.request(
+            "DELETE",
+            "/api/v1/workflows/folders/project",
+            json={"policy": "move_children_up"},
+        )
+        moved_first = await client.get("/api/v1/workflows/a")
+        moved_second = await client.get("/api/v1/workflows/nested/b")
+
+    assert deleted.status_code == 200
+    assert move_calls == [
+        [
+            RootWorkflowSnapshotMove(
+                old_workflow_id="project/a",
+                old_identity_generation=first.json()["identity_generation"],
+                new_workflow_id="a",
+                new_identity_generation=moved_first.json()["info"]["identity_generation"],
+            ),
+            RootWorkflowSnapshotMove(
+                old_workflow_id="project/nested/b",
+                old_identity_generation=second.json()["identity_generation"],
+                new_workflow_id="nested/b",
+                new_identity_generation=moved_second.json()["info"]["identity_generation"],
+            ),
+        ]
+    ]
+
+
+async def test_non_identity_workflow_updates_do_not_move_snapshots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    move_calls: list[list[RootWorkflowSnapshotMove]] = []
+
+    def observed_move(
+        _service: NestedWorkflowSnapshotService,
+        moves: list[RootWorkflowSnapshotMove],
+    ) -> list[Any]:
+        move_calls.append(moves)
+        return []
+
+    monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
+    async for client in _client(tmp_path):
+        assert (await client.post("/api/v1/workflows", json={"name": "source"})).status_code == 201
+        display = await client.patch(
+            "/api/v1/workflows/source",
+            json={"action": "update", "display_name": "Renamed"},
+        )
+        duplicate = await client.patch(
+            "/api/v1/workflows/source",
+            json={"action": "duplicate", "new_name": "copy"},
+        )
+
+    assert display.status_code == 200
+    assert duplicate.status_code == 200
+    assert move_calls == []
+
+
+async def test_workflow_move_holds_snapshot_then_structure_boundaries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot_depth = 0
+    structure_depth = 0
+    preflight_complete = False
+    original_snapshot_mutation = NestedWorkflowSnapshotService.snapshot_mutation
+    original_preflight = NestedWorkflowSnapshotService.preflight_root_workflow_moves
+    original_structure_mutation = WorkflowStoreService.workflow_structure_mutation
+    original_patch = WorkflowStoreService.patch_workflow
+
+    @contextmanager
+    def observed_snapshot_mutation(service: NestedWorkflowSnapshotService):
+        nonlocal snapshot_depth
+        with original_snapshot_mutation(service):
+            snapshot_depth += 1
+            try:
+                yield
+            finally:
+                snapshot_depth -= 1
+
+    @contextmanager
+    def observed_structure_mutation(store: WorkflowStoreService):
+        nonlocal structure_depth
+        with original_structure_mutation(store):
+            structure_depth += 1
+            try:
+                yield
+            finally:
+                structure_depth -= 1
+
+    def observed_patch(
+        store: WorkflowStoreService,
+        name: str,
+        body: Any,
+    ) -> Any:
+        assert snapshot_depth > 0
+        assert structure_depth > 0
+        assert preflight_complete is True
+        return original_patch(store, name, body)
+
+    def observed_preflight(service: NestedWorkflowSnapshotService) -> None:
+        nonlocal preflight_complete
+        assert snapshot_depth > 0
+        assert structure_depth > 0
+        original_preflight(service)
+        preflight_complete = True
+
+    def observed_move(
+        _service: NestedWorkflowSnapshotService,
+        _moves: list[RootWorkflowSnapshotMove],
+    ) -> list[Any]:
+        assert snapshot_depth > 0
+        assert structure_depth > 0
+        return []
+
+    async for client in _client(tmp_path):
+        assert (await client.post("/api/v1/workflows", json={"name": "old"})).status_code == 201
+        monkeypatch.setattr(
+            NestedWorkflowSnapshotService,
+            "snapshot_mutation",
+            observed_snapshot_mutation,
+        )
+        monkeypatch.setattr(
+            WorkflowStoreService,
+            "workflow_structure_mutation",
+            observed_structure_mutation,
+        )
+        monkeypatch.setattr(WorkflowStoreService, "patch_workflow", observed_patch)
+        monkeypatch.setattr(
+            NestedWorkflowSnapshotService,
+            "preflight_root_workflow_moves",
+            observed_preflight,
+        )
+        monkeypatch.setattr(NestedWorkflowSnapshotService, "move_root_workflows", observed_move)
+
+        moved = await client.patch(
+            "/api/v1/workflows/old",
+            json={"action": "update", "new_id": "new"},
+        )
+
+    assert moved.status_code == 200
+    assert snapshot_depth == 0
+    assert structure_depth == 0
 
 
 async def test_workflow_mutations_publish_tree_change_events(tmp_path: Path) -> None:
