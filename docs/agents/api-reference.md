@@ -308,7 +308,7 @@ For positional connections:
         }
       },
       {
-        "type": "connect_column_ref",
+        "type": "connect_column_edge",
         "source_node": "blur_1",
         "source_output": "image",
         "target_node": "threshold_1",
@@ -322,51 +322,53 @@ For positional connections:
 Keep batches small and ordered.
 If the tool reports an operation index, fix that operation and retry after refreshing workflow state.
 
-## Published Interface Tools
+## Workflow Interface Tools
 
-`set_published_input`
+`expose_workflow_input`
 
 ```json
 {
-  "tool": "set_published_input",
+  "tool": "expose_workflow_input",
   "arguments": {
-    "name": "image",
-    "internal_node_id": "load_1",
-    "internal_field": "path",
-    "kind": "input",
-    "schema": {
-      "type": "ImageFile"
+    "input_port": {
+      "id": "input-image",
+      "name": "image",
+      "kind": "field",
+      "schema": {"type": "ImageFile"},
+      "targets": [
+        {"node": "load_1", "port": {"kind": "field", "name": "path"}}
+      ]
     }
   }
 }
 ```
 
-`set_published_output`
+`expose_workflow_output`
 
 ```json
 {
-  "tool": "set_published_output",
+  "tool": "expose_workflow_output",
   "arguments": {
-    "name": "mask",
-    "internal_node_id": "threshold_1",
-    "internal_output": "mask",
-    "schema": {
-      "type": "LabelImage"
+    "output_port": {
+      "id": "output-mask",
+      "name": "mask",
+      "schema": {"type": "LabelImage"},
+      "source": {"node": "threshold_1", "column": "mask"}
     }
   }
 }
 ```
 
-`delete_published_input`
+`delete_workflow_input`
 
 ```json
-{"tool": "delete_published_input", "arguments": {"name": "image"}}
+{"tool": "delete_workflow_input", "arguments": {"input_id": "input-image"}}
 ```
 
-`delete_published_output`
+`delete_workflow_output`
 
 ```json
-{"tool": "delete_published_output", "arguments": {"name": "mask"}}
+{"tool": "delete_workflow_output", "arguments": {"output_id": "output-mask"}}
 ```
 
 ## Validation And Execution Tools

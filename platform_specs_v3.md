@@ -758,7 +758,7 @@ The current v1 API already exposes `deployment_mode`, `update_mode`, and `keyboa
 
 These items remain future proposals and are not part of the implemented v1/v2 contract:
 
-- **Large-workflow warning:** show a persistent informational warning above a configurable node-count threshold, initially around 50 nodes. For sub-workflows, count the flattened internal total.
+- **Large-workflow warning:** show a persistent informational warning above a configurable node-count threshold, initially around 50 nodes. For workflow nodes, count the flattened internal total.
 - **Canvas minimap:** offer an optional overview minimap for large graphs without making it a required default control.
 - **WebSocket sequencing and backpressure:** add a monotonic server-to-client sequence number and a bounded delivery policy so reconnecting clients can detect gaps and discard messages older than their contextual resynchronization snapshot.
 - **Step-by-step execution:** expose the library's `compute_steps()` capability as a future debugging mode that prepares and executes one node at a time while preserving the execution context and canvas-lock invariants.

@@ -149,7 +149,7 @@ Per-tool `ToolMetadata` fields (beyond name, package, inputs/outputs):
 | `tool_type` | `"ProcessingTool" \| "DataFrameTool"` | Discriminator for rendering and pin logic. |
 | `accepts_upstream` | `boolean` | `false` means the tool refuses positional upstream DataFrame connections. The canvas hides positional input pins. |
 | `dynamic_outputs` | `boolean` | `true` means the tool's output column set depends on inputs/upstream; the canvas refetches the resolved schema on input edits via `POST /graph/nodes/{node_id}/output_schema`. |
-| `dataframe_output` | `boolean` | `true` means the node exposes its full output DataFrame via the `__dataframe_out` header pin. This is `true` for both `ProcessingTool` and `DataFrameTool` nodes in the current library. |
+| `dataframe_output` | `boolean` | `true` means the node exposes its full output DataFrame via the `bif:v1:dataframe-output` header pin. This is `true` for both `ProcessingTool` and `DataFrameTool` nodes in the current library. |
 
 **The `"any"` type.** The library reserves `"any"` (see [library Section 2.4](bioimageflow/docs/source/specs.md#24-type-compatibility)) for columns whose runtime type is not known until execution. `Generate(column_name="x", values=[...])` produces `{x: {type: "any", ...}}` regardless of the values' Python type, because static introspection cannot infer it. GUIs must treat `"any"` as compatible with **any** consumer input type at edge creation. See §3.3.3 for the pin rendering and edge-validity rules.
 
@@ -380,10 +380,10 @@ The full-state sync architecture has a single graph payload as its central contr
 
 The graph has two kinds of edges, each with a distinct purpose:
 
-- **`ColumnRefEdge`**: Binds a specific output column of one node to a specific input field of another. Used for `ProcessingTool` keyword bindings.
-- **`PositionalEdge`**: Connects a node as a positional upstream argument to a `DataFrameTool`. The `positional_index` determines order in `merge_dataframes(dfs)`.
+- **`ColumnEdge`**: Binds a specific output column of one node to a specific input field of another. Used for `ProcessingTool` keyword bindings.
+- **`DataFrameEdge`**: Connects a node as a positional upstream argument to a `DataFrameTool`. The `target_position` determines order in `merge_dataframes(dfs)`.
 
-These are modeled as a **discriminated union** (discriminator: `type` field) rather than a single model with optional fields. This eliminates invalid states (e.g., `source_output` set simultaneously with `positional_index`), produces cleaner TypeScript types from OpenAPI, and makes each edge self-documenting.
+These are modeled as a **discriminated union** (discriminator: `type` field) rather than a single model with optional fields. This eliminates invalid states (e.g., `source_output` set simultaneously with `target_position`), produces cleaner TypeScript types from OpenAPI, and makes each edge self-documenting.
 
 **NodeStatus separation:**
 
@@ -412,26 +412,26 @@ class NodeState(BaseModel):
     enabled: bool = True
     collapsed: bool = False
 
-class ColumnRefEdge(BaseModel):
+class ColumnEdge(BaseModel):
     """Binds an output column to an input field (ProcessingTool keyword binding)."""
-    type: Literal["column_ref"] = "column_ref"
+    type: Literal["column"] = "column"
     id: str                              # Unique edge ID
     source_node: str                     # Upstream node ID
     target_node: str                     # Downstream node ID
     source_output: str                   # Output field name on source node
     target_input: str                    # Input field name on target node
 
-class PositionalEdge(BaseModel):
+class DataFrameEdge(BaseModel):
     """Connects a node as positional upstream to a DataFrameTool."""
-    type: Literal["positional"] = "positional"
+    type: Literal["dataframe"] = "dataframe"
     id: str                              # Unique edge ID
     source_node: str                     # Upstream node ID
     target_node: str                     # Downstream node ID
-    positional_index: int                # Position in merge_dataframes(dfs) list
+    target_position: int                # Position in merge_dataframes(dfs) list
 
 Edge = Annotated[
-    Annotated[ColumnRefEdge, Tag("column_ref")]
-    | Annotated[PositionalEdge, Tag("positional")],
+    Annotated[ColumnEdge, Tag("column")]
+    | Annotated[DataFrameEdge, Tag("dataframe")],
     Discriminator("type"),
 ]
 
@@ -479,9 +479,9 @@ class ValidationResult(BaseModel):
 
 **Node ID validation:** The backend validates node ID uniqueness and format whenever it validates a graph, including draft, nested-snapshot, full Run, Clear, and request-local `/graph` paths. Run Selected performs the same validation on the selected-plus-upstream execution subgraph derived only from its submitted graph. Duplicate or malformed IDs produce a `GraphValidationError` of type `"invalid_node_id"`.
 
-**Edge IDs:** Edge IDs (`ColumnRefEdge.id`, `PositionalEdge.id`) are frontend-generated UUIDs (or nanoid). The backend validates uniqueness; duplicate or missing edge IDs produce a `GraphValidationError` of type `"invalid_edge_id"`.
+**Edge IDs:** Edge IDs (`ColumnEdge.id`, `DataFrameEdge.id`) are frontend-generated UUIDs (or nanoid). The backend validates uniqueness; duplicate or missing edge IDs produce a `GraphValidationError` of type `"invalid_edge_id"`.
 
-**Positional index normalization:** The backend normalizes `positional_index` values on `PositionalEdge`s: it sorts by `positional_index` and reassigns `0..N-1`. This makes the frontend resilient to gaps after edge disconnection.
+**Positional index normalization:** The backend normalizes `target_position` values on `DataFrameEdge`s: it sorts by `target_position` and reassigns `0..N-1`. This makes the frontend resilient to gaps after edge disconnection.
 
 Note: `NodeStatus` is used in accepted draft and nested-snapshot validation results, the direct `PUT /graph` compatibility response, execution status, Clear responses, and WebSocket `node_state` messages. The schema is shared, while its frontend projection remains canvas and execution-context scoped.
 
@@ -490,8 +490,8 @@ Note: `NodeState` does not include `tool_version`. The `tool_package` and `tool_
 **Compatibility with the library serialization format:**
 
 The backend translation layer maps between the GUI schema and the library's `workflow.export()` format:
-- Library edges with `column: "__positional__"` map to `PositionalEdge`
-- Library edges with `column: "field_name"` map to `ColumnRefEdge`
+- Library edges with `column: "dataframe"` map to `DataFrameEdge`
+- Library edges with `column: "field_name"` map to `ColumnEdge`
 - Library `nodes[].constants` maps to `NodeState.parameters`
 - Library `nodes[].tool_module` + `tool_class` are resolved from `NodeState.tool_name` via the tool registry
 - Library `nodes[].tool_package` + `tool_package_version` are resolved from the tool registry (based on the current workflow's selected package versions)
@@ -524,7 +524,7 @@ Normal root canvases do not use this endpoint as their persistence authority; th
   ],
   "edges": [
     {
-      "type": "column_ref",
+      "type": "column",
       "id": "edge_1",
       "source_node": "file_lister_1",
       "source_output": "path",
@@ -532,11 +532,11 @@ Normal root canvases do not use this endpoint as their persistence authority; th
       "target_input": "input_image"
     },
     {
-      "type": "positional",
+      "type": "dataframe",
       "id": "edge_2",
       "source_node": "file_lister_1",
       "target_node": "inner_join_1",
-      "positional_index": 0
+      "target_position": 0
     }
   ]
 }
@@ -580,7 +580,7 @@ Normal root canvases do not use this endpoint as their persistence authority; th
 
 The backend:
 1. Parses the `GraphState`
-2. Reconstructs a BioImageFlow `Workflow` object (translates `ColumnRefEdge` to `ColumnRef` bindings, `PositionalEdge` to positional args, resolves tool classes from the tool store)
+2. Reconstructs a BioImageFlow `Workflow` object (translates `ColumnEdge` to `ColumnRef` bindings, `DataFrameEdge` to positional args, resolves tool classes from the tool store)
 3. Runs validation (cycle detection, type compatibility, parameter validation via Pydantic). Disabled nodes are skipped during validation.
 4. Checks cache status for each node (compares current parameters + upstream signature against stored hashes)
 5. Returns the `ValidationResult` with per-node status
@@ -1006,9 +1006,9 @@ Per-tool-type header pin rules:
 
 | Tool type | Header input pins | Header output pin |
 |---|---|---|
-| Source DataFrameTool (`accepts_upstream: false`, e.g. `Files`, `Generate`) | None | `__dataframe_out` |
-| Merge / transform DataFrameTool (`accepts_upstream: true`, e.g. `CrossJoin`, `FilterRows`) | Positional (`__positional_0`, `__positional_1`, ..., auto-grow) | `__dataframe_out` |
-| ProcessingTool | None | `__dataframe_out` |
+| Source DataFrameTool (`accepts_upstream: false`, e.g. `Files`, `Generate`) | None | `bif:v1:dataframe-output` |
+| Merge / transform DataFrameTool (`accepts_upstream: true`, e.g. `CrossJoin`, `FilterRows`) | Positional (`bif:v1:dataframe-position:0`, `bif:v1:dataframe-position:1`, ..., auto-grow) | `bif:v1:dataframe-output` |
+| ProcessingTool | None | `bif:v1:dataframe-output` |
 
 **Node creation:**
 - Drag a tool from the Tools Panel onto the canvas
@@ -1047,8 +1047,8 @@ Disabled nodes are rendered at reduced opacity. Nodes downstream of a disabled n
 
 Edges represent data flow between nodes. There are two kinds of edges (see [Section 2.4.3](#243-graph-schema-and-validation)), each visually distinct:
 
-- **Positional edges** (`PositionalEdge`): Connect a node's header DataFrame output pin (`__dataframe_out`) to a DataFrameTool's header positional input pin (`__positional_*`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves anchored on header-region pins.
-- **Column reference edges** (`ColumnRefEdge`): Connect a body output pin (column name) to a body input pin (field name). Represent `ColumnRef` bindings for `ProcessingTool` inputs. Rendered as **solid, type-colored, thinner (2px)** bezier curves anchored on body-region pins.
+- **Positional edges** (`DataFrameEdge`): Connect a node's header DataFrame output pin (`bif:v1:dataframe-output`) to a DataFrameTool's header positional input pin (`bif:v1:dataframe-position:<index>`). Represent whole-DataFrame flow (upstream arguments to `merge_dataframes`). Rendered as **solid, neutral gray (#7A7A80), thicker (2.5px)** bezier curves anchored on header-region pins.
+- **Column reference edges** (`ColumnEdge`): Connect a body output pin (column name) to a body input pin (field name). Represent `ColumnRef` bindings for `ProcessingTool` inputs. Rendered as **solid, type-colored, thinner (2px)** bezier curves anchored on body-region pins.
 
 **Cross-region rejection:** Header pins can only connect to header pins; body pins can only connect to body pins. Dragging a header output to a body input (or vice versa) is rejected client-side.
 
@@ -1077,10 +1077,10 @@ Pins are the connection points on nodes. They are divided into two visual catego
 Header pins appear in the node header region and carry whole-DataFrame connections (positional edges).
 
 - **Visual style:** Square (~14px), neutral gray fill (#7A7A80), distinct from the `"any"` wildcard color (#B0A060) and from body type-colored pins.
-- **DataFrame output pin** (`__dataframe_out`, right side): Present on nodes whose tool metadata has `dataframe_output === true` (currently all `ProcessingTool` and `DataFrameTool` nodes). Represents the node's full output DataFrame.
-- **Positional input pins** (`__positional_0`, `__positional_1`, ..., left side): Present on DataFrameTool nodes with `accepts_upstream === true`. Numbered "1", "2", etc. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap.
+- **DataFrame output pin** (`bif:v1:dataframe-output`, right side): Present on nodes whose tool metadata has `dataframe_output === true` (currently all `ProcessingTool` and `DataFrameTool` nodes). Represents the node's full output DataFrame.
+- **Positional input pins** (`bif:v1:dataframe-position:0`, `bif:v1:dataframe-position:1`, ..., left side): Present on DataFrameTool nodes with `accepts_upstream === true`. Numbered "1", "2", etc. A new pin appears dynamically when the last available pin is connected. **Auto-compact behavior:** when a positional edge is disconnected, higher-numbered pins shift down to fill the gap.
 - Source-only DataFrameTools (`accepts_upstream === false`, e.g. `Files`, `Generate`) render no positional input pins. Edge-creation onto a positional handle of such a tool is rejected client-side. The backend additionally rejects any graph containing such an edge with a `source_tool_upstream` validation error.
-- ProcessingTool nodes have no header input pins, but do have the `__dataframe_out` header output pin so their full result DataFrame can feed a downstream `DataFrameTool` such as an aggregator.
+- ProcessingTool nodes have no header input pins, but do have the `bif:v1:dataframe-output` header output pin so their full result DataFrame can feed a downstream `DataFrameTool` such as an aggregator.
 
 **Body pins (column-level / field-level)**
 
@@ -1360,7 +1360,7 @@ opened, or treated as workflow id collisions.
   system file browser. It does not show a separate workflow-file row because
   that duplicates the storage/path information.
 
-Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selected workflow, or using the Open action opens it in a root canvas tab or activates the existing tab already presenting that workflow. Dragging from anywhere on a workflow row onto a folder moves the workflow within the tree, and dragging that same row onto the canvas creates a SubWorkflowNode. Drops that would make a workflow contain itself directly or indirectly are rejected. Dragging a folder onto another folder moves the full folder subtree, including child folders and workflows.
+Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selected workflow, or using the Open action opens it in a root canvas tab or activates the existing tab already presenting that workflow. Dragging from anywhere on a workflow row onto a folder moves the workflow within the tree, and dragging that same row onto the canvas creates a workflow node containing an executable snapshot. Drops that would make a workflow contain itself directly or indirectly are rejected. Dragging a folder onto another folder moves the full folder subtree, including child folders and workflows.
 
 **Actions:**
 - **New workflow:** Opens a creation dialog for a free-form display name and an optional multiline description. The panel derives and previews the filesystem id, and a selected tree folder supplies the parent folder. The current panel does not expose editable workflow id or path fields; explicit ids and paths remain API capabilities. On id conflict, the server suggests an alternative.
@@ -1593,8 +1593,8 @@ Manual save (Ctrl+S) flushes pending frontend edits to the backend draft, checks
 
 | GUI Concept | Library Concept |
 |-------------|----------------|
-| `ColumnRefEdge` (output pin to input pin) | `ColumnRef` (keyword arg) |
-| `PositionalEdge` (node to DataFrameTool positional pin) | Positional argument in `DataFrameTool.__call__` |
+| `ColumnEdge` (output pin to input pin) | `ColumnRef` (keyword arg) |
+| `DataFrameEdge` (node to DataFrameTool positional pin) | Positional argument in `DataFrameTool.__call__` |
 | Parameter value in Node Panel | Constant keyword argument |
 | Pin visibility on a node | Determined by `GUIMeta.connectable` field metadata (set by tool author) |
 | "Run" button | `workflow.compute(node)` |

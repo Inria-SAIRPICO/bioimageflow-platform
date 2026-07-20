@@ -122,7 +122,7 @@ Move one node:
 {"tool": "move_node", "arguments": {"node_id": "blur_1", "position": [320, 160]}}
 ```
 
-Move several nodes without touching parameters, edges, or published interfaces:
+Move several nodes without touching parameters, edges, or workflow interfaces:
 
 ```json
 {
@@ -136,7 +136,7 @@ Move several nodes without touching parameters, edges, or published interfaces:
 }
 ```
 
-For nested sub-workflow layout, pass `scope.sub_workflow_path` as the list of node ids from the root graph to the nested graph:
+For nested workflow layout, pass `scope.workflow_path` as the list of workflow-node IDs from the root graph to the target graph:
 
 ```json
 {
@@ -145,7 +145,7 @@ For nested sub-workflow layout, pass `scope.sub_workflow_path` as the list of no
     "node_id": "inner_step",
     "position": [180, 120],
     "scope": {
-      "sub_workflow_path": ["outer_workflow_node"]
+      "workflow_path": ["outer_workflow_node"]
     }
   }
 }
@@ -174,7 +174,7 @@ Keep batches focused and let the backend validate mutation semantics.
         }
       },
       {
-        "type": "connect_column_ref",
+        "type": "connect_column_edge",
         "source_node": "blur_1",
         "source_output": "image",
         "target_node": "threshold_1",
@@ -185,7 +185,7 @@ Keep batches focused and let the backend validate mutation semantics.
 }
 ```
 
-Common batch operation `type` values are `create_node`, `delete_node`, `rename_node`, `update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`, `connect_column_ref`, `connect_positional`, `delete_edge`, `set_published_input`, `delete_published_input`, `set_published_output`, and `delete_published_output`.
+Common batch operation `type` values are `create_tool_node`, `create_workflow_node`, `delete_node`, `rename_node`, `update_tool_parameters`, `set_node_enabled`, `move_node`, `move_nodes`, `connect_column_edge`, `connect_dataframe_edge`, `delete_edge`, `expose_workflow_input`, `delete_workflow_input`, `expose_workflow_output`, and `delete_workflow_output`.
 Use only operation types advertised by `get_bioimageflow_capabilities`.
 
 ## Manage Workspace Workflows
@@ -251,52 +251,54 @@ Switch the active workflow:
 {"tool": "set_active_workflow", "arguments": {"workflow_id": "segmentation-demo"}}
 ```
 
-## Published Inputs And Outputs
+## Workflow Inputs And Outputs
 
-Use published interface tools instead of editing graph JSON locally.
-Published interface targets are checked against backend tool metadata.
+Use workflow interface tools instead of editing graph JSON locally.
+Interface targets are checked against backend tool metadata and identified by immutable port IDs.
 
-Publish a node field as a workflow input:
+Expose a node field as a workflow input:
 
 ```json
 {
-  "tool": "set_published_input",
+  "tool": "expose_workflow_input",
   "arguments": {
-    "name": "image",
-    "internal_node_id": "load_1",
-    "internal_field": "path",
-    "kind": "input",
-    "schema": {
-      "type": "ImageFile"
+    "input_port": {
+      "id": "input-image",
+      "name": "image",
+      "kind": "field",
+      "schema": {"type": "ImageFile"},
+      "targets": [
+        {"node": "load_1", "port": {"kind": "field", "name": "path"}}
+      ]
     }
   }
 }
 ```
 
-Publish a node output:
+Expose a node output:
 
 ```json
 {
-  "tool": "set_published_output",
+  "tool": "expose_workflow_output",
   "arguments": {
-    "name": "mask",
-    "internal_node_id": "threshold_1",
-    "internal_output": "mask",
-    "schema": {
-      "type": "LabelImage"
+    "output_port": {
+      "id": "output-mask",
+      "name": "mask",
+      "schema": {"type": "LabelImage"},
+      "source": {"node": "threshold_1", "column": "mask"}
     }
   }
 }
 ```
 
-Delete by published interface name:
+Delete by immutable interface port ID:
 
 ```json
-{"tool": "delete_published_input", "arguments": {"name": "image"}}
+{"tool": "delete_workflow_input", "arguments": {"input_id": "input-image"}}
 ```
 
 ```json
-{"tool": "delete_published_output", "arguments": {"name": "mask"}}
+{"tool": "delete_workflow_output", "arguments": {"output_id": "output-mask"}}
 ```
 
 When clearing nullable stored metadata, send the explicit clear flag used by the tool, such as `set_schema: true` with `schema: null`.

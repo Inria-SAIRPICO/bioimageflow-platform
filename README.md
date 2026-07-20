@@ -18,7 +18,7 @@ The platform follows a **client-server model**:
 - The **frontend** is a Vue SPA whose mounted canvases own immediate graph interaction state (nodes, edges, positions, parameters) and communicate with the backend exclusively through the API.
 - The backend also ships a **pywebview entrypoint** that opens the SPA in a native OS window, exposes native file dialogs to the frontend, and manages the full application lifecycle.
 
-Each root canvas persists its editable graph through a revisioned backend workflow draft, which is the durable authority shared with Save, Run, and agents. Nested canvases persist private revisioned snapshots until explicit parent apply. `workflow.json` is the explicitly saved artifact, and `PUT /graph` remains only stateless compatibility or transient validation. The backend also holds transient execution state during workflow runs.
+Each root canvas persists its editable recursive `GraphState` through a revisioned backend workflow draft, which is the durable authority shared with Save, Run, and agents. The same graph can appear as a workflow node inside another graph; nested canvases persist private revisioned snapshots until explicit parent apply. `workflow.json` is the explicitly saved canonical platform document, while `PUT /graph` provides request-local validation without retaining editor state. The backend also holds transient execution state during workflow runs.
 
 ## Workspace Model
 
@@ -44,7 +44,7 @@ folder asks whether to delete children, move them up, or cancel. Creating a
 workflow while a folder is selected places it in that folder and the creation
 dialog includes an optional description field. The workflow detail panel shows
 the description with an edit action, the workflow id, output storage path, and
-a button that opens the workflow folder in the system file browser. Custom tools are created in the current workflow's `tools/` folder so a workflow
+a button that opens the workflow folder in the system file browser. Dragging a saved workflow onto the canvas embeds an executable snapshot with explicit source provenance, and any workflow may be grouped or opened recursively using the same interface model. Custom tools are created in the current workflow's `tools/` folder so a workflow
 archive carries the custom tool sources it uses. Tool source opening keeps VS
 Code or code-server rooted at the workspace project and focuses the selected
 tool file. Reusable tools shared across workflows should be distributed as tool
@@ -178,7 +178,7 @@ Then restart the backend.
 The versioned specifications are cumulative and have distinct status:
 
 - [`platform_specs_v1.md`](platform_specs_v1.md) — normative current base.
-- [`platform_specs_v2.md`](platform_specs_v2.md) — normative implemented additions, including sub-workflows and editor integration.
+- [`platform_specs_v2.md`](platform_specs_v2.md) — normative recursive workflow, interface, provenance, and editor specification.
 - [`platform_specs_v3.md`](platform_specs_v3.md) — future webapp and multi-user proposal; it is not an implemented contract.
 - [`bioimageflow/docs/source/specs.md`](bioimageflow/docs/source/specs.md) — BioImageFlow library specification.
 
