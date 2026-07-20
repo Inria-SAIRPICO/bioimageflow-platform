@@ -19,6 +19,7 @@ test.describe('Datasets panel', () => {
     await expect(page.getByRole('button', { name: 'Upload files' })).toBeVisible()
     await expect(page.getByPlaceholder('Search files and folders')).toBeVisible()
     await expect(page.getByText('Datasets root', { exact: true })).toHaveCount(0)
+    await expect(page.locator('.dataset-tree')).toHaveCSS('padding', '0px')
 
     await page.locator('.datasets-panel input[type="file"]').setInputFiles({
       name: fileName,
@@ -27,6 +28,10 @@ test.describe('Datasets panel', () => {
     })
     await expect(page.locator('.upload-message.success')).toContainText(fileName)
     await expect(page.locator('.dataset-tree')).toContainText(fileName)
+    await expect(page.locator('.dataset-tree .p-tree-node-content').first()).toHaveCSS(
+      'padding',
+      '1.6px 2.4px',
+    )
     await page.getByTestId('upload-clear-completed').click()
     await expect(page.locator('.upload-message')).toHaveCount(0)
 

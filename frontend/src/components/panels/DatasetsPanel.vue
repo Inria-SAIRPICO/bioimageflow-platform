@@ -539,7 +539,9 @@ function nodeTitle(treeNode: TreeNode): string {
 .upload-message.cancelled { color: var(--p-text-muted-color); }
 .dataset-search { width: 100%; }
 .dataset-toolbar, .dataset-footer { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-.dataset-tree { flex: 1; min-height: 0; overflow: auto; }
+.dataset-tree { flex: 1; min-height: 0; overflow: auto; padding: 0; }
+.dataset-tree :deep(.p-tree-node-content),
+.dataset-tree :deep(.p-treenode-content) { padding: .1rem .15rem; }
 .dataset-node { display: inline-flex; align-items: center; gap: .45rem; min-width: 0; }
 .dataset-node-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dataset-footer { justify-content: flex-end; }
