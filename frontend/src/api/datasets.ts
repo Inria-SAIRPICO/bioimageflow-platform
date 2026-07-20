@@ -32,6 +32,7 @@ export interface UploadProgress { loaded: number; total?: number }
 export interface UploadOptions {
   folderId?: string | null
   onProgress?: (progress: UploadProgress) => void
+  signal?: AbortSignal
 }
 
 export async function listDatasets(): Promise<DatasetRecord[]> {
@@ -51,6 +52,7 @@ export async function uploadDataset(
   if (options.folderId) formData.append('folder_id', options.folderId)
   return (await api.post<UploadResponseRecord>('/api/v1/datasets/upload', formData, {
     onUploadProgress: event => options.onProgress?.({ loaded: event.loaded, total: event.total }),
+    signal: options.signal,
   })).data
 }
 

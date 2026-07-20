@@ -83,6 +83,28 @@ describe('DatasetsPanel', () => {
     expect(wrapper.find('[data-testid="dataset-row-menu"]').exists()).toBe(false)
   })
 
+  it('offers batch cancellation, completed-message cleanup, and inline error actions', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useDatasetsStore()
+    store.uploads = [
+      { id: 'uploading', batchId: 1, file: new File(['a'], 'active.tif'), loaded: 1, total: 10, status: 'uploading' },
+      { id: 'success', batchId: 1, file: new File(['b'], 'done.tif'), loaded: 1, total: 1, status: 'success' },
+      { id: 'error', batchId: 1, file: new File(['c'], 'failed.tif'), loaded: 1, total: 1, status: 'error', message: 'No space left on device' },
+    ]
+    const wrapper = mount(DatasetsPanel, { global: { plugins: [pinia], stubs } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="upload-cancel-all"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="upload-clear-completed"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('No space left on device')
+    expect(wrapper.find('[data-testid="upload-retry-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="upload-dismiss-error"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="upload-clear-completed"]').trigger('click')
+    expect(store.uploads.map(upload => upload.id)).toEqual(['uploading', 'error'])
+  })
+
   it('resolves files and folders into an explicit Files-node snapshot', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

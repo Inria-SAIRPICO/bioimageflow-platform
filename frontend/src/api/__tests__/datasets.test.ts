@@ -71,10 +71,12 @@ describe('uploadDataset', () => {
 
     const file = new File(['hello world'], 'cells.tif', { type: 'image/tiff' })
     const progressCallback = vi.fn()
+    const controller = new AbortController()
 
     const result = await uploadDataset(file, {
       folderId: 'f_images',
       onProgress: progressCallback,
+      signal: controller.signal,
     })
 
     expect(mockedPost).toHaveBeenCalledTimes(1)
@@ -85,6 +87,7 @@ describe('uploadDataset', () => {
     expect((formData as FormData).getAll('files')).toHaveLength(1)
     expect((formData as FormData).get('folder_id')).toBe('f_images')
     expect(options).toHaveProperty('onUploadProgress')
+    expect(options).toHaveProperty('signal', controller.signal)
 
     // Simulate axios firing the progress event
     const axiosProgressHandler = (options as { onUploadProgress: (e: { loaded: number; total?: number }) => void }).onUploadProgress

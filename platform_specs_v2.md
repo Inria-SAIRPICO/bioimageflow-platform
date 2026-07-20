@@ -822,7 +822,7 @@ It replaces the Dataset Browser and Upload Datasets modals.
 The panel is arranged vertically as follows:
 
 1. An **Upload files** button.
-2. An aggregate progress bar for the current upload batch and persistent per-file queued, uploading, success, or error messages, with retry actions for failed uploads.
+2. An aggregate progress bar for the current upload batch with **Cancel uploads** and **Clear completed** actions, followed by persistent per-file queued, uploading, cancelled, success, or error messages.
 3. A search input on its own line.
 4. A compact top toolbar with **Add folder**, **Rename**, one unified **Delete** action, and **Unselect all**.
 5. A PrimeVue-style draggable tree of folders and files with an independent checkbox for every item.
@@ -857,7 +857,12 @@ The set action replaces the selected `Files` node's `files` parameter with the s
 In browser mode a Node Panel file-picker action activates the Datasets panel in temporary single-file selection mode with the requested extension filter.
 The user completes the request with **Use file** or **Cancel**.
 Desktop Node Panel picker actions continue to use native dialogs.
-Operating-system file drops always enqueue managed uploads and activate the Datasets panel in both browser and desktop runtimes.
+Operating-system file drops immediately enqueue managed uploads and activate the Datasets panel in both browser and desktop runtimes; they do not require a confirmation modal.
+Every queued or active file has a **Cancel** action, and **Cancel uploads** cancels the complete outstanding batch.
+Queued cancellations prevent the request from starting, while active cancellations abort the HTTP upload and are displayed as cancelled rather than failed.
+Cancelled uploads can be retried, and **Clear completed** removes success and cancelled messages without hiding failures.
+Upload failures remain visible inline with the server or transport error detail and provide **Retry** and **Dismiss** actions; they do not open a modal, so one failure cannot interrupt or obscure the rest of a multi-file batch.
+The backend removes partial managed files when streaming or storage fails, including client disconnection, size-limit errors, and disk-write errors.
 
 The dataset catalog is logical metadata stored separately from immutable timestamped file blobs.
 Folders therefore organize datasets without moving physical files, and file display-name changes do not invalidate persisted workflow paths.

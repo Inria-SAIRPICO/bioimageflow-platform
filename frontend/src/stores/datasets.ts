@@ -14,7 +14,7 @@ export interface UploadEntry {
   file: File
   loaded: number
   total: number
-  status: 'queued' | 'uploading' | 'success' | 'error'
+  status: 'queued' | 'uploading' | 'success' | 'error' | 'cancelled'
   message?: string
 }
 
@@ -37,12 +37,23 @@ export const useDatasetsStore = defineStore('datasets', () => {
   let runningUploads = 0
   let pickerPreviousSelection: Record<string, boolean> | null = null
   const queued: Array<{ entry: UploadEntry; folderId: string | null }> = []
+  const uploadControllers = new Map<string, AbortController>()
+
+  const hasActiveUploads = computed(() => uploads.value.some(item => (
+    item.status === 'queued' || item.status === 'uploading'
+  )))
+
+  const hasCompletedUploads = computed(() => uploads.value.some(item => (
+    item.status === 'success' || item.status === 'cancelled'
+  )))
 
   const progress = computed(() => {
     const currentUploads = uploads.value.filter(item => item.batchId === currentBatchId)
     const total = currentUploads.reduce((sum, item) => sum + Math.max(item.total, 1), 0)
     const loaded = currentUploads.reduce((sum, item) => {
-      if (item.status === 'success' || item.status === 'error') return sum + Math.max(item.total, 1)
+      if (item.status === 'success' || item.status === 'error' || item.status === 'cancelled') {
+        return sum + Math.max(item.total, 1)
+      }
       return sum + Math.min(item.loaded, Math.max(item.total, 1))
     }, 0)
     return total ? Math.round((loaded / total) * 100) : 0
@@ -103,6 +114,7 @@ export const useDatasetsStore = defineStore('datasets', () => {
   }
 
   function retryUpload(entry: UploadEntry, folderId: string | null = null) {
+    if (entry.status === 'queued' || entry.status === 'uploading') return
     const hasActiveBatch = uploads.value.some(item => (
       item.batchId === currentBatchId
       && (item.status === 'queued' || item.status === 'uploading')
@@ -116,18 +128,65 @@ export const useDatasetsStore = defineStore('datasets', () => {
     pumpUploads()
   }
 
+  function cancelUpload(entry: UploadEntry) {
+    if (entry.status === 'queued') {
+      for (let index = queued.length - 1; index >= 0; index -= 1) {
+        if (queued[index].entry.id === entry.id) queued.splice(index, 1)
+      }
+      entry.status = 'cancelled'
+      entry.message = 'Cancelled'
+      return
+    }
+    if (entry.status !== 'uploading') return
+    entry.status = 'cancelled'
+    entry.message = 'Cancelled'
+    uploadControllers.get(entry.id)?.abort()
+  }
+
+  function cancelUploads() {
+    for (const entry of uploads.value) cancelUpload(entry)
+  }
+
+  function clearCompletedUploads() {
+    uploads.value = uploads.value.filter(entry => (
+      entry.status !== 'success' && entry.status !== 'cancelled'
+    ))
+  }
+
+  function dismissUpload(entry: UploadEntry) {
+    if (entry.status === 'queued' || entry.status === 'uploading') return
+    uploads.value = uploads.value.filter(item => item.id !== entry.id)
+  }
+
+  function uploadErrorMessage(error: unknown): string {
+    if (typeof error === 'object' && error && 'response' in error) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+      if (typeof detail === 'string') return detail
+      if (typeof detail === 'object' && detail && 'detail' in detail) {
+        const nested = (detail as { detail?: unknown }).detail
+        if (typeof nested === 'string') return nested
+      }
+    }
+    return error instanceof Error ? error.message : 'Upload failed'
+  }
+
   function pumpUploads() {
     while (runningUploads < 3 && queued.length) {
       const next = queued.shift()!
+      const controller = new AbortController()
+      uploadControllers.set(next.entry.id, controller)
       runningUploads += 1
       next.entry.status = 'uploading'
       void uploadDataset(next.entry.file, {
         folderId: next.folderId,
+        signal: controller.signal,
         onProgress: value => {
+          if (controller.signal.aborted) return
           next.entry.loaded = value.loaded
           next.entry.total = value.total ?? next.entry.file.size
         },
       }).then(response => {
+        if (controller.signal.aborted) return
         if (response.errors.length) {
           next.entry.status = 'error'
           next.entry.message = response.errors[0].detail
@@ -141,9 +200,19 @@ export const useDatasetsStore = defineStore('datasets', () => {
           selectionKeys.value[dataset.id] = true
         }
       }).catch(error => {
+        if (controller.signal.aborted) {
+          if (next.entry.status === 'uploading') {
+            next.entry.status = 'cancelled'
+            next.entry.message = 'Cancelled'
+          }
+          return
+        }
         next.entry.status = 'error'
-        next.entry.message = error instanceof Error ? error.message : 'Upload failed'
+        next.entry.message = uploadErrorMessage(error)
       }).finally(() => {
+        if (uploadControllers.get(next.entry.id) === controller) {
+          uploadControllers.delete(next.entry.id)
+        }
         runningUploads -= 1
         pumpUploads()
       })
@@ -152,7 +221,8 @@ export const useDatasetsStore = defineStore('datasets', () => {
 
   return {
     datasets, folders, selectionKeys, pickerSelectionId, picker, uploads,
-    activationRequest, progress, activate, refresh, selectedIds, openPicker,
-    finishPicker, queueUploads, retryUpload,
+    activationRequest, progress, hasActiveUploads, hasCompletedUploads,
+    activate, refresh, selectedIds, openPicker, finishPicker, queueUploads,
+    retryUpload, cancelUpload, cancelUploads, clearCompletedUploads, dismissUpload,
   }
 })

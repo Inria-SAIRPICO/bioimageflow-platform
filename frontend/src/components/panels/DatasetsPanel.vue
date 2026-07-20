@@ -4,16 +4,59 @@
     <Button label="Upload files" icon="pi pi-upload" :disabled="locked" @click="fileInput?.click()" />
 
     <div v-if="store.uploads.length" class="upload-status" aria-live="polite">
-      <ProgressBar :value="store.progress" />
-      <div v-for="upload in store.uploads" :key="upload.id" class="upload-message" :class="upload.status">
-        <span>{{ upload.file.name }} — {{ uploadLabel(upload) }}</span>
-        <Button
-          v-if="upload.status === 'error'"
-          label="Retry"
-          text
-          size="small"
-          @click="store.retryUpload(upload, uploadFolderId)"
-        />
+      <div class="upload-progress-row">
+        <ProgressBar :value="store.progress" />
+        <div class="upload-progress-actions">
+          <Button
+            v-if="store.hasActiveUploads"
+            data-testid="upload-cancel-all"
+            label="Cancel uploads"
+            icon="pi pi-times"
+            size="small"
+            text
+            @click="store.cancelUploads"
+          />
+          <Button
+            v-if="store.hasCompletedUploads"
+            data-testid="upload-clear-completed"
+            label="Clear completed"
+            icon="pi pi-check"
+            size="small"
+            text
+            @click="store.clearCompletedUploads"
+          />
+        </div>
+      </div>
+      <div class="upload-messages">
+        <div v-for="upload in store.uploads" :key="upload.id" class="upload-message" :class="upload.status">
+          <span>{{ upload.file.name }} — {{ uploadLabel(upload) }}</span>
+          <div class="upload-message-actions">
+            <Button
+              v-if="upload.status === 'queued' || upload.status === 'uploading'"
+              :data-testid="`upload-cancel-${upload.id}`"
+              label="Cancel"
+              text
+              size="small"
+              @click="store.cancelUpload(upload)"
+            />
+            <Button
+              v-if="upload.status === 'error' || upload.status === 'cancelled'"
+              :data-testid="`upload-retry-${upload.id}`"
+              label="Retry"
+              text
+              size="small"
+              @click="store.retryUpload(upload, uploadFolderId)"
+            />
+            <Button
+              v-if="upload.status === 'error'"
+              :data-testid="`upload-dismiss-${upload.id}`"
+              label="Dismiss"
+              text
+              size="small"
+              @click="store.dismissUpload(upload)"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -484,9 +527,16 @@ function nodeTitle(treeNode: TreeNode): string {
 .datasets-panel { display: flex; flex-direction: column; gap: .75rem; height: 100%; padding: .75rem; overflow: hidden; }
 .sr-only { position: absolute; width: 1px; height: 1px; clip: rect(0, 0, 0, 0); overflow: hidden; }
 .upload-status { display: grid; gap: .35rem; }
+.upload-progress-row { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.upload-progress-row :deep(.p-progressbar) { flex: 1; min-width: 4rem; }
+.upload-progress-actions, .upload-message-actions { display: flex; align-items: center; gap: .15rem; }
+.upload-messages { display: grid; gap: .35rem; max-height: 10rem; overflow: auto; }
 .upload-message { display: flex; align-items: center; justify-content: space-between; font-size: .8rem; }
+.upload-message > span { min-width: 0; overflow-wrap: anywhere; }
+.upload-message-actions { flex-shrink: 0; }
 .upload-message.error, .action-error { color: var(--p-red-500); }
 .upload-message.success { color: var(--p-green-500); }
+.upload-message.cancelled { color: var(--p-text-muted-color); }
 .dataset-search { width: 100%; }
 .dataset-toolbar, .dataset-footer { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .dataset-tree { flex: 1; min-height: 0; overflow: auto; }

@@ -21,6 +21,8 @@ test.describe('Datasets panel', () => {
     })
     await expect(page.locator('.upload-message.success')).toContainText('cells.tif')
     await expect(page.locator('.dataset-tree')).toContainText('cells.tif')
+    await page.getByTestId('upload-clear-completed').click()
+    await expect(page.locator('.upload-message')).toHaveCount(0)
 
     const fileRow = page.locator('.dataset-node-label').filter({ hasText: /^cells\.tif$/ })
     const datasetId = await fileRow.getAttribute('data-dataset-id')
@@ -41,5 +43,35 @@ test.describe('Datasets panel', () => {
 
     await page.getByRole('button', { name: 'Create Files node', exact: true }).click()
     await expect(page.locator('.vue-flow__node').filter({ hasText: 'Files' })).toHaveCount(1)
+  })
+
+  test('cancels a file dropped on the canvas while its upload is active', async ({ page }) => {
+    let markUploadStarted!: () => void
+    let releaseUpload!: () => void
+    const uploadStarted = new Promise<void>(resolve => { markUploadStarted = resolve })
+    const uploadRelease = new Promise<void>(resolve => { releaseUpload = resolve })
+    await page.route('**/api/v1/datasets/upload', async route => {
+      markUploadStarted()
+      await uploadRelease
+      await route.abort().catch(() => undefined)
+    })
+    await page.goto('/')
+
+    await page.evaluate(() => {
+      const transfer = new DataTransfer()
+      transfer.items.add(new File(['slow upload'], 'slow.tif', { type: 'image/tiff' }))
+      window.dispatchEvent(new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+      }))
+    })
+    await uploadStarted
+    await expect(page.getByTestId('upload-cancel-all')).toBeVisible()
+
+    await page.getByTestId('upload-cancel-all').click()
+    await expect(page.locator('.upload-message.cancelled')).toContainText('slow.tif — Cancelled')
+    await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
+    releaseUpload()
   })
 })
