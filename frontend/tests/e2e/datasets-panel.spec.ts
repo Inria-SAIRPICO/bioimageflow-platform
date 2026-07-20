@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('Datasets panel', () => {
   test('uploads, organizes, renames, and snapshots managed files', async ({ page }, testInfo) => {
-    const suffix = testInfo.repeatEachIndex
+    const suffix = `${testInfo.project.name}-${testInfo.repeatEachIndex}`
     const workflowName = `Dataset test ${suffix}`
     const fileName = `dataset-${suffix}.tif`
     const renamedName = `Control image ${suffix}`
