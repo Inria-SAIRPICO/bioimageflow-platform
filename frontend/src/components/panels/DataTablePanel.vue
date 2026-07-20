@@ -14,13 +14,19 @@ import {
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore, type DataTableSourceRequest } from '@/stores/dataTable'
-import type { NodeState, PublishedOutput } from '@/api/types'
+import type {
+  ToolNodeState,
+  WorkflowNodeState,
+  WorkflowOutput,
+} from '@/api/types'
 import {
   maximumUpstreamDepth,
   resolveDataTableNodes,
   selectedAnchorsAreRelated,
 } from '@/utils/dataTableSources'
 import { canvasSessionRegistry, type CanvasId } from '@/sessions/canvasSessionRegistry'
+
+type NodeState = ToolNodeState | WorkflowNodeState
 
 const props = defineProps<{ params?: { api?: DockviewPanelApi } }>()
 const uiStore = useUIStore()
@@ -43,7 +49,7 @@ interface DataTableEntry {
   role?: 'anchor' | 'context'
 }
 
-interface ResolvedPublishedOutput {
+interface ResolvedWorkflowOutput {
   dataNodeId: string
   column: string
   toolName: string | null
@@ -75,8 +81,10 @@ const resolvedNodes = computed(() => resolveDataTableNodes(
   upstreamDepth.value,
 ))
 
-function isSubWorkflowNode(node: NodeState | null | undefined): boolean {
-  return node?.tool_name === '__sub_workflow__'
+function isNestedWorkflowNode(
+  node: NodeState | null | undefined,
+): node is WorkflowNodeState {
+  return node?.type === 'workflow'
 }
 
 function findNode(graph: { nodes?: NodeState[] } | null | undefined, nodeId: string): NodeState | null {
@@ -87,32 +95,38 @@ function nodeLabel(nodeId: string): string {
   return nodeById.value[nodeId]?.name ?? nodeId
 }
 
-function resolvePublishedOutput(parent: NodeState, published: PublishedOutput): ResolvedPublishedOutput {
+function resolveWorkflowOutput(
+  parent: WorkflowNodeState,
+  exposed: WorkflowOutput,
+): ResolvedWorkflowOutput {
   const scopedIds = [parent.id]
-  let graph = parent.sub_workflow
-  let current = published
+  let graph = parent.workflow
+  let current = exposed
   while (true) {
-    scopedIds.push(current.internal_node_id)
-    const target = findNode(graph, current.internal_node_id)
-    const nestedOutput = target?.published_outputs?.find(
-      (candidate) => candidate.name === current.internal_output,
-    )
-    if (!isSubWorkflowNode(target) || !nestedOutput) {
+    scopedIds.push(current.source.node)
+    const target = findNode(graph, current.source.node)
+    const nestedOutput = target?.type === 'workflow'
+      ? target.workflow.interface.outputs.find(
+          candidate => candidate.id === current.source.column,
+        )
+      : undefined
+    if (!isNestedWorkflowNode(target) || !nestedOutput) {
       return {
         dataNodeId: scopedIds.join('/'),
-        column: current.internal_output,
-        toolName: target?.tool_name ?? null,
+        column: current.source.column,
+        toolName: target?.type === 'tool' ? target.tool_name : null,
       }
     }
-    graph = target?.sub_workflow
+    graph = target?.workflow
     current = nestedOutput
   }
 }
 
-function entriesForSubWorkflow(node: NodeState): DataTableEntry[] {
+function entriesForNestedWorkflow(node: NodeState): DataTableEntry[] {
   const byDataNode = new Map<string, DataTableEntry>()
-  for (const published of node.published_outputs ?? []) {
-    const resolved = resolvePublishedOutput(node, published)
+  if (node.type !== 'workflow') return []
+  for (const exposed of node.workflow.interface.outputs) {
+    const resolved = resolveWorkflowOutput(node, exposed)
     const entry = byDataNode.get(resolved.dataNodeId) ?? {
       key: `${node.id}:${resolved.dataNodeId}`,
       displayNodeId: node.id,
@@ -124,7 +138,7 @@ function entriesForSubWorkflow(node: NodeState): DataTableEntry[] {
       columnAliases: {},
       columnFilter: [],
     }
-    entry.columnAliases[resolved.column] = published.name
+    entry.columnAliases[resolved.column] = exposed.name
     entry.columnFilter?.push(resolved.column)
     byDataNode.set(resolved.dataNodeId, entry)
   }
@@ -134,14 +148,14 @@ function entriesForSubWorkflow(node: NodeState): DataTableEntry[] {
 function entryForNode(nodeId: string): DataTableEntry[] {
   const node = nodeById.value[nodeId]
   if (!node) return []
-  if (isSubWorkflowNode(node)) return entriesForSubWorkflow(node)
+  if (isNestedWorkflowNode(node)) return entriesForNestedWorkflow(node)
   return [{
     key: node.id,
     displayNodeId: node.id,
     dataNodeId: node.id,
     label: nodeLabel(node.id),
     subtitle: node.id,
-    toolName: node.tool_name ?? null,
+    toolName: node.type === 'tool' ? node.tool_name : null,
     disabled: node.enabled === false,
     columnAliases: {},
   }]

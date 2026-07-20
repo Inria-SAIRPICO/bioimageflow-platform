@@ -12,10 +12,10 @@ function makeCanvasCommandHandlers() {
     setNodeEnabled: vi.fn(() => true),
     setInputPinned: vi.fn(() => true),
     setOutputTemplate: vi.fn(() => true),
-    togglePublishedInput: vi.fn(() => ({ status: 'changed' as const })),
-    togglePublishedOutput: vi.fn(() => ({ status: 'changed' as const })),
-    renamePublishedInput: vi.fn(() => ({ status: 'changed' as const })),
-    renamePublishedOutput: vi.fn(() => ({ status: 'changed' as const })),
+    toggleWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
+    toggleWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
+    renameWorkflowInput: vi.fn(() => ({ status: 'changed' as const })),
+    renameWorkflowOutput: vi.fn(() => ({ status: 'changed' as const })),
   }
 }
 
@@ -54,34 +54,34 @@ const nodeEditCases: Array<{
   },
 ]
 
-const publicationCases: Array<{
+const workflowInterfaceCases: Array<{
   name: string
   invoke: (commands: CanvasCommands) => unknown
   spy: (handlers: CommandHandlers) => ReturnType<typeof vi.fn>
   expectedArgs: unknown[]
 }> = [
   {
-    name: 'input publication toggle',
-    invoke: commands => commands.togglePublishedInput('shared', 'image'),
-    spy: handlers => handlers.togglePublishedInput,
+    name: 'input workflowInterface toggle',
+    invoke: commands => commands.toggleWorkflowInput('shared', 'image'),
+    spy: handlers => handlers.toggleWorkflowInput,
     expectedArgs: ['shared', 'image'],
   },
   {
-    name: 'output publication toggle',
-    invoke: commands => commands.togglePublishedOutput('shared', 'result'),
-    spy: handlers => handlers.togglePublishedOutput,
+    name: 'output workflowInterface toggle',
+    invoke: commands => commands.toggleWorkflowOutput('shared', 'result'),
+    spy: handlers => handlers.toggleWorkflowOutput,
     expectedArgs: ['shared', 'result'],
   },
   {
-    name: 'published input rename',
-    invoke: commands => commands.renamePublishedInput('shared', 'image', 'source'),
-    spy: handlers => handlers.renamePublishedInput,
+    name: 'exposed input rename',
+    invoke: commands => commands.renameWorkflowInput('shared', 'image', 'source'),
+    spy: handlers => handlers.renameWorkflowInput,
     expectedArgs: ['shared', 'image', 'source'],
   },
   {
-    name: 'published output rename',
-    invoke: commands => commands.renamePublishedOutput('shared', 'result', 'mask'),
-    spy: handlers => handlers.renamePublishedOutput,
+    name: 'exposed output rename',
+    invoke: commands => commands.renameWorkflowOutput('shared', 'result', 'mask'),
+    spy: handlers => handlers.renameWorkflowOutput,
     expectedArgs: ['shared', 'result', 'mask'],
   },
 ]
@@ -109,7 +109,7 @@ describe('active canvas commands', () => {
 
   it('routes Save to the active nested canvas command', async () => {
     const rootId = canvasIdFromPanelId('workflow:root')
-    const nestedId = canvasIdFromPanelId('sub-workflow:nested')
+    const nestedId = canvasIdFromPanelId('nested-workflow:nested')
     const saveNested = vi.fn()
     useCanvasCommands({
       descriptor: {
@@ -160,7 +160,7 @@ describe('active canvas commands', () => {
 
   it('routes a shared node id only to the explicitly active fixed canvas', () => {
     const rootId = canvasIdFromPanelId('workflow:root')
-    const nestedId = canvasIdFromPanelId('sub-workflow:nested')
+    const nestedId = canvasIdFromPanelId('nested-workflow:nested')
     const updateRoot = vi.fn(() => true)
     const updateNested = vi.fn(() => true)
     const root = useCanvasCommands({
@@ -199,7 +199,7 @@ describe('active canvas commands', () => {
     'routes $name only to the explicitly active canvas with shared node ids',
     ({ invoke, spy, expectedArgs }) => {
       const rootId = canvasIdFromPanelId('workflow:root')
-      const nestedId = canvasIdFromPanelId('sub-workflow:nested')
+      const nestedId = canvasIdFromPanelId('nested-workflow:nested')
       const rootHandlers = makeCanvasCommandHandlers()
       const nestedHandlers = makeCanvasCommandHandlers()
       const root = useCanvasCommands({
@@ -234,11 +234,11 @@ describe('active canvas commands', () => {
     },
   )
 
-  it.each(publicationCases)(
+  it.each(workflowInterfaceCases)(
     'routes $name only to the explicitly active canvas with shared node ids',
     ({ invoke, spy, expectedArgs }) => {
       const rootId = canvasIdFromPanelId('workflow:root')
-      const nestedId = canvasIdFromPanelId('sub-workflow:nested')
+      const nestedId = canvasIdFromPanelId('nested-workflow:nested')
       const rootHandlers = makeCanvasCommandHandlers()
       const nestedHandlers = makeCanvasCommandHandlers()
       const root = useCanvasCommands({
@@ -310,7 +310,7 @@ describe('active canvas commands', () => {
     },
   )
 
-  it.each(publicationCases)(
+  it.each(workflowInterfaceCases)(
     'rejects $name when sessions exist without an active canvas',
     ({ invoke, spy }) => {
       const rootId = canvasIdFromPanelId('workflow:root')
@@ -376,7 +376,7 @@ describe('active canvas commands', () => {
     },
   )
 
-  it.each(publicationCases)(
+  it.each(workflowInterfaceCases)(
     'rejects late $name calls through a disposed fixed-canvas resource',
     ({ invoke, spy }) => {
       const rootId = canvasIdFromPanelId('workflow:root')

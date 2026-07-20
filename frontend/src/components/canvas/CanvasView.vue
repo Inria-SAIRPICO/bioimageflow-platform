@@ -4,8 +4,8 @@ import { VueFlow, useVueFlow, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import ToolNode from './ToolNode.vue'
-import ColumnRefEdge from './ColumnRefEdge.vue'
-import PositionalEdge from './PositionalEdge.vue'
+import ColumnEdge from './ColumnEdge.vue'
+import DataFrameEdge from './DataFrameEdge.vue'
 import CanvasErrorBanner from './CanvasErrorBanner.vue'
 import CanvasPersistenceFeedback from './CanvasPersistenceFeedback.vue'
 import NodeContextMenu from './NodeContextMenu.vue'
@@ -20,7 +20,7 @@ import {
   writeClipboardPayload,
 } from '@/utils/clipboard'
 import { useUndoRedo } from '@/composables/useUndoRedo'
-import { serializeGraph, useGraphSync } from '@/composables/useGraphSync'
+import { serializeGraph as serializeCanvasGraph, useGraphSync } from '@/composables/useGraphSync'
 import {
   useCanvasPersistence,
   type CanvasPersistenceIssue,
@@ -28,8 +28,8 @@ import {
 } from '@/composables/useCanvasPersistence'
 import {
   useCanvasCommands,
-  type CanvasPublicationCommandResult,
-  type CanvasPublicationRejectionReason,
+  type CanvasInterfaceCommandResult,
+  type CanvasInterfaceRejectionReason,
 } from '@/composables/useCanvasCommands'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import {
@@ -50,17 +50,24 @@ import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import { graphStateToVueFlow } from '@/utils/workflowGraph'
 import { reconcileOutputTemplates } from '@/utils/outputTemplates'
-import { createSubWorkflowFromSelection } from '@/utils/subWorkflow'
-import type { GraphState, MissingTool, PublishedInput, PublishedOutput, WorkflowInfo } from '@/api/types'
+import { groupIntoWorkflow } from '@/utils/workflowGrouping'
+import type { GraphState, MissingTool, WorkflowInput, WorkflowOutput, WorkflowInfo } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { api } from '@/api/client'
 import { useToast } from 'primevue/usetoast'
 import type { ClipboardPayload, PasteSummary } from '@/utils/clipboard'
 import type { ToolMetadata } from '@/api/types'
+import type { WorkflowSourcePreview } from '@/api/types'
 import {
-  useSubWorkflowSessionsStore,
-  type SubWorkflowParentConflictReason,
-} from '@/stores/subWorkflowSessions'
+  applyWorkflowSourceOperation,
+  previewWorkflowSourceUpdate,
+} from '@/api/workflowSources'
+import { resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
+import { loadRootWorkflowPresentation } from '@/services/rootWorkflowPresentation'
+import {
+  useNestedWorkflowSessionsStore,
+  type NestedWorkflowParentConflictReason,
+} from '@/stores/nestedWorkflowSessions'
 import {
   canvasIdFromPanelId,
   type CanvasSessionDescriptor,
@@ -68,6 +75,11 @@ import {
 import { graphDocumentsEqual } from '@/sessions/graphDocument'
 import { isNestedSnapshotPersistenceConflict } from '@/sessions/nestedSnapshotPersistence'
 import { connectionSourceLabel } from '@/utils/displayNames'
+import {
+  decodeEndpointHandle,
+  encodeEndpointHandle,
+  isDataFrameEndpoint,
+} from '@/utils/endpointHandles'
 
 const emit = defineEmits<{
   'graph-changed': [payload: { nodes: any[]; edges: any[] }]
@@ -75,7 +87,7 @@ const emit = defineEmits<{
 }>()
 
 const props = defineProps<{
-  subWorkflowSessionId?: string
+  nestedWorkflowSessionId?: string
   parentCanvasPanelId?: string
   params?: {
     panelId?: string
@@ -104,39 +116,39 @@ const props = defineProps<{
 // contract (`key -> component`) is what VueFlow actually uses.
 const nodeTypes = {
   tool: markRaw(ToolNode),
-  sub_workflow: markRaw(ToolNode),
+  workflow: markRaw(ToolNode),
 } as unknown as Record<string, object>
 
 const edgeTypes = {
-  column_ref: markRaw(ColumnRefEdge),
-  positional: markRaw(PositionalEdge),
+  column: markRaw(ColumnEdge),
+  dataframe: markRaw(DataFrameEdge),
 } as unknown as Record<string, object>
 
 const toolRegistryStore = useToolRegistryStore()
 const uiStore = useUIStore()
 const workflowStore = useWorkflowStore()
 const workflowDraftStore = useWorkflowDraftStore()
-const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
+const nestedWorkflowSessionsStore = useNestedWorkflowSessionsStore()
 const resolvedOutputsStore = useResolvedOutputsStore()
 const dataTableStore = useDataTableStore()
-const isSubWorkflowEditor = props.subWorkflowSessionId != null && props.subWorkflowSessionId !== ''
+const isNestedWorkflowEditor = props.nestedWorkflowSessionId != null && props.nestedWorkflowSessionId !== ''
 const canvasPanelId = componentPanelId()
 const canvasId = canvasIdFromPanelId(canvasPanelId)
 const initialCanvasParams = dockviewParams()
-const initialNestedSession = props.subWorkflowSessionId
-  ? subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+const initialNestedSession = props.nestedWorkflowSessionId
+  ? nestedWorkflowSessionsStore.sessionById(props.nestedWorkflowSessionId)
   : null
-if (isSubWorkflowEditor && !initialNestedSession) {
+if (isNestedWorkflowEditor && !initialNestedSession) {
   throw new Error('Nested CanvasView requires an accepted durable snapshot session')
 }
 const nestedParentCanvasPanelId = initialNestedSession?.parentCanvasId
 const ownedWorkflowName = ref<string | null>(
-  isSubWorkflowEditor
+  isNestedWorkflowEditor
     ? initialNestedSession?.parentWorkflowName ?? null
     : initialCanvasParams?.workflowName ?? workflowStore.currentName ?? null,
 )
 const ownedWorkflowDisplayName = ref<string | null>(
-  isSubWorkflowEditor
+  isNestedWorkflowEditor
     ? initialNestedSession?.parentNodeName ?? null
     : initialCanvasParams?.workflowDisplayName
       ?? workflowStore.current?.display_name
@@ -196,11 +208,11 @@ function refreshConnectedInputLabels(): void {
 
 watch(canvasResolvedOutputs, refreshConnectedInputLabels, { deep: true })
 
-const canvasDescriptor: CanvasSessionDescriptor = isSubWorkflowEditor
+const canvasDescriptor: CanvasSessionDescriptor = isNestedWorkflowEditor
     ? {
         kind: 'nested',
         canvasId,
-        sessionId: props.subWorkflowSessionId!,
+        sessionId: props.nestedWorkflowSessionId!,
         parentCanvasId: canvasIdFromPanelId(nestedParentCanvasPanelId!),
       }
     : {
@@ -212,19 +224,19 @@ const canvasPersistence = useCanvasPersistence({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
 })
-if (!isSubWorkflowEditor && initialCanvasParams?.draft) {
+if (!isNestedWorkflowEditor && initialCanvasParams?.draft) {
   canvasPersistence.initializeFromDraft(initialCanvasParams.draft)
 }
 const graphSync = useGraphSync({
   descriptor: canvasDescriptor,
   getWorkflowId: owningWorkflowId,
-  nestedSnapshot: initialNestedSession && props.subWorkflowSessionId
+  nestedSnapshot: initialNestedSession && props.nestedWorkflowSessionId
     ? {
-        initialSnapshot: subWorkflowSessionsStore.snapshotForSession(
-          props.subWorkflowSessionId,
+        initialSnapshot: nestedWorkflowSessionsStore.snapshotForSession(
+          props.nestedWorkflowSessionId,
         ),
-        onAccepted: snapshot => subWorkflowSessionsStore.acceptSnapshot(
-          props.subWorkflowSessionId!,
+        onAccepted: snapshot => nestedWorkflowSessionsStore.acceptSnapshot(
+          props.nestedWorkflowSessionId!,
           snapshot,
         ),
       }
@@ -232,7 +244,7 @@ const graphSync = useGraphSync({
 })
 const canvasCommands = useCanvasCommands({
   descriptor: canvasDescriptor,
-  save: isSubWorkflowEditor ? () => saveSubWorkflowSession() : undefined,
+  save: isNestedWorkflowEditor ? () => saveNestedWorkflowSession() : undefined,
   addToolNode: (toolName, parameters) => onAddNode({
     toolName,
     parameters,
@@ -242,10 +254,10 @@ const canvasCommands = useCanvasCommands({
   setNodeEnabled,
   setInputPinned,
   setOutputTemplate,
-  togglePublishedInput,
-  togglePublishedOutput,
-  renamePublishedInput,
-  renamePublishedOutput,
+  toggleWorkflowInput,
+  toggleWorkflowOutput,
+  renameWorkflowInput,
+  renameWorkflowOutput,
   updateParameter: updateNodeParameter,
 })
 uiStore.setCanvasWorkflow(
@@ -326,11 +338,13 @@ const nodeContextMenu = ref<{
   nodeId: string
   position: { x: number; y: number }
   enabled: boolean
-  canOpenSubWorkflow: boolean
+  canOpenNestedWorkflow: boolean
+  hasWorkspaceSource: boolean
+  sourceWorkflowId: string | null
 } | null>(null)
 const dragStartPositions = ref<Record<string, { x: number; y: number }>>({})
-const rootPublishedInputs = ref<PublishedInput[]>([])
-const rootPublishedOutputs = ref<PublishedOutput[]>([])
+const rootWorkflowInputs = ref<WorkflowInput[]>([])
+const rootWorkflowOutputs = ref<WorkflowOutput[]>([])
 const lastAuthoritativeGraph = ref<GraphState | null>(null)
 const isActiveCanvasTab = ref(true)
 const hasLoadedGraphState = ref(false)
@@ -358,7 +372,7 @@ const isPendingFrontendDraftEcho = computed(() => (
 ))
 
 const shouldShowRemoteDraftConflict = computed(() => {
-  if (isSubWorkflowEditor) return false
+  if (isNestedWorkflowEditor) return false
   if (!isActiveCanvasTab.value) return false
   if (!hasLoadedGraphState.value) return false
   if (
@@ -374,7 +388,7 @@ const shouldShowRemoteDraftConflict = computed(() => {
 })
 
 const nestedPersistenceState = computed<CanvasPersistenceState>(() => {
-  if (!isSubWorkflowEditor) return 'idle'
+  if (!isNestedWorkflowEditor) return 'idle'
   if (syncState.value === 'pending') return 'saving'
   if (syncState.value === 'conflict') return 'conflict'
   if (syncState.value === 'error') return 'error'
@@ -385,7 +399,7 @@ watch(
   [syncState, graphSyncLastError],
   ([state, error]) => {
     if (
-      !isSubWorkflowEditor
+      !isNestedWorkflowEditor
       || (state !== 'error' && state !== 'conflict')
     ) {
       nestedPersistenceError = null
@@ -403,7 +417,7 @@ watch(
     const errorDetail = error instanceof Error ? error.message.trim() : ''
     const conflictRevision = isConflict ? error.currentRevision : null
     const detail = isConflict
-      ? `${errorDetail || 'The nested workflow changed elsewhere.'} `
+      ? `${errorDetail || 'The nested-workflow changed elsewhere.'} `
         + `${conflictRevision === null ? '' : `The current revision is ${conflictRevision}. `}`
         + 'Use latest snapshot replaces this canvas with that version. '
         + 'Keep my changes retries the latest local snapshot against that revision.'
@@ -416,8 +430,8 @@ watch(
       kind: isConflict ? 'conflict' : 'error',
       source: 'draft',
       summary: isConflict
-        ? 'Nested workflow changes need attention'
-        : 'Nested workflow changes could not be saved',
+        ? 'nested-workflow changes need attention'
+        : 'nested-workflow changes could not be saved',
       detail,
       dismissed: false,
     }
@@ -429,7 +443,7 @@ const canvasPersistenceFeedbackState = computed<CanvasPersistenceState>(() => {
   if (lifecycleOperation.value !== null || shouldShowRemoteDraftConflict.value) {
     return 'idle'
   }
-  if (isSubWorkflowEditor) return nestedPersistenceState.value
+  if (isNestedWorkflowEditor) return nestedPersistenceState.value
   return rootPersistenceState.value === 'conflict'
     ? 'idle'
     : rootPersistenceState.value
@@ -437,17 +451,17 @@ const canvasPersistenceFeedbackState = computed<CanvasPersistenceState>(() => {
 
 const canvasPersistenceFeedbackIssue = computed<CanvasPersistenceIssue | null>(() => {
   if (shouldShowRemoteDraftConflict.value) return null
-  const issue = isSubWorkflowEditor
+  const issue = isNestedWorkflowEditor
     ? nestedPersistenceIssue.value
     : rootPersistenceIssue.value
-  return !isSubWorkflowEditor && issue?.kind === 'conflict' ? null : issue
+  return !isNestedWorkflowEditor && issue?.kind === 'conflict' ? null : issue
 })
 
 async function retryCanvasPersistence(issueId: string): Promise<void> {
   const issue = canvasPersistenceFeedbackIssue.value
   if (issue === null || issue.id !== issueId) return
   try {
-    if (isSubWorkflowEditor) {
+    if (isNestedWorkflowEditor) {
       await flushNow()
     } else {
       await canvasPersistence.retryPersistence()
@@ -460,7 +474,7 @@ async function retryCanvasPersistence(issueId: string): Promise<void> {
 async function resolveCanvasPersistenceConflict(issueId: string): Promise<void> {
   const issue = canvasPersistenceFeedbackIssue.value
   if (
-    !isSubWorkflowEditor
+    !isNestedWorkflowEditor
     || issue === null
     || issue.id !== issueId
     || issue.kind !== 'conflict'
@@ -478,9 +492,9 @@ async function resolveCanvasPersistenceConflict(issueId: string): Promise<void> 
 
 async function useLatestNestedPersistenceSnapshot(issueId: string): Promise<void> {
   const issue = canvasPersistenceFeedbackIssue.value
-  const sessionId = props.subWorkflowSessionId
+  const sessionId = props.nestedWorkflowSessionId
   if (
-    !isSubWorkflowEditor
+    !isNestedWorkflowEditor
     || !sessionId
     || issue === null
     || issue.id !== issueId
@@ -491,9 +505,9 @@ async function useLatestNestedPersistenceSnapshot(issueId: string): Promise<void
   try {
     const accepted = await resolveConflictUsingRemote()
     if (accepted === null || isCanvasUnmounted) return
-    subWorkflowSessionsStore.updateDraft(sessionId, accepted.graph)
+    nestedWorkflowSessionsStore.updateDraft(sessionId, accepted.graph)
     await applyGraphState(accepted.graph, [], false, false)
-    if (subWorkflowSessionsStore.isDirty(sessionId)) {
+    if (nestedWorkflowSessionsStore.isDirty(sessionId)) {
       uiStore.markCanvasDirty(canvasId)
     } else {
       uiStore.markCanvasClean(canvasId)
@@ -506,7 +520,7 @@ async function useLatestNestedPersistenceSnapshot(issueId: string): Promise<void
 }
 
 function dismissCanvasPersistenceIssue(issueId: string): void {
-  if (isSubWorkflowEditor) {
+  if (isNestedWorkflowEditor) {
     const issue = nestedPersistenceIssue.value
     if (issue === null || issue.id !== issueId || issue.dismissed) return
     nestedPersistenceIssue.value = { ...issue, dismissed: true }
@@ -516,7 +530,7 @@ function dismissCanvasPersistenceIssue(issueId: string): void {
 }
 
 function reopenCanvasPersistenceConflict(issueId: string): void {
-  if (!isSubWorkflowEditor) return
+  if (!isNestedWorkflowEditor) return
   const issue = nestedPersistenceIssue.value
   if (
     issue === null
@@ -535,33 +549,29 @@ const shouldFitViewOnInit = computed(() => {
   return false
 })
 
-interface SubWorkflowApplyPayload {
+interface NestedWorkflowApplyPayload {
   graph: GraphState
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
 }
 
-type SubWorkflowParentApplyResult =
+type NestedWorkflowParentApplyResult =
   | { status: 'applied' }
-  | { status: 'conflict'; reason: SubWorkflowParentConflictReason }
+  | { status: 'conflict'; reason: NestedWorkflowParentConflictReason }
   | { status: 'rejected'; reason: 'locked' }
 
-interface PublicationContext {
+interface InterfaceContext {
   parentNodeId?: string
-  published_inputs: PublishedInput[]
-  published_outputs: PublishedOutput[]
+  inputs: WorkflowInput[]
+  outputs: WorkflowOutput[]
 }
 
 interface CanvasVueFlowState {
   nodes: any[]
   edges: any[]
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
+  interface?: GraphState['interface']
 }
 
 interface CanvasHistoryState extends CanvasVueFlowState {
-  published_inputs: PublishedInput[]
-  published_outputs: PublishedOutput[]
+  interface: GraphState['interface']
 }
 
 interface GraphChangeOptions {
@@ -584,11 +594,29 @@ function rememberAuthoritativeGraph(graph: GraphState): GraphState {
   return snapshot
 }
 
+function serializeGraph(state: CanvasVueFlowState): GraphState {
+  const previous = lastAuthoritativeGraph.value
+  const identity = workflowIdentity()
+  const context = currentInterfaceContext()
+  return serializeCanvasGraph({
+    ...state,
+    schema_version: previous?.schema_version ?? 1,
+    name: previous?.name ?? identity.workflowName ?? 'workflow',
+    display_name: previous?.display_name
+      ?? identity.workflowDisplayName
+      ?? identity.workflowName
+      ?? 'Workflow',
+    interface: state.interface ?? (context
+      ? { inputs: context.inputs, outputs: context.outputs }
+      : { inputs: [], outputs: [] }),
+    config: previous?.config,
+  })
+}
+
 function graphWithAuthoritativeEdges(state: {
   nodes: any[]
   edges: any[]
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
+  interface?: GraphState['interface']
 }): GraphState {
   const graph = serializeGraph(state) as GraphState
   const previous = lastAuthoritativeGraph.value
@@ -603,8 +631,8 @@ function dockviewParams() {
 }
 
 function componentPanelId(): string {
-  if (props.subWorkflowSessionId) {
-    return `sub-workflow:${encodeURIComponent(props.subWorkflowSessionId)}`
+  if (props.nestedWorkflowSessionId) {
+    return `nested-workflow:${encodeURIComponent(props.nestedWorkflowSessionId)}`
   }
   const panelId = dockviewParams()?.panelId
   if (!panelId) {
@@ -621,8 +649,8 @@ function workflowIdentity() {
 }
 
 function owningWorkflowId(): string | null {
-  if (!props.subWorkflowSessionId) return ownedWorkflowName.value
-  return subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  if (!props.nestedWorkflowSessionId) return ownedWorkflowName.value
+  return nestedWorkflowSessionsStore.sessionById(props.nestedWorkflowSessionId)
     ?.parentWorkflowName ?? ownedWorkflowName.value
 }
 
@@ -637,13 +665,15 @@ function workflowUrl(id: string): string {
 type GraphLike = { nodes?: unknown[] }
 
 function nestedGraphFromNode(node: any): GraphLike | null {
-  const graph = node?.sub_workflow ?? node?.data?.sub_workflow
+  const graph = node?.workflow ?? node?.data?.workflow
   return graph && typeof graph === 'object' ? graph as GraphLike : null
 }
 
 function sourceWorkflowNameFromNode(node: any): string | null {
-  const source = node?.source_workflow_name ?? node?.data?.source_workflow_name
-  return typeof source === 'string' && source.length > 0 ? source : null
+  const source = node?.source ?? node?.data?.source
+  return source?.kind === 'workspace' && typeof source.workflow_id === 'string'
+    ? source.workflow_id
+    : null
 }
 
 function graphContainsWorkflow(graph: GraphLike | null | undefined, workflowName: string): boolean {
@@ -656,12 +686,12 @@ function graphContainsWorkflow(graph: GraphLike | null | undefined, workflowName
 }
 
 function containingWorkflowNames(): string[] {
-  if (!isSubWorkflowEditor) {
+  if (!isNestedWorkflowEditor) {
     const name = workflowIdentity().workflowName
     return typeof name === 'string' ? [name] : []
   }
-  if (!props.subWorkflowSessionId) return []
-  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  if (!props.nestedWorkflowSessionId) return []
+  const session = nestedWorkflowSessionsStore.sessionById(props.nestedWorkflowSessionId)
   return [session?.parentWorkflowName, session?.parentSourceWorkflowName]
     .filter((name): name is string => typeof name === 'string' && name.length > 0)
 }
@@ -681,74 +711,73 @@ function showWorkflowContainmentError(workflowName: string): void {
   })
 }
 
-function currentPublicationContext(): PublicationContext | null {
-  if (!isSubWorkflowEditor) {
+function currentInterfaceContext(): InterfaceContext | null {
+  if (!isNestedWorkflowEditor) {
     return {
-      published_inputs: rootPublishedInputs.value,
-      published_outputs: rootPublishedOutputs.value,
+      inputs: rootWorkflowInputs.value,
+      outputs: rootWorkflowOutputs.value,
     }
   }
-  if (!props.subWorkflowSessionId) return null
-  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  if (!props.nestedWorkflowSessionId) return null
+  const session = nestedWorkflowSessionsStore.sessionById(props.nestedWorkflowSessionId)
   if (!session) return null
   return {
     parentNodeId: session.parentNodeId,
-    published_inputs: session.draft.published_inputs ?? [],
-    published_outputs: session.draft.published_outputs ?? [],
+    inputs: session.draft.interface.inputs,
+    outputs: session.draft.interface.outputs,
   }
 }
 
-function attachPublicationContext(node: any) {
-  const context = currentPublicationContext()
+function attachInterfaceContext(node: any) {
+  const context = currentInterfaceContext()
   if (!context) return node
   node.data ??= {}
-  node.data.publicationContext = context
-  if (isSubWorkflowEditor) {
-    node.data.subWorkflowContext = context
+  node.data.workflowInterfaceContext = context
+  if (isNestedWorkflowEditor) {
+    node.data.nestedWorkflowContext = context
   }
   return node
 }
 
-function attachPublicationContextToNodes(nodes: any[]) {
-  return nodes.map((node) => attachPublicationContext(node))
+function attachInterfaceContextToNodes(nodes: any[]) {
+  return nodes.map((node) => attachInterfaceContext(node))
 }
 
-function refreshPublicationContextOnNodes(): void {
-  for (const node of getNodes.value) attachPublicationContext(node)
+function refreshInterfaceContextOnNodes(): void {
+  for (const node of getNodes.value) attachInterfaceContext(node)
 }
 
-function replacePublishedInterface(
-  inputs: PublishedInput[],
-  outputs: PublishedOutput[],
+function replaceWorkflowInterface(
+  inputs: WorkflowInput[],
+  outputs: WorkflowOutput[],
 ): boolean {
-  if (!isSubWorkflowEditor) {
-    rootPublishedInputs.value = inputs
-    rootPublishedOutputs.value = outputs
-    refreshPublicationContextOnNodes()
+  if (!isNestedWorkflowEditor) {
+    rootWorkflowInputs.value = inputs
+    rootWorkflowOutputs.value = outputs
+    refreshInterfaceContextOnNodes()
     return true
   }
-  if (!props.subWorkflowSessionId) return false
-  const session = subWorkflowSessionsStore.sessionById(props.subWorkflowSessionId)
+  if (!props.nestedWorkflowSessionId) return false
+  const session = nestedWorkflowSessionsStore.sessionById(props.nestedWorkflowSessionId)
   if (!session) return false
   session.draft = {
     ...session.draft,
-    published_inputs: deepClone(inputs),
-    published_outputs: deepClone(outputs),
+    interface: { inputs: deepClone(inputs), outputs: deepClone(outputs) },
   }
-  refreshPublicationContextOnNodes()
+  refreshInterfaceContextOnNodes()
   return true
 }
 
-function replacePublishedInputs(inputs: PublishedInput[]): boolean {
-  const context = currentPublicationContext()
+function replaceWorkflowInputs(inputs: WorkflowInput[]): boolean {
+  const context = currentInterfaceContext()
   if (!context) return false
-  return replacePublishedInterface(inputs, context.published_outputs)
+  return replaceWorkflowInterface(inputs, context.outputs)
 }
 
-function replacePublishedOutputs(outputs: PublishedOutput[]): boolean {
-  const context = currentPublicationContext()
+function replaceWorkflowOutputs(outputs: WorkflowOutput[]): boolean {
+  const context = currentInterfaceContext()
   if (!context) return false
-  return replacePublishedInterface(context.published_inputs, outputs)
+  return replaceWorkflowInterface(context.inputs, outputs)
 }
 
 // --- Workflow startup / graph application ---
@@ -760,16 +789,16 @@ async function applyGraphState(
   synchronize = true,
 ) {
   if (isCanvasUnmounted) return
-  if (!isSubWorkflowEditor) {
-    rootPublishedInputs.value = deepClone(graph.published_inputs ?? []) as PublishedInput[]
-    rootPublishedOutputs.value = deepClone(graph.published_outputs ?? []) as PublishedOutput[]
+  if (!isNestedWorkflowEditor) {
+    rootWorkflowInputs.value = deepClone(graph.interface.inputs)
+    rootWorkflowOutputs.value = deepClone(graph.interface.outputs)
   }
   const vueFlowGraph = graphStateToVueFlow(
     graph,
     toolRegistryStore.getToolByName,
     missingTools,
   )
-  attachPublicationContextToNodes(vueFlowGraph.nodes)
+  attachInterfaceContextToNodes(vueFlowGraph.nodes)
   isApplyingGraphState = true
   try {
     setNodes([])
@@ -791,7 +820,7 @@ async function applyGraphState(
     if (synchronize) syncGraphState(authoritativeGraph)
     undoRedo.clear()
     undoRedo.push(canvasHistoryState(currentVueFlowState(), authoritativeGraph))
-    if (!isSubWorkflowEditor) {
+    if (!isNestedWorkflowEditor) {
       const identity = workflowIdentity()
       uiStore.setCanvasWorkflow(
         canvasId,
@@ -862,7 +891,7 @@ async function handleRestoreSavedCanvasEvent(event: Event): Promise<void> {
 }
 
 function trackDraftWorkflowForActiveRootCanvas(): void {
-  if (isSubWorkflowEditor) return
+  if (isNestedWorkflowEditor) return
   const workflowName = workflowIdentity().workflowName
   if (typeof workflowName !== 'string' || workflowName.length === 0) return
   workflowDraftStore.trackWorkflow(workflowName)
@@ -1143,7 +1172,7 @@ function reconcilePendingToolState(): void {
 
   for (const node of getNodes.value as any[]) {
     const originalName = node.data?.toolName
-    if (typeof originalName !== 'string' || originalName === '__sub_workflow__') continue
+    if (node.type !== 'tool' || typeof originalName !== 'string') continue
     if (!pendingToolNames.has(originalName) && !pendingToolRenames.has(originalName)) continue
 
     const resolvedName = resolveRenamedToolName(originalName)
@@ -1265,7 +1294,7 @@ async function maybeApplyRemoteDraftToActiveCanvas(): Promise<void> {
   const remoteRevision = workflowDraftStore.remoteAvailableRevision
   if (remoteRevision === null) return
   if (!hasLoadedGraphState.value) return
-  if (isSubWorkflowEditor) return
+  if (isNestedWorkflowEditor) return
   if (!isActiveCanvasTab.value) return
   if (lifecycleOperation.value !== null) return
   if (hasLocalRemoteDraftConflict.value) return
@@ -1395,23 +1424,126 @@ function onNodeContextMenu(payload: any) {
       y: event.clientY - (rect?.top ?? 0),
     },
     enabled: node.data?.enabled !== false,
-    canOpenSubWorkflow: node.data?.sub_workflow != null,
+    canOpenNestedWorkflow: node.data?.workflow != null,
+    hasWorkspaceSource: !isNestedWorkflowEditor
+      && node.data?.source?.kind === 'workspace',
+    sourceWorkflowId: node.data?.source?.kind === 'workspace'
+      ? node.data.source.workflow_id
+      : null,
   }
+}
+
+async function openContextSourceWorkflow() {
+  const sourceWorkflowId = nodeContextMenu.value?.sourceWorkflowId
+  closeNodeContextMenu()
+  if (!sourceWorkflowId) return
+  try {
+    const presentation = await loadRootWorkflowPresentation(sourceWorkflowId)
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-graph', {
+      detail: {
+        graph: presentation.graph,
+        workflowName: presentation.workflowName,
+        workflowDisplayName: presentation.workflowDisplayName,
+        missingTools: presentation.missingTools,
+        dirty: presentation.dirty,
+        draft: presentation.draft,
+        identityGeneration: presentation.identityGeneration,
+        serverIdentityGeneration: presentation.serverIdentityGeneration,
+      },
+    }))
+  } catch (error: unknown) {
+    clipboardToast?.add({
+      severity: 'error',
+      summary: 'Open source workflow failed',
+      detail: error instanceof Error ? error.message : String(error),
+      life: 5000,
+    })
+  }
+}
+
+function describeSourceEffects(preview: WorkflowSourcePreview): string {
+  const effects = preview.destructive_effects ?? []
+  const sourceChanges = (preview.custom_source_ids_added?.length ?? 0)
+    + (preview.custom_source_ids_removed?.length ?? 0)
+  if (effects.length === 0 && sourceChanges === 0) {
+    return 'Replace this embedded workflow with the current saved source?'
+  }
+  return `Replace this embedded workflow? This will apply ${effects.length} interface change(s) and ${sourceChanges} workflow-local tool source change(s).`
+}
+
+async function updateContextWorkflowFromSource() {
+  const menu = nodeContextMenu.value
+  closeNodeContextMenu()
+  const workflowId = owningWorkflowId()
+  if (!menu?.hasWorkspaceSource || !workflowId || isNestedWorkflowEditor) return
+  if (uiStore.canvasHasUnsavedChanges(canvasId)) {
+    clipboardToast?.add({
+      severity: 'warn',
+      summary: 'Save the workflow first',
+      detail: 'Source updates require a clean saved parent workflow.',
+      life: 5000,
+    })
+    return
+  }
+  try {
+    const fresh = await canvasPersistence.ensureFreshForCriticalOperation()
+    if (!fresh) return
+    const { data: parent } = await api.get<{ artifact_hash: string }>(
+      `/api/v1/workflows/${workflowUrl(workflowId)}`,
+    )
+    const preview = await previewWorkflowSourceUpdate(workflowId, {
+      workflow_path: [menu.nodeId],
+      expected_artifact_hash: parent.artifact_hash,
+    })
+    if (!window.confirm(describeSourceEffects(preview))) return
+    const result = await applyWorkflowSourceOperation(workflowId, {
+      token: preview.token,
+      confirm_effects: preview.destructive_effects ?? [],
+    })
+    const revision = canvasPersistence.acceptedDraftRevision.value
+    if (revision === null) throw new Error('The parent workflow draft is unavailable')
+    const accepted = await resetWorkflowDraftToSaved(workflowId, revision)
+    initializeCanvasPersistenceFromDraft(accepted)
+    await applyGraphState(accepted.graph, [], false, false)
+    clipboardToast?.add({
+      severity: 'success',
+      summary: 'Workflow updated from source',
+      detail: `Saved artifact ${result.artifact_hash}`,
+      life: 4000,
+    })
+  } catch (error: unknown) {
+    clipboardToast?.add({
+      severity: 'error',
+      summary: 'Update from source failed',
+      detail: error instanceof Error ? error.message : String(error),
+      life: 6000,
+    })
+  }
+}
+
+function detachContextWorkflowSource() {
+  const menu = nodeContextMenu.value
+  closeNodeContextMenu()
+  if (!menu?.hasWorkspaceSource || isLocked.value) return
+  const node = getNodes.value.find((candidate: any) => candidate.id === menu.nodeId)
+  if (!node?.data || node.data.source?.kind !== 'workspace') return
+  node.data.source = null
+  emitGraphChanged()
 }
 
 function onNodeDoubleClick(payload: any) {
   const node = payload.node
-  if (!node?.data?.sub_workflow) return
-  openSubWorkflow(node.id)
+  if (!node?.data?.workflow) return
+  openNestedWorkflow(node.id)
 }
 
-function runContextSubWorkflowAction() {
+function runContextNestedWorkflowAction() {
   const menu = nodeContextMenu.value
   if (!menu) return
-  if (menu.canOpenSubWorkflow) {
-    openSubWorkflow(menu.nodeId)
+  if (menu.canOpenNestedWorkflow) {
+    openNestedWorkflow(menu.nodeId)
   } else {
-    createSelectedSubWorkflow()
+    createSelectedNestedWorkflow()
   }
   closeNodeContextMenu()
 }
@@ -1463,19 +1595,31 @@ if (clipboardToast === null) {
   }
 }
 
-async function loadSubWorkflowSessionDraft() {
-  const sessionId = props.subWorkflowSessionId
+async function loadNestedWorkflowSessionDraft() {
+  const sessionId = props.nestedWorkflowSessionId
   if (!sessionId) return
-  const session = subWorkflowSessionsStore.sessionById(sessionId)
-  await applyGraphState(session?.draft ?? { nodes: [], edges: [] })
+  const session = nestedWorkflowSessionsStore.sessionById(sessionId)
+  if (!session) return
+  await applyGraphState(session.draft)
   if (isCanvasUnmounted) return
   hasLoadedGraphState.value = true
 }
 
+async function handleReplaceRootGraphEvent(event: CustomEvent<{
+  workflowId?: string
+  draft?: WorkflowDraftResponse
+}>) {
+  if (isNestedWorkflowEditor) return
+  const detail = event.detail
+  if (!detail?.draft || detail.workflowId !== owningWorkflowId()) return
+  initializeCanvasPersistenceFromDraft(detail.draft)
+  await applyGraphState(detail.draft.graph, [], false, false)
+}
+
 onMounted(async () => {
   window.addEventListener(
-    'bioimageflow:apply-sub-workflow-session',
-    handleApplySubWorkflowSessionEvent as EventListener,
+    'bioimageflow:apply-nested-workflow-session',
+    handleApplyNestedWorkflowSessionEvent as EventListener,
   )
   window.addEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
   window.addEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
@@ -1488,12 +1632,16 @@ onMounted(async () => {
     'bioimageflow:restore-saved-canvas',
     handleRestoreSavedCanvasEvent as EventListener,
   )
+  window.addEventListener(
+    'bioimageflow:replace-root-graph',
+    handleReplaceRootGraphEvent as unknown as EventListener,
+  )
   if (toolRegistryStore.tools.length === 0) {
     await toolRegistryStore.fetchTools()
   }
   if (isCanvasUnmounted) return
-  if (isSubWorkflowEditor) {
-    await loadSubWorkflowSessionDraft()
+  if (isNestedWorkflowEditor) {
+    await loadNestedWorkflowSessionDraft()
     return
   }
   const initialGraph = initialGraphFromDockviewParams()
@@ -1523,8 +1671,12 @@ onBeforeUnmount(() => {
   canvasCommands.dispose()
   uiStore.releaseCanvasPresentation(canvasId)
   window.removeEventListener(
-    'bioimageflow:apply-sub-workflow-session',
-    handleApplySubWorkflowSessionEvent as EventListener,
+    'bioimageflow:apply-nested-workflow-session',
+    handleApplyNestedWorkflowSessionEvent as EventListener,
+  )
+  window.removeEventListener(
+    'bioimageflow:replace-root-graph',
+    handleReplaceRootGraphEvent as unknown as EventListener,
   )
   window.removeEventListener('bioimageflow:tool-renamed', handleToolRenamedEvent)
   window.removeEventListener('bioimageflow:tool-deleted', handleToolDeletedEvent)
@@ -1582,7 +1734,6 @@ onNodeDragStop(({ nodes }) => {
  * have this constraint — each positional index is its own pin.
  */
 function clearExistingIncomingEdge(nodeId: string, targetHandle: string) {
-  if (targetHandle.startsWith('__positional_')) return
   const existing = getEdges.value.filter(
     (e: any) => e.target === nodeId && e.targetHandle === targetHandle,
   )
@@ -1596,7 +1747,7 @@ onConnect((connection) => {
   const targetHandle = connection.targetHandle ?? ''
 
   // Reject positional edges into source DataFrameTools (accepts_upstream=false).
-  if (targetHandle.startsWith('__positional_')) {
+  if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
     const targetNode = getNodes.value.find((n: any) => n.id === connection.target)
     const targetTool: ToolMetadata | undefined =
       (targetNode?.data?.tool as ToolMetadata | undefined) ??
@@ -1629,7 +1780,7 @@ onConnect((connection) => {
     target: connection.target,
     sourceHandle: connection.sourceHandle,
     targetHandle,
-    type: edgeIsHeader ? 'positional' : 'column_ref',
+    type: edgeIsHeader ? 'dataframe' : 'column',
   }
   addEdges([newEdge])
 
@@ -1650,17 +1801,19 @@ onConnect((connection) => {
     // input. The wire schema says `parameters` carries non-connected fields
     // only, and a stray value here (notably ``null``) would otherwise ride
     // along into the lib payload and override the upstream binding.
-    if (!edgeIsHeader && targetNode.data.parameters
-        && targetHandle in targetNode.data.parameters) {
+    const targetEndpoint = decodeEndpointHandle(targetHandle)
+    const targetParameter = targetEndpoint.kind === 'tool-input' ? targetEndpoint.name : null
+    if (!edgeIsHeader && targetParameter && targetNode.data.parameters
+        && targetParameter in targetNode.data.parameters) {
       const next = { ...targetNode.data.parameters }
-      delete next[targetHandle]
+      delete next[targetParameter]
       targetNode.data.parameters = next
     }
   }
 
   // A new positional edge into a dynamic_outputs node changes its resolved
   // schema (e.g. CrossJoin's column union depends on the upstream tables).
-  if (targetHandle.startsWith('__positional_')) {
+  if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
     refreshIfDynamicOutputs(connection.target)
   }
 
@@ -1740,7 +1893,7 @@ function disconnectEdgeByInput(edgeId: string) {
   const target = edge.target
   cleanupDisconnectedInput(target, targetHandle)
   removeEdges([edgeId])
-  if (targetHandle.startsWith('__positional_')) {
+  if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
     refreshIfDynamicOutputs(target)
   }
   emitGraphChanged()
@@ -1802,20 +1955,22 @@ onEdgeUpdate(({ edge, connection }) => {
     // Mirror the onConnect cleanup: drop any constant for this input so
     // the wire payload carries non-connected fields only.
     const newEdgeIsHeader = isHeaderHandle(newTargetHandle) || isHeaderHandle(newSourceHandle)
-    if (!newEdgeIsHeader && targetNode.data.parameters
-        && newTargetHandle in targetNode.data.parameters) {
+    const newEndpoint = decodeEndpointHandle(newTargetHandle)
+    const newParameter = newEndpoint.kind === 'tool-input' ? newEndpoint.name : null
+    if (!newEdgeIsHeader && newParameter && targetNode.data.parameters
+        && newParameter in targetNode.data.parameters) {
       const next = { ...targetNode.data.parameters }
-      delete next[newTargetHandle]
+      delete next[newParameter]
       targetNode.data.parameters = next
     }
   }
 
   // Refresh schemas on either side of a positional re-route — both the old
   // and the new targets may have dynamic_outputs schemas to recompute.
-  if ((edge.targetHandle ?? '').startsWith('__positional_')) {
+  if (decodeEndpointHandle(edge.targetHandle ?? '').kind === 'dataframe-position') {
     refreshIfDynamicOutputs(edge.target)
   }
-  if (newTargetHandle.startsWith('__positional_')) {
+  if (decodeEndpointHandle(newTargetHandle).kind === 'dataframe-position') {
     refreshIfDynamicOutputs(newTarget)
   }
 
@@ -1835,7 +1990,7 @@ onEdgeUpdateEnd(({ edge }) => {
   const target = edge.target
   removeEdges([edge.id])
   cleanupDisconnectedInput(target, targetHandle)
-  if (targetHandle.startsWith('__positional_')) {
+  if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
     refreshIfDynamicOutputs(target)
   }
   emitGraphChanged()
@@ -1855,7 +2010,7 @@ function cleanupDisconnectedInput(nodeId: string, targetHandle: string) {
   const ci = { ...node.data.connectedInputs }
   delete ci[targetHandle]
 
-  if (targetHandle.startsWith('__positional_')) {
+  if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
     reindexPositionalInputs(node, ci)
   } else {
     node.data.connectedInputs = ci
@@ -1872,23 +2027,25 @@ function reindexPositionalInputs(
 ) {
   // Collect currently connected positional entries, sorted by old index
   const positionalEntries = Object.entries(ci)
-    .filter(([k]) => k.startsWith('__positional_'))
+    .filter(([handle]) => decodeEndpointHandle(handle).kind === 'dataframe-position')
     .sort(([a], [b]) => {
-      const ai = parseInt(a.replace('__positional_', ''), 10)
-      const bi = parseInt(b.replace('__positional_', ''), 10)
+      const left = decodeEndpointHandle(a)
+      const right = decodeEndpointHandle(b)
+      const ai = left.kind === 'dataframe-position' ? left.index : 0
+      const bi = right.kind === 'dataframe-position' ? right.index : 0
       return ai - bi
     })
 
   // Remove all old positional keys
   for (const key of Object.keys(ci)) {
-    if (key.startsWith('__positional_')) {
+    if (decodeEndpointHandle(key).kind === 'dataframe-position') {
       delete ci[key]
     }
   }
 
   // Re-insert with compact indices and update edges
   positionalEntries.forEach(([oldKey, label], newIndex) => {
-    const newKey = `__positional_${newIndex}`
+    const newKey = encodeEndpointHandle({ kind: 'dataframe-position', index: newIndex })
     ci[newKey] = label
 
     if (oldKey !== newKey) {
@@ -1912,9 +2069,18 @@ function reindexPositionalInputs(
  * Determine whether a handle belongs to the header region (DataFrame-level)
  * or the body region (column-level / field-level).
  */
-function isHeaderHandle(handle: string | null | undefined): boolean {
+function isHeaderHandle(handle: string | null | undefined, node?: any): boolean {
   if (!handle) return false
-  return handle.startsWith('__positional_') || handle === '__dataframe_out'
+  const endpoint = decodeEndpointHandle(handle)
+  if (endpoint.kind === 'dataframe-output'
+    || endpoint.kind === 'dataframe-position'
+    || endpoint.kind === 'dataframe-input') return true
+  if (endpoint.kind === 'workflow-input' && node?.type === 'workflow') {
+    return node.data?.workflow?.interface.inputs.some(
+      (input: WorkflowInput) => input.id === endpoint.id && input.kind === 'dataframe',
+    ) ?? false
+  }
+  return false
 }
 
 function pinConnectedBodyInput(
@@ -1924,11 +2090,13 @@ function pinConnectedBodyInput(
 ): void {
   if (!targetHandle || isHeaderHandle(targetHandle) || isHeaderHandle(sourceHandle)) return
   const tool = toolForNode(targetNode)
-  const field = tool?.inputs?.[targetHandle]
+  const endpoint = decodeEndpointHandle(targetHandle)
+  if (endpoint.kind !== 'tool-input') return
+  const field = tool?.inputs?.[endpoint.name]
   if (!field || field.connectable === 'never') return
   targetNode.data.pinnedInputs = {
     ...(targetNode.data.pinnedInputs ?? {}),
-    [targetHandle]: true,
+    [endpoint.name]: true,
   }
 }
 
@@ -1937,44 +2105,53 @@ function toolForNode(node: any): ToolMetadata | undefined {
     ?? toolRegistryStore.getToolByName(node?.data?.toolName)
 }
 
-function isSubWorkflowNode(node: any): boolean {
-  return node?.data?.toolName === '__sub_workflow__' || node?.data?.sub_workflow != null
+function isNestedWorkflowNode(node: any): boolean {
+  return node?.type === 'workflow' && node?.data?.nodeType === 'workflow'
 }
 
-function publishedSchemaType(schema: unknown): string | undefined {
+function exposedSchemaType(schema: unknown): string | undefined {
   if (!schema || typeof schema !== 'object') return undefined
   const type = (schema as { type?: unknown }).type
   return typeof type === 'string' ? type : undefined
 }
 
 function outputTypeForHandle(node: any, handle: string): string | undefined {
+  const endpoint = decodeEndpointHandle(handle)
+  const outputIdentity = endpoint.kind === 'tool-output'
+    ? endpoint.name
+    : endpoint.kind === 'workflow-output' ? endpoint.id : null
+  if (outputIdentity === null) return endpoint.kind === 'dataframe-output' ? 'DataFrame' : undefined
   const tool = toolForNode(node)
-  const sourceOutput = tool?.outputs?.[handle] as { type?: string } | undefined
+  const sourceOutput = tool?.outputs?.[outputIdentity] as { type?: string } | undefined
   let sourceType = sourceOutput?.type
   if (!sourceType && tool?.dynamic_outputs) {
     const resolved = canvasResolvedOutputs[node.id]
     if (resolved?.resolved && resolved.columns) {
-      const col = (resolved.columns as Record<string, any>)[handle]
+      const col = (resolved.columns as Record<string, any>)[outputIdentity]
       sourceType = col?.type
     }
   }
   if (sourceType) return sourceType
-  if (!isSubWorkflowNode(node)) return undefined
-  const published = (node.data?.published_outputs ?? []).find(
-    (item: PublishedOutput) => item.name === handle,
+  if (!isNestedWorkflowNode(node)) return undefined
+  const exposed = node.data.workflow.interface.outputs.find(
+    (item: WorkflowOutput) => item.id === outputIdentity,
   )
-  return publishedSchemaType(published?.schema)
+  return exposedSchemaType(exposed?.schema)
 }
 
 function inputTypeForHandle(node: any, handle: string): string | undefined {
+  const endpoint = decodeEndpointHandle(handle)
+  if (endpoint.kind === 'dataframe-position' || endpoint.kind === 'dataframe-input') {
+    return 'DataFrame'
+  }
   const tool = toolForNode(node)
-  const targetInput = tool?.inputs?.[handle]
+  const targetInput = endpoint.kind === 'tool-input' ? tool?.inputs?.[endpoint.name] : undefined
   if (targetInput?.type) return targetInput.type
-  if (!isSubWorkflowNode(node)) return undefined
-  const published = (node.data?.published_inputs ?? []).find(
-    (item: PublishedInput) => item.name === handle,
+  if (!isNestedWorkflowNode(node)) return undefined
+  const exposed = node.data.workflow.interface.inputs.find(
+    (item: WorkflowInput) => endpoint.kind === 'workflow-input' && item.id === endpoint.id,
   )
-  return publishedSchemaType(published?.schema)
+  return exposedSchemaType(exposed?.schema)
 }
 
 function isValidConnection(connection: {
@@ -1985,15 +2162,15 @@ function isValidConnection(connection: {
 }): boolean {
   // 0. Cross-region rejection: header handles must connect to header,
   //    body handles must connect to body.
-  const sourceIsHeader = isHeaderHandle(connection.sourceHandle)
-  const targetIsHeader = isHeaderHandle(connection.targetHandle)
+  const sourceNode = getNodes.value.find(node => node.id === connection.source)
+  const targetNode = getNodes.value.find(node => node.id === connection.target)
+  const sourceIsHeader = isHeaderHandle(connection.sourceHandle, sourceNode)
+  const targetIsHeader = isHeaderHandle(connection.targetHandle, targetNode)
   if (sourceIsHeader !== targetIsHeader) {
     return false
   }
 
   // 1. Type compatibility check
-  const sourceNode = getNodes.value.find((n: any) => n.id === connection.source)
-  const targetNode = getNodes.value.find((n: any) => n.id === connection.target)
   if (!sourceNode || !targetNode) return false
 
   // Prefer the tool metadata carried on the node itself — the registry may
@@ -2002,15 +2179,16 @@ function isValidConnection(connection: {
   const sourceTool = toolForNode(sourceNode)
   const targetTool = toolForNode(targetNode)
   if (
-    (!sourceTool && !isSubWorkflowNode(sourceNode))
-    || (!targetTool && !isSubWorkflowNode(targetNode))
+    (!sourceTool && !isNestedWorkflowNode(sourceNode))
+    || (!targetTool && !isNestedWorkflowNode(targetNode))
   ) {
     return false
   }
 
   // 1b. Reject positional edges into source DataFrameTools
   const th = connection.targetHandle ?? ''
-  if (th.startsWith('__positional_') && targetTool?.accepts_upstream === false) {
+  if (decodeEndpointHandle(th).kind === 'dataframe-position'
+    && targetTool?.accepts_upstream === false) {
     return false
   }
 
@@ -2166,7 +2344,7 @@ function onAddNode({
     },
   }
 
-  attachPublicationContext(newNode)
+  attachInterfaceContext(newNode)
   addNodes([newNode])
   emitGraphChanged()
   return id
@@ -2190,7 +2368,7 @@ async function onAddWorkflowNode({
     const info = data.info as { display_name?: string; name?: string }
     const existingIds = getNodes.value.map((n: any) => n.id)
     const existingNames = getNodes.value.map((n: any) => n.data?.name ?? '')
-    const id = generateNodeId('__sub_workflow__', existingIds)
+    const id = generateNodeId('workflow', existingIds)
     const name = generateNodeName(
       info.display_name ?? workflowName,
       existingNames,
@@ -2198,26 +2376,29 @@ async function onAddWorkflowNode({
     )
     const newNode = {
       id,
-      type: 'sub_workflow',
+      type: 'workflow',
       position: position ?? { x: 0, y: 0 },
       data: {
+        nodeType: 'workflow',
         name,
-        toolName: '__sub_workflow__',
-        tool: null,
         status: 'unexecuted',
-        parameters: {},
+        resources: {},
         collapsed: false,
         enabled: true,
         connectedInputs: {},
-        pinnedInputs: {},
-        output_templates: {},
-        sub_workflow: graph,
-        published_inputs: graph.published_inputs ?? [],
-        published_outputs: graph.published_outputs ?? [],
-        source_workflow_name: workflowName,
+        pinnedInputs: Object.fromEntries(
+          graph.interface.inputs.map(input => [input.id, true]),
+        ),
+        workflow: graph,
+        bindings: {},
+        source: {
+          kind: 'workspace',
+          workflow_id: workflowName,
+          artifact_hash: data.artifact_hash,
+        },
       },
     }
-    attachPublicationContext(newNode)
+    attachInterfaceContext(newNode)
     addNodes([newNode])
     emitGraphChanged()
   } catch (e: unknown) {
@@ -2243,7 +2424,7 @@ function deleteSelected() {
     const positionalTargets = new Set<string>()
     for (const edge of selectedEdges) {
       cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
-      if ((edge.targetHandle ?? '').startsWith('__positional_')) {
+      if (decodeEndpointHandle(edge.targetHandle ?? '').kind === 'dataframe-position') {
         positionalTargets.add(edge.target)
       }
     }
@@ -2267,7 +2448,7 @@ function deleteSelected() {
   for (const edge of edgesToRemove) {
     if (!selectedNodeIds.has(edge.target)) {
       cleanupDisconnectedInput(edge.target, edge.targetHandle ?? '')
-      if ((edge.targetHandle ?? '').startsWith('__positional_')) {
+      if (decodeEndpointHandle(edge.targetHandle ?? '').kind === 'dataframe-position') {
         survivingPositionalTargets.add(edge.target)
       }
     }
@@ -2296,7 +2477,7 @@ function copySelected() {
     graph,
     selectedIds,
     toolRegistryStore.getToolByName,
-    { sourceWorkflowName: owningWorkflowId() ?? undefined },
+    { sourceWorkflowId: owningWorkflowId() ?? undefined },
   )
   clipboardData.value = payload
   void writeClipboardPayload(payload)
@@ -2360,71 +2541,64 @@ function showPasteSummary(summary: PasteSummary) {
 }
 
 function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
-  const tool = toolRegistryStore.getToolByName(n.tool_name)
-  const pinnedInputs: Record<string, boolean> = {}
-  let output_templates: Record<string, string> = {}
-  if (tool) {
-    for (const [key, field] of Object.entries(tool.inputs)) {
-      if (field.connectable !== 'never') {
-        const isPathType = ['Path', 'ImageFile', 'MaskPath'].includes(field.type)
-        pinnedInputs[key] = isPathType && field.required
-      }
-    }
-    output_templates = reconcileOutputTemplates(tool, n.output_templates ?? {})
-  }
-  return {
-    id: n.id,
-    type: 'tool',
-    position: { x: n.position[0], y: n.position[1] },
-    data: {
-      name: n.name,
-      toolName: n.tool_name,
-      tool: tool ?? null,
-      status: 'unexecuted',
-      parameters: n.parameters,
-      resources: n.resources ?? {},
-      collapsed: n.collapsed ?? false,
-      enabled: n.enabled ?? true,
-      connectedInputs: {},
-      pinnedInputs,
-      output_templates,
-      sub_workflow: n.sub_workflow ?? null,
-      published_inputs: n.published_inputs ?? [],
-      published_outputs: n.published_outputs ?? [],
-      sub_workflow_readonly_reason: n.sub_workflow_readonly_reason ?? null,
-      source_workflow_name: n.source_workflow_name ?? null,
+  const previous = lastAuthoritativeGraph.value
+  const graph = graphStateToVueFlow({
+    schema_version: previous?.schema_version ?? 1,
+    name: previous?.name ?? 'clipboard',
+    display_name: previous?.display_name ?? 'Clipboard',
+    nodes: [n],
+    edges: [],
+    interface: { inputs: [], outputs: [] },
+    config: previous?.config ?? {
+      storage_path: './bif_data',
+      engine: 'wetlands',
+      execution: 'parallel',
     },
-  }
+  }, toolRegistryStore.getToolByName)
+  return graph.nodes[0]
 }
 
-function vueFlowEdgeFromGraphEdge(e: GraphState['edges'][number]) {
-  if (e.type === 'positional') {
+function vueFlowEdgeFromGraphEdge(
+  e: GraphState['edges'][number],
+  graphNodes: Array<{ id: string; type?: string }> = getNodes.value,
+) {
+  if (e.type === 'dataframe') {
     return {
       id: e.id,
       source: e.source_node,
       target: e.target_node,
-      sourceHandle: '__dataframe_out',
-      targetHandle: `__positional_${e.positional_index}`,
-      type: 'positional',
+      sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+      targetHandle: e.target_position == null
+        ? encodeEndpointHandle({ kind: 'workflow-input', id: e.target_input! })
+        : encodeEndpointHandle({ kind: 'dataframe-position', index: e.target_position }),
+      type: 'dataframe',
     }
   }
+  const sourceNode = graphNodes.find(node => node.id === e.source_node)
+  const targetNode = graphNodes.find(node => node.id === e.target_node)
   return {
     id: e.id,
     source: e.source_node,
     target: e.target_node,
-    sourceHandle: e.source_output,
-    targetHandle: e.target_input,
-    type: 'column_ref',
+    sourceHandle: encodeEndpointHandle(sourceNode?.type === 'workflow'
+      ? { kind: 'workflow-output', id: e.source_output }
+      : { kind: 'tool-output', name: e.source_output }),
+    targetHandle: encodeEndpointHandle(targetNode?.type === 'workflow'
+      ? { kind: 'workflow-input', id: e.target_input }
+      : { kind: 'tool-input', name: e.target_input }),
+    type: 'column',
   }
 }
 
 function currentVueFlowState(): CanvasVueFlowState {
-  const publication = currentPublicationContext()
+  const workflowInterface = currentInterfaceContext()
   return {
     nodes: getNodes.value.map((n: any) => ({ ...n })),
     edges: getEdges.value.map((e: any) => ({ ...e })),
-    published_inputs: publication?.published_inputs ?? rootPublishedInputs.value,
-    published_outputs: publication?.published_outputs ?? rootPublishedOutputs.value,
+    interface: {
+      inputs: workflowInterface?.inputs ?? rootWorkflowInputs.value,
+      outputs: workflowInterface?.outputs ?? rootWorkflowOutputs.value,
+    },
   }
 }
 
@@ -2432,14 +2606,16 @@ function canvasHistoryState(
   state: CanvasVueFlowState = currentVueFlowState(),
   authoritativeGraph?: GraphState,
 ): CanvasHistoryState {
-  const context = currentPublicationContext()
+  const context = currentInterfaceContext()
   return {
     nodes: state.nodes,
     edges: authoritativeGraph
-      ? authoritativeGraph.edges.map(vueFlowEdgeFromGraphEdge)
+      ? authoritativeGraph.edges.map(edge => vueFlowEdgeFromGraphEdge(edge))
       : state.edges,
-    published_inputs: context?.published_inputs ?? state.published_inputs ?? [],
-    published_outputs: context?.published_outputs ?? state.published_outputs ?? [],
+    interface: {
+      inputs: context?.inputs ?? state.interface?.inputs ?? [],
+      outputs: context?.outputs ?? state.interface?.outputs ?? [],
+    },
   }
 }
 
@@ -2512,10 +2688,10 @@ async function pasteFromClipboard() {
     return
   }
 
-  const newNodes = attachPublicationContextToNodes(
+  const newNodes = attachInterfaceContextToNodes(
     prepared.nodes.map(vueFlowNodeFromClipboardNode),
   )
-  const newEdges = prepared.edges.map(vueFlowEdgeFromGraphEdge)
+  const newEdges = prepared.edges.map(edge => vueFlowEdgeFromGraphEdge(edge, prepared.nodes))
   populateConnectedInputsForPastedNodes(newNodes, newEdges)
 
   addNodes(newNodes)
@@ -2524,27 +2700,27 @@ async function pasteFromClipboard() {
   emitGraphChanged()
 }
 
-function createSelectedSubWorkflow() {
+function createSelectedNestedWorkflow() {
   if (isLocked.value) return
   const selectedIds = new Set(
     getNodes.value.filter((n: any) => n.selected).map((n: any) => n.id),
   )
   if (selectedIds.size === 0) return
 
-  const id = generateNodeId('__sub_workflow__', getNodes.value.map((n: any) => n.id))
+  const id = generateNodeId('workflow', getNodes.value.map((n: any) => n.id))
   const name = generateNodeName(
-    'SubWorkflow',
+    'NestedWorkflow',
     getNodes.value.map((n: any) => n.data?.name ?? ''),
-    'Sub-workflow',
+    'Workflow',
   )
-  const result = createSubWorkflowFromSelection({
+  const result = groupIntoWorkflow({
     nodes: getNodes.value,
     edges: getEdges.value,
     selectedNodeIds: selectedIds,
-    subWorkflowId: id,
-    subWorkflowName: name,
+    workflowNodeId: id,
+    workflowNodeName: name,
   })
-  attachPublicationContextToNodes(result.nodes as any[])
+  attachInterfaceContextToNodes(result.nodes as any[])
   setNodes(result.nodes as any)
   setEdges(result.edges)
   refreshConnectedInputLabels()
@@ -2552,39 +2728,38 @@ function createSelectedSubWorkflow() {
   emitGraphChanged()
 }
 
-async function openSubWorkflow(nodeId: string) {
+async function openNestedWorkflow(nodeId: string) {
   if (isLocked.value) return null
   const node = getNodes.value.find((n: any) => n.id === nodeId)
-  if (!node?.data?.sub_workflow) return null
+  if (!node?.data?.workflow) return null
   try {
-    const owner = props.subWorkflowSessionId
-      ? { kind: 'nested' as const, session_id: props.subWorkflowSessionId }
+    const owner = props.nestedWorkflowSessionId
+      ? { kind: 'nested' as const, session_id: props.nestedWorkflowSessionId }
       : {
           kind: 'root' as const,
           canvas_id: canvasId,
           workflow_id: owningWorkflowId(),
         }
-    const { session, created } = await subWorkflowSessionsStore.openDurableSessionResult({
+    const { session, created } = await nestedWorkflowSessionsStore.openDurableSessionResult({
       owner,
       parentCanvasId: canvasId,
       parentWorkflowName: owningWorkflowId(),
-      parentSourceWorkflowName: node.data.source_workflow_name ?? null,
+      parentSourceWorkflowName: node.data.source?.kind === 'workspace'
+        ? node.data.source.workflow_id
+        : null,
       parentNodeId: node.id,
       parentNodeName: node.data.name ?? node.id,
-      graph: node.data.sub_workflow,
-      published_inputs: node.data.published_inputs ?? [],
-      published_outputs: node.data.published_outputs ?? [],
-      readonlyReason: node.data.sub_workflow_readonly_reason ?? null,
+      graph: node.data.workflow,
     })
     if (
       isCanvasUnmounted
       || isLocked.value
       || getNodes.value.find(candidate => candidate.id === nodeId) !== node
     ) {
-      if (created) subWorkflowSessionsStore.closeSession(session.id)
+      if (created) nestedWorkflowSessionsStore.closeSession(session.id)
       return null
     }
-    window.dispatchEvent(new CustomEvent('bioimageflow:sub-workflow-session-opened', {
+    window.dispatchEvent(new CustomEvent('bioimageflow:nested-workflow-session-opened', {
       detail: {
         sessionId: session.id,
         parentNodeId: node.id,
@@ -2597,106 +2772,50 @@ async function openSubWorkflow(nodeId: string) {
       kind: 'graph_sync_error',
       detail: error instanceof Error
         ? error.message
-        : 'Failed to open nested workflow snapshot',
+        : 'Failed to open nested-workflow snapshot',
     })
     return null
   }
 }
 
-function stablePublishedInputKey(input: PublishedInput): string {
-  return `${input.internal_node_id}:${input.internal_field}`
-}
-
-function stablePublishedOutputKey(output: PublishedOutput): string {
-  return `${output.internal_node_id}:${output.internal_output}`
-}
-
-function inputRenameMap(
-  previous: PublishedInput[],
-  next: PublishedInput[],
-): Map<string, string | null> {
-  const nextByKey = new Map(next.map((pin) => [stablePublishedInputKey(pin), pin.name]))
-  const result = new Map<string, string | null>()
-  for (const pin of previous) {
-    result.set(pin.name, nextByKey.get(stablePublishedInputKey(pin)) ?? null)
-  }
-  return result
-}
-
-function outputRenameMap(
-  previous: PublishedOutput[],
-  next: PublishedOutput[],
-): Map<string, string | null> {
-  const nextByKey = new Map(next.map((pin) => [stablePublishedOutputKey(pin), pin.name]))
-  const result = new Map<string, string | null>()
-  for (const pin of previous) {
-    result.set(pin.name, nextByKey.get(stablePublishedOutputKey(pin)) ?? null)
-  }
-  return result
-}
-
-function reconcilePublishedParentState(
+function reconcileWorkflowParentState(
   parentNodeId: string,
-  previousInputs: PublishedInput[],
-  previousOutputs: PublishedOutput[],
-  nextInputs: PublishedInput[],
-  nextOutputs: PublishedOutput[],
+  previousInputs: WorkflowInput[],
+  previousOutputs: WorkflowOutput[],
+  nextInputs: WorkflowInput[],
+  nextOutputs: WorkflowOutput[],
 ) {
-  const inputNames = new Set(nextInputs.map((pin) => pin.name))
-  const inputRenames = inputRenameMap(previousInputs, nextInputs)
-  const outputRenames = outputRenameMap(previousOutputs, nextOutputs)
-  const nextEdges: any[] = []
-
-  for (const edge of getEdges.value) {
-    if (edge.target === parentNodeId && inputRenames.has(edge.targetHandle ?? '')) {
-      const nextHandle = inputRenames.get(edge.targetHandle ?? '')
-      if (nextHandle === null) continue
-      nextEdges.push({ ...edge, targetHandle: nextHandle })
-      continue
+  const removedInputs = new Set(
+    previousInputs.filter(input => !nextInputs.some(next => next.id === input.id))
+      .map(input => input.id),
+  )
+  const removedOutputs = new Set(
+    previousOutputs.filter(output => !nextOutputs.some(next => next.id === output.id))
+      .map(output => output.id),
+  )
+  const nextEdges = getEdges.value.filter((edge) => {
+    if (edge.target === parentNodeId && edge.targetHandle) {
+      const target = decodeEndpointHandle(edge.targetHandle)
+      if (target.kind === 'workflow-input' && removedInputs.has(target.id)) return false
     }
-    if (edge.source === parentNodeId && outputRenames.has(edge.sourceHandle ?? '')) {
-      const nextHandle = outputRenames.get(edge.sourceHandle ?? '')
-      if (nextHandle === null) continue
-      nextEdges.push({ ...edge, sourceHandle: nextHandle })
-      continue
+    if (edge.source === parentNodeId && edge.sourceHandle) {
+      const source = decodeEndpointHandle(edge.sourceHandle)
+      if (source.kind === 'workflow-output' && removedOutputs.has(source.id)) return false
     }
-    nextEdges.push(edge)
-  }
+    return true
+  })
   setEdges(nextEdges)
 
   const parentNode = getNodes.value.find((n: any) => n.id === parentNodeId)
   if (!parentNode?.data) return
 
-  const nextParameters: Record<string, unknown> = {}
-  const currentParameters = parentNode.data.parameters ?? {}
-  for (const [key, value] of Object.entries(currentParameters)) {
-    if (inputRenames.has(key)) {
-      const nextName = inputRenames.get(key)
-      if (nextName != null) nextParameters[nextName] = value
-      continue
-    }
-    if (!inputNames.has(key)) {
-      nextParameters[key] = value
-    }
-  }
-  for (const pin of nextInputs) {
-    if (!(pin.name in nextParameters) && pin.default !== null && pin.default !== undefined) {
-      nextParameters[pin.name] = pin.default
-    }
-  }
-  parentNode.data.parameters = nextParameters
-
-  const nextPinnedInputs: Record<string, boolean> = {}
-  const currentPinnedInputs = parentNode.data.pinnedInputs ?? {}
-  for (const pin of nextInputs) {
-    const previous = previousInputs.find(
-      (candidate) => stablePublishedInputKey(candidate) === stablePublishedInputKey(pin),
-    )
-    nextPinnedInputs[pin.name] = previous
-      ? currentPinnedInputs[previous.name] !== false
-      : true
-  }
-  parentNode.data.pinnedInputs = nextPinnedInputs
+  parentNode.data.bindings = Object.fromEntries(
+    Object.entries(parentNode.data.bindings ?? {})
+      .filter(([id]) => !removedInputs.has(id)),
+  )
+  parentNode.data.pinnedInputs = Object.fromEntries(
+    nextInputs.map(input => [input.id, parentNode.data.pinnedInputs?.[input.id] !== false]),
+  )
 
   const connectedInputs: Record<string, string> = {}
   for (const edge of nextEdges) {
@@ -2710,47 +2829,27 @@ function reconcilePublishedParentState(
   parentNode.data.connectedInputs = connectedInputs
 }
 
-function applySubWorkflowDraft(
+function applyNestedWorkflowDraft(
   parentNodeId: string,
   graph: GraphState,
-  publishedInterface: {
-    published_inputs?: PublishedInput[]
-    published_outputs?: PublishedOutput[]
-  } = {},
 ): boolean {
   if (isLocked.value) return false
   const node = getNodes.value.find((n: any) => n.id === parentNodeId)
   if (!node?.data) return false
   const parentWasExecuted = canvasStatusProjection.statusForNode(parentNodeId)?.status
     === 'executed'
-  const previousInputs = deepClone(node.data.published_inputs ?? []) as PublishedInput[]
-  const previousOutputs = deepClone(node.data.published_outputs ?? []) as PublishedOutput[]
-  const nextInputs = deepClone(
-    graph.published_inputs
-      ?? publishedInterface.published_inputs
-      ?? node.data.published_inputs
-      ?? [],
-  ) as PublishedInput[]
-  const nextOutputs = deepClone(
-    graph.published_outputs
-      ?? publishedInterface.published_outputs
-      ?? node.data.published_outputs
-      ?? [],
-  ) as PublishedOutput[]
-  reconcilePublishedParentState(
+  const previousInputs = deepClone(node.data.workflow.interface.inputs) as WorkflowInput[]
+  const previousOutputs = deepClone(node.data.workflow.interface.outputs) as WorkflowOutput[]
+  const nextInputs = deepClone(graph.interface.inputs)
+  const nextOutputs = deepClone(graph.interface.outputs)
+  reconcileWorkflowParentState(
     parentNodeId,
     previousInputs,
     previousOutputs,
     nextInputs,
     nextOutputs,
   )
-  node.data.sub_workflow = deepClone({
-    ...graph,
-    published_inputs: nextInputs,
-    published_outputs: nextOutputs,
-  })
-  node.data.published_inputs = nextInputs
-  node.data.published_outputs = nextOutputs
+  node.data.workflow = deepClone(graph)
   canvasStatusProjection.stageCurrentSemanticStatuses()
   if (parentWasExecuted) {
     canvasStatusProjection.stageSemanticStatus(parentNodeId, {
@@ -2764,32 +2863,32 @@ function applySubWorkflowDraft(
   return true
 }
 
-async function saveSubWorkflowSession(): Promise<void> {
+async function saveNestedWorkflowSession(): Promise<void> {
   if (isLocked.value) return
-  const sessionId = props.subWorkflowSessionId
+  const sessionId = props.nestedWorkflowSessionId
   if (!sessionId) return
-  const session = subWorkflowSessionsStore.sessionById(sessionId)
+  const session = nestedWorkflowSessionsStore.sessionById(sessionId)
   if (!session) return
   try {
     const accepted = await flushNow()
     if (!accepted) return
     if (
       isCanvasUnmounted
-      || subWorkflowSessionsStore.sessionById(sessionId) !== session
+      || nestedWorkflowSessionsStore.sessionById(sessionId) !== session
     ) return
-    const outcome: { result: SubWorkflowParentApplyResult } = {
+    const outcome: { result: NestedWorkflowParentApplyResult } = {
       result: {
         status: 'conflict',
         reason: 'parent_missing',
       },
     }
-    window.dispatchEvent(new CustomEvent('bioimageflow:apply-sub-workflow-session', {
+    window.dispatchEvent(new CustomEvent('bioimageflow:apply-nested-workflow-session', {
       detail: {
         sessionId,
         parentCanvasId: session.parentCanvasId,
         parentNodeId: session.parentNodeId,
         graph: accepted.graph,
-        complete: (nextResult: SubWorkflowParentApplyResult) => {
+        complete: (nextResult: NestedWorkflowParentApplyResult) => {
           outcome.result = nextResult
         },
       },
@@ -2797,17 +2896,17 @@ async function saveSubWorkflowSession(): Promise<void> {
     const result = outcome.result
     if (result.status !== 'applied') {
       if (result.status === 'conflict') {
-        subWorkflowSessionsStore.markParentApplyConflict(sessionId, result.reason)
+        nestedWorkflowSessionsStore.markParentApplyConflict(sessionId, result.reason)
         uiStore.markCanvasDirty(canvasId)
       }
       reportError({
         kind: 'graph_sync_error',
-        detail: subWorkflowParentApplyError(result),
+        detail: nestedWorkflowParentApplyError(result),
         alwaysToast: true,
       })
       return
     }
-    subWorkflowSessionsStore.markSaved(
+    nestedWorkflowSessionsStore.markSaved(
       sessionId,
       accepted.graph,
       accepted.snapshotRevision,
@@ -2819,45 +2918,41 @@ async function saveSubWorkflowSession(): Promise<void> {
       kind: 'graph_sync_error',
       detail: error instanceof Error
         ? error.message
-        : 'Failed to save nested workflow snapshot',
+        : 'Failed to save nested-workflow snapshot',
     })
   }
 }
 
-function subWorkflowParentApplyError(result: Exclude<
-  SubWorkflowParentApplyResult,
+function nestedWorkflowParentApplyError(result: Exclude<
+  NestedWorkflowParentApplyResult,
   { status: 'applied' }
 >): string {
   if (result.status === 'rejected') {
-    return 'Cannot save nested workflow while execution is active.'
+    return 'Cannot save nested-workflow while execution is active.'
   }
   if (result.reason === 'parent_changed') {
-    return 'Cannot save nested workflow because its parent node changed after this editor was opened.'
+    return 'Cannot save nested-workflow because its parent node changed after this editor was opened.'
   }
-  return 'Cannot save nested workflow because its parent is no longer available.'
+  return 'Cannot save nested-workflow because its parent is no longer available.'
 }
 
-function currentSubWorkflowDocument(node: any): GraphState | null {
-  const graph = node?.data?.sub_workflow
+function currentNestedWorkflowDocument(node: any): GraphState | null {
+  const graph = node?.data?.workflow
   if (
     !graph
     || typeof graph !== 'object'
     || !Array.isArray(graph.nodes)
     || !Array.isArray(graph.edges)
   ) return null
-  return deepClone({
-    ...graph,
-    published_inputs: node.data.published_inputs ?? graph.published_inputs ?? [],
-    published_outputs: node.data.published_outputs ?? graph.published_outputs ?? [],
-  }) as GraphState
+  return deepClone(graph)
 }
 
-function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
+function handleApplyNestedWorkflowSessionEvent(event: CustomEvent<{
   sessionId?: string
   parentCanvasId?: string
   parentNodeId?: string
-  complete?: (result: SubWorkflowParentApplyResult) => void
-} & Partial<SubWorkflowApplyPayload>>) {
+  complete?: (result: NestedWorkflowParentApplyResult) => void
+} & Partial<NestedWorkflowApplyPayload>>) {
   const detail = event.detail
   if (
     !detail?.sessionId
@@ -2865,7 +2960,7 @@ function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
     || !detail.parentNodeId
     || !detail.graph
   ) return
-  const session = subWorkflowSessionsStore.sessionById(detail.sessionId)
+  const session = nestedWorkflowSessionsStore.sessionById(detail.sessionId)
   if (
     !session
     || session.parentCanvasId !== canvasId
@@ -2876,7 +2971,7 @@ function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
     detail.complete?.({ status: 'conflict', reason: 'parent_missing' })
     return
   }
-  const currentDocument = currentSubWorkflowDocument(parentNode)
+  const currentDocument = currentNestedWorkflowDocument(parentNode)
   if (
     currentDocument === null
     || !graphDocumentsEqual(currentDocument, session.savedSnapshot)
@@ -2884,10 +2979,7 @@ function handleApplySubWorkflowSessionEvent(event: CustomEvent<{
     detail.complete?.({ status: 'conflict', reason: 'parent_changed' })
     return
   }
-  const applied = applySubWorkflowDraft(detail.parentNodeId, detail.graph, {
-    published_inputs: detail.published_inputs,
-    published_outputs: detail.published_outputs,
-  })
+  const applied = applyNestedWorkflowDraft(detail.parentNodeId, detail.graph)
   detail.complete?.(applied
     ? { status: 'applied' }
     : { status: 'rejected', reason: 'locked' })
@@ -2903,7 +2995,7 @@ function historyNodesWithCurrentToolRuntime(nodes: any[]): any[] {
   const currentById = new Map(getNodes.value.map((node: any) => [node.id, node]))
   return nodes.map((node) => {
     const toolName = node.data?.toolName
-    if (typeof toolName !== 'string' || toolName === '__sub_workflow__') return node
+    if (node.type !== 'tool' || typeof toolName !== 'string') return node
 
     const tool = toolRegistryStore.getToolByName(toolName) ?? null
     const current = currentById.get(node.id)
@@ -2933,15 +3025,15 @@ function applyHistoryState(state: CanvasHistoryState) {
     setNodes(historyNodesWithCurrentToolRuntime(state.nodes))
     setEdges(state.edges)
     refreshConnectedInputLabels()
-    if (!replacePublishedInterface(state.published_inputs, state.published_outputs)) return
+    if (!replaceWorkflowInterface(state.interface.inputs, state.interface.outputs)) return
     const currentState = currentVueFlowState()
-    if (isSubWorkflowEditor && props.subWorkflowSessionId) {
+    if (isNestedWorkflowEditor && props.nestedWorkflowSessionId) {
       syncGraph(currentState)
       const graph = rememberAuthoritativeGraph(
         serializeGraph(currentState) as GraphState,
       )
-      subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
-      refreshPublicationContextOnNodes()
+      nestedWorkflowSessionsStore.updateDraft(props.nestedWorkflowSessionId, graph)
+      refreshInterfaceContextOnNodes()
       uiStore.markCanvasDirty(canvasId)
     } else {
       markDirtyAndAutoSave(currentState)
@@ -2989,8 +3081,8 @@ function handleEditCommandEvent(event: CustomEvent<{ command?: string }>) {
     case 'select-all':
       selectAll()
       break
-    case 'create-sub-workflow':
-      createSelectedSubWorkflow()
+    case 'group-into-workflow':
+      createSelectedNestedWorkflow()
       break
   }
 }
@@ -3027,8 +3119,8 @@ function handleKeydown(event: KeyboardEvent) {
   if (meta && event.key === 's') {
     event.preventDefault()
     if (locked) return
-    if (isSubWorkflowEditor) {
-      void saveSubWorkflowSession()
+    if (isNestedWorkflowEditor) {
+      void saveNestedWorkflowSession()
     }
     return
   }
@@ -3140,179 +3232,181 @@ function setOutputTemplate(
   return true
 }
 
-function publicationRejected(
-  reason: CanvasPublicationRejectionReason,
+function workflowInterfaceRejected(
+  reason: CanvasInterfaceRejectionReason,
   name?: string,
-): CanvasPublicationCommandResult {
+): CanvasInterfaceCommandResult {
   return name === undefined
     ? { status: 'rejected', reason }
     : { status: 'rejected', reason, name }
 }
 
-function emitPublicationChanged(): void {
+function emitInterfaceChanged(): void {
   const state = currentVueFlowState()
   const graph = graphWithAuthoritativeEdges(state)
   emitGraphChanged({
     state: {
       ...state,
-      edges: graph.edges.map(vueFlowEdgeFromGraphEdge),
+      edges: graph.edges.map(edge => vueFlowEdgeFromGraphEdge(edge)),
     },
   })
 }
 
-function publishedInputIndex(
-  context: PublicationContext,
+function workflowInputIndex(
+  context: InterfaceContext,
   nodeId: string,
   input: string,
 ): number {
-  return context.published_inputs.findIndex((item) => (
-    item.internal_node_id === nodeId && item.internal_field === input
-  ))
+  return context.inputs.findIndex(item => item.targets.some(target => (
+    target.node === nodeId
+    && ((target.port.kind === 'field' && target.port.name === input)
+      || (target.port.kind === 'workflow' && target.port.id === input))
+  )))
 }
 
-function publishedOutputIndex(
-  context: PublicationContext,
+function workflowOutputIndex(
+  context: InterfaceContext,
   nodeId: string,
   output: string,
 ): number {
-  return context.published_outputs.findIndex((item) => (
-    item.internal_node_id === nodeId && item.internal_output === output
+  return context.outputs.findIndex(item => (
+    item.source.node === nodeId && item.source.column === output
   ))
 }
 
-function publishedNameIsUsed(
-  context: PublicationContext,
+function exposedNameIsUsed(
+  context: InterfaceContext,
   name: string,
   except?: { collection: 'input' | 'output'; index: number },
 ): boolean {
-  return context.published_inputs.some((item, index) => (
+  return context.inputs.some((item, index) => (
     !(except?.collection === 'input' && except.index === index) && item.name === name
-  )) || context.published_outputs.some((item, index) => (
+  )) || context.outputs.some((item, index) => (
     !(except?.collection === 'output' && except.index === index) && item.name === name
   ))
 }
 
-function togglePublishedInput(
+function toggleWorkflowInput(
   nodeId: string,
   input: string,
-): CanvasPublicationCommandResult {
-  if (isLocked.value) return publicationRejected('locked')
+): CanvasInterfaceCommandResult {
+  if (isLocked.value) return workflowInterfaceRejected('locked')
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
-  if (!node?.data) return publicationRejected('not_found')
-  const context = currentPublicationContext()
-  if (!context) return publicationRejected('unavailable')
-  const existingIndex = publishedInputIndex(context, nodeId, input)
+  if (!node?.data) return workflowInterfaceRejected('not_found')
+  const context = currentInterfaceContext()
+  if (!context) return workflowInterfaceRejected('unavailable')
+  const existingIndex = workflowInputIndex(context, nodeId, input)
   if (existingIndex >= 0) {
-    const nextInputs = context.published_inputs.filter(
+    const nextInputs = context.inputs.filter(
       (_item, index) => index !== existingIndex,
     )
-    if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
-    emitPublicationChanged()
+    if (!replaceWorkflowInputs(nextInputs)) return workflowInterfaceRejected('unavailable')
+    emitInterfaceChanged()
     return { status: 'changed' }
   }
 
   const field = toolForNode(node)?.inputs?.[input]
-  if (!field) return publicationRejected('not_found')
-  if (field.connectable === 'never') return publicationRejected('not_publishable')
+  if (!field) return workflowInterfaceRejected('not_found')
+  if (field.connectable === 'never') return workflowInterfaceRejected('not_exposable')
   const name = `${nodeId}.${input}`
-  if (publishedNameIsUsed(context, name)) {
-    return publicationRejected('duplicate_name', name)
+  if (exposedNameIsUsed(context, name)) {
+    return workflowInterfaceRejected('duplicate_name', name)
   }
-  const nextInputs: PublishedInput[] = [...context.published_inputs, {
+  const nextInputs: WorkflowInput[] = [...context.inputs, {
+    id: `input-${crypto.randomUUID()}`,
     name,
-    internal_node_id: nodeId,
-    internal_field: input,
-    kind: 'input',
+    kind: 'field',
     schema: deepClone(field),
-    default: node.data.parameters?.[input] ?? field.default ?? null,
+    default: null,
+    targets: [{ node: nodeId, port: { kind: 'field', name: input } }],
   }]
-  if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
-  emitPublicationChanged()
+  if (!replaceWorkflowInputs(nextInputs)) return workflowInterfaceRejected('unavailable')
+  emitInterfaceChanged()
   return { status: 'changed' }
 }
 
-function togglePublishedOutput(
+function toggleWorkflowOutput(
   nodeId: string,
   output: string,
-): CanvasPublicationCommandResult {
-  if (isLocked.value) return publicationRejected('locked')
+): CanvasInterfaceCommandResult {
+  if (isLocked.value) return workflowInterfaceRejected('locked')
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
-  if (!node?.data) return publicationRejected('not_found')
-  const context = currentPublicationContext()
-  if (!context) return publicationRejected('unavailable')
-  const existingIndex = publishedOutputIndex(context, nodeId, output)
+  if (!node?.data) return workflowInterfaceRejected('not_found')
+  const context = currentInterfaceContext()
+  if (!context) return workflowInterfaceRejected('unavailable')
+  const existingIndex = workflowOutputIndex(context, nodeId, output)
   if (existingIndex >= 0) {
-    const nextOutputs = context.published_outputs.filter(
+    const nextOutputs = context.outputs.filter(
       (_item, index) => index !== existingIndex,
     )
-    if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
-    emitPublicationChanged()
+    if (!replaceWorkflowOutputs(nextOutputs)) return workflowInterfaceRejected('unavailable')
+    emitInterfaceChanged()
     return { status: 'changed' }
   }
 
   const field = toolForNode(node)?.outputs?.[output]
-  if (!field) return publicationRejected('not_found')
+  if (!field) return workflowInterfaceRejected('not_found')
   const name = `${nodeId}.${output}`
-  if (publishedNameIsUsed(context, name)) {
-    return publicationRejected('duplicate_name', name)
+  if (exposedNameIsUsed(context, name)) {
+    return workflowInterfaceRejected('duplicate_name', name)
   }
   const schema: Record<string, unknown> = isRecord(field) ? deepClone(field) : {}
-  const nextOutputs: PublishedOutput[] = [...context.published_outputs, {
+  const nextOutputs: WorkflowOutput[] = [...context.outputs, {
+    id: `output-${crypto.randomUUID()}`,
     name,
-    internal_node_id: nodeId,
-    internal_output: output,
     schema,
+    source: { node: nodeId, column: output },
   }]
-  if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
-  emitPublicationChanged()
+  if (!replaceWorkflowOutputs(nextOutputs)) return workflowInterfaceRejected('unavailable')
+  emitInterfaceChanged()
   return { status: 'changed' }
 }
 
-function renamePublishedInput(
+function renameWorkflowInput(
   nodeId: string,
   input: string,
   name: string,
-): CanvasPublicationCommandResult {
-  if (isLocked.value) return publicationRejected('locked')
-  const context = currentPublicationContext()
-  if (!context) return publicationRejected('unavailable')
-  const index = publishedInputIndex(context, nodeId, input)
-  if (index < 0) return publicationRejected('not_found')
+): CanvasInterfaceCommandResult {
+  if (isLocked.value) return workflowInterfaceRejected('locked')
+  const context = currentInterfaceContext()
+  if (!context) return workflowInterfaceRejected('unavailable')
+  const index = workflowInputIndex(context, nodeId, input)
+  if (index < 0) return workflowInterfaceRejected('not_found')
   const nextName = name.trim()
-  if (!nextName) return publicationRejected('empty_name')
-  if (context.published_inputs[index].name === nextName) return { status: 'unchanged' }
-  if (publishedNameIsUsed(context, nextName, { collection: 'input', index })) {
-    return publicationRejected('duplicate_name', nextName)
+  if (!nextName) return workflowInterfaceRejected('empty_name')
+  if (context.inputs[index].name === nextName) return { status: 'unchanged' }
+  if (exposedNameIsUsed(context, nextName, { collection: 'input', index })) {
+    return workflowInterfaceRejected('duplicate_name', nextName)
   }
-  const nextInputs = context.published_inputs.map((item, itemIndex) => (
+  const nextInputs = context.inputs.map((item, itemIndex) => (
     itemIndex === index ? { ...item, name: nextName } : item
   ))
-  if (!replacePublishedInputs(nextInputs)) return publicationRejected('unavailable')
-  emitPublicationChanged()
+  if (!replaceWorkflowInputs(nextInputs)) return workflowInterfaceRejected('unavailable')
+  emitInterfaceChanged()
   return { status: 'changed' }
 }
 
-function renamePublishedOutput(
+function renameWorkflowOutput(
   nodeId: string,
   output: string,
   name: string,
-): CanvasPublicationCommandResult {
-  if (isLocked.value) return publicationRejected('locked')
-  const context = currentPublicationContext()
-  if (!context) return publicationRejected('unavailable')
-  const index = publishedOutputIndex(context, nodeId, output)
-  if (index < 0) return publicationRejected('not_found')
+): CanvasInterfaceCommandResult {
+  if (isLocked.value) return workflowInterfaceRejected('locked')
+  const context = currentInterfaceContext()
+  if (!context) return workflowInterfaceRejected('unavailable')
+  const index = workflowOutputIndex(context, nodeId, output)
+  if (index < 0) return workflowInterfaceRejected('not_found')
   const nextName = name.trim()
-  if (!nextName) return publicationRejected('empty_name')
-  if (context.published_outputs[index].name === nextName) return { status: 'unchanged' }
-  if (publishedNameIsUsed(context, nextName, { collection: 'output', index })) {
-    return publicationRejected('duplicate_name', nextName)
+  if (!nextName) return workflowInterfaceRejected('empty_name')
+  if (context.outputs[index].name === nextName) return { status: 'unchanged' }
+  if (exposedNameIsUsed(context, nextName, { collection: 'output', index })) {
+    return workflowInterfaceRejected('duplicate_name', nextName)
   }
-  const nextOutputs = context.published_outputs.map((item, itemIndex) => (
+  const nextOutputs = context.outputs.map((item, itemIndex) => (
     itemIndex === index ? { ...item, name: nextName } : item
   ))
-  if (!replacePublishedOutputs(nextOutputs)) return publicationRejected('unavailable')
-  emitPublicationChanged()
+  if (!replaceWorkflowOutputs(nextOutputs)) return workflowInterfaceRejected('unavailable')
+  emitInterfaceChanged()
   return { status: 'changed' }
 }
 
@@ -3350,16 +3444,16 @@ function emitGraphChanged(options: GraphChangeOptions = {}) {
   const authoritativeGraph = options.authoritativeGraph
     ? rememberAuthoritativeGraph(options.authoritativeGraph)
     : null
-  const publishedState = authoritativeGraph
+  const exposedState = authoritativeGraph
     ? {
         ...state,
-        edges: authoritativeGraph.edges.map(vueFlowEdgeFromGraphEdge),
+        edges: authoritativeGraph.edges.map(edge => vueFlowEdgeFromGraphEdge(edge)),
       }
     : state
-  const historyState = canvasHistoryState(publishedState)
+  const historyState = canvasHistoryState(exposedState)
   undoRedo.push(historyState)
   if (!options.statusesAlreadyStaged) stageGraphValidation()
-  if (isSubWorkflowEditor && props.subWorkflowSessionId) {
+  if (isNestedWorkflowEditor && props.nestedWorkflowSessionId) {
     if (authoritativeGraph) {
       syncGraphState(authoritativeGraph)
     } else {
@@ -3368,14 +3462,14 @@ function emitGraphChanged(options: GraphChangeOptions = {}) {
     const graph = authoritativeGraph ?? rememberAuthoritativeGraph(
       serializeGraph(state) as GraphState,
     )
-    subWorkflowSessionsStore.updateDraft(props.subWorkflowSessionId, graph)
-    refreshPublicationContextOnNodes()
+    nestedWorkflowSessionsStore.updateDraft(props.nestedWorkflowSessionId, graph)
+    refreshInterfaceContextOnNodes()
     uiStore.markCanvasDirty(canvasId)
-    emit('graph-changed', publishedState)
+    emit('graph-changed', exposedState)
     return
   }
   markDirtyAndAutoSave(state, authoritativeGraph ?? undefined)
-  emit('graph-changed', publishedState)
+  emit('graph-changed', exposedState)
 }
 
 // Expose for testing
@@ -3387,10 +3481,10 @@ defineExpose({
   copySelected,
   pasteFromClipboard,
   selectAll,
-  createSelectedSubWorkflow,
-  openSubWorkflow,
-  applySubWorkflowDraft,
-  saveSubWorkflowSession,
+  createSelectedNestedWorkflow,
+  openNestedWorkflow,
+  applyNestedWorkflowDraft,
+  saveNestedWorkflowSession,
   isValidConnection,
   clipboardData,
   projectedStatuses,
@@ -3426,9 +3520,9 @@ defineExpose({
       class="canvas-persistence-feedback-host"
       :state="canvasPersistenceFeedbackState"
       :issue="canvasPersistenceFeedbackIssue"
-      :conflict-action-label="isSubWorkflowEditor ? 'Keep my changes' : undefined"
-      :conflict-secondary-action-label="isSubWorkflowEditor ? 'Use latest snapshot' : null"
-      :conflict-reopen-label="isSubWorkflowEditor ? 'Resolve nested save conflict' : null"
+      :conflict-action-label="isNestedWorkflowEditor ? 'Keep my changes' : undefined"
+      :conflict-secondary-action-label="isNestedWorkflowEditor ? 'Use latest snapshot' : null"
+      :conflict-reopen-label="isNestedWorkflowEditor ? 'Resolve nested save conflict' : null"
       :conflict-actions-disabled="nestedConflictResolution !== null"
       @retry="retryCanvasPersistence"
       @resolve-conflict="resolveCanvasPersistenceConflict"
@@ -3514,11 +3608,15 @@ defineExpose({
       :node-id="nodeContextMenu.nodeId"
       :position="nodeContextMenu.position"
       :enabled="nodeContextMenu.enabled"
-      :can-open-sub-workflow="nodeContextMenu.canOpenSubWorkflow"
+      :can-open-nested-workflow="nodeContextMenu.canOpenNestedWorkflow"
+      :has-workspace-source="nodeContextMenu.hasWorkspaceSource"
       @rename="renameContextNode"
       @enable-toggle="toggleContextNodeEnabled"
-      @create-sub-workflow="runContextSubWorkflowAction"
-      @open-sub-workflow="runContextSubWorkflowAction"
+      @group-into-workflow="runContextNestedWorkflowAction"
+      @open-workflow="runContextNestedWorkflowAction"
+      @open-source-workflow="openContextSourceWorkflow"
+      @update-from-source="updateContextWorkflowFromSource"
+      @detach-source="detachContextWorkflowSource"
       @delete="deleteContextNode"
       @close="closeNodeContextMenu"
     />

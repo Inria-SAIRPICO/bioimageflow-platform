@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { makeGraph } from '@/test-utils/graphFixtures'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -15,8 +16,6 @@ import {
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
 import { deferred } from '@/test-utils/asyncFixtures'
-import { makeGraph } from '@/test-utils/graphFixtures'
-
 const EXECUTION_CONTEXT = {
   execution_id: 'exec-test',
   workflow_id: 'wf_a',
@@ -194,7 +193,7 @@ describe('execution store', () => {
     execution.dismissEnvironmentRecovery()
     expect(execution.isEnvironmentRecoveryDialogVisible).toBe(false)
 
-    await execution.run({ nodes: [], edges: [] }, undefined, 'wf_a')
+    await execution.run(makeGraph(), undefined, 'wf_a')
 
     expect(execution.environmentRecoveryAction).toBeNull()
     expect(execution.isEnvironmentRecoveryDialogVisible).toBe(false)
@@ -264,7 +263,7 @@ describe('execution store', () => {
       const execution = useExecutionStore()
 
       await expect(
-        execution.run({ nodes: [], edges: [] }, undefined, 'wf_a'),
+        execution.run(makeGraph(), undefined, 'wf_a'),
       ).rejects.toBeTruthy()
 
       expect(execution.isConflict).toBe(true)
@@ -316,7 +315,7 @@ describe('execution store', () => {
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
     const execution = useExecutionStore()
 
-    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+    const run = execution.run(makeGraph(), undefined, 'wf_a', {
       canvasId,
       draftRevision: 7,
     })
@@ -359,7 +358,7 @@ describe('execution store', () => {
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
     const execution = useExecutionStore()
 
-    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+    const run = execution.run(makeGraph(), undefined, 'wf_a', {
       canvasId,
       draftRevision: 7,
     })
@@ -419,7 +418,7 @@ describe('execution store', () => {
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
     const execution = useExecutionStore()
 
-    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+    const run = execution.run(makeGraph(), undefined, 'wf_a', {
       canvasId,
       draftRevision: 7,
     })
@@ -453,7 +452,7 @@ describe('execution store', () => {
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
     const execution = useExecutionStore()
 
-    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+    const run = execution.run(makeGraph(), undefined, 'wf_a', {
       canvasId,
       draftRevision: 7,
     })
@@ -499,7 +498,7 @@ describe('execution store', () => {
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
     const execution = useExecutionStore()
 
-    const run = execution.run({ nodes: [], edges: [] }, undefined, 'wf_a', {
+    const run = execution.run(makeGraph(), undefined, 'wf_a', {
       canvasId,
       draftRevision: 7,
     })
@@ -609,7 +608,7 @@ describe('execution store', () => {
 
   it('does not infer a root execution origin from an active nested canvas', () => {
     const rootCanvas = canvasIdFromPanelId('workflow:a')
-    const nestedCanvas = canvasIdFromPanelId('sub-workflow:nested')
+    const nestedCanvas = canvasIdFromPanelId('nested-workflow:nested')
     canvasSessionRegistry.register({
       kind: 'root',
       canvasId: rootCanvas,
@@ -791,7 +790,7 @@ describe('execution store', () => {
     vi.mocked(api.post).mockReturnValueOnce(response.promise as never)
 
     const run = execution.run(
-      { nodes: [], edges: [] },
+      makeGraph(),
       undefined,
       'wf_a',
       { canvasId, draftRevision: 8 },
@@ -909,7 +908,7 @@ describe('execution store', () => {
     })
 
     await expect(execution.run(
-      { nodes: [], edges: [] },
+      makeGraph(),
       undefined,
       'wf_a',
       { canvasId, draftRevision: 8 },
@@ -923,7 +922,7 @@ describe('execution store', () => {
   it('posts workflow_name when clearing cache', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: { node_statuses: {} } })
     const execution = useExecutionStore()
-    const graph = { nodes: [], edges: [] }
+    const graph = makeGraph()
 
     await execution.clear(graph, ['n1'], 'wf_a')
 

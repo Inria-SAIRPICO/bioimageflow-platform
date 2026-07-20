@@ -25,6 +25,7 @@ function makeTool(): ToolMetadata {
     tool_type: 'ProcessingTool',
     accepts_upstream: true,
     dynamic_outputs: false,
+    dataframe_output: false,
     documentation: '',
     tags: [],
     categories: [],
@@ -49,6 +50,8 @@ function makeTool(): ToolMetadata {
     },
     outputs: {},
     environment: null,
+    source_kind: 'package',
+    editable: false,
   }
 }
 

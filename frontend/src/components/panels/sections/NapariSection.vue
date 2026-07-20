@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
-import type { Settings } from '@/api/types'
+import type { Settings } from '@/stores/settings'
 import { isDesktop, selectFolder } from '@/utils/nativeDialogs'
 
 const props = defineProps<{ modelValue: Settings }>()

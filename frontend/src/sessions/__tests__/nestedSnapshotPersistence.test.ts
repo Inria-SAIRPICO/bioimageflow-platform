@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { GraphState, ValidationResult } from '@/api/types'
 import type { NestedWorkflowSnapshotResponse } from '@/api/nestedWorkflowSnapshots'
+import { makeGraph } from '@/test-utils/graphFixtures'
 import { canvasIdFromPanelId } from '../canvasSessionRegistry'
 import {
   createNestedSnapshotPersistence,
@@ -18,9 +19,10 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function graph(nodeId: string, publishedName = 'image'): GraphState {
-  return {
+function graph(nodeId: string, exposedName = 'image'): GraphState {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: nodeId,
       name: nodeId,
       tool_name: 'tool',
@@ -32,16 +34,16 @@ function graph(nodeId: string, publishedName = 'image'): GraphState {
       collapsed: false,
     }],
     edges: [],
-    published_inputs: [{
-      name: publishedName,
-      internal_node_id: nodeId,
-      internal_field: 'image',
-      kind: 'input',
+    interface: { inputs: [{
+      id: `input-${nodeId}`,
+      name: exposedName,
+      kind: 'field',
       schema: { type: 'Path' },
       default: null,
+      targets: [{ node: nodeId, port: { kind: 'field', name: 'image' } }],
     }],
-    published_outputs: [],
-  }
+    outputs: [] },
+  })
 }
 
 function validation(nodeId: string): ValidationResult {
@@ -83,7 +85,7 @@ describe('nested snapshot persistence', () => {
     }
     const accepted = vi.fn()
     const resource = createNestedSnapshotPersistence({
-      canvasId: canvasIdFromPanelId('sub-workflow:session'),
+      canvasId: canvasIdFromPanelId('nested-workflow:session'),
       initialSnapshot: response(4, graph('initial')),
       transport,
       debounceMs: 60_000,
@@ -128,7 +130,7 @@ describe('nested snapshot persistence', () => {
       delete: vi.fn().mockResolvedValue(undefined),
     }
     const resource = createNestedSnapshotPersistence({
-      canvasId: canvasIdFromPanelId('sub-workflow:session'),
+      canvasId: canvasIdFromPanelId('nested-workflow:session'),
       initialSnapshot: response(2, graph('initial')),
       transport,
       debounceMs: 60_000,
@@ -165,7 +167,7 @@ describe('nested snapshot persistence', () => {
     }
     const accepted = vi.fn()
     const resource = createNestedSnapshotPersistence({
-      canvasId: canvasIdFromPanelId('sub-workflow:session'),
+      canvasId: canvasIdFromPanelId('nested-workflow:session'),
       initialSnapshot: response(4, graph('initial')),
       transport,
       debounceMs: 60_000,
@@ -223,7 +225,7 @@ describe('nested snapshot persistence', () => {
     }
     const accepted = vi.fn()
     const resource = createNestedSnapshotPersistence({
-      canvasId: canvasIdFromPanelId('sub-workflow:session'),
+      canvasId: canvasIdFromPanelId('nested-workflow:session'),
       initialSnapshot: response(4, graph('initial')),
       transport,
       debounceMs: 60_000,

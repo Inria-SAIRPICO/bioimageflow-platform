@@ -1,22 +1,94 @@
-import type { GraphState, MissingTool, ToolMetadata } from '@/api/types'
-import { reconcileOutputTemplates } from '@/utils/outputTemplates'
+import type {
+  GraphState,
+  MissingTool,
+  ToolMetadata,
+  ToolNodeState,
+  WorkflowNodeState,
+} from '@/api/types'
 import { connectionSourceLabel } from '@/utils/displayNames'
+import {
+  encodeEndpointHandle,
+} from '@/utils/endpointHandles'
+import { reconcileOutputTemplates } from '@/utils/outputTemplates'
 
 export interface VueFlowGraph {
   nodes: any[]
   edges: any[]
 }
 
-function hasSubWorkflowFields(node: Record<string, any>): boolean {
-  return node.tool_name === '__sub_workflow__'
-    || (node.sub_workflow !== undefined && node.sub_workflow !== null)
-    || (Array.isArray(node.published_inputs) && node.published_inputs.length > 0)
-    || (Array.isArray(node.published_outputs) && node.published_outputs.length > 0)
-    || typeof node.source_workflow_name === 'string'
-    || (
-      node.sub_workflow_readonly_reason !== undefined
-      && node.sub_workflow_readonly_reason !== null
-    )
+function sourceHandle(
+  graph: GraphState,
+  nodeId: string,
+  output: string,
+): string {
+  const node = graph.nodes.find(candidate => candidate.id === nodeId)
+  return encodeEndpointHandle(node?.type === 'workflow'
+    ? { kind: 'workflow-output', id: output }
+    : { kind: 'tool-output', name: output })
+}
+
+function targetHandle(
+  graph: GraphState,
+  nodeId: string,
+  input: string,
+): string {
+  const node = graph.nodes.find(candidate => candidate.id === nodeId)
+  return encodeEndpointHandle(node?.type === 'workflow'
+    ? { kind: 'workflow-input', id: input }
+    : { kind: 'tool-input', name: input })
+}
+
+function toolNodeData(
+  node: ToolNodeState,
+  tool: ToolMetadata | undefined,
+  missingTool: MissingTool | null,
+) {
+  const pinnedInputs: Record<string, boolean> = {}
+  if (tool) {
+    for (const [name, field] of Object.entries(tool.inputs)) {
+      if (field.connectable === 'never') continue
+      const isPath = ['Path', 'ImageFile', 'MaskPath'].includes(field.type)
+      pinnedInputs[name] = isPath && field.required
+    }
+  }
+  return {
+    nodeType: 'tool' as const,
+    name: node.name,
+    toolName: node.tool_name,
+    tool: tool ?? null,
+    missingTool,
+    status: 'unexecuted',
+    parameters: node.parameters,
+    resources: node.resources ?? {},
+    collapsed: node.collapsed ?? false,
+    enabled: node.enabled ?? true,
+    connectedInputs: {},
+    pinnedInputs,
+    output_templates: reconcileOutputTemplates(tool, node.output_templates ?? {}),
+    toolModule: node.tool_module ?? null,
+    toolClass: node.tool_class ?? null,
+    toolPackage: node.tool_package ?? null,
+    toolPackageVersion: node.tool_package_version ?? null,
+    sourceModule: node.source_module ?? null,
+  }
+}
+
+function workflowNodeData(node: WorkflowNodeState) {
+  return {
+    nodeType: 'workflow' as const,
+    name: node.name,
+    workflow: node.workflow,
+    bindings: node.bindings,
+    source: node.source ?? null,
+    resources: node.resources ?? {},
+    collapsed: node.collapsed ?? false,
+    enabled: node.enabled ?? true,
+    status: 'unexecuted',
+    connectedInputs: {},
+    pinnedInputs: Object.fromEntries(
+      node.workflow.interface.inputs.map(input => [input.id, true]),
+    ),
+  }
 }
 
 export function graphStateToVueFlow(
@@ -24,105 +96,55 @@ export function graphStateToVueFlow(
   getToolByName: (name: string) => ToolMetadata | undefined,
   missingTools: MissingTool[] = [],
 ): VueFlowGraph {
-  const missingByNode = new Map(missingTools.map((tool) => [tool.node_id, tool]))
+  const missingByNode = new Map(missingTools.map(tool => [tool.node_id, tool]))
   const edges = graph.edges.map((edge) => {
-    if (edge.type === 'positional') {
+    if (edge.type === 'dataframe') {
       return {
         id: edge.id,
         source: edge.source_node,
         target: edge.target_node,
-        sourceHandle: '__dataframe_out',
-        targetHandle: `__positional_${edge.positional_index}`,
-        type: 'positional',
+        sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+        targetHandle: edge.target_position == null
+          ? encodeEndpointHandle({ kind: 'workflow-input', id: edge.target_input! })
+          : encodeEndpointHandle({ kind: 'dataframe-position', index: edge.target_position }),
+        type: 'dataframe',
       }
     }
     return {
       id: edge.id,
       source: edge.source_node,
       target: edge.target_node,
-      sourceHandle: edge.source_output,
-      targetHandle: edge.target_input,
-      type: 'column_ref',
+      sourceHandle: sourceHandle(graph, edge.source_node, edge.source_output),
+      targetHandle: targetHandle(graph, edge.target_node, edge.target_input),
+      type: 'column',
     }
   })
-
-  const connectedInputsByNode = new Map<string, Record<string, string>>()
-  const connectedBodyInputsByNode = new Map<string, Set<string>>()
-  const graphNodesById = new Map(graph.nodes.map((node) => [node.id, node]))
-  for (const edge of edges) {
-    const targetHandle = edge.targetHandle ?? ''
-    if (!targetHandle) continue
-    const connected = connectedInputsByNode.get(edge.target) ?? {}
-    const source = graphNodesById.get(edge.source)
-    connected[targetHandle] = connectionSourceLabel(source
-      ? {
-          id: source.id,
-          data: {
-            name: source.name,
-            tool: getToolByName(source.tool_name) ?? null,
-            published_outputs: source.published_outputs ?? [],
-          },
-        }
-      : { id: edge.source }, edge.sourceHandle)
-    connectedInputsByNode.set(edge.target, connected)
-    if (edge.type === 'column_ref') {
-      const bodyInputs = connectedBodyInputsByNode.get(edge.target) ?? new Set<string>()
-      bodyInputs.add(targetHandle)
-      connectedBodyInputsByNode.set(edge.target, bodyInputs)
-    }
-  }
-
   const nodes = graph.nodes.map((node) => {
-    const tool = getToolByName(node.tool_name)
-    const pinnedInputs: Record<string, boolean> = {}
-    if (tool) {
-      for (const [key, field] of Object.entries(tool.inputs)) {
-        if (field.connectable !== 'never') {
-          const isPathType = ['Path', 'ImageFile', 'MaskPath'].includes(field.type)
-          pinnedInputs[key] = isPathType && field.required
-        }
-      }
-    }
-    const isSubWorkflow = hasSubWorkflowFields(node as any)
-    if (!isSubWorkflow && tool) {
-      for (const targetHandle of connectedBodyInputsByNode.get(node.id) ?? []) {
-        const field = tool.inputs[targetHandle]
-        if (field && field.connectable !== 'never') {
-          pinnedInputs[targetHandle] = true
-        }
-      }
-    }
-
-    const data: Record<string, unknown> = {
-      name: node.name,
-      toolName: node.tool_name,
-      tool: tool ?? null,
-      missingTool: missingByNode.get(node.id) ?? null,
-      status: 'unexecuted',
-      parameters: node.parameters ?? {},
-      resources: node.resources ?? {},
-      collapsed: node.collapsed ?? false,
-      enabled: node.enabled ?? true,
-      connectedInputs: connectedInputsByNode.get(node.id) ?? {},
-      pinnedInputs,
-      output_templates: reconcileOutputTemplates(tool, node.output_templates ?? {}),
-    }
-    if (isSubWorkflow) {
-      data.sub_workflow = (node as any).sub_workflow ?? null
-      data.published_inputs = (node as any).published_inputs ?? []
-      data.published_outputs = (node as any).published_outputs ?? []
-      data.sub_workflow_readonly_reason =
-        (node as any).sub_workflow_readonly_reason ?? null
-      data.source_workflow_name = (node as any).source_workflow_name ?? null
-    }
-
+    const data = node.type === 'workflow'
+      ? workflowNodeData(node)
+      : toolNodeData(
+          node,
+          getToolByName(node.tool_name),
+          missingByNode.get(node.id) ?? null,
+        )
     return {
       id: node.id,
-      type: isSubWorkflow ? 'sub_workflow' : 'tool',
+      type: node.type,
       position: { x: node.position[0], y: node.position[1] },
       data,
     }
   })
 
+  const byId = new Map(nodes.map(node => [node.id, node]))
+  for (const edge of edges) {
+    const target = byId.get(edge.target)
+    if (!target || !edge.targetHandle) continue
+    const source = byId.get(edge.source)
+    const connectedInputs = target.data.connectedInputs as Record<string, string>
+    connectedInputs[edge.targetHandle] = connectionSourceLabel(
+      source ?? { id: edge.source },
+      edge.sourceHandle,
+    )
+  }
   return { nodes, edges }
 }

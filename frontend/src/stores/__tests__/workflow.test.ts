@@ -28,6 +28,7 @@ import { useWorkflowStore } from '../workflow'
 import { useWorkflowDraftStore } from '../workflowDraft'
 import { useUIStore } from '../ui'
 import type { WorkflowInfo } from '@/api/types'
+import { makeGraph } from '@/test-utils/graphFixtures'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -54,6 +55,7 @@ function workflowInfo(id: string, displayName = id): WorkflowInfo {
     display_name: displayName,
     path: `/tmp/${id}/workflow.json`,
     last_modified: '2026-07-16T10:00:00Z',
+      identity_generation: 0,
   }
 }
 
@@ -117,9 +119,11 @@ describe('workflow store', () => {
     const store = useWorkflowStore()
     store.workflows = [{
       name: 'workflow-b',
+      folder: '',
       display_name: 'Workflow B',
       path: '/tmp/workflow-b.json',
       last_modified: '2026-07-16T10:00:00Z',
+      identity_generation: 0,
     }]
     const drafts = useWorkflowDraftStore()
     drafts.reset('workflow-a')
@@ -370,15 +374,19 @@ describe('workflow store', () => {
 
     const workflowA = {
       name: 'a',
+      folder: '',
       display_name: 'Workflow A',
       path: '/tmp/a.json',
       last_modified: '2026-07-15T10:00:00Z',
+      identity_generation: 0,
     } as WorkflowInfo
     const workflowB = {
       name: 'b',
+      folder: '',
       display_name: 'Workflow B',
       path: '/tmp/b.json',
       last_modified: '2026-07-15T10:00:00Z',
+      identity_generation: 0,
     } as WorkflowInfo
     const store = useWorkflowStore()
     store.workflows = [workflowA, workflowB]
@@ -390,7 +398,7 @@ describe('workflow store', () => {
       resolveSave = resolve
     }))
     const save = store.saveWorkflow(
-      { nodes: [], edges: [] },
+      makeGraph(),
       { canvasId: canvasA, workflowName: 'a' },
     )
 
@@ -401,6 +409,7 @@ describe('workflow store', () => {
         ...workflowA,
         display_name: 'Workflow A saved',
         last_modified: '2026-07-15T10:01:00Z',
+      identity_generation: 0,
       },
     })
     await save
@@ -419,7 +428,7 @@ describe('workflow store', () => {
     store.workflows = [workflowInfo('race', 'Deleted generation')]
 
     const saving = store.saveWorkflow(
-      { nodes: [], edges: [] },
+      makeGraph(),
       {
         canvasId: canvasIdFromPanelId('workflow:race'),
         workflowName: 'race',
@@ -519,6 +528,7 @@ describe('workflow store', () => {
       const duplicating = store.patchWorkflow('source', {
         action: 'duplicate',
         new_name: 'copy',
+        folder: '',
         display_name: 'Copy',
       })
       await store.forgetDeletedWorkflow(removedIdentity)
@@ -693,11 +703,13 @@ describe('workflow store', () => {
       data: {
         info: {
           name: 'b',
+          folder: '',
           display_name: 'Workflow B',
           path: '/tmp/b.json',
           last_modified: '2026-07-15T10:00:00Z',
+      identity_generation: 0,
         },
-        graph: { nodes: [], edges: [] },
+        graph: makeGraph(),
         missing_packages: [],
         missing_tools: [],
       },
@@ -716,17 +728,21 @@ describe('workflow store', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'Untitled',
+        folder: '',
         display_name: 'New workflow',
         path: '/tmp/Untitled.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     })
     const store = useWorkflowStore()
     store.workflows = [{
       name: 'Untitled',
+      folder: '',
       display_name: 'Untitled',
       path: '/tmp/Untitled.json',
       last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
     }]
     store.current = store.workflows[0]
     const drafts = useWorkflowDraftStore()
@@ -751,23 +767,28 @@ describe('workflow store', () => {
     vi.mocked(api.patch).mockResolvedValueOnce({
       data: {
         name: 'copy',
+        folder: '',
         display_name: 'Copy',
         path: '/tmp/copy.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     })
     const store = useWorkflowStore()
     store.workflows = [{
       name: 'source',
+      folder: '',
       display_name: 'Source',
       path: '/tmp/source.json',
       last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
     }]
     store.current = store.workflows[0]
 
     await store.patchWorkflow('source', {
       action: 'duplicate',
       new_name: 'copy',
+      folder: '',
       display_name: 'Copy',
     })
 
@@ -831,9 +852,11 @@ describe('workflow store', () => {
       data: {
         info: {
           name: 'imported',
+          folder: '',
           display_name: 'Imported',
           path: '/tmp/imported.json',
           last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
         },
         missing_packages: [{
           package_name: 'pkg',
@@ -882,6 +905,7 @@ describe('workflow store', () => {
             display_name: 'Beta',
             path: '/tmp/Analysis/beta.json',
             last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
           }],
         }],
         workflows: [{
@@ -890,6 +914,7 @@ describe('workflow store', () => {
           display_name: 'Alpha',
           path: '/tmp/alpha.json',
           last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
         }],
       },
     })
@@ -1011,7 +1036,7 @@ describe('workflow store', () => {
     await expect(store.patchWorkflow('Analysis/alpha', {
       action: 'update',
       ...identityPatch,
-    })).rejects.toThrow(/close.*workflow.*sub-workflow.*tab/is)
+    })).rejects.toThrow(/close.*workflow.*nested-workflow.*tab/is)
 
     expect(api.patch).not.toHaveBeenCalled()
     expect(autoSaveMocks.renameWorkflow).not.toHaveBeenCalled()
@@ -1114,7 +1139,7 @@ describe('workflow store', () => {
 
     await expect(
       store.renameWorkflowFolder('Analysis', 'Renamed'),
-    ).rejects.toThrow(/close.*workflow.*sub-workflow.*tab/is)
+    ).rejects.toThrow(/close.*workflow.*nested-workflow.*tab/is)
 
     expect(api.patch).not.toHaveBeenCalled()
     expect(store.workflowFolders[0]).toEqual({
@@ -1138,7 +1163,7 @@ describe('workflow store', () => {
 
     await expect(
       store.moveWorkflowFolder('Analysis/Nested', 'Archive'),
-    ).rejects.toThrow(/close.*workflow.*sub-workflow.*tab/is)
+    ).rejects.toThrow(/close.*workflow.*nested-workflow.*tab/is)
 
     expect(api.patch).not.toHaveBeenCalled()
     expect(ui.canvasWorkflowId(canvasId)).toBe('Analysis/Nested/alpha')
@@ -1249,7 +1274,7 @@ describe('workflow store', () => {
     staleWorkflow.resolve({
       data: {
         info: workflowInfo('Analysis/race', 'Stale generation'),
-        graph: { nodes: [], edges: [] },
+        graph: makeGraph(),
         missing_packages: [],
         missing_tools: [],
       },
@@ -1298,21 +1323,26 @@ describe('workflow store', () => {
         display_name: 'Beta',
         path: '/tmp/Analysis/beta.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     })
     const store = useWorkflowStore()
     store.workflows = [
       {
         name: 'alpha',
+        folder: '',
         display_name: 'Alpha',
         path: '/tmp/alpha.json',
         last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
       },
       {
         name: 'beta',
+        folder: '',
         display_name: 'Beta',
         path: '/tmp/beta.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     ]
     const folder = await store.createWorkflowFolder('Analysis')
@@ -1346,6 +1376,7 @@ describe('workflow store', () => {
         display_name: 'Beta',
         path: '/tmp/Analysis Results/beta/workflow.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     })
     const store = useWorkflowStore()
@@ -1353,9 +1384,11 @@ describe('workflow store', () => {
       {
         id: 'beta',
         name: 'beta',
+        folder: '',
         display_name: 'Beta',
         path: '/tmp/beta/workflow.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     ]
     const drafts = useWorkflowDraftStore()
@@ -1402,6 +1435,7 @@ describe('workflow store', () => {
         display_name: 'Beta',
         path: '/tmp/Analysis Results/beta/workflow.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     })
     vi.mocked(api.put).mockResolvedValueOnce({
@@ -1412,21 +1446,24 @@ describe('workflow store', () => {
         display_name: 'Beta',
         path: '/tmp/Analysis Results/beta/workflow.json',
         last_modified: '2026-04-30T12:01:00Z',
+      identity_generation: 0,
       },
     })
     const store = useWorkflowStore()
     const workflow: WorkflowInfo = {
       id: 'beta',
       name: 'beta',
+      folder: '',
       display_name: 'Beta',
       path: '/tmp/beta/workflow.json',
       last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
     }
     store.workflows = [workflow]
     store.current = workflow
     const folder = await store.createWorkflowFolder('Analysis Results')
     await store.moveWorkflowToFolder('beta', folder.id)
-    await store.saveWorkflow({ nodes: [], edges: [] })
+    await store.saveWorkflow(makeGraph())
 
     expect(store.currentName).toBe('Analysis Results/beta')
     expect(autoSaveMocks.renameWorkflow).toHaveBeenCalledWith(
@@ -1438,7 +1475,7 @@ describe('workflow store', () => {
     )
     expect(api.put).toHaveBeenCalledWith(
       '/api/v1/workflows/Analysis%20Results/beta',
-      { graph: { nodes: [], edges: [] } },
+      { graph: makeGraph() },
     )
   })
 
@@ -1460,6 +1497,7 @@ describe('workflow store', () => {
           display_name: 'Alpha',
           path: '/tmp/Drafts/alpha.json',
           last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
         },
       })
       .mockResolvedValueOnce({
@@ -1486,6 +1524,7 @@ describe('workflow store', () => {
               display_name: 'Alpha',
               path: '/tmp/Published/alpha.json',
               last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
             }],
           }],
           workflows: [],
@@ -1503,6 +1542,7 @@ describe('workflow store', () => {
             display_name: 'Alpha',
             path: '/tmp/alpha.json',
             last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
           }],
         },
       })
@@ -1510,9 +1550,11 @@ describe('workflow store', () => {
     const store = useWorkflowStore()
     store.workflows = [{
       name: 'alpha',
+      folder: '',
       display_name: 'Alpha',
       path: '/tmp/alpha.json',
       last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
     }]
     const folder = await store.createWorkflowFolder('Drafts')
     await store.moveWorkflowToFolder('alpha', folder.id)
@@ -1553,6 +1595,7 @@ describe('workflow store', () => {
               display_name: 'Beta',
               path: '/tmp/Archive 2026/Quality Control/beta/workflow.json',
               last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
             }],
           }],
           workflows: [],
@@ -1568,6 +1611,7 @@ describe('workflow store', () => {
       display_name: 'Beta',
       path: '/tmp/Analysis Results/Quality Control/beta/workflow.json',
       last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
     }
     store.workflowFolders = [
       { id: 'Analysis Results', name: 'Analysis Results', parentId: null },
@@ -1627,16 +1671,20 @@ describe('workflow store', () => {
       {
         id: 'Archive/alpha',
         name: 'alpha',
+        folder: '',
         display_name: 'Alpha',
         path: '/tmp/Archive/alpha/workflow.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
       {
         id: 'Archive/Nested/beta',
         name: 'beta',
+        folder: '',
         display_name: 'Beta',
         path: '/tmp/Archive/Nested/beta/workflow.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     ]
     const drafts = useWorkflowDraftStore()
@@ -1661,15 +1709,19 @@ describe('workflow store', () => {
     store.workflows = [
       {
         name: 'alpha',
+        folder: '',
         display_name: 'Alpha',
         path: '/tmp/alpha.json',
         last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
       },
       {
         name: 'beta',
+        folder: '',
         display_name: 'Beta',
         path: '/tmp/beta.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     ]
 
@@ -1683,15 +1735,19 @@ describe('workflow store', () => {
     store.workflows = [
       {
         name: 'alpha',
+        folder: '',
         display_name: 'Alpha',
         path: '/tmp/alpha.json',
         last_modified: '2026-04-30T11:00:00Z',
+      identity_generation: 0,
       },
       {
         name: 'beta',
+        folder: '',
         display_name: 'Beta',
         path: '/tmp/beta.json',
         last_modified: '2026-04-30T12:00:00Z',
+      identity_generation: 0,
       },
     ]
 

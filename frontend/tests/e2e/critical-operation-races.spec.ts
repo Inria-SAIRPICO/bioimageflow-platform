@@ -12,8 +12,13 @@ type GraphNode = {
 }
 
 type GraphState = {
+  schema_version: 1
+  name: string
+  display_name: string
   nodes: GraphNode[]
   edges: Array<Record<string, unknown>>
+  interface: { inputs: []; outputs: [] }
+  config: { storage_path: string; engine: string; execution: string }
 }
 
 type WorkflowDraft = {
@@ -49,8 +54,12 @@ function uniqueName(prefix: string): string {
 
 function gaussianGraph(nodeId: string, sigma: number): GraphState {
   return {
+    schema_version: 1,
+    name: 'critical_operation',
+    display_name: 'Critical operation',
     nodes: [
       {
+        type: 'tool',
         id: nodeId,
         name: 'Gaussian Blur',
         tool_name: 'GaussianBlur',
@@ -62,6 +71,8 @@ function gaussianGraph(nodeId: string, sigma: number): GraphState {
       },
     ],
     edges: [],
+    interface: { inputs: [], outputs: [] },
+    config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
   }
 }
 
@@ -108,7 +119,7 @@ async function createWorkflow(
   })
   expect(created.status()).toBe(201)
   const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
-    data: { graph },
+    data: { graph: { ...graph, name, display_name: displayName } },
   })
   expect(saved.ok()).toBeTruthy()
 }

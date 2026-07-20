@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
 import type { GraphState, WorkflowInfo } from '@/api/types'
+import { makeGraph } from '@/test-utils/graphFixtures'
 import {
   ROOT_PERSISTENCE_RESOURCE,
   type RootCanvasPersistenceResource,
@@ -15,8 +16,9 @@ import { useWorkflowStore } from '@/stores/workflow'
 import { saveRootWorkflowTarget } from '../rootWorkflowSave'
 
 function graph(value: string): GraphState {
-  return {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: 'node',
       name: 'Node',
       tool_name: 'tool',
@@ -28,7 +30,7 @@ function graph(value: string): GraphState {
       collapsed: false,
     }],
     edges: [],
-  }
+  })
 }
 
 function deferred<T>() {

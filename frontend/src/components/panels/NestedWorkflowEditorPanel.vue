@@ -29,10 +29,10 @@ const parentCanvasPanelId = computed(() => (
 </script>
 
 <template>
-  <div class="sub-workflow-editor">
+  <div class="nested-workflow-editor">
     <CanvasView
       v-if="sessionId"
-      :sub-workflow-session-id="sessionId"
+      :nested-workflow-session-id="sessionId"
       :parent-canvas-panel-id="parentCanvasPanelId"
       :params="{ panelId }"
     />
@@ -40,14 +40,14 @@ const parentCanvasPanelId = computed(() => (
 </template>
 
 <style scoped>
-.sub-workflow-editor {
+.nested-workflow-editor {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
 }
 
-.sub-workflow-editor :deep(.canvas-view) {
+.nested-workflow-editor :deep(.canvas-view) {
   flex: 1;
   min-height: 0;
 }

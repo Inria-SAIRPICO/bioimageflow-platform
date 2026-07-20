@@ -85,7 +85,7 @@ export function registerNestedCanvas(
   const descriptor: NestedCanvasSessionDescriptor = {
     kind: 'nested',
     canvasId: canvasIdFromPanelId(
-      options.panelId ?? `sub-workflow:${encodeURIComponent(options.sessionId)}`,
+      options.panelId ?? `nested-workflow:${encodeURIComponent(options.sessionId)}`,
     ),
     sessionId: options.sessionId,
     parentCanvasId: options.parentCanvasId,

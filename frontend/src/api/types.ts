@@ -90,6 +90,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tools/{tool_name}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tool Usage */
+        get: operations["get_tool_usage_api_v1_tools__tool_name__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tools/{tool_name}": {
         parameters: {
             query?: never;
@@ -119,6 +136,40 @@ export interface paths {
         put?: never;
         /** Use Package Version */
         post: operations["use_package_version_api_v1_tools_packages__package_name__use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tools/packages/import-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Package From Url */
+        post: operations["import_package_from_url_api_v1_tools_packages_import_url_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tools/packages/import-archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Package From Archive */
+        post: operations["import_package_from_archive_api_v1_tools_packages_import_archive_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -210,26 +261,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/dev/seed": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Seed Tools
-         * @description Register demo tools and packages for E2E testing.
-         */
-        post: operations["seed_tools_api_v1_dev_seed_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/fs/reveal": {
         parameters: {
             query?: never;
@@ -244,6 +275,57 @@ export interface paths {
          * @description Open the given path in the system file browser.
          */
         post: operations["reveal_path_api_v1_fs_reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/editor/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Editor Status */
+        get: operations["get_editor_status_api_v1_editor_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/editor/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Editor Path */
+        post: operations["open_editor_path_api_v1_editor_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/editor/open-tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Tool Script */
+        post: operations["open_tool_script_api_v1_editor_open_tool_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -326,6 +408,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Folders */
+        get: operations["list_folders_api_v1_datasets_folders_get"];
+        put?: never;
+        /** Create Folder */
+        post: operations["create_folder_api_v1_datasets_folders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/folders/{folder_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Folder */
+        patch: operations["update_folder_api_v1_datasets_folders__folder_id__patch"];
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}": {
         parameters: {
             query?: never;
@@ -338,6 +455,58 @@ export interface paths {
         post?: never;
         /** Delete Dataset */
         delete: operations["delete_dataset_api_v1_datasets__dataset_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Dataset */
+        patch: operations["update_dataset_api_v1_datasets__dataset_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/datasets/actions/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Selection */
+        post: operations["resolve_selection_api_v1_datasets_actions_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/actions/delete-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Delete */
+        post: operations["preview_delete_api_v1_datasets_actions_delete_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/actions/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Selection */
+        post: operations["delete_selection_api_v1_datasets_actions_delete_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -442,6 +611,76 @@ export interface paths {
         post?: never;
         /** Delete Nested Workflow Snapshot */
         delete: operations["delete_nested_workflow_snapshot_api_v1_nested_workflow_snapshots__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace */
+        get: operations["get_workspace_api_v1_workspace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Workspace */
+        patch: operations["patch_workspace_api_v1_workspace_patch"];
+        trace?: never;
+    };
+    "/api/v1/workflow-draft-operations/{workflow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Workflow Draft Operations Endpoint */
+        post: operations["apply_workflow_draft_operations_endpoint_api_v1_workflow_draft_operations__workflow_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{workflow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow Draft */
+        get: operations["get_workflow_draft_api_v1_workflow_drafts__workflow_id__get"];
+        /** Put Workflow Draft */
+        put: operations["put_workflow_draft_api_v1_workflow_drafts__workflow_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflow-drafts/{workflow_id}/reset-to-saved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Workflow Draft To Saved */
+        post: operations["reset_workflow_draft_to_saved_api_v1_workflow_drafts__workflow_id__reset_to_saved_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -554,6 +793,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/{name}/source-update/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Workflow Source Update */
+        post: operations["preview_workflow_source_update_api_v1_workflows__name__source_update_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/python-source/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Python Source */
+        post: operations["preview_python_source_api_v1_workflows__name__python_source_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/source-operations/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Workflow Source Operation */
+        post: operations["apply_workflow_source_operation_api_v1_workflows__name__source_operations_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/import": {
         parameters: {
             query?: never;
@@ -582,6 +872,23 @@ export interface paths {
         put?: never;
         /** Rebind Workflow Versions */
         post: operations["rebind_workflow_versions_api_v1_workflows__name__rebind_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate Workflow */
+        post: operations["activate_workflow_api_v1_workflows__name__activate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -673,23 +980,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/nodes/{node_id}/image": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Node Image */
-        get: operations["get_node_image_api_v1_nodes__node_id__image_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/nodes/{node_id}/image/{filename}": {
         parameters: {
             query?: never;
@@ -707,6 +997,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{node_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Image */
+        get: operations["get_node_image_api_v1_nodes__node_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node_id}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reveal Node Image */
+        post: operations["reveal_node_image_api_v1_nodes__node_id__reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{node_id}/thumbnail": {
         parameters: {
             query?: never;
@@ -718,6 +1042,40 @@ export interface paths {
         get: operations["get_node_thumbnail_api_v1_nodes__node_id__thumbnail_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/data-table/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Query Data Table */
+        post: operations["query_data_table_api_v1_data_table_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/data-table/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download Data Table Csv */
+        post: operations["download_data_table_csv_api_v1_data_table_csv_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -746,6 +1104,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_import_package_from_archive_api_v1_tools_packages_import_archive_post */
+        Body_import_package_from_archive_api_v1_tools_packages_import_archive_post: {
+            /** Archive */
+            archive: string;
+        };
         /** Body_import_workflow_api_v1_workflows_import_post */
         Body_import_workflow_api_v1_workflows_import_post: {
             /** File */
@@ -757,6 +1120,8 @@ export interface components {
         Body_upload_datasets_api_v1_datasets_upload_post: {
             /** Files */
             files: string[];
+            /** Folder Id */
+            folder_id?: string | null;
         };
         /** ClearRequest */
         ClearRequest: {
@@ -766,16 +1131,13 @@ export interface components {
             /** Workflow Name */
             workflow_name: string;
         };
-        /**
-         * ColumnRefEdge
-         * @description Edge that maps a named output column to a named input.
-         */
-        ColumnRefEdge: {
+        /** ColumnEdge */
+        ColumnEdge: {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "column_ref";
+            type: "column";
             /** Id */
             id: string;
             /** Source Node */
@@ -787,6 +1149,241 @@ export interface components {
             /** Target Input */
             target_input: string;
         };
+        /** ConnectColumnEdgeOperation */
+        ConnectColumnEdgeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "connect_column_edge";
+            /** Source Node */
+            source_node: string;
+            /** Target Node */
+            target_node: string;
+            /** Source Output */
+            source_output: string;
+            /** Target Input */
+            target_input: string;
+            /** Edge Id */
+            edge_id?: string | null;
+        };
+        /** ConnectDataFrameEdgeOperation */
+        ConnectDataFrameEdgeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "connect_dataframe_edge";
+            /** Source Node */
+            source_node: string;
+            /** Target Node */
+            target_node: string;
+            /** Target Position */
+            target_position?: number | null;
+            /** Target Input */
+            target_input?: string | null;
+            /** Edge Id */
+            edge_id?: string | null;
+        };
+        /** CreateToolNodeOperation */
+        CreateToolNodeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "create_tool_node";
+            /** Node Id */
+            node_id: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Name */
+            name: string;
+            /** Position */
+            position: [
+                number,
+                number
+            ];
+            /** Parameters */
+            parameters?: {
+                [key: string]: unknown;
+            };
+        };
+        /** CreateWorkflowNodeOperation */
+        CreateWorkflowNodeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "create_workflow_node";
+            /** Node Id */
+            node_id: string;
+            /** Name */
+            name: string;
+            /** Position */
+            position: [
+                number,
+                number
+            ];
+            workflow: components["schemas"]["GraphState"];
+            /** Bindings */
+            bindings?: {
+                [key: string]: components["schemas"]["SerializedConstant"];
+            };
+            source?: components["schemas"]["WorkspaceWorkflowSource"] | null;
+        };
+        /** DataFrameEdge */
+        DataFrameEdge: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "dataframe";
+            /** Id */
+            id: string;
+            /** Source Node */
+            source_node: string;
+            /** Target Node */
+            target_node: string;
+            /** Target Position */
+            target_position?: number | null;
+            /** Target Input */
+            target_input?: string | null;
+        };
+        /** DataTableColumn */
+        DataTableColumn: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Type */
+            type: string;
+            /** Source Node Id */
+            source_node_id: string;
+            /** Source Column */
+            source_column: string;
+        };
+        /**
+         * DataTableCsvRequest
+         * @description Full consolidated CSV request.
+         */
+        DataTableCsvRequest: {
+            /** Workflow Id */
+            workflow_id?: string | null;
+            /** Sources */
+            sources: components["schemas"]["DataTableSource"][];
+            /** Sort By */
+            sort_by?: string | null;
+            /**
+             * Sort Order
+             * @default asc
+             * @enum {string}
+             */
+            sort_order: "asc" | "desc";
+        };
+        /** DataTableMergedResponse */
+        DataTableMergedResponse: {
+            /**
+             * Mode
+             * @default merged
+             * @constant
+             */
+            mode: "merged";
+            /** Sources */
+            sources: components["schemas"]["DataTableSource"][];
+            /** Columns */
+            columns: components["schemas"]["DataTableColumn"][];
+            /** Rows */
+            rows: components["schemas"]["DataTableMergedRow"][];
+            /** Total Rows */
+            total_rows: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        };
+        /** DataTableMergedRow */
+        DataTableMergedRow: {
+            /** Index */
+            index: string;
+            /** Values */
+            values: {
+                [key: string]: unknown;
+            };
+            /** Source Rows */
+            source_rows: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * DataTableQueryRequest
+         * @description Consolidated Data Table query parameters.
+         */
+        DataTableQueryRequest: {
+            /** Workflow Id */
+            workflow_id?: string | null;
+            /** Sources */
+            sources: components["schemas"]["DataTableSource"][];
+            /**
+             * Page
+             * @default 0
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 50
+             */
+            page_size: number;
+            /** Sort By */
+            sort_by?: string | null;
+            /**
+             * Sort Order
+             * @default asc
+             * @enum {string}
+             */
+            sort_order: "asc" | "desc";
+        };
+        /**
+         * DataTableSource
+         * @description A frontend-resolved DataFrame output participating in a projection.
+         */
+        DataTableSource: {
+            /** Node Id */
+            node_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "anchor" | "context";
+            /** Label */
+            label: string;
+            /** Tool Name */
+            tool_name?: string | null;
+            /** Columns */
+            columns?: string[] | null;
+            /** Column Aliases */
+            column_aliases?: {
+                [key: string]: string;
+            };
+        };
+        /** DataTableStackedResponse */
+        DataTableStackedResponse: {
+            /**
+             * Mode
+             * @default stacked
+             * @constant
+             */
+            mode: "stacked";
+            /** Sources */
+            sources: components["schemas"]["DataTableSource"][];
+            /** Reason */
+            reason: string;
+            /** Message */
+            message: string;
+        };
         /**
          * Dataset
          * @description A stored dataset as returned by `GET /datasets`.
@@ -796,6 +1393,8 @@ export interface components {
             id: string;
             /** Original Filename */
             original_filename: string;
+            /** Display Name */
+            display_name: string;
             /** Path */
             path: string;
             /** Size */
@@ -804,6 +1403,117 @@ export interface components {
             upload_date: string;
             /** Content Type */
             content_type?: string | null;
+            /** Folder Id */
+            folder_id?: string | null;
+        };
+        /** DatasetFolder */
+        DatasetFolder: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Created At */
+            created_at: string;
+        };
+        /** DatasetSelection */
+        DatasetSelection: {
+            /** Dataset Ids */
+            dataset_ids?: string[];
+            /** Folder Ids */
+            folder_ids?: string[];
+        };
+        /** DatasetUpdate */
+        DatasetUpdate: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Folder Id */
+            folder_id?: string | null;
+        };
+        /** DeleteEdgeOperation */
+        DeleteEdgeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_edge";
+            /** Edge Id */
+            edge_id: string;
+        };
+        /** DeleteNodeOperation */
+        DeleteNodeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_node";
+            /** Node Id */
+            node_id: string;
+        };
+        /** DeletePreviewResponse */
+        DeletePreviewResponse: {
+            /** Revision */
+            revision: number;
+            /** Dataset Count */
+            dataset_count: number;
+            /** Folder Count */
+            folder_count: number;
+        };
+        /** DeleteSelectionRequest */
+        DeleteSelectionRequest: {
+            /** Dataset Ids */
+            dataset_ids?: string[];
+            /** Folder Ids */
+            folder_ids?: string[];
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** DeleteSelectionResponse */
+        DeleteSelectionResponse: {
+            /** Deleted Dataset Ids */
+            deleted_dataset_ids?: string[];
+            /** Deleted Folder Ids */
+            deleted_folder_ids?: string[];
+            /** Errors */
+            errors?: {
+                [key: string]: string;
+            }[];
+        };
+        /** DeleteWorkflowInputOperation */
+        DeleteWorkflowInputOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_workflow_input";
+            /** Input Id */
+            input_id: string;
+        };
+        /** DeleteWorkflowOutputOperation */
+        DeleteWorkflowOutputOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delete_workflow_output";
+            /** Output Id */
+            output_id: string;
+        };
+        /** DetachWorkflowSourceOperation */
+        DetachWorkflowSourceOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "detach_workflow_source";
+            /** Node Id */
+            node_id: string;
         };
         /**
          * DraftGraphMismatchResponse
@@ -824,6 +1534,77 @@ export interface components {
             draft_revision: number;
         };
         /**
+         * EditorOpenMethod
+         * @enum {string}
+         */
+        EditorOpenMethod: "external" | "embedded" | "clipboard";
+        /** EditorOpenRequest */
+        EditorOpenRequest: {
+            /** Path */
+            path: string;
+            /** Focus Path */
+            focus_path?: string | null;
+        };
+        /** EditorOpenResponse */
+        EditorOpenResponse: {
+            /** Opened */
+            opened: boolean;
+            method: components["schemas"]["EditorOpenMethod"];
+            /** Url */
+            url?: string | null;
+            /** Path */
+            path: string;
+            /** Project Path */
+            project_path?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Error Detail */
+            error_detail?: string | null;
+        };
+        /** EditorOpenToolRequest */
+        EditorOpenToolRequest: {
+            /** Tool Name */
+            tool_name: string;
+            /** Workflow Name */
+            workflow_name?: string | null;
+            /** Workflow Id */
+            workflow_id?: string | null;
+        };
+        /** EditorStatus */
+        EditorStatus: {
+            /** Available */
+            available: boolean;
+            /** Url */
+            url?: string | null;
+            /** Version */
+            version?: string | null;
+            /**
+             * Control Available
+             * @default false
+             */
+            control_available: boolean;
+            /**
+             * Launch Attempted
+             * @default false
+             */
+            launch_attempted: boolean;
+            /** Error Code */
+            error_code?: string | null;
+            /** Error Detail */
+            error_detail?: string | null;
+        };
+        /** EnvironmentDeleteRequest */
+        EnvironmentDeleteRequest: {
+            /** Path */
+            path: string;
+            /** Existing Hash */
+            existing_hash: string;
+            /** Requested Hash */
+            requested_hash?: string | null;
+        };
+        /**
          * ExecutionRequest
          * @description Execute an inline graph or verify it against an accepted draft revision.
          */
@@ -842,37 +1623,70 @@ export interface components {
              */
             draft_revision?: number | null;
         };
-        /**
-         * EnvironmentDeleteRequest
-         * @description Request to delete a Wetlands environment after a validated recipe-mismatch recovery prompt.
-         */
-        EnvironmentDeleteRequest: {
-            /** Path */
-            path: string;
-            /** Existing Hash */
-            existing_hash: string;
-            /** Requested Hash */
-            requested_hash?: string | null;
+        /** ExposeWorkflowInputOperation */
+        ExposeWorkflowInputOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "expose_workflow_input";
+            input: components["schemas"]["WorkflowInput"];
+        };
+        /** ExposeWorkflowOutputOperation */
+        ExposeWorkflowOutputOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "expose_workflow_output";
+            output: components["schemas"]["WorkflowOutput"];
+        };
+        /** FieldInputPort */
+        FieldInputPort: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "field";
+            /** Name */
+            name: string;
+        };
+        /** FolderCreate */
+        FolderCreate: {
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id?: string | null;
+        };
+        /** FolderUpdate */
+        FolderUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Parent Id */
+            parent_id?: string | null;
         };
         /**
          * GraphState
-         * @description Complete graph state with nodes and edges.
+         * @description One self-contained workflow definition at any editor depth.
          */
         GraphState: {
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: 1;
+            /** Name */
+            name: string;
+            /** Display Name */
+            display_name: string;
             /** Nodes */
-            nodes: components["schemas"]["NodeState"][];
+            nodes: (components["schemas"]["ToolNodeState"] | components["schemas"]["WorkflowNodeState"])[];
             /** Edges */
-            edges: (components["schemas"]["ColumnRefEdge"] | components["schemas"]["PositionalEdge"])[];
-            /**
-             * Published Inputs
-             * @default []
-             */
-            published_inputs?: components["schemas"]["PublishedInput"][];
-            /**
-             * Published Outputs
-             * @default []
-             */
-            published_outputs?: components["schemas"]["PublishedOutput"][];
+            edges: (components["schemas"]["ColumnEdge"] | components["schemas"]["DataFrameEdge"])[];
+            interface: components["schemas"]["WorkflowInterface"];
+            config: components["schemas"]["WorkflowConfig"];
         };
         /**
          * GraphValidationError
@@ -895,7 +1709,7 @@ export interface components {
         };
         /**
          * GraphValidationRequest
-         * @description Request to validate a graph in an optional workflow context.
+         * @description Request to validate a graph in an optional workspace context.
          */
         GraphValidationRequest: {
             graph: components["schemas"]["GraphState"];
@@ -938,7 +1752,7 @@ export interface components {
             /** Step */
             step?: number | null;
             /** Path Picker */
-            path_picker?: "file" | "folder" | "both" | null;
+            path_picker?: ("file" | "folder" | "both") | null;
             /** Choices */
             choices?: string[] | null;
             /** Image Spec */
@@ -975,6 +1789,43 @@ export interface components {
             required_version?: string | null;
             /** Installed Versions */
             installed_versions?: string[];
+        };
+        /** MoveNodeItem */
+        MoveNodeItem: {
+            /** Node Id */
+            node_id: string;
+            /** Position */
+            position: [
+                number,
+                number
+            ];
+        };
+        /** MoveNodeOperation */
+        MoveNodeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "move_node";
+            /** Node Id */
+            node_id: string;
+            /** Position */
+            position: [
+                number,
+                number
+            ];
+        };
+        /** MoveNodesOperation */
+        MoveNodesOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "move_nodes";
+            /** Moves */
+            moves: components["schemas"]["MoveNodeItem"][];
         };
         /**
          * NapariOpenRequest
@@ -1160,67 +2011,6 @@ export interface components {
             };
         };
         /**
-         * NodeState
-         * @description A single node in the processing graph.
-         */
-        NodeState: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Tool Name */
-            tool_name: string;
-            /** Position */
-            position: [
-                number,
-                number
-            ];
-            /** Parameters */
-            parameters: {
-                [key: string]: unknown;
-            };
-            /**
-             * Resources
-             * @default {}
-             */
-            resources: {
-                [key: string]: unknown;
-            };
-            /**
-             * Output Templates
-             * @default {}
-             */
-            output_templates: {
-                [key: string]: string;
-            };
-            /**
-             * Enabled
-             * @default true
-             */
-            enabled: boolean;
-            /**
-             * Collapsed
-             * @default false
-             */
-            collapsed: boolean;
-            /** Sub Workflow */
-            sub_workflow?: components["schemas"]["GraphState"] | null;
-            /**
-             * Published Inputs
-             * @default []
-             */
-            published_inputs?: components["schemas"]["PublishedInput"][];
-            /**
-             * Published Outputs
-             * @default []
-             */
-            published_outputs?: components["schemas"]["PublishedOutput"][];
-            /** Sub Workflow Readonly Reason */
-            sub_workflow_readonly_reason?: string | null;
-            /** Source Workflow Name */
-            source_workflow_name?: string | null;
-        };
-        /**
          * NodeStatus
          * @description Status of a single node after validation or execution.
          */
@@ -1244,42 +2034,6 @@ export interface components {
             record_id?: string | null;
         };
         /**
-         * OMEROInstance
-         * @description OMERO server connection configuration.
-         */
-        OMEROInstance: {
-            /** Name */
-            name?: string | null;
-            /** Host */
-            host: string;
-            /**
-             * Port
-             * @default 4064
-             */
-            port: number;
-            /** Username */
-            username: string;
-        };
-        /**
-         * OMEROInstancePatch
-         * @description API-facing OMERO instance patch with transient password input.
-         */
-        OMEROInstancePatch: {
-            /** Name */
-            name?: string | null;
-            /** Host */
-            host: string;
-            /**
-             * Port
-             * @default 4064
-             */
-            port: number;
-            /** Username */
-            username: string;
-            /** Password */
-            password?: string | null;
-        };
-        /**
          * OMEROInstanceResponse
          * @description API-facing OMERO instance response with non-secret password state.
          */
@@ -1297,6 +2051,39 @@ export interface components {
             username: string;
             /** Password Stored */
             password_stored: boolean;
+        };
+        /** OutputViewConfig */
+        OutputViewConfig: {
+            /**
+             * Mode
+             * @default none
+             * @enum {string}
+             */
+            mode: "none" | "symlink" | "copy" | "hardlink";
+            /**
+             * Scope
+             * @default latest
+             * @enum {string}
+             */
+            scope: "latest" | "runs" | "both";
+        };
+        /** PackageImportResponse */
+        PackageImportResponse: {
+            /**
+             * Status
+             * @default installed
+             * @constant
+             */
+            status: "installed";
+            /** Package */
+            package: string;
+            /** Version */
+            version: string;
+        };
+        /** PackageImportUrlRequest */
+        PackageImportUrlRequest: {
+            /** Url */
+            url: string;
         };
         /** PackageInfo */
         PackageInfo: {
@@ -1334,63 +2121,55 @@ export interface components {
              */
             environment_status: string;
         };
-        /**
-         * PositionalEdge
-         * @description Edge that connects nodes by positional index.
-         */
-        PositionalEdge: {
+        /** PositionalInputPort */
+        PositionalInputPort: {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            type: "positional";
-            /** Id */
-            id: string;
-            /** Source Node */
-            source_node: string;
-            /** Target Node */
-            target_node: string;
-            /** Positional Index */
-            positional_index: number;
+            kind: "positional";
+            /** Index */
+            index: number;
         };
         /**
-         * PublishedInput
-         * @description An internal sub-workflow field exposed as an outer input pin.
+         * PythonAuthoringProvenance
+         * @description Optional trusted source used to materialize a saved root graph.
          */
-        PublishedInput: {
-            /** Name */
-            name: string;
-            /** Internal Node Id */
-            internal_node_id: string;
-            /** Internal Field */
-            internal_field: string;
+        PythonAuthoringProvenance: {
             /**
              * Kind
+             * @default python
+             * @constant
+             */
+            kind: "python";
+            /** Source Id */
+            source_id: string;
+            /**
+             * Factory
+             * @default build_workflow
+             * @constant
+             */
+            factory: "build_workflow";
+            /** Source Hash */
+            source_hash: string;
+        };
+        /** PythonSourcePreviewRequest */
+        PythonSourcePreviewRequest: {
+            /** Expected Artifact Hash */
+            expected_artifact_hash: string;
+        };
+        /** RenameNodeOperation */
+        RenameNodeOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            kind: "parameter" | "input";
-            /** Schema */
-            schema?: {
-                [key: string]: unknown;
-            } | null;
-            /** Default */
-            default?: unknown;
-        };
-        /**
-         * PublishedOutput
-         * @description An internal sub-workflow output exposed as an outer output pin.
-         */
-        PublishedOutput: {
+            type: "rename_node";
+            /** Node Id */
+            node_id: string;
             /** Name */
             name: string;
-            /** Internal Node Id */
-            internal_node_id: string;
-            /** Internal Output */
-            internal_output: string;
-            /** Schema */
-            schema?: {
-                [key: string]: unknown;
-            } | null;
         };
         /**
          * RevealRequest
@@ -1399,6 +2178,32 @@ export interface components {
         RevealRequest: {
             /** Path */
             path: string;
+        };
+        /**
+         * SerializedConstant
+         * @description Typed constant envelope shared with the BioImageFlow library.
+         */
+        SerializedConstant: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            __type__: "none" | "bool" | "int" | "float" | "list" | "tuple" | "str";
+            /** Value */
+            value: unknown;
+        };
+        /** SetNodeEnabledOperation */
+        SetNodeEnabledOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set_node_enabled";
+            /** Node Id */
+            node_id: string;
+            /** Enabled */
+            enabled: boolean;
         };
         /**
          * SettingsResponse
@@ -1468,12 +2273,33 @@ export interface components {
              * @default 2147483648
              */
             max_upload_size: number;
+            /** Workspace Path */
+            workspace_path?: string | null;
+            /** Workspaces Root */
+            workspaces_root?: string | null;
             /** Resolved Tool Store Path */
             resolved_tool_store_path: string;
             /** Resolved Output Data Folder */
             resolved_output_data_folder: string;
         } & {
             [key: string]: unknown;
+        };
+        /** SourceDestructiveEffect */
+        SourceDestructiveEffect: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "removed_input" | "changed_input" | "removed_output" | "changed_output";
+            /** Port Id */
+            port_id: string;
+            /** Affected Edge Ids */
+            affected_edge_ids?: string[];
+            /**
+             * Affected Binding
+             * @default false
+             */
+            affected_binding: boolean;
         };
         /** ToolCreate */
         ToolCreate: {
@@ -1484,6 +2310,43 @@ export interface components {
              * @enum {string}
              */
             tool_type: "ProcessingTool" | "DataFrameTool";
+        };
+        /** ToolCreateResponse */
+        ToolCreateResponse: {
+            /** Name */
+            name: string;
+            /**
+             * Tool Type
+             * @enum {string}
+             */
+            tool_type: "ProcessingTool" | "DataFrameTool";
+            /** Path */
+            path: string;
+            /**
+             * Source Kind
+             * @default custom
+             * @constant
+             */
+            source_kind: "custom";
+            /**
+             * Editable
+             * @default true
+             * @constant
+             */
+            editable: true;
+        };
+        /** ToolDeleteResponse */
+        ToolDeleteResponse: {
+            /**
+             * Deleted
+             * @default true
+             * @constant
+             */
+            deleted: true;
+            /** Warning */
+            warning?: string | null;
+            /** Affected Workflows */
+            affected_workflows: string[];
         };
         /** ToolMetadata */
         ToolMetadata: {
@@ -1514,7 +2377,7 @@ export interface components {
              * Dataframe Output
              * @default true
              */
-            dataframe_output?: boolean;
+            dataframe_output: boolean;
             /**
              * Documentation
              * @default
@@ -1551,44 +2414,73 @@ export interface components {
             /**
              * Source Kind
              * @default package
+             * @enum {string}
              */
-            source_kind?: "package" | "custom";
+            source_kind: "package" | "custom";
             /**
              * Editable
              * @default false
              */
-            editable?: boolean;
+            editable: boolean;
         };
-        /** ToolCreateResponse */
-        ToolCreateResponse: {
-            /** Name */
-            name: string;
+        /**
+         * ToolNodeState
+         * @description Editable platform state for one processing tool invocation.
+         */
+        ToolNodeState: {
             /**
-             * Tool Type
+             * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            tool_type: "ProcessingTool" | "DataFrameTool";
-            /** Path */
-            path: string;
-            /**
-             * Source Kind
-             * @default custom
-             */
-            source_kind: "custom";
-            /**
-             * Editable
-             * @default true
-             */
-            editable: true;
-        };
-        /** ToolUsageResponse */
-        ToolUsageResponse: {
+            type: "tool";
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
             /** Tool Name */
             tool_name: string;
-            /** Affected Workflows */
-            affected_workflows: string[];
-            /** In Open Workflow */
-            in_open_workflow?: boolean | null;
+            /** Position */
+            position: [
+                number,
+                number
+            ];
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
+            /** Resources */
+            resources?: {
+                [key: string]: unknown;
+            };
+            /** Output Templates */
+            output_templates?: {
+                [key: string]: string;
+            };
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Collapsed
+             * @default false
+             */
+            collapsed: boolean;
+            /** Tool Module */
+            tool_module?: string | null;
+            /** Tool Class */
+            tool_class?: string | null;
+            /** Tool Package */
+            tool_package?: string | null;
+            /** Tool Package Version */
+            tool_package_version?: string | null;
+            /** Source Module */
+            source_module?: string | null;
+        };
+        /** ToolRename */
+        ToolRename: {
+            /** New Name */
+            new_name: string;
         };
         /** ToolRenameResponse */
         ToolRenameResponse: {
@@ -1598,18 +2490,6 @@ export interface components {
             new_name: string;
             /** Path */
             path: string;
-        };
-        /** ToolDeleteResponse */
-        ToolDeleteResponse: {
-            /**
-             * Deleted
-             * @default true
-             */
-            deleted: true;
-            /** Warning */
-            warning?: string | null;
-            /** Affected Workflows */
-            affected_workflows: string[];
         };
         /** ToolSourceResponse */
         ToolSourceResponse: {
@@ -1625,10 +2505,29 @@ export interface components {
             /** Editable */
             editable: boolean;
         };
-        /** ToolRename */
-        ToolRename: {
-            /** New Name */
-            new_name: string;
+        /** ToolUsageResponse */
+        ToolUsageResponse: {
+            /** Tool Name */
+            tool_name: string;
+            /** Affected Workflows */
+            affected_workflows: string[];
+            /** In Open Workflow */
+            in_open_workflow?: boolean | null;
+        };
+        /** UpdateToolParametersOperation */
+        UpdateToolParametersOperation: {
+            scope?: components["schemas"]["WorkflowDraftOperationScope"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "update_tool_parameters";
+            /** Node Id */
+            node_id: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: unknown;
+            };
         };
         /**
          * UploadError
@@ -1650,16 +2549,10 @@ export interface components {
          * @description Response body for `POST /datasets/upload`.
          */
         UploadResponse: {
-            /**
-             * Uploaded
-             * @default []
-             */
-            uploaded: components["schemas"]["UploadedFile"][];
-            /**
-             * Errors
-             * @default []
-             */
-            errors: components["schemas"]["UploadError"][];
+            /** Uploaded */
+            uploaded?: components["schemas"]["UploadedFile"][];
+            /** Errors */
+            errors?: components["schemas"]["UploadError"][];
         };
         /**
          * UploadedFile
@@ -1670,6 +2563,8 @@ export interface components {
             id: string;
             /** Original Filename */
             original_filename: string;
+            /** Display Name */
+            display_name: string;
             /** Path */
             path: string;
             /** Size */
@@ -1678,6 +2573,8 @@ export interface components {
             upload_date: string;
             /** Content Type */
             content_type?: string | null;
+            /** Folder Id */
+            folder_id?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1711,6 +2608,27 @@ export interface components {
              * @default []
              */
             errors: components["schemas"]["GraphValidationError"][];
+        };
+        /** WorkflowConfig */
+        WorkflowConfig: {
+            /**
+             * Storage Path
+             * @default ./bif_data
+             */
+            storage_path: string;
+            /**
+             * Engine
+             * @default wetlands
+             * @enum {string}
+             */
+            engine: "direct" | "wetlands";
+            /**
+             * Execution
+             * @default parallel
+             * @enum {string}
+             */
+            execution: "parallel" | "sequential";
+            output_view?: components["schemas"]["OutputViewConfig"] | null;
         };
         /**
          * WorkflowCreate
@@ -1765,6 +2683,139 @@ export interface components {
             /** Current Updated At */
             current_updated_at: string;
         };
+        /**
+         * WorkflowDraftLockedResponse
+         * @description Machine-readable lock response while execution is running.
+         */
+        WorkflowDraftLockedResponse: {
+            /**
+             * Error
+             * @default workflow_locked
+             * @constant
+             */
+            error: "workflow_locked";
+            /** Detail */
+            detail: string;
+        };
+        /**
+         * WorkflowDraftOperationScope
+         * @description Structural workflow-node IDs from the root to the edited graph.
+         */
+        WorkflowDraftOperationScope: {
+            /** Workflow Path */
+            workflow_path?: string[];
+        };
+        /** WorkflowDraftOperationValidationResponse */
+        WorkflowDraftOperationValidationResponse: {
+            /**
+             * Error
+             * @default operation_validation_error
+             * @constant
+             */
+            error: "operation_validation_error";
+            /** Operation Index */
+            operation_index: number;
+            /** Code */
+            code: string;
+            /** Detail */
+            detail: string;
+        };
+        /** WorkflowDraftOperationsRequest */
+        WorkflowDraftOperationsRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Updated By
+             * @default agent
+             * @enum {string}
+             */
+            updated_by: "frontend" | "agent" | "system";
+            /**
+             * Validate
+             * @default true
+             */
+            validate: boolean;
+            /** Operations */
+            operations: (components["schemas"]["CreateToolNodeOperation"] | components["schemas"]["CreateWorkflowNodeOperation"] | components["schemas"]["DeleteNodeOperation"] | components["schemas"]["RenameNodeOperation"] | components["schemas"]["UpdateToolParametersOperation"] | components["schemas"]["SetNodeEnabledOperation"] | components["schemas"]["MoveNodeOperation"] | components["schemas"]["MoveNodesOperation"] | components["schemas"]["ExposeWorkflowInputOperation"] | components["schemas"]["DeleteWorkflowInputOperation"] | components["schemas"]["ExposeWorkflowOutputOperation"] | components["schemas"]["DeleteWorkflowOutputOperation"] | components["schemas"]["ConnectColumnEdgeOperation"] | components["schemas"]["ConnectDataFrameEdgeOperation"] | components["schemas"]["DeleteEdgeOperation"] | components["schemas"]["DetachWorkflowSourceOperation"])[];
+        };
+        /**
+         * WorkflowDraftPutRequest
+         * @description Request body for replacing the live workflow draft.
+         */
+        WorkflowDraftPutRequest: {
+            graph: components["schemas"]["GraphState"];
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Updated By
+             * @default frontend
+             * @enum {string}
+             */
+            updated_by: "frontend" | "agent" | "system";
+            /**
+             * Validate
+             * @default true
+             */
+            validate: boolean;
+        };
+        /**
+         * WorkflowDraftResetRequest
+         * @description Request an atomic reset of the accepted draft to the saved artifact.
+         */
+        WorkflowDraftResetRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Updated By
+             * @default frontend
+             * @enum {string}
+             */
+            updated_by: "frontend" | "agent" | "system";
+        };
+        /**
+         * WorkflowDraftResponse
+         * @description Live workflow draft returned by the draft API.
+         */
+        WorkflowDraftResponse: {
+            /**
+             * Draft Version
+             * @default 1
+             * @constant
+             */
+            draft_version: 1;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Base Saved Revision */
+            base_saved_revision: string;
+            /** Draft Revision */
+            draft_revision: number;
+            /** Updated At */
+            updated_at: string;
+            /**
+             * Updated By
+             * @enum {string}
+             */
+            updated_by: "frontend" | "agent" | "system";
+            /** Dirty Against Saved */
+            dirty_against_saved: boolean;
+            graph: components["schemas"]["GraphState"];
+            validation: components["schemas"]["ValidationResult"];
+        };
+        /**
+         * WorkflowFile
+         * @description Workflow file response returned to the frontend.
+         */
+        WorkflowFile: {
+            info: components["schemas"]["WorkflowInfo"];
+            graph: components["schemas"]["GraphState"];
+            /** Artifact Hash */
+            artifact_hash: string;
+            authoring_source?: components["schemas"]["PythonAuthoringProvenance"] | null;
+            /** Missing Packages */
+            missing_packages?: components["schemas"]["MissingPackage"][];
+            /** Missing Tools */
+            missing_tools?: components["schemas"]["MissingTool"][];
+        };
         /** WorkflowFolderCreate */
         WorkflowFolderCreate: {
             /** Path */
@@ -1777,22 +2828,13 @@ export interface components {
              * @default empty
              * @enum {string}
              */
-            policy?: "empty" | "delete_children" | "move_children_up";
+            policy: "empty" | "delete_children" | "move_children_up";
         };
-        /**
-         * WorkflowFolderInfo
-         * @description Workflow folder tree node returned by GET /workflows/tree.
-         */
+        /** WorkflowFolderInfo */
         WorkflowFolderInfo: {
-            /**
-             * Path
-             * @default
-             */
+            /** Path */
             path: string;
-            /**
-             * Display Name
-             * @default
-             */
+            /** Display Name */
             display_name: string;
             /** Folders */
             folders?: components["schemas"]["WorkflowFolderInfo"][];
@@ -1803,22 +2845,6 @@ export interface components {
         WorkflowFolderUpdate: {
             /** New Path */
             new_path: string;
-        };
-        /**
-         * WorkflowFile
-         * @description Workflow file response returned to the frontend.
-         */
-        WorkflowFile: {
-            info: components["schemas"]["WorkflowInfo"];
-            graph: components["schemas"]["GraphState"];
-            /** Gui */
-            gui?: {
-                [key: string]: unknown;
-            };
-            /** Missing Packages */
-            missing_packages?: components["schemas"]["MissingPackage"][];
-            /** Missing Tools */
-            missing_tools?: components["schemas"]["MissingTool"][];
         };
         /**
          * WorkflowImportResponse
@@ -1844,7 +2870,7 @@ export interface components {
              * Folder
              * @default
              */
-            folder?: string;
+            folder: string;
             /** Display Name */
             display_name: string;
             /** Path */
@@ -1863,7 +2889,109 @@ export interface components {
              * Identity Generation
              * @default 0
              */
-            identity_generation?: number;
+            identity_generation: number;
+        };
+        /** WorkflowInput */
+        WorkflowInput: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "field" | "dataframe";
+            /** Schema */
+            schema?: {
+                [key: string]: unknown;
+            } | null;
+            default?: components["schemas"]["SerializedConstant"] | null;
+            /** Targets */
+            targets: components["schemas"]["WorkflowInputTarget"][];
+        };
+        /** WorkflowInputPort */
+        WorkflowInputPort: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "workflow";
+            /** Id */
+            id: string;
+        };
+        /** WorkflowInputTarget */
+        WorkflowInputTarget: {
+            /** Node */
+            node: string;
+            /** Port */
+            port: components["schemas"]["FieldInputPort"] | components["schemas"]["PositionalInputPort"] | components["schemas"]["WorkflowInputPort"];
+        };
+        /** WorkflowInterface */
+        WorkflowInterface: {
+            /** Inputs */
+            inputs: components["schemas"]["WorkflowInput"][];
+            /** Outputs */
+            outputs: components["schemas"]["WorkflowOutput"][];
+        };
+        /**
+         * WorkflowNodeState
+         * @description An embedded, independently editable workflow snapshot.
+         */
+        WorkflowNodeState: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "workflow";
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            workflow: components["schemas"]["GraphState"];
+            /** Bindings */
+            bindings: {
+                [key: string]: components["schemas"]["SerializedConstant"];
+            };
+            source?: components["schemas"]["WorkspaceWorkflowSource"] | null;
+            /** Position */
+            position: [
+                number,
+                number
+            ];
+            /** Resources */
+            resources?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Collapsed
+             * @default false
+             */
+            collapsed: boolean;
+        };
+        /** WorkflowOutput */
+        WorkflowOutput: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Schema */
+            schema?: {
+                [key: string]: unknown;
+            } | null;
+            source: components["schemas"]["WorkflowOutputSource"];
+        };
+        /** WorkflowOutputSource */
+        WorkflowOutputSource: {
+            /** Node */
+            node: string;
+            /** Column */
+            column: string;
         };
         /**
          * WorkflowSaveBody
@@ -1871,6 +2999,57 @@ export interface components {
          */
         WorkflowSaveBody: {
             graph: components["schemas"]["GraphState"];
+        };
+        /** WorkflowSourceApplyRequest */
+        WorkflowSourceApplyRequest: {
+            /**
+             * Token
+             * Format: uuid
+             */
+            token: string;
+            /** Confirm Effects */
+            confirm_effects?: components["schemas"]["SourceDestructiveEffect"][];
+        };
+        /** WorkflowSourceApplyResponse */
+        WorkflowSourceApplyResponse: {
+            graph: components["schemas"]["GraphState"];
+            /** Artifact Hash */
+            artifact_hash: string;
+        };
+        /** WorkflowSourcePreview */
+        WorkflowSourcePreview: {
+            /**
+             * Token
+             * Format: uuid
+             */
+            token: string;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "source_update" | "python_rebuild";
+            /** Workflow Id */
+            workflow_id: string;
+            /** Workflow Path */
+            workflow_path?: string[];
+            /** Parent Artifact Hash */
+            parent_artifact_hash: string;
+            /** Source Artifact Hash */
+            source_artifact_hash: string;
+            /** Destructive Effects */
+            destructive_effects?: components["schemas"]["SourceDestructiveEffect"][];
+            /** Custom Source Ids Added */
+            custom_source_ids_added?: string[];
+            /** Custom Source Ids Removed */
+            custom_source_ids_removed?: string[];
+            replacement: components["schemas"]["GraphState"];
+        };
+        /** WorkflowSourceUpdatePreviewRequest */
+        WorkflowSourceUpdatePreviewRequest: {
+            /** Workflow Path */
+            workflow_path: string[];
+            /** Expected Artifact Hash */
+            expected_artifact_hash: string;
         };
         /**
          * WorkflowUpdate
@@ -1895,6 +3074,41 @@ export interface components {
             /** Storage Path */
             storage_path?: string | null;
         };
+        /** WorkspaceInfo */
+        WorkspaceInfo: {
+            /** Workspace Path */
+            workspace_path: string;
+            /** Workflows Root */
+            workflows_root: string;
+            /** Tools Root */
+            tools_root: string;
+            /** Outputs Root */
+            outputs_root: string;
+            /**
+             * Deployment Mode
+             * @enum {string}
+             */
+            deployment_mode: "desktop" | "webapp";
+            /** User Editable */
+            user_editable: boolean;
+        };
+        /** WorkspaceUpdate */
+        WorkspaceUpdate: {
+            /** Workspace Path */
+            workspace_path: string;
+        };
+        /** WorkspaceWorkflowSource */
+        WorkspaceWorkflowSource: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "workspace";
+            /** Workflow Id */
+            workflow_id: string;
+            /** Artifact Hash */
+            artifact_hash: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -1902,14 +3116,48 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type BodyImportPackageFromArchiveApiV1ToolsPackagesImportArchivePost = components['schemas']['Body_import_package_from_archive_api_v1_tools_packages_import_archive_post'];
 export type BodyImportWorkflowApiV1WorkflowsImportPost = components['schemas']['Body_import_workflow_api_v1_workflows_import_post'];
 export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['Body_upload_datasets_api_v1_datasets_upload_post'];
 export type ClearRequest = components['schemas']['ClearRequest'];
-export type ColumnRefEdge = components['schemas']['ColumnRefEdge'];
+export type ColumnEdge = components['schemas']['ColumnEdge'];
+export type ConnectColumnEdgeOperation = components['schemas']['ConnectColumnEdgeOperation'];
+export type ConnectDataFrameEdgeOperation = components['schemas']['ConnectDataFrameEdgeOperation'];
+export type CreateToolNodeOperation = components['schemas']['CreateToolNodeOperation'];
+export type CreateWorkflowNodeOperation = components['schemas']['CreateWorkflowNodeOperation'];
+export type DataFrameEdge = components['schemas']['DataFrameEdge'];
+export type DataTableColumn = components['schemas']['DataTableColumn'];
+export type DataTableCsvRequest = components['schemas']['DataTableCsvRequest'];
+export type DataTableMergedResponse = components['schemas']['DataTableMergedResponse'];
+export type DataTableMergedRow = components['schemas']['DataTableMergedRow'];
+export type DataTableQueryRequest = components['schemas']['DataTableQueryRequest'];
+export type DataTableSource = components['schemas']['DataTableSource'];
+export type DataTableStackedResponse = components['schemas']['DataTableStackedResponse'];
 export type Dataset = components['schemas']['Dataset'];
+export type DatasetFolder = components['schemas']['DatasetFolder'];
+export type DatasetSelection = components['schemas']['DatasetSelection'];
+export type DatasetUpdate = components['schemas']['DatasetUpdate'];
+export type DeleteEdgeOperation = components['schemas']['DeleteEdgeOperation'];
+export type DeleteNodeOperation = components['schemas']['DeleteNodeOperation'];
+export type DeletePreviewResponse = components['schemas']['DeletePreviewResponse'];
+export type DeleteSelectionRequest = components['schemas']['DeleteSelectionRequest'];
+export type DeleteSelectionResponse = components['schemas']['DeleteSelectionResponse'];
+export type DeleteWorkflowInputOperation = components['schemas']['DeleteWorkflowInputOperation'];
+export type DeleteWorkflowOutputOperation = components['schemas']['DeleteWorkflowOutputOperation'];
+export type DetachWorkflowSourceOperation = components['schemas']['DetachWorkflowSourceOperation'];
 export type DraftGraphMismatchResponse = components['schemas']['DraftGraphMismatchResponse'];
+export type EditorOpenMethod = components['schemas']['EditorOpenMethod'];
+export type EditorOpenRequest = components['schemas']['EditorOpenRequest'];
+export type EditorOpenResponse = components['schemas']['EditorOpenResponse'];
+export type EditorOpenToolRequest = components['schemas']['EditorOpenToolRequest'];
+export type EditorStatus = components['schemas']['EditorStatus'];
 export type EnvironmentDeleteRequest = components['schemas']['EnvironmentDeleteRequest'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
+export type ExposeWorkflowInputOperation = components['schemas']['ExposeWorkflowInputOperation'];
+export type ExposeWorkflowOutputOperation = components['schemas']['ExposeWorkflowOutputOperation'];
+export type FieldInputPort = components['schemas']['FieldInputPort'];
+export type FolderCreate = components['schemas']['FolderCreate'];
+export type FolderUpdate = components['schemas']['FolderUpdate'];
 export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
@@ -1917,6 +3165,9 @@ export type HttpValidationError = components['schemas']['HTTPValidationError'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
 export type MissingPackage = components['schemas']['MissingPackage'];
 export type MissingTool = components['schemas']['MissingTool'];
+export type MoveNodeItem = components['schemas']['MoveNodeItem'];
+export type MoveNodeOperation = components['schemas']['MoveNodeOperation'];
+export type MoveNodesOperation = components['schemas']['MoveNodesOperation'];
 export type NapariOpenRequest = components['schemas']['NapariOpenRequest'];
 export type NapariStatus = components['schemas']['NapariStatus'];
 export type NestedSnapshotOwner = components['schemas']['NestedSnapshotOwner'];
@@ -1928,33 +3179,47 @@ export type NestedWorkflowSnapshotPutRequest = components['schemas']['NestedWork
 export type NestedWorkflowSnapshotResponse = components['schemas']['NestedWorkflowSnapshotResponse'];
 export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
-export type NodeState = components['schemas']['NodeState'];
 export type NodeStatus = components['schemas']['NodeStatus'];
-export type OmeroInstance = components['schemas']['OMEROInstance'];
-export type OmeroInstancePatch = components['schemas']['OMEROInstancePatch'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
+export type OutputViewConfig = components['schemas']['OutputViewConfig'];
+export type PackageImportResponse = components['schemas']['PackageImportResponse'];
+export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
 export type PackageInfo = components['schemas']['PackageInfo'];
-export type PositionalEdge = components['schemas']['PositionalEdge'];
-export type PublishedInput = components['schemas']['PublishedInput'];
-export type PublishedOutput = components['schemas']['PublishedOutput'];
+export type PositionalInputPort = components['schemas']['PositionalInputPort'];
+export type PythonAuthoringProvenance = components['schemas']['PythonAuthoringProvenance'];
+export type PythonSourcePreviewRequest = components['schemas']['PythonSourcePreviewRequest'];
+export type RenameNodeOperation = components['schemas']['RenameNodeOperation'];
 export type RevealRequest = components['schemas']['RevealRequest'];
+export type SerializedConstant = components['schemas']['SerializedConstant'];
+export type SetNodeEnabledOperation = components['schemas']['SetNodeEnabledOperation'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
+export type SourceDestructiveEffect = components['schemas']['SourceDestructiveEffect'];
 export type ToolCreate = components['schemas']['ToolCreate'];
 export type ToolCreateResponse = components['schemas']['ToolCreateResponse'];
 export type ToolDeleteResponse = components['schemas']['ToolDeleteResponse'];
 export type ToolMetadata = components['schemas']['ToolMetadata'];
+export type ToolNodeState = components['schemas']['ToolNodeState'];
 export type ToolRename = components['schemas']['ToolRename'];
 export type ToolRenameResponse = components['schemas']['ToolRenameResponse'];
 export type ToolSourceResponse = components['schemas']['ToolSourceResponse'];
 export type ToolUsageResponse = components['schemas']['ToolUsageResponse'];
+export type UpdateToolParametersOperation = components['schemas']['UpdateToolParametersOperation'];
 export type UploadError = components['schemas']['UploadError'];
 export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
+export type WorkflowConfig = components['schemas']['WorkflowConfig'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
 export type WorkflowDeleteResponse = components['schemas']['WorkflowDeleteResponse'];
 export type WorkflowDraftConflictResponse = components['schemas']['WorkflowDraftConflictResponse'];
+export type WorkflowDraftLockedResponse = components['schemas']['WorkflowDraftLockedResponse'];
+export type WorkflowDraftOperationScope = components['schemas']['WorkflowDraftOperationScope'];
+export type WorkflowDraftOperationValidationResponse = components['schemas']['WorkflowDraftOperationValidationResponse'];
+export type WorkflowDraftOperationsRequest = components['schemas']['WorkflowDraftOperationsRequest'];
+export type WorkflowDraftPutRequest = components['schemas']['WorkflowDraftPutRequest'];
+export type WorkflowDraftResetRequest = components['schemas']['WorkflowDraftResetRequest'];
+export type WorkflowDraftResponse = components['schemas']['WorkflowDraftResponse'];
 export type WorkflowFile = components['schemas']['WorkflowFile'];
 export type WorkflowFolderCreate = components['schemas']['WorkflowFolderCreate'];
 export type WorkflowFolderDelete = components['schemas']['WorkflowFolderDelete'];
@@ -1962,8 +3227,22 @@ export type WorkflowFolderInfo = components['schemas']['WorkflowFolderInfo'];
 export type WorkflowFolderUpdate = components['schemas']['WorkflowFolderUpdate'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
 export type WorkflowInfo = components['schemas']['WorkflowInfo'];
+export type WorkflowInput = components['schemas']['WorkflowInput'];
+export type WorkflowInputPort = components['schemas']['WorkflowInputPort'];
+export type WorkflowInputTarget = components['schemas']['WorkflowInputTarget'];
+export type WorkflowInterface = components['schemas']['WorkflowInterface'];
+export type WorkflowNodeState = components['schemas']['WorkflowNodeState'];
+export type WorkflowOutput = components['schemas']['WorkflowOutput'];
+export type WorkflowOutputSource = components['schemas']['WorkflowOutputSource'];
 export type WorkflowSaveBody = components['schemas']['WorkflowSaveBody'];
+export type WorkflowSourceApplyRequest = components['schemas']['WorkflowSourceApplyRequest'];
+export type WorkflowSourceApplyResponse = components['schemas']['WorkflowSourceApplyResponse'];
+export type WorkflowSourcePreview = components['schemas']['WorkflowSourcePreview'];
+export type WorkflowSourceUpdatePreviewRequest = components['schemas']['WorkflowSourceUpdatePreviewRequest'];
 export type WorkflowUpdate = components['schemas']['WorkflowUpdate'];
+export type WorkspaceInfo = components['schemas']['WorkspaceInfo'];
+export type WorkspaceUpdate = components['schemas']['WorkspaceUpdate'];
+export type WorkspaceWorkflowSource = components['schemas']['WorkspaceWorkflowSource'];
 export type $defs = Record<string, never>;
 export interface operations {
     health_api_v1_health_get: {
@@ -2010,7 +3289,9 @@ export interface operations {
     };
     create_tool_api_v1_tools_post: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2027,9 +3308,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolCreateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2087,7 +3366,9 @@ export interface operations {
     };
     get_tool_source_api_v1_tools__tool_name__source_get: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path: {
                 tool_name: string;
@@ -2102,9 +3383,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolSourceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_usage_api_v1_tools__tool_name__usage_get: {
+        parameters: {
+            query?: {
+                workflow_name?: string | null;
+            };
+            header?: never;
+            path: {
+                tool_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolUsageResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2120,7 +3432,9 @@ export interface operations {
     };
     delete_tool_api_v1_tools__tool_name__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path: {
                 tool_name: string;
@@ -2135,9 +3449,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolDeleteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2153,7 +3465,9 @@ export interface operations {
     };
     rename_tool_api_v1_tools__tool_name__patch: {
         parameters: {
-            query?: never;
+            query?: {
+                workflow_name?: string | null;
+            };
             header?: never;
             path: {
                 tool_name: string;
@@ -2172,9 +3486,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["ToolRenameResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2214,6 +3526,72 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_package_from_url_api_v1_tools_packages_import_url_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackageImportUrlRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_package_from_archive_api_v1_tools_packages_import_archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_package_from_archive_api_v1_tools_packages_import_archive_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackageImportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2404,28 +3782,6 @@ export interface operations {
             };
         };
     };
-    seed_tools_api_v1_dev_seed_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: number;
-                    };
-                };
-            };
-        };
-    };
     reveal_path_api_v1_fs_reveal_post: {
         parameters: {
             query?: never;
@@ -2448,6 +3804,103 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_editor_status_api_v1_editor_status_get: {
+        parameters: {
+            query?: {
+                launch?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_editor_path_api_v1_editor_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditorOpenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorOpenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_tool_script_api_v1_editor_open_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditorOpenToolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorOpenResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2582,6 +4035,94 @@ export interface operations {
             };
         };
     };
+    list_folders_api_v1_datasets_folders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetFolder"][];
+                };
+            };
+        };
+    };
+    create_folder_api_v1_datasets_folders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetFolder"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_folder_api_v1_datasets_folders__folder_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                folder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetFolder"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_dataset_api_v1_datasets__dataset_id__delete: {
         parameters: {
             query?: never;
@@ -2599,6 +4140,140 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_dataset_api_v1_datasets__dataset_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_selection_api_v1_datasets_actions_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_delete_api_v1_datasets_actions_delete_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_selection_api_v1_datasets_actions_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteSelectionResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -2694,9 +4369,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2907,6 +4580,249 @@ export interface operations {
             };
         };
     };
+    get_workspace_api_v1_workspace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInfo"];
+                };
+            };
+        };
+    };
+    patch_workspace_api_v1_workspace_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_workflow_draft_operations_endpoint_api_v1_workflow_draft_operations__workflow_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftOperationsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftOperationValidationResponse"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftLockedResponse"];
+                };
+            };
+        };
+    };
+    get_workflow_draft_api_v1_workflow_drafts__workflow_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_workflow_draft_api_v1_workflow_drafts__workflow_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftPutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftLockedResponse"];
+                };
+            };
+        };
+    };
+    reset_workflow_draft_to_saved_api_v1_workflow_drafts__workflow_id__reset_to_saved_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDraftResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftConflictResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDraftLockedResponse"];
+                };
+            };
+        };
+    };
     list_workflows_api_v1_workflows_get: {
         parameters: {
             query?: never;
@@ -2923,6 +4839,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowInfo"][];
+                };
+            };
+        };
+    };
+    create_workflow_api_v1_workflows_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2980,6 +4929,41 @@ export interface operations {
             };
         };
     };
+    delete_folder_api_v1_workflows_folders__path__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["WorkflowFolderDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rename_folder_api_v1_workflows_folders__path__patch: {
         parameters: {
             query?: never;
@@ -3002,74 +4986,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowFolderInfo"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_folder_api_v1_workflows_folders__path__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                path: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["WorkflowFolderDelete"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkflowDeleteResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_workflow_api_v1_workflows_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkflowCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkflowInfo"];
                 };
             };
             /** @description Validation Error */
@@ -3151,7 +5067,9 @@ export interface operations {
     };
     delete_workflow_api_v1_workflows__name__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_identity_generation?: number | null;
+            };
             header?: never;
             path: {
                 name: string;
@@ -3166,9 +5084,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": components["schemas"]["WorkflowDeleteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3248,6 +5164,111 @@ export interface operations {
             };
         };
     };
+    preview_workflow_source_update_api_v1_workflows__name__source_update_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowSourceUpdatePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowSourcePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_python_source_api_v1_workflows__name__python_source_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PythonSourcePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowSourcePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_workflow_source_operation_api_v1_workflows__name__source_operations_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowSourceApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowSourceApplyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_workflow_api_v1_workflows_import_post: {
         parameters: {
             query?: never;
@@ -3282,6 +5303,37 @@ export interface operations {
         };
     };
     rebind_workflow_versions_api_v1_workflows__name__rebind_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_workflow_api_v1_workflows__name__activate_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3431,43 +5483,7 @@ export interface operations {
         parameters: {
             query?: {
                 workflow_name?: string | null;
-            };
-            header?: never;
-            path: {
-                node_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_node_image_api_v1_nodes__node_id__image_get: {
-        parameters: {
-            query: {
-                col: string;
-                /** @enum {string|null} */
-                format?: "ome-tiff" | null;
-                row?: number;
-                workflow_name?: string | null;
+                columns?: string[] | null;
             };
             header?: never;
             path: {
@@ -3501,10 +5517,9 @@ export interface operations {
         parameters: {
             query: {
                 col: string;
-                /** @enum {string|null} */
-                format?: "ome-tiff" | null;
                 row?: number;
                 workflow_name?: string | null;
+                format?: "ome-tiff" | null;
             };
             header?: never;
             path: {
@@ -3535,6 +5550,79 @@ export interface operations {
             };
         };
     };
+    get_node_image_api_v1_nodes__node_id__image_get: {
+        parameters: {
+            query: {
+                col: string;
+                row?: number;
+                workflow_name?: string | null;
+                format?: "ome-tiff" | null;
+            };
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_node_image_api_v1_nodes__node_id__reveal_post: {
+        parameters: {
+            query: {
+                col: string;
+                row?: number;
+                workflow_name?: string | null;
+            };
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_node_thumbnail_api_v1_nodes__node_id__thumbnail_get: {
         parameters: {
             query: {
@@ -3550,6 +5638,72 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_data_table_api_v1_data_table_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataTableQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataTableMergedResponse"] | components["schemas"]["DataTableStackedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_data_table_csv_api_v1_data_table_csv_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataTableCsvRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -3626,40 +5780,4 @@ export interface operations {
             };
         };
     };
-}
-
-// --- Manual aliases (re-applied after every `generate-types` run) ---
-export type ExecutionBackend = "direct" | "wetlands" | string;
-export type ExecutionScheduling = "sequential" | "parallel" | string;
-export type Settings = SettingsResponse & {
-    /** Current BioImageFlow execution backend, when exposed by the server. */
-    engine?: ExecutionBackend;
-    /** Current BioImageFlow local scheduling policy, when exposed by the server. */
-    execution?: ExecutionScheduling;
-};
-export type OMEROInstance = OmeroInstanceResponse;
-export type OMEROInstancePatch = OmeroInstancePatch;
-
-export interface ProgressInfo {
-    node_id: string;
-    row: number;
-    total_rows: number;
-    result_key?: string | null;
-    record_id?: string | null;
-}
-
-export interface ExecutionResult {
-    success: boolean;
-    errors: Array<Record<string, unknown>>;
-    node_statuses: Record<string, NodeStatus>;
-}
-
-export interface ExecutionStatus {
-    state: "starting" | "running" | "idle";
-    last_result: ExecutionResult | null;
-    progress: ProgressInfo | null;
-    node_statuses?: Record<string, NodeStatus>;
-    execution_id?: string | null;
-    workflow_id?: string | null;
-    draft_revision?: number | null;
 }

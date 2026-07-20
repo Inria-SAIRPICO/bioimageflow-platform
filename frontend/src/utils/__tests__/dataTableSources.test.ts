@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { GraphState, NodeState } from '@/api/types'
+import type { ToolNodeState } from '@/api/types'
+import { makeGraph } from '@/test-utils/graphFixtures'
 import {
   maximumUpstreamDepth,
   resolveDataTableNodes,
   selectedAnchorsAreRelated,
 } from '@/utils/dataTableSources'
 
-function node(id: string): NodeState {
+function node(id: string): ToolNodeState {
   return {
+    type: 'tool',
     id,
     name: id,
     tool_name: id,
@@ -23,21 +25,22 @@ function node(id: string): NodeState {
 function edge(id: string, source: string, target: string) {
   return {
     id,
-    type: 'positional' as const,
+    type: 'dataframe' as const,
     source_node: source,
     target_node: target,
-    positional_index: 0,
+    target_position: 0,
+    target_input: null,
   }
 }
 
-const graph: GraphState = {
+const graph = makeGraph({
   nodes: ['a', 'branch', 'b', 'c', 'independent'].map(node),
   edges: [
     edge('a-b', 'a', 'b'),
     edge('branch-b', 'branch', 'b'),
     edge('b-c', 'b', 'c'),
   ],
-}
+})
 
 describe('Data Table source traversal', () => {
   it('collects incoming branches to the requested depth and orders them topologically', () => {

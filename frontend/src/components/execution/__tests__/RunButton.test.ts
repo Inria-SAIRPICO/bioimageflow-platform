@@ -76,11 +76,13 @@ describe('RunButton', () => {
     setActivePinia(createPinia())
     useWorkflowStore().current = {
       name: 'wf_a',
+      folder: '',
       display_name: 'Workflow A',
       description: null,
       storage_path: '/tmp/workflows/wf_a',
       path: '/tmp/workflows/wf_a.json',
       last_modified: '2026-01-01T00:00:00Z',
+      identity_generation: 0,
     }
     workflowDraftMocks.ensureFreshForCriticalOperation.mockClear()
     workflowDraftMocks.ensureFreshForCriticalOperation.mockResolvedValue(true)
@@ -204,8 +206,9 @@ describe('RunButton', () => {
     const { wrapper, flushNow, validationResult, currentGraph } = mountButton({
       syncPending: true,
     })
-    currentGraph.value = {
+    currentGraph.value = makeGraph({
       nodes: [{
+        type: 'tool',
         id: 'changed',
         name: 'Changed',
         tool_name: 'tool',
@@ -217,7 +220,7 @@ describe('RunButton', () => {
         collapsed: false,
       }],
       edges: [],
-    }
+    })
     flushNow.mockImplementation(async () => {
       validationResult.value = {
         valid: true,
@@ -278,6 +281,7 @@ describe('RunButton', () => {
     persistenceMocks.acceptedDraftRevision.value = 3
     useWorkflowStore().current = {
       name: 'wf_b',
+      folder: '',
       display_name: 'Workflow B',
     } as any
     const { wrapper } = mountButton()
@@ -345,7 +349,7 @@ describe('RunButton', () => {
       sessionId: 'nested-a',
       parentCanvasId,
       workflowId: 'wf_a',
-      panelId: 'sub-workflow:nested-a',
+      panelId: 'nested-workflow:nested-a',
       displayName: 'Nested A',
     })
     const ui = useUIStore()
@@ -379,11 +383,13 @@ describe('RunButton', () => {
     const workflows = useWorkflowStore()
     workflows.current = {
       name: 'wf_a',
+      folder: '',
       display_name: 'Workflow A',
       description: null,
       storage_path: '/tmp/workflows/wf_a',
       path: '/tmp/workflows/wf_a.json',
       last_modified: '2026-01-01T00:00:00Z',
+      identity_generation: 0,
     }
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
 
@@ -418,6 +424,7 @@ describe('RunButton', () => {
   it('uses the latest graph-sync graph after the freshness check', async () => {
     const staleGraph = makeGraph({
       nodes: [makeGraphNode({
+        type: 'tool',
         id: 'stale',
         name: 'Stale',
         tool_name: 'old_tool',
@@ -425,6 +432,7 @@ describe('RunButton', () => {
     })
     const freshGraph = makeGraph({
       nodes: [makeGraphNode({
+        type: 'tool',
         id: 'fresh',
         name: 'Fresh',
         tool_name: 'new_tool',

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GraphState, WorkflowInfo } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import type { RootWorkflowPresentation } from '../rootWorkflowPresentation'
+import { makeGraph } from '@/test-utils/graphFixtures'
 
 const workflowStoreMock = vi.hoisted(() => ({
   fetchWorkflowTree: vi.fn(),
@@ -39,8 +40,9 @@ vi.mock('../rootWorkflowPresentation', () => ({
 import { resolveStartupWorkflow } from '../startupWorkflow'
 
 function graph(nodeId: string): GraphState {
-  return {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: nodeId,
       name: nodeId,
       tool_name: 'gaussian_blur',
@@ -52,7 +54,7 @@ function graph(nodeId: string): GraphState {
       collapsed: false,
     }],
     edges: [],
-  }
+  })
 }
 
 function workflowInfo(name: string, lastModified = '2026-05-21T10:00:00Z'): WorkflowInfo {
@@ -64,6 +66,7 @@ function workflowInfo(name: string, lastModified = '2026-05-21T10:00:00Z'): Work
     display_name: `Display ${name}`,
     path: `/workspace/workflows/${name}/workflow.json`,
     last_modified: lastModified,
+      identity_generation: 0,
   }
 }
 

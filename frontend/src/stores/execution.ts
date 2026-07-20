@@ -9,13 +9,30 @@ import {
   type CanvasId,
 } from '@/sessions/canvasSessionRegistry'
 import type {
-  ExecutionResult,
-  ExecutionStatus,
   GraphState,
   GraphValidationError,
   NodeStatus,
-  ProgressInfo,
 } from '@/api/types'
+
+export interface ProgressInfo {
+  node_id: string
+  row: number
+  total_rows: number
+  result_key?: string | null
+  record_id?: string | null
+}
+
+interface ExecutionResult {
+  success: boolean
+  errors: Array<Record<string, unknown>>
+  node_statuses: Record<string, NodeStatus>
+}
+
+interface ExecutionStatus {
+  state: 'starting' | 'running' | 'idle'
+  last_result: ExecutionResult | null
+  progress: ProgressInfo | null
+}
 
 interface ExecutionContextFields {
   execution_id?: string | null

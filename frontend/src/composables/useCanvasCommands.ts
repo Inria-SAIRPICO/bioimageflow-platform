@@ -9,20 +9,20 @@ const CANVAS_COMMAND_RESOURCE = 'canvas-commands'
 
 export type CanvasSaveRoute = 'root' | 'nested' | 'unavailable'
 
-export type CanvasPublicationRejectionReason =
+export type CanvasInterfaceRejectionReason =
   | 'duplicate_name'
   | 'empty_name'
   | 'locked'
   | 'not_found'
-  | 'not_publishable'
+  | 'not_exposable'
   | 'unavailable'
 
-export type CanvasPublicationCommandResult =
+export type CanvasInterfaceCommandResult =
   | { status: 'changed' }
   | { status: 'unchanged' }
   | {
       status: 'rejected'
-      reason: CanvasPublicationRejectionReason
+      reason: CanvasInterfaceRejectionReason
       name?: string
     }
 
@@ -34,24 +34,24 @@ export interface CanvasScopedCommandsOptions {
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
-  togglePublishedInput: (
+  toggleWorkflowInput: (
     nodeId: string,
     input: string,
-  ) => CanvasPublicationCommandResult
-  togglePublishedOutput: (
+  ) => CanvasInterfaceCommandResult
+  toggleWorkflowOutput: (
     nodeId: string,
     output: string,
-  ) => CanvasPublicationCommandResult
-  renamePublishedInput: (
+  ) => CanvasInterfaceCommandResult
+  renameWorkflowInput: (
     nodeId: string,
     input: string,
     name: string,
-  ) => CanvasPublicationCommandResult
-  renamePublishedOutput: (
+  ) => CanvasInterfaceCommandResult
+  renameWorkflowOutput: (
     nodeId: string,
     output: string,
     name: string,
-  ) => CanvasPublicationCommandResult
+  ) => CanvasInterfaceCommandResult
   updateParameter: (nodeId: string, key: string, value: unknown) => boolean
 }
 
@@ -62,18 +62,18 @@ export interface CanvasCommandsApi {
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
-  togglePublishedInput(nodeId: string, input: string): CanvasPublicationCommandResult
-  togglePublishedOutput(nodeId: string, output: string): CanvasPublicationCommandResult
-  renamePublishedInput(
+  toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult
+  toggleWorkflowOutput(nodeId: string, output: string): CanvasInterfaceCommandResult
+  renameWorkflowInput(
     nodeId: string,
     input: string,
     name: string,
-  ): CanvasPublicationCommandResult
-  renamePublishedOutput(
+  ): CanvasInterfaceCommandResult
+  renameWorkflowOutput(
     nodeId: string,
     output: string,
     name: string,
-  ): CanvasPublicationCommandResult
+  ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
   dispose(): void
 }
@@ -85,18 +85,18 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
-  togglePublishedInput(nodeId: string, input: string): CanvasPublicationCommandResult
-  togglePublishedOutput(nodeId: string, output: string): CanvasPublicationCommandResult
-  renamePublishedInput(
+  toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult
+  toggleWorkflowOutput(nodeId: string, output: string): CanvasInterfaceCommandResult
+  renameWorkflowInput(
     nodeId: string,
     input: string,
     name: string,
-  ): CanvasPublicationCommandResult
-  renamePublishedOutput(
+  ): CanvasInterfaceCommandResult
+  renameWorkflowOutput(
     nodeId: string,
     output: string,
     name: string,
-  ): CanvasPublicationCommandResult
+  ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
 }
 
@@ -141,17 +141,17 @@ export function useCanvasCommands(
     setOutputTemplate: (nodeId, output, value) => (
       resource.setOutputTemplate(nodeId, output, value)
     ),
-    togglePublishedInput: (nodeId, input) => (
-      resource.togglePublishedInput(nodeId, input)
+    toggleWorkflowInput: (nodeId, input) => (
+      resource.toggleWorkflowInput(nodeId, input)
     ),
-    togglePublishedOutput: (nodeId, output) => (
-      resource.togglePublishedOutput(nodeId, output)
+    toggleWorkflowOutput: (nodeId, output) => (
+      resource.toggleWorkflowOutput(nodeId, output)
     ),
-    renamePublishedInput: (nodeId, input, name) => (
-      resource.renamePublishedInput(nodeId, input, name)
+    renameWorkflowInput: (nodeId, input, name) => (
+      resource.renameWorkflowInput(nodeId, input, name)
     ),
-    renamePublishedOutput: (nodeId, output, name) => (
-      resource.renamePublishedOutput(nodeId, output, name)
+    renameWorkflowOutput: (nodeId, output, name) => (
+      resource.renameWorkflowOutput(nodeId, output, name)
     ),
     updateParameter: (nodeId, key, value) => (
       resource.updateParameter(nodeId, key, value)
@@ -198,21 +198,21 @@ function createCommandResource(
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.setOutputTemplate(nodeId, output, value)
     },
-    togglePublishedInput: (nodeId, input) => {
+    toggleWorkflowInput: (nodeId, input) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
-      return options.togglePublishedInput(nodeId, input)
+      return options.toggleWorkflowInput(nodeId, input)
     },
-    togglePublishedOutput: (nodeId, output) => {
+    toggleWorkflowOutput: (nodeId, output) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
-      return options.togglePublishedOutput(nodeId, output)
+      return options.toggleWorkflowOutput(nodeId, output)
     },
-    renamePublishedInput: (nodeId, input, name) => {
+    renameWorkflowInput: (nodeId, input, name) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
-      return options.renamePublishedInput(nodeId, input, name)
+      return options.renameWorkflowInput(nodeId, input, name)
     },
-    renamePublishedOutput: (nodeId, output, name) => {
+    renameWorkflowOutput: (nodeId, output, name) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
-      return options.renamePublishedOutput(nodeId, output, name)
+      return options.renameWorkflowOutput(nodeId, output, name)
     },
     updateParameter: (nodeId, key, value) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
@@ -255,21 +255,21 @@ function createActiveFacade(): CanvasCommandsApi {
     setOutputTemplate: (nodeId, output, value) => (
       activeCommandResource()?.setOutputTemplate(nodeId, output, value) ?? false
     ),
-    togglePublishedInput: (nodeId, input) => (
-      activeCommandResource()?.togglePublishedInput(nodeId, input)
-      ?? publicationUnavailable()
+    toggleWorkflowInput: (nodeId, input) => (
+      activeCommandResource()?.toggleWorkflowInput(nodeId, input)
+      ?? workflowInterfaceUnavailable()
     ),
-    togglePublishedOutput: (nodeId, output) => (
-      activeCommandResource()?.togglePublishedOutput(nodeId, output)
-      ?? publicationUnavailable()
+    toggleWorkflowOutput: (nodeId, output) => (
+      activeCommandResource()?.toggleWorkflowOutput(nodeId, output)
+      ?? workflowInterfaceUnavailable()
     ),
-    renamePublishedInput: (nodeId, input, name) => (
-      activeCommandResource()?.renamePublishedInput(nodeId, input, name)
-      ?? publicationUnavailable()
+    renameWorkflowInput: (nodeId, input, name) => (
+      activeCommandResource()?.renameWorkflowInput(nodeId, input, name)
+      ?? workflowInterfaceUnavailable()
     ),
-    renamePublishedOutput: (nodeId, output, name) => (
-      activeCommandResource()?.renamePublishedOutput(nodeId, output, name)
-      ?? publicationUnavailable()
+    renameWorkflowOutput: (nodeId, output, name) => (
+      activeCommandResource()?.renameWorkflowOutput(nodeId, output, name)
+      ?? workflowInterfaceUnavailable()
     ),
     updateParameter: (nodeId, key, value) => {
       return activeCommandResource()?.updateParameter(nodeId, key, value) ?? false
@@ -291,6 +291,6 @@ function activeCommandResource(): CanvasCommandResource | undefined {
   ) ?? undefined
 }
 
-function publicationUnavailable(): CanvasPublicationCommandResult {
+function workflowInterfaceUnavailable(): CanvasInterfaceCommandResult {
   return { status: 'rejected', reason: 'unavailable' }
 }

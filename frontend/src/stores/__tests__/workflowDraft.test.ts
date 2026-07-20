@@ -12,11 +12,9 @@ import { api } from '@/api/client'
 import { useWorkflowDraftStore, type WorkflowDraftChangedMessage } from '../workflowDraft'
 import type { GraphState } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
+import { makeGraph } from '@/test-utils/graphFixtures'
 
-const emptyGraph: GraphState = {
-  nodes: [],
-  edges: [],
-}
+const emptyGraph: GraphState = makeGraph()
 
 function draft(
   revision: number,
@@ -281,8 +279,9 @@ describe('workflow draft store', () => {
   })
 
   it('overwrites a newer remote draft with the current graph revision', async () => {
-    const localGraph: GraphState = {
+    const localGraph: GraphState = makeGraph({
       nodes: [{
+        type: 'tool',
         id: 'local',
         name: 'Local',
         tool_name: 'gaussian_blur',
@@ -294,7 +293,7 @@ describe('workflow draft store', () => {
         collapsed: false,
       }],
       edges: [],
-    }
+    })
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: draft(3) })
       .mockResolvedValueOnce({ data: draft(4) })
@@ -317,8 +316,9 @@ describe('workflow draft store', () => {
   })
 
   it('can write a graph to another workflow without changing the tracked draft', async () => {
-    const copyGraph: GraphState = {
+    const copyGraph: GraphState = makeGraph({
       nodes: [{
+        type: 'tool',
         id: 'agent',
         name: 'Agent',
         tool_name: 'gaussian_blur',
@@ -330,7 +330,7 @@ describe('workflow draft store', () => {
         collapsed: false,
       }],
       edges: [],
-    }
+    })
     vi.mocked(api.get)
       .mockResolvedValueOnce({ data: draft(3) })
       .mockResolvedValueOnce({ data: draft(1, emptyGraph, 'copy') })

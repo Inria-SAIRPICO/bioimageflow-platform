@@ -221,7 +221,7 @@ describe('editor api helpers', () => {
     canvasSessionRegistry.activate(null)
 
     await expect(openPathWithEditor('/tmp/tool.py')).rejects.toThrow(
-      /active workflow or sub-workflow canvas/i,
+      /active workflow or nested-workflow canvas/i,
     )
 
     expect(barrierMocks.useCanvasPersistence).not.toHaveBeenCalled()
@@ -246,7 +246,7 @@ describe('editor api helpers', () => {
     setActivePinia(undefined as never)
 
     await expect(openPathWithEditor('/tmp/tool.py')).rejects.toThrow(
-      /active workflow or sub-workflow canvas/i,
+      /active workflow or nested-workflow canvas/i,
     )
 
     expect(barrierMocks.useCanvasPersistence).not.toHaveBeenCalled()

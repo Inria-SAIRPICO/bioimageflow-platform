@@ -5,23 +5,27 @@ const props = defineProps<{
   nodeId: string
   position: { x: number; y: number }
   enabled: boolean
-  canOpenSubWorkflow?: boolean
+  canOpenNestedWorkflow?: boolean
+  hasWorkspaceSource?: boolean
 }>()
 
 const emit = defineEmits<{
   'enable-toggle': []
   'rename': []
   'delete': []
-  'create-sub-workflow': []
-  'open-sub-workflow': []
+  'group-into-workflow': []
+  'open-workflow': []
+  'open-source-workflow': []
+  'update-from-source': []
+  'detach-source': []
   'close': []
 }>()
 
-function onSubWorkflowAction() {
-  if (props.canOpenSubWorkflow) {
-    emit('open-sub-workflow')
+function onNestedWorkflowAction() {
+  if (props.canOpenNestedWorkflow) {
+    emit('open-workflow')
   } else {
-    emit('create-sub-workflow')
+    emit('group-into-workflow')
   }
 }
 
@@ -65,9 +69,20 @@ onUnmounted(() => {
       <li @click="emit('enable-toggle')">
         {{ enabled ? 'Disable' : 'Enable' }}
       </li>
-      <li @click="onSubWorkflowAction">
-        {{ canOpenSubWorkflow ? 'Open Sub-workflow' : 'Create Sub-workflow' }}
+      <li @click="onNestedWorkflowAction">
+        {{ canOpenNestedWorkflow ? 'Open workflow' : 'Group into workflow' }}
       </li>
+      <template v-if="hasWorkspaceSource">
+        <li @click="emit('open-source-workflow')">
+          Open source workflow
+        </li>
+        <li @click="emit('update-from-source')">
+          Update from source
+        </li>
+        <li @click="emit('detach-source')">
+          Detach from source
+        </li>
+      </template>
       <li @click="emit('delete')">
         Delete
       </li>

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GraphState, ValidationResult } from '@/api/types'
+import { makeGraph, requireToolNode } from '@/test-utils/graphFixtures'
 import { canvasIdFromPanelId } from '../canvasSessionRegistry'
 import {
   CanvasSessionDisposedError,
@@ -8,8 +9,9 @@ import {
 } from '../graphSyncCoordinator'
 
 function graph(value: string): GraphState {
-  return {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: 'repeated-node',
       name: 'Repeated',
       tool_name: 'tool',
@@ -21,7 +23,7 @@ function graph(value: string): GraphState {
       collapsed: false,
     }],
     edges: [],
-  }
+  })
 }
 
 function validation(valid: boolean): ValidationResult {
@@ -62,7 +64,9 @@ describe('graph sync coordinator', () => {
     const graphA = graph('a')
     a.queue(graphA, { semanticRevision: 4 })
     b.queue(graph('b'), { semanticRevision: 9 })
-    graphA.nodes[0]!.parameters = { value: 'mutated-after-queue' }
+    const graphANode = graphA.nodes[0]!
+    if (graphANode.type !== 'tool') throw new Error('expected tool node')
+    graphANode.parameters = { value: 'mutated-after-queue' }
     await Promise.all([a.flushLatest(), b.flushLatest()])
 
     expect(requests).toEqual(expect.arrayContaining([
@@ -199,7 +203,7 @@ describe('graph sync coordinator', () => {
     expect(coordinator.syncState.value).toBe('error')
     expect(coordinator.lastError.value).toBe(failure)
     expect(coordinator.validationResult.value).toEqual(previousValidation)
-    expect(coordinator.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'retry' })
+    expect(requireToolNode(coordinator.currentGraph.value).parameters).toEqual({ value: 'retry' })
 
     const recoveryFlush = coordinator.flushLatest()
     await vi.advanceTimersByTimeAsync(0)

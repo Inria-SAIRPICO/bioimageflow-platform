@@ -10,16 +10,16 @@ export function workflowIdFromPanelId(panelId: string): string | null {
   return decodeURIComponent(panelId.slice('workflow:'.length))
 }
 
-export function subWorkflowPanelId(sessionId: string): string {
-  return `sub-workflow:${encodeURIComponent(sessionId)}`
+export function nestedWorkflowPanelId(sessionId: string): string {
+  return `nested-workflow:${encodeURIComponent(sessionId)}`
 }
 
-export function sessionIdFromSubWorkflowPanelId(panelId: string): string | null {
-  if (!panelId.startsWith('sub-workflow:')) return null
-  return decodeURIComponent(panelId.slice('sub-workflow:'.length))
+export function sessionIdFromNestedWorkflowPanelId(panelId: string): string | null {
+  if (!panelId.startsWith('nested-workflow:')) return null
+  return decodeURIComponent(panelId.slice('nested-workflow:'.length))
 }
 
 export function isCanvasPanelId(panelId: string): boolean {
   return workflowIdFromPanelId(panelId) !== null
-    || sessionIdFromSubWorkflowPanelId(panelId) !== null
+    || sessionIdFromNestedWorkflowPanelId(panelId) !== null
 }

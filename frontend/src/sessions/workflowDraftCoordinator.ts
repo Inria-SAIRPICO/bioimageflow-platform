@@ -1,5 +1,6 @@
 import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
 import type { GraphState } from '@/api/types'
+import { emptyGraph } from '@/sessions/graphDocument'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import type { CanvasId, DisposableCanvasResource } from './canvasSessionRegistry'
 
@@ -97,7 +98,7 @@ export function createWorkflowDraftCoordinator(
   options: CreateWorkflowDraftCoordinatorOptions,
 ): WorkflowDraftCoordinator {
   const debounceMs = options.debounceMs ?? 500
-  const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
+  const currentGraph = ref<GraphState>(emptyGraph()) as Ref<GraphState>
   const queueRevision = ref(0)
   const acceptedQueueRevision = ref<number | null>(null)
   const currentDraftRevision = ref(options.initialDraftRevision)

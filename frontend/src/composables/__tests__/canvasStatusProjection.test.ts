@@ -263,7 +263,7 @@ describe('canvas status projection resource', () => {
 
   it('never applies a contextual root overlay to a nested canvas', () => {
     const rootId = canvasIdFromPanelId('workflow:a')
-    const nestedId = canvasIdFromPanelId('subworkflow:a')
+    const nestedId = canvasIdFromPanelId('nested-workflow:a')
     useCanvasStatusProjection({
       descriptor: { kind: 'root', canvasId: rootId, workflowId: 'wf_a' },
       nodes: ref([node('same')]),
@@ -301,7 +301,7 @@ describe('canvas status projection resource', () => {
 
   it('never applies a contextless overlay to a registered nested canvas', () => {
     const rootId = canvasIdFromPanelId('workflow:a')
-    const nestedId = canvasIdFromPanelId('subworkflow:a')
+    const nestedId = canvasIdFromPanelId('nested-workflow:a')
     const nested = useCanvasStatusProjection({
       descriptor: {
         kind: 'nested',

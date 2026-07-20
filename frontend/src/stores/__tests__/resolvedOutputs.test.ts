@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { ToolMetadata } from '@/api/types'
+import { encodeEndpointHandle } from '@/utils/endpointHandles'
 
 // Mock the API client
 const mockFetchNodeOutputSchema = vi.fn()
@@ -56,12 +57,15 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tool_type: 'DataFrameTool',
     accepts_upstream: true,
     dynamic_outputs: true,
+    dataframe_output: true,
     documentation: '',
     tags: [],
     categories: [],
     inputs: {},
     outputs: {},
     environment: null,
+    source_kind: 'package',
+    editable: false,
     ...overrides,
   }
 }
@@ -85,6 +89,7 @@ describe('resolvedOutputs store', () => {
         type: 'tool',
         position: { x: 0, y: 0 },
         data: {
+          nodeType: 'tool',
           toolName: 'Generate',
           tool: makeTool({ name: 'Generate', dynamic_outputs: true }),
           parameters: { column_name: 'sensitivity' },
@@ -95,6 +100,7 @@ describe('resolvedOutputs store', () => {
         type: 'tool',
         position: { x: 100, y: 0 },
         data: {
+          nodeType: 'tool',
           toolName: 'CrossJoin',
           tool: makeTool({ name: 'CrossJoin', dynamic_outputs: true }),
           parameters: {},
@@ -106,9 +112,9 @@ describe('resolvedOutputs store', () => {
         id: 'e1',
         source: 'gen_1',
         target: 'cross_1',
-        sourceHandle: 'sensitivity',
-        targetHandle: '__positional_0',
-        type: 'positional',
+        sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+        targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+        type: 'dataframe',
       },
     ],
   })
@@ -191,6 +197,7 @@ describe('resolvedOutputs store', () => {
           type: 'tool',
           position: { x: 0, y: 0 },
           data: {
+            nodeType: 'tool',
             toolName: 'Generate',
             tool: makeTool({ name: 'Generate', dynamic_outputs: true }),
             parameters: { column_name: 'x' },
@@ -201,6 +208,7 @@ describe('resolvedOutputs store', () => {
           type: 'tool',
           position: { x: 100, y: 0 },
           data: {
+            nodeType: 'tool',
             toolName: 'MyCustomMerge',
             tool: makeTool({ name: 'MyCustomMerge', dynamic_outputs: true }),
             parameters: {},
@@ -212,9 +220,9 @@ describe('resolvedOutputs store', () => {
           id: 'e1',
           source: 'gen_1',
           target: 'custom_1',
-          sourceHandle: 'x',
-          targetHandle: '__positional_0',
-          type: 'positional',
+          sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+          targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+          type: 'dataframe',
         },
       ],
     }
@@ -247,6 +255,7 @@ describe('resolvedOutputs store', () => {
           type: 'tool',
           position: { x: 0, y: 0 },
           data: {
+            nodeType: 'tool',
             toolName: 'Generate',
             tool: makeTool({ name: 'Generate', dynamic_outputs: true }),
             parameters: { column_name: 'x' },
@@ -257,6 +266,7 @@ describe('resolvedOutputs store', () => {
           type: 'tool',
           position: { x: 100, y: 0 },
           data: {
+            nodeType: 'tool',
             toolName: 'FilterRows',
             tool: makeTool({ name: 'FilterRows', dynamic_outputs: false }),
             parameters: {},
@@ -268,9 +278,9 @@ describe('resolvedOutputs store', () => {
           id: 'e1',
           source: 'gen_1',
           target: 'static_1',
-          sourceHandle: 'x',
-          targetHandle: '__positional_0',
-          type: 'positional',
+          sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+          targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+          type: 'dataframe',
         },
       ],
     }
@@ -384,7 +394,11 @@ describe('resolvedOutputs store', () => {
           id: 'tail_1',
           type: 'tool',
           position: { x: 200, y: 0 },
-          data: { tool: makeTool({ name: 'Tail', dynamic_outputs: true }) },
+          data: {
+            nodeType: 'tool',
+            toolName: 'Tail',
+            tool: makeTool({ name: 'Tail', dynamic_outputs: true }),
+          },
         },
       ],
       edges: [
@@ -393,7 +407,9 @@ describe('resolvedOutputs store', () => {
           id: 'e2',
           source: 'cross_1',
           target: 'tail_1',
-          targetHandle: '__positional_0',
+          sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+          targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+          type: 'dataframe',
         },
       ],
     }
@@ -438,7 +454,11 @@ describe('resolvedOutputs store', () => {
           id: 'sibling_1',
           type: 'tool',
           position: { x: 100, y: 100 },
-          data: { tool: makeTool({ name: 'Sibling', dynamic_outputs: true }) },
+          data: {
+            nodeType: 'tool',
+            toolName: 'Sibling',
+            tool: makeTool({ name: 'Sibling', dynamic_outputs: true }),
+          },
         },
       ],
       edges: [
@@ -447,7 +467,9 @@ describe('resolvedOutputs store', () => {
           id: 'e-sibling',
           source: 'gen_1',
           target: 'sibling_1',
-          targetHandle: '__positional_0',
+          sourceHandle: encodeEndpointHandle({ kind: 'dataframe-output' }),
+          targetHandle: encodeEndpointHandle({ kind: 'dataframe-position', index: 0 }),
+          type: 'dataframe',
         },
       ],
     }

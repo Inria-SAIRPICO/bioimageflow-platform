@@ -7,7 +7,8 @@ import {
   type Ref,
 } from 'vue'
 
-import type { NodeStatus, ProgressInfo, ValidationResult } from '@/api/types'
+import type { NodeStatus, ValidationResult } from '@/api/types'
+import type { ProgressInfo } from '@/stores/execution'
 import {
   canvasSessionRegistry,
   type CanvasId,

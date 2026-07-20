@@ -1,53 +1,18 @@
-import type { GraphState, PublishedInput, PublishedOutput } from '@/api/types'
+import type { GraphState } from '@/api/types'
 
-function normalizePublishedInput(input: PublishedInput): Record<string, unknown> {
-  const normalized = { ...input } as Record<string, unknown>
-  if (normalized.schema == null) delete normalized.schema
-  if (normalized.default == null) delete normalized.default
-  return normalized
-}
-
-function normalizePublishedOutput(output: PublishedOutput): Record<string, unknown> {
-  const normalized = { ...output } as Record<string, unknown>
-  if (normalized.schema == null) delete normalized.schema
-  return normalized
-}
-
-function normalizeGraph(graph: GraphState): Record<string, unknown> {
+export function emptyGraph(name = 'workflow', displayName = 'Workflow'): GraphState {
   return {
-    nodes: graph.nodes.map((node) => {
-      const normalized = {
-        ...node,
-        resources: node.resources ?? {},
-        output_templates: node.output_templates ?? {},
-        enabled: node.enabled ?? true,
-        collapsed: node.collapsed ?? false,
-      } as Record<string, unknown>
-      if (node.sub_workflow == null) {
-        delete normalized.sub_workflow
-      } else {
-        normalized.sub_workflow = normalizeGraph(node.sub_workflow)
-      }
-      const inputs = node.published_inputs ?? []
-      if (inputs.length === 0) delete normalized.published_inputs
-      else normalized.published_inputs = inputs.map(normalizePublishedInput)
-      const outputs = node.published_outputs ?? []
-      if (outputs.length === 0) delete normalized.published_outputs
-      else normalized.published_outputs = outputs.map(normalizePublishedOutput)
-      if (node.sub_workflow_readonly_reason == null) {
-        delete normalized.sub_workflow_readonly_reason
-      }
-      if (node.source_workflow_name == null) {
-        delete normalized.source_workflow_name
-      }
-      return normalized
-    }),
-    edges: graph.edges.map(edge => ({
-      ...edge,
-      type: edge.type ?? ('positional_index' in edge ? 'positional' : 'column_ref'),
-    })),
-    published_inputs: (graph.published_inputs ?? []).map(normalizePublishedInput),
-    published_outputs: (graph.published_outputs ?? []).map(normalizePublishedOutput),
+    schema_version: 1,
+    name,
+    display_name: displayName,
+    nodes: [],
+    edges: [],
+    interface: { inputs: [], outputs: [] },
+    config: {
+      storage_path: './bif_data',
+      engine: 'wetlands',
+      execution: 'parallel',
+    },
   }
 }
 
@@ -63,7 +28,7 @@ function sortJson(value: unknown): unknown {
 }
 
 export function canonicalGraphJson(graph: GraphState): string {
-  return JSON.stringify(sortJson(normalizeGraph(graph)))
+  return JSON.stringify(sortJson(graph))
 }
 
 export function graphDocumentsEqual(left: GraphState, right: GraphState): boolean {

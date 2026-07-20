@@ -12,7 +12,7 @@ import CodeEditorPanel from './components/panels/CodeEditorPanel.vue'
 import CodeEditorTab from './components/layout/CodeEditorTab.vue'
 import AvivatorPanel from './components/panels/AvivatorPanel.vue'
 import AvivatorTab from './components/layout/AvivatorTab.vue'
-import SubWorkflowEditorPanel from './components/panels/SubWorkflowEditorPanel.vue'
+import NestedWorkflowEditorPanel from './components/panels/NestedWorkflowEditorPanel.vue'
 import CanvasTab from './components/layout/CanvasTab.vue'
 import CanvasPlaceholder from './components/canvas/CanvasPlaceholder.vue'
 
@@ -29,7 +29,7 @@ export default defineComponent({
     codeEditorTab: CodeEditorTab,
     avivator: AvivatorPanel,
     avivatorTab: AvivatorTab,
-    subWorkflowEditor: SubWorkflowEditorPanel,
+    nestedWorkflowEditor: NestedWorkflowEditorPanel,
     canvasTab: CanvasTab,
     canvasPlaceholder: CanvasPlaceholder,
   },
@@ -56,7 +56,7 @@ import { useExecutionLock } from './composables/useExecutionLock'
 import { useSettingsPanel } from './composables/useSettingsPanel'
 import { isDesktop as isPywebview } from './utils/nativeDialogs'
 import { useWebSocket } from './composables/useWebSocket'
-import { useSubWorkflowSessionsStore } from './stores/subWorkflowSessions'
+import { useNestedWorkflowSessionsStore } from './stores/nestedWorkflowSessions'
 import { useWorkflowStore } from './stores/workflow'
 import { useCanvasLifecycleStore } from './stores/canvasLifecycle'
 import type { GraphState, MissingTool } from './api/types'
@@ -87,8 +87,8 @@ import {
   CANVAS_EMPTY_PANEL_ID,
   CANVAS_LOADING_PANEL_ID,
   isCanvasPanelId,
-  sessionIdFromSubWorkflowPanelId,
-  subWorkflowPanelId,
+  sessionIdFromNestedWorkflowPanelId,
+  nestedWorkflowPanelId,
   workflowIdFromPanelId,
   workflowPanelId,
 } from './utils/canvasPanels'
@@ -123,7 +123,7 @@ const uiStore = useUIStore()
 const datasetsStore = useDatasetsStore()
 const napariStore = useNapariStore()
 const websocket = useWebSocket()
-const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
+const nestedWorkflowSessionsStore = useNestedWorkflowSessionsStore()
 const workflowStore = useWorkflowStore()
 const autoSave = useAutoSave()
 const canvasLifecycleStore = useCanvasLifecycleStore()
@@ -155,16 +155,16 @@ onMounted(() => {
   )
   window.addEventListener('bioimageflow:open-avivator', onOpenAvivator as EventListener)
   window.addEventListener(
-    'bioimageflow:sub-workflow-session-opened',
-    onSubWorkflowSessionOpened as EventListener,
+    'bioimageflow:nested-workflow-session-opened',
+    onNestedWorkflowSessionOpened as EventListener,
   )
   window.addEventListener(
     'bioimageflow:apply-graph',
     onApplyGraph as EventListener,
   )
   window.addEventListener(
-    'bioimageflow:close-sub-workflow-session',
-    onCloseSubWorkflowSession as EventListener,
+    'bioimageflow:close-nested-workflow-session',
+    onCloseNestedWorkflowSession as EventListener,
   )
   window.addEventListener(
     'bioimageflow:canvas-context-updated',
@@ -202,16 +202,16 @@ onBeforeUnmount(() => {
   )
   window.removeEventListener('bioimageflow:open-avivator', onOpenAvivator as EventListener)
   window.removeEventListener(
-    'bioimageflow:sub-workflow-session-opened',
-    onSubWorkflowSessionOpened as EventListener,
+    'bioimageflow:nested-workflow-session-opened',
+    onNestedWorkflowSessionOpened as EventListener,
   )
   window.removeEventListener(
     'bioimageflow:apply-graph',
     onApplyGraph as EventListener,
   )
   window.removeEventListener(
-    'bioimageflow:close-sub-workflow-session',
-    onCloseSubWorkflowSession as EventListener,
+    'bioimageflow:close-nested-workflow-session',
+    onCloseNestedWorkflowSession as EventListener,
   )
   window.removeEventListener(
     'bioimageflow:canvas-context-updated',
@@ -265,9 +265,9 @@ watch(
   },
 )
 const dockviewDisposables: DockviewIDisposable[] = []
-const confirmedSubWorkflowPanelCloses = new Set<string>()
-const removedWorkflowSubWorkflowCloses = new Set<string>()
-const subWorkflowParentCanvasIds = new Map<string, string>()
+const confirmedNestedWorkflowPanelCloses = new Set<string>()
+const removedWorkflowNestedWorkflowCloses = new Set<string>()
+const nestedWorkflowParentCanvasIds = new Map<string, string>()
 const openCanvasPanelIds = new Set<string>()
 const rootPanelActivationOrder: string[] = []
 let canvasActivationRequest = 0
@@ -436,29 +436,29 @@ function onDockviewReady(event: DockviewReadyEvent) {
         })
         return
       }
-      const sessionId = sessionIdFromSubWorkflowPanelId(panel.id)
+      const sessionId = sessionIdFromNestedWorkflowPanelId(panel.id)
       if (!sessionId) {
         return
       }
-      if (removedWorkflowSubWorkflowCloses.delete(panel.id)) {
-        subWorkflowSessionsStore.closeSession(sessionId)
-        subWorkflowParentCanvasIds.delete(sessionId)
+      if (removedWorkflowNestedWorkflowCloses.delete(panel.id)) {
+        nestedWorkflowSessionsStore.closeSession(sessionId)
+        nestedWorkflowParentCanvasIds.delete(sessionId)
         return
       }
-      if (confirmedSubWorkflowPanelCloses.delete(panel.id)) {
-        void finalizeSubWorkflowClose(sessionId)
+      if (confirmedNestedWorkflowPanelCloses.delete(panel.id)) {
+        void finalizeNestedWorkflowClose(sessionId)
         return
       }
-      const session = subWorkflowSessionsStore.sessionById(sessionId)
+      const session = nestedWorkflowSessionsStore.sessionById(sessionId)
       if (!session) return
       if (
-        subWorkflowSessionsStore.isDirty(sessionId) &&
-        !window.confirm(`Discard unsaved changes to sub-workflow '${session.parentNodeName}'?`)
+        nestedWorkflowSessionsStore.isDirty(sessionId) &&
+        !window.confirm(`Discard unsaved changes to nested-workflow '${session.parentNodeName}'?`)
       ) {
-        queueMicrotask(() => openSubWorkflowPanel(sessionId))
+        queueMicrotask(() => openNestedWorkflowPanel(sessionId))
         return
       }
-      void finalizeSubWorkflowClose(sessionId)
+      void finalizeNestedWorkflowClose(sessionId)
     }),
   )
   const activePanelChange = (api as unknown as {
@@ -610,17 +610,17 @@ function onOpenAvivator(event: CustomEvent<{
   panel.api.setActive()
 }
 
-function openSubWorkflowPanel(sessionId: string): void {
+function openNestedWorkflowPanel(sessionId: string): void {
   const api = dockviewApi.value
-  const session = subWorkflowSessionsStore.sessionById(sessionId)
+  const session = nestedWorkflowSessionsStore.sessionById(sessionId)
   if (!api || !session) return
-  const panelId = subWorkflowPanelId(sessionId)
+  const panelId = nestedWorkflowPanelId(sessionId)
   const existing = api.getPanel(panelId)
   if (existing) {
     existing.api.setActive()
     return
   }
-  const ownerPanelId = subWorkflowParentCanvasIds.get(sessionId)
+  const ownerPanelId = nestedWorkflowParentCanvasIds.get(sessionId)
   const canvasPanel = ownerPanelId
     ? api.getPanel(ownerPanelId) ?? layoutAnchorPanel(api)
     : layoutAnchorPanel(api)
@@ -631,7 +631,7 @@ function openSubWorkflowPanel(sessionId: string): void {
   )
   const panel = api.addPanel({
     id: panelId,
-    component: 'subWorkflowEditor',
+    component: 'nestedWorkflowEditor',
     title: session.parentNodeName,
     params: {
       sessionId,
@@ -646,45 +646,45 @@ function openSubWorkflowPanel(sessionId: string): void {
   panel.api.setActive()
 }
 
-function onSubWorkflowSessionOpened(event: CustomEvent<{
+function onNestedWorkflowSessionOpened(event: CustomEvent<{
   sessionId?: string
   parentCanvasPanelId?: string
 }>) {
   const sessionId = event.detail?.sessionId
   if (!sessionId) return
   if (event.detail.parentCanvasPanelId) {
-    subWorkflowParentCanvasIds.set(sessionId, event.detail.parentCanvasPanelId)
+    nestedWorkflowParentCanvasIds.set(sessionId, event.detail.parentCanvasPanelId)
   }
-  openSubWorkflowPanel(sessionId)
+  openNestedWorkflowPanel(sessionId)
 }
 
-async function finalizeSubWorkflowClose(sessionId: string): Promise<void> {
+async function finalizeNestedWorkflowClose(sessionId: string): Promise<void> {
   try {
     const deletedRetainedSnapshot = await deleteRetainedNestedSnapshot(sessionId)
     if (!deletedRetainedSnapshot) {
-      await subWorkflowSessionsStore.deleteDurableSession(sessionId)
+      await nestedWorkflowSessionsStore.deleteDurableSession(sessionId)
     }
-    subWorkflowSessionsStore.closeSession(sessionId)
-    subWorkflowParentCanvasIds.delete(sessionId)
+    nestedWorkflowSessionsStore.closeSession(sessionId)
+    nestedWorkflowParentCanvasIds.delete(sessionId)
   } catch (error) {
     console.warn('[nested-snapshot] failed to discard snapshot:', error)
-    queueMicrotask(() => openSubWorkflowPanel(sessionId))
+    queueMicrotask(() => openNestedWorkflowPanel(sessionId))
   }
 }
 
-function onCloseSubWorkflowSession(event: CustomEvent<{
+function onCloseNestedWorkflowSession(event: CustomEvent<{
   sessionId?: string
   discardConfirmed?: boolean
 }>) {
   const sessionId = event.detail?.sessionId
   if (!sessionId) return
-  const panel = dockviewApi.value?.getPanel(subWorkflowPanelId(sessionId))
+  const panel = dockviewApi.value?.getPanel(nestedWorkflowPanelId(sessionId))
   if (!panel) {
-    void finalizeSubWorkflowClose(sessionId)
+    void finalizeNestedWorkflowClose(sessionId)
     return
   }
   if (event.detail?.discardConfirmed) {
-    confirmedSubWorkflowPanelCloses.add(panel.id)
+    confirmedNestedWorkflowPanelCloses.add(panel.id)
   }
   dockviewApi.value?.removePanel(panel)
 }
@@ -701,9 +701,9 @@ function dockviewParams(panel: IDockviewPanel): Record<string, unknown> {
 function activateWorkflowContextForPanel(panel: IDockviewPanel): void {
   const canvasId = canvasIdFromPanelId(panel.id)
   const workflowNameFromId = workflowIdFromPanelId(panel.id)
-  const sessionId = sessionIdFromSubWorkflowPanelId(panel.id)
+  const sessionId = sessionIdFromNestedWorkflowPanelId(panel.id)
   if (sessionId) {
-    const session = subWorkflowSessionsStore.sessionById(sessionId)
+    const session = nestedWorkflowSessionsStore.sessionById(sessionId)
     if (session?.parentWorkflowName) {
       workflowStore.activateWorkflow(session.parentWorkflowName, canvasId)
     }
@@ -903,22 +903,22 @@ async function discardAndCloseRootCanvas(): Promise<void> {
 
 function closeNestedCanvasesForWorkflow(workflowName: string): void {
   const api = dockviewApi.value
-  for (const session of [...subWorkflowSessionsStore.sessions]) {
+  for (const session of [...nestedWorkflowSessionsStore.sessions]) {
     if (session.parentWorkflowName !== workflowName) continue
-    const panelId = subWorkflowPanelId(session.id)
+    const panelId = nestedWorkflowPanelId(session.id)
     const panel = api?.getPanel(panelId)
     if (panel) {
-      removedWorkflowSubWorkflowCloses.add(panelId)
+      removedWorkflowNestedWorkflowCloses.add(panelId)
       api?.removePanel(panel)
     } else {
-      subWorkflowSessionsStore.closeSession(session.id)
-      subWorkflowParentCanvasIds.delete(session.id)
+      nestedWorkflowSessionsStore.closeSession(session.id)
+      nestedWorkflowParentCanvasIds.delete(session.id)
     }
   }
 }
 
 function closeAndForgetNestedCanvasesForWorkflow(workflowName: string): void {
-  const nestedSessionIds = subWorkflowSessionsStore.sessions
+  const nestedSessionIds = nestedWorkflowSessionsStore.sessions
     .filter(session => session.parentWorkflowName === workflowName)
     .map(session => session.id)
   closeNestedCanvasesForWorkflow(workflowName)
@@ -941,10 +941,10 @@ function deletionCanvasTargets(workflowName: string): DeletionCanvasTarget[] {
       nestedSessionId: null,
     })
   }
-  for (const session of subWorkflowSessionsStore.sessions) {
+  for (const session of nestedWorkflowSessionsStore.sessions) {
     if (session.parentWorkflowName !== workflowName) continue
     targets.push({
-      canvasId: canvasIdFromPanelId(subWorkflowPanelId(session.id)),
+      canvasId: canvasIdFromPanelId(nestedWorkflowPanelId(session.id)),
       nestedSessionId: session.id,
     })
   }

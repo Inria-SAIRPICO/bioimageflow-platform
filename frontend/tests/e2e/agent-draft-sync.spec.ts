@@ -4,8 +4,25 @@ import type { Page } from '@playwright/test'
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
 type GraphState = {
+  schema_version: 1
+  name: string
+  display_name: string
   nodes: Array<Record<string, unknown>>
   edges: Array<Record<string, unknown>>
+  interface: { inputs: []; outputs: [] }
+  config: { storage_path: string; engine: string; execution: string }
+}
+
+function emptyGraph(name: string): GraphState {
+  return {
+    schema_version: 1,
+    name,
+    display_name: name,
+    nodes: [],
+    edges: [],
+    interface: { inputs: [], outputs: [] },
+    config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+  }
 }
 
 function uniqueName(prefix: string): string {
@@ -82,7 +99,7 @@ test.describe('agent draft sync', () => {
 
     const seed = await page.request.post(`${API_BASE}/api/v1/dev/seed`)
     expect(seed.ok()).toBeTruthy()
-    await createServerWorkflow(page, workflowName, { nodes: [], edges: [] })
+    await createServerWorkflow(page, workflowName, emptyGraph(workflowName))
 
     await page.goto('/')
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
@@ -111,7 +128,7 @@ test.describe('agent draft sync', () => {
           expected_revision: 0,
           operations: [
             {
-              type: 'create_node',
+              type: 'create_tool_node',
               node_id: 'agent_seed_1',
               tool_name: 'SeedNumbers',
               name: 'Agent Seed',

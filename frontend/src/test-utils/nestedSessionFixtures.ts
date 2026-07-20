@@ -1,7 +1,5 @@
 import type {
   GraphState,
-  PublishedInput,
-  PublishedOutput,
   ValidationResult,
 } from '@/api/types'
 import type {
@@ -9,17 +7,17 @@ import type {
   NestedWorkflowSnapshotResponse,
 } from '@/api/nestedWorkflowSnapshots'
 import type {
-  OpenDurableSubWorkflowSessionOptions,
-  SubWorkflowSession,
-  useSubWorkflowSessionsStore,
-} from '@/stores/subWorkflowSessions'
+  OpenDurableNestedWorkflowSessionOptions,
+  NestedWorkflowSession,
+  useNestedWorkflowSessionsStore,
+} from '@/stores/nestedWorkflowSessions'
 import { makeGraph, makeValidationResult } from './graphFixtures'
 
 interface ResolvedValueOnce<T> {
   mockResolvedValueOnce(value: T): unknown
 }
 
-type SubWorkflowSessionsStore = ReturnType<typeof useSubWorkflowSessionsStore>
+type NestedWorkflowSessionsStore = ReturnType<typeof useNestedWorkflowSessionsStore>
 
 export interface AcceptedNestedSnapshotOptions {
   sessionId?: string
@@ -42,16 +40,8 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function completeGraph(
-  graph: GraphState,
-  publishedInputs?: PublishedInput[],
-  publishedOutputs?: PublishedOutput[],
-): GraphState {
-  return {
-    ...clone(graph),
-    published_inputs: clone(publishedInputs ?? graph.published_inputs ?? []),
-    published_outputs: clone(publishedOutputs ?? graph.published_outputs ?? []),
-  }
+function completeGraph(graph: GraphState): GraphState {
+  return clone(graph)
 }
 
 export function makeAcceptedNestedSnapshot(
@@ -76,9 +66,9 @@ export function makeAcceptedNestedSnapshot(
 
 export interface AcceptedNestedSessionOptions
   extends Omit<
-    OpenDurableSubWorkflowSessionOptions,
+    OpenDurableNestedWorkflowSessionOptions,
     'owner' | 'parentCanvasId' | 'parentWorkflowName' | 'parentNodeId'
-    | 'parentNodeName' | 'graph' | 'published_inputs' | 'published_outputs'
+    | 'parentNodeName' | 'graph'
   > {
   owner?: NestedSnapshotOwner
   parentCanvasId?: string
@@ -86,8 +76,6 @@ export interface AcceptedNestedSessionOptions
   parentNodeId?: string
   parentNodeName?: string
   graph?: GraphState
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
   acceptedGraph?: GraphState
   sessionId?: string
   snapshotRevision?: number
@@ -97,10 +85,10 @@ export interface AcceptedNestedSessionOptions
 
 /** Opens a real durable store session from one mocked, server-accepted snapshot. */
 export async function openAcceptedNestedSession(
-  store: SubWorkflowSessionsStore,
+  store: NestedWorkflowSessionsStore,
   openSnapshot: ResolvedValueOnce<NestedWorkflowSnapshotResponse>,
   options: AcceptedNestedSessionOptions = {},
-): Promise<SubWorkflowSession> {
+): Promise<NestedWorkflowSession> {
   const parentCanvasId = options.parentCanvasId ?? 'workflow:parent'
   const parentWorkflowName = options.parentWorkflowName === undefined
     ? 'parent'
@@ -111,11 +99,7 @@ export async function openAcceptedNestedSession(
     canvas_id: parentCanvasId,
     workflow_id: parentWorkflowName,
   }
-  const parentGraph = completeGraph(
-    options.graph ?? makeGraph(),
-    options.published_inputs,
-    options.published_outputs,
-  )
+  const parentGraph = completeGraph(options.graph ?? makeGraph())
   const acceptedGraph = completeGraph(
     options.acceptedGraph ?? parentGraph,
   )
@@ -138,6 +122,5 @@ export async function openAcceptedNestedSession(
     parentNodeId,
     parentNodeName: options.parentNodeName ?? 'Sub 1',
     graph: parentGraph,
-    readonlyReason: options.readonlyReason,
   })
 }

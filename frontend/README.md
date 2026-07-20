@@ -36,8 +36,8 @@ src/
     canvas/
       CanvasView.vue          Vue Flow DAG editor
       ToolNode.vue            Custom node component
-      ColumnRefEdge.vue       Column reference edge
-      PositionalEdge.vue      Positional edge
+      ColumnEdge.vue       Column reference edge
+      DataFrameEdge.vue      Positional edge
   composables/
     useUndoRedo.ts            Client-side undo/redo
     useGraphSync.ts           Graph state synchronization
@@ -86,7 +86,7 @@ workspaces root server-side. The Workflows panel renders folders and workflow
 rows, supports folder names with spaces, create/rename/delete folder actions,
 and uses drag/drop for moving workflows and folder subtrees between folders.
 Creating a workflow from a selected folder adds it to that folder. Dragging a
-workflow onto the canvas remains the sub-workflow creation gesture.
+workflow onto the canvas creates a workflow node containing the saved recursive graph and source provenance. Grouped nodes produce the same workflow-node shape, and root and nested editors expose the same stable workflow interface controls.
 
 The Tools panel opens source through the editor API that keeps VS Code or
 code-server rooted at the workspace project and focuses the selected tool file.
@@ -120,7 +120,7 @@ bun run generate-types           # Generate TypeScript types from backend OpenAP
 
 By default this requires the backend at `http://localhost:8000`. Set `OPENAPI_URL` to use another schema URL, for example `OPENAPI_URL=http://localhost:8008/openapi.json bun run generate-types`.
 
-The script regenerates OpenAPI paths and schemas and appends its declared compatibility aliases. Workflow-draft helpers also retain manual types in `src/api/workflowDrafts.ts`, so review the generated diff and run type-checking before committing it.
+The script regenerates OpenAPI paths and schemas directly from the backend contract. Workflow-draft helpers retain their focused client response types in `src/api/workflowDrafts.ts`; review the generated diff and run type-checking before committing it.
 
 ## Linting
 

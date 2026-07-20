@@ -161,7 +161,7 @@ describe('CanvasPersistenceFeedback', () => {
   it('keeps an opt-in dismissed conflict keyboard-accessible and preserves focus', async () => {
     const conflict = issue({
       kind: 'conflict',
-      summary: 'Nested workflow changes need attention',
+      summary: 'nested-workflow changes need attention',
       detail: 'Choose which nested snapshot to keep.',
     })
     const wrapper = mount(CanvasPersistenceFeedback, {

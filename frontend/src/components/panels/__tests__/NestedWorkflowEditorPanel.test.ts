@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
-import SubWorkflowEditorPanel from '../SubWorkflowEditorPanel.vue'
+import NestedWorkflowEditorPanel from '../NestedWorkflowEditorPanel.vue'
 
 const CanvasStub = defineComponent({
   name: 'CanvasView',
   props: {
-    subWorkflowSessionId: {
+    nestedWorkflowSessionId: {
       type: String,
       default: '',
     },
@@ -15,12 +15,12 @@ const CanvasStub = defineComponent({
       default: '',
     },
   },
-  template: '<div data-testid="sub-workflow-canvas">{{ subWorkflowSessionId }}|{{ parentCanvasPanelId }}</div>',
+  template: '<div data-testid="nested-workflow-canvas">{{ nestedWorkflowSessionId }}|{{ parentCanvasPanelId }}</div>',
 })
 
-describe('SubWorkflowEditorPanel', () => {
+describe('NestedWorkflowEditorPanel', () => {
   it('passes Dockview-wrapped session params to the nested canvas', () => {
-    const wrapper = mount(SubWorkflowEditorPanel, {
+    const wrapper = mount(NestedWorkflowEditorPanel, {
       props: {
         params: {
           params: {
@@ -36,13 +36,13 @@ describe('SubWorkflowEditorPanel', () => {
       },
     })
 
-    expect(wrapper.find('[data-testid="sub-workflow-canvas"]').text()).toBe(
+    expect(wrapper.find('[data-testid="nested-workflow-canvas"]').text()).toBe(
       'parent:sub_1|workflow:parent',
     )
   })
 
   it('does not render a separate apply/close toolbar', () => {
-    const wrapper = mount(SubWorkflowEditorPanel, {
+    const wrapper = mount(NestedWorkflowEditorPanel, {
       props: {
         params: {
           params: {

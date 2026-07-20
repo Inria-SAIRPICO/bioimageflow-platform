@@ -93,7 +93,7 @@ describe('InputPin', () => {
 
   it('shows positional index number in positional mode', () => {
     const w = factory({
-      fieldName: '__positional_0',
+      fieldName: 'bif:v1:dataframe-position:0',
       fieldType: 'DataFrame',
       connected: false,
       positional: true,
@@ -104,7 +104,7 @@ describe('InputPin', () => {
 
   it('shows positional index 3 as "4"', () => {
     const w = factory({
-      fieldName: '__positional_3',
+      fieldName: 'bif:v1:dataframe-position:3',
       fieldType: 'DataFrame',
       connected: false,
       positional: true,
@@ -198,12 +198,12 @@ describe('InputPin', () => {
     })
 
     it('header variant adds input-pin--header class', () => {
-      const w = factory({ fieldName: '__positional_0', fieldType: 'DataFrame', connected: false, variant: 'header' })
+      const w = factory({ fieldName: 'bif:v1:dataframe-position:0', fieldType: 'DataFrame', connected: false, variant: 'header' })
       expect(w.find('.input-pin').classes()).toContain('input-pin--header')
     })
 
     it('header variant renders square pin (no border-radius 50%)', () => {
-      const w = factory({ fieldName: '__positional_0', fieldType: 'DataFrame', connected: false, variant: 'header' })
+      const w = factory({ fieldName: 'bif:v1:dataframe-position:0', fieldType: 'DataFrame', connected: false, variant: 'header' })
       const handle = w.find('.pin-handle')
       expect(handle.classes()).toContain('pin-handle--header')
     })

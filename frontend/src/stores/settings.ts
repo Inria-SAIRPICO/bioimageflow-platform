@@ -2,15 +2,19 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { AxiosError } from 'axios'
 import { api } from '@/api/client'
-import type { OMEROInstancePatch, Settings } from '@/api/types'
+import type { OmeroInstanceResponse, SettingsResponse } from '@/api/types'
 
-export type WorkspaceSettings = Settings & {
+type OmeroInstancePatch = Omit<OmeroInstanceResponse, 'password_stored'> & {
+  password?: string | null
+}
+
+export type WorkspaceSettings = SettingsResponse & {
   workspace_path?: string | null
   workspaces_root?: string | null
 }
-export type { Settings }
+export type Settings = SettingsResponse
 export type SettingsPatch = Omit<Partial<WorkspaceSettings>, 'omero_instances'> & {
-  omero_instances?: OMEROInstancePatch[]
+  omero_instances?: OmeroInstancePatch[]
 }
 
 function _extractError(e: unknown): string {

@@ -76,6 +76,7 @@ const tool: ToolMetadata = {
   tool_type: 'ProcessingTool',
   accepts_upstream: false,
   dynamic_outputs: false,
+  dataframe_output: false,
   documentation: '',
   tags: [],
   categories: [],
@@ -89,6 +90,8 @@ const tool: ToolMetadata = {
   },
   outputs: {},
   environment: null,
+  source_kind: 'package',
+  editable: false,
 }
 
 interface HarnessResources {
@@ -118,6 +121,7 @@ function acceptedStatus(
 function initialGraph(): GraphState {
   return makeGraph({
     nodes: [makeGraphNode({
+      type: 'tool',
       id: NODE_ID,
       name: 'Files',
       tool_name: 'files',
@@ -165,6 +169,7 @@ function mountHarness(): HarnessFixture {
         getWorkflowId: () => WORKFLOW_ID,
       })
       const nodeData = reactive({
+        nodeType: 'tool' as const,
         name: 'Files',
         toolName: 'files',
         tool,
@@ -179,6 +184,7 @@ function mountHarness(): HarnessFixture {
       })
       const canvasNodes = reactive([{
         id: NODE_ID,
+        type: 'tool',
         data: nodeData,
         position: { x: 0, y: 0 },
       }])
@@ -198,10 +204,10 @@ function mountHarness(): HarnessFixture {
         setNodeEnabled: () => false,
         setInputPinned: () => false,
         setOutputTemplate: () => false,
-        togglePublishedInput: () => ({ status: 'unchanged' }),
-        togglePublishedOutput: () => ({ status: 'unchanged' }),
-        renamePublishedInput: () => ({ status: 'unchanged' }),
-        renamePublishedOutput: () => ({ status: 'unchanged' }),
+        toggleWorkflowInput: () => ({ status: 'unchanged' }),
+        toggleWorkflowOutput: () => ({ status: 'unchanged' }),
+        renameWorkflowInput: () => ({ status: 'unchanged' }),
+        renameWorkflowOutput: () => ({ status: 'unchanged' }),
         updateParameter: (nodeId, key, value) => {
           const node = canvasNodes.find(candidate => candidate.id === nodeId)
           if (!node) return false

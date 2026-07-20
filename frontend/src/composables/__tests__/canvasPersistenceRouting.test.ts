@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { GraphState, ValidationResult } from '@/api/types'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
+import { makeGraph, requireToolNode } from '@/test-utils/graphFixtures'
 
 vi.mock('@/api/client', () => ({
   api: {
@@ -31,8 +32,9 @@ const mockedApiPut = vi.mocked(api.put)
 const mockedApiGet = vi.mocked(api.get)
 
 function graph(value: string): GraphState {
-  return {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: 'node',
       name: 'Node',
       tool_name: 'tool',
@@ -44,7 +46,7 @@ function graph(value: string): GraphState {
       collapsed: false,
     }],
     edges: [],
-  }
+  })
 }
 
 function validation(): ValidationResult {
@@ -154,7 +156,7 @@ describe('canvas persistence routing', () => {
     const edited = graph('captured')
 
     persistence.queueGraph(edited)
-    edited.nodes[0]!.parameters = { value: 'mutated-after-queue' }
+    requireToolNode(edited).parameters = { value: 'mutated-after-queue' }
 
     expect(persistence.persistenceState.value).toBe('saving')
     expect(persistence.persistenceIssue.value).toBeNull()
@@ -457,7 +459,7 @@ describe('canvas persistence routing', () => {
       transports: io,
     })
     const seeded = draft('workflow-a', 8, 'seeded')
-    seeded.graph.nodes[0]!.parameters = { first: 1, second: 2 }
+    requireToolNode(seeded.graph).parameters = { first: 1, second: 2 }
     persistence.initializeFromDraft(seeded)
     const sync = useGraphSync({
       descriptor,
@@ -467,7 +469,7 @@ describe('canvas persistence routing', () => {
     sync.syncGraphState({
       ...seeded.graph,
       nodes: [{
-        ...seeded.graph.nodes[0]!,
+        ...requireToolNode(seeded.graph),
         parameters: { second: 2, first: 1 },
       }],
     })
@@ -841,7 +843,7 @@ describe('canvas persistence routing', () => {
     await a.flush()
 
     await expect(b.ensureFreshForCriticalOperation()).resolves.toBe(false)
-    expect(b.currentGraph.value.nodes[0]?.parameters).toEqual({
+    expect(requireToolNode(b.currentGraph.value).parameters).toEqual({
       value: 'b-local',
     })
     expect(b.hasConflict.value).toBe(true)
@@ -874,7 +876,7 @@ describe('canvas persistence routing', () => {
     expect(fixed.hasConflict.value).toBe(false)
     fixed.queueGraph(graph('after-resolution'))
     await expect(fixed.ensureFreshForCriticalOperation()).resolves.toBe(true)
-    expect(fixed.currentGraph.value.nodes[0]?.parameters).toEqual({
+    expect(requireToolNode(fixed.currentGraph.value).parameters).toEqual({
       value: 'after-resolution',
     })
     expect(io.putDraft).toHaveBeenCalledTimes(2)
@@ -897,7 +899,7 @@ describe('canvas persistence routing', () => {
 
     await expect(fixed.ensureFreshForCriticalOperation()).resolves.toBe(false)
 
-    expect(fixed.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'local' })
+    expect(requireToolNode(fixed.currentGraph.value).parameters).toEqual({ value: 'local' })
     expect(fixed.hasConflict.value).toBe(true)
   })
 
@@ -1005,7 +1007,7 @@ describe('canvas persistence routing', () => {
     expect(active.persistenceIssue.value).toBeNull()
     await expect(active.ensureFreshForCriticalOperation()).resolves.toBe(false)
 
-    const nestedId = canvasIdFromPanelId('sub-workflow:nested')
+    const nestedId = canvasIdFromPanelId('nested-workflow:nested')
     graphSyncCanvasSessions.register({
       kind: 'nested',
       canvasId: nestedId,

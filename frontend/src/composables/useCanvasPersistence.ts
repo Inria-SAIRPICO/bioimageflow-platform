@@ -1,5 +1,6 @@
 import { computed, ref, shallowRef, watch, type Ref } from 'vue'
 import type { GraphState, ValidationResult } from '@/api/types'
+import { emptyGraph } from '@/sessions/graphDocument'
 import {
   fetchWorkflowDraft,
   putWorkflowDraft,
@@ -220,7 +221,7 @@ function createRootPersistenceResource(options: {
 }): RootCanvasPersistenceResource {
   const workflowId = ref<string | null>(options.initialWorkflowId)
   const acceptedDraftRevision = ref<number | null>(null)
-  const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
+  const currentGraph = ref<GraphState>(emptyGraph()) as Ref<GraphState>
   const validationResult = ref<ValidationResult | null>(null)
   const draftCoordinator = shallowRef<WorkflowDraftCoordinator | null>(null)
   const remoteDraftRevision = ref<number | null>(null)
@@ -726,7 +727,7 @@ function createUnavailableBoundApi(
 ): CanvasPersistenceApi {
   const workflowId = ref<string | null>(null)
   const acceptedDraftRevision = ref<number | null>(null)
-  const currentGraph = ref<GraphState>({ nodes: [], edges: [] }) as Ref<GraphState>
+  const currentGraph = ref<GraphState>(emptyGraph()) as Ref<GraphState>
   return {
     canvasId,
     workflowId,
@@ -780,7 +781,7 @@ function createActiveFacade(): CanvasPersistenceApi {
     acceptedDraftRevision: computed(
       () => selected()?.acceptedDraftRevision.value ?? null,
     ),
-    currentGraph: computed(() => selected()?.currentGraph.value ?? { nodes: [], edges: [] }),
+    currentGraph: computed(() => selected()?.currentGraph.value ?? emptyGraph()),
     isPending: computed(() => selected()?.isPending.value ?? false),
     hasConflict: computed(() => selected()?.hasConflict.value ?? false),
     persistenceState: computed(

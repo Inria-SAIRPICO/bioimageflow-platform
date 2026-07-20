@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { AxiosError } from 'axios'
 import PrimeVue from 'primevue/config'
 import Aura from '@primevue/themes/aura'
+import { makeGraph, makeGraphNode } from '@/test-utils/graphFixtures'
 
 const toastAdd = vi.hoisted(() => vi.fn())
 const apiMocks = vi.hoisted(() => ({
@@ -164,12 +165,13 @@ function registerActiveRootWorkflow(options: {
     storage_path: `/tmp/workflows/${name}`,
     path: `/tmp/workflows/${name}.json`,
     last_modified: '2026-01-01T00:00:00Z',
+      identity_generation: 0,
   } as WorkflowInfo
   const sync = useGraphSync({
     descriptor: { kind: 'root', canvasId, workflowId: name },
     getWorkflowId: () => name,
   })
-  sync.currentGraph.value = options.graph ?? { nodes: [], edges: [] }
+  sync.currentGraph.value = options.graph ?? makeGraph()
   const persistence = canvasSessionRegistry.getResource<RootCanvasPersistenceResource>(
     canvasId,
     ROOT_PERSISTENCE_RESOURCE,
@@ -339,9 +341,11 @@ describe('MenuBar', () => {
     it('does not expose the global workflow when no registered canvas is active', () => {
       useWorkflowStore().current = {
         name: 'wf_a',
+        folder: '',
         display_name: 'Workflow A',
         path: '/tmp/workflows/wf_a.json',
         last_modified: '2026-01-01T00:00:00Z',
+      identity_generation: 0,
       }
       const canvasId = canvasIdFromPanelId('workflow:registered')
       canvasSessionRegistry.register({
@@ -437,8 +441,9 @@ describe('MenuBar', () => {
     it('saves a copy from the canvas that opened Save As after activation changes', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
       const canvasB = canvasIdFromPanelId('workflow:b')
-      const graphA: GraphState = {
+      const graphA: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'a-node',
           name: 'A node',
           tool_name: 'tool',
@@ -450,8 +455,8 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
-      const graphB: GraphState = { nodes: [], edges: [] }
+      })
+      const graphB: GraphState = makeGraph()
       const syncA = useGraphSync({
         descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
         getWorkflowId: () => 'a',
@@ -490,6 +495,7 @@ describe('MenuBar', () => {
       persistenceMocks.canvasId = canvasB
       await vm.onWorkflowDialogSubmit({
         name: 'a_copy',
+        folder: '',
         display_name: 'Workflow A copy',
         description: null,
       })
@@ -693,7 +699,7 @@ describe('MenuBar', () => {
     })
 
     it('opens the workflow that finished loading even if global current changes later', async () => {
-      const graphA: GraphState = { nodes: [], edges: [] }
+      const graphA: GraphState = makeGraph()
       apiMocks.get.mockResolvedValueOnce({
         data: {
           info: { name: 'a', display_name: 'Workflow A' },
@@ -747,7 +753,16 @@ describe('MenuBar', () => {
       const workflow = vm.menuItems.find((item: any) => item.label === 'Workflow')
       const labels = workflow.items.map((item: any) => item.label)
 
-      expect(labels).toEqual(['New', 'Open', 'Save', 'Save As', 'Import', 'Export', 'Delete'])
+      expect(labels).toEqual([
+        'New',
+        'Open',
+        'Save',
+        'Save As',
+        'Import',
+        'Export',
+        'Build from Python source',
+        'Delete',
+      ])
       expect(labels).not.toContain('Dependencies')
       expect(labels).not.toContain('Use Installed Versions')
       expect(workflow.items.find((item: any) => item.label === 'Save As').icon).toBe('pi pi-copy')
@@ -794,9 +809,11 @@ describe('MenuBar', () => {
       apiMocks.put.mockResolvedValueOnce({
         data: {
           name: 'cell_segmentation',
+          folder: '',
           display_name: 'Cell segmentation',
           path: '/tmp/cell_segmentation.json',
           last_modified: '2026-04-29T00:00:01Z',
+      identity_generation: 0,
         },
       })
       apiMocks.post.mockResolvedValueOnce({
@@ -823,7 +840,7 @@ describe('MenuBar', () => {
 
       expect(apiMocks.put).toHaveBeenCalledWith(
         '/api/v1/workflows/cell_segmentation',
-        { graph: { nodes: [], edges: [] } },
+        { graph: makeGraph() },
       )
       expect(apiMocks.post).toHaveBeenCalledWith(
         '/api/v1/workflows/cell_segmentation/export',
@@ -854,9 +871,10 @@ describe('MenuBar', () => {
     it('keeps confirmed export bound to the root canvas that opened the dialog', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
       const canvasB = canvasIdFromPanelId('workflow:b')
-      const initialGraphA: GraphState = { nodes: [], edges: [] }
-      const latestGraphA: GraphState = {
+      const initialGraphA: GraphState = makeGraph()
+      const latestGraphA: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'a-node',
           name: 'A node',
           tool_name: 'tool',
@@ -868,9 +886,10 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
-      const graphB: GraphState = {
+      })
+      const graphB: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'b-node',
           name: 'B node',
           tool_name: 'tool',
@@ -882,7 +901,7 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
+      })
       const syncA = useGraphSync({
         descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
         getWorkflowId: () => 'a',
@@ -955,9 +974,10 @@ describe('MenuBar', () => {
       async (phase) => {
         const canvasA = canvasIdFromPanelId('workflow:a')
         const canvasB = canvasIdFromPanelId('workflow:b')
-        const capturedGraphA: GraphState = { nodes: [], edges: [] }
-        const newerGraphA: GraphState = {
+        const capturedGraphA: GraphState = makeGraph()
+        const newerGraphA: GraphState = makeGraph({
           nodes: [{
+            type: 'tool',
             id: 'newer-a-node',
             name: 'Newer A node',
             tool_name: 'tool',
@@ -969,8 +989,8 @@ describe('MenuBar', () => {
             collapsed: false,
           }],
           edges: [],
-        }
-        const graphB: GraphState = { nodes: [], edges: [] }
+        })
+        const graphB: GraphState = makeGraph()
         useGraphSync({
           descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
           getWorkflowId: () => 'a',
@@ -1210,6 +1230,7 @@ describe('MenuBar', () => {
 
       const submission = vm.onWorkflowDialogSubmit({
         name: 'delayed',
+        folder: '',
         display_name: 'Delayed',
         description: null,
       })
@@ -1218,9 +1239,11 @@ describe('MenuBar', () => {
       resolveCreate({
         data: {
           name: 'delayed',
+          folder: '',
           display_name: 'Delayed',
           path: '/tmp/delayed/workflow.json',
           last_modified: '2026-07-15T00:00:00Z',
+      identity_generation: 0,
         },
       })
       await submission
@@ -1361,6 +1384,7 @@ describe('MenuBar', () => {
         display_name: 'Beta',
         path: '/tmp/Analysis/beta/workflow.json',
         last_modified: '2026-05-22T08:00:00Z',
+      identity_generation: 0,
       }]
       let deletionRequest: WorkflowDeletionEventDetail | null = null
       const stopObserving = observeWorkflowDeletion((detail) => {
@@ -1418,9 +1442,11 @@ describe('MenuBar', () => {
       apiMocks.put.mockResolvedValue({
         data: {
           name: 'new_workflow',
+          folder: '',
           display_name: 'New workflow',
           path: '/tmp/new_workflow.json',
           last_modified: '2026-04-29T00:00:01Z',
+      identity_generation: 0,
         },
       })
 
@@ -1431,7 +1457,7 @@ describe('MenuBar', () => {
 
       expect(apiMocks.put).toHaveBeenCalledWith(
         '/api/v1/workflows/new_workflow',
-        { graph: { nodes: [], edges: [] } },
+        { graph: makeGraph() },
       )
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
         summary: 'Workflow saved',
@@ -1447,7 +1473,7 @@ describe('MenuBar', () => {
 
     it('marks a fixed root canvas clean only after its captured graph finishes saving', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
-      const graphA: GraphState = { nodes: [], edges: [] }
+      const graphA: GraphState = makeGraph()
       const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
       const syncA = useGraphSync({
         descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
@@ -1484,9 +1510,10 @@ describe('MenuBar', () => {
 
     it('keeps Save bound to the graph captured before the freshness barrier', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
-      const graphA: GraphState = { nodes: [], edges: [] }
-      const graphB: GraphState = {
+      const graphA: GraphState = makeGraph()
+      const graphB: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'newer-node',
           name: 'Newer node',
           tool_name: 'tool',
@@ -1498,7 +1525,7 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
+      })
       const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
       const syncA = useGraphSync({
         descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
@@ -1547,9 +1574,10 @@ describe('MenuBar', () => {
 
     it('keeps preservation conservative when a newer edit converges back to graph A', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
-      const graphA: GraphState = { nodes: [], edges: [] }
-      const graphB: GraphState = {
+      const graphA: GraphState = makeGraph()
+      const graphB: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'temporary-node',
           name: 'Temporary node',
           tool_name: 'tool',
@@ -1561,7 +1589,7 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
+      })
       const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
       const syncA = useGraphSync({
         descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
@@ -1614,9 +1642,10 @@ describe('MenuBar', () => {
 
     it('preserves graph B when it lands after the preservation check resolves', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
-      const graphA: GraphState = { nodes: [], edges: [] }
-      const graphB: GraphState = {
+      const graphA: GraphState = makeGraph()
+      const graphB: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'newer-node',
           name: 'Newer node',
           tool_name: 'tool',
@@ -1628,7 +1657,7 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
+      })
       const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
       const syncA = useGraphSync({
         descriptor: { kind: 'root', canvasId: canvasA, workflowId: 'a' },
@@ -1693,9 +1722,10 @@ describe('MenuBar', () => {
     it('saves graph A while preserving graph B as the dirty accepted draft when the save PUT is delayed', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
       const canvasB = canvasIdFromPanelId('workflow:b')
-      const graphA: GraphState = { nodes: [], edges: [] }
-      const graphB: GraphState = {
+      const graphA: GraphState = makeGraph()
+      const graphB: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'newer-node',
           name: 'Newer node',
           tool_name: 'tool',
@@ -1707,7 +1737,7 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
+      })
       const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
       const workflowB = { name: 'b', display_name: 'Workflow B' } as WorkflowInfo
       let savedGraph = graphA
@@ -1787,9 +1817,10 @@ describe('MenuBar', () => {
 
     it('keeps graph B dirty and accepted when it is edited during the graph A draft flush', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
-      const graphA: GraphState = { nodes: [], edges: [] }
-      const graphB: GraphState = {
+      const graphA: GraphState = makeGraph()
+      const graphB: GraphState = makeGraph({
         nodes: [{
+          type: 'tool',
           id: 'newer-node',
           name: 'Newer node',
           tool_name: 'tool',
@@ -1801,7 +1832,7 @@ describe('MenuBar', () => {
           collapsed: false,
         }],
         edges: [],
-      }
+      })
       const workflowA = { name: 'a', display_name: 'Workflow A' } as WorkflowInfo
       let draftRevision = 1
       let acceptedDraft: WorkflowDraftResponse = {
@@ -1911,9 +1942,9 @@ describe('MenuBar', () => {
       await save
 
       expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
-        graph: { nodes: [], edges: [] },
+        graph: makeGraph(),
       })
-      expect(persistenceA.queueDraft).toHaveBeenCalledWith({ nodes: [], edges: [] })
+      expect(persistenceA.queueDraft).toHaveBeenCalledWith(makeGraph())
       expect(persistenceA.flush).toHaveBeenCalledOnce()
       expect(persistenceB.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
       expect(persistenceB.queueDraft).not.toHaveBeenCalled()
@@ -1921,7 +1952,7 @@ describe('MenuBar', () => {
 
     it('routes Save to an active nested canvas without saving the root workflow', async () => {
       const parentCanvasId = canvasIdFromPanelId('workflow:wf_a')
-      const nestedCanvasId = canvasIdFromPanelId('sub-workflow:nested-a')
+      const nestedCanvasId = canvasIdFromPanelId('nested-workflow:nested-a')
       canvasSessionRegistry.register({
         kind: 'root',
         canvasId: parentCanvasId,
@@ -2041,7 +2072,7 @@ describe('MenuBar', () => {
 
     it('disables Run commands for an active nested canvas', () => {
       const parentCanvasId = canvasIdFromPanelId('workflow:a')
-      const nestedCanvasId = canvasIdFromPanelId('sub-workflow:nested-a')
+      const nestedCanvasId = canvasIdFromPanelId('nested-workflow:nested-a')
       canvasSessionRegistry.register({
         kind: 'root',
         canvasId: parentCanvasId,

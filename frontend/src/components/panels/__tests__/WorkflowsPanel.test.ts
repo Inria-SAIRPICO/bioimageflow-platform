@@ -31,6 +31,7 @@ const workflows: WorkflowInfo[] = [
     path: '/library/workflows/alpha_api/workflow.json',
     storage_path: '/library/workflows/alpha_api',
     last_modified: '2026-04-30T12:34:56Z',
+      identity_generation: 0,
   },
   {
     id: 'beta_api',
@@ -41,6 +42,7 @@ const workflows: WorkflowInfo[] = [
     path: '/library/workflows/beta_api/workflow.json',
     storage_path: '/library/workflows/beta_api',
     last_modified: '2026-05-01T08:00:00Z',
+      identity_generation: 0,
   },
 ]
 
@@ -197,6 +199,7 @@ describe('WorkflowsPanel', () => {
         description: null,
         path: '/library/workflows/A/nuclei/workflow.json',
         last_modified: '2026-04-30T12:34:56Z',
+      identity_generation: 0,
       },
       {
         id: 'B/nuclei',
@@ -206,6 +209,7 @@ describe('WorkflowsPanel', () => {
         description: null,
         path: '/library/workflows/B/nuclei/workflow.json',
         last_modified: '2026-05-01T08:00:00Z',
+      identity_generation: 0,
       },
     ]
     const wrapper = mountPanel(duplicateWorkflows)
@@ -292,6 +296,7 @@ describe('WorkflowsPanel', () => {
       path: '/library/workflows/Analysis Results/beta_api/workflow.json',
       storage_path: '/library/workflows/Analysis Results/beta_api',
       last_modified: '2026-05-01T08:00:00Z',
+      identity_generation: 0,
     }
     const wrapper = mountPanel([nestedWorkflow])
     const store = useWorkflowStore()
@@ -394,6 +399,7 @@ describe('WorkflowsPanel', () => {
         path: '/library/workflows/Analysis/beta_api/workflow.json',
         storage_path: '/library/workflows/Analysis/beta_api',
         last_modified: '2026-05-01T08:00:00Z',
+      identity_generation: 0,
       },
     })
     const wrapper = mountPanel()
@@ -443,6 +449,7 @@ describe('WorkflowsPanel', () => {
         path: '/library/workflows/alpha_api/workflow.json',
         storage_path: '/library/workflows/alpha_api',
         last_modified: '2026-04-30T12:34:56Z',
+      identity_generation: 0,
       },
     })
     const wrapper = mountPanel()
@@ -493,7 +500,7 @@ describe('WorkflowsPanel', () => {
 
     const error = wrapper.find('[data-testid="workflow-action-error"]')
     expect(error.attributes('role')).toBe('alert')
-    expect(error.text()).toMatch(/close.*workflow.*sub-workflow.*tab/is)
+    expect(error.text()).toMatch(/close.*workflow.*nested-workflow.*tab/is)
     expect(api.patch).not.toHaveBeenCalled()
 
     await wrapper.find('[data-testid="workflow-action-error-dismiss"]').trigger('click')
@@ -518,7 +525,7 @@ describe('WorkflowsPanel', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="workflow-action-error"]').text()).toMatch(
-      /close.*workflow.*sub-workflow.*tab/is,
+      /close.*workflow.*nested-workflow.*tab/is,
     )
     expect(api.patch).not.toHaveBeenCalled()
 
@@ -552,6 +559,7 @@ describe('WorkflowsPanel', () => {
         path: '/library/workflows/Analysis/beta_api/workflow.json',
         storage_path: '/library/workflows/Analysis/beta_api',
         last_modified: '2026-05-01T08:00:00Z',
+      identity_generation: 0,
       },
     })
     vi.mocked(api.get).mockResolvedValueOnce({
@@ -604,6 +612,7 @@ describe('WorkflowsPanel', () => {
         path: '/library/workflows/Analysis/beta_api/workflow.json',
         storage_path: '/library/workflows/Analysis/beta_api',
         last_modified: '2026-05-01T08:00:00Z',
+      identity_generation: 0,
       },
     })
     const folder = await store.createWorkflowFolder('Analysis')

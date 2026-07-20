@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { makeGraph } from '@/test-utils/graphFixtures'
 import type { WorkflowDraftResponse } from '@/api/workflowDrafts'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
@@ -37,7 +38,7 @@ function draftResponse(): WorkflowDraftResponse {
     updated_at: '2026-07-16T12:00:00Z',
     updated_by: 'frontend',
     dirty_against_saved: true,
-    graph: { nodes: [], edges: [] },
+    graph: makeGraph(),
     validation: { valid: true, node_statuses: {}, errors: [] },
   }
 }
@@ -53,7 +54,7 @@ describe('loadRootWorkflowPresentation identity fencing', () => {
   it('rejects when deletion lands while the retained draft is loading', async () => {
     const workflow = useWorkflowStore()
     const drafts = useWorkflowDraftStore()
-    const savedGraph = { nodes: [], edges: [] }
+    const savedGraph = makeGraph()
     vi.spyOn(workflow, 'loadWorkflow').mockResolvedValue(savedGraph)
     const delayedDraft = deferred<WorkflowDraftResponse>()
     vi.spyOn(drafts, 'loadDraft').mockReturnValueOnce(delayedDraft.promise)
@@ -69,7 +70,7 @@ describe('loadRootWorkflowPresentation identity fencing', () => {
   it('marks a resolved graph stale when its workflow generation is later deleted', async () => {
     const workflow = useWorkflowStore()
     const drafts = useWorkflowDraftStore()
-    const savedGraph = { nodes: [], edges: [] }
+    const savedGraph = makeGraph()
     vi.spyOn(workflow, 'loadWorkflow').mockResolvedValue(savedGraph)
     vi.spyOn(drafts, 'loadDraft').mockRejectedValueOnce(new Error('no draft'))
 

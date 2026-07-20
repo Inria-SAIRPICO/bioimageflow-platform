@@ -319,7 +319,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (affected.length === 0) return
     const names = affected.map((id) => `'${id}'`).join(', ')
     throw new Error(
-      `Close the affected workflow and sub-workflow tabs before renaming, moving, or deleting ${names}.`,
+      `Close the affected workflow and nested-workflow tabs before renaming, moving, or deleting ${names}.`,
     )
   }
 

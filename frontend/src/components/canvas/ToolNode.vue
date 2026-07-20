@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import type {
+  GraphState,
   MissingTool,
   NodeOutputSchemaResponse,
-  PublishedInput,
-  PublishedOutput,
   ToolMetadata,
 } from '@/api/types'
 import InputPin from './InputPin.vue'
 import OutputPin from './OutputPin.vue'
 import { CANVAS_STATUS_PROJECTION_KEY } from '@/composables/useCanvasStatusProjection'
 import { fieldDisplayName } from '@/utils/displayNames'
+import { decodeEndpointHandle, encodeEndpointHandle } from '@/utils/endpointHandles'
 
 export interface NodeData {
+  nodeType: 'tool' | 'workflow'
   name: string
   toolName: string
   tool: ToolMetadata | null
@@ -24,10 +25,7 @@ export interface NodeData {
   connectedInputs: Record<string, string>
   pinnedInputs: Record<string, boolean>
   output_templates: Record<string, string>
-  sub_workflow?: unknown
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
-  sub_workflow_readonly_reason?: string | null
+  workflow?: GraphState
   // Marks refreshed tool metadata; cleared when the user clicks the badge.
   updatedBadge?: boolean
 }
@@ -54,27 +52,33 @@ const resolvedOutputsByNodeId = inject<Record<string, NodeOutputSchemaResponse>>
   {},
 )
 
-const isSubWorkflow = computed(() => {
-  return props.data.toolName === '__sub_workflow__' || props.data.sub_workflow != null
+const isNestedWorkflow = computed(() => {
+  return props.data.nodeType === 'workflow'
 })
 
-function publishedFieldType(schema: { [key: string]: unknown } | null | undefined): string {
+function exposedFieldType(schema: { [key: string]: unknown } | null | undefined): string {
   const rawType = schema?.type
   return typeof rawType === 'string' && rawType.length > 0 ? rawType : 'any'
 }
 
 const connectableInputs = computed(() => {
-  if (isSubWorkflow.value) {
-    return (props.data.published_inputs ?? []).map((published) => [
-      published.name,
-      { type: publishedFieldType(published.schema) },
-    ] as [string, { type: string }])
+  if (isNestedWorkflow.value) {
+    return (props.data.workflow?.interface.inputs ?? [])
+      .filter(input => input.kind === 'field')
+      .map((input) => [
+        encodeEndpointHandle({ kind: 'workflow-input', id: input.id }),
+        { type: exposedFieldType(input.schema), display_name: input.name },
+      ] as [string, { type: string; display_name?: string }])
   }
   if (!props.data.tool) return []
-  return Object.entries(props.data.tool.inputs).filter(
-    ([name, field]) => field.connectable !== 'never'
-      && (props.data.pinnedInputs[name] !== false || name in props.data.connectedInputs),
-  )
+  return Object.entries(props.data.tool.inputs)
+    .filter(([name, field]) => field.connectable !== 'never'
+      && (props.data.pinnedInputs[name] !== false
+        || encodeEndpointHandle({ kind: 'tool-input', name }) in props.data.connectedInputs))
+    .map(([name, field]) => [
+      encodeEndpointHandle({ kind: 'tool-input', name }),
+      field,
+    ] as [string, typeof field])
 })
 
 const isDataFrameTool = computed(() => {
@@ -92,6 +96,7 @@ const showsPositionalPins = computed(() => {
  * outputs remain the per-column schema for that DataFrame.
  */
 const showsHeaderOutputPin = computed(() => {
+  if (isNestedWorkflow.value) return true
   if (!props.data.tool) return false
   return props.data.tool.dataframe_output !== false
 })
@@ -99,10 +104,31 @@ const showsHeaderOutputPin = computed(() => {
 const positionalInputCount = computed(() => {
   // For DataFrameTools that accept upstream: number of connected positional inputs + 1 spare
   if (!showsPositionalPins.value) return 0
-  const connected = Object.keys(props.data.connectedInputs).filter((k) =>
-    k.startsWith('__positional_'),
-  ).length
+  const connected = Object.keys(props.data.connectedInputs).filter((handle) => {
+    try {
+      return decodeEndpointHandle(handle).kind === 'dataframe-position'
+    } catch {
+      return false
+    }
+  }).length
   return connected + 1
+})
+
+const headerInputs = computed(() => {
+  if (isNestedWorkflow.value) {
+    return (props.data.workflow?.interface.inputs ?? [])
+      .filter(input => input.kind === 'dataframe')
+      .map(input => ({
+        handle: encodeEndpointHandle({ kind: 'workflow-input', id: input.id }),
+        label: input.name,
+        index: undefined,
+      }))
+  }
+  return Array.from({ length: positionalInputCount.value }, (_, index) => ({
+    handle: encodeEndpointHandle({ kind: 'dataframe-position', index }),
+    label: String(index + 1),
+    index,
+  }))
 })
 
 /**
@@ -112,10 +138,10 @@ const positionalInputCount = computed(() => {
  * Shape: `[name, { type }, placeholder?]`
  */
 const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
-  if (isSubWorkflow.value) {
-    return (props.data.published_outputs ?? []).map((published) => [
-      published.name,
-      { type: publishedFieldType(published.schema) },
+  if (isNestedWorkflow.value) {
+    return (props.data.workflow?.interface.outputs ?? []).map((output) => [
+      encodeEndpointHandle({ kind: 'workflow-output', id: output.id }),
+      { type: exposedFieldType(output.schema), display_name: output.name },
       false,
     ])
   }
@@ -126,7 +152,9 @@ const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
   if (tool.dynamic_outputs !== true) {
     // Static outputs — render tool.outputs directly (no fallback).
     const toolOutputs = tool.outputs as Record<string, { type: string }>
-    return Object.entries(toolOutputs).map(([name, field]) => [name, field, false])
+    return Object.entries(toolOutputs).map(([name, field]) => [
+      encodeEndpointHandle({ kind: 'tool-output', name }), field, false,
+    ])
   }
 
   // Dynamic outputs — check the resolved-outputs store.
@@ -134,7 +162,11 @@ const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
 
   if (!entry || entry.resolved !== true) {
     // Unresolved or not yet fetched — render a single placeholder pin.
-    return [['...', { type: 'DataFrame' }, true]]
+    return [[
+      encodeEndpointHandle({ kind: 'tool-output', name: '...' }),
+      { type: 'DataFrame' },
+      true,
+    ]]
   }
 
   const columns = entry.columns as Record<string, { type?: string }>
@@ -147,19 +179,23 @@ const outputs = computed<Array<[string, { type: string }, boolean]>>(() => {
     for (const [key, spec] of Object.entries(columns)) {
       if (key === '_passthrough') continue
       concreteEntries.push([
-        key,
+        encodeEndpointHandle({ kind: 'tool-output', name: key }),
         { ...(spec as any), type: (spec as any)?.type ?? 'any' },
         false,
       ])
     }
     // Add a single placeholder for inherited columns.
-    concreteEntries.push(['(+ inherited columns)', { type: 'DataFrame' }, true])
+    concreteEntries.push([
+      encodeEndpointHandle({ kind: 'tool-output', name: '(+ inherited columns)' }),
+      { type: 'DataFrame' },
+      true,
+    ])
     return concreteEntries
   }
 
   // Normal resolved: one pin per column.
   return Object.entries(columns).map(([name, spec]) => [
-    name,
+    encodeEndpointHandle({ kind: 'tool-output', name }),
     { ...(spec as any), type: (spec as any)?.type ?? 'any' },
     false,
   ])
@@ -210,8 +246,7 @@ function onDismissBadge(event: MouseEvent) {
       {
         disabled: !data.enabled,
         collapsed: data.collapsed,
-        'sub-workflow': isSubWorkflow,
-        'readonly-sub-workflow': isSubWorkflow && data.sub_workflow_readonly_reason,
+        'workflow-node': isNestedWorkflow,
         'missing-tool': data.missingTool,
       },
     ]"
@@ -220,15 +255,15 @@ function onDismissBadge(event: MouseEvent) {
     <div class="node-header" @dblclick="toggleCollapse">
       <div class="header-inputs">
         <InputPin
-          v-if="showsPositionalPins"
-          v-for="i in positionalInputCount"
-          :key="`__positional_${i - 1}`"
+          v-for="input in headerInputs"
+          :key="input.handle"
           :node-id="id"
-          :field-name="`__positional_${i - 1}`"
+          :field-name="input.handle"
+          :display-name="input.label"
           field-type="DataFrame"
-          :connected="`__positional_${i - 1}` in data.connectedInputs"
+          :connected="input.handle in data.connectedInputs"
           :positional="true"
-          :positional-index="i - 1"
+          :positional-index="input.index"
           variant="header"
         />
       </div>
@@ -256,7 +291,7 @@ function onDismissBadge(event: MouseEvent) {
       <div class="header-outputs">
         <OutputPin
           v-if="showsHeaderOutputPin"
-          field-name="__dataframe_out"
+          :field-name="encodeEndpointHandle({ kind: 'dataframe-output' })"
           display-name="DataFrame"
           field-type="DataFrame"
           variant="header"
@@ -306,12 +341,8 @@ function onDismissBadge(event: MouseEvent) {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.sub-workflow {
+.workflow-node {
   border-width: 4px;
-}
-
-.readonly-sub-workflow {
-  border-style: double;
 }
 
 .node-header {
@@ -462,7 +493,7 @@ function onDismissBadge(event: MouseEvent) {
 
 <style>
 .vue-flow__node-tool.selected .tool-node,
-.vue-flow__node-sub_workflow.selected .tool-node {
+.vue-flow__node-workflow.selected .tool-node {
   border-color: var(--p-primary-color);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-primary-color) 25%, transparent);
 }

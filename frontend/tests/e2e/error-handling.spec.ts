@@ -16,7 +16,15 @@ async function createAndOpenWorkflow(page: Page): Promise<string> {
   })
   expect(created.status()).toBe(201)
   const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${name}`, {
-    data: { graph: { nodes: [], edges: [] } },
+    data: { graph: {
+      schema_version: 1,
+      name,
+      display_name: displayName,
+      nodes: [],
+      edges: [],
+      interface: { inputs: [], outputs: [] },
+      config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+    } },
   })
   expect(saved.ok()).toBeTruthy()
 
@@ -177,64 +185,52 @@ test.describe('error handling', () => {
   test('cycle detection produces a global banner above the canvas', async ({
     page,
   }) => {
-    // Drive the same graph-sync singleton used by CanvasView so this covers
-    // both backend validation and the UI banner fed by the validation result.
-    const validation = await page.evaluate(async () => {
-      const mod = await import('/src/composables/useGraphSync.ts')
-      const sync = mod.useGraphSync()
-      sync.syncGraph({
+    const response = await page.request.put(`${API_BASE}/api/v1/graph`, {
+      data: {
+        schema_version: 1,
+        name: 'cycle',
+        display_name: 'Cycle',
         nodes: [
           {
-            id: 'a',
-            position: { x: 0, y: 0 },
-            data: {
-              name: 'Increment Numbers A',
-              toolName: 'IncrementNumbers',
-              parameters: {},
-            },
+            type: 'tool', id: 'a', name: 'A', tool_name: 'IncrementNumbers',
+            position: [0, 0], parameters: {},
           },
           {
-            id: 'b',
-            position: { x: 220, y: 0 },
-            data: {
-              name: 'Increment Numbers B',
-              toolName: 'IncrementNumbers',
-              parameters: {},
-            },
+            type: 'tool', id: 'b', name: 'B', tool_name: 'IncrementNumbers',
+            position: [220, 0], parameters: {},
           },
         ],
         edges: [
           {
-            id: 'e1',
-            source: 'a',
-            target: 'b',
-            sourceHandle: 'number_plus_one',
-            targetHandle: 'number',
+            type: 'column', id: 'e1', source_node: 'a', target_node: 'b',
+            source_output: 'number_plus_one', target_input: 'number',
           },
           {
-            id: 'e2',
-            source: 'b',
-            target: 'a',
-            sourceHandle: 'number_plus_one',
-            targetHandle: 'number',
+            type: 'column', id: 'e2', source_node: 'b', target_node: 'a',
+            source_output: 'number_plus_one', target_input: 'number',
           },
         ],
-      })
-      await sync.flushNow()
-      return sync.validationResult.value
+        interface: { inputs: [], outputs: [] },
+        config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+      },
     })
-
-    expect(validation?.valid).toBe(false)
-    expect(validation?.errors ?? []).toEqual(
+    expect(response.ok()).toBeTruthy()
+    const validation = await response.json()
+    expect(validation.valid).toBe(false)
+    expect(validation.errors ?? []).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'cycle_detected' }),
       ]),
     )
+    await page.evaluate(async (result) => {
+      const mod = await import('/src/composables/useGraphSync.ts')
+      mod.useGraphSync().validationResult.value = result
+    }, validation)
     await expect(page.locator('.canvas-error-banner')).toBeVisible()
     await expect(page.getByTestId('canvas-error-row').first()).toContainText(
       /cycle/i,
     )
-    const hasCycle = (validation?.errors ?? []).some(
+    const hasCycle = (validation.errors ?? []).some(
       (e: { type: string }) => e.type === 'cycle_detected',
     )
     expect(hasCycle).toBe(true)

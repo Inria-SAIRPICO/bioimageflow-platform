@@ -18,8 +18,25 @@ type ToolMetadata = {
 }
 
 type GraphState = {
+  schema_version: 1
+  name: string
+  display_name: string
   nodes: Array<Record<string, unknown>>
   edges: Array<Record<string, unknown>>
+  interface: { inputs: []; outputs: [] }
+  config: { storage_path: string; engine: string; execution: string }
+}
+
+function emptyGraph(name: string): GraphState {
+  return {
+    schema_version: 1,
+    name,
+    display_name: name,
+    nodes: [],
+    edges: [],
+    interface: { inputs: [], outputs: [] },
+    config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+  }
 }
 
 function uniqueName(prefix: string): string {
@@ -101,8 +118,12 @@ async function seedWorkflowAutoSave(page: Page, name: string, graph: GraphState)
 
 function graphWithEdge(tool: ToolMetadata, outputName: string, inputName: string): GraphState {
   return {
+    schema_version: 1,
+    name: 'recovered_workflow',
+    display_name: 'Recovered workflow',
     nodes: [
       {
+        type: 'tool',
         id: 'src_node',
         name: 'Source',
         tool_name: tool.name,
@@ -110,6 +131,7 @@ function graphWithEdge(tool: ToolMetadata, outputName: string, inputName: string
         parameters: {},
       },
       {
+        type: 'tool',
         id: 'tgt_node',
         name: 'Target',
         tool_name: tool.name,
@@ -119,7 +141,7 @@ function graphWithEdge(tool: ToolMetadata, outputName: string, inputName: string
     ],
     edges: [
       {
-        type: 'column_ref',
+        type: 'column',
         id: `e-src_node-${outputName}-tgt_node-${inputName}`,
         source_node: 'src_node',
         target_node: 'tgt_node',
@@ -127,6 +149,8 @@ function graphWithEdge(tool: ToolMetadata, outputName: string, inputName: string
         target_input: inputName,
       },
     ],
+    interface: { inputs: [], outputs: [] },
+    config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
   }
 }
 
@@ -136,7 +160,7 @@ test.describe('workflow-scoped graph recovery', () => {
     await deleteWorkflowIfExists(page, workflowName)
 
     const { tool, outputName, inputName } = await fetchAnyTool(page)
-    await createServerWorkflow(page, workflowName, { nodes: [], edges: [] })
+    await createServerWorkflow(page, workflowName, emptyGraph(workflowName))
 
     await page.goto('/')
     await seedWorkflowAutoSave(

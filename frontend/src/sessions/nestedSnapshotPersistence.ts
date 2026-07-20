@@ -120,7 +120,7 @@ function conflictResponse(error: unknown): {
     detail: typeof response.data?.detail === 'string'
       && response.data.detail.trim().length > 0
       ? response.data.detail.trim()
-      : 'The nested workflow snapshot changed elsewhere.',
+      : 'The nested-workflow snapshot changed elsewhere.',
   }
 }
 

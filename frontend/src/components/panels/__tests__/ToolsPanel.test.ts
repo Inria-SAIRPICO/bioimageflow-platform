@@ -31,7 +31,7 @@ import {
   makeWorkflowDraft,
 } from '@/test-utils/persistenceFixtures'
 import ToolsPanel from '../ToolsPanel.vue'
-import type { ToolMetadata, PackageInfo, Settings } from '@/api/types'
+import type { ToolMetadata, PackageInfo, SettingsResponse } from '@/api/types'
 
 const mockedApi = api as unknown as {
   get: ReturnType<typeof vi.fn>
@@ -49,6 +49,7 @@ const mockTools: ToolMetadata[] = [
     tool_type: 'ProcessingTool',
     accepts_upstream: true,
     dynamic_outputs: false,
+    dataframe_output: false,
     documentation: 'Apply threshold to an image',
     tags: ['segmentation', 'binary'],
     categories: ['Image Processing'],
@@ -66,6 +67,7 @@ const mockTools: ToolMetadata[] = [
     tool_type: 'ProcessingTool',
     accepts_upstream: true,
     dynamic_outputs: false,
+    dataframe_output: false,
     documentation: 'Apply gaussian blur',
     tags: ['filter'],
     categories: ['Filtering'],
@@ -83,6 +85,7 @@ const mockTools: ToolMetadata[] = [
     tool_type: 'ProcessingTool',
     accepts_upstream: true,
     dynamic_outputs: false,
+    dataframe_output: false,
     documentation: 'Deep learning segmentation',
     tags: ['deep-learning'],
     categories: ['Segmentation'],
@@ -100,6 +103,7 @@ const mockTools: ToolMetadata[] = [
     tool_type: 'ProcessingTool',
     accepts_upstream: true,
     dynamic_outputs: false,
+    dataframe_output: false,
     documentation: 'Local custom tool',
     tags: [],
     categories: ['Custom'],
@@ -132,7 +136,7 @@ const mockPackages: PackageInfo[] = [
   },
 ]
 
-function makeSettings(overrides: Partial<Settings> = {}): Settings {
+function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsResponse {
   return {
     deployment_mode: 'desktop',
     external_editor: null,
@@ -171,7 +175,7 @@ function setPywebviewDesktop(enabled: boolean) {
   })
 }
 
-function mountPanel(options: { settings?: Settings | null } = {}) {
+function mountPanel(options: { settings?: SettingsResponse | null } = {}) {
   // Mock fetchTools and fetchPackages calls in onMounted
   mockedApi.get.mockImplementation((url: string) => {
     if (url === '/api/v1/tools') return Promise.resolve({ data: mockTools })

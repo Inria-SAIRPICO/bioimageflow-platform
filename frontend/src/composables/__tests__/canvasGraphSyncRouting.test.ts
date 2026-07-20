@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { GraphState, ValidationResult } from '@/api/types'
 import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import { makeGraph, requireToolNode } from '@/test-utils/graphFixtures'
 
 vi.mock('@/api/client', () => ({
   api: {
@@ -23,8 +24,9 @@ const mockedPut = vi.mocked(api.put)
 const mockedGet = vi.mocked(api.get)
 
 function graph(value: string): GraphState {
-  return {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: 'repeated-node',
       name: 'Repeated',
       tool_name: 'tool',
@@ -36,7 +38,7 @@ function graph(value: string): GraphState {
       collapsed: false,
     }],
     edges: [],
-  }
+  })
 }
 
 function validation(valid: boolean): ValidationResult {
@@ -141,8 +143,8 @@ describe('canvas-scoped graph sync routing', () => {
         validate: true,
       }),
     )
-    expect(syncA.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'a' })
-    expect(syncB.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'b' })
+    expect(requireToolNode(syncA.currentGraph.value).parameters).toEqual({ value: 'a' })
+    expect(requireToolNode(syncB.currentGraph.value).parameters).toEqual({ value: 'b' })
     expect(syncA.validationResult.value).toEqual(validation(true))
     expect(syncB.validationResult.value).toEqual(validation(false))
   })
@@ -168,8 +170,8 @@ describe('canvas-scoped graph sync routing', () => {
     activateGraphSyncCanvas(canvasB)
     await flushA
 
-    expect(syncA.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'active-a' })
-    expect(syncB.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'b' })
+    expect(requireToolNode(syncA.currentGraph.value).parameters).toEqual({ value: 'active-a' })
+    expect(requireToolNode(syncB.currentGraph.value).parameters).toEqual({ value: 'b' })
     expect(mockedPut).toHaveBeenLastCalledWith(
       '/api/v1/workflow-drafts/workflow-a',
       expect.objectContaining({
@@ -180,7 +182,7 @@ describe('canvas-scoped graph sync routing', () => {
     expect(syncA.validationResult.value).toEqual(validation(true))
     expect(syncB.validationResult.value).toBeNull()
 
-    expect(active.currentGraph.value.nodes[0]?.parameters).toEqual({ value: 'b' })
+    expect(requireToolNode(active.currentGraph.value).parameters).toEqual({ value: 'b' })
     await active.flushNow()
     expect(active.validationResult.value).toEqual(validation(false))
   })

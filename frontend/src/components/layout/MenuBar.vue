@@ -25,6 +25,13 @@ import {
 } from '@/composables/useCanvasPersistence'
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
+import { useSettingsStore } from '@/stores/settings'
+import { api } from '@/api/client'
+import {
+  applyWorkflowSourceOperation,
+  previewPythonWorkflowSource,
+} from '@/api/workflowSources'
+import { resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
@@ -34,6 +41,7 @@ import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
+import { emptyGraph } from '@/sessions/graphDocument'
 import {
   loadRootWorkflowPresentation,
   type RootWorkflowPresentation,
@@ -56,6 +64,7 @@ const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const canvasLifecycleStore = useCanvasLifecycleStore()
 const workflowStore = useWorkflowStore()
+const settingsStore = useSettingsStore()
 const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
 const canvasPersistence = useCanvasPersistence()
 const canvasCommands = useCanvasCommands()
@@ -79,11 +88,19 @@ function workflowId(workflow: WorkflowInfo): string {
   return (workflow as WorkflowInfo & { id?: string | null }).id || workflow.name
 }
 
+function encodedWorkflowId(id: string): string {
+  return id.split('/').map(encodeURIComponent).join('/')
+}
+
 const workflowTitle = computed(() => {
   const label = uiStore.activeWorkflowName ?? 'No workflow'
   return uiStore.hasUnsavedChanges ? `${label} *` : label
 })
 const activeWorkflowId = computed(() => uiStore.activeWorkflowId)
+const canBuildFromPython = computed(() => (
+  settingsStore.isDesktop
+  && activeWorkflowId.value !== null
+))
 const activeCanvasLifecycleBusy = computed(() => {
   const canvasId = canvasSessionRegistry.activeCanvasId.value
   return canvasId !== null && canvasLifecycleStore.isBusy(canvasId)
@@ -192,7 +209,7 @@ function runDisabledReason(): string | null {
     activeCanvasId !== null
     && canvasSessionRegistry.get(activeCanvasId)?.descriptor.kind === 'nested'
   ) {
-    return 'Run the owning root workflow to execute this sub-workflow'
+    return 'Run the owning root workflow to execute this nested-workflow'
   }
   if (isPending.value) return 'Waiting for validation…'
   if (!activeWorkflowId.value) return 'Open or save a workflow before running'
@@ -268,7 +285,7 @@ async function onWorkflowDialogSubmit(payload: {
       workflowDialogVisible.value = false
       workflowDialogSuggestedName.value = null
       workflowDialogFolderId.value = null
-      applyGraph({ nodes: [], edges: [] }, false, {
+      applyGraph(emptyGraph(workflowId(info), info.display_name), false, {
         workflowName: workflowId(info),
         workflowDisplayName: info.display_name,
         missingTools: [],
@@ -441,6 +458,53 @@ async function confirmExportCurrentWorkflow(): Promise<void> {
 function chooseImportFile(): void {
   if (executionStore.isMutationLocked) return
   importFileInput.value?.click()
+}
+
+async function buildWorkflowFromPythonSource(): Promise<void> {
+  const workflowName = activeWorkflowId.value
+  const canvasId = canvasSessionRegistry.activeCanvasId.value
+  if (!workflowName || !canvasId || !canBuildFromPython.value) return
+  if (executionStore.isMutationLocked || activeCanvasLifecycleBusy.value) return
+  try {
+    const info = await saveCurrentWorkflowGraph({ showSuccessToast: false })
+    if (!info) return
+    const resource = getRootCanvasPersistenceResource(canvasId)
+    if (!resource || resource.workflowId.value !== workflowName) {
+      throw new Error('The active root workflow draft is unavailable')
+    }
+    const revision = resource.acceptedDraftRevision.value
+    if (revision === null) throw new Error('The active root workflow draft is unavailable')
+    const { data: saved } = await api.get<{ artifact_hash: string }>(
+      `/api/v1/workflows/${encodedWorkflowId(workflowName)}`,
+    )
+    const preview = await previewPythonWorkflowSource(workflowName, {
+      expected_artifact_hash: saved.artifact_hash,
+    })
+    const effects = preview.destructive_effects?.length ?? 0
+    const sourceChanges = (preview.custom_source_ids_added?.length ?? 0)
+      + (preview.custom_source_ids_removed?.length ?? 0)
+    const confirmed = window.confirm(
+      `Build this workflow from workflow.py? This replaces the saved graph and applies ${effects} interface change(s) and ${sourceChanges} workflow-local tool source change(s).`,
+    )
+    if (!confirmed) return
+    await applyWorkflowSourceOperation(workflowName, {
+      token: preview.token,
+      confirm_effects: preview.destructive_effects ?? [],
+    })
+    const accepted = await resetWorkflowDraftToSaved(workflowName, revision)
+    resource.initializeFromDraft(accepted)
+    window.dispatchEvent(new CustomEvent('bioimageflow:replace-root-graph', {
+      detail: { workflowId: workflowName, draft: accepted },
+    }))
+    toast?.add({
+      severity: 'success',
+      summary: 'Workflow built from Python source',
+      detail: info.display_name,
+      life: 3500,
+    })
+  } catch (error: unknown) {
+    showError('Build from Python source failed', error)
+  }
 }
 
 async function openImportedWorkflow(name: string): Promise<void> {
@@ -792,6 +856,13 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isMutationLocked, command: saveWorkflowAs },
       { label: 'Import', icon: 'pi pi-upload', disabled: executionStore.isMutationLocked, command: chooseImportFile },
       { label: 'Export', icon: 'pi pi-download', disabled: executionStore.isMutationLocked || !activeWorkflowId.value, command: exportCurrentWorkflow },
+      {
+        label: 'Build from Python source',
+        icon: 'pi pi-code',
+        visible: settingsStore.isDesktop,
+        disabled: executionStore.isMutationLocked || !canBuildFromPython.value,
+        command: buildWorkflowFromPythonSource,
+      },
       { label: 'Delete', icon: 'pi pi-trash', disabled: executionStore.isMutationLocked || !activeWorkflowId.value, command: deleteWorkflow },
     ],
   },

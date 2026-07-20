@@ -18,18 +18,19 @@ import {
   type NestedSnapshotPersistence,
 } from '@/sessions/nestedSnapshotPersistence'
 import type { NestedWorkflowSnapshotResponse } from '@/api/nestedWorkflowSnapshots'
-import { graphDocumentsEqual } from '@/sessions/graphDocument'
+import { emptyGraph, graphDocumentsEqual } from '@/sessions/graphDocument'
 import type {
-  ColumnRefEdge,
+  ColumnEdge,
+  DataFrameEdge,
   GraphState,
-  NodeState,
-  PositionalEdge,
-  PublishedInput,
-  PublishedOutput,
+  ToolNodeState,
   ValidationResult,
+  WorkflowNodeState,
 } from '@/api/types'
+import { decodeEndpointHandle } from '@/utils/endpointHandles'
 
-type Edge = ColumnRefEdge | PositionalEdge
+type Edge = ColumnEdge | DataFrameEdge
+type NodeState = ToolNodeState | WorkflowNodeState
 
 export type { SyncState } from '@/sessions/graphSyncCoordinator'
 
@@ -67,74 +68,82 @@ function deepCloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function hasSubWorkflowFields(data: Record<string, any> | undefined): boolean {
-  if (!data) return false
-  return data.toolName === '__sub_workflow__'
-    || (data.sub_workflow !== undefined && data.sub_workflow !== null)
-    || (Array.isArray(data.published_inputs) && data.published_inputs.length > 0)
-    || (Array.isArray(data.published_outputs) && data.published_outputs.length > 0)
-    || typeof data.source_workflow_name === 'string'
-    || (
-      data.sub_workflow_readonly_reason !== undefined
-      && data.sub_workflow_readonly_reason !== null
-    )
-}
-
 /**
  * Serialise a Vue Flow node object into the backend NodeState format.
  */
 function serializeNode(n: any): NodeState {
   const data = n.data ?? {}
-  const node = {
+  const common = {
     id: n.id,
     name: data.name ?? n.id,
-    tool_name: data.toolName ?? '',
-    position: [n.position?.x ?? 0, n.position?.y ?? 0],
-    parameters: data.parameters ?? {},
+    position: [n.position?.x ?? 0, n.position?.y ?? 0] as [number, number],
     resources: data.resources ?? {},
-    output_templates: data.output_templates ?? {},
     enabled: data.enabled ?? true,
     collapsed: data.collapsed ?? false,
-  } as NodeState & Record<string, unknown>
-  if (hasSubWorkflowFields(data)) {
-    for (const key of [
-      'sub_workflow',
-      'published_inputs',
-      'published_outputs',
-      'sub_workflow_readonly_reason',
-      'source_workflow_name',
-    ]) {
-      if (data[key] !== undefined) {
-        node[key] = deepCloneJson(data[key])
-      }
+  }
+  if (n.type === 'workflow' && data.nodeType === 'workflow') {
+    return {
+      type: 'workflow',
+      ...common,
+      workflow: deepCloneJson(data.workflow),
+      bindings: deepCloneJson(data.bindings ?? {}),
+      source: data.source == null ? null : deepCloneJson(data.source),
     }
   }
-  return node as NodeState
+  if (n.type !== 'tool' || data.nodeType !== 'tool') {
+    throw new Error(`Canvas node ${n.id} has no valid discriminator`)
+  }
+  return {
+    type: 'tool',
+    ...common,
+    tool_name: data.toolName,
+    parameters: deepCloneJson(data.parameters ?? {}),
+    output_templates: deepCloneJson(data.output_templates ?? {}),
+    tool_module: data.toolModule ?? null,
+    tool_class: data.toolClass ?? null,
+    tool_package: data.toolPackage ?? null,
+    tool_package_version: data.toolPackageVersion ?? null,
+    source_module: data.sourceModule ?? null,
+  }
 }
 
 /**
  * Serialise a Vue Flow edge object into the backend Edge format
- * (either ColumnRefEdge or PositionalEdge).
+ * (either ColumnEdge or DataFrameEdge).
  */
 function serializeEdge(e: any): Edge {
-  if (e.type === 'positional') {
-    const handle = e.targetHandle ?? ''
-    const idx = parseInt(handle.replace('__positional_', ''), 10)
+  const source = decodeEndpointHandle(e.sourceHandle ?? '')
+  const target = decodeEndpointHandle(e.targetHandle ?? '')
+  if (e.type === 'dataframe') {
+    if (source.kind !== 'dataframe-output') {
+      throw new Error(`DataFrame edge ${e.id} has a non-DataFrame source`)
+    }
+    if (target.kind !== 'dataframe-position' && target.kind !== 'workflow-input') {
+      throw new Error(`DataFrame edge ${e.id} has an incompatible target`)
+    }
     return {
-      type: 'positional',
+      type: 'dataframe',
       id: e.id,
       source_node: e.source,
       target_node: e.target,
-      positional_index: isNaN(idx) ? 0 : idx,
+      target_position: target.kind === 'dataframe-position' ? target.index : null,
+      target_input: target.kind === 'workflow-input' ? target.id : null,
     }
   }
+  if (e.type !== 'column') throw new Error(`Unknown canvas edge type: ${e.type}`)
+  if (source.kind !== 'tool-output' && source.kind !== 'workflow-output') {
+    throw new Error(`Column edge ${e.id} has an incompatible source`)
+  }
+  if (target.kind !== 'tool-input' && target.kind !== 'workflow-input') {
+    throw new Error(`Column edge ${e.id} has an incompatible target`)
+  }
   return {
-    type: 'column_ref',
+    type: 'column',
     id: e.id,
     source_node: e.source,
     target_node: e.target,
-    source_output: e.sourceHandle ?? '',
-    target_input: e.targetHandle ?? '',
+    source_output: source.kind === 'workflow-output' ? source.id : source.name,
+    target_input: target.kind === 'workflow-input' ? target.id : target.name,
   }
 }
 
@@ -144,20 +153,25 @@ function serializeEdge(e: any): Edge {
 export function serializeGraph(raw: {
   nodes: any[]
   edges: any[]
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
+  schema_version?: 1
+  name?: string
+  display_name?: string
+  interface?: GraphState['interface']
+  config?: GraphState['config']
 }): GraphState {
-  const graph = {
+  return {
+    schema_version: raw.schema_version ?? 1,
+    name: raw.name ?? 'workflow',
+    display_name: raw.display_name ?? raw.name ?? 'Workflow',
     nodes: raw.nodes.map(serializeNode),
     edges: raw.edges.map(serializeEdge),
-  } as GraphState
-  if (raw.published_inputs !== undefined) {
-    graph.published_inputs = deepCloneJson(raw.published_inputs)
+    interface: deepCloneJson(raw.interface ?? { inputs: [], outputs: [] }),
+    config: deepCloneJson(raw.config ?? {
+      storage_path: './bif_data',
+      engine: 'wetlands',
+      execution: 'parallel',
+    }),
   }
-  if (raw.published_outputs !== undefined) {
-    graph.published_outputs = deepCloneJson(raw.published_outputs)
-  }
-  return graph
 }
 
 export const graphSyncCanvasSessions = canvasSessionRegistry
@@ -388,7 +402,7 @@ function createActiveFacade(): GraphSyncApi {
     if (target === null) throw new Error('No active canvas graph sync session')
     return target
   }
-  const emptyGraph: GraphState = { nodes: [], edges: [] }
+  const fallbackGraph = emptyGraph()
 
   return {
     syncGraph: graph => required().syncGraph(graph),
@@ -411,7 +425,7 @@ function createActiveFacade(): GraphSyncApi {
     }),
     lastError: computed(() => selected()?.lastError.value ?? null),
     currentGraph: computed({
-      get: () => selected()?.currentGraph.value ?? emptyGraph,
+      get: () => selected()?.currentGraph.value ?? fallbackGraph,
       set: value => { required().currentGraph.value = value },
     }),
     dispose: () => required().dispose(),

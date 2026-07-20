@@ -8,15 +8,13 @@ import {
 } from '@/api/nestedWorkflowSnapshots'
 import type {
   GraphState,
-  PublishedInput,
-  PublishedOutput,
   ValidationResult,
 } from '@/api/types'
 import { graphDocumentsEqual } from '@/sessions/graphDocument'
 
-export type SubWorkflowParentConflictReason = 'parent_missing' | 'parent_changed'
+export type NestedWorkflowParentConflictReason = 'parent_missing' | 'parent_changed'
 
-export interface SubWorkflowSession {
+export interface NestedWorkflowSession {
   id: string
   owner: NestedSnapshotOwner
   parentCanvasId: string
@@ -28,16 +26,13 @@ export interface SubWorkflowSession {
   /** Child document last applied to the parent node. */
   savedSnapshot: GraphState
   acceptedSnapshot: GraphState
-  parentApplyConflict: SubWorkflowParentConflictReason | null
+  parentApplyConflict: NestedWorkflowParentConflictReason | null
   snapshotRevision: number
   updatedAt: string
   validation: ValidationResult
-  /** Compatibility views backed directly by draft, not separate state. */
-  published_inputs: PublishedInput[]
-  published_outputs: PublishedOutput[]
 }
 
-export interface OpenDurableSubWorkflowSessionOptions {
+export interface OpenDurableNestedWorkflowSessionOptions {
   owner: NestedSnapshotOwner
   parentCanvasId: string
   parentWorkflowName: string | null
@@ -45,13 +40,10 @@ export interface OpenDurableSubWorkflowSessionOptions {
   parentNodeId: string
   parentNodeName: string
   graph: GraphState
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
-  readonlyReason?: string | null
 }
 
-export interface OpenDurableSubWorkflowSessionResult {
-  session: SubWorkflowSession
+export interface OpenDurableNestedWorkflowSessionResult {
+  session: NestedWorkflowSession
   created: boolean
 }
 
@@ -59,16 +51,8 @@ function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function completeGraph(
-  graph: GraphState,
-  publishedInputs?: PublishedInput[],
-  publishedOutputs?: PublishedOutput[],
-): GraphState {
-  return {
-    ...deepClone(graph),
-    published_inputs: deepClone(publishedInputs ?? graph.published_inputs ?? []),
-    published_outputs: deepClone(publishedOutputs ?? graph.published_outputs ?? []),
-  }
+function completeGraph(graph: GraphState): GraphState {
+  return deepClone(graph)
 }
 
 function sameOwner(left: NestedSnapshotOwner, right: NestedSnapshotOwner): boolean {
@@ -83,11 +67,11 @@ function sameOwner(left: NestedSnapshotOwner, right: NestedSnapshotOwner): boole
 }
 
 function createSession(
-  options: OpenDurableSubWorkflowSessionOptions,
+  options: OpenDurableNestedWorkflowSessionOptions,
   snapshot: NestedWorkflowSnapshotResponse,
   draft: GraphState,
   savedSnapshot: GraphState,
-): SubWorkflowSession {
+): NestedWorkflowSession {
   const session = {
     id: snapshot.session_id,
     owner: snapshot.owner,
@@ -103,66 +87,42 @@ function createSession(
     snapshotRevision: snapshot.snapshot_revision,
     updatedAt: snapshot.updated_at,
     validation: deepClone(snapshot.validation),
-  } as SubWorkflowSession
-
-  Object.defineProperties(session, {
-    published_inputs: {
-      enumerable: true,
-      get: () => session.draft.published_inputs ?? [],
-      set: (value: PublishedInput[]) => {
-        session.draft.published_inputs = deepClone(value)
-      },
-    },
-    published_outputs: {
-      enumerable: true,
-      get: () => session.draft.published_outputs ?? [],
-      set: (value: PublishedOutput[]) => {
-        session.draft.published_outputs = deepClone(value)
-      },
-    },
-  })
+  } satisfies NestedWorkflowSession
   return session
 }
 
-export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', () => {
-  const sessions = ref<SubWorkflowSession[]>([])
+export const useNestedWorkflowSessionsStore = defineStore('nestedWorkflowSessions', () => {
+  const sessions = ref<NestedWorkflowSession[]>([])
 
   const dirtySessionIds = computed(() => sessions.value
     .filter((session) => isSessionDirty(session))
     .map((session) => session.id))
 
-  function isSessionDirty(session: SubWorkflowSession): boolean {
+  function isSessionDirty(session: NestedWorkflowSession): boolean {
     return session.parentApplyConflict !== null
       || !graphDocumentsEqual(session.draft, session.savedSnapshot)
   }
 
-  function sessionById(id: string): SubWorkflowSession | undefined {
+  function sessionById(id: string): NestedWorkflowSession | undefined {
     return sessions.value.find((session) => session.id === id)
   }
 
   async function openDurableSession(
-    options: OpenDurableSubWorkflowSessionOptions,
-  ): Promise<SubWorkflowSession> {
+    options: OpenDurableNestedWorkflowSessionOptions,
+  ): Promise<NestedWorkflowSession> {
     return (await openDurableSessionResult(options)).session
   }
 
   async function openDurableSessionResult(
-    options: OpenDurableSubWorkflowSessionOptions,
-  ): Promise<OpenDurableSubWorkflowSessionResult> {
-    if (options.readonlyReason) {
-      throw new Error(options.readonlyReason)
-    }
+    options: OpenDurableNestedWorkflowSessionOptions,
+  ): Promise<OpenDurableNestedWorkflowSessionResult> {
     const existing = sessions.value.find(session => (
       session.parentNodeId === options.parentNodeId
       && sameOwner(session.owner, options.owner)
     ))
     if (existing) return { session: existing, created: false }
 
-    const parentBaseline = completeGraph(
-      options.graph,
-      options.published_inputs,
-      options.published_outputs,
-    )
+    const parentBaseline = completeGraph(options.graph)
     const snapshot = await openNestedWorkflowSnapshot({
       owner: options.owner,
       parent_node_id: options.parentNodeId,
@@ -194,7 +154,7 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
     validation?: ValidationResult,
   ): void {
     const session = sessionById(id)
-    if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
+    if (!session) throw new Error(`nested-workflow session not found: ${id}`)
     const accepted = completeGraph(graph)
     session.draft = deepClone(accepted)
     session.savedSnapshot = deepClone(accepted)
@@ -208,16 +168,16 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
 
   function updateDraft(id: string, graph: GraphState): void {
     const session = sessionById(id)
-    if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
+    if (!session) throw new Error(`nested-workflow session not found: ${id}`)
     session.draft = completeGraph(graph)
   }
 
   function markParentApplyConflict(
     id: string,
-    reason: SubWorkflowParentConflictReason,
+    reason: NestedWorkflowParentConflictReason,
   ): void {
     const session = sessionById(id)
-    if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
+    if (!session) throw new Error(`nested-workflow session not found: ${id}`)
     session.parentApplyConflict = reason
   }
 
@@ -235,7 +195,7 @@ export const useSubWorkflowSessionsStore = defineStore('subWorkflowSessions', ()
 
   function snapshotForSession(id: string): NestedWorkflowSnapshotResponse {
     const session = sessionById(id)
-    if (!session) throw new Error(`Sub-workflow session not found: ${id}`)
+    if (!session) throw new Error(`nested-workflow session not found: ${id}`)
     return {
       snapshot_version: 1,
       session_id: session.id,

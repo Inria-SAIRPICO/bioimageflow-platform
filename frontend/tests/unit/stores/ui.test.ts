@@ -104,7 +104,7 @@ describe('UI store', () => {
     store.markCanvasDirty(rootCanvasId)
     store.setCanvasSelectedNodes(nestedCanvasId, ['shared'])
     store.setCanvasGraphNodes(nestedCanvasId, [nestedNode])
-    store.setCanvasWorkflow(nestedCanvasId, 'root', 'Nested workflow')
+    store.setCanvasWorkflow(nestedCanvasId, 'root', 'nested-workflow')
     store.markCanvasClean(nestedCanvasId)
 
     canvasSessionRegistry.activate(rootCanvasId)
@@ -119,7 +119,7 @@ describe('UI store', () => {
     expect(store.graphNodes).toEqual([nestedNode])
     expect(store.activeWorkflowId).toBe('root')
     expect(store.hasUnsavedChanges).toBe(false)
-    expect(store.tabTitle).toBe('BioImageFlow \u2014 Nested workflow')
+    expect(store.tabTitle).toBe('BioImageFlow \u2014 nested-workflow')
   })
 
   it('keeps inactive canvas updates out of the active presentation facade', () => {

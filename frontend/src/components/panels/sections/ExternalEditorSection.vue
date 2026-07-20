@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import InputText from 'primevue/inputtext'
-import type { Settings } from '@/api/types'
+import type { Settings } from '@/stores/settings'
 
 const props = defineProps<{ modelValue: Settings }>()
 const emit = defineEmits<{

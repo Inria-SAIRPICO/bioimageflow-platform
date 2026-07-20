@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { fetchNodeOutputSchema } from '@/api/client'
 import { serializeGraph } from '@/composables/useGraphSync'
 import type { NodeOutputSchemaResponse, ToolMetadata } from '@/api/types'
+import { decodeEndpointHandle } from '@/utils/endpointHandles'
 import {
   canvasSessionRegistry,
   type CanvasId,
@@ -145,8 +146,8 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
       if (!isCurrentRequest(context, nodeId, requestId)) return
       const raw = getGraph()
       const graph = serializeGraph(raw)
-      const published = await fetchAndPublish(context, nodeId, graph, requestId)
-      if (!published) return
+      const exposed = await fetchAndPublish(context, nodeId, graph, requestId)
+      if (!exposed) return
       await propagateDownstream(
         context,
         nodeId,
@@ -197,8 +198,11 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
 
       for (const edge of raw.edges) {
         if (edge.source !== current) continue
-        const targetHandle = edge.targetHandle ?? ''
-        if (!targetHandle.startsWith('__positional_')) continue
+        const targetHandle = decodeEndpointHandle(edge.targetHandle ?? '')
+        if (
+          targetHandle.kind !== 'dataframe-position'
+          && targetHandle.kind !== 'dataframe-input'
+        ) continue
         const targetId = edge.target
         if (visited.has(targetId)) continue
 
@@ -206,7 +210,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
         if (targetTool?.dynamic_outputs === true) {
           clearTimer(context, targetId)
           const requestId = nextRequestId(context, targetId)
-          const published = await fetchAndPublish(
+          const exposed = await fetchAndPublish(
             context,
             targetId,
             graph,
@@ -214,7 +218,7 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
             { nodeId: startNodeId, requestId: startRequestId },
           )
           if (!isCurrentRequest(context, startNodeId, startRequestId)) return
-          if (!published) continue
+          if (!exposed) continue
           queue.push(targetId)
         }
       }

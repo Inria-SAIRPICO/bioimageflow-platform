@@ -12,6 +12,7 @@ const workflows: WorkflowInfo[] = [
     display_name: 'Nuclei A',
     path: '/workspace/workflows/A/nuclei/workflow.json',
     last_modified: '2026-05-01T08:00:00Z',
+      identity_generation: 0,
   },
   {
     id: 'B/nuclei',
@@ -20,6 +21,7 @@ const workflows: WorkflowInfo[] = [
     display_name: 'Nuclei B',
     path: '/workspace/workflows/B/nuclei/workflow.json',
     last_modified: '2026-05-01T09:00:00Z',
+      identity_generation: 0,
   },
 ]
 

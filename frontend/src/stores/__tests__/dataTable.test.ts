@@ -323,7 +323,7 @@ describe('dataTable store canvas ownership', () => {
     })
   })
 
-  it('retries a consolidated query while immutable result data is being published', async () => {
+  it('retries a consolidated query while immutable result data is being exposed', async () => {
     vi.useFakeTimers()
     const [canvasA] = registerCanvases()
     canvasSessionRegistry.activate(canvasA)

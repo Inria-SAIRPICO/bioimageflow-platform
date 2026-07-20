@@ -185,7 +185,7 @@ async function flushDraftIfAvailable(): Promise<void> {
   const activeCanvasId = canvasSessionRegistry.activeCanvasId.value
   if (activeCanvasId === null) {
     throw new Error(
-      'Select an active workflow or sub-workflow canvas before opening the editor.',
+      'Select an active workflow or nested-workflow canvas before opening the editor.',
     )
   }
   const session = canvasSessionRegistry.get(activeCanvasId)

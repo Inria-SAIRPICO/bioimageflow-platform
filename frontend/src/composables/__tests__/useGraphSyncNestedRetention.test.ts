@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { GraphState } from '@/api/types'
 import type { NestedWorkflowSnapshotResponse } from '@/api/nestedWorkflowSnapshots'
 import { canvasIdFromPanelId } from '@/sessions/canvasSessionRegistry'
+import { makeGraph } from '@/test-utils/graphFixtures'
 
 const snapshotApiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -26,8 +27,9 @@ import {
 import { NestedSnapshotPersistenceConflictError } from '@/sessions/nestedSnapshotPersistence'
 
 function graph(value: string): GraphState {
-  return {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: 'inner',
       name: 'Inner',
       tool_name: 'tool',
@@ -39,7 +41,7 @@ function graph(value: string): GraphState {
       collapsed: false,
     }],
     edges: [],
-  }
+  })
 }
 
 function snapshot(
@@ -82,7 +84,7 @@ describe('retained nested snapshot graph sync', () => {
     const sync = useGraphSync({
       descriptor: {
         kind: 'nested',
-        canvasId: canvasIdFromPanelId(`sub-workflow:${sessionId}`),
+        canvasId: canvasIdFromPanelId(`nested-workflow:${sessionId}`),
         sessionId,
         parentCanvasId: canvasIdFromPanelId('workflow:parent'),
       },
@@ -107,7 +109,7 @@ describe('retained nested snapshot graph sync', () => {
 
   it('retains a writer across ordinary tab disposal but forgets it after root deletion', async () => {
     const sessionId = '00000000-0000-4000-8000-000000000001'
-    const canvasId = canvasIdFromPanelId(`sub-workflow:${sessionId}`)
+    const canvasId = canvasIdFromPanelId(`nested-workflow:${sessionId}`)
     const sync = useGraphSync({
       descriptor: {
         kind: 'nested',
@@ -142,7 +144,7 @@ describe('retained nested snapshot graph sync', () => {
 
   it('exposes only the latest nested persistence failure through fixed and active APIs', async () => {
     const sessionId = '00000000-0000-4000-8000-000000000001'
-    const canvasId = canvasIdFromPanelId(`sub-workflow:${sessionId}`)
+    const canvasId = canvasIdFromPanelId(`nested-workflow:${sessionId}`)
     const failure = new Error('nested snapshot unavailable')
     const recovered = graph('recovered')
     snapshotApiMocks.put
@@ -181,7 +183,7 @@ describe('retained nested snapshot graph sync', () => {
 
   it('routes an explicit nested conflict resolution through the fixed and active APIs', async () => {
     const sessionId = '00000000-0000-4000-8000-000000000001'
-    const canvasId = canvasIdFromPanelId(`sub-workflow:${sessionId}`)
+    const canvasId = canvasIdFromPanelId(`nested-workflow:${sessionId}`)
     const conflict = {
       response: {
         status: 409,
@@ -237,7 +239,7 @@ describe('retained nested snapshot graph sync', () => {
     expect(() => useGraphSync({
       descriptor: {
         kind: 'nested',
-        canvasId: canvasIdFromPanelId('sub-workflow:missing'),
+        canvasId: canvasIdFromPanelId('nested-workflow:missing'),
         sessionId: 'missing',
         parentCanvasId: canvasIdFromPanelId('workflow:parent'),
       },

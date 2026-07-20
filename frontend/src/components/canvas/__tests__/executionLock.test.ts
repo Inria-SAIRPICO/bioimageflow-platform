@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, ref, computed, nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import InputText from 'primevue/inputtext'
+import { encodeEndpointHandle } from '@/utils/endpointHandles'
 
 // --- Mock shared state that matches the pattern in CanvasView.test.ts ---
 
@@ -88,6 +89,7 @@ vi.mock('@vue-flow/controls', () => ({
 vi.mock('@/composables/useGraphSync', () => ({
   serializeGraph: (raw: { nodes: any[]; edges: any[] }) => ({
     nodes: raw.nodes.map((node) => ({
+      type: 'tool',
       id: node.id,
       name: node.data?.name ?? node.id,
       tool_name: node.data?.toolName ?? '',
@@ -201,6 +203,7 @@ describe('CanvasView execution lock', () => {
         display_name: 'Untitled',
         path: '/tmp/untitled.json',
         last_modified: '2026-01-01T00:00:00Z',
+      identity_generation: 0,
         description: null,
         storage_path: '/tmp/workflows/untitled',
       },
@@ -226,8 +229,8 @@ describe('CanvasView execution lock', () => {
     connectHandler!({
       source: 'a',
       target: 'b',
-      sourceHandle: 'out',
-      targetHandle: 'in',
+      sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'out' }),
+      targetHandle: encodeEndpointHandle({ kind: 'tool-input', name: 'in' }),
     })
     expect(mockEdges).toEqual([])
     w.unmount()
@@ -272,8 +275,8 @@ describe('CanvasView execution lock', () => {
       id: 'edge-1',
       source: 'a',
       target: 'b',
-      sourceHandle: 'out',
-      targetHandle: 'in',
+      sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'out' }),
+      targetHandle: encodeEndpointHandle({ kind: 'tool-input', name: 'in' }),
     }
     mockEdges = [edge]
     const w = mountCanvas()
@@ -285,7 +288,7 @@ describe('CanvasView execution lock', () => {
       connection: {
         source: 'a',
         target: 'c',
-        sourceHandle: 'out',
+        sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'out' }),
         targetHandle: 'other',
       },
     })
@@ -346,13 +349,17 @@ describe('CanvasView execution lock', () => {
     const w = mountCanvas()
     await writeClipboardPayload({
       bioimageflow_clipboard: true,
-      clipboard_version: 2,
+      clipboard_version: 1,
+      created_at: '2026-07-20T00:00:00Z',
       nodes: [{
+        type: 'tool',
         id: 'a',
         name: 'A',
         tool_name: 'T',
         position: [0, 0],
         parameters: {},
+        enabled: true,
+        collapsed: false,
       }],
       edges: [],
     })
@@ -377,8 +384,8 @@ describe('CanvasView execution lock', () => {
     connectHandler!({
       source: 'a',
       target: 'b',
-      sourceHandle: 'out',
-      targetHandle: 'in',
+      sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'out' }),
+      targetHandle: encodeEndpointHandle({ kind: 'tool-input', name: 'in' }),
     })
     expect(mockEdges.length).toBe(1)
     w.unmount()
@@ -613,8 +620,8 @@ describe('CanvasView execution lock', () => {
     connectHandler!({
       source: 'source',
       target: 'target',
-      sourceHandle: 'out',
-      targetHandle: 'in',
+      sourceHandle: encodeEndpointHandle({ kind: 'tool-output', name: 'out' }),
+      targetHandle: encodeEndpointHandle({ kind: 'tool-input', name: 'in' }),
     })
     await nextTick()
 

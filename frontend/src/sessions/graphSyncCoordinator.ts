@@ -1,5 +1,6 @@
 import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
 import type { GraphState, ValidationResult } from '@/api/types'
+import { emptyGraph } from '@/sessions/graphDocument'
 import type { CanvasId, DisposableCanvasResource } from './canvasSessionRegistry'
 
 export type SyncState = 'idle' | 'pending' | 'error' | 'conflict'
@@ -99,7 +100,7 @@ export function createGraphSyncCoordinator(
     options.initialValidation ? cloneJson(options.initialValidation) : null,
   )
   const currentGraph = ref<GraphState>(cloneJson(
-    options.initialGraph ?? { nodes: [], edges: [] },
+    options.initialGraph ?? emptyGraph(),
   )) as Ref<GraphState>
   const semanticRevision = ref(options.initialSemanticRevision ?? 0)
   const acceptedRevision = ref<number | null>(null)

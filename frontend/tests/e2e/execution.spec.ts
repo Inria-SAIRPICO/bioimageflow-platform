@@ -62,22 +62,32 @@ async function createWorkflowInGui(page: Page, displayName: string) {
   await expect(page.locator('[data-testid="workflow-title"]')).toContainText(displayName)
 }
 
-async function addSourceNode(page: Page, source: ToolMetadata) {
-  await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
-  await page.locator('[data-testid="tool-search"]').fill(source.name)
-  const tool = page.getByTestId(`tool-item-${source.name}`)
-  await expect(tool).toBeVisible({ timeout: 5000 })
-  const draftResponse = page.waitForResponse(
-    (resp) =>
-      resp.url().includes('/api/v1/workflow-drafts/') &&
-      resp.request().method() === 'PUT' &&
-      resp.status() === 200,
-  )
-  await tool.dragTo(page.locator('.vue-flow'), {
-    targetPosition: { x: 300, y: 180 },
+async function addSourceNode(page: Page, source: ToolMetadata, workflowName: string) {
+  const current = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
+  expect(current.ok()).toBeTruthy()
+  const document = await current.json()
+  document.graph.nodes = [{
+    type: 'tool',
+    id: 'seed_1',
+    name: source.display_name,
+    tool_name: source.name,
+    position: [300, 180],
+    parameters: {},
+  }]
+  const saved = await page.request.put(`${API_BASE}/api/v1/workflows/${workflowName}`, {
+    data: { graph: document.graph },
   })
-  await draftResponse
-  const node = page.locator('.vue-flow__node').first()
+  expect(saved.ok()).toBeTruthy()
+  const draft = await page.request.get(`${API_BASE}/api/v1/workflow-drafts/${workflowName}`)
+  expect(draft.ok()).toBeTruthy()
+  const draftRevision = (await draft.json()).draft_revision
+  const reset = await page.request.post(
+    `${API_BASE}/api/v1/workflow-drafts/${workflowName}/reset-to-saved`,
+    { data: { expected_revision: draftRevision, updated_by: 'frontend' } },
+  )
+  expect(reset.ok()).toBeTruthy()
+  await page.reload()
+  const node = page.locator('.vue-flow__node[data-id="seed_1"]')
   await expect(node).toBeVisible({ timeout: 5000 })
   await expect(node.locator('.node-name')).toContainText(source.display_name)
   return node
@@ -117,7 +127,7 @@ test.describe('execution lifecycle', () => {
 
     await createWorkflowInGui(page, displayName)
     const source = await sourceTool(page)
-    const node = await addSourceNode(page, source)
+    const node = await addSourceNode(page, source, workflowName)
     const nodeId = await node.getAttribute('data-id')
     expect(nodeId).toBeTruthy()
 

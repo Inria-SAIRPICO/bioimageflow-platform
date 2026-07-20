@@ -59,7 +59,7 @@ const runTooltip = computed(() => {
   if (exec.isStopping) return 'Execution is stopping'
   if (exec.isRunning) return 'Execution in progress'
   if (isNestedCanvasActive.value) {
-    return 'Run the owning root workflow to execute this sub-workflow'
+    return 'Run the owning root workflow to execute this nested-workflow'
   }
   if (!activeWorkflowId.value) return 'Open or save a workflow before running'
   return ''

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
+import { makeGraph } from '@/test-utils/graphFixtures'
 
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
@@ -74,7 +75,7 @@ describe('useExecutionLock', () => {
     })
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
 
-    const graph = { nodes: [], edges: [] }
+    const graph = makeGraph()
     await lockForExecution({
       graph,
       validationResult: validationResult.value,
@@ -88,7 +89,7 @@ describe('useExecutionLock', () => {
     const { lockForExecution } = useExecutionLock()
     const exec = useExecutionStore()
     const canvasId = canvasIdFromPanelId('workflow:a')
-    const graph = { nodes: [], edges: [] }
+    const graph = makeGraph()
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
 
     await lockForExecution({
@@ -116,7 +117,7 @@ describe('useExecutionLock', () => {
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
 
     await expect(lockForExecution({
-      graph: { nodes: [], edges: [] },
+      graph: makeGraph(),
       validationResult: validationResult.value,
       workflowName: 'wf_a',
       isTargetActive: () => false,
@@ -146,7 +147,7 @@ describe('useExecutionLock', () => {
 
     await expect(
       lockForExecution({
-        graph: { nodes: [], edges: [] },
+        graph: makeGraph(),
         validationResult: validationResult.value,
         workflowName: 'wf_a',
       }),
@@ -166,7 +167,7 @@ describe('useExecutionLock', () => {
     })
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
 
-    const graph = { nodes: [], edges: [] }
+    const graph = makeGraph()
     await lockForExecution({
       graph,
       nodes: ['n1', 'n2'],

@@ -3,13 +3,18 @@ import { mount } from '@vue/test-utils'
 import NodeContextMenu from '../NodeContextMenu.vue'
 
 describe('NodeContextMenu', () => {
-  function factory(options: { enabled?: boolean; canOpenSubWorkflow?: boolean } = {}) {
+  function factory(options: {
+    enabled?: boolean
+    canOpenNestedWorkflow?: boolean
+    hasWorkspaceSource?: boolean
+  } = {}) {
     return mount(NodeContextMenu, {
       props: {
         nodeId: 'node-1',
         position: { x: 100, y: 200 },
         enabled: options.enabled ?? true,
-        canOpenSubWorkflow: options.canOpenSubWorkflow ?? false,
+        canOpenNestedWorkflow: options.canOpenNestedWorkflow ?? false,
+        hasWorkspaceSource: options.hasWorkspaceSource ?? false,
       },
     })
   }
@@ -29,9 +34,9 @@ describe('NodeContextMenu', () => {
     expect(w.findAll('li')[1].text()).toBe('Enable')
   })
 
-  it('shows "Create Sub-workflow" item', () => {
+  it('shows "Group into workflow" item', () => {
     const w = factory()
-    expect(w.findAll('li')[2].text()).toBe('Create Sub-workflow')
+    expect(w.findAll('li')[2].text()).toBe('Group into workflow')
   })
 
   it('shows "Delete" item', () => {
@@ -51,18 +56,33 @@ describe('NodeContextMenu', () => {
     expect(w.emitted('enable-toggle')).toBeTruthy()
   })
 
-  it('emits create-sub-workflow on third item click', async () => {
+  it('emits group-into-workflow on third item click', async () => {
     const w = factory()
     await w.findAll('li')[2].trigger('click')
-    expect(w.emitted('create-sub-workflow')).toBeTruthy()
+    expect(w.emitted('group-into-workflow')).toBeTruthy()
   })
 
-  it('emits open-sub-workflow when the target already has a sub-workflow', async () => {
-    const w = factory({ canOpenSubWorkflow: true })
+  it('emits open-workflow when the target is a workflow', async () => {
+    const w = factory({ canOpenNestedWorkflow: true })
     await w.findAll('li')[2].trigger('click')
-    expect(w.text()).toContain('Open Sub-workflow')
-    expect(w.emitted('open-sub-workflow')).toBeTruthy()
-    expect(w.emitted('create-sub-workflow')).toBeFalsy()
+    expect(w.text()).toContain('Open workflow')
+    expect(w.emitted('open-workflow')).toBeTruthy()
+    expect(w.emitted('group-into-workflow')).toBeFalsy()
+  })
+
+  it('offers explicit source actions for a provenance-linked workflow', async () => {
+    const w = factory({ canOpenNestedWorkflow: true, hasWorkspaceSource: true })
+    expect(w.text()).toContain('Open source workflow')
+    expect(w.text()).toContain('Update from source')
+    expect(w.text()).toContain('Detach from source')
+
+    await w.findAll('li')[3].trigger('click')
+    await w.findAll('li')[4].trigger('click')
+    await w.findAll('li')[5].trigger('click')
+
+    expect(w.emitted('open-source-workflow')).toBeTruthy()
+    expect(w.emitted('update-from-source')).toBeTruthy()
+    expect(w.emitted('detach-source')).toBeTruthy()
   })
 
   it('emits delete on fourth item click', async () => {

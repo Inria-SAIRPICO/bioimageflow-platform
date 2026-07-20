@@ -1,74 +1,32 @@
 import type {
-  ColumnRefEdge,
   GraphState,
   InputFieldSchema,
-  PositionalEdge,
   ToolMetadata,
+  ToolNodeState,
+  WorkflowNodeState,
 } from '@/api/types'
 import { generateNodeId, generateNodeName } from './nodeIdGenerator'
 
-export interface PublishedInput {
-  name: string
-  internal_node_id: string
-  internal_field: string
-  kind: 'parameter' | 'input'
-  schema?: Record<string, unknown> | null
-  default?: unknown
-}
+export type ClipboardEdge = GraphState['edges'][number]
+export type ClipboardNode = ToolNodeState | WorkflowNodeState
 
-export interface PublishedOutput {
-  name: string
-  internal_node_id: string
-  internal_output: string
-  schema?: Record<string, unknown> | null
-}
-
-export type ClipboardEdge = ColumnRefEdge | PositionalEdge
-
-export interface ClipboardNode {
-  id: string
-  name: string
-  tool_name: string
-  position: [number, number]
-  parameters: Record<string, unknown>
-  resources?: Record<string, unknown>
-  output_templates?: Record<string, string>
-  enabled?: boolean
-  collapsed?: boolean
-  tool_package?: string
-  tool_package_version?: string
-  sub_workflow?: ClipboardGraphState | null
-  published_inputs?: PublishedInput[]
-  published_outputs?: PublishedOutput[]
-  sub_workflow_readonly_reason?: string | null
-  source_workflow_name?: string | null
-  missing?: boolean
-}
-
-export interface ClipboardGraphState {
+export interface ClipboardPayload {
+  bioimageflow_clipboard: true
+  clipboard_version: 1
   nodes: ClipboardNode[]
   edges: ClipboardEdge[]
-}
-
-export interface ClipboardPayload extends ClipboardGraphState {
-  bioimageflow_clipboard: true
-  clipboard_version: 1 | 2
-  source_workflow_name?: string
   source_workflow_id?: string
-  created_at?: string
+  created_at: string
 }
 
 export type ClipboardData = ClipboardPayload
 
 export type ParseClipboardResult =
   | { kind: 'valid'; payload: ClipboardPayload }
-  | { kind: 'legacy'; payload: ClipboardPayload }
   | { kind: 'invalid'; reason: string }
   | { kind: 'unsupported_version'; version: unknown }
 
-export type ReadClipboardResult =
-  | ParseClipboardResult
-  | { kind: 'empty' }
+export type ReadClipboardResult = ParseClipboardResult | { kind: 'empty' }
 
 export interface ReconcileSummary {
   kept: string[]
@@ -112,13 +70,9 @@ export interface PreparePasteOptions {
 }
 
 const PASTE_OFFSET: [number, number] = [50, 50]
-const CLIPBOARD_VERSION = 2
-const SUB_WORKFLOW_TOOL_NAME = '__sub_workflow__'
-
 let memoryClipboardPayload: ClipboardPayload | null = null
 
-function deepClone<T>(value: T): T {
-  if (value === undefined) return value
+function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
@@ -126,140 +80,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function hasOwn(value: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key)
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
-function isLegacyEdge(value: unknown): value is Omit<ColumnRefEdge, 'type'> {
+function isNode(value: unknown): value is ClipboardNode {
   return isRecord(value)
-    && typeof value.id === 'string'
-    && typeof value.source_node === 'string'
-    && typeof value.target_node === 'string'
-    && typeof value.source_output === 'string'
-    && typeof value.target_input === 'string'
-    && value.type === undefined
-}
-
-function isClipboardEdge(value: unknown): value is ClipboardEdge {
-  if (!isRecord(value)) return false
-  if (
-    value.type === 'column_ref'
-    && typeof value.id === 'string'
-    && typeof value.source_node === 'string'
-    && typeof value.target_node === 'string'
-    && typeof value.source_output === 'string'
-    && typeof value.target_input === 'string'
-  ) {
-    return true
-  }
-  return value.type === 'positional'
-    && typeof value.id === 'string'
-    && typeof value.source_node === 'string'
-    && typeof value.target_node === 'string'
-    && typeof value.positional_index === 'number'
-}
-
-function isClipboardNode(value: unknown): value is ClipboardNode {
-  return isRecord(value)
+    && (value.type === 'tool' || value.type === 'workflow')
     && typeof value.id === 'string'
     && typeof value.name === 'string'
-    && typeof value.tool_name === 'string'
     && Array.isArray(value.position)
-    && value.position.length === 2
-    && typeof value.position[0] === 'number'
-    && typeof value.position[1] === 'number'
-    && isRecord(value.parameters)
 }
 
-function normalizeEdge(raw: unknown): ClipboardEdge | null {
-  if (isClipboardEdge(raw)) return deepClone(raw)
-  if (isLegacyEdge(raw)) {
-    return {
-      type: 'column_ref',
-      id: raw.id,
-      source_node: raw.source_node,
-      target_node: raw.target_node,
-      source_output: raw.source_output,
-      target_input: raw.target_input,
-    }
+function isEdge(value: unknown): value is ClipboardEdge {
+  if (!isRecord(value) || typeof value.id !== 'string') return false
+  if (value.type === 'column') {
+    return typeof value.source_node === 'string'
+      && typeof value.target_node === 'string'
+      && typeof value.source_output === 'string'
+      && typeof value.target_input === 'string'
   }
-  return null
-}
-
-function normalizeNode(raw: unknown): ClipboardNode | null {
-  if (!isClipboardNode(raw)) return null
-  const cloned = deepClone(raw)
-  if (cloned.sub_workflow !== undefined && cloned.sub_workflow !== null) {
-    const normalizedNested = normalizeGraphLike(cloned.sub_workflow)
-    if (normalizedNested === null) return null
-    cloned.sub_workflow = normalizedNested
-  }
-  return cloned
-}
-
-function normalizeGraphLike(raw: unknown): ClipboardGraphState | null {
-  if (!isRecord(raw) || !Array.isArray(raw.nodes) || !Array.isArray(raw.edges)) {
-    return null
-  }
-  const nodes = raw.nodes.map(normalizeNode)
-  const edges = raw.edges.map(normalizeEdge)
-  if (nodes.some((node) => node === null) || edges.some((edge) => edge === null)) {
-    return null
-  }
-  return {
-    nodes: nodes as ClipboardNode[],
-    edges: edges as ClipboardEdge[],
-  }
+  return value.type === 'dataframe'
+    && typeof value.source_node === 'string'
+    && typeof value.target_node === 'string'
 }
 
 export function normalizeClipboardPayload(raw: unknown): ClipboardPayload {
-  const graph = normalizeGraphLike(raw)
-  if (graph === null || !isRecord(raw)) {
-    throw new Error('Clipboard payload must contain nodes and edges arrays')
+  if (!isRecord(raw) || raw.bioimageflow_clipboard !== true) {
+    throw new Error('Clipboard payload has no BioImageFlow marker')
   }
-
-  const hasMarker = hasOwn(raw, 'bioimageflow_clipboard')
-  const hasVersion = hasOwn(raw, 'clipboard_version')
-  const isMarked = raw.bioimageflow_clipboard === true
-  const version = raw.clipboard_version
-
-  if (isMarked) {
-    if (version !== 1 && version !== CLIPBOARD_VERSION) {
-      throw new Error(`Unsupported clipboard version: ${String(version)}`)
-    }
-    return {
-      ...graph,
-      bioimageflow_clipboard: true,
-      clipboard_version: version,
-      source_workflow_name: typeof raw.source_workflow_name === 'string'
-        ? raw.source_workflow_name
-        : undefined,
-      source_workflow_id: typeof raw.source_workflow_id === 'string'
-        ? raw.source_workflow_id
-        : undefined,
-      created_at: typeof raw.created_at === 'string' ? raw.created_at : undefined,
-    }
+  if (raw.clipboard_version !== 1) {
+    throw new Error(`Unsupported clipboard version: ${String(raw.clipboard_version)}`)
   }
-
-  if (hasMarker || hasVersion) {
-    throw new Error('Clipboard payload is missing BioImageFlow clipboard marker')
+  if (!Array.isArray(raw.nodes) || !raw.nodes.every(isNode)) {
+    throw new Error('Clipboard payload has invalid nodes')
   }
-
-  const rawEdges = raw.edges as unknown[]
-  const edgesAreLegacy = rawEdges.every((edge) => isLegacyEdge(edge))
-  if (!edgesAreLegacy) {
-    throw new Error('Clipboard payload is missing BioImageFlow clipboard marker')
+  if (!Array.isArray(raw.edges) || !raw.edges.every(isEdge)) {
+    throw new Error('Clipboard payload has invalid edges')
   }
-
-  return {
-    ...graph,
-    bioimageflow_clipboard: true,
-    clipboard_version: 1,
+  if (typeof raw.created_at !== 'string') {
+    throw new Error('Clipboard payload has no creation timestamp')
   }
+  return clone(raw as unknown as ClipboardPayload)
 }
 
 export function parseClipboardText(text: string): ParseClipboardResult {
@@ -269,63 +127,36 @@ export function parseClipboardText(text: string): ParseClipboardResult {
   } catch {
     return { kind: 'invalid', reason: 'Clipboard does not contain valid JSON' }
   }
-
-  if (!isRecord(raw)) {
-    return { kind: 'invalid', reason: 'Clipboard does not contain BioImageFlow nodes' }
-  }
-
-  if (raw.bioimageflow_clipboard === true
-      && raw.clipboard_version !== 1
-      && raw.clipboard_version !== CLIPBOARD_VERSION) {
+  if (isRecord(raw)
+    && raw.bioimageflow_clipboard === true
+    && raw.clipboard_version !== 1) {
     return { kind: 'unsupported_version', version: raw.clipboard_version }
   }
-
   try {
-    const payload = normalizeClipboardPayload(raw)
-    return payload.clipboard_version === 1
-      ? { kind: 'legacy', payload }
-      : { kind: 'valid', payload }
+    return { kind: 'valid', payload: normalizeClipboardPayload(raw) }
   } catch (error) {
     return {
       kind: 'invalid',
-      reason: error instanceof Error
-        ? error.message
-        : 'Clipboard does not contain BioImageFlow nodes',
+      reason: error instanceof Error ? error.message : 'Clipboard payload is invalid',
     }
   }
 }
 
 export function serializeGraphSelection(
-  graph: GraphState | ClipboardGraphState,
+  graph: Pick<GraphState, 'nodes' | 'edges'>,
   selectedIds: Set<string>,
-  getToolByName: (name: string) => ToolMetadata | undefined,
-  options: { sourceWorkflowName?: string; sourceWorkflowId?: string } = {},
+  _getToolByName: (name: string) => ToolMetadata | undefined,
+  options: { sourceWorkflowId?: string } = {},
 ): ClipboardPayload {
-  const selectedNodes = graph.nodes
-    .filter((node) => selectedIds.has(node.id))
-    .map((node) => {
-      const copied = deepClone(node as ClipboardNode)
-      delete copied.missing
-      const tool = getToolByName(copied.tool_name)
-      if (tool) {
-        copied.tool_package = tool.package
-        copied.tool_package_version = tool.package_version
-      }
-      return copied
-    })
-
-  const selectedEdges = graph.edges
-    .filter((edge) => selectedIds.has(edge.source_node) && selectedIds.has(edge.target_node))
-    .map((edge) => normalizeEdge(edge)!)
-
   return {
     bioimageflow_clipboard: true,
-    clipboard_version: CLIPBOARD_VERSION,
-    source_workflow_name: options.sourceWorkflowName,
+    clipboard_version: 1,
     source_workflow_id: options.sourceWorkflowId,
     created_at: new Date().toISOString(),
-    nodes: selectedNodes,
-    edges: selectedEdges,
+    nodes: clone(graph.nodes.filter(node => selectedIds.has(node.id))),
+    edges: clone(graph.edges.filter(edge => (
+      selectedIds.has(edge.source_node) && selectedIds.has(edge.target_node)
+    ))),
   }
 }
 
@@ -337,12 +168,8 @@ export function serializeSelection(
   return serializeGraphSelection({ nodes, edges }, selectedIds, () => undefined)
 }
 
-function fieldHasDefault(field: InputFieldSchema): boolean {
-  return hasOwn(field, 'default')
-}
-
-function cloneDefault(field: InputFieldSchema): unknown {
-  return fieldHasDefault(field) ? deepClone(field.default) : undefined
+function hasDefault(field: InputFieldSchema): boolean {
+  return Object.prototype.hasOwnProperty.call(field, 'default')
 }
 
 function typeAllowsValue(type: string, value: unknown): boolean {
@@ -355,28 +182,17 @@ function typeAllowsValue(type: string, value: unknown): boolean {
   if (normalized === 'float' || normalized === 'number') {
     return typeof value === 'number' && Number.isFinite(value)
   }
-  if (
-    normalized === 'str'
-    || normalized === 'string'
-    || normalized === 'path'
-    || normalized === 'imagepath'
-    || normalized === 'maskpath'
-    || normalized === 'filepath'
-    || normalized === 'dirpath'
-  ) {
-    return typeof value === 'string'
-  }
+  if (['str', 'string', 'path', 'imagepath', 'maskpath', 'filepath', 'dirpath']
+    .includes(normalized)) return typeof value === 'string'
   if (normalized === 'array' || normalized === 'list') return Array.isArray(value)
-  if (normalized === 'object' || normalized === 'dict' || normalized === 'record') {
-    return isRecord(value)
-  }
+  if (['object', 'dict', 'record'].includes(normalized)) return isRecord(value)
   return true
 }
 
 function valueFitsField(value: unknown, field: InputFieldSchema): boolean {
   if (value === null) return field.nullable
   if (!typeAllowsValue(field.type, value)) return false
-  if (isStringArray(field.choices) && !field.choices.includes(String(value))) return false
+  if (Array.isArray(field.choices) && !field.choices.includes(String(value))) return false
   if (typeof value === 'number') {
     if (typeof field.min === 'number' && value < field.min) return false
     if (typeof field.max === 'number' && value > field.max) return false
@@ -388,49 +204,36 @@ export function reconcileParameters(
   pastedParameters: Record<string, unknown>,
   inputs: ToolMetadata['inputs'],
 ): ReconcileResult {
-  const parameters: Record<string, unknown> = {}
-  const kept: string[] = []
-  const reset: string[] = []
-  const removed: string[] = []
-  const omittedRequired: string[] = []
-  const warnings: string[] = []
-
+  const result: ReconcileResult = {
+    parameters: {},
+    kept: [],
+    reset: [],
+    removed: [],
+    omitted_required: [],
+    warnings: [],
+  }
   for (const [key, value] of Object.entries(pastedParameters)) {
     const field = inputs[key]
     if (!field) {
-      removed.push(key)
-      continue
+      result.removed.push(key)
+    } else if (valueFitsField(value, field)) {
+      result.parameters[key] = clone(value)
+      result.kept.push(key)
+    } else if (hasDefault(field)) {
+      result.parameters[key] = clone(field.default)
+      result.reset.push(key)
+      result.warnings.push(`${key} reset to default`)
+    } else if (field.required) {
+      result.omitted_required.push(key)
+      result.warnings.push(`${key} omitted because it is required and has no default`)
+    } else {
+      result.removed.push(key)
     }
-    if (valueFitsField(value, field)) {
-      parameters[key] = deepClone(value)
-      kept.push(key)
-      continue
-    }
-    if (fieldHasDefault(field)) {
-      parameters[key] = cloneDefault(field)
-      reset.push(key)
-      warnings.push(`${key} reset to default`)
-      continue
-    }
-    if (field.required) {
-      omittedRequired.push(key)
-      warnings.push(`${key} omitted because it is required and has no default`)
-      continue
-    }
-    removed.push(key)
   }
-
-  return {
-    parameters,
-    kept,
-    reset,
-    removed,
-    omitted_required: omittedRequired,
-    warnings,
-  }
+  return result
 }
 
-function emptyPasteSummary(): PasteSummary {
+function emptySummary(): PasteSummary {
   return {
     missingTools: [],
     versionMismatches: [],
@@ -441,250 +244,133 @@ function emptyPasteSummary(): PasteSummary {
   }
 }
 
-function baseNameForPaste(node: ClipboardNode): string {
-  return node.name.replace(/\s+\d+$/, '') || node.name
-}
-
-function reconcileSubWorkflowGraph(
-  graph: ClipboardGraphState,
-  getToolByName: (name: string) => ToolMetadata | undefined,
+function reconcileToolNode(
+  node: ToolNodeState,
+  getToolByName: PreparePasteOptions['getToolByName'],
   summary: PasteSummary,
-): ClipboardGraphState {
-  const keptNodes: ClipboardNode[] = []
-  const keptIds = new Set<string>()
-
-  for (const node of graph.nodes) {
-    const prepared = prepareNodeForTarget(node, getToolByName, summary, false)
-    if (!prepared) continue
-    keptNodes.push(prepared)
-    keptIds.add(prepared.id)
-  }
-
-  return {
-    nodes: keptNodes,
-    edges: graph.edges
-      .filter((edge) => keptIds.has(edge.source_node) && keptIds.has(edge.target_node))
-      .map((edge) => deepClone(edge)),
-  }
-}
-
-function prepareSubWorkflowParameters(node: ClipboardNode): Record<string, unknown> {
-  if (!node.published_inputs) return deepClone(node.parameters ?? {})
-  const publishedNames = new Set(node.published_inputs.map((input) => input.name))
-  return Object.fromEntries(
-    Object.entries(node.parameters ?? {})
-      .filter(([key]) => publishedNames.has(key))
-      .map(([key, value]) => [key, deepClone(value)]),
-  )
-}
-
-function prepareNodeForTarget(
-  node: ClipboardNode,
-  getToolByName: (name: string) => ToolMetadata | undefined,
-  summary: PasteSummary,
-  renameRoot: boolean,
-  allIds: string[] = [],
-  allNames: string[] = [],
-  offset: [number, number] = PASTE_OFFSET,
-): ClipboardNode | null {
-  const isSubWorkflow = node.tool_name === SUB_WORKFLOW_TOOL_NAME && node.sub_workflow
-  const tool = isSubWorkflow ? undefined : getToolByName(node.tool_name)
-
-  if (!isSubWorkflow && !tool) {
+): ToolNodeState {
+  const tool = getToolByName(node.tool_name)
+  if (!tool) {
     summary.missingTools.push(node.tool_name)
-    return null
+    return clone(node)
   }
-
-  const prepared: ClipboardNode = deepClone(node)
-  if (renameRoot) {
-    const newId = generateNodeId(node.tool_name, allIds)
-    allIds.push(newId)
-    prepared.id = newId
-    const newName = generateNodeName(node.tool_name, allNames, baseNameForPaste(node))
-    allNames.push(newName)
-    prepared.name = newName
-    prepared.position = [
-      node.position[0] + offset[0],
-      node.position[1] + offset[1],
-    ]
-  }
-
-  delete prepared.missing
-
-  if (isSubWorkflow) {
-    prepared.parameters = prepareSubWorkflowParameters(node)
-    prepared.sub_workflow = reconcileSubWorkflowGraph(
-      node.sub_workflow!,
-      getToolByName,
-      summary,
-    )
-    return prepared
-  }
-
-  const activeTool = tool!
-  const packageMismatch = Boolean(
-    node.tool_package && node.tool_package !== activeTool.package,
-  )
-  const versionMismatch = Boolean(
-    node.tool_package_version
-      && node.tool_package_version !== activeTool.package_version,
-  )
-  if (packageMismatch || versionMismatch) {
+  if ((node.tool_package && node.tool_package !== tool.package)
+    || (node.tool_package_version && node.tool_package_version !== tool.package_version)) {
     summary.versionMismatches.push({
       nodeName: node.name,
-      packageName: node.tool_package ?? activeTool.package,
-      sourceVersion: node.tool_package_version,
-      targetVersion: activeTool.package_version,
+      packageName: node.tool_package ?? tool.package,
+      sourceVersion: node.tool_package_version ?? undefined,
+      targetVersion: tool.package_version,
     })
   }
-
-  const reconciled = reconcileParameters(node.parameters ?? {}, activeTool.inputs)
-  prepared.parameters = reconciled.parameters
-  if (reconciled.reset.length > 0) {
+  const reconciled = reconcileParameters(node.parameters, tool.inputs)
+  if (reconciled.reset.length) {
     summary.parameterResets.push({ nodeName: node.name, fields: reconciled.reset })
   }
-  if (reconciled.removed.length > 0) {
+  if (reconciled.removed.length) {
     summary.removedParameters.push({ nodeName: node.name, fields: reconciled.removed })
   }
-  if (reconciled.omitted_required.length > 0) {
+  if (reconciled.omitted_required.length) {
     summary.omittedRequiredParameters.push({
       nodeName: node.name,
       fields: reconciled.omitted_required,
     })
   }
   summary.warnings.push(...reconciled.warnings)
-  return prepared
+  return { ...clone(node), parameters: reconciled.parameters }
 }
 
 export function prepareClipboardPaste(
   payload: ClipboardPayload,
   options: PreparePasteOptions,
 ): PreparedPaste {
-  const summary = emptyPasteSummary()
-  const idMap = new Map<string, string>()
+  const summary = emptySummary()
   const allIds = [...options.existingIds]
   const allNames = [...options.existingNames]
-  const allEdgeIds = new Set(options.existingEdgeIds ?? [])
+  const idMap = new Map<string, string>()
   const offset = options.offset ?? PASTE_OFFSET
-  const edgeIdGenerator = options.edgeIdGenerator
-    ?? ((_edge: ClipboardEdge, index: number) => `pasted_edge_${index}`)
+  const nodes = payload.nodes.map((original) => {
+    const node = original.type === 'tool'
+      ? reconcileToolNode(original, options.getToolByName, summary)
+      : clone(original)
+    const idSeed = node.type === 'tool' ? node.tool_name : 'workflow'
+    const id = generateNodeId(idSeed, allIds)
+    allIds.push(id)
+    const name = generateNodeName(idSeed, allNames, node.name.replace(/\s+\d+$/, ''))
+    allNames.push(name)
+    idMap.set(original.id, id)
+    return {
+      ...node,
+      id,
+      name,
+      position: [node.position[0] + offset[0], node.position[1] + offset[1]],
+    } as ClipboardNode
+  })
 
-  const nodes: ClipboardNode[] = []
-  for (const node of payload.nodes) {
-    const prepared = prepareNodeForTarget(
-      node,
-      options.getToolByName,
-      summary,
-      true,
-      allIds,
-      allNames,
-      offset,
-    )
-    if (!prepared) continue
-    nodes.push(prepared)
-    idMap.set(node.id, prepared.id)
-  }
-
-  let edgeCounter = 0
-  const edges: ClipboardEdge[] = []
-  for (const edge of payload.edges) {
-    const source = idMap.get(edge.source_node)
-    const target = idMap.get(edge.target_node)
-    if (!source || !target) continue
-    edgeCounter += 1
-    let edgeId = edgeIdGenerator(edge, edgeCounter)
-    while (allEdgeIds.has(edgeId)) {
-      edgeCounter += 1
-      edgeId = edgeIdGenerator(edge, edgeCounter)
+  const edgeIds = new Set(options.existingEdgeIds ?? [])
+  let counter = 0
+  const edges = payload.edges.map((original) => {
+    let id: string
+    do {
+      counter += 1
+      id = options.edgeIdGenerator?.(original, counter) ?? `pasted_edge_${counter}`
+    } while (edgeIds.has(id))
+    edgeIds.add(id)
+    return {
+      ...clone(original),
+      id,
+      source_node: idMap.get(original.source_node)!,
+      target_node: idMap.get(original.target_node)!,
     }
-    allEdgeIds.add(edgeId)
-    edges.push({
-      ...deepClone(edge),
-      id: edgeId,
-      source_node: source,
-      target_node: target,
-    } as ClipboardEdge)
-  }
-
+  })
   return { nodes, edges, summary }
 }
 
 export function deserializeSelection(
-  clipboard: ClipboardPayload | ClipboardGraphState,
+  clipboard: ClipboardPayload,
   existingIds: string[],
   existingNames: string[],
-): ClipboardGraphState {
-  let payload: ClipboardPayload
-  try {
-    payload = normalizeClipboardPayload(clipboard)
-  } catch {
-    const graph = normalizeGraphLike(clipboard)
-    if (graph === null) throw new Error('Clipboard payload must contain nodes and edges arrays')
-    payload = {
-      ...graph,
-      bioimageflow_clipboard: true,
-      clipboard_version: 1,
-    }
-  }
-  const prepared = prepareClipboardPaste(payload, {
+): Pick<GraphState, 'nodes' | 'edges'> {
+  const prepared = prepareClipboardPaste(normalizeClipboardPayload(clipboard), {
     existingIds,
     existingNames,
-    getToolByName: (name) => ({
-      name,
-      display_name: name,
-      package: '',
-      package_version: '',
-      tool_type: 'ProcessingTool',
-      accepts_upstream: true,
-      dynamic_outputs: false,
-      documentation: '',
-      tags: [],
-      categories: [],
-      inputs: {},
-      outputs: {},
-      environment: null,
-    }),
+    getToolByName: () => undefined,
   })
   return { nodes: prepared.nodes, edges: prepared.edges }
 }
 
 export async function writeClipboardPayload(payload: ClipboardPayload): Promise<void> {
-  memoryClipboardPayload = deepClone(payload)
-  const text = JSON.stringify(payload)
+  memoryClipboardPayload = clone(payload)
   try {
-    await globalThis.navigator?.clipboard?.writeText?.(text)
+    await globalThis.navigator?.clipboard?.writeText?.(JSON.stringify(payload))
   } catch {
-    // Browser permission denial is expected in tests and some desktop shells.
+    // Browser permission denial falls back to the in-memory clipboard.
   }
 }
 
 export async function readClipboardPayloadResult(): Promise<ReadClipboardResult> {
   try {
     const text = await globalThis.navigator?.clipboard?.readText?.()
-    if (typeof text === 'string' && text.length > 0) {
-      const parsed = parseClipboardText(text)
-      if (parsed.kind === 'valid' || parsed.kind === 'legacy') {
-        memoryClipboardPayload = deepClone(parsed.payload)
-      }
-      return parsed
+    if (text) {
+      const result = parseClipboardText(text)
+      if (result.kind === 'valid') memoryClipboardPayload = clone(result.payload)
+      return result
     }
   } catch {
-    // Fall back to the last in-memory payload.
+    // Browser permission denial falls back to the in-memory clipboard.
   }
   return memoryClipboardPayload
-    ? { kind: 'valid', payload: deepClone(memoryClipboardPayload) }
+    ? { kind: 'valid', payload: clone(memoryClipboardPayload) }
     : { kind: 'empty' }
 }
 
 export async function readClipboardPayload(): Promise<ClipboardPayload | null> {
   const result = await readClipboardPayloadResult()
-  return result.kind === 'valid' || result.kind === 'legacy'
-    ? result.payload
-    : null
+  return result.kind === 'valid' ? result.payload : null
 }
 
 export function getMemoryClipboardPayload(): ClipboardPayload | null {
-  return memoryClipboardPayload ? deepClone(memoryClipboardPayload) : null
+  return memoryClipboardPayload ? clone(memoryClipboardPayload) : null
 }
 
 export function _resetClipboardForTest(): void {

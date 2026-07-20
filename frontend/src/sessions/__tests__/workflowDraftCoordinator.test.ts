@@ -10,6 +10,7 @@ import {
   makeGraph,
   makeGraphNode,
   makeValidationResult,
+  requireToolNode,
 } from '@/test-utils/graphFixtures'
 import { makeWorkflowDraft } from '@/test-utils/persistenceFixtures'
 import { deferred } from '@/test-utils/asyncFixtures'
@@ -54,7 +55,7 @@ describe('workflow draft coordinator', () => {
     const queued = graph('queued')
 
     coordinator.queue(queued)
-    queued.nodes[0]!.parameters = { value: 'mutated-after-queue' }
+    requireToolNode(queued).parameters = { value: 'mutated-after-queue' }
 
     expect(coordinator.isPending.value).toBe(true)
     await coordinator.flushLatest()
@@ -221,7 +222,7 @@ describe('workflow draft coordinator', () => {
     expect(second.syncState.value).toBe('conflict')
     expect(second.conflictDraftRevision.value).toBe(2)
     expect(second.isPending.value).toBe(true)
-    expect(second.currentGraph.value.nodes[0]?.parameters).toEqual({
+    expect(requireToolNode(second.currentGraph.value).parameters).toEqual({
       value: 'second-latest',
     })
   })
@@ -251,7 +252,7 @@ describe('workflow draft coordinator', () => {
     await expect(flushing).rejects.toBe(conflict)
     expect(coordinator.syncState.value).toBe('conflict')
     expect(coordinator.conflictDraftRevision.value).toBe(7)
-    expect(coordinator.currentGraph.value.nodes[0]?.parameters).toEqual({
+    expect(requireToolNode(coordinator.currentGraph.value).parameters).toEqual({
       value: 'queued-during-write',
     })
 
@@ -262,7 +263,7 @@ describe('workflow draft coordinator', () => {
 
     coordinator.queue(graph('edited-after-conflict'))
     expect(coordinator.syncState.value).toBe('conflict')
-    expect(coordinator.currentGraph.value.nodes[0]?.parameters).toEqual({
+    expect(requireToolNode(coordinator.currentGraph.value).parameters).toEqual({
       value: 'edited-after-conflict',
     })
     await vi.advanceTimersByTimeAsync(500)

@@ -81,7 +81,8 @@ const fallback: WorkspaceSettings & {
 }
 const liveSettings = computed(() => settingsStore.settings ?? fallback)
 
-function onUpdate(payload: { field: keyof WorkspaceSettings; value: unknown }) {
+function onUpdate(payload: { field: PropertyKey; value: unknown }) {
+  if (typeof payload.field !== 'string') return
   settingsStore.updateSettings({ [payload.field]: payload.value } as Partial<WorkspaceSettings>)
 }
 </script>

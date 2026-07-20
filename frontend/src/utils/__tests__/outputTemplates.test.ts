@@ -11,6 +11,7 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
     tool_type: 'ProcessingTool',
     accepts_upstream: true,
     dynamic_outputs: false,
+    dataframe_output: false,
     documentation: '',
     tags: [],
     categories: [],
@@ -21,6 +22,8 @@ function makeTool(overrides: Partial<ToolMetadata> = {}): ToolMetadata {
       overlap_count: { type: 'int' },
     },
     environment: null,
+    source_kind: 'package',
+    editable: false,
     ...overrides,
   }
 }

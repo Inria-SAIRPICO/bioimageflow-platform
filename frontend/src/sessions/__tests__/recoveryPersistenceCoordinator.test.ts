@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GraphState } from '@/api/types'
+import { makeGraph, requireToolNode } from '@/test-utils/graphFixtures'
 import { canvasIdFromPanelId } from '../canvasSessionRegistry'
 import {
   RecoveryPersistenceCoordinatorDisposedError,
@@ -9,8 +10,9 @@ import {
 } from '../recoveryPersistenceCoordinator'
 
 function graph(value: string): GraphState {
-  return {
+  return makeGraph({
     nodes: [{
+      type: 'tool',
       id: 'node',
       name: 'Node',
       tool_name: 'tool',
@@ -22,7 +24,7 @@ function graph(value: string): GraphState {
       collapsed: false,
     }],
     edges: [],
-  }
+  })
 }
 
 function deferred<T>() {
@@ -53,7 +55,7 @@ describe('recovery persistence coordinator', () => {
 
     coordinator.queue('folder/first', first)
     coordinator.queue('folder/second', graph('second'))
-    first.nodes[0]!.parameters = { value: 'mutated-after-queue' }
+    requireToolNode(first).parameters = { value: 'mutated-after-queue' }
 
     expect(coordinator.isPending.value).toBe(true)
     await vi.advanceTimersByTimeAsync(500)

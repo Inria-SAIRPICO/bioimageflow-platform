@@ -285,6 +285,7 @@ describe('useWebSocket workflow draft dispatch', () => {
           display_name: 'Kept',
           path: '/tmp/kept/workflow.json',
           last_modified: '2026-07-16T10:00:00Z',
+      identity_generation: 0,
         }],
       })
     const workflow = useWorkflowStore()
@@ -308,6 +309,7 @@ describe('useWebSocket workflow draft dispatch', () => {
         display_name: 'Stale',
         path: '/tmp/stale/workflow.json',
         last_modified: '2026-07-16T09:00:00Z',
+      identity_generation: 0,
       }],
     })
     await refresh

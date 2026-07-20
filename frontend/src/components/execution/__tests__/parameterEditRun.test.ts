@@ -41,7 +41,7 @@ import {
   _resetCanvasStatusProjectionForTest,
   useCanvasStatusProjection,
 } from '@/composables/useCanvasStatusProjection'
-import { makeGraph, makeGraphNode } from '@/test-utils/graphFixtures'
+import { makeGraph, makeGraphNode, requireToolNode } from '@/test-utils/graphFixtures'
 import { makeRootCanvasDescriptor } from '@/test-utils/canvasFixtures'
 import {
   createInMemoryCanvasPersistence,
@@ -56,6 +56,7 @@ const mockedApi = api as unknown as {
 
 const graph = makeGraph({
   nodes: [makeGraphNode({
+    type: 'tool',
     id: 'files',
     name: 'Files',
     tool_name: 'files',
@@ -66,12 +67,14 @@ const graph = makeGraph({
 
 const tool = {
   name: 'files',
+  folder: '',
   display_name: 'Files',
   package: 'bioimageflow-core',
   package_version: '1.0.0',
   tool_type: 'ProcessingTool',
   accepts_upstream: false,
   dynamic_outputs: false,
+  dataframe_output: false,
   documentation: '',
   tags: [],
   categories: [],
@@ -85,6 +88,8 @@ const tool = {
   },
   outputs: {},
   environment: null,
+  source_kind: 'package',
+  editable: false,
 } as ToolMetadata
 
 describe('parameter edit followed immediately by Run', () => {
@@ -115,11 +120,13 @@ describe('parameter edit followed immediately by Run', () => {
     setActivePinia(pinia)
     useWorkflowStore().current = {
       name: 'parameter_edit',
+      folder: '',
       display_name: 'Parameter edit',
       description: null,
       storage_path: '/tmp/workflows/parameter_edit',
       path: '/tmp/workflows/parameter_edit.json',
       last_modified: '2026-01-01T00:00:00Z',
+      identity_generation: 0,
     }
     const descriptor = makeRootCanvasDescriptor('parameter_edit')
     const canvasId = descriptor.canvasId
@@ -144,6 +151,7 @@ describe('parameter edit followed immediately by Run', () => {
     canvasSessionRegistry.activate(canvasId)
 
     const nodeData = {
+      nodeType: 'tool' as const,
       name: 'Files',
       toolName: 'files',
       tool,
@@ -164,8 +172,8 @@ describe('parameter edit followed immediately by Run', () => {
       parameters: { path: '/data/untouched' },
     }
     const canvasNodes = [
-      { id: 'files', data: nodeData, position: { x: 0, y: 0 } },
-      { id: 'untouched', data: untouchedNodeData, position: { x: 100, y: 0 } },
+      { id: 'files', type: 'tool', data: nodeData, position: { x: 0, y: 0 } },
+      { id: 'untouched', type: 'tool', data: untouchedNodeData, position: { x: 100, y: 0 } },
     ]
     ui.setCanvasGraphNodes(canvasId, [
       canvasNodes[0],
@@ -196,10 +204,10 @@ describe('parameter edit followed immediately by Run', () => {
       setNodeEnabled: () => false,
       setInputPinned: () => false,
       setOutputTemplate: () => false,
-      togglePublishedInput: () => ({ status: 'unchanged' }),
-      togglePublishedOutput: () => ({ status: 'unchanged' }),
-      renamePublishedInput: () => ({ status: 'unchanged' }),
-      renamePublishedOutput: () => ({ status: 'unchanged' }),
+      toggleWorkflowInput: () => ({ status: 'unchanged' }),
+      toggleWorkflowOutput: () => ({ status: 'unchanged' }),
+      renameWorkflowInput: () => ({ status: 'unchanged' }),
+      renameWorkflowOutput: () => ({ status: 'unchanged' }),
       updateParameter: (nodeId, key, value) => {
         const selected = canvasNodes.find(node => node.id === nodeId)
         if (!selected?.data) return false
@@ -249,7 +257,7 @@ describe('parameter edit followed immediately by Run', () => {
     expect(nodeData).not.toHaveProperty('provisional')
     expect(untouchedNodeData.status).toBe('executed')
     expect(untouchedNodeData).not.toHaveProperty('provisional')
-    expect(graphSync.currentGraph.value.nodes[0]?.parameters).toEqual({
+    expect(requireToolNode(graphSync.currentGraph.value).parameters).toEqual({
       path: '/data/new',
     })
 

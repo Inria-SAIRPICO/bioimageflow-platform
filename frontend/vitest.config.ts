@@ -22,7 +22,7 @@ const nodeTestFiles = [
   'src/sessions/__tests__/*.test.ts',
   'src/stores/__tests__/execution.test.ts',
   'src/stores/__tests__/napari.test.ts',
-  'src/stores/__tests__/subWorkflowSessions.test.ts',
+  'src/stores/__tests__/nestedWorkflowSessions.test.ts',
   'src/stores/__tests__/workflowDraft.test.ts',
   'src/utils/__tests__/dataTableSources.test.ts',
   'src/utils/__tests__/imagePaths.test.ts',

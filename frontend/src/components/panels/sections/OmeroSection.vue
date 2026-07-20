@@ -6,7 +6,11 @@ import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Tag from 'primevue/tag'
 import { useConfirm } from 'primevue/useconfirm'
-import type { OMEROInstancePatch, SettingsResponse } from '@/api/types'
+import type { OmeroInstanceResponse, SettingsResponse } from '@/api/types'
+
+type OmeroInstancePatch = Omit<OmeroInstanceResponse, 'password_stored'> & {
+  password?: string | null
+}
 
 type LocalOmeroInstance = {
   name: string
@@ -78,9 +82,9 @@ function validateRows(): boolean {
   return true
 }
 
-function toPatch(passwordIndex: number | null = null): OMEROInstancePatch[] {
+function toPatch(passwordIndex: number | null = null): OmeroInstancePatch[] {
   return rows.value.map((row, index) => {
-    const patch: OMEROInstancePatch = {
+    const patch: OmeroInstancePatch = {
       name: row.name.trim() || null,
       host: row.host.trim(),
       port: row.port,

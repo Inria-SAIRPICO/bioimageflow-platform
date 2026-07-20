@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Settings } from '@/api/types'
+import type { Settings } from '@/stores/settings'
 
 const props = defineProps<{ modelValue: Settings }>()
 defineEmits<{

@@ -11,13 +11,13 @@ import Slider from 'primevue/slider'
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useLoggerStore, ALL_LEVELS, type LogEntry } from '@/stores/logger'
-import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
+import { useNestedWorkflowSessionsStore } from '@/stores/nestedWorkflowSessions'
 import { usePathPicker } from '@/composables/usePathPicker'
 import { useGraphSync } from '@/composables/useGraphSync'
 import { useCanvasStatusProjection } from '@/composables/useCanvasStatusProjection'
 import {
   useCanvasCommands,
-  type CanvasPublicationCommandResult,
+  type CanvasInterfaceCommandResult,
 } from '@/composables/useCanvasCommands'
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import {
@@ -33,8 +33,8 @@ import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBloc
 import type {
   GraphValidationError,
   InputFieldSchema,
-  PublishedInput,
-  PublishedOutput,
+  WorkflowInput,
+  WorkflowOutput,
 } from '@/api/types'
 import { fieldDisplayName } from '@/utils/displayNames'
 import { IMAGE_PATH_GLOBS } from '@/utils/imagePaths'
@@ -72,7 +72,7 @@ const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const statusProjection = useCanvasStatusProjection()
 const loggerStore = useLoggerStore()
-const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
+const nestedWorkflowSessionsStore = useNestedWorkflowSessionsStore()
 const { validationResult } = useGraphSync()
 const canvasCommands = useCanvasCommands()
 const { nodeErrors, getFieldErrors } = useValidationErrors(validationResult)
@@ -99,7 +99,7 @@ const selectedNode = computed(() => {
 })
 
 const nodeData = computed(() => selectedNode.value?.data ?? null)
-const publishNameError = ref<string | null>(null)
+const interfaceNameError = ref<string | null>(null)
 const listInputErrors = ref<Record<string, string>>({})
 
 const editingName = ref(false)
@@ -132,7 +132,7 @@ const selectedNodeLogTarget = computed<{
     if (descriptor.kind === 'root') {
       return { nodeId: segments.join('/'), executionCanvasId: descriptor.canvasId }
     }
-    const session = subWorkflowSessionsStore.sessionById(descriptor.sessionId)
+    const session = nestedWorkflowSessionsStore.sessionById(descriptor.sessionId)
     if (!session) return null
     segments.unshift(session.parentNodeId)
     canvasId = descriptor.parentCanvasId
@@ -370,9 +370,9 @@ function isSliderField(field: InputFieldSchema): boolean {
   return field.type === 'float' && field.min != null && field.max != null && field.step != null
 }
 
-const publicationContext = computed(() => (
-  nodeData.value?.publicationContext
-  ?? nodeData.value?.subWorkflowContext
+const workflowInterfaceContext = computed(() => (
+  nodeData.value?.workflowInterfaceContext
+  ?? nodeData.value?.nestedWorkflowContext
   ?? null
 ))
 
@@ -380,67 +380,69 @@ function selectedInternalNodeId(): string {
   return selectedNode.value?.id ?? ''
 }
 
-function inputPublishIndex(fieldName: string): number {
-  const ctx = publicationContext.value
+function workflowInputIndex(fieldName: string): number {
+  const ctx = workflowInterfaceContext.value
   if (!ctx) return -1
-  return (ctx.published_inputs ?? []).findIndex((item: PublishedInput) => (
-    item.internal_node_id === selectedInternalNodeId() && item.internal_field === fieldName
+  return (ctx.inputs ?? []).findIndex((item: WorkflowInput) => item.targets.some(target => (
+    target.node === selectedInternalNodeId()
+    && target.port.kind === 'field'
+    && target.port.name === fieldName
+  )))
+}
+
+function workflowOutputIndex(outputName: string): number {
+  const ctx = workflowInterfaceContext.value
+  if (!ctx) return -1
+  return (ctx.outputs ?? []).findIndex((item: WorkflowOutput) => (
+    item.source.node === selectedInternalNodeId() && item.source.column === outputName
   ))
 }
 
-function outputPublishIndex(outputName: string): number {
-  const ctx = publicationContext.value
-  if (!ctx) return -1
-  return (ctx.published_outputs ?? []).findIndex((item: PublishedOutput) => (
-    item.internal_node_id === selectedInternalNodeId() && item.internal_output === outputName
-  ))
+function isWorkflowInputExposed(fieldName: string): boolean {
+  return workflowInputIndex(fieldName) >= 0
 }
 
-function isInputPublished(fieldName: string): boolean {
-  return inputPublishIndex(fieldName) >= 0
+function isWorkflowOutputExposed(outputName: string): boolean {
+  return workflowOutputIndex(outputName) >= 0
 }
 
-function isOutputPublished(outputName: string): boolean {
-  return outputPublishIndex(outputName) >= 0
-}
-
-function applyPublicationResult(result: CanvasPublicationCommandResult): void {
+function applyInterfaceResult(result: CanvasInterfaceCommandResult): void {
   if (result.status === 'rejected' && result.reason === 'duplicate_name') {
-    publishNameError.value = `Published name '${result.name ?? ''}' is already used.`
+    interfaceNameError.value = `Workflow interface name '${result.name ?? ''}' is already used.`
     return
   }
   if (result.status === 'rejected' && result.reason === 'empty_name') {
-    publishNameError.value = 'Published name cannot be empty.'
+    interfaceNameError.value = 'Workflow interface name cannot be empty.'
     return
   }
-  if (result.status !== 'rejected') publishNameError.value = null
+  if (result.status !== 'rejected') interfaceNameError.value = null
 }
 
-function togglePublishInput(fieldName: string) {
+function toggleWorkflowInputExposure(fieldName: string) {
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
-  applyPublicationResult(canvasCommands.togglePublishedInput(nodeId, fieldName))
+  applyInterfaceResult(canvasCommands.toggleWorkflowInput(nodeId, fieldName))
 }
 
-function updatePublishedInputName(fieldName: string, value: string) {
+function updateWorkflowInputName(fieldName: string, value: string) {
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
-  applyPublicationResult(
-    canvasCommands.renamePublishedInput(nodeId, fieldName, value),
+  applyInterfaceResult(
+    canvasCommands.renameWorkflowInput(nodeId, fieldName, value),
   )
 }
 
-function togglePublishOutput(outputName: string) {
+function toggleWorkflowOutputExposure(outputName: string) {
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
-  applyPublicationResult(canvasCommands.togglePublishedOutput(nodeId, outputName))
+  applyInterfaceResult(canvasCommands.toggleWorkflowOutput(nodeId, outputName))
 }
 
-function updatePublishedOutputName(outputName: string, value: string) {
+function updateWorkflowOutputName(outputName: string, value: string) {
   const nodeId = selectedNode.value?.id
   if (!nodeId) return
-  applyPublicationResult(
-    canvasCommands.renamePublishedOutput(nodeId, outputName, value),
+  applyInterfaceResult(
+    canvasCommands.renameWorkflowOutput(nodeId, outputName, value),
   )
 }
 
@@ -554,11 +556,11 @@ async function pickFolder(key: string) {
       <div v-if="nodeData.tool" class="parameters-section">
         <h4>Parameters</h4>
         <div
-          v-if="publishNameError"
-          class="publish-name-error"
-          data-testid="publish-name-error"
+          v-if="interfaceNameError"
+          class="interface-name-error"
+          data-testid="interface-name-error"
         >
-          {{ publishNameError }}
+          {{ interfaceNameError }}
         </div>
         <div
           v-for="[key, field] in Object.entries(nodeData.tool.inputs)"
@@ -569,14 +571,14 @@ async function pickFolder(key: string) {
         >
           <div class="param-header">
             <Button
-              v-if="publicationContext && canConnect(field as InputFieldSchema)"
-              :icon="isInputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
-              class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
+              v-if="workflowInterfaceContext && canConnect(field as InputFieldSchema)"
+              :icon="isWorkflowInputExposed(key) ? 'pi pi-minus' : 'pi pi-plus'"
+              class="p-button-text p-button-sm param-action-btn interface-toggle-btn"
               :disabled="isNodeEditingDisabled"
-              :title="isInputPublished(key) ? 'Unpublish input' : 'Publish input'"
-              :aria-pressed="isInputPublished(key)"
-              @click="togglePublishInput(key)"
-              data-testid="publish-input-toggle"
+              :title="isWorkflowInputExposed(key) ? 'Remove workflow input' : 'Expose as workflow input'"
+              :aria-pressed="isWorkflowInputExposed(key)"
+              @click="toggleWorkflowInputExposure(key)"
+              :data-testid="`interface-input-toggle-${key}`"
             />
             <!-- Pin visibility toggle (icon-only, before the label) -->
             <Button
@@ -619,12 +621,12 @@ async function pickFolder(key: string) {
           </div>
 
           <InputText
-            v-if="publicationContext && isInputPublished(key)"
-            :model-value="publicationContext.published_inputs[inputPublishIndex(key)].name"
-            class="published-name-input"
+            v-if="workflowInterfaceContext && isWorkflowInputExposed(key)"
+            :model-value="workflowInterfaceContext.inputs[workflowInputIndex(key)].name"
+            class="workflow-interface-name-input"
             :disabled="isNodeEditingDisabled"
-            :data-testid="`published-input-name-${key}`"
-            @update:model-value="updatePublishedInputName(key, $event as string)"
+            :data-testid="`workflow-input-name-${key}`"
+            @update:model-value="updateWorkflowInputName(key, $event as string)"
           />
 
           <!-- Fix 18: Always-visible help text -->
@@ -780,25 +782,25 @@ async function pickFolder(key: string) {
         >
           <div class="output-header">
             <Button
-              v-if="publicationContext"
-              :icon="isOutputPublished(key) ? 'pi pi-minus' : 'pi pi-plus'"
-              class="p-button-text p-button-sm param-action-btn publish-toggle-btn"
+              v-if="workflowInterfaceContext"
+              :icon="isWorkflowOutputExposed(key) ? 'pi pi-minus' : 'pi pi-plus'"
+              class="p-button-text p-button-sm param-action-btn interface-toggle-btn"
               :disabled="isNodeEditingDisabled"
-              :title="isOutputPublished(key) ? 'Unpublish output' : 'Publish output'"
-              :aria-pressed="isOutputPublished(key)"
-              :data-testid="`publish-output-toggle-${key}`"
-              @click="togglePublishOutput(key)"
+              :title="isWorkflowOutputExposed(key) ? 'Remove workflow output' : 'Expose as workflow output'"
+              :aria-pressed="isWorkflowOutputExposed(key)"
+              :data-testid="`interface-output-toggle-${key}`"
+              @click="toggleWorkflowOutputExposure(key)"
             />
             <span class="output-name">{{ fieldDisplayName(key, field as OutputFieldSchema) }}</span>
             <span class="output-type">{{ (field as OutputFieldSchema).type }}</span>
           </div>
           <InputText
-            v-if="publicationContext && isOutputPublished(key)"
-            :model-value="publicationContext.published_outputs[outputPublishIndex(key)].name"
-            class="published-name-input"
+            v-if="workflowInterfaceContext && isWorkflowOutputExposed(key)"
+            :model-value="workflowInterfaceContext.outputs[workflowOutputIndex(key)].name"
+            class="workflow-interface-name-input"
             :disabled="isNodeEditingDisabled"
-            :data-testid="`published-output-name-${key}`"
-            @update:model-value="updatePublishedOutputName(key, $event as string)"
+            :data-testid="`workflow-output-name-${key}`"
+            @update:model-value="updateWorkflowOutputName(key, $event as string)"
           />
           <!-- Editable path template — ProcessingTool outputs only.
                DataFrameTool Outputs are column declarations, not file paths. -->
@@ -1222,16 +1224,16 @@ h4 {
   color: var(--p-orange-500);
 }
 
-.publish-toggle-btn[aria-pressed='true'] {
+.interface-toggle-btn[aria-pressed='true'] {
   color: var(--p-primary-color);
 }
 
-.published-name-input {
+.workflow-interface-name-input {
   width: 100%;
   font-size: 12px;
 }
 
-.publish-name-error {
+.interface-name-error {
   color: var(--p-red-700, #b91c1c);
   font-size: 12px;
   margin-bottom: 8px;
