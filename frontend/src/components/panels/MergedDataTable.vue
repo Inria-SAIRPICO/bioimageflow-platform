@@ -52,13 +52,16 @@ function onPage(event: { page: number; rows: number }): void {
   >
     <div class="merged-data-table__toolbar">
       <span>{{ data.sources.map((source) => source.label).join(' → ') }}</span>
-      <Button
-        icon="pi pi-download"
-        label="CSV"
-        size="small"
-        data-testid="download-merged-csv"
-        @click="store.downloadProjectionCsv()"
-      />
+      <div class="merged-data-table__toolbar-actions">
+        <slot name="toolbar-actions" />
+        <Button
+          icon="pi pi-download"
+          label="CSV"
+          size="small"
+          data-testid="download-merged-csv"
+          @click="store.downloadProjectionCsv()"
+        />
+      </div>
     </div>
     <DataTable
       :value="rowModels"
@@ -120,6 +123,12 @@ function onPage(event: { page: number; rows: number }): void {
   justify-content: space-between;
   color: var(--p-text-muted-color);
   margin-bottom: 0.5rem;
+}
+
+.merged-data-table__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .merged-data-table__sort {

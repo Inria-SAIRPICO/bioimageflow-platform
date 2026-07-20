@@ -263,7 +263,10 @@ onBeforeUnmount(() => {
       All selected nodes are disabled.
     </div>
     <template v-else>
-      <div class="data-table-panel__controls">
+      <div
+        v-if="dataTableStore.projectionError || (dataTableStore.projectionLoading && !dataTableStore.projection)"
+        class="data-table-panel__controls data-table-panel__controls--standalone"
+      >
         <label for="data-table-upstream-depth">Upstream levels</label>
         <InputNumber
           input-id="data-table-upstream-depth"
@@ -288,7 +291,23 @@ onBeforeUnmount(() => {
       <MergedDataTable
         v-else-if="dataTableStore.projection?.mode === 'merged'"
         :workflow-id="activeWorkflowId"
-      />
+      >
+        <template #toolbar-actions>
+          <div class="data-table-panel__controls">
+            <label for="data-table-upstream-depth">Upstream levels</label>
+            <InputNumber
+              input-id="data-table-upstream-depth"
+              v-model="upstreamDepth"
+              :min="0"
+              :max="maximumDepth"
+              :step="1"
+              show-buttons
+              size="small"
+              data-testid="upstream-depth"
+            />
+          </div>
+        </template>
+      </MergedDataTable>
       <template v-else-if="isStacked">
         <div class="data-table-panel__info" data-testid="data-table-fallback">
           {{ fallbackMessage }}
@@ -302,7 +321,7 @@ onBeforeUnmount(() => {
           />
         </div>
         <section
-          v-for="entry in visibleStackedEntries"
+          v-for="(entry, index) in visibleStackedEntries"
           :key="entry.key"
           class="data-table-panel__node"
         >
@@ -320,7 +339,23 @@ onBeforeUnmount(() => {
             :disabled="entry.disabled"
             :column-aliases="entry.columnAliases"
             :column-filter="entry.columnFilter"
-          />
+          >
+            <template v-if="index === 0" #toolbar-actions>
+              <div class="data-table-panel__controls">
+                <label for="data-table-upstream-depth">Upstream levels</label>
+                <InputNumber
+                  input-id="data-table-upstream-depth"
+                  v-model="upstreamDepth"
+                  :min="0"
+                  :max="maximumDepth"
+                  :step="1"
+                  show-buttons
+                  size="small"
+                  data-testid="upstream-depth"
+                />
+              </div>
+            </template>
+          </NodeDataTable>
         </section>
       </template>
     </template>
@@ -343,6 +378,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.data-table-panel__controls--standalone {
   margin-bottom: 0.75rem;
 }
 

@@ -95,6 +95,7 @@ function onPage(event: { page: number; rows: number }) {
     :data-testid="`node-data-table-${nodeId}`"
   >
     <div class="node-data-table__toolbar">
+      <slot name="toolbar-actions" />
       <Button
         icon="pi pi-download"
         label="CSV"
@@ -194,6 +195,8 @@ function onPage(event: { page: number; rows: number }) {
 
 .node-data-table__toolbar {
   display: flex;
+  align-items: center;
+  gap: 0.5rem;
   justify-content: flex-end;
   margin-bottom: 0.25rem;
 }

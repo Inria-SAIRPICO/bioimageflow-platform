@@ -268,6 +268,10 @@ describe('DataTablePanel consolidation', () => {
     expect(wrapper.find('[data-testid="image-cell"]').text()).toContain(
       'a:7:path:/images/sample.OME.TIFF:true:true',
     )
+    const toolbarActions = wrapper.find('.merged-data-table__toolbar-actions')
+    expect(toolbarActions.find('[data-testid="upstream-depth"]').exists()).toBe(true)
+    expect(toolbarActions.element.children[0]?.classList).toContain('data-table-panel__controls')
+    expect(toolbarActions.element.children[1]?.getAttribute('data-testid')).toBe('download-merged-csv')
   })
 })
 
