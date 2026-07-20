@@ -33,7 +33,7 @@ describe('useErrorStore', () => {
     expect(entry.detail).toBe('Network down')
     expect(entry.timestamp).toBeGreaterThanOrEqual(before)
     expect(entry.timestamp).toBeLessThanOrEqual(after)
-    expect(entry.dismissed).toBeFalsy()
+    expect(entry.acknowledged).toBe(false)
     expect(id).toBe(entry.id)
   })
 
@@ -90,45 +90,41 @@ describe('useErrorStore', () => {
     expect(store.hasErrors).toBe(true)
   })
 
-  it('dismiss(id) sets dismissed=true and removes from unreadCount', () => {
+  it('toggleAcknowledged(id) reversibly updates read state and unreadCount', () => {
     const store = useErrorStore()
     const id = store.report({ kind: 'graph_sync_error', detail: 'oops' })
     store.report({ kind: 'graph_sync_error', detail: 'still here' })
-    store.dismiss(id)
+    store.toggleAcknowledged(id)
     expect(store.errors).toHaveLength(2)
-    expect(store.errors[0]!.dismissed).toBe(true)
+    expect(store.errors[0]!.acknowledged).toBe(true)
     expect(store.unreadCount).toBe(1)
+
+    store.toggleAcknowledged(id)
+    expect(store.errors).toHaveLength(2)
+    expect(store.errors[0]!.acknowledged).toBe(false)
+    expect(store.unreadCount).toBe(2)
   })
 
-  it('dismiss with unknown id is a no-op', () => {
+  it('toggleAcknowledged with unknown id is a no-op', () => {
     const store = useErrorStore()
     store.report({ kind: 'graph_sync_error', detail: 'x' })
-    expect(() => store.dismiss('unknown-id')).not.toThrow()
+    expect(() => store.toggleAcknowledged('unknown-id')).not.toThrow()
     expect(store.errors).toHaveLength(1)
-    expect(store.errors[0]!.dismissed).toBeFalsy()
+    expect(store.errors[0]!.acknowledged).toBe(false)
   })
 
-  it('dismissAll marks every entry dismissed', () => {
-    const store = useErrorStore()
-    store.report({ kind: 'graph_sync_error', detail: '1' })
-    store.report({ kind: 'graph_sync_error', detail: '2' })
-    store.report({ kind: 'graph_sync_error', detail: '3' })
-    store.dismissAll()
-    expect(store.errors.every((e) => e.dismissed)).toBe(true)
-    expect(store.unreadCount).toBe(0)
-    expect(store.hasErrors).toBe(false)
-  })
-
-  it('clear() empties the array entirely', () => {
+  it('does not expose destructive clear or bulk-dismiss actions', () => {
     const store = useErrorStore()
     store.report({ kind: 'graph_sync_error', detail: 'a' })
     store.report({ kind: 'graph_sync_error', detail: 'b' })
-    store.clear()
-    expect(store.errors).toEqual([])
-    expect(store.unreadCount).toBe(0)
+
+    expect('clear' in store).toBe(false)
+    expect('dismissAll' in store).toBe(false)
+    expect('dismiss' in store).toBe(false)
+    expect(store.errors).toHaveLength(2)
   })
 
-  it('autoDismissMs schedules auto-dismissal after the given delay', () => {
+  it('autoDismissMs schedules automatic acknowledgement after the given delay', () => {
     vi.useFakeTimers()
     const store = useErrorStore()
     const id = store.report({
@@ -136,17 +132,17 @@ describe('useErrorStore', () => {
       detail: 'reconnecting',
       autoDismissMs: 3000,
     })
-    expect(store.errors[0]!.dismissed).toBeFalsy()
+    expect(store.errors[0]!.acknowledged).toBe(false)
 
     vi.advanceTimersByTime(2999)
-    expect(store.errors[0]!.dismissed).toBeFalsy()
+    expect(store.errors[0]!.acknowledged).toBe(false)
 
     vi.advanceTimersByTime(1)
-    expect(store.errors[0]!.dismissed).toBe(true)
+    expect(store.errors[0]!.acknowledged).toBe(true)
     expect(id).toBe(store.errors[0]!.id)
   })
 
-  it('manual dismiss before timer fires does not throw later', () => {
+  it('manual read-state toggles cancel automatic acknowledgement', () => {
     vi.useFakeTimers()
     const store = useErrorStore()
     const id = store.report({
@@ -154,22 +150,10 @@ describe('useErrorStore', () => {
       detail: 'reconnecting',
       autoDismissMs: 3000,
     })
-    store.dismiss(id)
+    store.toggleAcknowledged(id)
+    store.toggleAcknowledged(id)
     expect(() => vi.advanceTimersByTime(5000)).not.toThrow()
-    expect(store.errors[0]!.dismissed).toBe(true)
-  })
-
-  it('clear() while autoDismiss timer is pending does not throw when timer fires', () => {
-    vi.useFakeTimers()
-    const store = useErrorStore()
-    store.report({
-      kind: 'websocket_error',
-      detail: 'reconnecting',
-      autoDismissMs: 3000,
-    })
-    store.clear()
-    expect(() => vi.advanceTimersByTime(5000)).not.toThrow()
-    expect(store.errors).toEqual([])
+    expect(store.errors[0]!.acknowledged).toBe(false)
   })
 
   it('id values are unique across many reports', () => {

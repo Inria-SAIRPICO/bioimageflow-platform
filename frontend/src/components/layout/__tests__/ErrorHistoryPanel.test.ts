@@ -62,59 +62,45 @@ describe('ErrorHistoryPanel', () => {
     wrapper.unmount()
   })
 
-  it('clicking the per-row dismiss button marks the entry dismissed', async () => {
+  it('toggles each error between unread and acknowledged without removing it', async () => {
     const store = useErrorStore()
     store.report({ kind: 'graph_sync_error', detail: 'a' })
     const wrapper = mountPanel(true)
-    const dismissBtn = document.querySelector(
-      '[data-testid="error-row-dismiss"]',
+    let toggle = document.querySelector(
+      '[data-testid="error-row-read-toggle"]',
     ) as HTMLElement
-    expect(dismissBtn).not.toBeNull()
-    dismissBtn.click()
-    await wrapper.vm.$nextTick()
-    expect(store.errors[0]!.dismissed).toBe(true)
-    wrapper.unmount()
-  })
+    expect(toggle.getAttribute('aria-label')).toBe('Mark as read')
 
-  it('dismissed rows have a "dismissed" class', async () => {
-    const store = useErrorStore()
-    const id = store.report({ kind: 'graph_sync_error', detail: 'a' })
-    store.dismiss(id)
-    const wrapper = mountPanel(true)
+    toggle.click()
     await wrapper.vm.$nextTick()
-    const row = document.querySelector('[data-testid="error-row"]')!
-    expect(row.classList.contains('dismissed')).toBe(true)
-    wrapper.unmount()
-  })
+    expect(store.errors).toHaveLength(1)
+    expect(store.errors[0]!.acknowledged).toBe(true)
+    expect(document.querySelector('[data-testid="error-row"]')?.classList)
+      .toContain('acknowledged')
 
-  it('"Clear all" button calls errorStore.clear()', async () => {
-    const store = useErrorStore()
-    store.report({ kind: 'graph_sync_error', detail: 'a' })
-    store.report({ kind: 'graph_sync_error', detail: 'b' })
-    const wrapper = mountPanel(true)
-    const clearBtn = document.querySelector(
-      '[data-testid="error-history-clear"]',
+    toggle = document.querySelector(
+      '[data-testid="error-row-read-toggle"]',
     ) as HTMLElement
-    expect(clearBtn).not.toBeNull()
-    clearBtn.click()
+    expect(toggle.getAttribute('aria-label')).toBe('Mark as unread')
+    toggle.click()
     await wrapper.vm.$nextTick()
-    expect(store.errors).toHaveLength(0)
+    expect(store.errors).toHaveLength(1)
+    expect(store.errors[0]!.acknowledged).toBe(false)
+    expect(document.querySelector('[data-testid="error-row"]')?.classList)
+      .not.toContain('acknowledged')
     wrapper.unmount()
   })
 
-  it('"Dismiss all" button calls errorStore.dismissAll()', async () => {
+  it('does not expose delete, clear-all, or dismiss-all controls', () => {
     const store = useErrorStore()
     store.report({ kind: 'graph_sync_error', detail: 'a' })
     store.report({ kind: 'graph_sync_error', detail: 'b' })
     const wrapper = mountPanel(true)
-    const dismissAllBtn = document.querySelector(
-      '[data-testid="error-history-dismiss-all"]',
-    ) as HTMLElement
-    expect(dismissAllBtn).not.toBeNull()
-    dismissAllBtn.click()
-    await wrapper.vm.$nextTick()
-    expect(store.errors.every((e) => e.dismissed)).toBe(true)
-    expect(store.unreadCount).toBe(0)
+
+    expect(document.querySelector('[data-testid="error-history-clear"]')).toBeNull()
+    expect(document.querySelector('[data-testid="error-history-dismiss-all"]')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/delete|clear all|dismiss all/i)
+    expect(store.errors).toHaveLength(2)
     wrapper.unmount()
   })
 

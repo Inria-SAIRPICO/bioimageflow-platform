@@ -27,16 +27,8 @@ function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleTimeString()
 }
 
-function onDismiss(id: string) {
-  errorStore.dismiss(id)
-}
-
-function onClearAll() {
-  errorStore.clear()
-}
-
-function onDismissAll() {
-  errorStore.dismissAll()
+function onToggleAcknowledged(id: string) {
+  errorStore.toggleAcknowledged(id)
 }
 
 function onNavigate(nodeId: string) {
@@ -75,24 +67,6 @@ void props
         <header class="error-history-header">
           <span class="error-history-title">Error history</span>
           <Button
-            v-if="!isEmpty"
-            data-testid="error-history-dismiss-all"
-            severity="secondary"
-            size="small"
-            text
-            label="Dismiss all"
-            @click="onDismissAll"
-          />
-          <Button
-            v-if="!isEmpty"
-            data-testid="error-history-clear"
-            severity="danger"
-            size="small"
-            text
-            label="Clear all"
-            @click="onClearAll"
-          />
-          <Button
             data-testid="error-history-close"
             icon="pi pi-times"
             severity="secondary"
@@ -112,7 +86,7 @@ void props
           <div
             v-for="entry in sortedErrors"
             :key="entry.id"
-            :class="['error-row', { dismissed: entry.dismissed }]"
+            :class="['error-row', { acknowledged: entry.acknowledged }]"
             data-testid="error-row"
           >
             <div class="error-row-meta">
@@ -121,16 +95,17 @@ void props
               </span>
               <span class="error-row-kind">{{ ERROR_KIND_LABELS[entry.kind] }}</span>
               <Button
-                data-testid="error-row-dismiss"
-                icon="pi pi-times"
+                data-testid="error-row-read-toggle"
+                :icon="entry.acknowledged ? 'pi pi-check-circle' : 'pi pi-circle'"
                 severity="secondary"
                 size="small"
                 text
                 rounded
-                aria-label="Dismiss"
-                title="Dismiss"
-                class="error-row-dismiss"
-                @click="onDismiss(entry.id)"
+                :aria-label="entry.acknowledged ? 'Mark as unread' : 'Mark as read'"
+                :title="entry.acknowledged ? 'Mark as unread' : 'Mark as read'"
+                :aria-pressed="entry.acknowledged"
+                class="error-row-read-toggle"
+                @click="onToggleAcknowledged(entry.id)"
               />
             </div>
             <div data-testid="error-row-detail" class="error-row-detail">
@@ -254,7 +229,7 @@ void props
   gap: 0.25rem;
 }
 
-.error-row.dismissed {
+.error-row.acknowledged {
   opacity: 0.55;
   border-left-color: var(--p-surface-400, #9ca3af);
 }
@@ -272,7 +247,7 @@ void props
   color: var(--p-text-color, #111827);
 }
 
-.error-row-dismiss {
+.error-row-read-toggle {
   margin-left: auto;
 }
 

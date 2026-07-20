@@ -49,10 +49,10 @@ describe('ErrorIndicator', () => {
     expect(wrapper.emitted('open')!).toHaveLength(1)
   })
 
-  it('renders without unread badge when all errors are dismissed', () => {
+  it('renders without unread badge when all errors are acknowledged', () => {
     const store = useErrorStore()
-    store.report({ kind: 'graph_sync_error', detail: 'a' })
-    store.dismissAll()
+    const id = store.report({ kind: 'graph_sync_error', detail: 'a' })
+    store.toggleAcknowledged(id)
     const wrapper = mount(ErrorIndicator)
     // Indicator is still visible (history accessible) but no badge.
     expect(wrapper.find('.error-indicator').exists()).toBe(true)
@@ -68,25 +68,26 @@ describe('ErrorIndicator', () => {
     )
   })
 
-  it('icon receives data-state="dismissed" when only dismissed entries remain', () => {
+  it('icon receives data-state="acknowledged" when only acknowledged entries remain', () => {
     const store = useErrorStore()
-    store.report({ kind: 'graph_sync_error', detail: 'a' })
-    store.dismissAll()
+    const id = store.report({ kind: 'graph_sync_error', detail: 'a' })
+    store.toggleAcknowledged(id)
     const wrapper = mount(ErrorIndicator)
     expect(wrapper.find('.error-indicator').attributes('data-state')).toBe(
-      'dismissed',
+      'acknowledged',
     )
   })
 
   it('tooltip text is "Errors (N)" when unread > 0, else "Error history"', () => {
     const store = useErrorStore()
-    store.report({ kind: 'graph_sync_error', detail: 'a' })
+    const id = store.report({ kind: 'graph_sync_error', detail: 'a' })
     store.report({ kind: 'graph_sync_error', detail: 'b' })
     let wrapper = mount(ErrorIndicator)
     expect(wrapper.find('.error-indicator').attributes('title')).toBe(
       'Errors (2)',
     )
-    store.dismissAll()
+    store.toggleAcknowledged(id)
+    store.toggleAcknowledged(store.errors[1]!.id)
     wrapper = mount(ErrorIndicator)
     expect(wrapper.find('.error-indicator').attributes('title')).toBe(
       'Error history',

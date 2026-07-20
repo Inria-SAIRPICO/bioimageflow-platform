@@ -38,7 +38,7 @@ export const LEVEL_ORDER: Record<string, number> = {
 }
 
 export const ALL_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR'] as const
-export const DEFAULT_LEVELS = new Set<string>(['INFO', 'WARNING', 'ERROR'])
+export const DEFAULT_LEVELS = new Set<string>(ALL_LEVELS)
 
 const MAX_ENTRIES = 5000
 

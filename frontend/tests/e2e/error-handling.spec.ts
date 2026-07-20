@@ -162,7 +162,7 @@ test.describe('error handling', () => {
     await expect(panel).toContainText('failed_node: boom')
 
     await page
-      .locator('[data-testid="error-row-dismiss"]')
+      .locator('[data-testid="error-row-read-toggle"]')
       .first()
       .click()
     await expect(page.locator('.error-indicator .unread-badge')).toHaveCount(0)
@@ -240,7 +240,7 @@ test.describe('error handling', () => {
     expect(hasCycle).toBe(true)
   })
 
-  test('error history "Clear all" wipes the history', async ({ page }) => {
+  test('error history read toggles retain every error', async ({ page }) => {
     await page.evaluate(async () => {
       const errors = await import('/src/stores/errors.ts')
       const store = errors.useErrorStore()
@@ -252,9 +252,21 @@ test.describe('error handling', () => {
     await page.locator('.error-indicator').click()
 
     await expect(page.locator('[data-testid="error-row"]')).toHaveCount(2)
-    await page.locator('[data-testid="error-history-clear"]').click()
-    await expect(page.locator('[data-testid="error-row"]')).toHaveCount(0)
-    await expect(page.locator('[data-testid="error-history-empty"]')).toBeVisible()
+    await expect(page.locator('[data-testid="error-history-clear"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="error-history-dismiss-all"]')).toHaveCount(0)
+
+    const firstRow = page.locator('[data-testid="error-row"]').first()
+    const readToggle = firstRow.locator('[data-testid="error-row-read-toggle"]')
+    await expect(readToggle).toHaveAttribute('aria-label', 'Mark as read')
+    await readToggle.click()
+
+    await expect(page.locator('[data-testid="error-row"]')).toHaveCount(2)
+    await expect(firstRow).toHaveClass(/acknowledged/)
+    await expect(readToggle).toHaveAttribute('aria-label', 'Mark as unread')
+
+    await readToggle.click()
+    await expect(page.locator('[data-testid="error-row"]')).toHaveCount(2)
+    await expect(firstRow).not.toHaveClass(/acknowledged/)
   })
 
   test('error history "Go to node" emits navigation', async ({ page }) => {

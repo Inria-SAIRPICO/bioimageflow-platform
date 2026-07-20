@@ -14,16 +14,19 @@ import { registerRootCanvas } from '@/test-utils/canvasFixtures'
 
 const require = createRequire(import.meta.url)
 const primeIconsCss = readFileSync(require.resolve('primeicons/primeicons.css'), 'utf8')
+const mountedWrappers: Array<ReturnType<typeof mount>> = []
 
 function mountPanel() {
   const pinia = createPinia()
   setActivePinia(pinia)
   registerRootCanvas('logger-workflow')
-  return mount(LoggerPanel, {
+  const wrapper = mount(LoggerPanel, {
     global: {
       plugins: [pinia, PrimeVue],
     },
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('LoggerPanel', () => {
@@ -46,6 +49,7 @@ describe('LoggerPanel', () => {
   })
 
   afterEach(() => {
+    mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount())
     canvasSessionRegistry.dispose()
     vi.useRealTimers()
   })
@@ -59,7 +63,7 @@ describe('LoggerPanel', () => {
 
     const toggles = w.findAllComponents(ToggleButton).slice(0, 4)
     expect(toggles.map((toggle) => toggle.props('modelValue'))).toEqual([
-      false,
+      true,
       true,
       true,
       true,
@@ -71,7 +75,7 @@ describe('LoggerPanel', () => {
     const store = useLoggerStore()
 
     await w.find('[data-testid="log-level-DEBUG"]').trigger('click')
-    expect(store.filter.levels.has('DEBUG')).toBe(true)
+    expect(store.filter.levels.has('DEBUG')).toBe(false)
 
     await w.find('[data-testid="log-level-INFO"]').trigger('click')
     expect(store.filter.levels.has('INFO')).toBe(false)
@@ -100,21 +104,22 @@ describe('LoggerPanel', () => {
     expect(store.filter.nodeId).toBe('n1')
   })
 
-  it('auto-scopes to a single canvas selection and clears on multi-select', async () => {
+  it('shows every level and node by default even when a node is selected', async () => {
     const w = mountPanel()
     const ui = useUIStore()
     const store = useLoggerStore()
+    store.addEntry({ level: 'DEBUG', message: 'first node', nodeId: 'n1', timestamp: 1 })
+    store.addEntry({ level: 'INFO', message: 'second node', nodeId: 'n2', timestamp: 2 })
 
     ui.setSelectedNodes(['n1'])
     await w.vm.$nextTick()
-    expect(store.filter.nodeId).toBe('n1')
 
-    ui.setSelectedNodes(['n1', 'n2'])
-    await w.vm.$nextTick()
     expect(store.filter.nodeId).toBeNull()
+    expect(w.findAll('[data-testid="log-message"]').map(row => row.text()))
+      .toEqual(['first node', 'second node'])
   })
 
-  it('auto-scope toggle disables selection-driven filtering', async () => {
+  it('auto-scope toggle enables selection-driven filtering', async () => {
     const w = mountPanel()
     const ui = useUIStore()
     const store = useLoggerStore()
@@ -122,28 +127,16 @@ describe('LoggerPanel', () => {
     await w.find('[data-testid="log-auto-scope"]').trigger('click')
     ui.setSelectedNodes(['n1'])
     await w.vm.$nextTick()
-    expect(store.filter.nodeId).toBeNull()
+    expect(store.filter.nodeId).toBe('n1')
   })
 
-  it('renders a visible active state for the auto-scope toggle', async () => {
+  it('renders a visible inactive state for the auto-scope toggle by default', async () => {
     const w = mountPanel()
     const button = w.find('[data-testid="log-auto-scope"]')
 
-    expect(button.classes()).toContain('logger-panel__auto-scope--active')
+    expect(button.classes()).toContain('logger-panel__auto-scope--inactive')
     let icon = button.find('.logger-panel__auto-scope-icon')
     expect(icon.exists()).toBe(true)
-    expect(icon.classes()).toEqual(
-      expect.arrayContaining([
-        'pi',
-        'pi-filter',
-        'logger-panel__auto-scope-icon--active',
-      ]),
-    )
-    expect(primeIconsCss).toContain('.pi-filter:before')
-    await button.trigger('click')
-    expect(button.classes()).not.toContain('logger-panel__auto-scope--active')
-    expect(button.classes()).toContain('logger-panel__auto-scope--inactive')
-    icon = button.find('.logger-panel__auto-scope-icon')
     expect(icon.classes()).toEqual(
       expect.arrayContaining([
         'pi',
@@ -152,6 +145,18 @@ describe('LoggerPanel', () => {
       ]),
     )
     expect(primeIconsCss).toContain('.pi-filter-slash:before')
+    await button.trigger('click')
+    expect(button.classes()).not.toContain('logger-panel__auto-scope--inactive')
+    expect(button.classes()).toContain('logger-panel__auto-scope--active')
+    icon = button.find('.logger-panel__auto-scope-icon')
+    expect(icon.classes()).toEqual(
+      expect.arrayContaining([
+        'pi',
+        'pi-filter',
+        'logger-panel__auto-scope-icon--active',
+      ]),
+    )
+    expect(primeIconsCss).toContain('.pi-filter:before')
   })
 
   it('manual node filters are not overridden by canvas selection', async () => {

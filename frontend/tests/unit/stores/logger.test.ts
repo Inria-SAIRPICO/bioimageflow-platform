@@ -17,7 +17,7 @@ describe('logger store', () => {
     expect(store.autoScroll).toBe(true)
     expect(store.filter.nodeId).toBeNull()
     expect(store.filter.searchText).toBe('')
-    expect([...store.filter.levels].sort()).toEqual(['ERROR', 'INFO', 'WARNING'])
+    expect([...store.filter.levels].sort()).toEqual(['DEBUG', 'ERROR', 'INFO', 'WARNING'])
   })
 
   it('appends entries, accepts empty messages, and caps the ring buffer', () => {
@@ -125,7 +125,7 @@ describe('logger store', () => {
     expect(store.filter.levels).toEqual(initialLevels)
 
     store.toggleLevel('DEBUG')
-    expect(store.filter.levels.has('DEBUG')).toBe(true)
+    expect(store.filter.levels.has('DEBUG')).toBe(false)
     store.toggleLevel('INFO')
     expect(store.filter.levels.has('INFO')).toBe(false)
 

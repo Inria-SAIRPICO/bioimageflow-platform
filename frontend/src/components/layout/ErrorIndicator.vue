@@ -6,8 +6,8 @@ const errorStore = useErrorStore()
 
 const visible = computed(() => errorStore.errors.length > 0)
 const unread = computed(() => errorStore.unreadCount)
-const state = computed<'unread' | 'dismissed'>(() =>
-  unread.value > 0 ? 'unread' : 'dismissed',
+const state = computed<'unread' | 'acknowledged'>(() =>
+  unread.value > 0 ? 'unread' : 'acknowledged',
 )
 const badgeText = computed(() => (unread.value > 9 ? '9+' : String(unread.value)))
 const tooltip = computed(() =>

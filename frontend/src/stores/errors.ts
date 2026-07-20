@@ -31,12 +31,12 @@ export interface ErrorEntry {
   status?: number
   nodeId?: string
   autoDismissMs?: number
-  dismissed?: boolean
+  acknowledged?: boolean
 }
 
 export type ErrorReportInput = Omit<
   ErrorEntry,
-  'id' | 'timestamp' | 'dismissed'
+  'id' | 'timestamp' | 'acknowledged'
 > & {
   logToLogger?: boolean
 }
@@ -58,7 +58,7 @@ export const useErrorStore = defineStore('errors', () => {
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
 
   const unreadCount = computed(
-    () => errors.value.filter((e) => !e.dismissed).length,
+    () => errors.value.filter((e) => !e.acknowledged).length,
   )
   const hasErrors = computed(() => unreadCount.value > 0)
 
@@ -77,7 +77,7 @@ export const useErrorStore = defineStore('errors', () => {
       kind: input.kind,
       detail: input.detail,
       timestamp: Date.now(),
-      dismissed: false,
+      acknowledged: false,
     }
     if (input.field !== undefined) entry.field = input.field
     if (input.status !== undefined) entry.status = input.status
@@ -90,8 +90,8 @@ export const useErrorStore = defineStore('errors', () => {
         const idx = errors.value.findIndex((e) => e.id === id)
         if (idx === -1) return
         const e = errors.value[idx]!
-        if (!e.dismissed) {
-          errors.value[idx] = { ...e, dismissed: true }
+        if (!e.acknowledged) {
+          errors.value[idx] = { ...e, acknowledged: true }
         }
       }, input.autoDismissMs)
       timers.set(id, t)
@@ -108,26 +108,12 @@ export const useErrorStore = defineStore('errors', () => {
     return id
   }
 
-  function dismiss(id: string): void {
+  function toggleAcknowledged(id: string): void {
     const idx = errors.value.findIndex((e) => e.id === id)
     if (idx === -1) return
     _clearTimer(id)
     const e = errors.value[idx]!
-    if (!e.dismissed) {
-      errors.value[idx] = { ...e, dismissed: true }
-    }
-  }
-
-  function dismissAll(): void {
-    for (const id of Array.from(timers.keys())) _clearTimer(id)
-    errors.value = errors.value.map((e) =>
-      e.dismissed ? e : { ...e, dismissed: true },
-    )
-  }
-
-  function clear(): void {
-    for (const id of Array.from(timers.keys())) _clearTimer(id)
-    errors.value = []
+    errors.value[idx] = { ...e, acknowledged: !e.acknowledged }
   }
 
   return {
@@ -135,8 +121,6 @@ export const useErrorStore = defineStore('errors', () => {
     unreadCount,
     hasErrors,
     report,
-    dismiss,
-    dismissAll,
-    clear,
+    toggleAcknowledged,
   }
 })

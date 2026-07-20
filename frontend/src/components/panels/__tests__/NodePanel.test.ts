@@ -517,6 +517,18 @@ describe('NodePanel', () => {
       expect(w.find('[data-testid="doc-panel"]').exists()).toBe(true)
     })
 
+    it('places documentation immediately after node identity and before parameters', () => {
+      const w = mountPanel(makeNodeData())
+      const details = w.find('.node-details').element
+      const children = Array.from(details.children)
+      const headerIndex = children.indexOf(w.find('.node-panel-header').element)
+      const documentationIndex = children.indexOf(w.find('[data-testid="doc-panel"]').element)
+      const parametersIndex = children.indexOf(w.find('.parameters-section').element)
+
+      expect(documentationIndex).toBe(headerIndex + 1)
+      expect(documentationIndex).toBeLessThan(parametersIndex)
+    })
+
     it('does not render documentation panel when tool has no documentation', () => {
       const tool = makeTool({ documentation: '' })
       const w = mountPanel(makeNodeData({ tool }))

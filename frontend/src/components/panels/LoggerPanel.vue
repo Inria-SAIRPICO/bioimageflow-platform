@@ -32,7 +32,7 @@ const logger = useLoggerStore()
 const ui = useUIStore()
 
 const listEl = ref<HTMLElement | null>(null)
-const autoScope = ref(true)
+const autoScope = ref(false)
 const autoScopedNodeId = ref<string | null>(null)
 const manualNodeFilter = ref(false)
 const searchDraft = ref(logger.filter.searchText)

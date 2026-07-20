@@ -533,6 +533,23 @@ async function pickFolder(key: string) {
         </div>
       </div>
 
+      <!-- Documentation section, open by default. The chevron is rendered
+           before the label and toggles the section. -->
+      <section v-if="nodeData.tool?.documentation" class="doc-panel" data-testid="doc-panel">
+        <button
+          type="button"
+          class="doc-panel-header"
+          :aria-expanded="!docCollapsed"
+          @click="docCollapsed = !docCollapsed"
+        >
+          <i :class="docCollapsed ? 'pi pi-chevron-right' : 'pi pi-chevron-down'" />
+          <span class="p-panel-title doc-panel-title">Documentation</span>
+        </button>
+        <div v-show="!docCollapsed" class="doc-panel-body">
+          <p class="doc-text">{{ nodeData.tool.documentation }}</p>
+        </div>
+      </section>
+
       <!-- Parameters section -->
       <div v-if="nodeData.tool" class="parameters-section">
         <h4>Parameters</h4>
@@ -858,23 +875,6 @@ async function pickFolder(key: string) {
         </div>
       </section>
 
-      <!-- Documentation section, docked at the bottom, open by default.
-           Chevron is rendered before the "Documentation" label and toggles
-           the section. -->
-      <section v-if="nodeData.tool?.documentation" class="doc-panel" data-testid="doc-panel">
-        <button
-          type="button"
-          class="doc-panel-header"
-          :aria-expanded="!docCollapsed"
-          @click="docCollapsed = !docCollapsed"
-        >
-          <i :class="docCollapsed ? 'pi pi-chevron-right' : 'pi pi-chevron-down'" />
-          <span class="p-panel-title doc-panel-title">Documentation</span>
-        </button>
-        <div v-show="!docCollapsed" class="doc-panel-body">
-          <p class="doc-text">{{ nodeData.tool.documentation }}</p>
-        </div>
-      </section>
     </div>
   </div>
 </template>
@@ -1099,7 +1099,7 @@ async function pickFolder(key: string) {
   color: var(--p-red-700, #b91c1c);
 }
 
-/* Documentation panel (bottom, open by default, chevron before title) */
+/* Documentation panel (open by default, chevron before title) */
 .doc-panel {
   margin-top: 12px;
   border-top: 1px solid var(--p-content-border-color);
