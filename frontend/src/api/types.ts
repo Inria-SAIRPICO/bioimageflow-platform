@@ -512,6 +512,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/demo-workflows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Demo Workflow Status */
+        get: operations["demo_workflow_status_api_v1_demo_workflows_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/demo-workflows/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install Demo Workflows */
+        post: operations["install_demo_workflows_api_v1_demo_workflows_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/execution/run": {
         parameters: {
             query?: never;
@@ -1503,6 +1537,42 @@ export interface components {
             type: "delete_workflow_output";
             /** Output Id */
             output_id: string;
+        };
+        /** DemoWorkflowStatus */
+        DemoWorkflowStatus: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "installed" | "missing" | "conflict";
+            /** Installed Version */
+            installed_version?: number | null;
+            /** Identity Generation */
+            identity_generation?: number | null;
+        };
+        /** DemoWorkflowsStatus */
+        DemoWorkflowsStatus: {
+            /** Bundle Version */
+            bundle_version: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "installed" | "partial" | "missing" | "conflict";
+            /** Workflows */
+            workflows: components["schemas"]["DemoWorkflowStatus"][];
+            /** Can Install */
+            can_install: boolean;
+            /** Can Remove */
+            can_remove: boolean;
         };
         /** DetachWorkflowSourceOperation */
         DetachWorkflowSourceOperation: {
@@ -3144,6 +3214,8 @@ export type DeleteSelectionRequest = components['schemas']['DeleteSelectionReque
 export type DeleteSelectionResponse = components['schemas']['DeleteSelectionResponse'];
 export type DeleteWorkflowInputOperation = components['schemas']['DeleteWorkflowInputOperation'];
 export type DeleteWorkflowOutputOperation = components['schemas']['DeleteWorkflowOutputOperation'];
+export type DemoWorkflowStatus = components['schemas']['DemoWorkflowStatus'];
+export type DemoWorkflowsStatus = components['schemas']['DemoWorkflowsStatus'];
 export type DetachWorkflowSourceOperation = components['schemas']['DetachWorkflowSourceOperation'];
 export type DraftGraphMismatchResponse = components['schemas']['DraftGraphMismatchResponse'];
 export type EditorOpenMethod = components['schemas']['EditorOpenMethod'];
@@ -4282,6 +4354,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_workflow_status_api_v1_demo_workflows_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoWorkflowsStatus"];
+                };
+            };
+        };
+    };
+    install_demo_workflows_api_v1_demo_workflows_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoWorkflowsStatus"];
                 };
             };
         };

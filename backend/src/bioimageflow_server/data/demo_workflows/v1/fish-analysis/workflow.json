@@ -1,0 +1,804 @@
+{
+  "artifact_hash": "sha256:327758d32723ab8c48a9e6768f78c008096f904018d580c4b3e6e3899321d343",
+  "graph": {
+    "config": {
+      "engine": "wetlands",
+      "execution": "parallel",
+      "storage_path": "./bif_data"
+    },
+    "display_name": "Fish Analysis",
+    "edges": [
+      {
+        "id": "edge-d624c480d9038f33d46c",
+        "source_node": "download_cil_images",
+        "source_output": "path",
+        "target_input": "input_image",
+        "target_node": "extract_ch2_nuclei",
+        "type": "column"
+      },
+      {
+        "id": "edge-a3efae8568a51d605feb",
+        "source_node": "extract_ch2_nuclei",
+        "source_output": "output_image",
+        "target_input": "input_image",
+        "target_node": "cellpose3_nuclei",
+        "type": "column"
+      },
+      {
+        "id": "edge-9026f61dd7dc07f6a2e9",
+        "source_node": "download_cil_images",
+        "source_output": "path",
+        "target_input": "input-image",
+        "target_node": "fols2_marker_spot_analysis",
+        "type": "column"
+      },
+      {
+        "id": "edge-5796b059fcdb70cbc283",
+        "source_node": "cellpose3_nuclei",
+        "source_output": "mask",
+        "target_input": "input-nuclei-labels",
+        "target_node": "fols2_marker_spot_analysis",
+        "type": "column"
+      },
+      {
+        "id": "edge-72e5254754ec79342fd6",
+        "source_node": "download_cil_images",
+        "source_output": "path",
+        "target_input": "input-image",
+        "target_node": "csf1r_marker_spot_analysis",
+        "type": "column"
+      },
+      {
+        "id": "edge-70dfe7ac0f4014ef9a05",
+        "source_node": "cellpose3_nuclei",
+        "source_output": "mask",
+        "target_input": "input-nuclei-labels",
+        "target_node": "csf1r_marker_spot_analysis",
+        "type": "column"
+      },
+      {
+        "id": "edge-f887c25e4451d3c3ada5",
+        "source_node": "fols2_marker_spot_analysis",
+        "target_node": "avg_spots_per_nucleus",
+        "target_position": 0,
+        "type": "dataframe"
+      },
+      {
+        "id": "edge-2119f1a62c9b9c627f30",
+        "source_node": "csf1r_marker_spot_analysis",
+        "target_node": "avg_spots_per_nucleus",
+        "target_position": 1,
+        "type": "dataframe"
+      }
+    ],
+    "interface": {
+      "inputs": [],
+      "outputs": [
+        {
+          "id": "output-image-index",
+          "name": "image_index",
+          "schema": {
+            "image_spec": null,
+            "type": "str"
+          },
+          "source": {
+            "column": "image_index",
+            "node": "avg_spots_per_nucleus"
+          }
+        },
+        {
+          "id": "output-fols2",
+          "name": "avg_fols2_per_nucleus",
+          "schema": {
+            "image_spec": null,
+            "type": "float"
+          },
+          "source": {
+            "column": "avg_fols2_per_nucleus",
+            "node": "avg_spots_per_nucleus"
+          }
+        },
+        {
+          "id": "output-csf1r",
+          "name": "avg_csf1r_per_nucleus",
+          "schema": {
+            "image_spec": null,
+            "type": "float"
+          },
+          "source": {
+            "column": "avg_csf1r_per_nucleus",
+            "node": "avg_spots_per_nucleus"
+          }
+        }
+      ]
+    },
+    "name": "fish_analysis",
+    "nodes": [
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "download_cil_images",
+        "name": "download_cil_images",
+        "output_templates": {},
+        "parameters": {
+          "urls": "https://cildata.crbs.ucsd.edu/media/images/13432/13432.tif\nhttps://cildata.crbs.ucsd.edu/media/images/13434/13434.tif\nhttps://cildata.crbs.ucsd.edu/media/images/13436/13436.tif\nhttps://cildata.crbs.ucsd.edu/media/images/13438/13438.tif"
+        },
+        "position": [
+          0.0,
+          0.0
+        ],
+        "resources": {},
+        "tool_class": "DownloadImages",
+        "tool_module": "tools.download_images",
+        "tool_name": "DownloadImages",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "extract_ch2_nuclei",
+        "name": "extract_ch2_nuclei",
+        "output_templates": {},
+        "parameters": {
+          "channel": 2
+        },
+        "position": [
+          280.0,
+          0.0
+        ],
+        "resources": {},
+        "tool_class": "ExtractChannel",
+        "tool_module": "bioimageflow_common_tools.extract_channel",
+        "tool_name": "ExtractChannel",
+        "tool_package": "bioimageflow_common_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "cellpose3_nuclei",
+        "name": "cellpose3_nuclei",
+        "output_templates": {},
+        "parameters": {
+          "model_type": "nuclei"
+        },
+        "position": [
+          560.0,
+          0.0
+        ],
+        "resources": {},
+        "tool_class": "Cellpose3",
+        "tool_module": "bioimageflow_segmentation_tools.cellpose_v3",
+        "tool_name": "Cellpose3",
+        "tool_package": "bioimageflow_segmentation_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "bindings": {
+          "input-channel": {
+            "__type__": "int",
+            "value": 0
+          },
+          "input-gaussian-std": {
+            "__type__": "int",
+            "value": 60
+          },
+          "input-p-value": {
+            "__type__": "float",
+            "value": 0.001
+          }
+        },
+        "collapsed": false,
+        "enabled": true,
+        "id": "fols2_marker_spot_analysis",
+        "name": "Marker Spot Analysis",
+        "position": [
+          840.0,
+          0.0
+        ],
+        "resources": {},
+        "type": "workflow",
+        "workflow": {
+          "config": {
+            "engine": "wetlands",
+            "execution": "parallel",
+            "storage_path": "./bif_data"
+          },
+          "display_name": "Marker Spot Analysis",
+          "edges": [
+            {
+              "id": "edge-07b064a2dfef4cc23c4f",
+              "source_node": "extract_marker_channel",
+              "source_output": "output_image",
+              "target_input": "input_image",
+              "target_node": "detect_marker_spots",
+              "type": "column"
+            },
+            {
+              "id": "edge-0c662bb971cb8175b378",
+              "source_node": "detect_marker_spots",
+              "source_output": "output_image",
+              "target_input": "input_image",
+              "target_node": "label_marker_spots",
+              "type": "column"
+            },
+            {
+              "id": "edge-21f21e2e68302ceac955",
+              "source_node": "label_marker_spots",
+              "source_output": "output_image",
+              "target_input": "label_image",
+              "target_node": "measure_nucleus_overlaps",
+              "type": "column"
+            }
+          ],
+          "interface": {
+            "inputs": [
+              {
+                "id": "input-image",
+                "kind": "field",
+                "name": "input_image",
+                "schema": {
+                  "image_spec": {
+                    "dtypes": [],
+                    "formats": [],
+                    "layouts": [],
+                    "semantics": [
+                      "intensity"
+                    ]
+                  },
+                  "type": "ImageFile"
+                },
+                "targets": [
+                  {
+                    "node": "extract_marker_channel",
+                    "port": {
+                      "kind": "field",
+                      "name": "input_image"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "input-nuclei-labels",
+                "kind": "field",
+                "name": "nuclei_labels",
+                "schema": {
+                  "image_spec": {
+                    "dtypes": [],
+                    "formats": [],
+                    "layouts": [],
+                    "semantics": [
+                      "label"
+                    ]
+                  },
+                  "type": "ImageFile"
+                },
+                "targets": [
+                  {
+                    "node": "measure_nucleus_overlaps",
+                    "port": {
+                      "kind": "field",
+                      "name": "reference_image"
+                    }
+                  }
+                ]
+              },
+              {
+                "default": {
+                  "__type__": "int",
+                  "value": 0
+                },
+                "id": "input-channel",
+                "kind": "field",
+                "name": "channel",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "targets": [
+                  {
+                    "node": "extract_marker_channel",
+                    "port": {
+                      "kind": "field",
+                      "name": "channel"
+                    }
+                  }
+                ]
+              },
+              {
+                "default": {
+                  "__type__": "int",
+                  "value": 60
+                },
+                "id": "input-gaussian-std",
+                "kind": "field",
+                "name": "gaussian_std",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "targets": [
+                  {
+                    "node": "detect_marker_spots",
+                    "port": {
+                      "kind": "field",
+                      "name": "gaussian_std"
+                    }
+                  }
+                ]
+              },
+              {
+                "default": {
+                  "__type__": "float",
+                  "value": 0.001
+                },
+                "id": "input-p-value",
+                "kind": "field",
+                "name": "p_value",
+                "schema": {
+                  "image_spec": null,
+                  "type": "float"
+                },
+                "targets": [
+                  {
+                    "node": "detect_marker_spots",
+                    "port": {
+                      "kind": "field",
+                      "name": "p_value"
+                    }
+                  }
+                ]
+              }
+            ],
+            "outputs": [
+              {
+                "id": "output-reference-label",
+                "name": "reference_label",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "source": {
+                  "column": "reference_label",
+                  "node": "measure_nucleus_overlaps"
+                }
+              },
+              {
+                "id": "output-spot-label",
+                "name": "spot_label",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "source": {
+                  "column": "spot_label",
+                  "node": "measure_nucleus_overlaps"
+                }
+              },
+              {
+                "id": "output-overlap-count",
+                "name": "overlap_count",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "source": {
+                  "column": "overlap_count",
+                  "node": "measure_nucleus_overlaps"
+                }
+              }
+            ]
+          },
+          "name": "marker_spot_analysis",
+          "nodes": [
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "extract_marker_channel",
+              "name": "extract_marker_channel",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                0.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "ExtractChannel",
+              "tool_module": "bioimageflow_common_tools.extract_channel",
+              "tool_name": "ExtractChannel",
+              "tool_package": "bioimageflow_common_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            },
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "detect_marker_spots",
+              "name": "detect_marker_spots",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                280.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "AtlasSpotDetection",
+              "tool_module": "bioimageflow_spot_tools.atlas",
+              "tool_name": "AtlasSpotDetection",
+              "tool_package": "bioimageflow_spot_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            },
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "label_marker_spots",
+              "name": "label_marker_spots",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                560.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "ConnectedComponents",
+              "tool_module": "bioimageflow_common_tools.connected_components",
+              "tool_name": "ConnectedComponents",
+              "tool_package": "bioimageflow_common_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            },
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "measure_nucleus_overlaps",
+              "name": "measure_nucleus_overlaps",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                840.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "LabelOverlaps",
+              "tool_module": "bioimageflow_common_tools.label_overlaps",
+              "tool_name": "LabelOverlaps",
+              "tool_package": "bioimageflow_common_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            }
+          ],
+          "schema_version": 1
+        }
+      },
+      {
+        "bindings": {
+          "input-channel": {
+            "__type__": "int",
+            "value": 1
+          },
+          "input-gaussian-std": {
+            "__type__": "int",
+            "value": 60
+          },
+          "input-p-value": {
+            "__type__": "float",
+            "value": 0.001
+          }
+        },
+        "collapsed": false,
+        "enabled": true,
+        "id": "csf1r_marker_spot_analysis",
+        "name": "Marker Spot Analysis",
+        "position": [
+          0.0,
+          180.0
+        ],
+        "resources": {},
+        "type": "workflow",
+        "workflow": {
+          "config": {
+            "engine": "wetlands",
+            "execution": "parallel",
+            "storage_path": "./bif_data"
+          },
+          "display_name": "Marker Spot Analysis",
+          "edges": [
+            {
+              "id": "edge-07b064a2dfef4cc23c4f",
+              "source_node": "extract_marker_channel",
+              "source_output": "output_image",
+              "target_input": "input_image",
+              "target_node": "detect_marker_spots",
+              "type": "column"
+            },
+            {
+              "id": "edge-0c662bb971cb8175b378",
+              "source_node": "detect_marker_spots",
+              "source_output": "output_image",
+              "target_input": "input_image",
+              "target_node": "label_marker_spots",
+              "type": "column"
+            },
+            {
+              "id": "edge-21f21e2e68302ceac955",
+              "source_node": "label_marker_spots",
+              "source_output": "output_image",
+              "target_input": "label_image",
+              "target_node": "measure_nucleus_overlaps",
+              "type": "column"
+            }
+          ],
+          "interface": {
+            "inputs": [
+              {
+                "id": "input-image",
+                "kind": "field",
+                "name": "input_image",
+                "schema": {
+                  "image_spec": {
+                    "dtypes": [],
+                    "formats": [],
+                    "layouts": [],
+                    "semantics": [
+                      "intensity"
+                    ]
+                  },
+                  "type": "ImageFile"
+                },
+                "targets": [
+                  {
+                    "node": "extract_marker_channel",
+                    "port": {
+                      "kind": "field",
+                      "name": "input_image"
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "input-nuclei-labels",
+                "kind": "field",
+                "name": "nuclei_labels",
+                "schema": {
+                  "image_spec": {
+                    "dtypes": [],
+                    "formats": [],
+                    "layouts": [],
+                    "semantics": [
+                      "label"
+                    ]
+                  },
+                  "type": "ImageFile"
+                },
+                "targets": [
+                  {
+                    "node": "measure_nucleus_overlaps",
+                    "port": {
+                      "kind": "field",
+                      "name": "reference_image"
+                    }
+                  }
+                ]
+              },
+              {
+                "default": {
+                  "__type__": "int",
+                  "value": 0
+                },
+                "id": "input-channel",
+                "kind": "field",
+                "name": "channel",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "targets": [
+                  {
+                    "node": "extract_marker_channel",
+                    "port": {
+                      "kind": "field",
+                      "name": "channel"
+                    }
+                  }
+                ]
+              },
+              {
+                "default": {
+                  "__type__": "int",
+                  "value": 60
+                },
+                "id": "input-gaussian-std",
+                "kind": "field",
+                "name": "gaussian_std",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "targets": [
+                  {
+                    "node": "detect_marker_spots",
+                    "port": {
+                      "kind": "field",
+                      "name": "gaussian_std"
+                    }
+                  }
+                ]
+              },
+              {
+                "default": {
+                  "__type__": "float",
+                  "value": 0.001
+                },
+                "id": "input-p-value",
+                "kind": "field",
+                "name": "p_value",
+                "schema": {
+                  "image_spec": null,
+                  "type": "float"
+                },
+                "targets": [
+                  {
+                    "node": "detect_marker_spots",
+                    "port": {
+                      "kind": "field",
+                      "name": "p_value"
+                    }
+                  }
+                ]
+              }
+            ],
+            "outputs": [
+              {
+                "id": "output-reference-label",
+                "name": "reference_label",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "source": {
+                  "column": "reference_label",
+                  "node": "measure_nucleus_overlaps"
+                }
+              },
+              {
+                "id": "output-spot-label",
+                "name": "spot_label",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "source": {
+                  "column": "spot_label",
+                  "node": "measure_nucleus_overlaps"
+                }
+              },
+              {
+                "id": "output-overlap-count",
+                "name": "overlap_count",
+                "schema": {
+                  "image_spec": null,
+                  "type": "int"
+                },
+                "source": {
+                  "column": "overlap_count",
+                  "node": "measure_nucleus_overlaps"
+                }
+              }
+            ]
+          },
+          "name": "marker_spot_analysis",
+          "nodes": [
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "extract_marker_channel",
+              "name": "extract_marker_channel",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                0.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "ExtractChannel",
+              "tool_module": "bioimageflow_common_tools.extract_channel",
+              "tool_name": "ExtractChannel",
+              "tool_package": "bioimageflow_common_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            },
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "detect_marker_spots",
+              "name": "detect_marker_spots",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                280.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "AtlasSpotDetection",
+              "tool_module": "bioimageflow_spot_tools.atlas",
+              "tool_name": "AtlasSpotDetection",
+              "tool_package": "bioimageflow_spot_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            },
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "label_marker_spots",
+              "name": "label_marker_spots",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                560.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "ConnectedComponents",
+              "tool_module": "bioimageflow_common_tools.connected_components",
+              "tool_name": "ConnectedComponents",
+              "tool_package": "bioimageflow_common_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            },
+            {
+              "collapsed": false,
+              "enabled": true,
+              "id": "measure_nucleus_overlaps",
+              "name": "measure_nucleus_overlaps",
+              "output_templates": {},
+              "parameters": {},
+              "position": [
+                840.0,
+                0.0
+              ],
+              "resources": {},
+              "tool_class": "LabelOverlaps",
+              "tool_module": "bioimageflow_common_tools.label_overlaps",
+              "tool_name": "LabelOverlaps",
+              "tool_package": "bioimageflow_common_tools",
+              "tool_package_version": "0.1.6",
+              "type": "tool"
+            }
+          ],
+          "schema_version": 1
+        }
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "avg_spots_per_nucleus",
+        "name": "avg_spots_per_nucleus",
+        "output_templates": {},
+        "parameters": {},
+        "position": [
+          280.0,
+          180.0
+        ],
+        "resources": {},
+        "tool_class": "AverageSpotsPerNucleus",
+        "tool_module": "tools.average_spots_per_nucleus",
+        "tool_name": "AverageSpotsPerNucleus",
+        "type": "tool"
+      }
+    ],
+    "schema_version": 1
+  },
+  "metadata": {
+    "bundled_template": {
+      "id": "fish-analysis",
+      "version": 1
+    },
+    "description": "Analyze FISH marker spots per segmented nucleus.",
+    "storage_path": "./bif_data"
+  },
+  "owned_source_ids": [],
+  "platform_document_version": 1
+}

@@ -167,6 +167,15 @@ class LocalToolReference(BaseModel):
     reason: Literal["custom_tool_not_portable"] = "custom_tool_not_portable"
 
 
+class BundledTemplateProvenance(BaseModel):
+    """Stable identity for a workflow installed from the bundled demos."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    version: int = Field(ge=1)
+
+
 class WorkspaceWorkflowMetadata(BaseModel):
     """Workspace concerns that are not part of a workflow definition."""
 
@@ -174,6 +183,7 @@ class WorkspaceWorkflowMetadata(BaseModel):
 
     description: str | None = None
     storage_path: str
+    bundled_template: BundledTemplateProvenance | None = None
 
 
 class PythonAuthoringProvenance(BaseModel):

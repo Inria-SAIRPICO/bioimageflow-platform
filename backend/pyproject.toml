@@ -49,6 +49,7 @@ packages = ["src/bioimageflow_server"]
 "src/bioimageflow_server/logging.yaml" = "bioimageflow_server/logging.yaml"
 "src/bioimageflow_server/data/agent_workspace_instructions.md" = "bioimageflow_server/data/agent_workspace_instructions.md"
 "src/bioimageflow_server/data/default_known_packages.txt" = "bioimageflow_server/data/default_known_packages.txt"
+"src/bioimageflow_server/data/demo_workflows" = "bioimageflow_server/data/demo_workflows"
 "src/bioimageflow_server/_external/napari_manager.py" = "bioimageflow_server/_external/napari_manager.py"
 "src/bioimageflow_server/_external/thumbnail_generator.py" = "bioimageflow_server/_external/thumbnail_generator.py"
 "src/bioimageflow_server/_external/opener/README.md" = "bioimageflow_server/_external/opener/README.md"
@@ -84,7 +85,10 @@ target-version = "py312"
 pythonVersion = "3.12"
 typeCheckingMode = "standard"
 include = ["src/bioimageflow_server"]
-exclude = ["src/bioimageflow_server/_external"]
+exclude = [
+    "src/bioimageflow_server/_external",
+    "src/bioimageflow_server/data/demo_workflows",
+]
 reportMissingTypeStubs = false
 
 [tool.uv.sources]

@@ -221,6 +221,24 @@ Moves update drafts, retained snapshots, and provenance references atomically.
 Portable export/import uses the BioImageFlow library recursive archive format.
 A workspace-document backup, when provided, is a separate platform artifact and is not accepted as a library workflow archive.
 
+### Bundled demo workflows
+
+The application bundle contains versioned platform templates generated deterministically from the maintained Python examples for **Fish Analysis** and **Parameters Space Exploration**.
+The examples are self-contained definitions that download their public input data into workflow-managed run assets and do not reference repository-local datasets.
+
+Initialization installs both templates under `Demo/` only when the active workflow root did not exist before initialization.
+An existing workflow root is not seeded merely because it is empty, and a workspace change applies the same new-root rule.
+No launcher post-install hook, user-home marker, or demo-folder filesystem watcher participates in this decision.
+
+Demo status is derived from each canonical path and `metadata.bundled_template` identity.
+A matching template identity is installed regardless of its recorded bundle version and is never overwritten automatically; an absent identity is missing; an occupied canonical path without matching provenance is a conflict.
+Moving or renaming a demo detaches it from canonical status, so a later install may create a fresh copy at the canonical path.
+
+Settings exposes explicit install and remove actions.
+Install is idempotent, installs only missing templates, refuses canonical conflicts, and remains locked during execution.
+Remove deletes only recognized canonical demo workflows through the normal generation-aware deletion coordinator, preserves unrelated `Demo` children, and removes the folder only if it is empty.
+Missing tool packages are reported through the ordinary dependency UI and are never installed implicitly.
+
 ## 13. API Surface
 
 The v2 API includes canonical workflow lifecycle routes; root workflow-draft routes; nested workflow-snapshot routes; recursive validation, execution, output-schema, cache, package, and tool routes; source-update preview and apply routes; and trusted Python-source preview using the same apply route.

@@ -4,3 +4,5 @@
 #
 # This file is used only when ~/.bioimageflow/known_packages.txt does not exist.
 bioimageflow_common_tools
+bioimageflow_segmentation_tools
+bioimageflow_spot_tools

@@ -8,6 +8,16 @@ import ToastService from 'primevue/toastservice'
 vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), patch: vi.fn() },
 }))
+vi.mock('@/api/demoWorkflows', () => ({
+  getDemoWorkflowsStatus: vi.fn().mockResolvedValue({
+    bundle_version: 1,
+    status: 'missing',
+    workflows: [],
+    can_install: true,
+    can_remove: false,
+  }),
+  installDemoWorkflows: vi.fn(),
+}))
 
 import { api } from '@/api/client'
 import SettingsPanel from '@/components/panels/SettingsPanel.vue'

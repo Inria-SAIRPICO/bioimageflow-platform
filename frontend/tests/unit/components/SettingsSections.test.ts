@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ConfirmationService from 'primevue/confirmationservice'
 import ToastService from 'primevue/toastservice'
@@ -9,6 +10,17 @@ import NapariSection from '@/components/panels/sections/NapariSection.vue'
 import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import * as nativeDialogs from '@/utils/nativeDialogs'
+
+vi.mock('@/api/demoWorkflows', () => ({
+  getDemoWorkflowsStatus: vi.fn().mockResolvedValue({
+    bundle_version: 1,
+    status: 'missing',
+    workflows: [],
+    can_install: true,
+    can_remove: false,
+  }),
+  installDemoWorkflows: vi.fn(),
+}))
 
 // In jsdom, ResizeObserver and matchMedia are missing — PrimeVue Select uses
 // both during mount.
@@ -53,9 +65,11 @@ const baseSettings = {
   resolved_output_data_folder: '/Users/me/bioimageflow_data',
 }
 
+const pinia = createPinia()
+setActivePinia(pinia)
 const globalOpts = {
   global: {
-    plugins: [PrimeVue, ConfirmationService, ToastService],
+    plugins: [pinia, PrimeVue, ConfirmationService, ToastService],
   },
 }
 

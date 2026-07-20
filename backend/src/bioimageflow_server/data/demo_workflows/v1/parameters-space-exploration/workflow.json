@@ -1,0 +1,382 @@
+{
+  "artifact_hash": "sha256:d12b6f50de710f5cf6bf66f012e0d30815b51e3b5ed55f88ecbf414308487fa2",
+  "graph": {
+    "config": {
+      "engine": "wetlands",
+      "execution": "parallel",
+      "storage_path": "./bif_data"
+    },
+    "display_name": "Parameters Space Exploration",
+    "edges": [
+      {
+        "id": "edge-859c7b8a2b8bc694e502",
+        "source_node": "download_cil_image",
+        "target_node": "parameter_grid",
+        "target_position": 0,
+        "type": "dataframe"
+      },
+      {
+        "id": "edge-0cf79943bd7a70deccdc",
+        "source_node": "sensitivity_values",
+        "target_node": "parameter_grid",
+        "target_position": 1,
+        "type": "dataframe"
+      },
+      {
+        "id": "edge-1c1b96c27400b2380241",
+        "source_node": "size_values",
+        "target_node": "parameter_grid",
+        "target_position": 2,
+        "type": "dataframe"
+      },
+      {
+        "id": "edge-69337c40f30046b93e38",
+        "source_node": "parameter_grid",
+        "source_output": "path",
+        "target_input": "input_image",
+        "target_node": "extract_marker_channel",
+        "type": "column"
+      },
+      {
+        "id": "edge-f1d22063df838d02745a",
+        "source_node": "extract_marker_channel",
+        "source_output": "output_image",
+        "target_input": "input_image",
+        "target_node": "atlas_detections",
+        "type": "column"
+      },
+      {
+        "id": "edge-6fbf9a05b1890dafe016",
+        "source_node": "parameter_grid",
+        "source_output": "sensitivity",
+        "target_input": "p_value",
+        "target_node": "atlas_detections",
+        "type": "column"
+      },
+      {
+        "id": "edge-9c44f289b51acac28374",
+        "source_node": "parameter_grid",
+        "source_output": "size",
+        "target_input": "gaussian_std",
+        "target_node": "atlas_detections",
+        "type": "column"
+      },
+      {
+        "id": "edge-94611779b4e3ff10a11f",
+        "source_node": "atlas_detections",
+        "source_output": "output_image",
+        "target_input": "input_image",
+        "target_node": "spot_mask_counts",
+        "type": "column"
+      },
+      {
+        "id": "edge-c35e789448bf448dd46d",
+        "source_node": "atlas_detections",
+        "source_output": "output_image",
+        "target_input": "input_image",
+        "target_node": "results_mosaic",
+        "type": "column"
+      },
+      {
+        "id": "edge-5278cc187a69c6927a8d",
+        "source_node": "parameter_grid",
+        "target_node": "parameter_results",
+        "target_position": 0,
+        "type": "dataframe"
+      },
+      {
+        "id": "edge-cb942c60f2a82b03261a",
+        "source_node": "atlas_detections",
+        "target_node": "parameter_results",
+        "target_position": 1,
+        "type": "dataframe"
+      },
+      {
+        "id": "edge-9c22c55b89a27f2837d9",
+        "source_node": "spot_mask_counts",
+        "target_node": "parameter_results",
+        "target_position": 2,
+        "type": "dataframe"
+      },
+      {
+        "id": "edge-19df5e9e87a35f551713",
+        "source_node": "results_mosaic",
+        "target_node": "parameter_results",
+        "target_position": 3,
+        "type": "dataframe"
+      }
+    ],
+    "interface": {
+      "inputs": [
+        {
+          "default": {
+            "__type__": "int",
+            "value": 0
+          },
+          "id": "input-marker-channel",
+          "kind": "field",
+          "name": "marker_channel",
+          "schema": {
+            "image_spec": null,
+            "type": "int"
+          },
+          "targets": [
+            {
+              "node": "extract_marker_channel",
+              "port": {
+                "kind": "field",
+                "name": "channel"
+              }
+            }
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "id": "output-sensitivity",
+          "name": "sensitivity",
+          "schema": {
+            "image_spec": null,
+            "type": "float"
+          },
+          "source": {
+            "column": "sensitivity",
+            "node": "parameter_results"
+          }
+        },
+        {
+          "id": "output-size",
+          "name": "size",
+          "schema": {
+            "image_spec": null,
+            "type": "int"
+          },
+          "source": {
+            "column": "size",
+            "node": "parameter_results"
+          }
+        },
+        {
+          "id": "output-label-count",
+          "name": "label_count",
+          "schema": {
+            "image_spec": null,
+            "type": "int"
+          },
+          "source": {
+            "column": "label_count",
+            "node": "parameter_results"
+          }
+        },
+        {
+          "id": "output-mosaic-path",
+          "name": "mosaic_path",
+          "schema": {
+            "image_spec": null,
+            "type": "str"
+          },
+          "source": {
+            "column": "mosaic_path",
+            "node": "parameter_results"
+          }
+        }
+      ]
+    },
+    "name": "parameter_space_exploration",
+    "nodes": [
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "download_cil_image",
+        "name": "download_cil_image",
+        "output_templates": {},
+        "parameters": {
+          "urls": "https://cildata.crbs.ucsd.edu/media/images/13432/13432.tif"
+        },
+        "position": [
+          0.0,
+          0.0
+        ],
+        "resources": {},
+        "tool_class": "DownloadImages",
+        "tool_module": "tools.download_images",
+        "tool_name": "DownloadImages",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "sensitivity_values",
+        "name": "sensitivity_values",
+        "output_templates": {},
+        "parameters": {
+          "column_name": "sensitivity",
+          "values": [
+            0.001,
+            0.0001
+          ]
+        },
+        "position": [
+          280.0,
+          0.0
+        ],
+        "resources": {},
+        "tool_class": "Generate",
+        "tool_module": "bioimageflow_common_tools.generate",
+        "tool_name": "Generate",
+        "tool_package": "bioimageflow_common_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "size_values",
+        "name": "size_values",
+        "output_templates": {},
+        "parameters": {
+          "column_name": "size",
+          "values": [
+            30,
+            60,
+            120
+          ]
+        },
+        "position": [
+          560.0,
+          0.0
+        ],
+        "resources": {},
+        "tool_class": "Generate",
+        "tool_module": "bioimageflow_common_tools.generate",
+        "tool_name": "Generate",
+        "tool_package": "bioimageflow_common_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "parameter_grid",
+        "name": "parameter_grid",
+        "output_templates": {},
+        "parameters": {},
+        "position": [
+          840.0,
+          0.0
+        ],
+        "resources": {},
+        "tool_class": "CrossJoin",
+        "tool_module": "bioimageflow_common_tools.merge",
+        "tool_name": "CrossJoin",
+        "tool_package": "bioimageflow_common_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "extract_marker_channel",
+        "name": "extract_marker_channel",
+        "output_templates": {},
+        "parameters": {},
+        "position": [
+          0.0,
+          180.0
+        ],
+        "resources": {},
+        "tool_class": "ExtractChannel",
+        "tool_module": "bioimageflow_common_tools.extract_channel",
+        "tool_name": "ExtractChannel",
+        "tool_package": "bioimageflow_common_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "atlas_detections",
+        "name": "atlas_detections",
+        "output_templates": {},
+        "parameters": {},
+        "position": [
+          280.0,
+          180.0
+        ],
+        "resources": {},
+        "tool_class": "AtlasSpotDetection",
+        "tool_module": "bioimageflow_spot_tools.atlas",
+        "tool_name": "AtlasSpotDetection",
+        "tool_package": "bioimageflow_spot_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "spot_mask_counts",
+        "name": "spot_mask_counts",
+        "output_templates": {},
+        "parameters": {},
+        "position": [
+          560.0,
+          180.0
+        ],
+        "resources": {},
+        "tool_class": "SpotMaskMetrics",
+        "tool_module": "tools.metrics",
+        "tool_name": "SpotMaskMetrics",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "results_mosaic",
+        "name": "results_mosaic",
+        "output_templates": {},
+        "parameters": {
+          "columns": 6
+        },
+        "position": [
+          840.0,
+          180.0
+        ],
+        "resources": {},
+        "tool_class": "Mosaic",
+        "tool_module": "bioimageflow_common_tools.mosaic",
+        "tool_name": "Mosaic",
+        "tool_package": "bioimageflow_common_tools",
+        "tool_package_version": "0.1.6",
+        "type": "tool"
+      },
+      {
+        "collapsed": false,
+        "enabled": true,
+        "id": "parameter_results",
+        "name": "parameter_results",
+        "output_templates": {},
+        "parameters": {},
+        "position": [
+          0.0,
+          360.0
+        ],
+        "resources": {},
+        "tool_class": "ParameterSweepResults",
+        "tool_module": "tools.metrics",
+        "tool_name": "ParameterSweepResults",
+        "type": "tool"
+      }
+    ],
+    "schema_version": 1
+  },
+  "metadata": {
+    "bundled_template": {
+      "id": "parameters-space-exploration",
+      "version": 1
+    },
+    "description": "Explore a grid of ATLAS spot-detection parameters.",
+    "storage_path": "./bif_data"
+  },
+  "owned_source_ids": [],
+  "platform_document_version": 1
+}

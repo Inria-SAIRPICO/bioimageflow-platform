@@ -254,6 +254,21 @@ function hasMissingImportDependencies(): boolean {
   return workflowStore.missingPackages.length > 0 || workflowStore.missingTools.length > 0
 }
 
+watch(
+  [
+    activeWorkflowId,
+    () => workflowStore.missingPackages.map(item => (
+      `${item.package_name}@${item.required_version}`
+    )).join(','),
+    () => workflowStore.missingTools.map(item => item.node_id).join(','),
+  ],
+  ([workflowId]) => {
+    if (workflowId && hasMissingImportDependencies()) {
+      dependencyDialogVisible.value = true
+    }
+  },
+)
+
 function workflowNameInDialogFolder(name: string): string {
   if (!workflowDialogFolderId.value || name.includes('/')) return name
   return `${workflowDialogFolderId.value}/${name}`

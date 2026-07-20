@@ -108,6 +108,15 @@ class WorkflowIdentityMovePlan:
     new_workflow_id: str
 
 
+@dataclass(frozen=True)
+class WorkflowTemplate:
+    """Validated workflow document and local tool files to install together."""
+
+    workflow_id: str
+    document: WorkflowDocument
+    tool_files: dict[str, bytes]
+
+
 _WORKFLOW_GENERATION_LEDGER_VERSION = 1
 _WORKFLOW_GENERATION_LEDGER_NAME = "workflow-identity-generations.json"
 _WORKFLOW_MOVE_JOURNAL_NAME = "workflow-move-journal.json"
@@ -1117,6 +1126,18 @@ class WorkflowStoreService:
     def workflow_tools_dir(self, name: str) -> Path:
         return self._workflow_tools_dir(name)
 
+    def has_workflow_collision(self, name: str) -> bool:
+        """Return whether an identity or its managed storage blocks creation."""
+
+        return self._has_name_collision(name)
+
+    def read_workflow_document(self, name: str) -> WorkflowDocument:
+        """Read the canonical persisted document for provenance checks."""
+
+        with self.workflow_mutation(name):
+            self._existing_path_for(name)
+            return WorkflowDocument.model_validate(self._read_raw(name))
+
     def _ensure_workflow_layout(self, name: str) -> None:
         self._ensure_directory_durable(self._workflow_tools_dir(name))
 
@@ -1530,6 +1551,7 @@ class WorkflowStoreService:
             if isinstance(raw_metadata, dict)
             else {}
         )
+        metadata = {key: value for key, value in metadata.items() if value is not None}
         managed_storage: WorkflowManagedStorageMove | None = None
 
         if patch is not None and patch.description is not None:
@@ -2131,6 +2153,114 @@ class WorkflowStoreService:
             self._reserve_workflow_generations([data.name])
             self._write_raw(data.name, raw)
             return self._metadata_from_raw(data.name, self._read_raw(data.name), path)
+
+    def install_workflow_templates(
+        self,
+        templates: list[WorkflowTemplate],
+    ) -> list[WorkflowInfo]:
+        """Atomically publish a set of prevalidated bundled workflow templates."""
+
+        if not templates:
+            return []
+        names = [self._validate_name(template.workflow_id) for template in templates]
+        if len(names) != len(set(names)):
+            raise ValueError("Workflow template identities must be unique")
+
+        with self.workflow_structural_mutations(names):
+            self.ensure_workflow_mutations_available()
+            root_existed = self.root_dir.exists()
+            for name in names:
+                if self._has_name_collision(name):
+                    raise FileExistsError(name)
+
+            prepared: list[tuple[str, Path, Path]] = []
+            published: list[Path] = []
+            created_parents: set[Path] = set()
+            try:
+                for name, template in zip(names, templates, strict=True):
+                    self.validate_containment(name, template.document.graph)
+                    metadata = template.document.metadata.model_copy(
+                        update={"storage_path": str(self._managed_storage_path(name))}
+                    )
+                    document = template.document.model_copy(
+                        update={
+                            "metadata": metadata,
+                            "artifact_hash": artifact_hash(template.document.graph, []),
+                        }
+                    )
+                    destination = self._workflow_dir(name)
+                    parent_existed = destination.parent.exists()
+                    self._ensure_directory_durable(destination.parent)
+                    if not parent_existed:
+                        created_parents.add(destination.parent)
+                    staging = Path(
+                        tempfile.mkdtemp(
+                            dir=str(destination.parent),
+                            prefix=f".{destination.name}.demo.",
+                        )
+                    )
+                    workflow_path = staging / "workflow.json"
+                    with workflow_path.open("w", encoding="utf-8") as handle:
+                        json.dump(
+                            document.model_dump(mode="json", by_alias=True, exclude_none=True),
+                            handle,
+                            indent=2,
+                            sort_keys=True,
+                        )
+                        handle.write("\n")
+                        handle.flush()
+                        os.fsync(handle.fileno())
+
+                    tools_dir = staging / "tools"
+                    tools_dir.mkdir()
+                    for filename, content in sorted(template.tool_files.items()):
+                        relative = Path(filename)
+                        if (
+                            relative.is_absolute()
+                            or len(relative.parts) != 1
+                            or relative.suffix != ".py"
+                            or relative.name.startswith(".")
+                        ):
+                            raise ValueError(f"Invalid bundled tool filename: {filename!r}")
+                        tool_path = tools_dir / relative
+                        with tool_path.open("wb") as handle:
+                            handle.write(content)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+                    self._fsync_directory(tools_dir)
+                    self._fsync_directory(staging)
+                    prepared.append((name, staging, destination))
+
+                self._reserve_workflow_generations(names)
+                for _, staging, destination in prepared:
+                    os.replace(staging, destination)
+                    published.append(destination)
+                    self._fsync_directory(destination.parent)
+            except Exception:
+                for path in reversed(published):
+                    shutil.rmtree(path, ignore_errors=True)
+                for _, staging, _ in prepared:
+                    shutil.rmtree(staging, ignore_errors=True)
+                for parent in sorted(
+                    created_parents,
+                    key=lambda path: len(path.parts),
+                    reverse=True,
+                ):
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        pass
+                if not root_existed:
+                    try:
+                        self.root_dir.rmdir()
+                    except OSError:
+                        pass
+                raise
+
+            return [
+                self._metadata_from_raw(name, self._read_raw(name), self._path_for(name))
+                for name in names
+            ]
 
     @_identity_locked
     def get_workflow(self, name: str) -> WorkflowFile:

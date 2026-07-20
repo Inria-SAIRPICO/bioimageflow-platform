@@ -129,6 +129,8 @@ workspace/
 
 Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Runtime execution paths passed to the BioImageFlow library are resolved below the configured output-data folder, by default `~/bioimageflow_data/workflows/<workflow-id>/`. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`. `WorkspaceInfo` also reports reserved `tools_root` and `outputs_root` values, but those paths are not the current custom-tool or execution-output authorities.
 
+A workflow root that does not exist when it is first initialized receives the versioned bundled templates at `Demo/Fish Analysis` and `Demo/Parameters Space Exploration`. An existing root is never seeded merely because it is empty. Installation state is derived from canonical workflow paths plus `metadata.bundled_template`; no home-directory flag or launcher post-install hook is used. Reinstall skips recognized templates, reports unrelated occupants as conflicts, and materializes bundled custom tools into each workflow's `tools/` directory.
+
 ### How it fits together
 
 `desktop.py` starts uvicorn in a background daemon thread, waits for `server.started`, then opens a pywebview window. When the window closes, a shutdown sequence stops the execution (placeholder), cleans up shared memory (placeholder), saves settings (placeholder), and signals uvicorn to exit.
@@ -164,6 +166,8 @@ All endpoints are prefixed with `/api/v1/`. This is a short orientation list; us
 | `GET`    | `/workspace`                        | Current workspace roots and flags           |
 | `PATCH`  | `/workspace`                        | Desktop workspace path change               |
 | `GET`    | `/workflows/tree`                   | Nested workflow folder tree                 |
+| `GET`    | `/demo-workflows`                   | Derived bundled demo installation status    |
+| `POST`   | `/demo-workflows/install`           | Install missing bundled demo templates      |
 | `POST`   | `/workflows/{id}/source-update/preview` | Preview an explicit embedded-source refresh |
 | `POST`   | `/workflows/{id}/python-source/preview` | Preview trusted `build_workflow` materialization |
 | `POST`   | `/workflows/{id}/source-operations/apply` | Apply an immutable confirmed source operation |

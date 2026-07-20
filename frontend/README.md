@@ -88,6 +88,8 @@ and uses drag/drop for moving workflows and folder subtrees between folders.
 Creating a workflow from a selected folder adds it to that folder. Dragging a
 workflow onto the canvas creates a workflow node containing the saved recursive graph and source provenance. Grouped nodes produce the same workflow-node shape, and root and nested editors expose the same stable workflow interface controls.
 
+The Storage tab in Settings shows whether the two bundled demo workflows are installed, missing, partial, or blocked by canonical-path conflicts. **Install demos** adds only missing recognized templates. **Remove demos** uses the normal generation-aware workflow deletion path, preserves unrelated `Demo` children, and removes the `Demo` folder only when it becomes empty. The status is refreshed when Settings opens and when the workflow tree changes; no special filesystem watcher is used.
+
 The Tools panel opens source through the editor API that keeps VS Code or
 code-server rooted at the workspace project and focuses the selected tool file.
 

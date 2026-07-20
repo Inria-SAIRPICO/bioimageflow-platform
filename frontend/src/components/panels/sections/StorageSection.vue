@@ -1,9 +1,22 @@
 <script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import type { SettingsResponse } from '@/api/types'
+import {
+  getDemoWorkflowsStatus,
+  installDemoWorkflows,
+  type DemoWorkflowsStatus,
+} from '@/api/demoWorkflows'
+import { useWorkflowStore } from '@/stores/workflow'
+import { requestWorkflowDeletion } from '@/services/workflowDeletion'
+import { workflowPanelId } from '@/utils/canvasPanels'
+import {
+  canvasIdFromPanelId,
+  canvasSessionRegistry,
+} from '@/sessions/canvasSessionRegistry'
 import { isDesktop, revealPath, selectFolder } from '@/utils/nativeDialogs'
 
 type StorageSettings = SettingsResponse & {
@@ -12,6 +25,7 @@ type StorageSettings = SettingsResponse & {
 }
 
 const props = defineProps<{ modelValue: StorageSettings }>()
+const workflowStore = useWorkflowStore()
 const emit = defineEmits<{
   (e: 'update:field', payload: { field: keyof StorageSettings; value: unknown }): void
 }>()
@@ -28,6 +42,157 @@ try {
 } catch {
   confirm = null
 }
+
+const demoStatus = ref<DemoWorkflowsStatus | null>(null)
+const demoBusy = ref(false)
+const demoError = ref<string | null>(null)
+const installedDemoCount = computed(() => (
+  demoStatus.value?.workflows.filter(item => item.status === 'installed').length ?? 0
+))
+const demoStatusLabel = computed(() => {
+  if (!demoStatus.value) return 'Checking…'
+  if (demoStatus.value.status === 'installed') return 'Installed'
+  if (demoStatus.value.status === 'missing') return 'Not installed'
+  if (demoStatus.value.status === 'partial') return 'Partially installed'
+  return 'Canonical locations are occupied by other workflows'
+})
+
+function errorMessage(error: unknown): string {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'response' in error
+  ) {
+    const detail = (error as { response?: { data?: { detail?: unknown } } })
+      .response?.data?.detail
+    if (typeof detail === 'string') return detail
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+function workflowId(workflow: { name: string; id?: string | null }): string {
+  return workflow.id ?? workflow.name
+}
+
+async function refreshDemoStatus(): Promise<void> {
+  try {
+    demoStatus.value = await getDemoWorkflowsStatus()
+    demoError.value = null
+  } catch (error) {
+    demoError.value = errorMessage(error)
+  }
+}
+
+defineExpose({ refreshDemoStatus })
+
+function captureDeletionRequest(workflowName: string) {
+  const canvasId = canvasIdFromPanelId(workflowPanelId(workflowName))
+  const session = canvasSessionRegistry.get(canvasId)
+  const mountedRoot = session?.descriptor.kind === 'root'
+    && session.descriptor.workflowId === workflowName
+    ? session
+    : null
+  return {
+    canvasId: mountedRoot ? canvasId : null,
+    workflowName,
+    localIdentityGeneration: workflowStore.workflowIdentityGeneration(workflowName),
+    serverIdentityGeneration: workflowStore.workflowServerIdentityGeneration(workflowName),
+    sessionRegistrationToken: mountedRoot?.registrationToken ?? null,
+  }
+}
+
+async function installDemos(): Promise<void> {
+  demoBusy.value = true
+  try {
+    await refreshDemoStatus()
+    if (!demoStatus.value?.can_install) return
+    demoStatus.value = await installDemoWorkflows()
+    await workflowStore.fetchWorkflowTree()
+    toast?.add({
+      severity: 'success',
+      summary: 'Example workflows installed',
+      detail: 'The bundled workflows are available in the Demo folder.',
+      life: 4000,
+    })
+  } catch (error) {
+    demoError.value = errorMessage(error)
+    toast?.add({
+      severity: 'error',
+      summary: 'Could not install example workflows',
+      detail: demoError.value,
+      life: 6000,
+    })
+  } finally {
+    demoBusy.value = false
+    await refreshDemoStatus()
+  }
+}
+
+async function removeInstalledDemos(): Promise<void> {
+  demoBusy.value = true
+  try {
+    await refreshDemoStatus()
+    const workflowIds = demoStatus.value?.workflows
+      .filter(item => item.status === 'installed')
+      .map(item => item.workflow_id) ?? []
+    for (const workflowId of workflowIds) {
+      await requestWorkflowDeletion(captureDeletionRequest(workflowId))
+    }
+    await workflowStore.fetchWorkflowTree()
+    const demoHasWorkflows = workflowStore.workflows.some(
+      workflow => workflowId(workflow).startsWith('Demo/'),
+    )
+    const demoHasFolders = workflowStore.workflowFolders.some(
+      folder => folder.parentId === 'Demo',
+    )
+    if (
+      !demoHasWorkflows
+      && !demoHasFolders
+      && workflowStore.workflowFolders.some(folder => folder.id === 'Demo')
+    ) {
+      await workflowStore.deleteWorkflowFolder('Demo', 'empty')
+    }
+    toast?.add({
+      severity: 'success',
+      summary: 'Example workflows removed',
+      life: 4000,
+    })
+  } catch (error) {
+    demoError.value = errorMessage(error)
+    toast?.add({
+      severity: 'error',
+      summary: 'Could not remove all example workflows',
+      detail: demoError.value,
+      life: 6000,
+    })
+  } finally {
+    demoBusy.value = false
+    await workflowStore.fetchWorkflowTree().catch(() => undefined)
+    await refreshDemoStatus()
+  }
+}
+
+function confirmRemoveDemos(): void {
+  const remove = () => void removeInstalledDemos()
+  if (!confirm) {
+    remove()
+    return
+  }
+  confirm.require({
+    header: 'Remove example workflows',
+    message: `Remove ${installedDemoCount.value} installed example workflow${installedDemoCount.value === 1 ? '' : 's'} and their server-managed output caches? Your other workflows in the Demo folder will be kept.`,
+    icon: 'pi pi-exclamation-triangle',
+    accept: remove,
+  })
+}
+
+onMounted(() => void refreshDemoStatus())
+watch(
+  () => workflowStore.workflows.map(workflow => (
+    workflowId(workflow)
+  )).join('\n'),
+  () => void refreshDemoStatus(),
+)
 
 async function reveal() {
   try {
@@ -141,6 +306,42 @@ async function changeWorkspacePath() {
         <code>BIOIMAGEFLOW_TOOL_STORE</code> environment variable.
       </p>
     </div>
+
+    <div class="field demo-workflows-field">
+      <div class="field-row demo-heading">
+        <div>
+          <div class="field-label">Example workflows</div>
+          <p class="help-text" data-testid="demo-workflows-status">
+            {{ demoStatusLabel }}. Bundled examples use the
+            <code>Demo</code> folder and download their public input data when run.
+          </p>
+        </div>
+        <span v-if="demoStatus" class="demo-count">
+          {{ installedDemoCount }}/{{ demoStatus.workflows.length }}
+        </span>
+      </div>
+      <p v-if="demoError" class="demo-error" data-testid="demo-workflows-error">
+        {{ demoError }}
+      </p>
+      <div class="field-row">
+        <Button
+          label="Install demos"
+          icon="pi pi-download"
+          :disabled="demoBusy || !demoStatus?.can_install"
+          :loading="demoBusy"
+          data-testid="demo-workflows-install"
+          @click="installDemos"
+        />
+        <Button
+          label="Remove demos"
+          icon="pi pi-trash"
+          severity="secondary"
+          :disabled="demoBusy || !demoStatus?.can_remove"
+          data-testid="demo-workflows-remove"
+          @click="confirmRemoveDemos"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -169,5 +370,23 @@ async function changeWorkspacePath() {
   margin: 0;
   color: var(--p-text-muted-color, #888);
   font-size: 0.85rem;
+}
+.demo-workflows-field {
+  border-top: 1px solid var(--p-content-border-color, #ddd);
+  padding-top: 1rem;
+}
+.demo-heading {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.demo-count {
+  color: var(--p-text-muted-color, #888);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.demo-error {
+  color: var(--p-red-500);
+  font-size: 0.85rem;
+  margin: 0;
 }
 </style>

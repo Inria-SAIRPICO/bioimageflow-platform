@@ -47,6 +47,9 @@ def create_app() -> FastAPI:
         )
     )
     root.mkdir(parents=True, exist_ok=True)
+    # The general Playwright suite assumes an existing empty workflow library.
+    # First-install demo seeding has dedicated service and startup coverage.
+    (root / "workflows").mkdir(parents=True, exist_ok=True)
     tool_store = root / "tool_packages"
     os.environ["BIOIMAGEFLOW_HOME"] = str(root)
     os.environ["BIOIMAGEFLOW_TOOL_STORE"] = str(tool_store)

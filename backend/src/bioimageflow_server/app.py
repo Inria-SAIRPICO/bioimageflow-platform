@@ -31,6 +31,12 @@ from bioimageflow_server.routers.datasets import (
     get_max_upload_size,
     router as datasets_router,
 )
+from bioimageflow_server.routers.demo_workflows import (
+    get_connection_manager as demo_workflows_get_connection_manager,
+    get_demo_workflow_service,
+    get_execution_manager as demo_workflows_get_execution_manager,
+    router as demo_workflows_router,
+)
 from bioimageflow_server.routers.filesystem import router as filesystem_router
 from bioimageflow_server.routers.editor import (
     get_editor_service,
@@ -120,6 +126,7 @@ from bioimageflow_server.services.execution import (
 )
 from bioimageflow_server.services.agent_workspace_context import ensure_agent_workspace_context
 from bioimageflow_server.services.editor import EditorService
+from bioimageflow_server.services.demo_workflows import DemoWorkflowService
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.napari_launcher import NapariLauncher
 from bioimageflow_server.services.nested_workflow_snapshot import (
@@ -347,6 +354,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         key = (str(store.root_dir), str(store.storage_base_dir))
         if key in initialized_workflow_stores:
             return
+        is_new_workspace = not store.root_dir.exists()
         workflow_move_recovery_service.recover_pending_move()
         try:
             nested_workflow_snapshot_service.cleanup_orphaned_snapshots()
@@ -356,6 +364,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 exc,
                 exc_info=exc,
             )
+        if is_new_workspace:
+            DemoWorkflowService(store, registry).install()
         _register_workflow_custom_tools(store)
         initialized_workflow_stores.add(key)
 
@@ -652,6 +662,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(editor_router, prefix="/api/v1")
     app.include_router(graph_router, prefix="/api/v1")
     app.include_router(datasets_router, prefix="/api/v1")
+    app.include_router(demo_workflows_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
     app.include_router(nested_workflow_snapshots_router, prefix="/api/v1")
     app.include_router(workspace_router, prefix="/api/v1")
@@ -691,6 +702,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[tools_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[workflows_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[workflows_get_connection_manager] = lambda: ws_manager
+    app.dependency_overrides[get_demo_workflow_service] = lambda: DemoWorkflowService(
+        _current_workflow_store(), registry
+    )
+    app.dependency_overrides[demo_workflows_get_execution_manager] = lambda: execution_manager
+    app.dependency_overrides[demo_workflows_get_connection_manager] = lambda: ws_manager
     app.dependency_overrides[get_workflow_draft_service] = lambda: workflow_draft_service
     app.dependency_overrides[get_nested_workflow_snapshot_service] = lambda: (
         nested_workflow_snapshot_service

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, nextTick, useTemplateRef, watch } from 'vue'
 import Dialog from 'primevue/dialog'
 import Tabs from 'primevue/tabs'
 import TabList from 'primevue/tablist'
@@ -9,6 +9,7 @@ import TabPanel from 'primevue/tabpanel'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { useSettingsStore } from '@/stores/settings'
+import { useWorkflowStore } from '@/stores/workflow'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import type { WorkspaceSettings } from '@/stores/settings'
 import ExternalEditorSection from '@/components/panels/sections/ExternalEditorSection.vue'
@@ -18,7 +19,9 @@ import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import OmeroSection from '@/components/panels/sections/OmeroSection.vue'
 
 const settingsStore = useSettingsStore()
+const workflowStore = useWorkflowStore()
 const panel = useSettingsPanel()
+const storageSection = useTemplateRef<InstanceType<typeof StorageSection>>('storageSection')
 
 let toast: ReturnType<typeof useToast> | null = null
 try {
@@ -29,9 +32,10 @@ try {
 
 // Lazy-load on first open.
 watch(panel.isOpen, async (open) => {
-  if (open && !settingsStore.isLoaded) {
-    await settingsStore.fetchSettings()
-  }
+  if (!open) return
+  if (!settingsStore.isLoaded) await settingsStore.fetchSettings()
+  await nextTick()
+  await storageSection.value?.refreshDemoStatus()
 })
 
 // Surface server errors as a toast as soon as `error` transitions to non-null.
@@ -81,9 +85,15 @@ const fallback: WorkspaceSettings & {
 }
 const liveSettings = computed(() => settingsStore.settings ?? fallback)
 
-function onUpdate(payload: { field: PropertyKey; value: unknown }) {
+async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
   if (typeof payload.field !== 'string') return
-  settingsStore.updateSettings({ [payload.field]: payload.value } as Partial<WorkspaceSettings>)
+  await settingsStore.updateSettings(
+    { [payload.field]: payload.value } as Partial<WorkspaceSettings>,
+  )
+  if (payload.field === 'workspace_path' && !settingsStore.error) {
+    await workflowStore.fetchWorkflowTree()
+    await storageSection.value?.refreshDemoStatus()
+  }
 }
 </script>
 
@@ -114,7 +124,11 @@ function onUpdate(payload: { field: PropertyKey; value: unknown }) {
           <ExecutionSection :model-value="liveSettings" @update:field="onUpdate" />
         </TabPanel>
         <TabPanel value="storage">
-          <StorageSection :model-value="liveSettings" @update:field="onUpdate" />
+          <StorageSection
+            ref="storageSection"
+            :model-value="liveSettings"
+            @update:field="onUpdate"
+          />
         </TabPanel>
         <TabPanel value="omero">
           <OmeroSection :model-value="liveSettings" @update:field="onUpdate" />
