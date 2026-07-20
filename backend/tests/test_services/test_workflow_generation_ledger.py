@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.graph_factory import graph_state
 
-from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowSaveBody,
@@ -130,7 +130,7 @@ def test_multiple_stores_serialize_saved_write_against_delete(
         save_future = pool.submit(
             writer.save_workflow,
             "wf",
-            WorkflowSaveBody(graph=GraphState(nodes=[], edges=[])),
+            WorkflowSaveBody(graph=graph_state(nodes=[], edges=[])),
         )
         assert save_entered.wait(timeout=5)
         delete_future = pool.submit(deleter.delete_workflow, "wf")
@@ -205,8 +205,12 @@ def test_create_duplicate_and_import_generations_survive_restart(tmp_path: Path)
         "source",
         WorkflowUpdate(action="duplicate", new_name="copy"),
     )
-    exported = first.export_workflow("source")
-    imported = first.import_workflow(exported, name_override="imported")
+    filename, exported = first.export_workflow_archive("source")
+    imported = first.import_workflow_archive(
+        exported,
+        filename=filename,
+        name_override="imported",
+    )
 
     restarted = _store(tmp_path)
 
@@ -221,7 +225,7 @@ def test_create_duplicate_and_import_generations_survive_restart(tmp_path: Path)
 def test_tombstoned_targets_advance_for_duplicate_import_and_move(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="source"))
-    exported = store.export_workflow("source")
+    filename, exported = store.export_workflow_archive("source")
 
     tombstones: dict[str, int] = {}
     for target in ("copy", "imported", "moved"):
@@ -233,7 +237,11 @@ def test_tombstoned_targets_advance_for_duplicate_import_and_move(tmp_path: Path
         "source",
         WorkflowUpdate(action="duplicate", new_name="copy"),
     )
-    imported = store.import_workflow(exported, name_override="imported")
+    imported = store.import_workflow_archive(
+        exported,
+        filename=filename,
+        name_override="imported",
+    )
     store.create_workflow(WorkflowCreate(name="move-source"))
     moved = _patch_workflow(
         store,

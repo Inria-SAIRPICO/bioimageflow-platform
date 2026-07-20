@@ -13,14 +13,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.graph_factory import graph_state
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.tool import IOModel
 
 from bioimageflow_server.models.graph import (
     GraphState,
-    NodeState,
-    PositionalEdge,
+    ToolNodeState,
+    DataFrameEdge,
 )
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.graph_builder import build_workflow
@@ -98,21 +99,21 @@ def _seed_cache(storage_path: Path, registry: ToolRegistryService,
 
 
 def _chain_graph() -> GraphState:
-    return GraphState(
+    return graph_state(
         nodes=[
-            NodeState(id="src", name="src", tool_name="SourceTool",
+            ToolNodeState(type="tool", id="src", name="src", tool_name="SourceTool",
                       position=(0, 0),
                       parameters={"diameter": 30.0}),
-            NodeState(id="mid", name="mid", tool_name="MidTool",
+            ToolNodeState(type="tool", id="mid", name="mid", tool_name="MidTool",
                       position=(0, 0),
                       parameters={"scale": 2.0}),
         ],
         edges=[
-            PositionalEdge(
+            DataFrameEdge(type="dataframe",
                 id="e1",
                 source_node="src",
                 target_node="mid",
-                positional_index=0,
+                target_position=0,
             ),
         ],
     )
@@ -157,12 +158,12 @@ def test_constant_change_invalidates_downstream(
     _seed_cache(tmp_path, registry, graph, dev_mode)
 
     # Mutate the upstream node's constant.
-    modified = GraphState(
+    modified = graph_state(
         nodes=[
-            NodeState(id="src", name="src", tool_name="SourceTool",
+            ToolNodeState(type="tool", id="src", name="src", tool_name="SourceTool",
                       position=(0, 0),
                       parameters={"diameter": 99.0}),
-            NodeState(id="mid", name="mid", tool_name="MidTool",
+            ToolNodeState(type="tool", id="mid", name="mid", tool_name="MidTool",
                       position=(0, 0),
                       parameters={"scale": 2.0}),
         ],
@@ -184,12 +185,12 @@ def test_unrelated_node_stays_cached(
     graph = _chain_graph()
     _seed_cache(tmp_path, registry, graph, dev_mode)
 
-    modified = GraphState(
+    modified = graph_state(
         nodes=[
-            NodeState(id="src", name="src", tool_name="SourceTool",
+            ToolNodeState(type="tool", id="src", name="src", tool_name="SourceTool",
                       position=(0, 0),
                       parameters={"diameter": 30.0}),
-            NodeState(id="mid", name="mid", tool_name="MidTool",
+            ToolNodeState(type="tool", id="mid", name="mid", tool_name="MidTool",
                       position=(0, 0),
                       parameters={"scale": 99.0}),
         ],

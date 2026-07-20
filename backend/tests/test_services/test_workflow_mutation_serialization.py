@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.graph_factory import graph_state
 
-from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowSaveBody,
@@ -45,7 +45,7 @@ def store(tmp_path: Path) -> WorkflowStoreService:
 def _put_empty_draft(service: WorkflowDraftService, workflow_id: str) -> Any:
     return service.put_draft(
         workflow_id,
-        graph=GraphState(nodes=[], edges=[]),
+        graph=graph_state(nodes=[], edges=[]),
         expected_revision=0,
         should_validate=False,
     )
@@ -178,7 +178,7 @@ def test_delete_waits_for_saved_workflow_write_and_removes_accepted_state(
         save_future = pool.submit(
             store.save_workflow,
             "wf",
-            WorkflowSaveBody(graph=GraphState(nodes=[], edges=[])),
+            WorkflowSaveBody(graph=graph_state(nodes=[], edges=[])),
         )
         assert save_replace_entered.wait(timeout=5)
         delete_future = pool.submit(store.delete_workflow, "wf")
@@ -315,19 +315,17 @@ def test_request_from_deleted_generation_cannot_mutate_same_id_recreation(
             assert release_stale_request.wait(timeout=5)
         return generations
 
-    stale_graph = GraphState.model_validate(
-        {
-            "nodes": [
+    stale_graph = graph_state(
+            nodes=[
                 {
+                    "type": "tool",
                     "id": "stale",
                     "name": "Stale request",
                     "tool_name": "MissingTool",
                     "position": [0, 0],
                     "parameters": {},
                 }
-            ],
-            "edges": [],
-        }
+            ]
     )
 
     def stale_put() -> Any:

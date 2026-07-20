@@ -23,6 +23,13 @@ from bioimageflow_server.models.workflow import (
     WorkflowSaveBody,
     WorkflowUpdate,
 )
+from bioimageflow_server.models.workflow_sources import (
+    PythonSourcePreviewRequest,
+    WorkflowSourceApplyRequest,
+    WorkflowSourceApplyResponse,
+    WorkflowSourcePreview,
+    WorkflowSourceUpdatePreviewRequest,
+)
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
     RootWorkflowSnapshotMove,
@@ -34,6 +41,10 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowIdentityMovePlan,
     WorkflowMoveRecoveryError,
     WorkflowStoreService,
+)
+from bioimageflow_server.services.workflow_sources import (
+    WorkflowSourceConflict,
+    WorkflowSourceService,
 )
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -54,6 +65,10 @@ def get_connection_manager() -> Any | None:
 
 def get_nested_workflow_snapshot_service() -> NestedWorkflowSnapshotService | None:
     return None
+
+
+def get_workflow_source_service() -> WorkflowSourceService:  # pragma: no cover
+    raise RuntimeError("workflow_source_service dependency not configured")
 
 
 def _ensure_unlocked(execution_manager: Any | None) -> None:
@@ -448,6 +463,75 @@ async def export_workflow(
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+@router.post(
+    "/{name:path}/source-update/preview",
+    response_model=WorkflowSourcePreview,
+)
+async def preview_workflow_source_update(
+    name: str,
+    body: WorkflowSourceUpdatePreviewRequest,
+    service: WorkflowSourceService = Depends(get_workflow_source_service),
+    execution_manager: Any | None = Depends(get_execution_manager),
+) -> WorkflowSourcePreview:
+    _ensure_unlocked(execution_manager)
+    try:
+        return service.preview_source_update(
+            name,
+            body.workflow_path,
+            expected_artifact_hash=body.expected_artifact_hash,
+        )
+    except WorkflowSourceConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{name:path}/python-source/preview",
+    response_model=WorkflowSourcePreview,
+)
+async def preview_python_source(
+    name: str,
+    body: PythonSourcePreviewRequest,
+    service: WorkflowSourceService = Depends(get_workflow_source_service),
+    execution_manager: Any | None = Depends(get_execution_manager),
+) -> WorkflowSourcePreview:
+    _ensure_unlocked(execution_manager)
+    try:
+        return service.preview_python_rebuild(
+            name,
+            expected_artifact_hash=body.expected_artifact_hash,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except WorkflowSourceConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (FileNotFoundError, ValueError, ImportError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{name:path}/source-operations/apply",
+    response_model=WorkflowSourceApplyResponse,
+)
+async def apply_workflow_source_operation(
+    name: str,
+    body: WorkflowSourceApplyRequest,
+    service: WorkflowSourceService = Depends(get_workflow_source_service),
+    execution_manager: Any | None = Depends(get_execution_manager),
+) -> WorkflowSourceApplyResponse:
+    del name  # The immutable preview token carries its exact destination identity.
+    _ensure_unlocked(execution_manager)
+    try:
+        return service.apply(body)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except WorkflowSourceConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(

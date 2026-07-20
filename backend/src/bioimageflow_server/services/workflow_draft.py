@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
@@ -672,6 +671,7 @@ class WorkflowDraftService:
     ) -> _DraftWritePreparation:
         store = self._store()
         with store.workflow_mutation(workflow_id):
+            store.validate_containment(workflow_id, graph)
             current = self._read_current_for_mutation_locked(store, workflow_id)
             self._ensure_expected_revision(current, expected_revision)
             return _DraftWritePreparation(
@@ -804,9 +804,7 @@ class WorkflowDraftService:
         )
 
     def _saved_revision(self, store: WorkflowStoreService, workflow_id: str) -> str:
-        path = store.workflow_dir(workflow_id) / "workflow.json"
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        return f"sha256:{digest}"
+        return store.get_workflow(workflow_id).artifact_hash
 
     def _validate(
         self,

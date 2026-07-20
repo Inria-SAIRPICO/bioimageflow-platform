@@ -1,20 +1,37 @@
-"""Semantic workflow draft operation API models."""
+"""Typed semantic mutations for recursive workflow drafts."""
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
+from bioimageflow_server.models.graph import (
+    GraphState,
+    SerializedConstant,
+    WorkflowInput,
+    WorkflowOutput,
+    WorkspaceWorkflowSource,
+)
 from bioimageflow_server.models.workflow_draft import DraftWriter
 
 
-class _OperationBase(BaseModel):
+class OperationModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class CreateNodeOperation(_OperationBase):
-    type: Literal["create_node"] = "create_node"
+class WorkflowDraftOperationScope(OperationModel):
+    """Structural workflow-node IDs from the root to the edited graph."""
+
+    workflow_path: list[str] = Field(default_factory=list)
+
+
+class ScopedOperation(OperationModel):
+    scope: WorkflowDraftOperationScope = Field(default_factory=WorkflowDraftOperationScope)
+
+
+class CreateToolNodeOperation(ScopedOperation):
+    type: Literal["create_tool_node"] = "create_tool_node"
     node_id: str
     tool_name: str
     name: str
@@ -22,101 +39,77 @@ class CreateNodeOperation(_OperationBase):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
-class DeleteNodeOperation(_OperationBase):
+class CreateWorkflowNodeOperation(ScopedOperation):
+    type: Literal["create_workflow_node"] = "create_workflow_node"
+    node_id: str
+    name: str
+    position: tuple[float, float]
+    workflow: GraphState
+    bindings: dict[str, SerializedConstant] = Field(default_factory=dict)
+    source: WorkspaceWorkflowSource | None = None
+
+
+class DeleteNodeOperation(ScopedOperation):
     type: Literal["delete_node"] = "delete_node"
     node_id: str
 
 
-class RenameNodeOperation(_OperationBase):
+class RenameNodeOperation(ScopedOperation):
     type: Literal["rename_node"] = "rename_node"
     node_id: str
     name: str
 
 
-class UpdateNodeParametersOperation(_OperationBase):
-    type: Literal["update_node_parameters"] = "update_node_parameters"
+class UpdateToolParametersOperation(ScopedOperation):
+    type: Literal["update_tool_parameters"] = "update_tool_parameters"
     node_id: str
     parameters: dict[str, Any]
 
 
-class SetNodeEnabledOperation(_OperationBase):
+class SetNodeEnabledOperation(ScopedOperation):
     type: Literal["set_node_enabled"] = "set_node_enabled"
     node_id: str
     enabled: bool
 
 
-class WorkflowDraftOperationScope(_OperationBase):
-    sub_workflow_path: list[str] = Field(default_factory=list)
-
-
-class _LayoutScopeMixin(_OperationBase):
-    scope: WorkflowDraftOperationScope = Field(default_factory=WorkflowDraftOperationScope)
-
-
-class MoveNodeOperation(_LayoutScopeMixin):
+class MoveNodeOperation(ScopedOperation):
     type: Literal["move_node"] = "move_node"
     node_id: str
     position: tuple[float, float]
 
 
-class MoveNodeItem(_OperationBase):
+class MoveNodeItem(OperationModel):
     node_id: str
     position: tuple[float, float]
 
 
-class MoveNodesOperation(_LayoutScopeMixin):
+class MoveNodesOperation(ScopedOperation):
     type: Literal["move_nodes"] = "move_nodes"
     moves: list[MoveNodeItem] = Field(min_length=1)
 
 
-class _PublishedNameMixin(_OperationBase):
-    name: str
-
-    @field_validator("name")
-    @classmethod
-    def _strip_non_empty_name(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("published name must not be empty")
-        return stripped
+class ExposeWorkflowInputOperation(ScopedOperation):
+    type: Literal["expose_workflow_input"] = "expose_workflow_input"
+    input: WorkflowInput
 
 
-class _PublishedTargetMixin(_OperationBase):
-    internal_node_id: str
-
-    @field_validator("internal_node_id", "internal_field", "internal_output", check_fields=False)
-    @classmethod
-    def _strip_non_empty_target(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("published target fields must not be empty")
-        return stripped
+class DeleteWorkflowInputOperation(ScopedOperation):
+    type: Literal["delete_workflow_input"] = "delete_workflow_input"
+    input_id: str
 
 
-class SetPublishedInputOperation(_PublishedNameMixin, _PublishedTargetMixin):
-    type: Literal["set_published_input"] = "set_published_input"
-    internal_field: str
-    kind: Literal["parameter", "input"]
-    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
-    default: Any | None = None
+class ExposeWorkflowOutputOperation(ScopedOperation):
+    type: Literal["expose_workflow_output"] = "expose_workflow_output"
+    output: WorkflowOutput
 
 
-class DeletePublishedInputOperation(_PublishedNameMixin):
-    type: Literal["delete_published_input"] = "delete_published_input"
+class DeleteWorkflowOutputOperation(ScopedOperation):
+    type: Literal["delete_workflow_output"] = "delete_workflow_output"
+    output_id: str
 
 
-class SetPublishedOutputOperation(_PublishedNameMixin, _PublishedTargetMixin):
-    type: Literal["set_published_output"] = "set_published_output"
-    internal_output: str
-    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
-
-
-class DeletePublishedOutputOperation(_PublishedNameMixin):
-    type: Literal["delete_published_output"] = "delete_published_output"
-
-
-class ConnectColumnRefOperation(_OperationBase):
-    type: Literal["connect_column_ref"] = "connect_column_ref"
+class ConnectColumnEdgeOperation(ScopedOperation):
+    type: Literal["connect_column_edge"] = "connect_column_edge"
     source_node: str
     target_node: str
     source_output: str
@@ -124,52 +117,54 @@ class ConnectColumnRefOperation(_OperationBase):
     edge_id: str | None = None
 
 
-class ConnectPositionalOperation(_OperationBase):
-    type: Literal["connect_positional"] = "connect_positional"
+class ConnectDataFrameEdgeOperation(ScopedOperation):
+    type: Literal["connect_dataframe_edge"] = "connect_dataframe_edge"
     source_node: str
     target_node: str
-    positional_index: int = Field(ge=0)
+    target_position: int | None = Field(default=None, ge=0)
+    target_input: str | None = None
     edge_id: str | None = None
 
 
-class DeleteEdgeOperation(_OperationBase):
+class DeleteEdgeOperation(ScopedOperation):
     type: Literal["delete_edge"] = "delete_edge"
     edge_id: str
 
 
+class DetachWorkflowSourceOperation(ScopedOperation):
+    type: Literal["detach_workflow_source"] = "detach_workflow_source"
+    node_id: str
+
+
 WorkflowDraftOperation = Annotated[
-    CreateNodeOperation
+    CreateToolNodeOperation
+    | CreateWorkflowNodeOperation
     | DeleteNodeOperation
     | RenameNodeOperation
-    | UpdateNodeParametersOperation
+    | UpdateToolParametersOperation
     | SetNodeEnabledOperation
     | MoveNodeOperation
     | MoveNodesOperation
-    | SetPublishedInputOperation
-    | DeletePublishedInputOperation
-    | SetPublishedOutputOperation
-    | DeletePublishedOutputOperation
-    | ConnectColumnRefOperation
-    | ConnectPositionalOperation
-    | DeleteEdgeOperation,
+    | ExposeWorkflowInputOperation
+    | DeleteWorkflowInputOperation
+    | ExposeWorkflowOutputOperation
+    | DeleteWorkflowOutputOperation
+    | ConnectColumnEdgeOperation
+    | ConnectDataFrameEdgeOperation
+    | DeleteEdgeOperation
+    | DetachWorkflowSourceOperation,
     Field(discriminator="type"),
 ]
 
 
-class WorkflowDraftOperationsRequest(BaseModel):
-    """Request body for applying semantic edits to a workflow draft."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
+class WorkflowDraftOperationsRequest(OperationModel):
     expected_revision: int
     updated_by: DraftWriter = "agent"
     validate_: bool = Field(default=True, alias="validate")
     operations: list[WorkflowDraftOperation] = Field(min_length=1, max_length=10)
 
 
-class WorkflowDraftOperationValidationResponse(BaseModel):
-    """Machine-readable semantic operation validation failure."""
-
+class WorkflowDraftOperationValidationResponse(OperationModel):
     error: Literal["operation_validation_error"] = "operation_validation_error"
     operation_index: int
     code: str

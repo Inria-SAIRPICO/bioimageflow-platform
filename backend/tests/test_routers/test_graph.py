@@ -20,8 +20,15 @@ from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from tests.common_tools import load_common_tools_class
+from tests.graph_factory import graph_document, graph_payload
 
 pytestmark = pytest.mark.anyio
+
+
+def _complete_graph(graph: dict[str, Any]) -> dict[str, Any]:
+    """Complete a concise router fixture as a canonical graph document."""
+
+    return graph_payload(**graph)
 
 
 @pytest.fixture
@@ -135,6 +142,7 @@ async def test_put_valid_graph(client: httpx.AsyncClient) -> None:
     body = {
         "nodes": [
             {
+                "type": "tool",
                 "id": "n1",
                 "name": "n1",
                 "tool_name": "MockProcessingTool",
@@ -144,7 +152,7 @@ async def test_put_valid_graph(client: httpx.AsyncClient) -> None:
         ],
         "edges": [],
     }
-    resp = await client.put("/api/v1/graph", json=body)
+    resp = await client.put("/api/v1/graph", json=_complete_graph(body))
     assert resp.status_code == 200
     data = resp.json()
     assert data["valid"] is True
@@ -160,6 +168,7 @@ async def test_put_graph_resolves_workflow_storage_path(tmp_path: Path) -> None:
         "graph": {
             "nodes": [
                 {
+                    "type": "tool",
                     "id": "n1",
                     "name": "n1",
                     "tool_name": "MockProcessingTool",
@@ -171,6 +180,7 @@ async def test_put_graph_resolves_workflow_storage_path(tmp_path: Path) -> None:
         },
         "workflow_name": "wf_a",
     }
+    body["graph"] = _complete_graph(body["graph"])
     async with c:
         resp = await c.put("/api/v1/graph", json=body)
 
@@ -185,6 +195,7 @@ async def test_put_missing_tool(client: httpx.AsyncClient) -> None:
     body = {
         "nodes": [
             {
+                "type": "tool",
                 "id": "n1",
                 "name": "n1",
                 "tool_name": "NoSuchTool",
@@ -194,7 +205,7 @@ async def test_put_missing_tool(client: httpx.AsyncClient) -> None:
         ],
         "edges": [],
     }
-    resp = await client.put("/api/v1/graph", json=body)
+    resp = await client.put("/api/v1/graph", json=_complete_graph(body))
     assert resp.status_code == 200
     data = resp.json()
     assert data["valid"] is False
@@ -205,6 +216,7 @@ async def test_put_cycle(client: httpx.AsyncClient) -> None:
     body = {
         "nodes": [
             {
+                "type": "tool",
                 "id": "a",
                 "name": "a",
                 "tool_name": "MockProcessingTool",
@@ -212,6 +224,7 @@ async def test_put_cycle(client: httpx.AsyncClient) -> None:
                 "parameters": {"input_image": "/a"},
             },
             {
+                "type": "tool",
                 "id": "b",
                 "name": "b",
                 "tool_name": "MockProcessingTool",
@@ -221,7 +234,7 @@ async def test_put_cycle(client: httpx.AsyncClient) -> None:
         ],
         "edges": [
             {
-                "type": "column_ref",
+                "type": "column",
                 "id": "e1",
                 "source_node": "a",
                 "target_node": "b",
@@ -229,7 +242,7 @@ async def test_put_cycle(client: httpx.AsyncClient) -> None:
                 "target_input": "input_image",
             },
             {
-                "type": "column_ref",
+                "type": "column",
                 "id": "e2",
                 "source_node": "b",
                 "target_node": "a",
@@ -238,16 +251,17 @@ async def test_put_cycle(client: httpx.AsyncClient) -> None:
             },
         ],
     }
-    resp = await client.put("/api/v1/graph", json=body)
+    resp = await client.put("/api/v1/graph", json=_complete_graph(body))
     assert resp.status_code == 200
     data = resp.json()
-    assert any(e["type"] == "cycle_detected" for e in data["errors"])
+    assert any(e["type"] == "cycle_detected" for e in data["errors"]), data
 
 
 async def test_put_parameter_invalid(client: httpx.AsyncClient) -> None:
     body = {
         "nodes": [
             {
+                "type": "tool",
                 "id": "n1",
                 "name": "n1",
                 "tool_name": "IntTool",
@@ -257,14 +271,14 @@ async def test_put_parameter_invalid(client: httpx.AsyncClient) -> None:
         ],
         "edges": [],
     }
-    resp = await client.put("/api/v1/graph", json=body)
+    resp = await client.put("/api/v1/graph", json=_complete_graph(body))
     data = resp.json()
     assert resp.status_code == 200
     assert any(e["type"] == "parameter_invalid" and e["field"] == "n" for e in data["errors"])
 
 
 async def test_put_empty_graph(client: httpx.AsyncClient) -> None:
-    resp = await client.put("/api/v1/graph", json={"nodes": [], "edges": []})
+    resp = await client.put("/api/v1/graph", json=graph_document())
     assert resp.status_code == 200
     data = resp.json()
     assert data["valid"] is True
@@ -274,6 +288,7 @@ async def test_put_duplicate_node_ids(client: httpx.AsyncClient) -> None:
     body = {
         "nodes": [
             {
+                "type": "tool",
                 "id": "dup",
                 "name": "a",
                 "tool_name": "MockProcessingTool",
@@ -281,6 +296,7 @@ async def test_put_duplicate_node_ids(client: httpx.AsyncClient) -> None:
                 "parameters": {"input_image": "/a"},
             },
             {
+                "type": "tool",
                 "id": "dup",
                 "name": "b",
                 "tool_name": "MockProcessingTool",
@@ -290,20 +306,20 @@ async def test_put_duplicate_node_ids(client: httpx.AsyncClient) -> None:
         ],
         "edges": [],
     }
-    resp = await client.put("/api/v1/graph", json=body)
-    data = resp.json()
-    assert any(e["type"] == "invalid_node_id" for e in data["errors"])
+    resp = await client.put("/api/v1/graph", json=_complete_graph(body))
+    assert resp.status_code == 422
+    assert resp.json()["error"] == "validation_error"
 
 
 async def test_put_returns_423_when_locked(client_locked: httpx.AsyncClient) -> None:
-    resp = await client_locked.put("/api/v1/graph", json={"nodes": [], "edges": []})
+    resp = await client_locked.put("/api/v1/graph", json=graph_document())
     assert resp.status_code == 423
 
 
 async def test_put_with_no_execution_manager_is_unlocked(
     client: httpx.AsyncClient,
 ) -> None:
-    resp = await client.put("/api/v1/graph", json={"nodes": [], "edges": []})
+    resp = await client.put("/api/v1/graph", json=graph_document())
     assert resp.status_code == 200
 
 
@@ -380,6 +396,7 @@ class TestOutputSchema:
         body = {
             "nodes": [
                 {
+                    "type": "tool",
                     "id": "gen_1",
                     "name": "gen_1",
                     "tool_name": "Generate",
@@ -391,7 +408,7 @@ class TestOutputSchema:
         }
         resp = await common_client.post(
             "/api/v1/graph/nodes/gen_1/output_schema",
-            json=body,
+            json=_complete_graph(body),
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -409,6 +426,7 @@ class TestOutputSchema:
         body = {
             "nodes": [
                 {
+                    "type": "tool",
                     "id": "gen_1",
                     "name": "gen_1",
                     "tool_name": "Generate",
@@ -420,7 +438,7 @@ class TestOutputSchema:
         }
         resp = await common_client.post(
             "/api/v1/graph/nodes/gen_1/output_schema",
-            json=body,
+            json=_complete_graph(body),
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -435,6 +453,7 @@ class TestOutputSchema:
         body = {
             "nodes": [
                 {
+                    "type": "tool",
                     "id": "files_1",
                     "name": "files_1",
                     "tool_name": "Files",
@@ -442,6 +461,7 @@ class TestOutputSchema:
                     "parameters": {"path": str(tmp_path)},
                 },
                 {
+                    "type": "tool",
                     "id": "gen_sens",
                     "name": "gen_sens",
                     "tool_name": "Generate",
@@ -449,6 +469,7 @@ class TestOutputSchema:
                     "parameters": {"column_name": "sensitivity", "values": [0.1, 0.2]},
                 },
                 {
+                    "type": "tool",
                     "id": "gen_size",
                     "name": "gen_size",
                     "tool_name": "Generate",
@@ -456,6 +477,7 @@ class TestOutputSchema:
                     "parameters": {"column_name": "size", "values": [10, 20]},
                 },
                 {
+                    "type": "tool",
                     "id": "cross_1",
                     "name": "cross_1",
                     "tool_name": "CrossJoin",
@@ -465,31 +487,31 @@ class TestOutputSchema:
             ],
             "edges": [
                 {
-                    "type": "positional",
+                    "type": "dataframe",
                     "id": "e1",
                     "source_node": "files_1",
                     "target_node": "cross_1",
-                    "positional_index": 0,
+                    "target_position": 0,
                 },
                 {
-                    "type": "positional",
+                    "type": "dataframe",
                     "id": "e2",
                     "source_node": "gen_sens",
                     "target_node": "cross_1",
-                    "positional_index": 1,
+                    "target_position": 1,
                 },
                 {
-                    "type": "positional",
+                    "type": "dataframe",
                     "id": "e3",
                     "source_node": "gen_size",
                     "target_node": "cross_1",
-                    "positional_index": 2,
+                    "target_position": 2,
                 },
             ],
         }
         resp = await common_client.post(
             "/api/v1/graph/nodes/cross_1/output_schema",
-            json=body,
+            json=_complete_graph(body),
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -505,6 +527,7 @@ class TestOutputSchema:
         body_no_jc = {
             "nodes": [
                 {
+                    "type": "tool",
                     "id": "files_l",
                     "name": "files_l",
                     "tool_name": "Files",
@@ -512,6 +535,7 @@ class TestOutputSchema:
                     "parameters": {"path": str(tmp_path)},
                 },
                 {
+                    "type": "tool",
                     "id": "files_r",
                     "name": "files_r",
                     "tool_name": "Files",
@@ -519,6 +543,7 @@ class TestOutputSchema:
                     "parameters": {"path": str(tmp_path)},
                 },
                 {
+                    "type": "tool",
                     "id": "joc_1",
                     "name": "joc_1",
                     "tool_name": "JoinOnColumn",
@@ -528,24 +553,24 @@ class TestOutputSchema:
             ],
             "edges": [
                 {
-                    "type": "positional",
+                    "type": "dataframe",
                     "id": "e1",
                     "source_node": "files_l",
                     "target_node": "joc_1",
-                    "positional_index": 0,
+                    "target_position": 0,
                 },
                 {
-                    "type": "positional",
+                    "type": "dataframe",
                     "id": "e2",
                     "source_node": "files_r",
                     "target_node": "joc_1",
-                    "positional_index": 1,
+                    "target_position": 1,
                 },
             ],
         }
         resp1 = await common_client.post(
             "/api/v1/graph/nodes/joc_1/output_schema",
-            json=body_no_jc,
+            json=_complete_graph(body_no_jc),
         )
         assert resp1.status_code == 200
         data1 = resp1.json()
@@ -565,7 +590,7 @@ class TestOutputSchema:
         }
         resp2 = await common_client.post(
             "/api/v1/graph/nodes/joc_1/output_schema",
-            json=body_with_jc,
+            json=_complete_graph(body_with_jc),
         )
         assert resp2.status_code == 200
         data2 = resp2.json()
@@ -573,10 +598,10 @@ class TestOutputSchema:
 
 
 async def test_unknown_output_schema_node_id_returns_404(client: httpx.AsyncClient) -> None:
-    body = {"nodes": [], "edges": []}
+    body = graph_document()
     resp = await client.post(
         "/api/v1/graph/nodes/nonexistent/output_schema",
-        json=body,
+        json=_complete_graph(body),
     )
     assert resp.status_code == 404
 
@@ -586,6 +611,7 @@ async def test_malformed_graph_output_schema_is_unresolved(client: httpx.AsyncCl
     body = {
         "nodes": [
             {
+                "type": "tool",
                 "id": "bad_1",
                 "name": "bad_1",
                 "tool_name": "NoSuchTool",
@@ -597,7 +623,7 @@ async def test_malformed_graph_output_schema_is_unresolved(client: httpx.AsyncCl
     }
     resp = await client.post(
         "/api/v1/graph/nodes/bad_1/output_schema",
-        json=body,
+        json=_complete_graph(body),
     )
     assert resp.status_code == 200
     data = resp.json()

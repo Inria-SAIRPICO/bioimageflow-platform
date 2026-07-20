@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from tests.graph_factory import graph_document
 from httpx import ASGITransport
 
 from bioimageflow_core.environment import EnvironmentSpec
@@ -124,18 +125,18 @@ def _clear_active_workflow() -> Any:
 
 
 def _minimal_graph() -> dict:
-    return {
-        "nodes": [
+    return graph_document(
+        nodes=[
             {
+                "type": "tool",
                 "id": "n1",
                 "name": "n1",
                 "tool_name": "T",
                 "position": [0, 0],
                 "parameters": {},
             }
-        ],
-        "edges": [],
-    }
+        ]
+    )
 
 
 def _accepted_draft(
@@ -215,7 +216,7 @@ class _FakeExecutionManager:
         )
 
     @asynccontextmanager
-    async def exclusive_idle_graph_operation(self) -> AsyncIterator[None]:
+    async def exclusive_idle_mutation(self) -> AsyncIterator[None]:
         if self.is_running:
             raise ExecutionConflictError("already running")
         yield
@@ -632,6 +633,9 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
         storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
+    saved_graph = workflow_store.get_workflow("wf").graph.model_dump(
+        mode="json", by_alias=True
+    )
     draft_path = workflow_store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
     assert not draft_path.exists()
     client = await _make_client(
@@ -644,7 +648,7 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
         response = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": {"nodes": [], "edges": []},
+                "graph": saved_graph,
                 "workflow_name": "wf",
                 "draft_revision": 0,
             },
@@ -652,7 +656,7 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
 
     assert response.status_code == 202, response.text
     assert response.json()["draft_revision"] == 0
-    assert em.start.await_args.args[0] == GraphState(nodes=[], edges=[])
+    assert em.start.await_args.args[0] == GraphState.model_validate(saved_graph)
     assert em.start.await_args.kwargs["draft_revision"] == 0
     assert not draft_path.exists()
 
@@ -988,18 +992,18 @@ async def test_stop_returns_200(idle_client) -> None:
 async def test_clear_returns_node_statuses(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
     reg = _make_registry()
-    graph = {
-        "nodes": [
+    graph = graph_document(
+        nodes=[
             {
+                "type": "tool",
                 "id": "a",
                 "name": "a",
                 "tool_name": "SrcTool",
                 "position": [0, 0],
                 "parameters": {"input_image": "/a"},
             },
-        ],
-        "edges": [],
-    }
+        ]
+    )
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
     c = await _make_client(
@@ -1033,18 +1037,18 @@ async def test_clear_without_graph_returns_422(tmp_path: Path) -> None:
 async def test_clear_while_running_returns_423(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=True)
     reg = _make_registry()
-    graph = {
-        "nodes": [
+    graph = graph_document(
+        nodes=[
             {
+                "type": "tool",
                 "id": "a",
                 "name": "a",
                 "tool_name": "SrcTool",
                 "position": [0, 0],
                 "parameters": {"input_image": "/a"},
             },
-        ],
-        "edges": [],
-    }
+        ]
+    )
     c = await _make_client(tmp_path, execution_manager=em, tool_registry=reg)
     async with c:
         resp = await c.post(
@@ -1096,20 +1100,28 @@ async def test_clear_rejects_invalid_workflow_identity(
 async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
     em = _FakeExecutionManager(running=False)
     reg = _make_registry()
-    graph = {
-        "nodes": [
+    graph = graph_document(
+        nodes=[
             {
+                "type": "tool",
                 "id": "a",
                 "name": "a",
                 "tool_name": "SrcTool",
                 "position": [0, 0],
                 "parameters": {"input_image": "/a"},
             },
-            {"id": "b", "name": "b", "tool_name": "DstTool", "position": [0, 0], "parameters": {}},
-        ],
-        "edges": [
             {
-                "type": "column_ref",
+                "type": "tool",
+                "id": "b",
+                "name": "b",
+                "tool_name": "DstTool",
+                "position": [0, 0],
+                "parameters": {},
+            },
+        ],
+        edges=[
+            {
+                "type": "column",
                 "id": "e",
                 "source_node": "a",
                 "target_node": "b",
@@ -1117,7 +1129,7 @@ async def test_clear_downstream_out_of_date(tmp_path: Path) -> None:
                 "target_input": "mask_input",
             }
         ],
-    }
+    )
     workflow_store = MagicMock()
     workflow_store.get_storage_path.return_value = tmp_path
     c = await _make_client(

@@ -77,7 +77,7 @@ Workflow management:
 Inspection:
 
 - `get_workflow_draft`: returns draft metadata, graph summary, validation summary, and optionally the full graph.
-- `describe_workflow`: returns the current live draft summary, nodes, edges, published interface, validation summary, and revision metadata.
+- `describe_workflow`: returns the current live draft summary, nodes, edges, workflow interface, validation summary, and revision metadata.
 
 BioImageFlow tool discovery:
 
@@ -89,9 +89,9 @@ Graph mutation:
 - `create_node`, `delete_node`, `rename_node`, `update_node_parameters`, `set_node_enabled`, `move_node`, `move_nodes`, `connect_nodes`, `delete_edge`.
 - `apply_workflow_operations`: applies a small ordered batch of graph operations through backend-owned mutation rules.
 
-Published interface:
+Workflow interface:
 
-- `set_published_input`, `delete_published_input`, `set_published_output`, `delete_published_output`.
+- `expose_workflow_input`, `delete_workflow_input`, `expose_workflow_output`, `delete_workflow_output`.
 
 Validation and execution:
 
@@ -156,7 +156,7 @@ Update parameters:
 Apply a batch edit:
 
 ```json
-{"tool": "apply_workflow_operations", "arguments": {"operations": [{"type": "create_node", "node_id": "threshold_1", "tool_name": "Threshold", "name": "Threshold", "position": [480, 160], "parameters": {"method": "otsu"}}, {"type": "connect_column_ref", "source_node": "blur_1", "source_output": "image", "target_node": "threshold_1", "target_input": "image"}]}}
+{"tool": "apply_workflow_operations", "arguments": {"operations": [{"type": "create_tool_node", "node_id": "threshold_1", "tool_name": "Threshold", "name": "Threshold", "position": [480, 160], "parameters": {"method": "otsu"}}, {"type": "connect_column_edge", "source_node": "blur_1", "source_output": "image", "target_node": "threshold_1", "target_input": "image"}]}}
 ```
 
 Validate the latest draft:

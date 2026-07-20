@@ -19,6 +19,7 @@ from bioimageflow_server.services.nested_workflow_snapshot import (
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from tests.graph_factory import graph_document
 
 pytestmark = pytest.mark.anyio
 
@@ -35,13 +36,13 @@ class _ExecutionManager:
 
 class _FakeArchiveAdapter:
     def __init__(self, library: dict | None = None) -> None:
-        self.library = library or {"nodes": [], "edges": []}
-        self.export_calls: list[tuple[Path, Path]] = []
+        self.library = library or _library_graph()
+        self.export_calls: list[tuple[dict[str, Any], Path]] = []
         self.import_payload: bytes | None = None
         self.extract_to: Path | None = None
 
-    def export_archive(self, workflow_path: Path, archive_path: Path) -> None:
-        self.export_calls.append((workflow_path, archive_path))
+    def export_archive(self, workflow: dict[str, Any], archive_path: Path) -> None:
+        self.export_calls.append((workflow, archive_path))
         archive_path.write_bytes(b"fake zip")
 
     def read_archive(self, archive_path: Path, *, extract_to: Path | None = None) -> dict:
@@ -50,6 +51,18 @@ class _FakeArchiveAdapter:
         if extract_to is not None:
             extract_to.mkdir(parents=True, exist_ok=True)
         return self.library
+
+
+def _library_graph(*, nodes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "name": "imported",
+        "display_name": "Imported",
+        "interface": {"inputs": [], "outputs": []},
+        "nodes": nodes or [],
+        "edges": [],
+        "config": {"storage_path": "./bif_data", "engine": "direct", "execution": "parallel"},
+    }
 
 
 class _ConnectionManager:
@@ -136,9 +149,12 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert [item["name"] for item in listing.json()] == ["wf"]
     assert listing.json()[0]["identity_generation"] == 1
 
-    graph: dict[str, Any] = {
-        "nodes": [
+    graph = graph_document(
+        name="wf",
+        display_name="Workflow",
+        nodes=[
             {
+                "type": "tool",
                 "id": "bad",
                 "name": "Bad",
                 "tool_name": "MissingTool",
@@ -146,8 +162,7 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
                 "parameters": {"value": 1},
             }
         ],
-        "edges": [],
-    }
+    )
     save = await client.put("/api/v1/workflows/wf", json={"graph": graph})
     assert save.status_code == 200
 
@@ -159,7 +174,7 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert loaded.json()["graph"]["nodes"][0]["position"] == [1.0, 2.0]
     assert loaded.json()["graph"]["nodes"][0]["parameters"] == {"value": 1}
     assert loaded.json()["missing_packages"] == []
-    assert loaded.json()["missing_tools"] == []
+    assert [item["node_id"] for item in loaded.json()["missing_tools"]] == ["bad"]
 
     deleted = await client.delete("/api/v1/workflows/wf")
     assert deleted.status_code == 200
@@ -203,8 +218,8 @@ async def test_delete_workflow_removes_its_retained_nested_snapshot_tree(
                 "canvas_id": "workflow:wf",
                 "workflow_id": "wf",
             },
-            "parent_node_id": "sub_1",
-            "graph": {"nodes": [], "edges": []},
+            "parent_node_id": "child_1",
+            "graph": graph_document(name="child", display_name="Child"),
         },
     )
     assert parent.status_code == 201
@@ -215,8 +230,8 @@ async def test_delete_workflow_removes_its_retained_nested_snapshot_tree(
                 "kind": "nested",
                 "session_id": parent.json()["session_id"],
             },
-            "parent_node_id": "sub_2",
-            "graph": {"nodes": [], "edges": []},
+            "parent_node_id": "child_2",
+            "graph": graph_document(name="grandchild", display_name="Grandchild"),
         },
     )
     assert child.status_code == 201
@@ -247,8 +262,8 @@ async def test_delete_folder_children_removes_each_retained_snapshot_tree(
                     "canvas_id": f"workflow:{workflow_id}",
                     "workflow_id": workflow_id,
                 },
-                "parent_node_id": "sub_1",
-                "graph": {"nodes": [], "edges": []},
+                "parent_node_id": "child_1",
+                "graph": graph_document(name="child", display_name="Child"),
             },
         )
         assert opened.status_code == 201
@@ -623,7 +638,7 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
         )
         blocked_save = await client.put(
             "/api/v1/workflows/new",
-            json={"graph": {"nodes": [], "edges": []}},
+            json={"graph": graph_document()},
         )
         blocked_delete = await client.delete("/api/v1/workflows/new")
         blocked_create = await client.post(
@@ -638,7 +653,7 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
         blocked_draft = await client.put(
             "/api/v1/workflow-drafts/new",
             json={
-                "graph": {"nodes": [], "edges": []},
+                "graph": graph_document(),
                 "expected_revision": 0,
                 "updated_by": "frontend",
             },
@@ -646,7 +661,7 @@ async def test_interrupted_move_returns_recovery_required_and_keeps_journal(
         blocked_run = await client.post(
             "/api/v1/execution/run",
             json={
-                "graph": {"nodes": [], "edges": []},
+                "graph": graph_document(),
                 "workflow_name": "new",
                 "draft_revision": 0,
             },
@@ -860,7 +875,7 @@ async def test_export_workflow_download_response(tmp_path: Path) -> None:
 
         response = await client.post("/api/v1/workflows/wf/export")
 
-    assert archive_adapter.export_calls[0][0] == tmp_path / "workflows" / "wf" / "workflow.json"
+    assert archive_adapter.export_calls[0][0]["name"] == "wf"
     assert archive_adapter.export_calls[0][1].name == "wf.bioimageflow.zip"
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/zip")
@@ -878,17 +893,19 @@ async def test_export_unknown_workflow_returns_404(
 
 async def test_import_workflow_zip_upload_success(tmp_path: Path) -> None:
     archive_adapter = _FakeArchiveAdapter(
-        library={
-            "nodes": [
+        library=_library_graph(
+            nodes=[
                 {
+                    "type": "tool",
                     "name": "n1",
-                    "display_name": "Node",
+                    "tool_module": "missing_module",
                     "tool_class": "ExistingTool",
-                    "constants": {"threshold": 3},
+                    "tool_package": None,
+                    "tool_package_version": None,
+                    "constants": {"threshold": {"__type__": "int", "value": 3}},
                 }
-            ],
-            "edges": [],
-        }
+            ]
+        )
     )
     async for client in _client(tmp_path, archive_adapter=archive_adapter):
         response = await client.post(
@@ -906,7 +923,7 @@ async def test_import_workflow_zip_upload_success(tmp_path: Path) -> None:
     body = response.json()
     assert body["info"]["name"] == "imported"
     assert archive_adapter.import_payload == b"fake zip"
-    assert archive_adapter.extract_to == tmp_path / "workflows" / "imported"
+    assert archive_adapter.extract_to is None
 
 
 async def test_import_workflow_rejects_json_upload(client: httpx.AsyncClient) -> None:
@@ -1043,7 +1060,7 @@ async def test_mutations_return_423_while_execution_running(
     assert (await locked_client.post("/api/v1/workflows", json={"name": "wf"})).status_code == 201
 
     if method == "put":
-        response = await locked_client.put(path, json={"graph": {"nodes": [], "edges": []}})
+        response = await locked_client.put(path, json={"graph": graph_document()})
     elif method == "patch":
         response = await locked_client.patch(path, json={"action": "update", "display_name": "x"})
     else:

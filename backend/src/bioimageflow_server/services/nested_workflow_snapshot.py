@@ -209,6 +209,39 @@ class NestedWorkflowSnapshotService:
 
         return await run_graph_work(partial(self.get_snapshot, session_id))
 
+    def has_open_at_or_below(self, workflow_id: str, workflow_path: list[str]) -> bool:
+        """Return whether a durable editor owns the target or a descendant."""
+
+        with self._lock:
+            store = self._store()
+            inventory = self._inventory_locked(store)
+            snapshots = inventory.snapshots
+
+            def root_and_path(
+                snapshot: NestedWorkflowSnapshotResponse,
+            ) -> tuple[str | None, list[str]]:
+                path = [snapshot.parent_node_id]
+                owner = snapshot.owner
+                seen: set[UUID] = set()
+                while owner.kind == "nested" and owner.session_id is not None:
+                    if owner.session_id in seen:
+                        return None, []
+                    seen.add(owner.session_id)
+                    parent = snapshots.get(owner.session_id)
+                    if parent is None:
+                        return None, []
+                    path.insert(0, parent.parent_node_id)
+                    owner = parent.owner
+                return owner.workflow_id, path
+
+            for snapshot in snapshots.values():
+                root_id, path = root_and_path(snapshot)
+                if root_id != workflow_id:
+                    continue
+                if path[: len(workflow_path)] == workflow_path:
+                    return True
+            return False
+
     def put_snapshot(
         self,
         session_id: UUID,

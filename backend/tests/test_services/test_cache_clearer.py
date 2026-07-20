@@ -8,6 +8,7 @@ from typing import Annotated, Any
 
 import pandas as pd
 import pytest
+from tests.graph_factory import graph_state
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
@@ -15,10 +16,10 @@ from bioimageflow_core.tool import IOModel, ProcessingTool
 from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
-    ColumnRefEdge,
+    ColumnEdge,
     GraphState,
-    NodeState,
-    PositionalEdge,
+    ToolNodeState,
+    DataFrameEdge,
 )
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.execution import WorkflowBuildError, clear_node_cache
@@ -95,8 +96,8 @@ def _clear_active_workflow() -> Any:
     set_active_workflow(None)
 
 
-def _node(id: str, tool: str = "SrcTool") -> NodeState:
-    return NodeState(
+def _node(id: str, tool: str = "SrcTool") -> ToolNodeState:
+    return ToolNodeState(type="tool",
         id=id,
         name=id,
         tool_name=tool,
@@ -105,8 +106,8 @@ def _node(id: str, tool: str = "SrcTool") -> NodeState:
     )
 
 
-def _edge(source: str, target: str, idx: int = 0) -> ColumnRefEdge:
-    return ColumnRefEdge(
+def _edge(source: str, target: str, idx: int = 0) -> ColumnEdge:
+    return ColumnEdge(type="column",
         id=f"{source}->{target}-{idx}",
         source_node=source,
         target_node=target,
@@ -119,10 +120,10 @@ def _make_graph(
     nodes: list[tuple[str, str]], edges: list[tuple[str, str]]
 ) -> GraphState:
     tools_by_node = dict(nodes)
-    return GraphState(
+    return graph_state(
         nodes=[_node(n, tool) for n, tool in nodes],
         edges=[
-            ColumnRefEdge(
+            ColumnEdge(type="column",
                 id=f"{source}->{target}-{index}",
                 source_node=source,
                 target_node=target,
@@ -204,7 +205,7 @@ def test_clear_multiple_nodes_shared_downstream(
     # Actually, both edges map to the same field so the second one
     # overwrites — the library handles this gracefully. Test the core
     # multi-clear behavior with a diamond instead.
-    graph = GraphState(
+    graph = graph_state(
         nodes=[_node("a", "SrcTool"), _node("b", "SrcTool")],
         edges=[],
     )
@@ -260,9 +261,9 @@ def test_clear_removes_current_cache_selection(
         ),
         tool_class=DFTool,
     )
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="a",
                 name="a",
                 tool_name="DFTool",
@@ -303,9 +304,9 @@ def test_invalid_graph_does_not_clear_existing_cache(
         ),
         tool_class=DFTool,
     )
-    valid_graph = GraphState(
+    valid_graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="a",
                 name="a",
                 tool_name="DFTool",
@@ -331,10 +332,10 @@ def test_invalid_graph_does_not_clear_existing_cache(
     storage = Storage(tmp_path)
     assert storage.load_current(plan.final_result_key) is not None
 
-    invalid_graph = GraphState(
+    invalid_graph = graph_state(
         nodes=[
             *valid_graph.nodes,
-            NodeState(
+            ToolNodeState(type="tool",
                 id="broken",
                 name="broken",
                 tool_name="MissingTool",
@@ -370,9 +371,9 @@ def test_semantically_invalid_graph_does_not_clear_existing_cache(
         ),
         tool_class=DFTool,
     )
-    valid_graph = GraphState(
+    valid_graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="a",
                 name="a",
                 tool_name="DFTool",
@@ -398,7 +399,7 @@ def test_semantically_invalid_graph_does_not_clear_existing_cache(
     storage = Storage(tmp_path)
     assert storage.load_current(plan.final_result_key) is not None
 
-    invalid_graph = GraphState(
+    invalid_graph = graph_state(
         nodes=[
             valid_graph.nodes[0].model_copy(
                 update={"parameters": {"threshold": "not-a-float"}}
@@ -452,14 +453,14 @@ def test_positional_edges_count_as_downstream(
             tool_class=cls,
         )
 
-    graph = GraphState(
-        nodes=[_node("a", "SrcTool"), NodeState(
+    graph = graph_state(
+        nodes=[_node("a", "SrcTool"), ToolNodeState(type="tool",
             id="b", name="b", tool_name="DFTool",
             position=(0, 0), parameters={},
         )],
         edges=[
-            PositionalEdge(
-                id="e1", source_node="a", target_node="b", positional_index=0
+            DataFrameEdge(type="dataframe",
+                id="e1", source_node="a", target_node="b", target_position=0
             )
         ],
     )

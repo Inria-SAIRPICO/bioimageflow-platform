@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from tests.graph_factory import graph_state
 from wetlands.exceptions import EnvironmentReuseError
 
 from bioimageflow_server.models.execution import (
@@ -23,7 +24,7 @@ from bioimageflow_server.models.execution import (
     ExecutionResult,
     ProgressInfo,
 )
-from bioimageflow_server.models.graph import ColumnRefEdge, GraphState, NodeState
+from bioimageflow_server.models.graph import ColumnEdge, GraphState, ToolNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.services.execution import (
@@ -260,9 +261,9 @@ def _settings(dev_mode: bool = True) -> Settings:
 def _graph_with(nodes: list[tuple[str, bool]] | None = None) -> GraphState:
     if nodes is None:
         nodes = []
-    return GraphState(
+    return graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id=node_id,
                 name=node_id,
                 tool_name="tool",
@@ -609,16 +610,16 @@ class TestExecutionManagerLifecycle:
 
         assert em.is_running is False
 
-    async def test_run_selected_builds_only_selected_nodes_and_upstream(
+    async def test_run_selected_compiles_the_accepted_graph_without_pruning(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         wf = _FakeWorkflow()
         wf.nodes = {node_id: object() for node_id in ["source", "selected"]}
         builder = _install_fake_builder(monkeypatch, wf)
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
-        graph = GraphState(
+        graph = graph_state(
             nodes=[
-                NodeState(
+                ToolNodeState(type="tool",
                     id=node_id,
                     name=node_id,
                     tool_name="tool",
@@ -628,14 +629,14 @@ class TestExecutionManagerLifecycle:
                 for node_id in ["source", "selected", "downstream"]
             ],
             edges=[
-                ColumnRefEdge(
+                ColumnEdge(type="column",
                     id="e1",
                     source_node="source",
                     target_node="selected",
                     source_output="out",
                     target_input="in",
                 ),
-                ColumnRefEdge(
+                ColumnEdge(type="column",
                     id="e2",
                     source_node="selected",
                     target_node="downstream",
@@ -649,8 +650,12 @@ class TestExecutionManagerLifecycle:
         await _drain(em)
 
         built_graph = builder.call_args.args[0]
-        assert {node.id for node in built_graph.nodes} == {"source", "selected"}
-        assert [edge.id for edge in built_graph.edges] == ["e1"]
+        assert {node.id for node in built_graph.nodes} == {
+            "source",
+            "selected",
+            "downstream",
+        }
+        assert [edge.id for edge in built_graph.edges] == ["e1", "e2"]
 
 
 class TestExecutionManagerProgress:

@@ -14,6 +14,7 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowMoveRecoveryError,
     WorkflowStoreService,
 )
+from tests.graph_factory import graph_document
 
 
 def _store(tmp_path: Path) -> WorkflowStoreService:
@@ -41,7 +42,7 @@ def _draft_payload(workflow_id: str, revision: int) -> dict[str, object]:
         "updated_at": "2026-07-17T12:00:00Z",
         "updated_by": "frontend",
         "dirty_against_saved": True,
-        "graph": {"nodes": [], "edges": []},
+        "graph": graph_document(name="draft", display_name="Draft"),
         "validation": {"valid": True, "node_statuses": {}, "errors": []},
     }
 
@@ -95,7 +96,7 @@ def _assert_recovered_workflow(
 
     raw = json.loads(_workflow_json(store, new_id).read_text(encoding="utf-8"))
     assert raw["metadata"]["storage_path"] == str(expected_storage)
-    assert raw["workflow"]["config"]["storage_path"] == str(expected_storage)
+    assert raw["graph"]["config"]["storage_path"] == "./bif_data"
 
 
 def _finish_recovery_twice(

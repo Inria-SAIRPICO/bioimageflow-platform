@@ -75,7 +75,7 @@ requires-dist = [
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pydantic" },
-    { name = "wetlands", editable = "../../wetlands" },
+    { name = "wetlands", editable = "../../../../wetlands" },
 ]
 
 [[package]]
@@ -1962,7 +1962,7 @@ wheels = [
 [[package]]
 name = "wetlands"
 version = "1.1.1"
-source = { editable = "../../wetlands" }
+source = { editable = "../../../../wetlands" }
 dependencies = [
     { name = "json5" },
     { name = "packaging" },

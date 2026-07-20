@@ -7,8 +7,8 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from tests.graph_factory import graph_document, graph_state
 
-from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowSaveBody,
@@ -52,9 +52,8 @@ def _draft_payload(workflow_id: str) -> dict[str, object]:
         "updated_at": "2026-07-17T08:00:00Z",
         "updated_by": "agent",
         "dirty_against_saved": True,
-        "graph": {"nodes": [], "edges": []},
+        "graph": graph_document(name="draft", display_name="Draft"),
         "validation": {"valid": True, "node_statuses": {}, "errors": []},
-        "future_compatible": {"preserve": [1, 2, 3]},
     }
 
 
@@ -138,9 +137,10 @@ def test_post_directory_rename_failure_recovers_metadata_draft_storage_and_gener
 
     raw = json.loads(_workflow_json(restarted, "archive/destination").read_text())
     assert raw["metadata"] == move.target_metadata
-    assert raw["metadata"]["display_name"] == "After"
+    assert raw["graph"]["display_name"] == "After"
+    assert move.target_display_name == "After"
     assert raw["metadata"]["description"] == "new description"
-    assert raw["workflow"]["config"]["storage_path"] == str(destination_storage)
+    assert raw["graph"]["config"]["storage_path"] == "./bif_data"
     recovered_draft = json.loads(
         _draft_json(restarted, "archive/destination").read_text(encoding="utf-8")
     )
@@ -397,7 +397,7 @@ def test_pending_committed_move_fences_other_workflow_mutations(
         lambda: store.create_folder("other-folder"),
         lambda: store.save_workflow(
             "new",
-            WorkflowSaveBody(graph=GraphState(nodes=[], edges=[])),
+            WorkflowSaveBody(graph=graph_state(nodes=[], edges=[])),
         ),
         lambda: store.delete_workflow("new"),
         lambda: store.patch_workflow(

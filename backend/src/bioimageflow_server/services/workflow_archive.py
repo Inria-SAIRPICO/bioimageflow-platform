@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -34,14 +33,11 @@ def _workflow_import_scope(root: Path):
 class BioImageFlowWorkflowArchiveAdapter:
     """Delegate workflow archive reads/writes to the BioImageFlow library."""
 
-    def export_archive(self, workflow_path: Path, archive_path: Path) -> None:
-        raw = json.loads(workflow_path.read_text(encoding="utf-8"))
-        library = raw.get("workflow", raw) if isinstance(raw, dict) else raw
-        if not isinstance(library, dict):
-            raise ValueError("Workflow file did not contain a library workflow object")
-        with _workflow_import_scope(workflow_path.parent):
-            result = BioImageFlowWorkflow.from_dict(library)
-            workflow = cast(Any, result)
+    def export_archive(self, workflow_data: dict[str, Any], archive_path: Path) -> None:
+        """Export one accepted graph-plus-source snapshot through the library."""
+
+        result = BioImageFlowWorkflow.from_dict(workflow_data)
+        workflow = cast(Any, result)
         workflow.export(archive_path)
 
     def read_archive(
@@ -54,4 +50,4 @@ class BioImageFlowWorkflowArchiveAdapter:
             workflow = BioImageFlowWorkflow.load(archive_path)
         else:
             workflow = BioImageFlowWorkflow.import_archive(archive_path, extract_to)
-        return workflow.to_dict(include_custom_tools=False)
+        return workflow.to_dict(include_custom_tools=True)

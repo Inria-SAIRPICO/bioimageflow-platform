@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from bioimageflow_server.models.graph import GraphState
 
@@ -167,28 +167,37 @@ class LocalToolReference(BaseModel):
     reason: Literal["custom_tool_not_portable"] = "custom_tool_not_portable"
 
 
-class ExportedWorkflow(BaseModel):
-    """Raw persisted workflow sections carried by a portable export."""
+class WorkspaceWorkflowMetadata(BaseModel):
+    """Workspace concerns that are not part of a workflow definition."""
 
-    name: str
-    display_name: str
+    model_config = ConfigDict(extra="forbid")
+
     description: str | None = None
-    storage_path: str | None = None
-    graph: dict[str, Any]
-    library: dict[str, Any]
-    gui: dict[str, Any]
-    metadata: dict[str, Any]
+    storage_path: str
 
 
-class WorkflowExportDocument(BaseModel):
-    """Portable workflow export file."""
+class PythonAuthoringProvenance(BaseModel):
+    """Optional trusted source used to materialize a saved root graph."""
 
-    bioimageflow_export: Literal[True] = True
-    export_version: Literal["1.0"] = "1.0"
-    exported_at: str
-    workflow: ExportedWorkflow
-    required_packages: list[RequiredPackage] = Field(default_factory=list)
-    local_tools: list[LocalToolReference] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["python"] = "python"
+    source_id: str
+    factory: Literal["build_workflow"] = "build_workflow"
+    source_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class WorkflowDocument(BaseModel):
+    """The sole persisted platform workflow authority."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    platform_document_version: Literal[1] = 1
+    graph: GraphState
+    metadata: WorkspaceWorkflowMetadata
+    authoring_source: PythonAuthoringProvenance | None = None
+    owned_source_ids: list[str] = Field(default_factory=list)
+    artifact_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 class WorkflowImportResponse(BaseModel):
@@ -212,6 +221,7 @@ class WorkflowFile(BaseModel):
 
     info: WorkflowInfo
     graph: GraphState
-    gui: dict[str, Any] = Field(default_factory=dict)
+    artifact_hash: str
+    authoring_source: PythonAuthoringProvenance | None = None
     missing_packages: list[MissingPackage] = Field(default_factory=list)
     missing_tools: list[MissingTool] = Field(default_factory=list)

@@ -12,6 +12,7 @@ from httpx import ASGITransport
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.tool_registry import ToolRegistryService
+from tests.graph_factory import graph_document
 
 pytestmark = pytest.mark.anyio
 
@@ -80,18 +81,18 @@ async def test_seed_registers_executable_source_tool(client: httpx.AsyncClient):
     resp = await client.put(
         "/api/v1/graph",
         json={
-            "graph": {
-                "nodes": [
+            "graph": graph_document(
+                nodes=[
                     {
+                        "type": "tool",
                         "id": "seed_numbers_1",
                         "name": "Seed Numbers",
                         "tool_name": "SeedNumbers",
                         "position": [0, 0],
                         "parameters": {},
                     },
-                ],
-                "edges": [],
-            },
+                ]
+            ),
         },
     )
 

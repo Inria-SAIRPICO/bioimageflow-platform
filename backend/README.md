@@ -1,6 +1,6 @@
 # BioImageFlow Server
 
-FastAPI backend for the BioImageFlow platform. Wraps the BioImageFlow library and exposes a REST + WebSocket API for tool discovery, graph validation, workflow execution, and real-time progress streaming. Also ships a **pywebview desktop entrypoint** that opens the Vue SPA in a native OS window.
+FastAPI backend for the BioImageFlow platform. It persists one canonical recursive workflow graph model, translates accepted snapshots to the BioImageFlow library for validation and execution, and exposes REST and WebSocket APIs for editing, provenance updates, trusted Python materialization, execution, and real-time progress. It also ships a **pywebview desktop entrypoint** that opens the Vue SPA in a native OS window.
 
 ## Tech Stack
 
@@ -127,7 +127,7 @@ workspace/
     <workflow-id>/tools/              custom tools owned by one workflow
 ```
 
-Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Runtime execution paths passed to the BioImageFlow library are resolved below the configured output-data folder, by default `~/bioimageflow_data/workflows/<workflow-id>/`. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`. The compatibility `WorkspaceInfo` response also reports reserved `tools_root` and `outputs_root` values, but those paths are not the current custom-tool or execution-output authorities.
+Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Runtime execution paths passed to the BioImageFlow library are resolved below the configured output-data folder, by default `~/bioimageflow_data/workflows/<workflow-id>/`. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`. `WorkspaceInfo` also reports reserved `tools_root` and `outputs_root` values, but those paths are not the current custom-tool or execution-output authorities.
 
 ### How it fits together
 
@@ -164,6 +164,9 @@ All endpoints are prefixed with `/api/v1/`. This is a short orientation list; us
 | `GET`    | `/workspace`                        | Current workspace roots and flags           |
 | `PATCH`  | `/workspace`                        | Desktop workspace path change               |
 | `GET`    | `/workflows/tree`                   | Nested workflow folder tree                 |
+| `POST`   | `/workflows/{id}/source-update/preview` | Preview an explicit embedded-source refresh |
+| `POST`   | `/workflows/{id}/python-source/preview` | Preview trusted `build_workflow` materialization |
+| `POST`   | `/workflows/{id}/source-operations/apply` | Apply an immutable confirmed source operation |
 | `POST`   | `/fs/reveal`                        | Open a path in the system file browser      |
 
 ## Linting

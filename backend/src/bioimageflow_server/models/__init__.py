@@ -14,11 +14,13 @@ from bioimageflow_server.models.execution import (
     ProgressInfo,
 )
 from bioimageflow_server.models.graph import (
-    ColumnRefEdge,
+    ColumnEdge,
+    DataFrameEdge,
     Edge,
     GraphState,
     NodeState,
-    PositionalEdge,
+    ToolNodeState,
+    WorkflowNodeState,
 )
 from bioimageflow_server.models.nodes import NodeDataResponse
 from bioimageflow_server.models.nested_workflow_snapshot import (
@@ -54,15 +56,16 @@ from bioimageflow_server.models.workflow import (
     WorkflowUpdate,
 )
 from bioimageflow_server.models.workflow_draft_operations import (
-    ConnectColumnRefOperation,
-    ConnectPositionalOperation,
-    CreateNodeOperation,
+    ConnectColumnEdgeOperation,
+    ConnectDataFrameEdgeOperation,
+    CreateToolNodeOperation,
+    CreateWorkflowNodeOperation,
     DeleteEdgeOperation,
     DeleteNodeOperation,
     MoveNodeOperation,
     RenameNodeOperation,
     SetNodeEnabledOperation,
-    UpdateNodeParametersOperation,
+    UpdateToolParametersOperation,
     WorkflowDraftOperationsRequest,
 )
 from bioimageflow_server.models.ws import (
@@ -85,10 +88,12 @@ __all__ = [
     "AckMessage",
     "AppConfig",
     "ClientMessage",
-    "ColumnRefEdge",
-    "ConnectColumnRefOperation",
-    "ConnectPositionalOperation",
-    "CreateNodeOperation",
+    "ColumnEdge",
+    "ConnectColumnEdgeOperation",
+    "ConnectDataFrameEdgeOperation",
+    "CreateToolNodeOperation",
+    "CreateWorkflowNodeOperation",
+    "DataFrameEdge",
     "DeleteEdgeOperation",
     "DeleteNodeOperation",
     "Edge",
@@ -122,7 +127,6 @@ __all__ = [
     "OutputFieldSchema",
     "PackageInfo",
     "PackageInstallMessage",
-    "PositionalEdge",
     "ProgressInfo",
     "ProgressMessage",
     "RenameNodeOperation",
@@ -136,13 +140,15 @@ __all__ = [
     "ToolReloadMessage",
     "ToolRename",
     "ToolSourceResponse",
-    "UpdateNodeParametersOperation",
+    "ToolNodeState",
+    "UpdateToolParametersOperation",
     "ValidationResult",
     "WorkflowCreate",
     "WorkflowDeleteResponse",
     "WorkflowDraftOperationsRequest",
     "WorkflowFile",
     "WorkflowInfo",
+    "WorkflowNodeState",
     "WorkflowSaveBody",
     "WorkflowUpdate",
 ]

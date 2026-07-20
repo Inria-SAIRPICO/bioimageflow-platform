@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 import pytest
+from tests.graph_factory import graph_state
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.nested_workflow_snapshot import NestedSnapshotOwner
@@ -50,20 +51,20 @@ def store(tmp_path: Path) -> WorkflowStoreService:
 
 def _graph(node_id: str | None = None) -> GraphState:
     if node_id is None:
-        return GraphState(nodes=[], edges=[])
-    return GraphState.model_validate(
-        {
-            "nodes": [
-                {
-                    "id": node_id,
-                    "name": node_id,
-                    "tool_name": "MissingTool",
-                    "position": [0, 0],
-                    "parameters": {},
-                }
-            ],
-            "edges": [],
-        }
+        return graph_state(name="wf", display_name="wf", nodes=[], edges=[])
+    return graph_state(
+        name="wf",
+        display_name="wf",
+        nodes=[
+            {
+                "type": "tool",
+                "id": node_id,
+                "name": node_id,
+                "tool_name": "MissingTool",
+                "position": [0, 0],
+                "parameters": {},
+            }
+        ]
     )
 
 
@@ -209,7 +210,8 @@ async def test_validation_from_deleted_generation_cannot_mutate_same_id_replacem
 
     fresh = store.get_workflow("wf")
     assert fresh.info.display_name == "Replacement"
-    assert fresh.graph == _graph()
+    assert fresh.graph.nodes == []
+    assert fresh.graph.name == "wf"
     assert not (store.workflow_dir("wf") / ".bioimageflow" / "draft.json").exists()
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
+from tests.graph_factory import graph_state
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
@@ -14,10 +15,9 @@ from bioimageflow_core.tool import IOModel, ProcessingTool
 from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
-    ColumnRefEdge,
-    GraphState,
-    NodeState,
-    PositionalEdge,
+    ColumnEdge,
+    ToolNodeState,
+    DataFrameEdge,
 )
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.graph_validator import (
@@ -154,9 +154,9 @@ def _clear_active_workflow() -> Any:
 
 
 def test_valid_graph(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="n1",
                 name="n1",
                 tool_name="MockProcessingTool",
@@ -176,9 +176,9 @@ def test_valid_graph(registry: ToolRegistryService) -> None:
 def test_request_local_validation_isolates_graphs_with_repeated_node_ids(
     registry: ToolRegistryService,
 ) -> None:
-    valid_graph = GraphState(
+    valid_graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="shared",
                 name="valid",
                 tool_name="IntParamTool",
@@ -188,9 +188,9 @@ def test_request_local_validation_isolates_graphs_with_repeated_node_ids(
         ],
         edges=[],
     )
-    invalid_graph = GraphState(
+    invalid_graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="shared",
                 name="invalid",
                 tool_name="IntParamTool",
@@ -212,17 +212,17 @@ def test_request_local_validation_isolates_graphs_with_repeated_node_ids(
 
 
 def test_cycle_detected(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="a", name="a", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="a", name="a", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={"input_image": "/a"}),
-            NodeState(id="b", name="b", tool_name="CompatTool",
+            ToolNodeState(type="tool", id="b", name="b", tool_name="CompatTool",
                       position=(0, 0), parameters={}),
         ],
         edges=[
-            ColumnRefEdge(id="e1", source_node="a", target_node="b",
+            ColumnEdge(type="column", id="e1", source_node="a", target_node="b",
                           source_output="mask", target_input="mask_input"),
-            ColumnRefEdge(id="e2", source_node="b", target_node="a",
+            ColumnEdge(type="column", id="e2", source_node="b", target_node="a",
                           source_output="result", target_input="input_image"),
         ],
     )
@@ -232,13 +232,13 @@ def test_cycle_detected(registry: ToolRegistryService) -> None:
 
 
 def test_self_loop_detected(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="a", name="a", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="a", name="a", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={"input_image": "/a"}),
         ],
         edges=[
-            ColumnRefEdge(id="e1", source_node="a", target_node="a",
+            ColumnEdge(type="column", id="e1", source_node="a", target_node="a",
                           source_output="mask", target_input="input_image"),
         ],
     )
@@ -248,15 +248,15 @@ def test_self_loop_detected(registry: ToolRegistryService) -> None:
 
 
 def test_type_incompatible(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="src", name="src", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="src", name="src", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={"input_image": "/a"}),
-            NodeState(id="dst", name="dst", tool_name="IncompatTool",
+            ToolNodeState(type="tool", id="dst", name="dst", tool_name="IncompatTool",
                       position=(0, 0), parameters={}),
         ],
         edges=[
-            ColumnRefEdge(id="e1", source_node="src", target_node="dst",
+            ColumnEdge(type="column", id="e1", source_node="src", target_node="dst",
                           source_output="mask", target_input="img"),
         ],
     )
@@ -267,9 +267,9 @@ def test_type_incompatible(registry: ToolRegistryService) -> None:
 
 
 def test_parameter_invalid(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="n1",
                 name="n1",
                 tool_name="IntParamTool",
@@ -286,9 +286,9 @@ def test_parameter_invalid(registry: ToolRegistryService) -> None:
 
 
 def test_missing_connection(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="n1", name="n1", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={}),
         ],
         edges=[],
@@ -300,15 +300,15 @@ def test_missing_connection(registry: ToolRegistryService) -> None:
 
 def test_connected_input_skips_parameter_validation(registry: ToolRegistryService) -> None:
     """A field that has an incoming edge should NOT be validated as a constant."""
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="src", name="src", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="src", name="src", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={"input_image": "/a"}),
-            NodeState(id="dst", name="dst", tool_name="CompatTool",
+            ToolNodeState(type="tool", id="dst", name="dst", tool_name="CompatTool",
                       position=(0, 0), parameters={}),
         ],
         edges=[
-            ColumnRefEdge(id="e1", source_node="src", target_node="dst",
+            ColumnEdge(type="column", id="e1", source_node="src", target_node="dst",
                           source_output="mask", target_input="mask_input"),
         ],
     )
@@ -321,9 +321,9 @@ def test_connected_input_skips_parameter_validation(registry: ToolRegistryServic
 
 
 def test_disabled_node_status(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="n1", name="n1", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={}, enabled=False),
         ],
         edges=[],
@@ -343,9 +343,9 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
     from bioimageflow.cache import dataframe_publish
     from bioimageflow_server.services.graph_builder import build_workflow
 
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="MockDataFrameTool",
+            ToolNodeState(type="tool", id="n1", name="n1", tool_name="MockDataFrameTool",
                       position=(0, 0),
                       parameters={"threshold": 0.5}),
         ],
@@ -377,9 +377,9 @@ def test_cache_out_of_date(registry: ToolRegistryService, tmp_path: Path) -> Non
 
     from bioimageflow.cache import dataframe_publish
 
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="MockDataFrameTool",
+            ToolNodeState(type="tool", id="n1", name="n1", tool_name="MockDataFrameTool",
                       position=(0, 0),
                       parameters={"threshold": 0.75}),
         ],
@@ -393,9 +393,9 @@ def test_cache_out_of_date(registry: ToolRegistryService, tmp_path: Path) -> Non
 
 
 def test_cache_unexecuted(registry: ToolRegistryService, tmp_path: Path) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="n1", name="n1", tool_name="MockProcessingTool",
                       position=(0, 0),
                       parameters={"input_image": "/a"}),
         ],
@@ -417,8 +417,8 @@ def test_missing_package_surfaced() -> None:
             tool_type="ProcessingTool",
         ),
     )
-    graph = GraphState(
-        nodes=[NodeState(id="n1", name="n1", tool_name="Missing",
+    graph = graph_state(
+        nodes=[ToolNodeState(type="tool", id="n1", name="n1", tool_name="Missing",
                          position=(0, 0), parameters={})],
         edges=[],
     )
@@ -427,12 +427,12 @@ def test_missing_package_surfaced() -> None:
 
 
 def test_multiple_errors_not_short_circuited(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="n1", name="n1", tool_name="IntParamTool",
+            ToolNodeState(type="tool", id="n1", name="n1", tool_name="IntParamTool",
                       position=(0, 0),
                       parameters={"input_image": "/a", "n": "bad"}),
-            NodeState(id="n2", name="n2", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="n2", name="n2", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={}),
         ],
         edges=[],
@@ -447,15 +447,15 @@ def test_dataframe_producer_without_outputs_skips_type_check(
     registry: ToolRegistryService,
 ) -> None:
     """DataFrameTool with no Outputs should not trigger type_incompatible."""
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="df", name="df", tool_name="MockDataFrameTool",
+            ToolNodeState(type="tool", id="df", name="df", tool_name="MockDataFrameTool",
                       position=(0, 0), parameters={}),
-            NodeState(id="dst", name="dst", tool_name="CompatTool",
+            ToolNodeState(type="tool", id="dst", name="dst", tool_name="CompatTool",
                       position=(0, 0), parameters={}),
         ],
         edges=[
-            ColumnRefEdge(id="e1", source_node="df", target_node="dst",
+            ColumnEdge(type="column", id="e1", source_node="df", target_node="dst",
                           source_output="anything", target_input="mask_input"),
         ],
     )
@@ -467,44 +467,44 @@ def test_positional_edge_into_source_tool_produces_source_tool_upstream_error(
     registry: ToolRegistryService,
 ) -> None:
     """Wiring a positional edge into a source DataFrameTool yields source_tool_upstream."""
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="upstream", name="upstream", tool_name="MockDataFrameTool",
+            ToolNodeState(type="tool", id="upstream", name="upstream", tool_name="MockDataFrameTool",
                       position=(0, 0), parameters={}),
-            NodeState(id="source", name="source", tool_name="MockSourceDataFrameTool",
+            ToolNodeState(type="tool", id="source", name="source", tool_name="MockSourceDataFrameTool",
                       position=(100, 0), parameters={"path": "/tmp"}),
         ],
         edges=[
-            PositionalEdge(id="e_pos", source_node="upstream", target_node="source",
-                           positional_index=0),
+            DataFrameEdge(type="dataframe", id="e_pos", source_node="upstream", target_node="source",
+                           target_position=0),
         ],
     )
     result = validate_graph(graph, registry)
     source_errs = [e for e in result.errors if e.type == "source_tool_upstream"]
-    assert len(source_errs) >= 1
-    assert any(e.edge_id == "e_pos" for e in source_errs)
+    assert len(source_errs) >= 1, result
+    assert source_errs[0].node == "source"
 
 
 def test_positional_edge_into_processing_tool_is_rejected(
     registry: ToolRegistryService,
 ) -> None:
     """Forged header edges cannot target ProcessingTool nodes."""
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="src", name="src", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="src", name="src", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={"input_image": "/tmp/x.tif"}),
-            NodeState(id="dst", name="dst", tool_name="CompatTool",
+            ToolNodeState(type="tool", id="dst", name="dst", tool_name="CompatTool",
                       position=(100, 0), parameters={}),
         ],
         edges=[
-            PositionalEdge(id="e_pos", source_node="src", target_node="dst",
-                           positional_index=0),
+            DataFrameEdge(type="dataframe", id="e_pos", source_node="src", target_node="dst",
+                           target_position=0),
         ],
     )
     result = validate_graph(graph, registry)
     positional_errs = [
         e for e in result.errors
-        if e.type == "parameter_invalid" and e.edge_id == "e_pos"
+        if e.type == "parameter_invalid" and e.node == "dst"
     ]
     assert len(positional_errs) == 1
-    assert "cannot accept positional DataFrame inputs" in positional_errs[0].detail
+    assert "cannot have positional DataFrame inputs" in positional_errs[0].detail

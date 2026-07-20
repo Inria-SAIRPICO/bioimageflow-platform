@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import httpx
 import pandas as pd
 import pytest
+from tests.graph_factory import graph_state
 from bioimageflow import DataFrameTool
 from bioimageflow.cache import cache_load
 from bioimageflow_core.tool import IOModel
@@ -19,7 +20,7 @@ from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.execution import ExecutionContext
-from bioimageflow_server.models.graph import GraphState, NodeState, PositionalEdge
+from bioimageflow_server.models.graph import GraphState, ToolNodeState, DataFrameEdge
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.execution import ExecutionManager
@@ -196,16 +197,16 @@ def _registry() -> ToolRegistryService:
 
 
 def _real_graph() -> GraphState:
-    return GraphState(
+    return graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="source",
                 name="source",
                 tool_name="SourceNumbers",
                 position=(0, 0),
                 parameters={"start": 2, "count": 3},
             ),
-            NodeState(
+            ToolNodeState(type="tool",
                 id="offset",
                 name="offset",
                 tool_name="AddOffset",
@@ -214,20 +215,20 @@ def _real_graph() -> GraphState:
             ),
         ],
         edges=[
-            PositionalEdge(
+            DataFrameEdge(type="dataframe",
                 id="source_to_offset",
                 source_node="source",
                 target_node="offset",
-                positional_index=0,
+                target_position=0,
             ),
         ],
     )
 
 
 def _failure_graph(message: str = "deterministic failure from test") -> GraphState:
-    return GraphState(
+    return graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="boom",
                 name="boom",
                 tool_name="ExplodingNumbers",
@@ -353,16 +354,16 @@ async def test_execution_manager_run_uses_request_graph_when_session_is_stale(
         storage_path=tmp_path,
     )
     original = _real_graph()
-    modified = GraphState(
+    modified = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="source",
                 name="source",
                 tool_name="SourceNumbers",
                 position=(0, 0),
                 parameters={"start": 10, "count": 3},
             ),
-            NodeState(
+            ToolNodeState(type="tool",
                 id="offset",
                 name="offset",
                 tool_name="AddOffset",

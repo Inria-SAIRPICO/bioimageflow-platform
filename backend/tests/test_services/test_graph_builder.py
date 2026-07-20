@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
+from tests.graph_factory import graph_state
 
 from bioimageflow.dataframe_tool import DataFrameTool
 from bioimageflow_core.environment import EnvironmentSpec
@@ -14,10 +15,9 @@ from bioimageflow_core.tool import IOModel, ProcessingTool
 from bioimageflow_core.types import ImageSpec, Semantic
 
 from bioimageflow_server.models.graph import (
-    ColumnRefEdge,
-    GraphState,
-    NodeState,
-    PositionalEdge,
+    ColumnEdge,
+    ToolNodeState,
+    DataFrameEdge,
 )
 from bioimageflow_server.models.tools import ToolMetadata
 from bioimageflow_server.services.graph_builder import build_workflow
@@ -116,16 +116,16 @@ def _clear_active_workflow() -> Any:
 
 
 def test_empty_graph(registry: ToolRegistryService) -> None:
-    workflow, errors, disabled = build_workflow(GraphState(nodes=[], edges=[]), registry)
+    workflow, errors, disabled = build_workflow(graph_state(nodes=[], edges=[]), registry)
     assert errors == []
     assert workflow.nodes == {}
     assert disabled == set()
 
 
 def test_single_valid_node(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="n1",
                 name="n1",
                 tool_name="MockProcessingTool",
@@ -143,9 +143,9 @@ def test_single_valid_node(registry: ToolRegistryService) -> None:
 
 def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
     """GUI-built workflows must execute processing tools through Wetlands."""
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="n1",
                 name="n1",
                 tool_name="MockProcessingTool",
@@ -160,7 +160,7 @@ def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
 
     assert errors == []
     assert workflow.engine_type == "wetlands"
-    assert workflow.execution == "sequential"
+    assert workflow.execution == "parallel"
 
 
 def test_processing_tool_can_feed_dataframe_tool_positionally(
@@ -172,16 +172,16 @@ def test_processing_tool_can_feed_dataframe_tool_positionally(
     assert metadata.tool_type == "DataFrameTool"
     assert metadata.dataframe_output is True
 
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="proc",
                 name="proc",
                 tool_name="MockProcessingTool",
                 position=(0, 0),
                 parameters={"input_image": "/tmp/x.tif"},
             ),
-            NodeState(
+            ToolNodeState(type="tool",
                 id="df",
                 name="df",
                 tool_name="MockDataFrameTool",
@@ -190,11 +190,11 @@ def test_processing_tool_can_feed_dataframe_tool_positionally(
             ),
         ],
         edges=[
-            PositionalEdge(
+            DataFrameEdge(type="dataframe",
                 id="e1",
                 source_node="proc",
                 target_node="df",
-                positional_index=0,
+                target_position=0,
             )
         ],
     )
@@ -206,9 +206,9 @@ def test_processing_tool_can_feed_dataframe_tool_positionally(
 
 
 def test_missing_tool_error(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="n1",
                 name="n1",
                 tool_name="Nonexistent",
@@ -237,9 +237,9 @@ def test_missing_package_error() -> None:
             tool_type="ProcessingTool",
         ),
     )
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="n1",
                 name="n1",
                 tool_name="Missing",
@@ -263,9 +263,9 @@ def test_disabled_node_excluded(registry: ToolRegistryService) -> None:
     downstream references stay resolvable. The platform tracks the
     explicit ``enabled=False`` set separately.
     """
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="n1",
                 name="n1",
                 tool_name="MockProcessingTool",
@@ -281,17 +281,17 @@ def test_disabled_node_excluded(registry: ToolRegistryService) -> None:
     assert errors == []
 
 
-def test_column_ref_edge(registry: ToolRegistryService) -> None:
-    graph = GraphState(
+def test_column_edge(registry: ToolRegistryService) -> None:
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="src",
                 name="src",
                 tool_name="MockProcessingTool",
                 position=(0, 0),
                 parameters={"input_image": "/tmp/x.tif"},
             ),
-            NodeState(
+            ToolNodeState(type="tool",
                 id="dst",
                 name="dst",
                 tool_name="DownstreamTool",
@@ -300,7 +300,7 @@ def test_column_ref_edge(registry: ToolRegistryService) -> None:
             ),
         ],
         edges=[
-            ColumnRefEdge(
+            ColumnEdge(type="column",
                 id="e1",
                 source_node="src",
                 target_node="dst",
@@ -317,32 +317,32 @@ def test_column_ref_edge(registry: ToolRegistryService) -> None:
     assert dst._column_bindings["mask_input"].column == "mask"
 
 
-def test_positional_edge_reindexing(registry: ToolRegistryService) -> None:
-    """Positional indices [2, 0, 5] should yield args in ascending order."""
-    graph = GraphState(
+def test_dataframe_edges_retain_explicit_positions(registry: ToolRegistryService) -> None:
+    """DataFrame inputs are ordered by their explicit contiguous positions."""
+    graph = graph_state(
         nodes=[
-            NodeState(
+            ToolNodeState(type="tool",
                 id="s1",
                 name="s1",
                 tool_name="MockProcessingTool",
                 position=(0, 0),
                 parameters={"input_image": "/a"},
             ),
-            NodeState(
+            ToolNodeState(type="tool",
                 id="s2",
                 name="s2",
                 tool_name="MockProcessingTool",
                 position=(0, 0),
                 parameters={"input_image": "/b"},
             ),
-            NodeState(
+            ToolNodeState(type="tool",
                 id="s3",
                 name="s3",
                 tool_name="MockProcessingTool",
                 position=(0, 0),
                 parameters={"input_image": "/c"},
             ),
-            NodeState(
+            ToolNodeState(type="tool",
                 id="df",
                 name="df",
                 tool_name="MockDataFrameTool",
@@ -351,88 +351,27 @@ def test_positional_edge_reindexing(registry: ToolRegistryService) -> None:
             ),
         ],
         edges=[
-            PositionalEdge(id="e1", source_node="s1", target_node="df", positional_index=2),
-            PositionalEdge(id="e2", source_node="s2", target_node="df", positional_index=0),
-            PositionalEdge(id="e3", source_node="s3", target_node="df", positional_index=5),
+            DataFrameEdge(type="dataframe", id="e1", source_node="s1", target_node="df", target_position=2),
+            DataFrameEdge(type="dataframe", id="e2", source_node="s2", target_node="df", target_position=0),
+            DataFrameEdge(type="dataframe", id="e3", source_node="s3", target_node="df", target_position=1),
         ],
     )
     workflow, errors, _disabled = build_workflow(graph, registry)
     assert errors == []
     df = workflow.nodes["df"]
     arg_names = [a.name for a in df._args]
-    assert arg_names == ["s2", "s1", "s3"]
-
-
-def test_duplicate_node_ids(registry: ToolRegistryService) -> None:
-    graph = GraphState(
-        nodes=[
-            NodeState(
-                id="dup",
-                name="a",
-                tool_name="MockProcessingTool",
-                position=(0, 0),
-                parameters={"input_image": "/a"},
-            ),
-            NodeState(
-                id="dup",
-                name="b",
-                tool_name="MockProcessingTool",
-                position=(0, 0),
-                parameters={"input_image": "/b"},
-            ),
-        ],
-        edges=[],
-    )
-    _workflow, errors, _disabled = build_workflow(graph, registry)
-    types = [e.type for e in errors]
-    assert "invalid_node_id" in types
-
-
-def test_duplicate_edge_ids(registry: ToolRegistryService) -> None:
-    graph = GraphState(
-        nodes=[
-            NodeState(id="a", name="a", tool_name="MockProcessingTool",
-                      position=(0, 0), parameters={"input_image": "/a"}),
-            NodeState(id="b", name="b", tool_name="DownstreamTool",
-                      position=(0, 0), parameters={}),
-        ],
-        edges=[
-            ColumnRefEdge(id="dup", source_node="a", target_node="b",
-                          source_output="mask", target_input="mask_input"),
-            ColumnRefEdge(id="dup", source_node="a", target_node="b",
-                          source_output="mask", target_input="mask_input"),
-        ],
-    )
-    _workflow, errors, _disabled = build_workflow(graph, registry)
-    types = [e.type for e in errors]
-    assert "invalid_edge_id" in types
-
-
-def test_edge_references_unknown_node(registry: ToolRegistryService) -> None:
-    graph = GraphState(
-        nodes=[
-            NodeState(id="a", name="a", tool_name="MockProcessingTool",
-                      position=(0, 0), parameters={"input_image": "/a"}),
-        ],
-        edges=[
-            ColumnRefEdge(id="e", source_node="a", target_node="ghost",
-                          source_output="mask", target_input="x"),
-        ],
-    )
-    _workflow, errors, _disabled = build_workflow(graph, registry)
-    types = [e.type for e in errors]
-    assert "invalid_edge_id" in types
+    assert arg_names == ["s2", "s3", "s1"]
 
 
 def test_mixed_graph(registry: ToolRegistryService) -> None:
     """Graph with valid nodes, a missing tool, and a disabled node."""
-    graph = GraphState(
+    graph = graph_state(
         nodes=[
-            NodeState(id="good", name="g", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="good", name="g", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={"input_image": "/a"}),
-            NodeState(id="missing", name="m", tool_name="NoSuchTool",
+            ToolNodeState(type="tool", id="missing", name="m", tool_name="NoSuchTool",
                       position=(0, 0), parameters={}),
-            NodeState(id="disabled", name="d", tool_name="MockProcessingTool",
+            ToolNodeState(type="tool", id="disabled", name="d", tool_name="MockProcessingTool",
                       position=(0, 0), parameters={"input_image": "/d"}, enabled=False),
         ],
         edges=[],

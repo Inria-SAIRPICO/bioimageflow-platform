@@ -13,6 +13,7 @@ from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from tests.graph_factory import graph_document
 
 pytestmark = pytest.mark.anyio
 
@@ -29,33 +30,39 @@ class _ExecutionManager:
 
 def _graph(
     node_id: str,
-    published_name: str = "image",
-    source_workflow_name: str | None = None,
+    input_name: str = "image",
 ) -> dict[str, Any]:
-    return {
-        "nodes": [
+    return graph_document(
+        name=f"{node_id}_workflow",
+        display_name=f"{node_id} workflow",
+        nodes=[
             {
+                "type": "tool",
                 "id": node_id,
                 "name": node_id,
                 "tool_name": "MissingTool",
                 "position": [0, 0],
                 "parameters": {},
-                "source_workflow_name": source_workflow_name,
             }
         ],
-        "edges": [],
-        "published_inputs": [
-            {
-                "name": published_name,
-                "internal_node_id": node_id,
-                "internal_field": "image",
-                "kind": "input",
-                "schema": {"type": "Path"},
-                "default": None,
-            }
-        ],
-        "published_outputs": [],
-    }
+        interface={
+            "inputs": [
+                {
+                    "id": "input-1",
+                    "name": input_name,
+                    "kind": "field",
+                    "schema": {"type": "Path"},
+                    "targets": [
+                        {
+                            "node": node_id,
+                            "port": {"kind": "field", "name": "image"},
+                        }
+                    ],
+                }
+            ],
+            "outputs": [],
+        },
+    )
 
 
 @pytest.fixture
@@ -101,13 +108,13 @@ async def test_open_replace_get_and_revision_checked_delete(
                 "canvas_id": "workflow:root-a",
                 "workflow_id": "root-a",
             },
-            "parent_node_id": "sub_1",
-            "graph": _graph("inner", source_workflow_name="reusable-child"),
+            "parent_node_id": "child_1",
+            "graph": _graph("inner"),
         },
     )
     assert opened.status_code == 201
     snapshot = opened.json()
-    assert snapshot["graph"]["nodes"][0]["source_workflow_name"] == "reusable-child"
+    assert snapshot["graph"]["name"] == "inner_workflow"
 
     replaced = await client.put(
         f"/api/v1/nested-workflow-snapshots/{snapshot['session_id']}",
@@ -118,7 +125,7 @@ async def test_open_replace_get_and_revision_checked_delete(
     )
     assert replaced.status_code == 200
     assert replaced.json()["snapshot_revision"] == 1
-    assert replaced.json()["graph"]["published_inputs"][0]["name"] == "renamed"
+    assert replaced.json()["graph"]["interface"]["inputs"][0]["name"] == "renamed"
 
     recovered = await client.get(
         f"/api/v1/nested-workflow-snapshots/{snapshot['session_id']}"
@@ -149,7 +156,7 @@ async def test_mutations_return_423_without_changing_the_record(
                 "canvas_id": "workflow:root-a",
                 "workflow_id": "root-a",
             },
-            "parent_node_id": "sub_1",
+            "parent_node_id": "child_1",
             "graph": _graph("inner"),
         },
     )
@@ -179,7 +186,7 @@ async def test_mutations_return_423_without_changing_the_record(
                 "canvas_id": "workflow:root-b",
                 "workflow_id": "root-b",
             },
-            "parent_node_id": "sub_1",
+            "parent_node_id": "child_1",
             "graph": _graph("other"),
         },
     )
@@ -201,7 +208,7 @@ async def test_delete_rejects_orphaning_a_nested_snapshot(
                 "canvas_id": "workflow:root-a",
                 "workflow_id": "root-a",
             },
-            "parent_node_id": "sub_1",
+            "parent_node_id": "child_1",
             "graph": _graph("inner"),
         },
     )
@@ -210,7 +217,7 @@ async def test_delete_rejects_orphaning_a_nested_snapshot(
         "/api/v1/nested-workflow-snapshots/open",
         json={
             "owner": {"kind": "nested", "session_id": parent["session_id"]},
-            "parent_node_id": "sub_2",
+            "parent_node_id": "child_2",
             "graph": _graph("deep_inner"),
         },
     )

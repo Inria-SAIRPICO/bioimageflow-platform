@@ -342,7 +342,7 @@ class ExecutionManager:
     ) -> ExecutionContext:
         live_settings = self._settings_provider() if self._settings_provider else self.settings
         run_storage_path = storage_path if storage_path is not None else self.storage_path
-        build_graph = _execution_subgraph(graph, nodes) if nodes else graph
+        build_graph = graph
         on_progress = self._make_progress_callback(context)
         try:
             validation_output = await GraphValidationService(
@@ -462,13 +462,6 @@ class ExecutionManager:
                 yield
             finally:
                 self._idle_operation_active = False
-
-    @asynccontextmanager
-    async def exclusive_idle_graph_operation(self) -> AsyncIterator[None]:
-        """Compatibility alias for cache operations requiring the idle lease."""
-
-        async with self.exclusive_idle_mutation():
-            yield
 
     # ---- Internals ---------------------------------------------------------
 
@@ -1060,39 +1053,6 @@ def _option_value(command: list[object], option: str) -> str | None:
         if value == option and index + 1 < len(command):
             return str(command[index + 1])
     return None
-
-
-def _execution_subgraph(graph: GraphState, node_ids: list[str] | None) -> GraphState:
-    """Return selected target nodes plus all transitive upstream dependencies."""
-    if not node_ids:
-        return graph
-
-    requested = set(node_ids)
-    known = {node.id for node in graph.nodes}
-    executable = requested & known
-    if not executable:
-        return GraphState(nodes=[], edges=[])
-
-    incoming: dict[str, list[str]] = {}
-    for edge in graph.edges:
-        incoming.setdefault(edge.target_node, []).append(edge.source_node)
-
-    stack = list(executable)
-    while stack:
-        node_id = stack.pop()
-        for upstream in incoming.get(node_id, []):
-            if upstream in known and upstream not in executable:
-                executable.add(upstream)
-                stack.append(upstream)
-
-    return GraphState(
-        nodes=[node for node in graph.nodes if node.id in executable],
-        edges=[
-            edge
-            for edge in graph.edges
-            if edge.source_node in executable and edge.target_node in executable
-        ],
-    )
 
 
 # ---- Cache clearer ----------------------------------------------------------

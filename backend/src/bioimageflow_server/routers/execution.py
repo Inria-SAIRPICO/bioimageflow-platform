@@ -381,7 +381,7 @@ async def clear_execution(
         if execution_manager is None:
             statuses = await clear_in_current_context()
         else:
-            async with execution_manager.exclusive_idle_graph_operation():
+            async with execution_manager.exclusive_idle_mutation():
                 statuses = await clear_in_current_context()
     except ExecutionConflictError as exc:
         raise HTTPException(

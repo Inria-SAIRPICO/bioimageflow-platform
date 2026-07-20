@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from tests.graph_factory import graph_state
 from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
@@ -26,7 +27,7 @@ from bioimageflow_server.models.tools import (
     PackageInfo,
     ToolMetadata,
 )
-from bioimageflow_server.models.graph import GraphState, NodeState
+from bioimageflow_server.models.graph import ToolNodeState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.workflow import WorkflowCreate, WorkflowSaveBody
 from bioimageflow_server.services.package_installer import (
@@ -131,19 +132,15 @@ async def test_get_tools_empty(empty_client: httpx.AsyncClient):
 
 async def test_get_tools_discovers_existing_custom_tools(workflow_root: Path):
     registry = ToolRegistryService()
-    workflow_dir = workflow_root / "existing"
-    workflow_dir.mkdir(parents=True)
-    (workflow_dir / "workflow.json").write_text(
-        json.dumps({
-            "graph": {"nodes": [], "edges": []},
-            "workflow": {"nodes": [], "edges": []},
-            "gui": {"nodes": {}},
-            "metadata": {"display_name": "Existing"},
-        }),
-        encoding="utf-8",
+    store = WorkflowStoreService(
+        root_dir=workflow_root,
+        tool_registry=registry,
+        storage_base_dir=workflow_root.parent / "outputs",
     )
+    store.create_workflow(WorkflowCreate(name="existing", display_name="Existing"))
+    workflow_dir = workflow_root / "existing"
     custom_root = workflow_dir / "tools"
-    custom_root.mkdir(parents=True)
+    custom_root.mkdir(parents=True, exist_ok=True)
     from bioimageflow_server.services.custom_tools import CustomToolService
 
     source = CustomToolService(workflow_dir, registry).render_template(
@@ -536,9 +533,9 @@ async def test_tool_usage_reports_saved_workflows(workflow_root: Path):
     store.save_workflow(
         "uses_tool",
         WorkflowSaveBody(
-            graph=GraphState(
+            graph=graph_state(
                 nodes=[
-                    NodeState(
+                    ToolNodeState(type="tool",
                         id="n1",
                         name="n1",
                         tool_name="MyTool",
@@ -585,9 +582,9 @@ async def test_delete_reports_saved_workflow_usage(workflow_root: Path):
         service_store.save_workflow(
             "uses_tool",
             WorkflowSaveBody(
-                graph=GraphState(
+                graph=graph_state(
                     nodes=[
-                        NodeState(
+                        ToolNodeState(type="tool",
                             id="n1",
                             name="n1",
                             tool_name="UsedTool",

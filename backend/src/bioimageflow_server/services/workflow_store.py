@@ -20,12 +20,12 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 
 from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.nested_workflow_snapshot import (
+    NestedWorkflowSnapshotResponse,
+)
 from bioimageflow_server.models.workflow import (
-    ExportedWorkflow,
-    LocalToolReference,
-    RequiredPackage,
     WorkflowCreate,
-    WorkflowExportDocument,
+    WorkflowDocument,
     WorkflowFile,
     WorkflowFolderDelete,
     WorkflowFolderInfo,
@@ -33,6 +33,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowImportResponse,
     WorkflowSaveBody,
     WorkflowUpdate,
+    WorkspaceWorkflowMetadata,
     validate_workflow_id,
 )
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
@@ -45,12 +46,20 @@ from bioimageflow_server.models.workflow_move_recovery import (
     WorkflowPromotionChildMove,
 )
 from bioimageflow_server.services.graph_translator import (
-    collect_required_packages,
     _detect_missing_packages,
     _detect_missing_tools,
-    graph_state_to_persisted_sections,
+    graph_state_to_lib_dict,
     lib_dict_to_graph_state,
     rebind_lib_dict_versions,
+)
+from bioimageflow_server.services.workflow_artifacts import (
+    OwnedWorkflowSources,
+    artifact_hash,
+    referenced_source_ids,
+    rewrite_workspace_source_ids,
+)
+from bioimageflow_server.services.workflow_containment import (
+    validate_workflow_containment,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_archive import BioImageFlowWorkflowArchiveAdapter
@@ -126,7 +135,7 @@ _WORKFLOW_COORDINATIONS_GUARD = threading.Lock()
 class WorkflowArchiveAdapter(Protocol):
     """Small boundary around BioImageFlow archive APIs."""
 
-    def export_archive(self, workflow_path: Path, archive_path: Path) -> None: ...
+    def export_archive(self, workflow_data: dict[str, Any], archive_path: Path) -> None: ...
 
     def read_archive(
         self,
@@ -233,50 +242,6 @@ def normalize_workflow_draft_identity(
             pass
         raise
     return normalized
-
-
-def _merge_export_requirements(
-    primary: tuple[list[RequiredPackage], list[LocalToolReference]],
-    fallback: tuple[list[RequiredPackage], list[LocalToolReference]],
-) -> tuple[list[RequiredPackage], list[LocalToolReference]]:
-    package_map = {
-        (package.name, package.version): package for package in [*primary[0], *fallback[0]]
-    }
-    local_map: dict[str, list[str]] = {}
-    for tool in [*primary[1], *fallback[1]]:
-        node_ids = local_map.setdefault(tool.tool_name, [])
-        for node_id in tool.node_ids:
-            if node_id not in node_ids:
-                node_ids.append(node_id)
-    return (
-        [package_map[key] for key in sorted(package_map)],
-        [
-            LocalToolReference(tool_name=tool_name, node_ids=node_ids)
-            for tool_name, node_ids in sorted(local_map.items())
-        ],
-    )
-
-
-def _graph_nodes_missing_from_library(
-    graph: dict[str, Any],
-    library: dict[str, Any],
-) -> dict[str, Any]:
-    library_node_ids = {
-        str(node.get("id") or node.get("name"))
-        for node in library.get("nodes", [])
-        if isinstance(node, dict) and (node.get("id") or node.get("name"))
-    }
-    graph_nodes = graph.get("nodes", [])
-    if not isinstance(graph_nodes, list) or not library_node_ids:
-        return graph
-    graph_fallback = dict(graph)
-    graph_fallback["nodes"] = [
-        node
-        for node in graph_nodes
-        if not isinstance(node, dict)
-        or str(node.get("id") or node.get("name")) not in library_node_ids
-    ]
-    return graph_fallback
 
 
 class WorkflowStoreService:
@@ -1094,6 +1059,10 @@ class WorkflowStoreService:
             raw = self._read_raw(move.destination_workflow_id)
             recovered = cast(dict[str, Any], json.loads(json.dumps(raw)))
             recovered["metadata"] = json.loads(json.dumps(move.target_metadata))
+            recovered_graph = GraphState.model_validate(recovered["graph"]).model_copy(
+                update={"display_name": move.target_display_name}
+            )
+            recovered["graph"] = recovered_graph.model_dump(mode="json", by_alias=True)
             storage_path = move.target_metadata.get("storage_path")
             if isinstance(storage_path, str) and storage_path:
                 self._set_workflow_storage_path(recovered, storage_path)
@@ -1204,15 +1173,11 @@ class WorkflowStoreService:
             )
 
     def _set_workflow_storage_path(self, raw: dict[str, Any], storage_path: str) -> None:
-        workflow_data = raw.get("workflow", {})
-        if not isinstance(workflow_data, dict):
-            workflow_data = {}
-            raw["workflow"] = workflow_data
-        config = workflow_data.get("config", {})
-        if not isinstance(config, dict):
-            config = {}
-        config["storage_path"] = storage_path
-        workflow_data["config"] = config
+        metadata = raw.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            raw["metadata"] = metadata
+        metadata["storage_path"] = storage_path
 
     def _workflow_names_under_folder(self, folder: Path) -> list[str]:
         if not folder.exists():
@@ -1291,6 +1256,72 @@ class WorkflowStoreService:
     def _rewrite_moved_workflows(self, moves: list[tuple[str, str]]) -> None:
         for old_name, new_name in moves:
             self._rewrite_moved_workflow_metadata(old_name, new_name)
+        self._rewrite_moved_source_provenance(
+            {old_name: new_name for old_name, new_name in moves if old_name != new_name}
+        )
+
+    def _write_auxiliary_json(self, path: Path, payload: dict[str, Any]) -> None:
+        fd, temporary = tempfile.mkstemp(
+            dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+            self._fsync_directory(path.parent)
+        except Exception:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
+
+    def _rewrite_moved_source_provenance(self, mapping: dict[str, str]) -> None:
+        if not mapping:
+            return
+        saved_updates: list[tuple[str, WorkflowDocument]] = []
+        draft_updates: list[tuple[Path, WorkflowDraftResponse]] = []
+        for workflow_id in self._workflow_names_under_folder(self.root_dir):
+            document = WorkflowDocument.model_validate(self._read_raw(workflow_id))
+            graph = rewrite_workspace_source_ids(document.graph, mapping)
+            if graph != document.graph:
+                saved_updates.append(
+                    (workflow_id, document.model_copy(update={"graph": graph}))
+                )
+            draft_path = self._workflow_dir(workflow_id) / ".bioimageflow" / "draft.json"
+            if draft_path.exists():
+                draft = WorkflowDraftResponse.model_validate_json(
+                    draft_path.read_text(encoding="utf-8")
+                )
+                graph = rewrite_workspace_source_ids(draft.graph, mapping)
+                if graph != draft.graph:
+                    draft_updates.append((draft_path, draft.model_copy(update={"graph": graph})))
+
+        snapshot_updates: list[tuple[Path, NestedWorkflowSnapshotResponse]] = []
+        snapshot_dir = self.workspace_dir / ".bioimageflow" / "nested-workflow-snapshots"
+        if snapshot_dir.exists():
+            for path in snapshot_dir.glob("*.json"):
+                snapshot = NestedWorkflowSnapshotResponse.model_validate_json(
+                    path.read_text(encoding="utf-8")
+                )
+                graph = rewrite_workspace_source_ids(snapshot.graph, mapping)
+                if graph != snapshot.graph:
+                    snapshot_updates.append(
+                        (path, snapshot.model_copy(update={"graph": graph}))
+                    )
+
+        for workflow_id, document in saved_updates:
+            self._write_raw(
+                workflow_id,
+                document.model_dump(mode="json", by_alias=True, exclude_none=True),
+            )
+        for path, draft in draft_updates:
+            self._write_auxiliary_json(path, draft.model_dump(mode="json"))
+        for path, snapshot in snapshot_updates:
+            self._write_auxiliary_json(path, snapshot.model_dump(mode="json"))
 
     @staticmethod
     def _renamed_child_path(old_name: str, old_prefix: str, new_prefix: str) -> str:
@@ -1492,6 +1523,7 @@ class WorkflowStoreService:
         patch: WorkflowUpdate | None,
     ) -> WorkflowArtifactMove:
         raw = self._read_raw(old_name)
+        document = WorkflowDocument.model_validate(raw)
         raw_metadata = raw.get("metadata", {})
         metadata = (
             cast(dict[str, Any], json.loads(json.dumps(raw_metadata)))
@@ -1500,8 +1532,6 @@ class WorkflowStoreService:
         )
         managed_storage: WorkflowManagedStorageMove | None = None
 
-        if patch is not None and patch.display_name is not None:
-            metadata["display_name"] = patch.display_name
         if patch is not None and patch.description is not None:
             metadata["description"] = patch.description
         if patch is not None and patch.storage_path is not None:
@@ -1529,6 +1559,11 @@ class WorkflowStoreService:
             destination_generation_before=destination_generation,
             destination_generation_after=destination_generation + 1,
             target_metadata=metadata,
+            target_display_name=(
+                patch.display_name
+                if patch is not None and patch.display_name is not None
+                else document.graph.display_name
+            ),
             managed_storage=managed_storage,
         )
 
@@ -1538,9 +1573,8 @@ class WorkflowStoreService:
         raw: dict[str, Any],
         path: Path,
     ) -> WorkflowInfo:
-        metadata = raw.get("metadata", {})
-        if not isinstance(metadata, dict):
-            metadata = {}
+        document = WorkflowDocument.model_validate(raw)
+        metadata = document.metadata
         last_modified = datetime.fromtimestamp(
             path.stat().st_mtime,
             tz=UTC,
@@ -1549,10 +1583,10 @@ class WorkflowStoreService:
             id=name,
             name=self._leaf_name(name),
             folder=self._folder_name(name),
-            display_name=str(metadata.get("display_name") or name),
-            description=cast(str | None, metadata.get("description")),
-            storage_path=cast(str | None, metadata.get("storage_path")),
-            output_path=cast(str | None, metadata.get("storage_path")),
+            display_name=document.graph.display_name,
+            description=metadata.description,
+            storage_path=metadata.storage_path,
+            output_path=metadata.storage_path,
             workspace_path=str(self.workspace_dir),
             path=str(path),
             last_modified=last_modified,
@@ -1565,20 +1599,20 @@ class WorkflowStoreService:
             data = json.load(handle)
         if not isinstance(data, dict):
             raise ValueError(f"Workflow file {path} must contain a JSON object")
-        return data
+        return WorkflowDocument.model_validate(data).model_dump(
+            mode="json", by_alias=True
+        )
 
     def get_storage_path(self, name: str) -> Path:
         """Return the storage root recorded for a workflow."""
         raw = self._read_raw(name)
-        metadata = raw.get("metadata", {})
-        if not isinstance(metadata, dict):
-            metadata = {}
-        storage_path = metadata.get("storage_path")
-        if isinstance(storage_path, str) and storage_path:
-            return self._normalize_storage_path(storage_path)
-        return self._managed_storage_path(name)
+        document = WorkflowDocument.model_validate(raw)
+        return self._normalize_storage_path(document.metadata.storage_path)
 
     def _write_raw(self, name: str, raw: dict[str, Any]) -> None:
+        raw = WorkflowDocument.model_validate(raw).model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
         path = self._path_for(name)
         self._ensure_workflow_layout(name)
         fd, tmp_name = tempfile.mkstemp(
@@ -1602,26 +1636,34 @@ class WorkflowStoreService:
             raise
 
     def _empty_raw(self, data: WorkflowCreate) -> dict[str, Any]:
-        graph = GraphState(nodes=[], edges=[])
+        definition_name = self._leaf_name(data.name)
+        graph = GraphState(
+            schema_version=1,
+            name=definition_name,
+            display_name=data.display_name or definition_name,
+            nodes=[],
+            edges=[],
+            interface={"inputs": [], "outputs": []},
+            config={},
+        )
         storage_path = self._storage_path_string(
             data.storage_path or self._managed_storage_path(data.name)
         )
-        metadata = {
-            "display_name": data.display_name or data.name,
-            "description": data.description,
-            "storage_path": storage_path,
-        }
-        graph_section, workflow_section, gui_section, _ = graph_state_to_persisted_sections(
+        return WorkflowDocument(
+            graph=graph,
+            metadata=WorkspaceWorkflowMetadata(
+                description=data.description,
+                storage_path=storage_path,
+            ),
+            artifact_hash=artifact_hash(graph, []),
+        ).model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    def validate_containment(self, destination: str, graph: GraphState) -> None:
+        validate_workflow_containment(
+            destination,
             graph,
-            self.tool_registry,
-            storage_path=Path(metadata["storage_path"]),
+            resolve_saved_graph=lambda workflow_id: self.get_workflow(workflow_id).graph,
         )
-        return {
-            "graph": graph_section,
-            "workflow": workflow_section,
-            "gui": gui_section,
-            "metadata": metadata,
-        }
 
     def suggest_name(self, base_name: str) -> str:
         base = self._validate_name(base_name)
@@ -1632,53 +1674,35 @@ class WorkflowStoreService:
             suffix += 1
         return candidate
 
-    @_identity_locked
-    def export_workflow(self, name: str) -> WorkflowExportDocument:
-        path = self._existing_path_for(name)
-        raw = self._read_raw(name)
-        info = self._metadata_from_raw(name, raw, path)
-        graph = raw.get("graph", {})
-        library = raw.get("workflow", {})
-        gui = raw.get("gui", {})
-        metadata = raw.get("metadata", {})
-        if not isinstance(graph, dict):
-            graph = {}
-        if not isinstance(library, dict):
-            library = {}
-        if not isinstance(gui, dict):
-            gui = {}
-        if not isinstance(metadata, dict):
-            metadata = {}
-        required_packages, local_tools = _merge_export_requirements(
-            collect_required_packages(library, self.tool_registry),
-            collect_required_packages(
-                _graph_nodes_missing_from_library(graph, library),
-                self.tool_registry,
-            ),
-        )
-        return WorkflowExportDocument(
-            exported_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-            workflow=ExportedWorkflow(
-                name=info.name,
-                display_name=info.display_name,
-                description=info.description,
-                storage_path=info.storage_path,
-                graph=cast(dict[str, Any], json.loads(json.dumps(graph))),
-                library=cast(dict[str, Any], json.loads(json.dumps(library))),
-                gui=cast(dict[str, Any], json.loads(json.dumps(gui))),
-                metadata=cast(dict[str, Any], json.loads(json.dumps(metadata))),
-            ),
-            required_packages=required_packages,
-            local_tools=local_tools,
-        )
-
     def export_workflow_archive(self, name: str) -> tuple[str, bytes]:
-        workflow_path = self._existing_path_for(name)
+        self._existing_path_for(name)
+        document = WorkflowDocument.model_validate(self._read_raw(name))
+        translation = graph_state_to_lib_dict(
+            document.graph,
+            self.tool_registry,
+            storage_path=Path(document.metadata.storage_path),
+        )
+        if translation.errors:
+            raise WorkflowArchiveError(
+                "; ".join(error.detail for error in translation.errors)
+            )
+        sources = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(
+            document.graph
+        )
+        payload = (
+            {
+                "archive_version": 1,
+                "workflow": translation.lib_dict,
+                "custom_sources": sources,
+            }
+            if sources
+            else translation.lib_dict
+        )
         filename = f"{self._validate_name(name)}.bioimageflow.zip"
         with tempfile.TemporaryDirectory() as tmp_dir:
             archive_path = Path(tmp_dir) / filename
             try:
-                self.archive_adapter.export_archive(workflow_path, archive_path)
+                self.archive_adapter.export_archive(payload, archive_path)
                 return filename, archive_path.read_bytes()
             except Exception as exc:
                 raise WorkflowArchiveError(str(exc)) from exc
@@ -1726,7 +1750,6 @@ class WorkflowStoreService:
             try:
                 library = self.archive_adapter.read_archive(
                     archive_path,
-                    extract_to=self._workflow_dir(imported_name),
                 )
             except Exception as exc:
                 workflow_dir = self._workflow_dir(imported_name)
@@ -1738,79 +1761,46 @@ class WorkflowStoreService:
                 if workflow_dir.exists():
                     shutil.rmtree(workflow_dir)
                 raise WorkflowArchiveError("Workflow archive did not contain a workflow object")
-            graph = lib_dict_to_graph_state(library, None).model_dump(mode="json")
-            document = WorkflowExportDocument(
-                exported_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-                workflow=ExportedWorkflow(
-                    name=imported_name,
-                    display_name=imported_name,
+            graph = lib_dict_to_graph_state(library)
+            self.validate_containment(imported_name, graph)
+            source_records = (
+                library.get("custom_sources", [])
+                if set(library) == {"archive_version", "workflow", "custom_sources"}
+                else []
+            )
+            if not isinstance(source_records, list):
+                raise WorkflowArchiveError("Workflow archive sources must be an array")
+            sources = OwnedWorkflowSources(self._workflow_dir(imported_name))
+            staged = sources.stage(cast(list[dict[str, Any]], source_records))
+            document = WorkflowDocument(
+                graph=graph,
+                metadata=WorkspaceWorkflowMetadata(
                     description=None,
-                    storage_path=None,
-                    graph=graph,
-                    library=library,
-                    gui={"nodes": {}},
-                    metadata={},
+                    storage_path=str(self._managed_storage_path(imported_name)),
                 ),
-                required_packages=[],
-                local_tools=[],
+                owned_source_ids=sorted(referenced_source_ids(graph)),
+                artifact_hash=artifact_hash(
+                    graph, cast(list[dict[str, Any]], source_records)
+                ),
             )
             try:
-                return self._persist_import_workflow(document, imported_name)
+                self._write_raw(
+                    imported_name,
+                    document.model_dump(mode="json", by_alias=True, exclude_none=True),
+                )
+                sources.publish(staged)
+                loaded = self.get_workflow(imported_name)
+                return WorkflowImportResponse(
+                    info=loaded.info,
+                    missing_packages=loaded.missing_packages,
+                    missing_tools=loaded.missing_tools,
+                )
             except Exception:
+                sources.discard(staged)
                 workflow_dir = self._workflow_dir(imported_name)
                 if workflow_dir.exists():
                     shutil.rmtree(workflow_dir)
                 raise
-
-    def import_workflow(
-        self,
-        document: WorkflowExportDocument,
-        *,
-        name_override: str | None = None,
-    ) -> WorkflowImportResponse:
-        imported_name = self._validate_name(name_override or document.workflow.name)
-        with self.workflow_structure_mutation(), self.workflow_mutation(imported_name):
-            self.ensure_workflow_mutations_available()
-            if self._has_name_collision(imported_name):
-                raise FileExistsError(imported_name)
-            GraphState.model_validate(document.workflow.graph)
-            self._reserve_workflow_generations([imported_name])
-            return self._persist_import_workflow(document, imported_name)
-
-    def _persist_import_workflow(
-        self,
-        document: WorkflowExportDocument,
-        imported_name: str,
-    ) -> WorkflowImportResponse:
-        GraphState.model_validate(document.workflow.graph)
-        graph = cast(dict[str, Any], json.loads(json.dumps(document.workflow.graph)))
-        library = cast(
-            dict[str, Any],
-            json.loads(json.dumps(document.workflow.library)),
-        )
-        gui = cast(dict[str, Any], json.loads(json.dumps(document.workflow.gui)))
-        metadata = cast(
-            dict[str, Any],
-            json.loads(json.dumps(document.workflow.metadata)),
-        )
-        metadata["display_name"] = document.workflow.display_name or imported_name
-        metadata["description"] = document.workflow.description
-        metadata["storage_path"] = str(self._managed_storage_path(imported_name))
-
-        raw = {
-            "graph": graph,
-            "workflow": library,
-            "gui": gui,
-            "metadata": metadata,
-        }
-        self._set_workflow_storage_path(raw, metadata["storage_path"])
-        self._write_raw(imported_name, raw)
-        loaded = self.get_workflow(imported_name)
-        return WorkflowImportResponse(
-            info=loaded.info,
-            missing_packages=loaded.missing_packages,
-            missing_tools=loaded.missing_tools,
-        )
 
     def list_workflows(self) -> list[WorkflowInfo]:
         if not self.root_dir.exists():
@@ -2145,56 +2135,43 @@ class WorkflowStoreService:
     @_identity_locked
     def get_workflow(self, name: str) -> WorkflowFile:
         path = self._existing_path_for(name)
-        raw = self._read_raw(name)
-        workflow_data = raw.get("workflow", {})
-        if not isinstance(workflow_data, dict):
-            workflow_data = {}
-        gui_data = raw.get("gui", {})
-        if not isinstance(gui_data, dict):
-            gui_data = {}
-        graph_data = raw.get("graph")
-        graph = (
-            GraphState.model_validate(graph_data)
-            if graph_data is not None
-            else lib_dict_to_graph_state(workflow_data, gui_data)
+        document = WorkflowDocument.model_validate(self._read_raw(name))
+        translation = graph_state_to_lib_dict(
+            document.graph,
+            self.tool_registry,
+            storage_path=Path(document.metadata.storage_path),
         )
         return WorkflowFile(
-            info=self._metadata_from_raw(name, raw, path),
-            graph=graph,
-            gui=gui_data,
+            info=self._metadata_from_raw(
+                name,
+                document.model_dump(mode="json", by_alias=True),
+                path,
+            ),
+            graph=document.graph,
+            artifact_hash=document.artifact_hash,
+            authoring_source=document.authoring_source,
             missing_packages=_detect_missing_packages(
-                workflow_data,
+                translation.lib_dict,
                 self.tool_registry,
             ),
-            missing_tools=_detect_missing_tools(workflow_data, self.tool_registry),
+            missing_tools=_detect_missing_tools(translation.lib_dict, self.tool_registry),
         )
 
     @_identity_locked
     def save_workflow(self, name: str, data: WorkflowSaveBody) -> WorkflowInfo:
         self.ensure_workflow_mutations_available()
         path = self._existing_path_for(name)
-        raw = self._read_raw(name)
-        metadata = raw.get("metadata", {})
-        if not isinstance(metadata, dict):
-            metadata = {}
-        storage_path = metadata.get("storage_path")
-        if not isinstance(storage_path, str) or not storage_path:
-            storage_path = str(self._managed_storage_path(name))
-            metadata["storage_path"] = storage_path
-        graph_section, workflow_section, gui_section, _ = graph_state_to_persisted_sections(
-            data.graph,
-            self.tool_registry,
-            storage_path=Path(storage_path),
+        self.validate_containment(name, data.graph)
+        current = WorkflowDocument.model_validate(self._read_raw(name))
+        sources = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(data.graph)
+        document = current.model_copy(
+            update={
+                "graph": data.graph,
+                "owned_source_ids": sorted(referenced_source_ids(data.graph)),
+                "artifact_hash": artifact_hash(data.graph, sources),
+            }
         )
-        self._write_raw(
-            name,
-            {
-                "graph": graph_section,
-                "workflow": workflow_section,
-                "gui": gui_section,
-                "metadata": metadata,
-            },
-        )
+        self._write_raw(name, document.model_dump(mode="json", by_alias=True))
         return self._metadata_from_raw(name, self._read_raw(name), path)
 
     def delete_workflow(
@@ -2323,7 +2300,6 @@ class WorkflowStoreService:
             duplicate = cast(dict[str, Any], json.loads(json.dumps(raw)))
             duplicate_metadata = duplicate.setdefault("metadata", {})
             if isinstance(duplicate_metadata, dict):
-                duplicate_metadata["display_name"] = patch.display_name or new_name
                 if patch.description is not None:
                     duplicate_metadata["description"] = patch.description
                 duplicate_metadata["storage_path"] = self._storage_path_string(
@@ -2333,8 +2309,28 @@ class WorkflowStoreService:
                     duplicate,
                     duplicate_metadata["storage_path"],
                 )
+            duplicate_graph = GraphState.model_validate(duplicate["graph"])
+            duplicate_graph = duplicate_graph.model_copy(
+                update={
+                    "name": self._leaf_name(new_name),
+                    "display_name": patch.display_name or self._leaf_name(new_name),
+                }
+            )
+            self.validate_containment(new_name, duplicate_graph)
+            source_records = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(
+                duplicate_graph
+            )
+            duplicate["graph"] = duplicate_graph.model_dump(mode="json", by_alias=True)
+            duplicate["artifact_hash"] = artifact_hash(duplicate_graph, source_records)
+            destination_sources = OwnedWorkflowSources(self._workflow_dir(new_name))
+            staged_sources = destination_sources.stage(source_records)
             self._reserve_workflow_generations([new_name])
-            self._write_raw(new_name, duplicate)
+            try:
+                destination_sources.publish(staged_sources)
+                self._write_raw(new_name, duplicate)
+            except Exception:
+                destination_sources.discard(staged_sources)
+                raise
             old_tools = self._workflow_tools_dir(name)
             new_tools = self._workflow_tools_dir(new_name)
             if old_tools.exists():
@@ -2350,7 +2346,14 @@ class WorkflowStoreService:
             self._reserve_workflow_generations([name, new_name])
 
         if patch.display_name is not None:
-            metadata["display_name"] = patch.display_name
+            graph = GraphState.model_validate(raw["graph"]).model_copy(
+                update={"display_name": patch.display_name}
+            )
+            raw["graph"] = graph.model_dump(mode="json", by_alias=True)
+            source_records = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(
+                graph
+            )
+            raw["artifact_hash"] = artifact_hash(graph, source_records)
         if patch.description is not None:
             metadata["description"] = patch.description
         if patch.storage_path is not None:
@@ -2373,6 +2376,8 @@ class WorkflowStoreService:
             self._fsync_directory(destination.parent)
             normalize_workflow_draft_identity(destination, new_name)
         self._write_raw(new_name, raw)
+        if new_name != name:
+            self._rewrite_moved_source_provenance({name: new_name})
         return self._metadata_from_raw(
             new_name,
             self._read_raw(new_name),
@@ -2382,13 +2387,31 @@ class WorkflowStoreService:
     @_identity_locked
     def rebind_versions(self, name: str) -> WorkflowFile:
         self.ensure_workflow_mutations_available()
-        raw = self._read_raw(name)
-        workflow_data = raw.get("workflow", {})
-        if not isinstance(workflow_data, dict):
-            workflow_data = {}
-        raw["workflow"] = rebind_lib_dict_versions(
-            workflow_data,
-            self.tool_registry,
+        document = WorkflowDocument.model_validate(self._read_raw(name))
+        translation = graph_state_to_lib_dict(document.graph, self.tool_registry)
+        rebound = rebind_lib_dict_versions(translation.lib_dict, self.tool_registry)
+        graph = lib_dict_to_graph_state(rebound)
+        # Preserve GUI state from the accepted graph while replacing only tool
+        # dependency identities resolved by the library round trip.
+        positions = {node.id: node for node in document.graph.nodes}
+        graph = graph.model_copy(
+            update={
+                "nodes": [
+                    node.model_copy(
+                        update={
+                            "position": positions[node.id].position,
+                            "collapsed": positions[node.id].collapsed,
+                            "resources": positions[node.id].resources,
+                            "name": positions[node.id].name,
+                        }
+                    )
+                    for node in graph.nodes
+                ]
+            }
         )
-        self._write_raw(name, raw)
+        sources = OwnedWorkflowSources(self._workflow_dir(name)).collect_for_graph(graph)
+        updated = document.model_copy(
+            update={"graph": graph, "artifact_hash": artifact_hash(graph, sources)}
+        )
+        self._write_raw(name, updated.model_dump(mode="json", by_alias=True))
         return self.get_workflow(name)

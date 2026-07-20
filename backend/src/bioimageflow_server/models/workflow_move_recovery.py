@@ -63,6 +63,7 @@ class WorkflowArtifactMove(BaseModel):
     destination_generation_before: int = Field(ge=0)
     destination_generation_after: int = Field(ge=1)
     target_metadata: dict[str, Any]
+    target_display_name: str
     managed_storage: WorkflowManagedStorageMove | None = None
 
     @model_validator(mode="after")

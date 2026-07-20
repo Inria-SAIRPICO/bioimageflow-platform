@@ -94,6 +94,7 @@ from bioimageflow_server.routers.workflows import (
     get_connection_manager as workflows_get_connection_manager,
     get_execution_manager as workflows_get_execution_manager,
     get_workflow_store as workflows_get_workflow_store,
+    get_workflow_source_service,
     get_nested_workflow_snapshot_service as workflows_get_nested_snapshot_service,
     router as workflows_router,
 )
@@ -139,6 +140,7 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowMoveRecoveryError,
     WorkflowStoreService,
 )
+from bioimageflow_server.services.workflow_sources import WorkflowSourceService
 from bioimageflow_server.services.workflow_move_recovery import WorkflowMoveRecoveryService
 from bioimageflow_server.services.workflow_draft import WorkflowDraftService
 from bioimageflow_server.services.workflow_context import normalize_workflow_storage_path
@@ -326,6 +328,14 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         fallback_storage_path_provider=lambda: resolved_storage_path,
         dev_mode_provider=_live_dev_mode,
         settings_provider=_live_settings,
+    )
+    workflow_source_service = WorkflowSourceService(
+        _current_workflow_store,
+        deployment_mode_provider=lambda: config.deployment_mode,
+        unsafe_webapp_features_provider=lambda: bool(
+            _live_settings().unsafe_webapp_features
+        ),
+        has_open_nested_editor=nested_workflow_snapshot_service.has_open_at_or_below,
     )
     workflow_move_recovery_service = WorkflowMoveRecoveryService(
         _current_workflow_store,
@@ -673,6 +683,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[execution_get_dev_mode] = _live_dev_mode
     app.dependency_overrides[execution_get_settings] = _live_settings
     app.dependency_overrides[workflows_get_workflow_store] = _current_workflow_store
+    app.dependency_overrides[get_workflow_source_service] = lambda: workflow_source_service
     app.dependency_overrides[workflows_get_nested_snapshot_service] = lambda: (
         nested_workflow_snapshot_service
     )

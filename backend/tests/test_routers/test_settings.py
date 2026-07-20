@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -13,8 +12,11 @@ from httpx import ASGITransport
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.workflow import WorkflowCreate
 from bioimageflow_server.services.omero_credentials import OmeroCredentialError, OmeroCredentialKey
 from bioimageflow_server.services.settings_store import SettingsStore
+from bioimageflow_server.services.tool_registry import ToolRegistryService
+from bioimageflow_server.services.workflow_store import WorkflowStoreService
 
 
 pytestmark = pytest.mark.anyio
@@ -172,17 +174,15 @@ class TestPatchSettings:
     ) -> None:
         workspace = tmp_path / "new workspace"
         workflows_root = workspace / "workflows"
-        workflow_file = workflows_root / "retargeted" / "workflow.json"
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            json.dumps({
-                "graph": {"nodes": [], "edges": []},
-                "workflow": {"nodes": [], "edges": []},
-                "gui": {"nodes": {}},
-                "metadata": {"display_name": "Retargeted"},
-            }),
-            encoding="utf-8",
+        store = WorkflowStoreService(
+            root_dir=workflows_root,
+            tool_registry=ToolRegistryService(),
+            storage_base_dir=workspace / "outputs",
         )
+        store.create_workflow(
+            WorkflowCreate(name="retargeted", display_name="Retargeted")
+        )
+        workflow_file = workflows_root / "retargeted" / "workflow.json"
 
         response = await settings_client.patch(
             "/api/v1/settings",

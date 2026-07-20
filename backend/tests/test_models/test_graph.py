@@ -1,305 +1,186 @@
-"""Tests for the graph Pydantic models."""
+"""Tests for the strict recursive workflow graph models."""
 
-import json
-from typing import Any
+from __future__ import annotations
+
+import copy
 
 import pytest
 from pydantic import ValidationError
 
-from bioimageflow_server.models.graph import (
-    ColumnRefEdge,
-    Edge,
-    GraphState,
-    NodeState,
-    PositionalEdge,
-    PublishedInput,
-    PublishedOutput,
-)
+from bioimageflow_server.models.graph import GraphState
 
 
-class TestNodeState:
-    def test_full_construction(self) -> None:
-        node = NodeState(
-            id="node-1",
-            name="My Node",
-            tool_name="threshold",
-            position=(100.0, 200.0),
-            parameters={"value": 128},
-            resources={"cpu": 2},
-            output_templates={"out": "result_{name}.csv"},
-            enabled=False,
-            collapsed=True,
-        )
-        assert node.id == "node-1"
-        assert node.name == "My Node"
-        assert node.tool_name == "threshold"
-        assert node.position == (100.0, 200.0)
-        assert node.parameters == {"value": 128}
-        assert node.resources == {"cpu": 2}
-        assert node.output_templates == {"out": "result_{name}.csv"}
-        assert node.enabled is False
-        assert node.collapsed is True
+def _tool(node_id: str) -> dict[str, object]:
+    return {
+        "type": "tool",
+        "id": node_id,
+        "name": node_id.title(),
+        "tool_name": "Generate",
+        "position": [0, 0],
+        "parameters": {},
+    }
 
-    def test_defaults(self) -> None:
-        node = NodeState(
-            id="node-2",
-            name="Node",
-            tool_name="blur",
-            position=(0.0, 0.0),
-            parameters={},
-        )
-        assert node.resources == {}
-        assert node.output_templates == {}
-        assert node.enabled is True
-        assert node.collapsed is False
-        assert node.sub_workflow is None
-        assert node.published_inputs == []
-        assert node.published_outputs == []
-        assert node.sub_workflow_readonly_reason is None
 
-    def test_required_fields(self) -> None:
-        with pytest.raises(ValidationError):
-            NodeState()  # type: ignore[call-arg]
+def _graph(name: str = "workflow") -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "name": name,
+        "display_name": name.title(),
+        "nodes": [_tool("generate")],
+        "edges": [],
+        "interface": {"inputs": [], "outputs": []},
+        "config": {
+            "storage_path": "./bif_data",
+            "engine": "direct",
+            "execution": "parallel",
+        },
+    }
 
-    def test_roundtrip(self) -> None:
-        data: dict[str, Any] = {
-            "id": "node-3",
-            "name": "Test",
-            "tool_name": "crop",
-            "position": [50.5, 75.5],
-            "parameters": {"x": 10, "y": 20},
-        }
-        node = NodeState.model_validate(data)
-        dumped = json.loads(node.model_dump_json())
-        node2 = NodeState.model_validate(dumped)
-        assert node2 == node
 
-    def test_sub_workflow_roundtrip_preserves_nested_graph(self) -> None:
-        data: dict[str, Any] = {
-            "id": "outer",
-            "name": "Outer",
-            "tool_name": "__sub_workflow__",
-            "position": [10, 20],
-            "parameters": {"image": "/tmp/input.tif"},
-            "sub_workflow": {
-                "nodes": [
+def test_recursive_discriminated_graph_round_trip() -> None:
+    child = _graph("child")
+    child["interface"] = {
+        "inputs": [
+            {
+                "id": "input-value",
+                "name": "value",
+                "kind": "field",
+                "targets": [
                     {
-                        "id": "inner",
-                        "name": "Inner",
-                        "tool_name": "segment",
-                        "position": [1, 2],
-                        "parameters": {"diameter": 30},
-                        "resources": {"cpu": 2},
-                        "output_templates": {"mask": "mask.tif"},
-                        "enabled": False,
-                        "collapsed": True,
-                    },
+                        "node": "generate",
+                        "port": {"kind": "field", "name": "value"},
+                    }
                 ],
-                "edges": [
-                    {
-                        "type": "positional",
-                        "id": "pos",
-                        "source_node": "inner",
-                        "target_node": "inner",
-                        "positional_index": 0,
-                    },
-                ],
+            }
+        ],
+        "outputs": [
+            {
+                "id": "output-value",
+                "name": "value",
+                "source": {"node": "generate", "column": "value"},
+            }
+        ],
+    }
+    parent = _graph("parent")
+    parent["nodes"] = [
+        {
+            "type": "workflow",
+            "id": "child-node",
+            "name": "Child",
+            "workflow": child,
+            "bindings": {
+                "input-value": {"__type__": "int", "value": 7},
             },
-            "published_inputs": [
-                {
-                    "name": "image",
-                    "internal_node_id": "inner",
-                    "internal_field": "input_image",
-                    "kind": "input",
-                    "schema": {"type": "Path"},
-                    "default": None,
-                },
-            ],
-            "published_outputs": [
-                {
-                    "name": "mask",
-                    "internal_node_id": "inner",
-                    "internal_output": "mask",
-                    "schema": {"type": "Path"},
-                },
-            ],
+            "position": [100, 100],
+            "source": {
+                "kind": "workspace",
+                "workflow_id": "saved/child",
+                "artifact_hash": "sha256:" + "a" * 64,
+            },
         }
+    ]
+    parsed = GraphState.model_validate(parent)
 
-        node = NodeState.model_validate(data)
-        dumped = json.loads(node.model_dump_json())
-        restored = NodeState.model_validate(dumped)
-
-        assert restored == node
-        assert restored.sub_workflow is not None
-        assert restored.sub_workflow.nodes[0].resources == {"cpu": 2}
-        assert isinstance(restored.sub_workflow.edges[0], PositionalEdge)
-
-    def test_class_based_sub_workflow_readonly_metadata(self) -> None:
-        node = NodeState(
-            id="outer",
-            name="Outer",
-            tool_name="__sub_workflow__",
-            position=(0, 0),
-            parameters={},
-            sub_workflow_readonly_reason="Class-based sub-workflow has no editable graph data.",
-            published_inputs=[
-                PublishedInput(
-                    name="image",
-                    internal_node_id="",
-                    internal_field="image",
-                    kind="input",
-                    schema={"type": "Path"},
-                ),
-            ],
-            published_outputs=[
-                PublishedOutput(
-                    name="mask",
-                    internal_node_id="",
-                    internal_output="mask",
-                    schema={"type": "Path"},
-                ),
-            ],
-        )
-
-        dumped = node.model_dump(mode="json")
-        assert dumped["sub_workflow"] is None
-        assert dumped["sub_workflow_readonly_reason"].startswith("Class-based")
+    assert parsed.nodes[0].type == "workflow"
+    assert parsed.model_dump(mode="json", by_alias=True)["nodes"][0]["bindings"] == {
+        "input-value": {"__type__": "int", "value": 7}
+    }
+    assert GraphState.model_validate_json(parsed.model_dump_json(by_alias=True)) == parsed
 
 
-class TestColumnRefEdge:
-    def test_construction(self) -> None:
-        edge = ColumnRefEdge(
-            id="edge-1",
-            source_node="n1",
-            target_node="n2",
-            source_output="out",
-            target_input="in",
-        )
-        assert edge.type == "column_ref"
-        assert edge.id == "edge-1"
-        assert edge.source_node == "n1"
-        assert edge.target_node == "n2"
-        assert edge.source_output == "out"
-        assert edge.target_input == "in"
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("unexpected",), True),
+        (("nodes", 0, "unexpected"), True),
+        (("nodes", 0, "type"), "unknown"),
+        (("edges",), [{"type": "unknown", "id": "e"}]),
+    ],
+)
+def test_unknown_fields_and_discriminators_are_rejected(
+    path: tuple[str | int, ...], value: object
+) -> None:
+    payload = _graph()
+    cursor: object = payload
+    for part in path[:-1]:
+        cursor = cursor[part]  # type: ignore[index]
+    cursor[path[-1]] = value  # type: ignore[index]
+    with pytest.raises(ValidationError):
+        GraphState.model_validate(payload)
 
 
-class TestPositionalEdge:
-    def test_construction(self) -> None:
-        edge = PositionalEdge(
-            id="edge-2",
-            source_node="n1",
-            target_node="n3",
-            positional_index=0,
-        )
-        assert edge.type == "positional"
-        assert edge.id == "edge-2"
-        assert edge.positional_index == 0
+@pytest.mark.parametrize("missing", ["name", "display_name", "interface", "config"])
+def test_definition_fields_are_required(missing: str) -> None:
+    payload = _graph()
+    payload.pop(missing)
+    with pytest.raises(ValidationError):
+        GraphState.model_validate(payload)
 
 
-class TestEdgeUnion:
-    def test_dispatch_column_ref(self) -> None:
-        from pydantic import TypeAdapter
-
-        adapter = TypeAdapter(Edge)
-        data = {
-            "type": "column_ref",
-            "id": "e1",
-            "source_node": "a",
-            "target_node": "b",
-            "source_output": "out",
-            "target_input": "in",
+def test_binding_requires_known_field_input_and_typed_envelope() -> None:
+    payload = _graph("parent")
+    child = _graph("child")
+    child["interface"] = {
+        "inputs": [
+            {"id": "table", "name": "table", "kind": "dataframe", "targets": []}
+        ],
+        "outputs": [],
+    }
+    payload["nodes"] = [
+        {
+            "type": "workflow",
+            "id": "child",
+            "name": "Child",
+            "workflow": child,
+            "bindings": {"table": {"__type__": "str", "value": "invalid"}},
+            "position": [0, 0],
         }
-        edge = adapter.validate_python(data)
-        assert isinstance(edge, ColumnRefEdge)
+    ]
+    with pytest.raises(ValidationError, match="DataFrame workflow inputs cannot have constants"):
+        GraphState.model_validate(payload)
 
-    def test_dispatch_positional(self) -> None:
-        from pydantic import TypeAdapter
+    payload["nodes"][0]["bindings"] = {  # type: ignore[index]
+        "missing": {"__type__": "str", "value": "invalid"}
+    }
+    with pytest.raises(ValidationError, match="unknown workflow input IDs"):
+        GraphState.model_validate(payload)
 
-        adapter = TypeAdapter(Edge)
-        data = {
-            "type": "positional",
-            "id": "e2",
-            "source_node": "a",
-            "target_node": "b",
-            "positional_index": 1,
+
+def test_workflow_edge_uses_stable_port_id_and_excludes_a_binding() -> None:
+    payload = _graph("parent")
+    child = _graph("child")
+    child["interface"] = {
+        "inputs": [{"id": "input-value", "name": "Value", "kind": "field", "targets": []}],
+        "outputs": [],
+    }
+    payload["nodes"] = [
+        _tool("source"),
+        {
+            "type": "workflow",
+            "id": "child",
+            "name": "Child",
+            "workflow": child,
+            "bindings": {},
+            "position": [0, 0],
+        },
+    ]
+    payload["edges"] = [
+        {
+            "type": "column",
+            "id": "edge-value",
+            "source_node": "source",
+            "source_output": "value",
+            "target_node": "child",
+            "target_input": "input-value",
         }
-        edge = adapter.validate_python(data)
-        assert isinstance(edge, PositionalEdge)
+    ]
+    parsed = GraphState.model_validate(payload)
+    renamed = copy.deepcopy(payload)
+    renamed["nodes"][1]["workflow"]["interface"]["inputs"][0]["name"] = "Renamed"  # type: ignore[index]
+    assert GraphState.model_validate(renamed).edges == parsed.edges
 
-    def test_rejection_invalid_type(self) -> None:
-        from pydantic import TypeAdapter
-
-        adapter = TypeAdapter(Edge)
-        with pytest.raises(ValidationError):
-            adapter.validate_python({"type": "unknown", "id": "x"})
-
-    def test_roundtrip(self) -> None:
-        from pydantic import TypeAdapter
-
-        adapter = TypeAdapter(Edge)
-        data = {
-            "type": "column_ref",
-            "id": "e1",
-            "source_node": "a",
-            "target_node": "b",
-            "source_output": "out",
-            "target_input": "in",
-        }
-        edge = adapter.validate_python(data)
-        dumped = json.loads(adapter.dump_json(edge))
-        edge2 = adapter.validate_python(dumped)
-        assert edge == edge2
-
-
-class TestGraphState:
-    def test_empty(self) -> None:
-        g = GraphState(nodes=[], edges=[])
-        assert g.nodes == []
-        assert g.edges == []
-
-    def test_mixed_edges(self) -> None:
-        node = NodeState(
-            id="n1",
-            name="N",
-            tool_name="t",
-            position=(0, 0),
-            parameters={},
-        )
-        col_edge = ColumnRefEdge(
-            id="e1",
-            source_node="n1",
-            target_node="n2",
-            source_output="o",
-            target_input="i",
-        )
-        pos_edge = PositionalEdge(
-            id="e2",
-            source_node="n1",
-            target_node="n2",
-            positional_index=0,
-        )
-        g = GraphState(nodes=[node], edges=[col_edge, pos_edge])
-        assert len(g.edges) == 2
-        assert isinstance(g.edges[0], ColumnRefEdge)
-        assert isinstance(g.edges[1], PositionalEdge)
-
-    def test_roundtrip(self) -> None:
-        node = NodeState(
-            id="n1",
-            name="N",
-            tool_name="t",
-            position=(0, 0),
-            parameters={"k": "v"},
-        )
-        edge = ColumnRefEdge(
-            id="e1",
-            source_node="n1",
-            target_node="n2",
-            source_output="o",
-            target_input="i",
-        )
-        g = GraphState(nodes=[node], edges=[edge])
-        dumped = json.loads(g.model_dump_json())
-        g2 = GraphState.model_validate(dumped)
-        assert g2.nodes[0].id == "n1"
-        assert isinstance(g2.edges[0], ColumnRefEdge)
+    renamed["nodes"][1]["bindings"] = {  # type: ignore[index]
+        "input-value": {"__type__": "int", "value": 1}
+    }
+    with pytest.raises(ValidationError, match="both an edge and a binding"):
+        GraphState.model_validate(renamed)

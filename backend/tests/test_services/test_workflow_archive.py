@@ -18,7 +18,7 @@ class _LoadedWorkflow:
         self.exported_to = path
 
     def to_dict(self, *, include_custom_tools: bool = False) -> dict[str, Any]:
-        assert include_custom_tools is False
+        assert include_custom_tools is True
         return self.data
 
 

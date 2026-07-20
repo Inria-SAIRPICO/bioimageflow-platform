@@ -26,17 +26,38 @@ class _TemplateTool(ProcessingTool):
 
 def _workflow_dict(template: str) -> dict[str, Any]:
     return {
+        "schema_version": 1,
+        "name": "template_test",
+        "display_name": "Template test",
+        "interface": {
+            "inputs": [],
+            "outputs": [
+                {
+                    "id": "output-result",
+                    "name": "result",
+                    "schema": {"type": "Path"},
+                    "source": {"node": "write", "column": "result"},
+                }
+            ],
+        },
         "nodes": [
             {
                 "name": "write",
+                "type": "tool",
                 "tool_module": __name__,
                 "tool_class": "_TemplateTool",
+                "tool_package": None,
+                "tool_package_version": None,
                 "constants": {},
                 "output_templates": {"result": template},
             },
         ],
         "edges": [],
-        "config": {"engine": "direct"},
+        "config": {
+            "storage_path": "./bif_data",
+            "engine": "direct",
+            "execution": "parallel",
+        },
     }
 
 

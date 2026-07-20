@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from bioimageflow_server.models.graph import GraphState
+from bioimageflow_server.models.graph import WorkflowNodeState
 from bioimageflow_server.models.validation import GraphValidationError
 from bioimageflow_server.services.graph_translator import (
     graph_state_to_lib_dict,
@@ -66,7 +67,25 @@ def build_workflow(
     assert isinstance(result, tuple)
     workflow, lib_errors = result
 
-    errors.extend(lib_validation_error_to_graph_error(e) for e in lib_errors)
-    disabled = {n.id for n in graph.nodes if not n.enabled}
+    for library_error in lib_errors:
+        translated = lib_validation_error_to_graph_error(library_error)
+        duplicate_resolution_error = translated.type in {"missing_tool", "missing_package"} and any(
+            error.node == translated.node
+            and error.type in {"missing_tool", "missing_package"}
+            for error in errors
+        )
+        if not duplicate_resolution_error:
+            errors.append(translated)
+    disabled: set[str] = set()
+
+    def collect_disabled(current: GraphState, scope: tuple[str, ...] = ()) -> None:
+        for node in current.nodes:
+            path = "/".join((*scope, node.id))
+            if not node.enabled:
+                disabled.add(path)
+            if isinstance(node, WorkflowNodeState):
+                collect_disabled(node.workflow, (*scope, node.id))
+
+    collect_disabled(graph)
 
     return BuildOutput(workflow, errors, disabled)

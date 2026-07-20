@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from tests.graph_factory import graph_state
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.nested_workflow_snapshot import NestedSnapshotOwner
@@ -30,7 +31,7 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
 
 
 def _empty_graph() -> GraphState:
-    return GraphState(nodes=[], edges=[])
+    return graph_state(nodes=[], edges=[])
 
 
 def test_recovery_moves_retained_snapshot_tree_before_clearing_journal(

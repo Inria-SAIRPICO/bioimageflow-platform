@@ -103,6 +103,14 @@ def _validation_from_compilation(
         try:
             plans = workflow.plan(dev_mode=dev_mode)
         except CycleInWorkflowError:
+            _append_unique_error(
+                errors,
+                seen_errors,
+                GraphValidationError(
+                    type="cycle_detected",
+                    detail="Workflow contains a dependency cycle",
+                ),
+            )
             plans = {}
         for node_id, node_plan in plans.items():
             if node_id in node_statuses:

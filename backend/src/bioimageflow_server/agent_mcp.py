@@ -43,17 +43,18 @@ SUPPORTED_MCP_TOOLS = [
     "list_tools",
     "describe_bioimageflow_tool",
     "apply_workflow_operations",
-    "create_node",
+    "create_tool_node",
+    "create_workflow_node",
     "delete_node",
     "rename_node",
-    "update_node_parameters",
+    "update_tool_parameters",
     "set_node_enabled",
     "move_node",
     "move_nodes",
-    "set_published_input",
-    "delete_published_input",
-    "set_published_output",
-    "delete_published_output",
+    "expose_workflow_input",
+    "delete_workflow_input",
+    "expose_workflow_output",
+    "delete_workflow_output",
     "connect_nodes",
     "delete_edge",
     "validate_workflow",
@@ -63,19 +64,20 @@ SUPPORTED_MCP_TOOLS = [
 ]
 
 SUPPORTED_OPERATION_TYPES = [
-    "create_node",
+    "create_tool_node",
+    "create_workflow_node",
     "delete_node",
     "rename_node",
-    "update_node_parameters",
+    "update_tool_parameters",
     "set_node_enabled",
     "move_node",
     "move_nodes",
-    "set_published_input",
-    "delete_published_input",
-    "set_published_output",
-    "delete_published_output",
-    "connect_column_ref",
-    "connect_positional",
+    "expose_workflow_input",
+    "delete_workflow_input",
+    "expose_workflow_output",
+    "delete_workflow_output",
+    "connect_column_edge",
+    "connect_dataframe_edge",
     "delete_edge",
 ]
 
@@ -409,14 +411,7 @@ class BioImageFlowMCPGateway:
                 for node in graph.get("nodes", [])
             ],
             "edges": graph.get("edges", []),
-            "published_inputs": [
-                _compact_published_input(item)
-                for item in graph.get("published_inputs", [])
-            ],
-            "published_outputs": [
-                _compact_published_output(item)
-                for item in graph.get("published_outputs", [])
-            ],
+            "interface": graph.get("interface", {"inputs": [], "outputs": []}),
             "validation": _validation_summary(draft.get("validation")),
         }
 
@@ -446,7 +441,7 @@ class BioImageFlowMCPGateway:
             validate=validate,
         )
 
-    async def create_node(
+    async def create_tool_node(
         self,
         *,
         node_id: str,
@@ -459,7 +454,7 @@ class BioImageFlowMCPGateway:
         return await self._apply_operations(
             [
                 {
-                    "type": "create_node",
+                    "type": "create_tool_node",
                     "node_id": node_id,
                     "tool_name": tool_name,
                     "name": name,
@@ -493,7 +488,7 @@ class BioImageFlowMCPGateway:
             expected_revision=expected_revision,
         )
 
-    async def update_node_parameters(
+    async def update_tool_parameters(
         self,
         *,
         node_id: str,
@@ -503,7 +498,7 @@ class BioImageFlowMCPGateway:
         return await self._apply_operations(
             [
                 {
-                    "type": "update_node_parameters",
+                    "type": "update_tool_parameters",
                     "node_id": node_id,
                     "parameters": parameters,
                 }
@@ -564,79 +559,89 @@ class BioImageFlowMCPGateway:
             expected_revision=expected_revision,
         )
 
-    async def set_published_input(
+    async def create_workflow_node(
         self,
         *,
+        node_id: str,
         name: str,
-        internal_node_id: str,
-        internal_field: str,
-        kind: str,
-        schema: dict[str, Any] | None = None,
-        default: Any | None = None,
-        set_schema: bool = False,
-        set_default: bool = False,
+        position: list[float],
+        workflow: dict[str, Any],
+        bindings: dict[str, Any] | None = None,
+        source: dict[str, Any] | None = None,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        return await self._apply_operations(
+            [{
+                "type": "create_workflow_node",
+                "node_id": node_id,
+                "name": name,
+                "position": position,
+                "workflow": workflow,
+                "bindings": bindings or {},
+                "source": source,
+            }],
+            expected_revision=expected_revision,
+        )
+
+    async def expose_workflow_input(
+        self,
+        *,
+        input_port: dict[str, Any],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         operation: dict[str, Any] = {
-            "type": "set_published_input",
-            "name": name,
-            "internal_node_id": internal_node_id,
-            "internal_field": internal_field,
-            "kind": kind,
+            "type": "expose_workflow_input",
+            "input": input_port,
         }
-        if schema is not None or set_schema:
-            operation["schema"] = schema
-        if default is not None or set_default:
-            operation["default"] = default
-        return await self._apply_operations(
-            [operation],
-            expected_revision=expected_revision,
-        )
+        if scope is not None:
+            operation["scope"] = scope
+        return await self._apply_operations([operation], expected_revision=expected_revision)
 
-    async def delete_published_input(
+    async def delete_workflow_input(
         self,
         *,
-        name: str,
-        expected_revision: int | None = None,
-    ) -> dict[str, Any]:
-        return await self._apply_operations(
-            [{"type": "delete_published_input", "name": name}],
-            expected_revision=expected_revision,
-        )
-
-    async def set_published_output(
-        self,
-        *,
-        name: str,
-        internal_node_id: str,
-        internal_output: str,
-        schema: dict[str, Any] | None = None,
-        set_schema: bool = False,
+        input_id: str,
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         operation: dict[str, Any] = {
-            "type": "set_published_output",
-            "name": name,
-            "internal_node_id": internal_node_id,
-            "internal_output": internal_output,
+            "type": "delete_workflow_input",
+            "input_id": input_id,
         }
-        if schema is not None or set_schema:
-            operation["schema"] = schema
-        return await self._apply_operations(
-            [operation],
-            expected_revision=expected_revision,
-        )
+        if scope is not None:
+            operation["scope"] = scope
+        return await self._apply_operations([operation], expected_revision=expected_revision)
 
-    async def delete_published_output(
+    async def expose_workflow_output(
         self,
         *,
-        name: str,
+        output_port: dict[str, Any],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        return await self._apply_operations(
-            [{"type": "delete_published_output", "name": name}],
-            expected_revision=expected_revision,
-        )
+        operation: dict[str, Any] = {
+            "type": "expose_workflow_output",
+            "output": output_port,
+        }
+        if scope is not None:
+            operation["scope"] = scope
+        return await self._apply_operations([operation], expected_revision=expected_revision)
+
+    async def delete_workflow_output(
+        self,
+        *,
+        output_id: str,
+        scope: dict[str, Any] | None = None,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        operation: dict[str, Any] = {
+            "type": "delete_workflow_output",
+            "output_id": output_id,
+        }
+        if scope is not None:
+            operation["scope"] = scope
+        return await self._apply_operations([operation], expected_revision=expected_revision)
 
     async def connect_nodes(
         self,
@@ -645,16 +650,16 @@ class BioImageFlowMCPGateway:
         target_node: str,
         source_output: str | None = None,
         target_input: str | None = None,
-        positional_index: int | None = None,
+        target_position: int | None = None,
         edge_id: str | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        if positional_index is not None:
+        if target_position is not None:
             operation: dict[str, Any] = {
-                "type": "connect_positional",
+                "type": "connect_dataframe_edge",
                 "source_node": source_node,
                 "target_node": target_node,
-                "positional_index": positional_index,
+                "target_position": target_position,
             }
         else:
             if source_output is None or target_input is None:
@@ -663,11 +668,11 @@ class BioImageFlowMCPGateway:
                     "error": "invalid_connect_nodes_arguments",
                     "detail": (
                         "source_output and target_input are required when "
-                        "positional_index is not provided"
+                        "target_position is not provided"
                     ),
                 }
             operation = {
-                "type": "connect_column_ref",
+                "type": "connect_column_edge",
                 "source_node": source_node,
                 "target_node": target_node,
                 "source_output": source_output,
@@ -971,7 +976,7 @@ def create_mcp_server(
         )
 
     @server.tool()
-    async def create_node(
+    async def create_tool_node(
         node_id: str,
         tool_name: str,
         name: str,
@@ -980,12 +985,33 @@ def create_mcp_server(
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Create one workflow node."""
-        return await gateway.create_node(
+        return await gateway.create_tool_node(
             node_id=node_id,
             tool_name=tool_name,
             name=name,
             position=position,
             parameters=parameters,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool()
+    async def create_workflow_node(
+        node_id: str,
+        name: str,
+        position: list[float],
+        workflow: dict[str, Any],
+        bindings: dict[str, Any] | None = None,
+        source: dict[str, Any] | None = None,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Create one embedded workflow snapshot node."""
+        return await gateway.create_workflow_node(
+            node_id=node_id,
+            name=name,
+            position=position,
+            workflow=workflow,
+            bindings=bindings,
+            source=source,
             expected_revision=expected_revision,
         )
 
@@ -1014,13 +1040,13 @@ def create_mcp_server(
         )
 
     @server.tool()
-    async def update_node_parameters(
+    async def update_tool_parameters(
         node_id: str,
         parameters: dict[str, Any],
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Shallow-patch one node parameter mapping."""
-        return await gateway.update_node_parameters(
+        return await gateway.update_tool_parameters(
             node_id=node_id,
             parameters=parameters,
             expected_revision=expected_revision,
@@ -1068,68 +1094,54 @@ def create_mcp_server(
         )
 
     @server.tool()
-    async def set_published_input(
-        name: str,
-        internal_node_id: str,
-        internal_field: str,
-        kind: str,
-        schema: dict[str, Any] | None = None,
-        default: Any | None = None,
-        set_schema: bool = False,
-        set_default: bool = False,
+    async def expose_workflow_input(
+        input_port: dict[str, Any],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        """Create or update a published workflow input."""
-        return await gateway.set_published_input(
-            name=name,
-            internal_node_id=internal_node_id,
-            internal_field=internal_field,
-            kind=kind,
-            schema=schema,
-            default=default,
-            set_schema=set_schema,
-            set_default=set_default,
+        """Create or update a workflow input by immutable port ID."""
+        return await gateway.expose_workflow_input(
+            input_port=input_port,
+            scope=scope,
             expected_revision=expected_revision,
         )
 
     @server.tool()
-    async def delete_published_input(
-        name: str,
+    async def delete_workflow_input(
+        input_id: str,
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        """Delete a published workflow input."""
-        return await gateway.delete_published_input(
-            name=name,
+        """Delete a workflow input by immutable port ID."""
+        return await gateway.delete_workflow_input(
+            input_id=input_id,
+            scope=scope,
             expected_revision=expected_revision,
         )
 
     @server.tool()
-    async def set_published_output(
-        name: str,
-        internal_node_id: str,
-        internal_output: str,
-        schema: dict[str, Any] | None = None,
-        set_schema: bool = False,
+    async def expose_workflow_output(
+        output_port: dict[str, Any],
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        """Create or update a published workflow output."""
-        return await gateway.set_published_output(
-            name=name,
-            internal_node_id=internal_node_id,
-            internal_output=internal_output,
-            schema=schema,
-            set_schema=set_schema,
+        """Create or update a workflow output by immutable port ID."""
+        return await gateway.expose_workflow_output(
+            output_port=output_port,
+            scope=scope,
             expected_revision=expected_revision,
         )
 
     @server.tool()
-    async def delete_published_output(
-        name: str,
+    async def delete_workflow_output(
+        output_id: str,
+        scope: dict[str, Any] | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        """Delete a published workflow output."""
-        return await gateway.delete_published_output(
-            name=name,
+        """Delete a workflow output by immutable port ID."""
+        return await gateway.delete_workflow_output(
+            output_id=output_id,
+            scope=scope,
             expected_revision=expected_revision,
         )
 
@@ -1139,7 +1151,7 @@ def create_mcp_server(
         target_node: str,
         source_output: str | None = None,
         target_input: str | None = None,
-        positional_index: int | None = None,
+        target_position: int | None = None,
         edge_id: str | None = None,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
@@ -1149,7 +1161,7 @@ def create_mcp_server(
             target_node=target_node,
             source_output=source_output,
             target_input=target_input,
-            positional_index=positional_index,
+            target_position=target_position,
             edge_id=edge_id,
             expected_revision=expected_revision,
         )
@@ -1245,11 +1257,12 @@ def _draft_graph_or_error(draft: dict[str, Any]) -> dict[str, Any]:
 
 
 def _graph_summary(graph: dict[str, Any]) -> dict[str, int]:
+    interface = graph.get("interface") or {}
     return {
         "node_count": len(graph.get("nodes") or []),
         "edge_count": len(graph.get("edges") or []),
-        "published_input_count": len(graph.get("published_inputs") or []),
-        "published_output_count": len(graph.get("published_outputs") or []),
+        "workflow_input_count": len(interface.get("inputs") or []),
+        "workflow_output_count": len(interface.get("outputs") or []),
     }
 
 
@@ -1273,52 +1286,36 @@ def _compact_node(
 ) -> dict[str, Any]:
     parameters = node.get("parameters") or {}
     output_templates = node.get("output_templates") or {}
-    payload = {
+    payload: dict[str, Any] = {
+        "type": node.get("type"),
         "id": node.get("id"),
         "name": node.get("name"),
-        "tool_name": node.get("tool_name"),
         "enabled": node.get("enabled", True),
         "position": node.get("position"),
-        "parameter_names": list(parameters),
-        "output_template_names": list(output_templates),
-        "has_sub_workflow": node.get("sub_workflow") is not None,
-        "published_input_names": [
-            item.get("name")
-            for item in node.get("published_inputs", [])
-            if isinstance(item, dict)
-        ],
-        "published_output_names": [
-            item.get("name")
-            for item in node.get("published_outputs", [])
-            if isinstance(item, dict)
-        ],
     }
-    if include_parameters:
-        payload["parameters"] = parameters
+    if node.get("type") == "workflow":
+        child = node.get("workflow") or {}
+        interface = child.get("interface") or {}
+        payload.update({
+            "workflow_name": child.get("name"),
+            "workflow_display_name": child.get("display_name"),
+            "workflow_input_ids": [
+                item.get("id") for item in interface.get("inputs", [])
+            ],
+            "workflow_output_ids": [
+                item.get("id") for item in interface.get("outputs", [])
+            ],
+            "source": node.get("source"),
+        })
+    else:
+        payload.update({
+            "tool_name": node.get("tool_name"),
+            "parameter_names": list(parameters),
+            "output_template_names": list(output_templates),
+        })
+        if include_parameters:
+            payload["parameters"] = parameters
     return payload
-
-
-def _compact_published_input(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: item.get(key)
-        for key in (
-            "name",
-            "internal_node_id",
-            "internal_field",
-            "kind",
-            "schema",
-            "default",
-        )
-        if key in item
-    }
-
-
-def _compact_published_output(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: item.get(key)
-        for key in ("name", "internal_node_id", "internal_output", "schema")
-        if key in item
-    }
 
 
 def _read_state_or_error(path: Path | None) -> AgentState | dict[str, Any]:
