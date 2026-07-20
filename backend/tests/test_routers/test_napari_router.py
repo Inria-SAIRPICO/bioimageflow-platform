@@ -339,10 +339,10 @@ def test_create_app_uses_provided_napari_launcher() -> None:
 
 
 async def test_lifespan_calls_shutdown_before_ws_handler_removal() -> None:
-    """The launcher.shutdown() must run before the WS log handler is
-    detached so the final environment_status: stopped event reaches
-    connected clients. We drive the lifespan directly because
-    ASGITransport does not run startup/shutdown events.
+    """A failing shutdown is swallowed before the WS handler is detached.
+
+    We drive the lifespan directly because ASGITransport does not run
+    startup/shutdown events.
     """
     import logging as _logging
 
@@ -351,10 +351,14 @@ async def test_lifespan_calls_shutdown_before_ws_handler_removal() -> None:
 
     async def _record_shutdown() -> None:
         order.append("napari_shutdown")
+        raise RuntimeError("boom")
 
     launcher.shutdown.side_effect = _record_shutdown
 
-    config = AppConfig(napari_launcher=launcher)  # type: ignore[arg-type]
+    config = AppConfig(
+        napari_launcher=launcher,  # type: ignore[arg-type]
+        disable_hot_reload=True,
+    )
     app = create_app(config=config)
 
     # Wrap removeHandler so we can record when the WS log handler is
@@ -378,18 +382,3 @@ async def test_lifespan_calls_shutdown_before_ws_handler_removal() -> None:
     assert "napari_shutdown" in order
     assert "ws_handler_removed" in order
     assert order.index("napari_shutdown") < order.index("ws_handler_removed")
-
-
-async def test_lifespan_completes_when_shutdown_raises() -> None:
-    """A raise in launcher.shutdown() must be logged and swallowed so
-    the rest of the lifespan cleanup still runs.
-    """
-    launcher = _fake_launcher()
-    launcher.shutdown.side_effect = RuntimeError("boom")
-
-    config = AppConfig(napari_launcher=launcher)  # type: ignore[arg-type]
-    app = create_app(config=config)
-
-    # Should NOT raise; the exception is logged, not propagated.
-    async with app.router.lifespan_context(app):
-        pass

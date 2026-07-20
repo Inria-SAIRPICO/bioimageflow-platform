@@ -73,28 +73,6 @@ class _FakePypi(PyPIVersionService):
         pass
 
 
-# ---------------------------------------------------------------------------
-# Task 7.1 — default installer constructed when config omits it
-# ---------------------------------------------------------------------------
-
-
-async def test_default_installer_constructed(empty_tool_store: Path):
-    config = AppConfig(
-        tool_registry=ToolRegistryService(),
-        known_packages=KnownPackagesService(
-            user_path=empty_tool_store / "no_user",
-            bundled_path=empty_tool_store / "no_bundled",
-        ),
-        pypi_versions=_FakePypi(),
-    )
-    app = create_app(config=config)
-    # Sanity: the dependency override no longer returns None.
-    from bioimageflow_server.routers.tools import get_package_installer
-
-    resolver = app.dependency_overrides[get_package_installer]
-    assert isinstance(resolver(), PypiPackageInstaller)
-
-
 async def test_install_endpoint_no_longer_500s_by_default(
     empty_tool_store: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -117,11 +95,6 @@ async def test_install_endpoint_no_longer_500s_by_default(
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.post("/api/v1/tools/packages/bioimageflow_core/install")
     assert resp.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# Task 7.2 — overrides are preserved
-# ---------------------------------------------------------------------------
 
 
 async def test_custom_installer_override_preserved(empty_tool_store: Path):
@@ -223,6 +196,7 @@ async def test_lifespan_refreshes_catalog_on_startup(empty_tool_store: Path):
     config = AppConfig(
         tool_registry=ToolRegistryService(),
         package_catalog=catalog,  # type: ignore[arg-type]
+        disable_hot_reload=True,
         known_packages=KnownPackagesService(
             user_path=empty_tool_store / "no_user",
             bundled_path=empty_tool_store / "no_bundled",
@@ -253,6 +227,7 @@ async def test_lifespan_swallows_network_error_from_refresh(
     config = AppConfig(
         tool_registry=ToolRegistryService(),
         package_catalog=_BrokenCatalog(),  # type: ignore[arg-type]
+        disable_hot_reload=True,
         known_packages=KnownPackagesService(
             user_path=empty_tool_store / "no_user",
             bundled_path=empty_tool_store / "no_bundled",

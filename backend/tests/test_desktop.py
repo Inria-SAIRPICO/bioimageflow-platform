@@ -1,37 +1,8 @@
 """Tests for desktop (pywebview) module."""
 
-import inspect
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
-
-
-def test_import_webview():
-    """Verify that pywebview is installed and importable."""
-    import webview  # noqa: F401
-
-
-def test_start_desktop_exists_and_signature():
-    """start_desktop has the correct signature with expected defaults."""
-    from bioimageflow_server.desktop import start_desktop
-
-    sig = inspect.signature(start_desktop)
-    params = sig.parameters
-
-    assert "host" in params
-    assert params["host"].default == "127.0.0.1"
-    # With `from __future__ import annotations` the annotation is the string 'str'
-    assert params["host"].annotation in (str, "str")
-
-    assert "port" in params
-    assert params["port"].default == 8000
-    assert params["port"].annotation in (int, "int")
-
-    assert "dev" in params
-    assert params["dev"].default is False
-    assert params["dev"].annotation in (bool, "bool")
-
-    assert sig.return_annotation is None or sig.return_annotation == "None"
 
 
 def _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls):
@@ -367,25 +338,6 @@ class TestMainDesktopFlag:
 
 class TestDesktopApiClass:
     """Tests for the DesktopApi class itself."""
-
-    def test_desktop_api_importable(self):
-        from bioimageflow_server.desktop import DesktopApi
-
-        api = DesktopApi()
-        assert api is not None
-
-    def test_desktop_api_has_required_methods(self):
-        from bioimageflow_server.desktop import DesktopApi
-
-        api = DesktopApi()
-        assert callable(getattr(api, "select_file", None))
-        assert callable(getattr(api, "select_files", None))
-        assert callable(getattr(api, "select_folder", None))
-        assert callable(getattr(api, "save_file", None))
-        assert callable(getattr(api, "reveal_path", None))
-        assert callable(getattr(api, "set_title", None))
-        assert callable(getattr(api, "open_code_editor_window", None))
-        assert callable(getattr(api, "close_code_editor_window", None))
 
     def test_set_window(self):
         from bioimageflow_server.desktop import DesktopApi
@@ -1022,13 +974,6 @@ class TestOnClosing:
 
         assert _on_closing() is True
 
-    def test_on_closing_is_callable(self):
-        """_on_closing is a callable."""
-        from bioimageflow_server.desktop import _on_closing
-
-        assert callable(_on_closing)
-
-
 class TestStartDesktopShutdownIntegration:
     """Tests that start_desktop wires shutdown and closing correctly."""
 
@@ -1105,16 +1050,6 @@ class TestStartDesktopShutdownIntegration:
 class TestShutdownConstants:
     """Tests for shutdown-related constants."""
 
-    def test_server_thread_join_timeout_is_positive(self):
-        from bioimageflow_server.desktop import _SERVER_THREAD_JOIN_TIMEOUT
-
-        assert _SERVER_THREAD_JOIN_TIMEOUT > 0
-
-    def test_execution_stop_timeout_is_positive(self):
-        from bioimageflow_server.desktop import _EXECUTION_STOP_TIMEOUT
-
-        assert _EXECUTION_STOP_TIMEOUT > 0
-
     def test_execution_stop_timeout_is_10s(self):
         from bioimageflow_server.desktop import _EXECUTION_STOP_TIMEOUT
 
@@ -1132,15 +1067,6 @@ class TestEntryPoint:
         matches = [ep for ep in eps if ep.name == "bioimageflow-gui"]
         assert len(matches) == 1
         assert matches[0].value == "bioimageflow_server.desktop:main_desktop"
-
-    def test_main_desktop_exists_and_callable(self):
-        """main_desktop is importable and callable with no arguments."""
-        from bioimageflow_server.desktop import main_desktop
-
-        assert callable(main_desktop)
-        sig = inspect.signature(main_desktop)
-        # main_desktop takes no parameters
-        assert len(sig.parameters) == 0
 
     def test_main_desktop_calls_start_desktop(self):
         """main_desktop delegates to start_desktop with default arguments."""

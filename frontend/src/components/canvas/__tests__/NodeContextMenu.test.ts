@@ -14,12 +14,6 @@ describe('NodeContextMenu', () => {
     })
   }
 
-  it('renders four menu items', () => {
-    const w = factory()
-    const items = w.findAll('li')
-    expect(items).toHaveLength(4)
-  })
-
   it('shows "Rename" as first item', () => {
     const w = factory()
     expect(w.findAll('li')[0].text()).toBe('Rename')

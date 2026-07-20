@@ -832,23 +832,6 @@ async def test_uninstall_package_not_found():
 # ---------------------------------------------------------------------------
 
 
-async def test_start_environment():
-    config = AppConfig(tool_registry=ToolRegistryService())
-    async for client in _client(config):
-        resp = await client.post("/api/v1/tools/environments/myenv/start")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "creating"
-    assert resp.json()["environment"] == "myenv"
-
-
-async def test_stop_environment():
-    config = AppConfig(tool_registry=ToolRegistryService())
-    async for client in _client(config):
-        resp = await client.post("/api/v1/tools/environments/myenv/stop")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "stopped"
-
-
 class _FakeToolEnvironmentService:
     def __init__(self) -> None:
         self.started: list[str] = []

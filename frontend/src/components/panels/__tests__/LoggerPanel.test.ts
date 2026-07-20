@@ -278,14 +278,4 @@ describe('LoggerPanel', () => {
     expect(store.autoScroll).toBe(false)
   })
 
-  it('renders a large capped buffer without throwing', async () => {
-    const w = mountPanel()
-    const store = useLoggerStore()
-    store.setFilter({ levels: new Set(['DEBUG', 'INFO', 'WARNING', 'ERROR']) })
-    for (let i = 0; i < 5000; i += 1) {
-      store.addEntry({ level: 'INFO', message: `entry ${i}`, nodeId: null, timestamp: i })
-    }
-    await w.vm.$nextTick()
-    expect(w.findAll('[data-testid="log-entry"]')).toHaveLength(5000)
-  })
 })

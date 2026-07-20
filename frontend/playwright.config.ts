@@ -24,6 +24,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
+  failOnFlakyTests: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: `http://localhost:${frontendPort}`,

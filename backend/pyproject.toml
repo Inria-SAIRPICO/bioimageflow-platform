@@ -55,6 +55,9 @@ packages = ["src/bioimageflow_server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "error::ResourceWarning",
+]
 markers = [
     "common_tools: external certification tests requiring --run-common-tools and an installed bioimageflow_common_tools tool store.",
 ]

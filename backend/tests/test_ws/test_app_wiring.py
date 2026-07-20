@@ -80,7 +80,9 @@ def test_lifespan_sets_and_clears_loop_and_handler() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 
     manager = ConnectionManager()
-    app = create_app(AppConfig(connection_manager=manager))
+    app = create_app(
+        AppConfig(connection_manager=manager, disable_hot_reload=True)
+    )
     bioimageflow_logger = logging.getLogger("bioimageflow")
     initial_handlers = set(bioimageflow_logger.handlers)
 
@@ -102,7 +104,9 @@ def test_integration_subscribe_ack_roundtrip() -> None:
     from bioimageflow_server.ws.handler import ConnectionManager
 
     manager = ConnectionManager()
-    app = create_app(AppConfig(connection_manager=manager))
+    app = create_app(
+        AppConfig(connection_manager=manager, disable_hot_reload=True)
+    )
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:

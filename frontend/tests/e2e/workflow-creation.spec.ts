@@ -64,17 +64,6 @@ test.describe('workflow creation', () => {
     await expect(page.locator('[data-testid="create-tool-btn"]')).toBeVisible()
   })
 
-  test('Tools Panel fetches tools from backend successfully', async ({ page }) => {
-    // The tools API call already happened during mount.
-    // Verify the data loaded by checking the store via evaluate.
-    const toolsLoaded = await page.evaluate(async () => {
-      const res = await fetch('/api/v1/tools')
-      return { status: res.status, isArray: Array.isArray(await res.json()) }
-    })
-    expect(toolsLoaded.status).toBe(200)
-    expect(toolsLoaded.isArray).toBe(true)
-  })
-
   test('Canvas panel has dot grid background and no minimap', async ({ page }) => {
     const name = `canvas_grid_${Date.now()}`
     const displayName = `Canvas Grid ${name}`
@@ -152,20 +141,4 @@ test.describe('workflow creation', () => {
     await expect(toolNameCells).toHaveCount(0)
   })
 
-  test('global font is sans-serif, not browser default', async ({ page }) => {
-    const fontFamily = await page.evaluate(() =>
-      getComputedStyle(document.body).fontFamily,
-    )
-    expect(fontFamily).toContain('apple-system')
-    expect(fontFamily).toContain('sans-serif')
-  })
-
-  test('primeicons CSS is loaded', async ({ page }) => {
-    const iconFontLoaded = await page.evaluate(() => {
-      const icon = document.querySelector('[class*="pi-"]')
-      if (!icon) return false
-      return getComputedStyle(icon).fontFamily.includes('primeicons')
-    })
-    expect(iconFontLoaded).toBe(true)
-  })
 })

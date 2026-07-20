@@ -8,7 +8,8 @@ import os
 import re
 import sqlite3
 import uuid
-from collections.abc import AsyncIterable, Iterable
+from collections.abc import AsyncIterable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -179,11 +180,20 @@ class DatasetStore:
         self._initialize_catalog()
         self._reconcile()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self._catalog_path, timeout=5)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            yield connection
+        except BaseException:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        finally:
+            connection.close()
 
     def _initialize_catalog(self) -> None:
         with self._connect() as connection:

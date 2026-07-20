@@ -64,6 +64,10 @@ def isolated_bioimageflow_runtime(
     monkeypatch.setenv("BIOIMAGEFLOW_HOME", str(home))
     monkeypatch.setenv("BIOIMAGEFLOW_TOOL_STORE", str(tool_store))
     monkeypatch.setenv("BIOIMAGEFLOW_WETLANDS", str(wetlands))
+    monkeypatch.setattr(
+        "bioimageflow_server.app.ensure_agent_workspace_context",
+        lambda _workspace: None,
+    )
 
 
 @pytest.fixture

@@ -108,14 +108,6 @@ test.describe('execution lifecycle', () => {
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
   })
 
-  test('a newly created canonical workflow canvas is visible and responsive', async ({ page }) => {
-    const displayName = uniqueDisplayName('Visible Canvas')
-    const workflowName = deriveWorkflowId(displayName)
-    await createWorkflowInGui(page, displayName)
-    await expect(page.locator('.canvas-view')).toBeVisible()
-    await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`)
-  })
-
   test('creates a workflow and executes a source tool through the real backend', async ({
     page,
   }) => {

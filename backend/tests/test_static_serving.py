@@ -106,18 +106,3 @@ async def test_no_static_dir_no_fallback():
         resp = await ac.get("/random/path")
         # Should get 404 since no catch-all is registered
         assert resp.status_code == 404
-
-
-# ---- AppConfig field ----
-
-
-def test_appconfig_static_dir_default():
-    """AppConfig.static_dir defaults to None."""
-    config = AppConfig()
-    assert config.static_dir is None
-
-
-def test_appconfig_static_dir_set(tmp_path: Path):
-    """AppConfig.static_dir can be set to a Path."""
-    config = AppConfig(static_dir=tmp_path)
-    assert config.static_dir == tmp_path

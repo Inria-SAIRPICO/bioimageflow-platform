@@ -29,7 +29,11 @@ def anyio_backend() -> str:
 async def settings_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
     settings_path = tmp_path / "settings.json"
     store = SettingsStore(path=settings_path)
-    config = AppConfig(settings_store=store, deployment_mode="desktop")
+    config = AppConfig(
+        settings_store=store,
+        deployment_mode="desktop",
+        disable_hot_reload=True,
+    )
     app = create_app(config)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
@@ -67,7 +71,11 @@ async def omero_settings_client(
     settings_path = tmp_path / "settings.json"
     credentials = FakeOmeroCredentials()
     store = SettingsStore(path=settings_path, omero_credentials=credentials)
-    config = AppConfig(settings_store=store, deployment_mode="desktop")
+    config = AppConfig(
+        settings_store=store,
+        deployment_mode="desktop",
+        disable_hot_reload=True,
+    )
     app = create_app(config)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(

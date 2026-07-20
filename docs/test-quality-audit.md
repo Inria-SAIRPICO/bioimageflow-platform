@@ -13,7 +13,7 @@ Some safety-critical internals have deep coverage, while several central v2 user
 The highest-value improvement is to replace shallow and duplicated checks with a small number of real vertical feature tests: recursive sub-workflow execution and caching, archive export/import round trips, nested editor save/discard, cross-workflow paste, custom-tool lifecycle, and consolidated data-table behavior.
 Coverage should become an enforced signal, but percentage targets should be introduced only after gaps are classified; raw line coverage must not become a reason to preserve trivial serialization and framework tests.
 
-## Measured baseline
+## Pre-cleanup measured baseline
 
 The measurements below were taken from the working checkout on 2026-07-20.
 
@@ -30,12 +30,11 @@ The frontend source contains about 34,851 TypeScript/Vue lines, its Vitest tests
 Test volume therefore already exceeds production-code volume, which reinforces that future work should optimize signal rather than simply add more cases.
 
 The backend run emitted 241 warnings, dominated by unclosed SQLite connection `ResourceWarning`s in dataset-related tests.
-Warnings at this volume make new warnings easy to miss and should be treated as a suite defect.
-The likely production defect is repeated `with self._connect() as connection` use in `services/dataset_store.py`: SQLite’s connection context manager commits or rolls back but does not close the connection.
+The cleanup iteration fixed the connection lifecycle and configured Pytest to fail on future `ResourceWarning`s.
 
-## High-confidence cleanup recommendations
+## Small cleanup implemented
 
-The following tests can be removed because they do not exercise a distinct project contract:
+The small cleanup iteration removed or consolidated the following tests because they did not exercise a distinct project contract:
 
 - `frontend/tests/unit/smoke.test.ts` asserted only that `1 + 1` equals `2`.
 - `frontend/tests/unit/stores/integration.test.ts` checked that Pinia stores can coexist and repeated state assertions already owned by the individual store suites.
@@ -43,19 +42,25 @@ The following tests can be removed because they do not exercise a distinct proje
 - `frontend/tests/e2e/smoke.spec.ts` was a strict subset of the retained backend-connected `full-stack-smoke.spec.ts` and `app-shell.spec.ts`.
 - `frontend/tests/e2e/stores-integration.spec.ts` inspected Vue/Pinia internals rather than a user-visible feature; every maintained browser flow already proves that the app and stores initialize.
 - `frontend/tests/e2e/graph-validation.spec.ts` drove `fetch` directly and duplicated `backend/tests/test_routers/test_graph.py`, including empty-graph validation and removal of the parameter PATCH endpoint; it never exercised GUI validation behavior.
-- Remove the API-only “Tools Panel fetches tools from backend successfully” case from `frontend/tests/e2e/workflow-creation.spec.ts`; it asserts the response shape of `/tools`, not panel behavior.
-- Remove the standalone “newly created canonical workflow canvas is visible” case from `frontend/tests/e2e/execution.spec.ts` because the retained real execution and workflow CRUD flows perform the same setup and stronger assertions.
-- Remove the font-family and PrimeIcons implementation checks from `frontend/tests/e2e/workflow-creation.spec.ts`; they do not protect a platform feature or stable visual contract.
+- The API-only “Tools Panel fetches tools from backend successfully” case in `frontend/tests/e2e/workflow-creation.spec.ts` asserted the response shape of `/tools`, not panel behavior.
+- The standalone “newly created canonical workflow canvas is visible” case in `frontend/tests/e2e/execution.spec.ts` duplicated setup and weaker assertions already present in real execution and workflow CRUD flows.
+- The font-family and PrimeIcons implementation checks in `frontend/tests/e2e/workflow-creation.spec.ts` did not protect a platform feature or stable visual contract.
 - `frontend/tests/manual/chrome_devtools_harness.py` was outside every documented and CI lane, depended on an external CLI and fragile Vue internals, and duplicated maintained Playwright coverage.
-- Remove the 5,000-row `LoggerPanel` render test because it costs about 1.93 seconds while the logger store already owns the capped-buffer contract; a future virtualization test should use a bounded performance assertion rather than requiring 5,000 DOM rows.
-- Remove `backend/tests/test_models/test_imports.py` because collection, type checking, and all consuming tests already import the public models.
-- Remove the private default-installer construction assertion in `backend/tests/test_app_config_wiring.py` in favor of the retained observable install-endpoint test.
-- Remove the two `AppConfig.static_dir` getter/default assertions from `backend/tests/test_static_serving.py`; the retained tests exercise actual fallback and asset serving.
+- The 5,000-row `LoggerPanel` render test cost about 1.93 seconds while the logger store already owns the capped-buffer contract; a future virtualization test should use a bounded performance assertion rather than requiring 5,000 DOM rows.
+- `backend/tests/test_models/test_imports.py` was redundant with collection, type checking, and consuming tests that import the public models.
+- The private default-installer construction assertion in `backend/tests/test_app_config_wiring.py` was redundant with the retained observable install-endpoint test.
+- The two `AppConfig.static_dir` getter/default assertions in `backend/tests/test_static_serving.py` duplicated the retained tests of actual fallback and asset serving.
+- Importability, callability, signature, and positive-constant assertions were removed from `backend/tests/test_desktop.py`; the retained tests exercise observable desktop behavior and the exact execution-stop timeout contract.
+- Two tools-router environment start/stop cases were removed because they duplicated the retained fake-service delegation tests and could race a real Pixi installation.
+- The exact four-item assertion in `NodeContextMenu.test.ts` was removed while each menu action remains covered independently.
+- Six serial canvas browser cases were consolidated into one feature flow that proves tool discovery, draft persistence, selection, pins, and the Node Panel without repeating workflow setup.
 
-Applying only this conservative set would reduce the inventory to approximately 1,495 backend tests with 1,485 selected in the required lane, 100 Vitest files with 1,466 tests, and 16 Chromium spec files with 42 tests.
+After cleanup, Pytest collects 1,484 tests with 1,474 selected in the required lane, Vitest runs 1,465 tests in 100 files, and Playwright runs 37 tests in 16 spec files.
+Post-cleanup validation completed with 1,474 backend tests passing in 43.16 seconds, 1,465 frontend unit tests passing in 22.15 seconds, and all 37 Chromium tests passing in 52.9 seconds.
 The retained `full-stack-smoke.spec.ts` is the one browser smoke because it proves app rendering, the Vite proxy, backend health, and absence of console errors in one flow.
 
-Further backend candidates need coverage-assisted mutation or fault-seeding evidence before removal.
+No tests were added, and sub-workflow tests were deliberately left unchanged because that feature area is expected to change soon.
+Further deletion candidates need coverage-assisted mutation or fault-seeding evidence before removal.
 
 ## What is already strong
 
@@ -176,8 +181,7 @@ There are overlapping old/new locations for execution, tool registry, WebSocket,
 The files are not exact duplicates, but ownership is fragmented and some behavior is asserted at multiple layers.
 Merge by responsibility: protocol dispatch in one WebSocket suite, state transitions in one store suite, and visible behavior in component/browser suites.
 
-`NodeContextMenu.test.ts` has a brittle exact count of four menu items in addition to individual action assertions.
-Remove the count assertion because adding an unrelated valid command should not break existing behavior tests.
+The brittle exact menu-item count in `NodeContextMenu.test.ts` was removed during the small cleanup; the individual action assertions remain.
 
 The Create Tool browser case currently proves only that a dialog opens and closes; it should be replaced by a real creation flow rather than expanded with more dialog-shape assertions.
 
@@ -201,26 +205,25 @@ Stub the independently tested `ensure_agent_workspace_context` setup in move-rec
 Numerous backend tests poll with `asyncio.sleep(0.01)` or use fixed `time.sleep` calls, especially WebSocket logging, hot reload, editor, package installer, and execution tests.
 Prefer explicit events, awaited task completion, or condition polling with an immediate first check.
 
-Ordinary uninstrumented runs under the local macOS/Python 3.13 environment repeatedly exited with status 133 when consecutive application-lifespan tests ran, although those tests passed individually and the slower coverage-instrumented full run passed.
-CI uses Linux/Python 3.12, so this is a portability and test-order isolation warning rather than a confirmed CI failure.
-Reproduce it with verbose order logging, then prevent unrelated lifespan tests from starting real watchers/process services and reset process-global log handlers explicitly.
+Before cleanup, ordinary uninstrumented runs under the local macOS/Python 3.13 environment repeatedly exited with status 133 when consecutive application-lifespan tests ran, although those tests passed individually and the slower coverage-instrumented full run passed.
+The cleanup disables unrelated hot reload in affected lifespan tests and stubs the separately tested agent-workspace setup in the global isolated-runtime fixture; the complete uninstrumented backend lane now passes without an interpreter abort.
 
 Consider `pytest-xdist` only after marking process-global logging, module-import, file-watcher, and environment tests as serial.
 Parallelizing everything blindly would make this suite less reliable; the safe service/model subset is the first candidate.
 
-Close dataset SQLite connections explicitly in production code and turn `ResourceWarning` into an error once the existing 241 warnings are fixed.
-Also configure Pytest to reject unregistered markers and report the slowest tests in CI.
+Dataset SQLite connections now commit or roll back explicitly and always close, and Pytest treats `ResourceWarning` as an error.
+Pytest should also reject unregistered markers and report the slowest tests in CI in the larger iteration.
 
 ### Frontend unit tests
 
-Vitest currently gives every file a JSDOM environment and runs `frontend/tests/setup.ts`, which replaces IndexedDB before every one of the 1,479 pre-cleanup tests.
+Vitest currently gives every file a JSDOM environment and runs `frontend/tests/setup.ts`, which replaces IndexedDB before every one of the 1,465 post-cleanup tests.
 Split pure utility/session/store tests into a Node environment where possible, reserve JSDOM and Vue Test Utils setup for component tests, and install fake IndexedDB only in suites that use it.
 
 Very large files increase transform, collection, review, and failure-localization costs: `CanvasView.test.ts` is about 6,576 lines, `AppShell.test.ts` 2,251, `MenuBar.test.ts` 2,138, and `workflow.test.ts` 1,705.
 Split them by contract area without duplicating the expensive mount/setup path, using shared fixture builders from `src/test-utils`.
 
-A representative normal Vitest run measured about 21 seconds wall time; aggregate JSDOM environment time across workers was about 91 seconds and setup about 12.1 seconds.
-The slowest files were `AppShell.test.ts` at 5.89 seconds, `MenuBar.test.ts` at 5.12, `ToolsPanel.test.ts` at 3.17, `LoggerPanel.test.ts` at 2.45, and `NodePanel.test.ts` at 1.98.
+A post-cleanup Vitest run measured 22.15 seconds wall time, with 100 files and 1,465 tests passing.
+The slowest files were `AppShell.test.ts` at 6.10 seconds, `MenuBar.test.ts` at 5.24, `ToolsPanel.test.ts` at 3.06, and `NodePanel.test.ts` at 1.99; `LoggerPanel.test.ts` fell to 0.55 seconds after removing the 5,000-row DOM case.
 That profile supports environment/setup splitting and focused fixture work before micro-optimizing assertions.
 
 ### Browser tests
@@ -235,8 +238,8 @@ Introduce fixtures that create and delete a workflow per test, eliminate `Date.n
 Replace `page.waitForTimeout(350)` in `logger-panel.spec.ts` with an observable UI/event condition.
 Keep the file-watcher timeout in `hot-reload.spec.ts` as a bounded integration timeout, but make timeout failures report watcher/backend state.
 
-CI currently retries every browser failure twice.
-Enable Playwright’s `failOnFlakyTests` in CI so a pass-on-retry is still visible as a failing quality signal, and quarantine a demonstrably flaky test with an owner and expiry rather than silently normalizing retries.
+CI still retries browser failures twice, but Playwright now enables `failOnFlakyTests` in CI so a pass-on-retry remains a failing quality signal.
+Quarantine any demonstrably flaky test with an owner and expiry rather than silently normalizing retries.
 
 There are no screenshot assertions and no automated accessibility audit in the Playwright suite.
 Do not create a large screenshot-baseline suite, but consider a few stable visual assertions for the sub-workflow border, canvas shell, and critical dialogs, plus an accessibility scan of the main shell and modal flows.
@@ -265,7 +268,7 @@ Add a production build/static-serving smoke so packaging and production-only bun
 
 ### P0: restore trust in signals
 
-1. Fix and then fail on the SQLite/resource warnings.
+1. Completed in the small cleanup: fix and then fail on SQLite/resource warnings.
 2. Add backend branch coverage and frontend V8 coverage with non-regression thresholds and artifacts.
 3. Resolve the custom-tool context-menu specification contradiction.
 4. Add a real recursive sub-workflow execution/cache/log test.

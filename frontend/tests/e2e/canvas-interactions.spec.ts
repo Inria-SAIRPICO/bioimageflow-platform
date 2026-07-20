@@ -93,51 +93,21 @@ test.describe('Canvas interactions', () => {
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })
 
-  test('seeded tools are loaded in the panel', async ({ page }) => {
-    const source = await panelTool(page)
-    await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
-    await page.locator('[data-testid="tool-search"]').fill(source.name)
-    await expect(page.getByTestId(`tool-item-${source.name}`)).toBeVisible({
-      timeout: 5000,
-    })
-    await expect(
-      page.getByTestId(`tool-item-${source.name}`).locator('.tool-list-name'),
-    ).toContainText(source.display_name)
-  })
-
-  test('node drop is accepted by workflow draft persistence', async ({ page }) => {
-    const { response } = await addSeedNumbersNode(page)
+  test('loads a tool and persists an interactive node with panel and pins', async ({ page }) => {
+    const { node, tool, response } = await addSeedNumbersNode(page)
     expect(response.status()).toBe(200)
-  })
+    await expect(
+      page.getByTestId(`tool-item-${tool.name}`).locator('.tool-list-name'),
+    ).toContainText(tool.display_name)
 
-  test('selected node has blue border', async ({ page }) => {
-    const { node } = await addSeedNumbersNode(page)
     await node.click()
     await expect(node).toHaveClass(/selected/)
-  })
+    await expect(node.locator('.pin-dot')).toHaveCount(0)
+    expect(await node.locator('.pin-handle').count()).toBeGreaterThan(0)
 
-  test('node panel updates on selection', async ({ page }) => {
-    const { node } = await addSeedNumbersNode(page)
-    await node.click()
     await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
     const nodePanel = page.locator('[data-testid="panel-nodePanel"]')
     await expect(nodePanel).toBeVisible()
     await expect(nodePanel.locator('.node-name')).toBeVisible({ timeout: 3000 })
-  })
-
-  test('pins show single circle (no double)', async ({ page }) => {
-    const { node } = await addSeedNumbersNode(page)
-    await expect(node.locator('.pin-dot')).toHaveCount(0)
-    const handles = node.locator('.pin-handle')
-    expect(await handles.count()).toBeGreaterThan(0)
-  })
-
-  test('context menu has light theme', async ({ page }) => {
-    const { node } = await addSeedNumbersNode(page)
-    await node.click({ button: 'right' })
-    const menu = page.locator('.node-context-menu')
-    await expect(menu).toBeVisible()
-    const bg = await menu.evaluate((el) => getComputedStyle(el).backgroundColor)
-    expect(bg).toContain('255')
   })
 })
