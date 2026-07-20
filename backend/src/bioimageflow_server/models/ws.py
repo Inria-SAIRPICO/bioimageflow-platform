@@ -132,7 +132,7 @@ class PackageInstallMessage(_MessageBase):
 class EnvironmentStatusMessage(_MessageBase):
     type: Literal["environment_status"] = "environment_status"
     env_name: str
-    status: Literal["stopped", "creating", "running"]
+    status: Literal["stopped", "creating", "opening", "running"]
 
 
 class WorkflowDraftChangedMessage(_MessageBase):

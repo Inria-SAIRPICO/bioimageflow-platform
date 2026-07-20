@@ -52,4 +52,27 @@ describe('napari store', () => {
     expect(napari.requestPending).toBe(false)
     expect(napari.phase).toBeNull()
   })
+
+  it('distinguishes environment installation from opening and requests Logger', () => {
+    const napari = useNapariStore()
+    napari.requestPending = true
+
+    napari.applyEnvironmentStatus({ env_name: 'napari', status: 'creating' })
+
+    expect(napari.phase).toBe('installing')
+    expect(napari.loggerActivationRequest).toBe(1)
+
+    napari.applyEnvironmentStatus({ env_name: 'napari', status: 'opening' })
+
+    expect(napari.phase).toBe('opening')
+    expect(napari.loggerActivationRequest).toBe(2)
+  })
+
+  it('does not request Logger for a terminal running status', () => {
+    const napari = useNapariStore()
+
+    napari.applyEnvironmentStatus({ env_name: 'napari', status: 'running' })
+
+    expect(napari.loggerActivationRequest).toBe(0)
+  })
 })

@@ -6,6 +6,7 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useExecutionStore } from '@/stores/execution'
+import { useNapariStore } from '@/stores/napari'
 import { api } from '@/api/client'
 
 const EXECUTION_CONTEXT = {
@@ -233,6 +234,24 @@ describe('useWebSocket workflow draft dispatch', () => {
     } as MessageEvent)
 
     expect(registry.getToolByName('CustomTool')).toBeUndefined()
+  })
+
+  it('routes Napari launch status to progress and Logger activation state', () => {
+    const napari = useNapariStore()
+    napari.requestPending = true
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+
+    FakeWebSocket.instances[0]!.onmessage?.({
+      data: JSON.stringify({
+        type: 'environment_status',
+        env_name: 'napari',
+        status: 'opening',
+      }),
+    } as MessageEvent)
+
+    expect(napari.phase).toBe('opening')
+    expect(napari.loggerActivationRequest).toBe(1)
   })
 
   it('refreshes the workflow tree for workflow_tree_changed messages', async () => {

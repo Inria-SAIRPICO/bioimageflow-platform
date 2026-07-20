@@ -9,6 +9,7 @@ import { api } from '@/api/client'
 import MenuBar from '@/components/layout/MenuBar.vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useNapariStore } from '@/stores/napari'
 import { useSubWorkflowSessionsStore } from '@/stores/subWorkflowSessions'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
@@ -340,6 +341,22 @@ describe('AppShell', () => {
 
     expect(panels.get('dataTable').api.setActive).toHaveBeenCalledTimes(1)
     expect(panels.get('logger').api.setActive).not.toHaveBeenCalled()
+  })
+
+  it('opens and activates Logger when Napari starts installing or opening', async () => {
+    mountApp()
+    await flushPromises()
+    useUIStore().setPanelVisible('logger', false)
+    await flushPromises()
+    expect(panels.has('logger')).toBe(false)
+
+    useNapariStore().applyEnvironmentStatus({
+      env_name: 'napari',
+      status: 'opening',
+    })
+    await flushPromises()
+
+    expect(panels.get('logger').api.setActive).toHaveBeenCalledOnce()
   })
 
   it('does not poll execution status while execution is running', async () => {

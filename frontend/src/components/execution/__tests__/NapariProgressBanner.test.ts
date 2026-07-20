@@ -7,7 +7,6 @@ import Aura from '@primevue/themes/aura'
 
 import NapariProgressBanner from '../NapariProgressBanner.vue'
 import { useNapariStore } from '@/stores/napari'
-import { useToolRegistryStore } from '@/stores/toolRegistry'
 
 function mountBanner() {
   return mount(NapariProgressBanner, {
@@ -31,11 +30,9 @@ describe('NapariProgressBanner', () => {
   it('shows installation progress while the Napari environment is being created', async () => {
     const wrapper = mountBanner()
     const napari = useNapariStore()
-    const toolRegistry = useToolRegistryStore()
 
     napari.requestPending = true
-    toolRegistry.applyEnvironmentStatus({
-      type: 'environment_status',
+    napari.applyEnvironmentStatus({
       env_name: 'napari',
       status: 'creating',
     })
@@ -46,16 +43,14 @@ describe('NapariProgressBanner', () => {
     expect(wrapper.find('[data-testid="napari-progress-bar"]').exists()).toBe(true)
   })
 
-  it('shows opening progress once the Napari environment is running', async () => {
+  it('shows opening progress while the installed Napari environment launches', async () => {
     const wrapper = mountBanner()
     const napari = useNapariStore()
-    const toolRegistry = useToolRegistryStore()
 
     napari.requestPending = true
-    toolRegistry.applyEnvironmentStatus({
-      type: 'environment_status',
+    napari.applyEnvironmentStatus({
       env_name: 'napari',
-      status: 'running',
+      status: 'opening',
     })
     await nextTick()
 

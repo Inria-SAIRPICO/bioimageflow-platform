@@ -50,6 +50,7 @@ import NapariProgressBanner from './components/execution/NapariProgressBanner.vu
 import EnvironmentRecoveryDialog from './components/execution/EnvironmentRecoveryDialog.vue'
 import { useUIStore } from './stores/ui'
 import { useDatasetsStore } from './stores/datasets'
+import { useNapariStore } from './stores/napari'
 import { useFileDrop } from './composables/useFileDrop'
 import { useExecutionLock } from './composables/useExecutionLock'
 import { useSettingsPanel } from './composables/useSettingsPanel'
@@ -120,6 +121,7 @@ const shortcutEnabled = isMac() || isPywebview()
 
 const uiStore = useUIStore()
 const datasetsStore = useDatasetsStore()
+const napariStore = useNapariStore()
 const websocket = useWebSocket()
 const subWorkflowSessionsStore = useSubWorkflowSessionsStore()
 const workflowStore = useWorkflowStore()
@@ -253,6 +255,13 @@ watch(
   () => {
     uiStore.panels.datasets = true
     nextTick(() => dockviewApi.value?.getPanel('datasets')?.api.setActive())
+  },
+)
+watch(
+  () => napariStore.loggerActivationRequest,
+  () => {
+    uiStore.panels.logger = true
+    nextTick(() => dockviewApi.value?.getPanel('logger')?.api.setActive())
   },
 )
 const dockviewDisposables: DockviewIDisposable[] = []

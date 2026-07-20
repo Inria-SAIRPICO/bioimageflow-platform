@@ -282,6 +282,21 @@ async def test_open_sends_correct_command_dict(tmp_path, monkeypatch) -> None:
     ]
 
 
+async def test_open_in_running_viewer_emits_no_launch_status(tmp_path) -> None:
+    cm = MagicMock()
+    launcher = _make_launcher(connection_manager=cm)
+    a = tmp_path / "a.tif"
+    a.write_bytes(b"\0")
+    fake_conn = _FakeConnection()
+    fake_conn.responses.append({"status": "ok"})
+    _attach_alive(launcher, conn=fake_conn)
+
+    await launcher.open([str(a)])
+
+    cm.publish_environment_status.assert_not_called()
+    cm.publish_log.assert_not_called()
+
+
 async def test_open_auto_reconnects_once_on_connection_error(tmp_path, monkeypatch) -> None:
     launcher = _make_launcher()
     a = tmp_path / "a.tif"
@@ -481,15 +496,28 @@ class _FakeEnvironment:
 class _FakeEnvManager:
     """Stand-in for wetlands EnvironmentManager."""
 
-    def __init__(self, *, port_line: str | None = "Listening port 54321") -> None:
+    def __init__(
+        self,
+        *,
+        port_line: str | None = "Listening port 54321",
+        environment_installed: bool = False,
+    ) -> None:
         self.created: list[dict[str, Any]] = []
         self.loaded: list[tuple[str, Any]] = []
         self.executed: list[dict[str, Any]] = []
+        self.environment_installed = environment_installed
+        self.settings_manager = MagicMock()
+        self.settings_manager.get_environment_path_from_name.return_value = Path(
+            "/envs/napari"
+        )
         self.process = MagicMock()
         self.process.pid = 9999
         self.process.poll.return_value = None
         self._logger = _FakeProcessLogger(port_line=port_line)
         self._env = _FakeEnvironment("napari", "/envs/napari")
+
+    def environment_exists(self, environment_path: Path) -> bool:
+        return self.environment_installed
 
     def create(self, name, dependencies=None, additional_install_commands=None):
         self.created.append(
@@ -717,6 +745,28 @@ def test_launch_emits_creating_then_running_status(monkeypatch) -> None:
     assert statuses == ["creating", "running"]
     assert [call.args[1] for call in cm.publish_log.call_args_list] == [
         "Napari environment creating",
+        "Napari environment running",
+    ]
+
+
+def test_launch_emits_opening_for_installed_environment(monkeypatch) -> None:
+    em = _FakeEnvManager(environment_installed=True)
+
+    def _client(addr, *, authkey):
+        return _FakeConnection()
+
+    _patch_launch_deps(monkeypatch, env_manager=em, client_factory=_client)
+    cm = MagicMock()
+    statuses: list[str] = []
+    cm.publish_environment_status = lambda env, st: statuses.append(st)
+    cm.publish_log = MagicMock()
+    launcher = _make_launcher(connection_manager=cm)
+
+    launcher._launch()
+
+    assert statuses == ["opening", "running"]
+    assert [call.args[1] for call in cm.publish_log.call_args_list] == [
+        "Napari environment opening",
         "Napari environment running",
     ]
 

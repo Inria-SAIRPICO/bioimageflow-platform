@@ -1,6 +1,7 @@
 import { ref, type Ref } from 'vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
+import { useNapariStore } from '@/stores/napari'
 import { useLoggerStore, type LogEntry } from '@/stores/logger'
 import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
@@ -255,6 +256,7 @@ function dispatch(raw: unknown) {
         'applyEnvironmentStatus',
         msg,
       )
+      useNapariStore().applyEnvironmentStatus(msg)
       break
     case 'workflow_draft_changed':
       useWorkflowDraftStore().noteRemoteChange(

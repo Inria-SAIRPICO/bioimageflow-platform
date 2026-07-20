@@ -339,7 +339,7 @@ class TestPackageInstallMessage:
 
 class TestEnvironmentStatusMessage:
     def test_statuses(self) -> None:
-        for status in ("stopped", "creating", "running"):
+        for status in ("stopped", "creating", "opening", "running"):
             msg = EnvironmentStatusMessage(env_name="napari", status=status)
             assert msg.status == status
 

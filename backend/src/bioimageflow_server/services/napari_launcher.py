@@ -208,13 +208,27 @@ class NapariLauncher:
         if self._is_alive():
             return
 
-        # Step 2: announce the long-running solve so the UI can flip a
-        # spinner before we block on Wetlands.
-        self._broadcast_status("creating")
-
         try:
             # Steps 3–5: get/create the Wetlands environment.
             env_manager = get_shared_environment_manager()
+            if self._napari_env_path:
+                launch_status = "opening"
+            else:
+                environment_path = (
+                    env_manager.settings_manager.get_environment_path_from_name(
+                        "napari"
+                    )
+                )
+                launch_status = (
+                    "opening"
+                    if env_manager.environment_exists(environment_path)
+                    else "creating"
+                )
+
+            # Announce whether Wetlands must install the environment or can
+            # immediately launch Napari from an existing one.
+            self._broadcast_status(launch_status)
+
             if self._napari_env_path:
                 environment = env_manager.load(
                     "napari", Path(self._napari_env_path)
@@ -290,7 +304,7 @@ class NapariLauncher:
             self._env_path = str(env_path) if env_path else None
             self._pid = getattr(process, "pid", None)
         except Exception:
-            # Any failure between "creating" and a successful connect
+            # Any failure between the initial status and a successful connect
             # must flip the indicator back to "stopped" so the UI does
             # not stay stuck on the spinner.
             self._broadcast_status("stopped")
