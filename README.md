@@ -101,13 +101,16 @@ bun install
 bun run dev
 ```
 
+You can use `BIOIMAGEFLOW_BACKEND_PORT` to overwrite the port: `BIOIMAGEFLOW_BACKEND_PORT=8008 bun run dev` 
+(when server is run with `uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8008`)
+
 Open <http://localhost:5173>. Vite proxies `/api` and `/ws` to `BIOIMAGEFLOW_BACKEND_PORT`, defaulting to port 8000.
 
 The module entrypoint uses the packaged backend logging config by default, so application INFO logs are visible during development. To run raw Uvicorn instead, pass the same config explicitly:
 
 ```bash
 cd backend
-uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude ".pixi/*" --reload-exclude ".worktrees/*" --log-config src/bioimageflow_server/logging.yaml
+uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-dir src --log-config src/bioimageflow_server/logging.yaml
 ```
 
 ## Quick Start — Desktop + HMR (development)

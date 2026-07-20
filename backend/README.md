@@ -54,7 +54,7 @@ Best for backend development or when running the frontend separately via Vite.
 uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
 
 # Raw Uvicorn is also supported; pass the packaged logging config explicitly
-uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-exclude .bioimageflow/* --log-config src/bioimageflow_server/logging.yaml
+uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --port 8000 --reload --reload-dir src --log-config src/bioimageflow_server/logging.yaml
 ```
 
 OpenAPI docs: <http://localhost:8000/docs>.
