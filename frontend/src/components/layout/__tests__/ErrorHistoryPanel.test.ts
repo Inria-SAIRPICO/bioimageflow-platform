@@ -213,6 +213,7 @@ describe('ErrorHistoryPanel', () => {
       'execution_failed',
       'network_unreachable',
       'edge_rejected',
+      'dataset_upload_rejected',
       'unknown',
     ]
     for (const k of kinds) {
@@ -228,6 +229,7 @@ describe('ErrorHistoryPanel', () => {
     expect(text).toContain('Execution failed')
     expect(text).toContain('Network unreachable')
     expect(text).toContain('Edge rejected')
+    expect(text).toContain('Dataset upload rejected')
     wrapper.unmount()
   })
 })

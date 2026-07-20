@@ -235,7 +235,7 @@ onBeforeUnmount(() => {
   }
 })
 
-// Window-level file drops always become managed datasets, including on desktop.
+// Window-level regular-file drops become managed datasets, including on desktop.
 useFileDrop()
 
 // Sync document.title with uiStore.tabTitle

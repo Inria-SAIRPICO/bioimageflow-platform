@@ -62,6 +62,13 @@ const TOAST_POLICY: Record<ErrorKind, KindPolicy> = {
     toast: true,
     lifeMs: 5000,
   },
+  dataset_upload_rejected: {
+    severity: 'error',
+    once: false,
+    recordHistory: true,
+    toast: true,
+    lifeMs: 8000,
+  },
   unknown: {
     severity: 'info',
     once: false,

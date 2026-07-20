@@ -92,6 +92,18 @@ describe('useErrorReporting', () => {
     expect(id).toBeUndefined()
   })
 
+  it('dataset_upload_rejected: shows an error toast and records history', () => {
+    const store = useErrorStore()
+    const { reportError } = useErrorReporting()
+    reportError({ kind: 'dataset_upload_rejected', detail: 'Folders are unsupported' })
+    expect(toastAdd).toHaveBeenCalledOnce()
+    expect(toastAdd.mock.calls[0]![0]).toMatchObject({
+      severity: 'error',
+      summary: 'Dataset upload rejected',
+    })
+    expect(store.errors).toHaveLength(1)
+  })
+
   it('a toast provider failure does not crash reportError', () => {
     toastAdd.mockImplementationOnce(() => {
       throw new Error('no provider')

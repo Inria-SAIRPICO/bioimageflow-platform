@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { useFileDrop } from '../useFileDrop'
 import { useDatasetsStore } from '@/stores/datasets'
+import { useErrorStore } from '@/stores/errors'
 
 function mountHost() {
   const Host = defineComponent({
@@ -15,11 +16,20 @@ function mountHost() {
   return mount(Host, { global: { plugins: [createPinia()] } })
 }
 
-function makeDragEvent(opts: { files?: File[]; types?: string[]; type?: string }): DragEvent {
+function makeDragEvent(opts: {
+  files?: File[]
+  items?: Array<Partial<DataTransferItem>>
+  types?: string[]
+  type?: string
+}): DragEvent {
   const files = opts.files ?? []
   const event = new Event(opts.type ?? 'drop', { bubbles: true, cancelable: true }) as DragEvent
   Object.defineProperty(event, 'dataTransfer', {
-    value: { files, types: opts.types ?? (files.length ? ['Files'] : []) },
+    value: {
+      files,
+      items: opts.items ?? [],
+      types: opts.types ?? (files.length ? ['Files'] : []),
+    },
   })
   return event
 }
@@ -66,6 +76,33 @@ describe('useFileDrop', () => {
     window.dispatchEvent(makeDragEvent({ files: [file] }))
 
     expect(queue).toHaveBeenCalledWith([file])
+    wrapper.unmount()
+  })
+
+  it('rejects directory drops and reports a user-visible upload error', () => {
+    const wrapper = mountHost()
+    const datasets = useDatasetsStore()
+    const errors = useErrorStore()
+    const queue = vi.spyOn(datasets, 'queueUploads')
+    const folder = new File([], 'images')
+    const drop = makeDragEvent({
+      files: [folder],
+      items: [{
+        kind: 'file',
+        webkitGetAsEntry: () => ({ isDirectory: true, name: 'images' }),
+      } as Partial<DataTransferItem>],
+    })
+
+    window.dispatchEvent(drop)
+
+    expect(drop.defaultPrevented).toBe(true)
+    expect(queue).not.toHaveBeenCalled()
+    expect(errors.errors).toHaveLength(1)
+    expect(errors.errors[0]).toMatchObject({
+      kind: 'dataset_upload_rejected',
+      detail: 'Folder "images" cannot be uploaded. Drop files instead.',
+      acknowledged: false,
+    })
     wrapper.unmount()
   })
 
