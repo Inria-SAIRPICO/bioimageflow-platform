@@ -268,7 +268,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     def _register_workflow_custom_tools(store: WorkflowStoreService) -> None:
         for workflow_info in store.list_workflows():
-            custom_tools_root = store.workflow_tools_dir(workflow_info.id)
+            custom_tools_root = store.workflow_tools_dir(workflow_info.id or workflow_info.name)
             if custom_tools_root.exists():
                 registry.register_custom_tools_directory(custom_tools_root)
 

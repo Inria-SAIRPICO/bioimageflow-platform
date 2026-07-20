@@ -216,13 +216,16 @@ async def update_folder(
     body: FolderUpdate,
     store: DatasetStore = Depends(get_dataset_store),
 ) -> DatasetFolder:
-    kwargs: dict[str, object] = {}
-    if "name" in body.model_fields_set:
-        kwargs["name"] = body.name
-    if "parent_id" in body.model_fields_set:
-        kwargs["parent_id"] = body.parent_id
     try:
-        return _folder_model(store.update_folder(folder_id, **kwargs))
+        if "name" in body.model_fields_set and "parent_id" in body.model_fields_set:
+            folder = store.update_folder(folder_id, name=body.name, parent_id=body.parent_id)
+        elif "name" in body.model_fields_set:
+            folder = store.update_folder(folder_id, name=body.name)
+        elif "parent_id" in body.model_fields_set:
+            folder = store.update_folder(folder_id, parent_id=body.parent_id)
+        else:
+            folder = store.update_folder(folder_id)
+        return _folder_model(folder)
     except (ValueError, FolderNotFoundError, NameConflictError, InvalidMoveError) as exc:
         raise _catalog_error(exc) from exc
 
@@ -233,13 +236,20 @@ async def update_dataset(
     body: DatasetUpdate,
     store: DatasetStore = Depends(get_dataset_store),
 ) -> Dataset:
-    kwargs: dict[str, object] = {}
-    if "display_name" in body.model_fields_set:
-        kwargs["display_name"] = body.display_name
-    if "folder_id" in body.model_fields_set:
-        kwargs["folder_id"] = body.folder_id
     try:
-        return _dataset_model(store.update_dataset(dataset_id, **kwargs))
+        if "display_name" in body.model_fields_set and "folder_id" in body.model_fields_set:
+            dataset = store.update_dataset(
+                dataset_id,
+                display_name=body.display_name,
+                folder_id=body.folder_id,
+            )
+        elif "display_name" in body.model_fields_set:
+            dataset = store.update_dataset(dataset_id, display_name=body.display_name)
+        elif "folder_id" in body.model_fields_set:
+            dataset = store.update_dataset(dataset_id, folder_id=body.folder_id)
+        else:
+            dataset = store.update_dataset(dataset_id)
+        return _dataset_model(dataset)
     except (ValueError, DatasetNotFoundError, FolderNotFoundError, NameConflictError) as exc:
         raise _catalog_error(exc) from exc
 

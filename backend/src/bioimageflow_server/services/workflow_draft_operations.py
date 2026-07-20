@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import NoReturn
 
 from bioimageflow_server.models.graph import (
     ColumnRefEdge,
@@ -605,7 +606,7 @@ def _positional_edge_id(operation: ConnectPositionalOperation) -> str:
     )
 
 
-def _raise(code: str, detail: str) -> None:
+def _raise(code: str, detail: str) -> NoReturn:
     raise WorkflowDraftOperationError(
         operation_index=-1,
         code=code,

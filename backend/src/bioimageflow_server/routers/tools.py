@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -105,6 +105,8 @@ def _project_root_for_source(
         if store_path is not None:
             return store_path.resolve()
         return source_path.resolve().parent
+    if workflow_root is None:
+        raise RuntimeError("workflow root is required for custom tool sources")
     root_candidate = workflow_root.parent if workflow_root.name == "workflows" else workflow_root
     return root_candidate.resolve()
 
@@ -402,7 +404,7 @@ def _ensure_row_package_install_allowed(
         )
 
 
-def _raise_package_install_error(exc: Exception, package_name: str | None = None) -> None:
+def _raise_package_install_error(exc: Exception, package_name: str | None = None) -> NoReturn:
     if isinstance(exc, PackageInvalidError):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if isinstance(exc, PackageNotFoundError):

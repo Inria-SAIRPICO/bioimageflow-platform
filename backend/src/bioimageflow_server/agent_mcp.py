@@ -114,7 +114,7 @@ class BioImageFlowMCPGateway:
 
     async def get_bioimageflow_capabilities(self) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         draft = await self._draft(state)
         payload: dict[str, Any] = {
@@ -152,7 +152,7 @@ class BioImageFlowMCPGateway:
 
     async def get_active_workflow(self) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         return {
             "ok": True,
@@ -163,7 +163,7 @@ class BioImageFlowMCPGateway:
 
     async def get_workspace_context(self) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         workflows = await self._request("GET", "/workflows")
         payload: dict[str, Any] = {
@@ -287,7 +287,7 @@ class BioImageFlowMCPGateway:
         description: str | None = None,
     ) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         result = await self._request(
             "PATCH",
@@ -320,7 +320,7 @@ class BioImageFlowMCPGateway:
         confirm_workflow_id: str,
     ) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         if confirm_workflow_id != workflow_id:
             return {
@@ -372,7 +372,7 @@ class BioImageFlowMCPGateway:
 
     async def get_workflow_draft(self, include_graph: bool = True) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         draft = await self._draft(state)
         if _is_error(draft):
@@ -393,7 +393,7 @@ class BioImageFlowMCPGateway:
         self, include_parameters: bool = False
     ) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         draft = await self._draft(state)
         if _is_error(draft):
@@ -693,7 +693,7 @@ class BioImageFlowMCPGateway:
 
     async def validate_workflow(self) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         draft = await self._draft(state)
         if _is_error(draft):
@@ -720,7 +720,7 @@ class BioImageFlowMCPGateway:
 
     async def run_workflow(self, *, nodes: list[str] | None = None) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         draft = await self._draft(state)
         if _is_error(draft):
@@ -760,7 +760,7 @@ class BioImageFlowMCPGateway:
         validate: bool = True,
     ) -> dict[str, Any]:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         if expected_revision is None:
             draft = await self._draft(state)
@@ -793,7 +793,7 @@ class BioImageFlowMCPGateway:
         json: dict[str, Any] | None = None,
     ) -> Any:
         state = _read_state_or_error(self.state_path)
-        if _is_error(state):
+        if isinstance(state, dict):
             return state
         url = f"{state.api_base_url.rstrip('/')}{path}"
         try:

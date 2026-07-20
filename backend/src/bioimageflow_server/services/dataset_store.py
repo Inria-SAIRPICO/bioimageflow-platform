@@ -12,7 +12,7 @@ from collections.abc import AsyncIterable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _MAX_FILENAME_BYTES = 255
 _STORED_NAME_RE = re.compile(r"^(\d{8}T\d{6})_(.+)$")
@@ -398,7 +398,7 @@ class DatasetStore:
             row = connection.execute("SELECT * FROM folders WHERE id = ?", (folder_id,)).fetchone()
             if row is None:
                 raise FolderNotFoundError(folder_id)
-            next_parent = row["parent_id"] if parent_id is _UNSET else parent_id
+            next_parent = cast(str | None, row["parent_id"] if parent_id is _UNSET else parent_id)
             self._ensure_folder(connection, next_parent)
             if next_parent == folder_id or next_parent in self._folder_descendants(connection, folder_id):
                 raise InvalidMoveError(folder_id)
@@ -424,7 +424,7 @@ class DatasetStore:
             row = connection.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
             if row is None:
                 raise DatasetNotFoundError(dataset_id)
-            next_folder = row["folder_id"] if folder_id is _UNSET else folder_id
+            next_folder = cast(str | None, row["folder_id"] if folder_id is _UNSET else folder_id)
             self._ensure_folder(connection, next_folder)
             next_name = row["display_name"] if display_name is None else display_name.strip()
             normalized = _normal_name(next_name)

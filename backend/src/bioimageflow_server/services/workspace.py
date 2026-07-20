@@ -35,7 +35,7 @@ class WorkspaceService:
         user_id: str | None = None,
     ) -> None:
         self.settings = settings
-        self.deployment_mode = deployment_mode
+        self.deployment_mode: Literal["desktop", "webapp"] = deployment_mode
         self._workspace_path = workspace_path
         self._workspaces_root = workspaces_root
         self.user_id = user_id or "default"

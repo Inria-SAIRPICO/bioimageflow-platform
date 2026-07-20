@@ -246,13 +246,16 @@ def _as_ome_tiff(image_path: Path) -> Path:
     try:
         import tifffile
 
-        kwargs: dict[str, object] = {
-            "ome": True,
-            "metadata": {"axes": axes},
-        }
         if axes.endswith("S"):
-            kwargs["photometric"] = "rgb"
-        tifffile.imwrite(tmp_path, data, **kwargs)
+            tifffile.imwrite(
+                tmp_path,
+                data,
+                ome=True,
+                metadata={"axes": axes},
+                photometric="rgb",
+            )
+        else:
+            tifffile.imwrite(tmp_path, data, ome=True, metadata={"axes": axes})
         tmp_path.replace(cache_path)
     except Exception as exc:
         tmp_path.unlink(missing_ok=True)
@@ -425,7 +428,7 @@ async def get_node_image_with_filename(
     row: Annotated[int, Query(ge=0)] = 0,
     workflow_name: str | None = None,
     output_format: Annotated[Literal["ome-tiff"] | None, Query(alias="format")] = None,
-) -> FileResponse:
+) -> Response:
     return _node_image_response(
         node_id=node_id,
         result_store=result_store,
@@ -447,7 +450,7 @@ async def get_node_image(
     row: Annotated[int, Query(ge=0)] = 0,
     workflow_name: str | None = None,
     output_format: Annotated[Literal["ome-tiff"] | None, Query(alias="format")] = None,
-) -> FileResponse:
+) -> Response:
     return _node_image_response(
         node_id=node_id,
         result_store=result_store,
