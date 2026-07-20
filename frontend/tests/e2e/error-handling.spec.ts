@@ -99,7 +99,7 @@ test.describe('error handling', () => {
     await expect(page.locator('.error-indicator')).toHaveCount(0)
   })
 
-  test('contextual execution failure is recorded once in history and logger', async ({
+  test('contextual execution failure is recorded once in history and logger', { tag: '@critical' }, async ({
     page,
   }) => {
     const draftResponse = await page.request.get(

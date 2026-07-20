@@ -4,6 +4,11 @@ set -euo pipefail
 
 repo_root="${CI_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"
 
+if [[ -z "${BIOIMAGEFLOW_COMMON_TOOLS_VERSION:-}" ]]; then
+  # shellcheck source=test_versions.env
+  source "$repo_root/scripts/ci/test_versions.env"
+fi
+
 : "${BIOIMAGEFLOW_COMMON_TOOLS_VERSION:?BIOIMAGEFLOW_COMMON_TOOLS_VERSION must be set}"
 : "${BIOIMAGEFLOW_TOOL_STORE:?BIOIMAGEFLOW_TOOL_STORE must be set}"
 
@@ -22,6 +27,7 @@ fi
 mkdir -p "$target"
 uv --no-cache pip install \
   --python "$repo_root/backend/.venv/bin/python" \
+  --no-deps \
   --target "$target" \
   "bioimageflow-common-tools==$BIOIMAGEFLOW_COMMON_TOOLS_VERSION"
 

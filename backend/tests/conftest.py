@@ -11,30 +11,62 @@ from bioimageflow_server.app import create_app
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Keep external package certification out of the deterministic suite."""
+    """Keep external package certification explicit and opt-in."""
+
+    parser.addoption(
+        "--run-external",
+        action="store_true",
+        default=False,
+        help="run external package and service certification tests",
+    )
 
     parser.addoption(
         "--run-common-tools",
         action="store_true",
         default=False,
-        help="run tests that certify an installed bioimageflow-common-tools package",
+        help="alias for --run-external retained for common-tools certification",
     )
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(
     config: pytest.Config,
     items: list[pytest.Item],
 ) -> None:
-    """Skip live common-tools checks unless the caller explicitly opts in."""
+    """Classify broad test boundaries and gate external certification."""
 
-    if config.getoption("--run-common-tools"):
+    integration_paths = {
+        "tests/test_app_config_wiring.py",
+        "tests/test_static_serving.py",
+        "tests/test_ws/test_app_wiring.py",
+    }
+    serial_paths = {
+        "tests/test_desktop.py",
+        "tests/test_logging_config.py",
+        "tests/test_ws/test_logging_bridge.py",
+    }
+    serial_tests = {
+        "test_publish_logs_future_exceptions",
+        "test_publish_without_loop_drops_silently",
+    }
+
+    for item in items:
+        relative_path = item.path.relative_to(config.rootpath).as_posix()
+        if (
+            relative_path.startswith("tests/test_integration/")
+            or relative_path.startswith("tests/test_routers/")
+            or relative_path in integration_paths
+        ):
+            item.add_marker("integration")
+        if relative_path in serial_paths or item.name in serial_tests:
+            item.add_marker("serial")
+
+    if config.getoption("--run-external") or config.getoption("--run-common-tools"):
         return
 
-    skip = pytest.mark.skip(
-        reason="external common-tools certification requires --run-common-tools"
-    )
+    skip = pytest.mark.skip(reason="external certification requires --run-external")
     for item in items:
-        if item.get_closest_marker("common_tools") is not None:
+        if item.get_closest_marker("external") is not None:
             item.add_marker(skip)
 
 
@@ -53,7 +85,7 @@ def isolated_bioimageflow_runtime(
 ) -> None:
     """Keep deterministic tests out of the developer's persistent runtime state."""
 
-    if request.node.get_closest_marker("common_tools") is not None:
+    if request.node.get_closest_marker("external") is not None:
         return
 
     home = tmp_path / "bioimageflow-home"

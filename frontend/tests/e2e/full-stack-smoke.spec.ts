@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('full stack smoke', () => {
+test.describe('full stack smoke', { tag: '@critical' }, () => {
   test('app renders and backend health check responds via proxy', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {

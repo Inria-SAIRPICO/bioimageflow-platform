@@ -93,7 +93,7 @@ test.describe('Canvas interactions', () => {
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })
 
-  test('loads a tool and persists an interactive node with panel and pins', async ({ page }) => {
+  test('loads a tool and persists an interactive node with panel and pins', { tag: '@critical' }, async ({ page }) => {
     const { node, tool, response } = await addSeedNumbersNode(page)
     expect(response.status()).toBe(200)
     await expect(

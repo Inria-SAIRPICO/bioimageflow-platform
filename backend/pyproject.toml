@@ -24,6 +24,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=6.0",
     "anyio[trio]>=4.0",
     "httpx>=0.27",
     "ruff>=0.9",
@@ -55,12 +56,25 @@ packages = ["src/bioimageflow_server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["--strict-markers"]
 filterwarnings = [
     "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
 ]
 markers = [
-    "common_tools: external certification tests requiring --run-common-tools and an installed bioimageflow_common_tools tool store.",
+    "integration: tests that cross application, service, filesystem, or execution boundaries.",
+    "serial: tests that mutate process-global state and must not run concurrently.",
+    "slow: measured slow tests excluded from the inner coding loop.",
+    "external: certification tests requiring separately installed packages or services.",
+    "common_tools: external certification tests requiring --run-external (or --run-common-tools) and an installed bioimageflow_common_tools tool store.",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["bioimageflow_server"]
+
+[tool.coverage.report]
+show_missing = true
 
 [tool.ruff]
 line-length = 100

@@ -19,10 +19,7 @@ from bioimageflow_core.types import ImageSpec, Semantic
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig, ToolMetadata
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from tests.common_tools import (
-    COMMON_TOOLS_MARK,
-    load_common_tools_class,
-)
+from tests.common_tools import load_common_tools_class
 
 pytestmark = pytest.mark.anyio
 
@@ -328,12 +325,6 @@ async def test_parameter_patch_endpoint_is_removed(client: httpx.AsyncClient) ->
 # JoinOnColumn) so that serialize_resolved_outputs returns meaningful results.
 
 
-def _load_common_tools_class(class_name: str) -> type:
-    """Load a required common-tools class for external certification."""
-    cls, _version = load_common_tools_class(class_name)
-    return cls
-
-
 def _common_tools_registry() -> ToolRegistryService:
     reg = ToolRegistryService()
     # Register the standard test tool classes
@@ -380,16 +371,12 @@ async def common_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         yield c
 
 
-def _require_common_tools() -> None:
-    _load_common_tools_class("Generate")
-
-
-@COMMON_TOOLS_MARK
+@pytest.mark.external
+@pytest.mark.common_tools
 class TestOutputSchema:
     """POST /graph/nodes/{node_id}/output_schema — parity with library tests."""
 
     async def test_generate_resolved(self, common_client: httpx.AsyncClient) -> None:
-        _require_common_tools()
         body = {
             "nodes": [
                 {
@@ -416,7 +403,6 @@ class TestOutputSchema:
         self,
         common_client: httpx.AsyncClient,
     ) -> None:
-        _require_common_tools()
         # Generate requires column_name; omitting it makes it unresolvable.
         # However, Generate's column_name is a required param, so the graph
         # build may fail. The endpoint should return resolved=false, not 4xx.
@@ -446,7 +432,6 @@ class TestOutputSchema:
         common_client: httpx.AsyncClient,
         tmp_path: Path,
     ) -> None:
-        _require_common_tools()
         body = {
             "nodes": [
                 {
@@ -516,7 +501,6 @@ class TestOutputSchema:
         common_client: httpx.AsyncClient,
         tmp_path: Path,
     ) -> None:
-        _require_common_tools()
         # Two Files as left/right; JoinOnColumn without join_column -> unresolved
         body_no_jc = {
             "nodes": [
@@ -587,43 +571,35 @@ class TestOutputSchema:
         data2 = resp2.json()
         assert data2["resolved"] is True
 
-    async def test_unknown_node_id_returns_404(
-        self,
-        common_client: httpx.AsyncClient,
-    ) -> None:
-        body = {"nodes": [], "edges": []}
-        resp = await common_client.post(
-            "/api/v1/graph/nodes/nonexistent/output_schema",
-            json=body,
-        )
-        assert resp.status_code == 404
 
-    async def test_malformed_graph_returns_unresolved_not_4xx(
-        self,
-        common_client: httpx.AsyncClient,
-    ) -> None:
-        """Build failures (missing tool, bad params) must return 200 + unresolved,
-        not a 4xx error — input edits frequently produce transiently invalid states."""
-        # Graph references a tool that doesn't exist in the registry.
-        body = {
-            "nodes": [
-                {
-                    "id": "bad_1",
-                    "name": "bad_1",
-                    "tool_name": "NoSuchTool",
-                    "position": [0, 0],
-                    "parameters": {},
-                },
-            ],
-            "edges": [],
-        }
-        resp = await common_client.post(
-            "/api/v1/graph/nodes/bad_1/output_schema",
-            json=body,
-        )
-        # The node is not in the built workflow → 200 + unresolved
-        # (the endpoint catches build failures gracefully).
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["resolved"] is False
-        assert data["columns"] == {}
+async def test_unknown_output_schema_node_id_returns_404(client: httpx.AsyncClient) -> None:
+    body = {"nodes": [], "edges": []}
+    resp = await client.post(
+        "/api/v1/graph/nodes/nonexistent/output_schema",
+        json=body,
+    )
+    assert resp.status_code == 404
+
+
+async def test_malformed_graph_output_schema_is_unresolved(client: httpx.AsyncClient) -> None:
+    """Build failures return an unresolved schema during transient invalid edits."""
+    body = {
+        "nodes": [
+            {
+                "id": "bad_1",
+                "name": "bad_1",
+                "tool_name": "NoSuchTool",
+                "position": [0, 0],
+                "parameters": {},
+            },
+        ],
+        "edges": [],
+    }
+    resp = await client.post(
+        "/api/v1/graph/nodes/bad_1/output_schema",
+        json=body,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["resolved"] is False
+    assert data["columns"] == {}

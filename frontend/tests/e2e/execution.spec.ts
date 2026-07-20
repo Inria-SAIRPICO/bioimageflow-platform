@@ -108,7 +108,7 @@ test.describe('execution lifecycle', () => {
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
   })
 
-  test('creates a workflow and executes a source tool through the real backend', async ({
+  test('creates a workflow and executes a source tool through the real backend', { tag: '@critical' }, async ({
     page,
   }) => {
     const displayName = uniqueDisplayName('Execution Workflow')

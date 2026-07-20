@@ -58,7 +58,7 @@ test.describe('workflow CRUD dialogs', () => {
     await expect(page.locator('[data-testid="workflow-title"]')).toBeVisible()
   })
 
-  test('creates a workflow from the polished dialog', async ({ page }) => {
+  test('creates a workflow from the polished dialog', { tag: '@critical' }, async ({ page }) => {
     const displayName = uniqueName('Dialog Create', page)
     const name = deriveWorkflowId(displayName)
     await deleteWorkflowIfExists(page, name)

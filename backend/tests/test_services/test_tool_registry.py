@@ -13,7 +13,7 @@ from bioimageflow_server.models.tools import (
     ToolMetadata,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from tests.common_tools import COMMON_TOOLS_MARK, PACKAGE_NAME, load_common_tools_class
+from tests.common_tools import PACKAGE_NAME, load_common_tools_class
 
 pytestmark = pytest.mark.anyio
 
@@ -115,7 +115,8 @@ def _register(class_name: str) -> ToolMetadata:
     return meta
 
 
-@COMMON_TOOLS_MARK
+@pytest.mark.external
+@pytest.mark.common_tools
 def test_files_accepts_upstream_is_false():
     meta = _register("Files")
     assert meta.tool_type == "DataFrameTool"
@@ -174,14 +175,16 @@ def test_register_tool_preserves_non_null_path_picker(monkeypatch):
     assert meta.inputs["path"].path_picker == "folder"
 
 
-@COMMON_TOOLS_MARK
+@pytest.mark.external
+@pytest.mark.common_tools
 def test_inner_join_accepts_upstream_is_true():
     meta = _register("InnerJoin")
     assert meta.tool_type == "DataFrameTool"
     assert meta.accepts_upstream is True
 
 
-@COMMON_TOOLS_MARK
+@pytest.mark.external
+@pytest.mark.common_tools
 def test_processing_tool_connected_components_has_correct_type_and_accepts_upstream():
     meta = _register("ConnectedComponents")
     assert meta.tool_type == "ProcessingTool"
@@ -659,7 +662,8 @@ def test_scan_tool_store_refreshes_existing_entries(
     assert "truncate" in after.inputs
 
 
-@COMMON_TOOLS_MARK
+@pytest.mark.external
+@pytest.mark.common_tools
 def test_scan_tool_store_registers_common_tools():
     """End-to-end regression: scanning the real tool store must surface
     every tool re-exported from bioimageflow_common_tools' __init__.py.

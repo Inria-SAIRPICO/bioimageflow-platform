@@ -8,7 +8,6 @@ import pytest
 from packaging.version import InvalidVersion, Version
 
 PACKAGE_NAME = "bioimageflow_common_tools"
-COMMON_TOOLS_MARK = pytest.mark.common_tools
 COMMON_TOOLS_FAILURE_REASON = (
     f"{PACKAGE_NAME} certification tests require an installed tool store. "
     "Set BIOIMAGEFLOW_TOOL_STORE to a fixture store, or BIOIMAGEFLOW_HOME to "

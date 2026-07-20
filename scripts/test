@@ -1,0 +1,345 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+backend_dir="$repo_root/backend"
+frontend_dir="$repo_root/frontend"
+
+# Keep agent and sandboxed runs away from a developer's global uv cache while
+# preserving an explicitly configured CI or local cache.
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${TMPDIR:-/tmp}/bioimageflow-platform-uv-cache}"
+
+# shellcheck source=ci/test_versions.env
+source "$repo_root/scripts/ci/test_versions.env"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/test <command> [arguments]
+
+Coding-loop commands:
+  focus backend [PYTEST_ARGS...]  Run an exact backend selection.
+  focus unit [VITEST_ARGS...]     Run an exact frontend unit selection.
+  focus related FILE...           Run Vitest tests related to source files.
+  focus e2e [PLAYWRIGHT_ARGS...]  Run an exact browser selection in Chromium.
+  quick                            Run fast, repository-owned checks in parallel.
+
+Completion commands:
+  check                            Run all deterministic checks and Chromium E2E.
+  full                             Run coverage, all browsers, and external certification.
+  certification                    Certify the pinned published common-tools package only.
+
+Examples:
+  scripts/test focus backend tests/test_services/test_dataset_store.py
+  scripts/test focus backend tests/test_services/test_dataset_store.py::test_name
+  scripts/test focus backend -k 'dataset and delete'
+  scripts/test focus unit src/stores/__tests__/workflow.test.ts
+  scripts/test focus unit src/stores/__tests__/workflow.test.ts -t 'deletes workflow'
+  scripts/test focus related frontend/src/stores/workflow.ts
+  scripts/test focus e2e tests/e2e/execution.spec.ts:111
+  scripts/test focus e2e --grep 'executes a source tool'
+
+The full lane installs bioimageflow-common-tools from the package index into a
+fresh temporary store. It requires network access and never silently omits the
+external tests. CI bootstraps exact sibling source revisions before invoking
+this runner; local runs use the source checkouts already linked in the checkout.
+EOF
+}
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf 'Required command not found: %s\n' "$1" >&2
+    return 1
+  fi
+}
+
+phase() {
+  local label="$1"
+  shift
+  printf '\n==> %s\n' "$label"
+  "$@"
+}
+
+run_parallel() {
+  local -a names=()
+  local -a pids=()
+  local name
+  local pid
+  local status=0
+  local index
+
+  for name in "$@"; do
+    names+=("$name")
+    ("$name") &
+    pids+=("$!")
+  done
+
+  for index in "${!pids[@]}"; do
+    pid="${pids[$index]}"
+    if wait "$pid"; then
+      printf '\nPASS: %s\n' "${names[$index]}"
+    else
+      printf '\nFAIL: %s\n' "${names[$index]}" >&2
+      status=1
+    fi
+  done
+
+  return "$status"
+}
+
+allocate_port() {
+  "$backend_dir/.venv/bin/python" -c \
+    'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+
+run_e2e() (
+  require_command bun
+  if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
+    printf 'Backend environment missing: run cd backend && uv sync --extra dev --frozen\n' >&2
+    return 1
+  fi
+
+  local managed_root=0
+  local e2e_root="${BIOIMAGEFLOW_E2E_ROOT:-}"
+  if [[ -z "$e2e_root" ]]; then
+    e2e_root="$(mktemp -d "${TMPDIR:-/tmp}/bioimageflow-platform-e2e.XXXXXX")"
+    managed_root=1
+  fi
+
+  cleanup_e2e_root() {
+    if (( managed_root )); then
+      rm -rf -- "$e2e_root"
+    fi
+  }
+  trap cleanup_e2e_root EXIT
+
+  export BIOIMAGEFLOW_E2E_ROOT="$e2e_root"
+  export BIOIMAGEFLOW_E2E_BACKEND_PORT="${BIOIMAGEFLOW_E2E_BACKEND_PORT:-$(allocate_port)}"
+  export BIOIMAGEFLOW_E2E_FRONTEND_PORT="${BIOIMAGEFLOW_E2E_FRONTEND_PORT:-$(allocate_port)}"
+  while [[ "$BIOIMAGEFLOW_E2E_FRONTEND_PORT" == "$BIOIMAGEFLOW_E2E_BACKEND_PORT" ]]; do
+    export BIOIMAGEFLOW_E2E_FRONTEND_PORT="$(allocate_port)"
+  done
+
+  cd "$frontend_dir"
+  bun run test:e2e -- "$@"
+)
+
+backend_lint() {
+  phase 'Backend lint' bash -c 'cd "$1" && uv run --frozen ruff check .' _ "$backend_dir"
+}
+
+backend_quick() {
+  phase 'Backend fast tests' bash -c \
+    'cd "$1" && uv run --frozen pytest -m "not integration and not serial and not slow and not external" --durations=10' \
+    _ "$backend_dir"
+}
+
+backend_deterministic() {
+  phase 'Backend deterministic tests' bash -c \
+    'cd "$1" && uv run --frozen pytest -m "not external" --durations=20' \
+    _ "$backend_dir"
+}
+
+backend_full_coverage() {
+  phase 'Backend full tests with branch coverage' bash -c \
+    'cd "$1" && uv run --frozen pytest --run-external --cov=bioimageflow_server --cov-branch --cov-report=term-missing --cov-report=xml:.pytest_cache/coverage.xml --cov-report=html:.pytest_cache/htmlcov --durations=20' \
+    _ "$backend_dir"
+}
+
+backend_logging_order() {
+  phase 'Backend logging-order certification' bash -c '
+    cd "$1" && uv run --frozen pytest \
+      tests/test_logging_config.py \
+      tests/test_ws/test_handler.py::test_publish_without_loop_drops_silently \
+      tests/test_ws/test_handler.py::test_publish_logs_future_exceptions \
+      tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger \
+      -q
+  ' _ "$backend_dir"
+}
+
+frontend_lint() {
+  phase 'Frontend lint' bash -c 'cd "$1" && bun run lint' _ "$frontend_dir"
+}
+
+frontend_typecheck() {
+  phase 'Frontend type-check' bash -c 'cd "$1" && bun run type-check' _ "$frontend_dir"
+}
+
+frontend_quick() {
+  phase 'Frontend fast Node tests' bash -c \
+    'cd "$1" && bun run test:unit -- --project=node' _ "$frontend_dir"
+}
+
+frontend_all_units() {
+  phase 'Frontend unit tests' bash -c 'cd "$1" && bun run test:unit' _ "$frontend_dir"
+}
+
+frontend_full_coverage() {
+  phase 'Frontend unit tests with branch coverage' bash -c \
+    'cd "$1" && bun run test:unit -- --coverage --coverage.reporter=text --coverage.reporter=html --coverage.reportsDirectory=test-results/coverage' \
+    _ "$frontend_dir"
+}
+
+frontend_build() {
+  phase 'Frontend production build' bash -c 'cd "$1" && bun run build' _ "$frontend_dir"
+}
+
+quick_lane() {
+  require_command uv
+  require_command bun
+  run_parallel backend_lint backend_quick frontend_lint frontend_typecheck frontend_quick
+  printf '\nQuick lane passed. External, integration, serial, slow, browser, and coverage phases were intentionally not run.\n'
+}
+
+check_lane() {
+  require_command uv
+  require_command bun
+  run_parallel backend_lint backend_deterministic frontend_lint frontend_typecheck frontend_all_units frontend_build
+  backend_logging_order
+  phase 'Chromium end-to-end tests' run_e2e --project=chromium
+  printf '\nCheck lane passed. External package certification and Firefox were intentionally not run.\n'
+}
+
+create_certification_store() {
+  local certification_root="$1"
+  export BIOIMAGEFLOW_TOOL_STORE="$certification_root/tool_packages"
+  phase "Install bioimageflow-common-tools $BIOIMAGEFLOW_COMMON_TOOLS_VERSION" \
+    bash "$repo_root/scripts/ci/install_common_tools_from_index.sh"
+}
+
+backend_import_preflight() {
+  phase 'Backend source import preflight' \
+    "$backend_dir/.venv/bin/python" -c 'import bioimageflow_server.app'
+}
+
+certification_lane() (
+  require_command uv
+  if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
+    printf 'Backend environment missing: run cd backend && uv sync --extra dev --frozen\n' >&2
+    return 1
+  fi
+
+  backend_import_preflight
+
+  local certification_root
+  certification_root="$(mktemp -d "${TMPDIR:-/tmp}/bioimageflow-common-tools-certification.XXXXXX")"
+  trap 'rm -rf -- "$certification_root"' EXIT
+  create_certification_store "$certification_root"
+  phase 'External common-tools tests' bash -c \
+    'cd "$1" && uv run --frozen pytest --run-external -m external --durations=10' \
+    _ "$backend_dir"
+  printf '\nExternal certification passed with bioimageflow-common-tools %s.\n' \
+    "$BIOIMAGEFLOW_COMMON_TOOLS_VERSION"
+)
+
+full_lane() (
+  require_command uv
+  require_command bun
+  if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
+    printf 'Backend environment missing: run cd backend && uv sync --extra dev --frozen\n' >&2
+    return 1
+  fi
+
+  backend_import_preflight
+
+  local certification_root
+  certification_root="$(mktemp -d "${TMPDIR:-/tmp}/bioimageflow-common-tools-certification.XXXXXX")"
+  trap 'rm -rf -- "$certification_root"' EXIT
+  create_certification_store "$certification_root"
+
+  run_parallel backend_lint backend_full_coverage frontend_lint frontend_typecheck frontend_full_coverage frontend_build
+  backend_logging_order
+  phase 'Chromium and Firefox end-to-end tests' run_e2e --project=chromium --project=firefox
+  printf '\nFull lane passed: repository tests, external certification, branch coverage, production build, Chromium, and Firefox all completed.\n'
+  printf 'Coverage artifacts: backend/.pytest_cache/{coverage.xml,htmlcov/} and frontend/test-results/coverage/.\n'
+)
+
+focus_lane() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    printf 'focus requires one of: backend, unit, related, e2e\n' >&2
+    return 2
+  fi
+  shift
+
+  case "$target" in
+    backend)
+      require_command uv
+      cd "$backend_dir"
+      uv run --frozen pytest "$@"
+      ;;
+    unit)
+      require_command bun
+      cd "$frontend_dir"
+      bun run test:unit -- "$@"
+      ;;
+    related)
+      require_command bun
+      if (( $# == 0 )); then
+        printf 'focus related requires at least one source file\n' >&2
+        return 2
+      fi
+      local -a related_files=()
+      local source_file
+      for source_file in "$@"; do
+        related_files+=("${source_file#frontend/}")
+      done
+      cd "$frontend_dir"
+      bun run vitest related "${related_files[@]}" --run
+      ;;
+    e2e)
+      run_e2e --project=chromium "$@"
+      ;;
+    *)
+      printf 'Unknown focus target: %s\n' "$target" >&2
+      return 2
+      ;;
+  esac
+}
+
+command="${1:-help}"
+if (( $# > 0 )); then
+  shift
+fi
+
+case "$command" in
+  help|-h|--help)
+    usage
+    ;;
+  focus)
+    focus_lane "$@"
+    ;;
+  quick)
+    if (( $# > 0 )); then
+      printf 'quick does not accept selectors; use scripts/test focus instead\n' >&2
+      exit 2
+    fi
+    quick_lane
+    ;;
+  check)
+    if (( $# > 0 )); then
+      printf 'check does not accept selectors; use scripts/test focus instead\n' >&2
+      exit 2
+    fi
+    check_lane
+    ;;
+  full)
+    if (( $# > 0 )); then
+      printf 'full does not accept selectors; use scripts/test focus instead\n' >&2
+      exit 2
+    fi
+    full_lane
+    ;;
+  certification)
+    if (( $# > 0 )); then
+      printf 'certification does not accept selectors\n' >&2
+      exit 2
+    fi
+    certification_lane
+    ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$command" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

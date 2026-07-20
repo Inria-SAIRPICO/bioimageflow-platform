@@ -45,10 +45,33 @@ test.describe('logger panel', () => {
       'Message',
     ])
 
+    const failure = await page.evaluate(() => fetch(
+      '/api/v1/dev/e2e/execution-failure',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          execution_id: 'logger-filter-execution',
+          workflow_id: 'logger-filter-workflow',
+          draft_revision: 0,
+          node_id: 'logger-filter-node',
+          error: 'logger-filter-sentinel',
+          traceback: 'logger-filter-traceback',
+        }),
+      },
+    ).then((response) => response.ok))
+    expect(failure).toBe(true)
+    const sentinel = page.getByTestId('log-entry').filter({
+      hasText: 'logger-filter-sentinel',
+    })
+    await expect(sentinel).toBeVisible()
+
     const before = wsMessages.filter((msg: any) => msg?.type === 'subscribe_logs').length
     await page.locator('[data-testid="log-level-DEBUG"]').click()
-    await page.locator('[data-testid="log-search"]').fill('needle')
-    await page.waitForTimeout(350)
+    const search = page.locator('[data-testid="log-search"]')
+    await search.fill('needle')
+    await expect(search).toHaveValue('needle')
+    await expect(sentinel).toHaveCount(0)
     const after = wsMessages.filter((msg: any) => msg?.type === 'subscribe_logs').length
 
     expect(after).toBe(before)

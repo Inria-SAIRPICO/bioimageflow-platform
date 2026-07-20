@@ -57,6 +57,8 @@ variables:
     paths:
       - frontend/playwright-report/
       - frontend/test-results/
+      - backend/.pytest_cache/coverage.xml
+      - backend/.pytest_cache/htmlcov/
   cache:
     - key:
         files:
@@ -94,7 +96,7 @@ frontend:required:
   script:
     - bun run lint
     - bun run type-check
-    - bun run test:unit
+    - "$CI_PROJECT_DIR/scripts/test focus unit"
 
 backend:required:
   extends: .backend-job
@@ -102,7 +104,7 @@ backend:required:
   script:
     - cd backend
     - uv run --frozen ruff check .
-    - uv run --frozen pytest -m "not common_tools"
+    - "$CI_PROJECT_DIR/scripts/test focus backend -m 'not external'"
     - >-
       uv run --frozen pytest
       tests/test_logging_config.py
@@ -115,29 +117,12 @@ chromium:required:
   extends: .browser-job
   stage: browser
   script:
-    - cd frontend
-    - bun run test:e2e -- --project=chromium
+    - scripts/test focus e2e
 
-firefox:scheduled:
+full:scheduled:
   extends:
     - .browser-job
     - .scheduled-or-manual
-  stage: browser
-  script:
-    - cd frontend
-    - bun run test:e2e -- --project=firefox
-
-common-tools:external:
-  extends: .backend-job
   stage: certification
-  variables:
-    BIOIMAGEFLOW_COMMON_TOOLS_VERSION: "0.1.5"
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-      when: always
-    - when: manual
-      allow_failure: true
   script:
-    - bash scripts/ci/install_common_tools_from_index.sh
-    - cd backend
-    - uv run --frozen pytest --run-common-tools -m common_tools
+    - scripts/test full

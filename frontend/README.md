@@ -94,12 +94,15 @@ code-server rooted at the workspace project and focuses the selected tool file.
 ## Testing
 
 ```bash
-bun run test:unit                # Run all unit tests (Vitest)
-bun run test:unit:watch          # Watch mode
-bun run test:e2e                 # Run E2E tests with Playwright-managed isolated servers
+scripts/test focus unit src/path/to/file.test.ts  # From the repository root
+scripts/test quick                              # Fast coding checkpoint
+scripts/test check                              # Deterministic completion check
+scripts/test full                               # Coverage and complete certification
 ```
 
-Playwright starts and stops the backend and frontend servers declared in `playwright.config.ts`; do not start shared development servers for the normal E2E command. See [`../docs/testing.md`](../docs/testing.md) for the required Chromium lane, optional Firefox lane, and environment-isolation details.
+The native `bun run test:unit`, `bun run test:unit:watch`, and `bun run test:e2e` commands remain available from this directory.
+The root runner forwards exact Vitest and Playwright selectors, starts browser servers with isolated runtime state, and provides consistently named quick, check, and full lanes.
+See [`../docs/testing.md`](../docs/testing.md) for focused examples and lane contents.
 
 ## Building
 

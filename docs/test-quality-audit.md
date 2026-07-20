@@ -55,8 +55,8 @@ The small cleanup iteration removed or consolidated the following tests because 
 - The exact four-item assertion in `NodeContextMenu.test.ts` was removed while each menu action remains covered independently.
 - Six serial canvas browser cases were consolidated into one feature flow that proves tool discovery, draft persistence, selection, pins, and the Node Panel without repeating workflow setup.
 
-After cleanup, Pytest collects 1,484 tests with 1,474 selected in the required lane, Vitest runs 1,465 tests in 100 files, and Playwright runs 37 tests in 16 spec files.
-Post-cleanup validation completed with 1,474 backend tests passing in 43.16 seconds, 1,465 frontend unit tests passing in 22.15 seconds, and all 37 Chromium tests passing in 52.9 seconds.
+Immediately after that cleanup, Pytest collected 1,484 tests with 1,474 selected in the required lane, Vitest ran 1,465 tests in 100 files, and Playwright ran 37 tests in 16 spec files.
+That historical validation completed with 1,474 backend tests passing in 43.16 seconds, 1,465 frontend unit tests passing in 22.15 seconds, and all 37 Chromium tests passing in 52.9 seconds; later feature commits have increased the live inventory.
 The retained `full-stack-smoke.spec.ts` is the one browser smoke because it proves app rendering, the Vite proxy, backend health, and absence of console errors in one flow.
 
 No tests were added, and sub-workflow tests were deliberately left unchanged because that feature area is expected to change soon.
@@ -192,8 +192,8 @@ Keep URL/path encoding, resolution-order, persistence barriers, and failure beha
 
 ### Backend
 
-The autouse `isolated_bioimageflow_runtime` fixture requests `tmp_path` and creates a home, tool store, and Wetlands directory for every deterministic test, including pure model tests.
-Make isolation opt-in for filesystem/runtime tests, or set environment paths lazily and create directories only when the tested service needs them.
+The autouse `isolated_bioimageflow_runtime` fixture still requests `tmp_path` and creates a home, tool store, and Wetlands directory for every deterministic test, including pure model tests.
+A trial session-shared runtime was rejected because it allowed process state and network transports to leak across tests; future optimization must retain per-test mutation isolation while making provisioning lazy or opt-in.
 
 The ordinary `client` fixture creates the full application for every router test.
 Use module-scoped application/client fixtures for read-only contract groups and retain per-test application instances only where state or dependency overrides can leak.
@@ -212,19 +212,18 @@ Consider `pytest-xdist` only after marking process-global logging, module-import
 Parallelizing everything blindly would make this suite less reliable; the safe service/model subset is the first candidate.
 
 Dataset SQLite connections now commit or roll back explicitly and always close, and Pytest treats `ResourceWarning` as an error.
-Pytest should also reject unregistered markers and report the slowest tests in CI in the larger iteration.
+Pytest now rejects unregistered markers, distinguishes integration, serial, slow, and external requirements, and the root runner reports the slowest tests.
 
 ### Frontend unit tests
 
-Vitest currently gives every file a JSDOM environment and runs `frontend/tests/setup.ts`, which replaces IndexedDB before every one of the 1,465 post-cleanup tests.
-Split pure utility/session/store tests into a Node environment where possible, reserve JSDOM and Vue Test Utils setup for component tests, and install fake IndexedDB only in suites that use it.
+Vitest is now divided into Node, JSDOM, and JSDOM-with-IndexedDB projects.
+The fast Node project covers verified pure utility, session, service, store, and API suites, while fake IndexedDB is installed only for the two files that require the shared implementation.
 
 Very large files increase transform, collection, review, and failure-localization costs: `CanvasView.test.ts` is about 6,576 lines, `AppShell.test.ts` 2,251, `MenuBar.test.ts` 2,138, and `workflow.test.ts` 1,705.
 Split them by contract area without duplicating the expensive mount/setup path, using shared fixture builders from `src/test-utils`.
 
-A post-cleanup Vitest run measured 22.15 seconds wall time, with 100 files and 1,465 tests passing.
-The slowest files were `AppShell.test.ts` at 6.10 seconds, `MenuBar.test.ts` at 5.24, `ToolsPanel.test.ts` at 3.06, and `NodePanel.test.ts` at 1.99; `LoggerPanel.test.ts` fell to 0.55 seconds after removing the 5,000-row DOM case.
-That profile supports environment/setup splitting and focused fixture work before micro-optimizing assertions.
+The first post-split run completed the current 100-file suite in 18.52 seconds, down from the earlier 22.15-second post-cleanup run, while the Node-only project completed in 4.32 seconds during isolated validation.
+V8 coverage is now available only in the comprehensive lane; its first baseline measured 95.18% statements, 84.16% branches, and 84.89% functions without slowing the coding loop.
 
 ### Browser tests
 
@@ -235,7 +234,7 @@ Run the full Firefox suite only when browser-specific changes or failure history
 Playwright uses one worker and a shared persistent backend root, which avoids races but forces all feature tests to be serial and encourages state cleanup by convention.
 Introduce fixtures that create and delete a workflow per test, eliminate `Date.now()`/random naming where a deterministic test ID is enough, and then shard independent spec groups across isolated server/root pairs.
 
-Replace `page.waitForTimeout(350)` in `logger-panel.spec.ts` with an observable UI/event condition.
+The fixed `page.waitForTimeout(350)` in `logger-panel.spec.ts` has been replaced with an actual WebSocket log event and an observable filtered-row transition.
 Keep the file-watcher timeout in `hot-reload.spec.ts` as a bounded integration timeout, but make timeout failures report watcher/backend state.
 
 CI still retries browser failures twice, but Playwright now enables `failOnFlakyTests` in CI so a pass-on-retry remains a failing quality signal.
@@ -244,8 +243,7 @@ Quarantine any demonstrably flaky test with an owner and expiry rather than sile
 There are no screenshot assertions and no automated accessibility audit in the Playwright suite.
 Do not create a large screenshot-baseline suite, but consider a few stable visual assertions for the sub-workflow border, canvas shell, and critical dialogs, plus an accessibility scan of the main shell and modal flows.
 
-The browser lane runs the Vite development server, and CI does not run `bun run build`.
-Add a production build/static-serving smoke so packaging and production-only bundling failures are certified.
+The browser lane still runs the Vite development server, but the deterministic check and comprehensive lane now run `bun run build` before browser certification.
 
 ## Recommended test lanes
 
@@ -269,7 +267,7 @@ Add a production build/static-serving smoke so packaging and production-only bun
 ### P0: restore trust in signals
 
 1. Completed in the small cleanup: fix and then fail on SQLite/resource warnings.
-2. Add backend branch coverage and frontend V8 coverage with non-regression thresholds and artifacts.
+2. Coverage instrumentation and artifacts are complete; establish non-regression thresholds after the baselines stabilize.
 3. Resolve the custom-tool context-menu specification contradiction.
 4. Add a real recursive sub-workflow execution/cache/log test.
 5. Add a real export→import archive round trip.
@@ -284,7 +282,7 @@ Add a production build/static-serving smoke so packaging and production-only bun
 
 ### P2: reduce runtime and maintenance cost
 
-1. Split Node and JSDOM Vitest environments and scope fake IndexedDB setup.
+1. Completed: split Node, JSDOM, and IndexedDB Vitest environments and scope fake IndexedDB setup.
 2. Scope backend runtime directories and application construction to tests that need them.
 3. Remove fixed sleeps and introduce deterministic synchronization helpers.
 4. Consolidate trivial model/framework tests and overlapping frontend ownership after mutation checks.
