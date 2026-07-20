@@ -88,8 +88,14 @@ run_parallel() {
 }
 
 allocate_port() {
-  "$backend_dir/.venv/bin/python" -c \
-    'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+  local port
+  if ! port="$("$backend_dir/.venv/bin/python" -c \
+    'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()' \
+    2>/dev/null)"; then
+    printf 'Could not allocate a local E2E port. Grant local-server access or set BIOIMAGEFLOW_E2E_BACKEND_PORT and BIOIMAGEFLOW_E2E_FRONTEND_PORT.\n' >&2
+    return 1
+  fi
+  printf '%s\n' "$port"
 }
 
 run_e2e() (
@@ -114,8 +120,13 @@ run_e2e() (
   trap cleanup_e2e_root EXIT
 
   export BIOIMAGEFLOW_E2E_ROOT="$e2e_root"
-  export BIOIMAGEFLOW_E2E_BACKEND_PORT="${BIOIMAGEFLOW_E2E_BACKEND_PORT:-$(allocate_port)}"
-  export BIOIMAGEFLOW_E2E_FRONTEND_PORT="${BIOIMAGEFLOW_E2E_FRONTEND_PORT:-$(allocate_port)}"
+  if [[ -z "${BIOIMAGEFLOW_E2E_BACKEND_PORT:-}" ]]; then
+    BIOIMAGEFLOW_E2E_BACKEND_PORT="$(allocate_port)"
+  fi
+  if [[ -z "${BIOIMAGEFLOW_E2E_FRONTEND_PORT:-}" ]]; then
+    BIOIMAGEFLOW_E2E_FRONTEND_PORT="$(allocate_port)"
+  fi
+  export BIOIMAGEFLOW_E2E_BACKEND_PORT BIOIMAGEFLOW_E2E_FRONTEND_PORT
   while [[ "$BIOIMAGEFLOW_E2E_FRONTEND_PORT" == "$BIOIMAGEFLOW_E2E_BACKEND_PORT" ]]; do
     export BIOIMAGEFLOW_E2E_FRONTEND_PORT="$(allocate_port)"
   done

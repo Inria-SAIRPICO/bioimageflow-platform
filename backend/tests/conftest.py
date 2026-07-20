@@ -10,6 +10,21 @@ from httpx import ASGITransport
 from bioimageflow_server.app import create_app
 
 
+class _OfflinePyPIVersionService:
+    """Keep repository-owned app tests deterministic and network-free."""
+
+    async def get_versions(self, _package_name: str) -> list[str]:
+        return []
+
+    async def get_latest_stable(self, package_name: str) -> str:
+        raise AssertionError(
+            f"Test must inject a PyPI service before resolving {package_name!r}"
+        )
+
+    async def aclose(self) -> None:
+        pass
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Keep external package certification explicit and opt-in."""
 
@@ -99,6 +114,10 @@ def isolated_bioimageflow_runtime(
     monkeypatch.setattr(
         "bioimageflow_server.app.ensure_agent_workspace_context",
         lambda _workspace: None,
+    )
+    monkeypatch.setattr(
+        "bioimageflow_server.app.PyPIVersionService",
+        _OfflinePyPIVersionService,
     )
 
 

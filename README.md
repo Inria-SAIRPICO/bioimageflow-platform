@@ -133,24 +133,19 @@ The pywebview window loads `http://localhost:5173` while the FastAPI backend run
 
 ## Testing
 
-The required local checks match CI:
+Use the root test runner for the same focused, quick, deterministic, and comprehensive lanes used by agents and CI:
 
 ```bash
-# Backend lint, deterministic tests, and logging-order regression
-cd backend
-uv run --frozen ruff check .
-uv run --frozen pytest -m "not common_tools"
-uv run --frozen pytest tests/test_logging_config.py tests/test_ws/test_handler.py::test_publish_without_loop_drops_silently tests/test_ws/test_handler.py::test_publish_logs_future_exceptions tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger -q
-
-# Frontend lint, type-check, unit tests, and Chromium E2E
-cd ../frontend
-bun run lint
-bun run type-check
-bun run test:unit
-bun run test:e2e -- --project=chromium
+scripts/test focus backend tests/test_services/test_dataset_store.py
+scripts/test focus unit src/stores/__tests__/workflow.test.ts
+scripts/test quick
+scripts/test check
+scripts/test full
 ```
 
-Playwright manages isolated backend and frontend servers. See [`docs/testing.md`](docs/testing.md) for dependency setup, Firefox, exact source bootstrap, and separate external common-tools certification.
+Use focused tests during editing, `quick` for frequent coding checkpoints, `check` before completing an ordinary change, and `full` after large iterations or before releases.
+Playwright manages isolated backend and frontend servers.
+See [`docs/testing.md`](docs/testing.md) for exact lane contents, dependency setup, selectors, coverage, Firefox, source bootstrap, and external common-tools certification.
 
 ## Development
 

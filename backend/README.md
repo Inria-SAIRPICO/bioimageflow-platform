@@ -138,14 +138,16 @@ The pywebview JS bridge (`DesktopApi`) exposes native file/folder pickers, a sav
 ## Testing
 
 ```bash
-uv run --frozen pytest -m "not common_tools"  # Required deterministic lane
-uv run pytest tests/test_desktop.py       # Desktop + DesktopApi + shutdown
-uv run pytest tests/test_routers          # Router tests only
+../scripts/test focus backend tests/test_desktop.py
+../scripts/test focus backend tests/test_routers
+../scripts/test quick
+../scripts/test check
 ```
 
 Desktop tests mock `webview`, `uvicorn`, and `threading.Thread`, so they run headlessly without opening any window.
 
-External common-tools certification is intentionally separate and requires `--run-common-tools` after installing the pinned published package into an empty tool store. See [`../docs/testing.md`](../docs/testing.md) for exact required, logging-order, browser, and external-certification commands.
+External common-tools certification is intentionally separate and available through `../scripts/test certification`.
+See [`../docs/testing.md`](../docs/testing.md) for focused selectors and the exact quick, check, full, browser, and external-certification lane contents.
 
 ## API Overview
 
