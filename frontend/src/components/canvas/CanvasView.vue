@@ -1416,6 +1416,17 @@ function runContextSubWorkflowAction() {
   closeNodeContextMenu()
 }
 
+function renameContextNode() {
+  const menu = nodeContextMenu.value
+  if (!menu) return
+  const node = getNodes.value.find((candidate: any) => candidate.id === menu.nodeId)
+  closeNodeContextMenu()
+  if (!node?.data || isLocked.value) return
+  const currentName = typeof node.data.name === 'string' ? node.data.name : ''
+  const nextName = window.prompt('Rename node', currentName)
+  if (nextName !== null) renameNode(menu.nodeId, nextName)
+}
+
 function toggleContextNodeEnabled() {
   const menu = nodeContextMenu.value
   if (!menu) return
@@ -3504,7 +3515,7 @@ defineExpose({
       :position="nodeContextMenu.position"
       :enabled="nodeContextMenu.enabled"
       :can-open-sub-workflow="nodeContextMenu.canOpenSubWorkflow"
-      @rename="closeNodeContextMenu"
+      @rename="renameContextNode"
       @enable-toggle="toggleContextNodeEnabled"
       @create-sub-workflow="runContextSubWorkflowAction"
       @open-sub-workflow="runContextSubWorkflowAction"

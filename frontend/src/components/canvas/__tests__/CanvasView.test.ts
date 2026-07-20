@@ -1568,6 +1568,50 @@ describe('CanvasView', () => {
       w.unmount()
     })
 
+    it('renames a node from its context menu', async () => {
+      mockNodes = reactive([{
+        id: 'shared',
+        data: {
+          name: 'Original name',
+          toolName: 'gaussian_blur',
+          status: 'executed',
+          enabled: true,
+        },
+        position: { x: 0, y: 0 },
+      }]) as any[]
+      const prompt = vi.spyOn(window, 'prompt').mockReturnValue('Renamed node')
+      const w = mountCanvas({
+        params: {
+          panelId: 'workflow:analysis',
+          workflowName: 'analysis',
+        },
+      })
+      graphSyncMocks.syncGraph.mockClear()
+      persistenceMocks.queueGraph.mockClear()
+
+      w.findComponent({ name: 'VueFlow' }).vm.$emit('node-context-menu', {
+        event: {
+          clientX: 20,
+          clientY: 30,
+          preventDefault: vi.fn(),
+        },
+        node: mockNodes[0],
+      })
+      await nextTick()
+      await w.findAll('.node-context-menu li')[0]!.trigger('click')
+
+      expect(prompt).toHaveBeenCalledWith('Rename node', 'Original name')
+      expect(mockNodes[0].data.name).toBe('Renamed node')
+      expect(w.find('.node-context-menu').exists()).toBe(false)
+      expect(graphSyncMocks.syncGraph).not.toHaveBeenCalled()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledOnce()
+      expect(persistenceMocks.queueGraph).toHaveBeenCalledWith(expect.objectContaining({
+        nodes: [expect.objectContaining({ id: 'shared', name: 'Renamed node' })],
+      }))
+      prompt.mockRestore()
+      w.unmount()
+    })
+
     it('writes presentation state through its fixed canvas identity', () => {
       mockNodes = [
         {
