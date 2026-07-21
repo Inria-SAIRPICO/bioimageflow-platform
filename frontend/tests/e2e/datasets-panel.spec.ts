@@ -54,8 +54,25 @@ test.describe('Datasets panel', () => {
     await expect(folderDialog).toBeHidden()
     await expect(page.locator('.dataset-tree')).toContainText(folderName)
 
-    await page.getByRole('button', { name: 'Create Files node', exact: true }).click()
-    await expect(page.locator('.vue-flow__node').filter({ hasText: 'Files' })).toHaveCount(1)
+    const renamedFileContent = page.locator('.p-tree-node-content').filter({
+      has: page.locator('.dataset-node-label').filter({ hasText: new RegExp(`^${renamedName}$`) }),
+    })
+    const canvas = page.locator('.canvas-view')
+    const canvasBox = await canvas.boundingBox()
+    expect(canvasBox).not.toBeNull()
+    const targetPosition = {
+      x: Math.round(canvasBox!.width * 0.6),
+      y: Math.round(canvasBox!.height * 0.4),
+    }
+
+    await renamedFileContent.dragTo(canvas, { targetPosition })
+
+    const filesNode = page.locator('.vue-flow__node').filter({ hasText: 'Files' })
+    await expect(filesNode).toHaveCount(1)
+    const nodeBox = await filesNode.boundingBox()
+    expect(nodeBox).not.toBeNull()
+    expect(Math.abs(nodeBox!.x - (canvasBox!.x + targetPosition.x))).toBeLessThan(40)
+    expect(Math.abs(nodeBox!.y - (canvasBox!.y + targetPosition.y))).toBeLessThan(40)
   })
 
   test('cancels a file dropped on the canvas while its upload is active', async ({ page }) => {
@@ -86,5 +103,67 @@ test.describe('Datasets panel', () => {
     await expect(page.locator('.upload-message.cancelled')).toContainText('slow.tif — Cancelled')
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
     releaseUpload()
+  })
+
+  test('moves checked items together and keeps hierarchical selection visible', async ({ page }, testInfo) => {
+    const suffix = `${testInfo.project.name}-${testInfo.repeatEachIndex}`
+    const firstName = `alpha-${suffix}.tif`
+    const secondName = `zulu-${suffix}.tif`
+    const folderName = `Batch ${suffix}`
+    let completedMoves = 0
+    page.on('response', response => {
+      if (
+        response.request().method() === 'PATCH'
+        && /\/api\/v1\/datasets\/[^/]+$/.test(new URL(response.url()).pathname)
+      ) completedMoves += 1
+    })
+
+    await page.goto('/')
+    await page.locator('.dv-tab').filter({ hasText: /^Datasets$/ }).click()
+    await page.locator('.datasets-panel input[type="file"]').setInputFiles([
+      { name: firstName, mimeType: 'image/tiff', buffer: Buffer.from('alpha') },
+      { name: secondName, mimeType: 'image/tiff', buffer: Buffer.from('zulu') },
+    ])
+    await expect(page.locator('.upload-message.success')).toHaveCount(2)
+
+    await page.getByRole('button', { name: 'Add folder' }).click()
+    const folderDialog = page.getByRole('dialog', { name: 'Add folder' })
+    await folderDialog.getByRole('textbox').fill(folderName)
+    await folderDialog.getByRole('button', { name: 'Save' }).click()
+    await expect(folderDialog).toBeHidden()
+
+    const contentFor = (label: string) => page.locator('.p-tree-node-content').filter({
+      has: page.locator('.dataset-node-label').filter({ hasText: new RegExp(`^${label}$`) }),
+    })
+    const folderContent = contentFor(folderName)
+    await contentFor(firstName).dragTo(folderContent)
+    await expect.poll(() => completedMoves).toBe(2)
+
+    const folderItem = page.locator('.p-tree-node').filter({
+      has: page.locator('.dataset-node-label').filter({ hasText: new RegExp(`^${folderName}$`) }),
+    }).first()
+    await folderItem.locator(':scope > .p-tree-node-content .p-tree-node-toggle-button').click()
+    await expect(folderItem.getByText(firstName, { exact: true })).toBeVisible()
+    await expect(folderItem.getByText(secondName, { exact: true })).toBeVisible()
+
+    await contentFor(firstName).dragTo(contentFor(secondName))
+    await expect(folderItem.getByText(firstName, { exact: true })).toBeVisible()
+    await expect(folderItem.getByText(secondName, { exact: true })).toBeVisible()
+    expect(completedMoves).toBe(2)
+
+    await page.getByRole('button', { name: 'Unselect all' }).click()
+    const folderCheckbox = page.getByTestId(`dataset-checkbox-${await folderItem.locator('.dataset-node-label').first().getAttribute('data-dataset-id')}`)
+    const firstCheckbox = page.getByRole('checkbox', { name: `Select ${firstName}` })
+    const secondCheckbox = page.getByRole('checkbox', { name: `Select ${secondName}` })
+    await folderCheckbox.locator('input').click()
+    await expect(folderCheckbox.locator('input')).toBeChecked()
+    await expect(firstCheckbox).toBeChecked()
+    await expect(secondCheckbox).toBeChecked()
+
+    await firstCheckbox.click()
+    await expect(folderCheckbox).toHaveAttribute('data-p-indeterminate', 'true')
+    await expect(folderCheckbox.locator('input')).not.toBeChecked()
+    await expect(firstCheckbox).not.toBeChecked()
+    await expect(secondCheckbox).toBeChecked()
   })
 })

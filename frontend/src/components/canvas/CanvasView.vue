@@ -39,6 +39,10 @@ import {
 import { useValidationErrors } from '@/composables/useValidationErrors'
 import { useErrorReporting } from '@/composables/useErrorReporting'
 import {
+  DATASET_TREE_DRAG_MIME,
+  decodeDatasetTreeDrag,
+} from '@/utils/datasetDrag'
+import {
   useFieldFocusTracker,
   type FieldFocusTarget,
 } from '@/composables/useFieldFocusTracker'
@@ -2249,26 +2253,31 @@ function hasPath(from: string, to: string): boolean {
 function onDrop(event: DragEvent) {
   event.preventDefault()
   if (isLocked.value) return
+  const position = canvasDropPosition(event)
+  const datasetPaths = decodeDatasetTreeDrag(
+    event.dataTransfer?.getData(DATASET_TREE_DRAG_MIME) ?? '',
+  )
+  if (datasetPaths) {
+    onAddNode({ toolName: 'Files', position, parameters: { files: datasetPaths } })
+    return
+  }
   const workflowName = event.dataTransfer?.getData('application/bioimageflow-workflow')
   if (workflowName) {
-    const rect = (canvasRef.value as HTMLElement).getBoundingClientRect()
-    const position = project({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    })
     void onAddWorkflowNode({ workflowName, position })
     return
   }
   const toolName = event.dataTransfer?.getData('application/bioimageflow-tool')
   if (!toolName) return
 
+  onAddNode({ toolName, position })
+}
+
+function canvasDropPosition(event: DragEvent): { x: number; y: number } {
   const rect = (canvasRef.value as HTMLElement).getBoundingClientRect()
-  const position = project({
+  return project({
     x: event.clientX - rect.left,
     y: event.clientY - rect.top,
   })
-
-  onAddNode({ toolName, position })
 }
 
 function onDragOver(event: DragEvent) {
@@ -3497,8 +3506,8 @@ defineExpose({
   <div
     ref="canvasRef"
     class="canvas-view"
-    @drop="onDrop"
-    @dragover="onDragOver"
+    @drop.capture="onDrop"
+    @dragover.capture="onDragOver"
     @keydown="handleKeydown"
     tabindex="0"
     :aria-busy="lifecycleOperation !== null || isInstallingAuthoritativeDraft"

@@ -113,6 +113,10 @@ def create_app() -> FastAPI:
         _write_hot_reload_fixture(Path(hot_reload_fixture))
 
     registry = ToolRegistryService()
+    # An injected registry is not scanned by create_platform_app(). Populate
+    # the generated tool-store fixture explicitly so browser tests exercise
+    # Files-node creation and hot reload against the real package loader.
+    registry.scan_tool_store(tool_store)
     registry.register_tool(
         "Generate",
         ToolMetadata(

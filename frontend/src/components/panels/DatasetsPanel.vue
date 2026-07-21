@@ -64,40 +64,48 @@
 
     <div class="dataset-toolbar">
       <Button data-testid="dataset-add-folder" label="Add folder" icon="pi pi-folder-plus" size="small" :disabled="locked" @click="openAddFolder" />
-      <Button data-testid="dataset-rename" label="Rename" icon="pi pi-pencil" size="small" :disabled="locked || selectedNodes.length !== 1" @click="openRename" />
+      <Button data-testid="dataset-rename" label="Rename" icon="pi pi-pencil" size="small" :disabled="locked || selectedRootNodes.length !== 1" @click="openRename" />
       <Button data-testid="dataset-delete" label="Delete" icon="pi pi-trash" size="small" severity="danger" :disabled="locked || selectedNodes.length === 0" @click="confirmDelete" />
       <Button data-testid="dataset-clear-selection" label="Unselect all" icon="pi pi-times" size="small" text :disabled="selectedNodes.length === 0" @click="clearSelection" />
     </div>
+    <small v-if="treeActionError" class="action-error" aria-live="polite">
+      {{ treeActionError }}
+    </small>
 
-    <Tree
-      v-model:expandedKeys="expandedKeys"
-      :value="visibleNodes"
-      draggable-nodes
-      droppable-nodes
-      class="dataset-tree"
-      @node-drop="onNodeDrop"
-    >
-      <template #default="slotProps">
-        <span class="dataset-node" @click.stop>
-          <Checkbox
-            :model-value="isNodeSelected(slotProps.node)"
-            binary
-            :disabled="locked || (Boolean(store.picker) && slotProps.node.data.kind === 'folder')"
-            :data-testid="`dataset-checkbox-${slotProps.node.data.record.id}`"
-            :aria-label="`Select ${slotProps.node.label}`"
-            @click.stop
-            @update:model-value="setNodeSelected(slotProps.node, $event)"
-          />
-          <i :class="slotProps.node.data.kind === 'folder' ? 'pi pi-folder' : 'pi pi-file'" aria-hidden="true" />
-          <span
-            class="dataset-node-label"
-            :data-dataset-id="slotProps.node.data.record.id"
-            :title="nodeTitle(slotProps.node)"
-          >{{ slotProps.node.label }}</span>
-        </span>
-      </template>
-      <template #empty>No datasets found.</template>
-    </Tree>
+    <div class="dataset-tree-wrap" @dragstart.capture="onTreeDragStart">
+      <Tree
+        v-model:expandedKeys="expandedKeys"
+        :value="visibleNodes"
+        draggable-nodes
+        droppable-nodes
+        validate-drop
+        :pt="treePassThrough"
+        class="dataset-tree"
+        @node-drop="onNodeDrop"
+      >
+        <template #default="slotProps">
+          <span class="dataset-node" @click.stop>
+            <Checkbox
+              :model-value="nodeSelectionState(slotProps.node) === 'all'"
+              :indeterminate="nodeSelectionState(slotProps.node) === 'partial'"
+              binary
+              :disabled="locked || (Boolean(store.picker) && slotProps.node.data.kind === 'folder')"
+              :data-testid="`dataset-checkbox-${slotProps.node.data.record.id}`"
+              :aria-label="`Select ${slotProps.node.label}`"
+              @click.stop
+              @update:model-value="setNodeSelected(slotProps.node, $event)"
+            />
+            <i :class="slotProps.node.data.kind === 'folder' ? 'pi pi-folder' : 'pi pi-file'" aria-hidden="true" />
+            <span
+              class="dataset-node-label"
+              :data-dataset-id="slotProps.node.data.record.id"
+              :title="nodeTitle(slotProps.node)"
+            >{{ slotProps.node.label }}</span>
+          </span>
+        </template>
+        <template #empty>No datasets found.</template>
+      </Tree>
+    </div>
 
     <div class="dataset-footer">
       <span data-testid="dataset-selection-summary" :data-selected-ids="selectedNodeIds.join(',')">{{ selectionSummary }}</span>
@@ -174,12 +182,21 @@ import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useExecutionLock } from '@/composables/useExecutionLock'
 import { useDatasetsStore, type UploadEntry } from '@/stores/datasets'
 import { useUIStore } from '@/stores/ui'
+import {
+  DATASET_TREE_DRAG_MIME,
+  encodeDatasetTreeDrag,
+} from '@/utils/datasetDrag'
 
 type NodeData =
   | { kind: 'dataset'; record: DatasetRecord }
   | { kind: 'folder'; record: DatasetFolderRecord }
 
-type DatasetTreeNode = TreeNode & { key: string; data: NodeData; children?: DatasetTreeNode[] }
+type DatasetTreeNode = Omit<TreeNode, 'key' | 'data' | 'children'> & {
+  key: string
+  data: NodeData
+  children?: DatasetTreeNode[]
+}
+type DatasetSelectionState = 'none' | 'partial' | 'all'
 
 const store = useDatasetsStore()
 const uiStore = useUIStore()
@@ -192,6 +209,7 @@ const editorMode = ref<'add' | 'rename'>('add')
 const editorName = ref('')
 const actionBusy = ref(false)
 const actionError = ref('')
+const treeActionError = ref('')
 const deleteVisible = ref(false)
 const deletePreview = ref<Awaited<ReturnType<typeof previewDatasetDelete>> | null>(null)
 const expandedKeys = ref<Record<string, boolean>>({})
@@ -236,12 +254,11 @@ const visibleNodes = computed(() => {
   const needle = query.value.trim().toLocaleLowerCase()
   const filter = (nodes: DatasetTreeNode[]): DatasetTreeNode[] => nodes.flatMap(node => {
     const children = filter(node.children ?? [])
-    const record = node.data.record
     const haystack = node.data.kind === 'dataset'
-      ? `${record.display_name} ${record.original_filename} ${folderPath(record.folder_id)}`
-      : folderPath(record.id)
+      ? `${node.data.record.display_name} ${node.data.record.original_filename} ${folderPath(node.data.record.folder_id)}`
+      : folderPath(node.data.record.id)
     const searchMatches = !needle || haystack.toLocaleLowerCase().includes(needle)
-    const pickerMatches = node.data.kind === 'folder' || matchesPickerTypes(record)
+    const pickerMatches = node.data.kind === 'folder' || matchesPickerTypes(node.data.record)
     if ((!searchMatches || !pickerMatches) && children.length === 0) return []
     return [{ ...node, children }]
   })
@@ -252,6 +269,11 @@ const selectedNodes = computed(() => Object.entries(store.selectionKeys)
   .filter(([, selected]) => selected)
   .map(([id]) => nodeMap.value.get(id))
   .filter((node): node is DatasetTreeNode => Boolean(node)))
+
+const selectedRootNodes = computed(() => {
+  const selectedIds = new Set(selectedNodes.value.map(node => node.key))
+  return selectedNodes.value.filter(node => !hasSelectedFolderAncestor(node, selectedIds))
+})
 
 const selectedNodeIds = computed(() => selectedNodes.value.map(node => node.key))
 
@@ -270,11 +292,17 @@ const selectionSummary = computed(() => {
 })
 
 const uploadFolderId = computed(() => {
-  if (selectedNodes.value.length !== 1) return null
-  const node = selectedNodes.value[0]
+  if (selectedRootNodes.value.length !== 1) return null
+  const node = selectedRootNodes.value[0]
   if (node.data.kind === 'folder') return node.data.record.id
   return node.data.record.folder_id
 })
+
+const treePassThrough = {
+  nodeContent: ({ context }: { context: { node: DatasetTreeNode } }) => ({
+    'data-dataset-tree-id': context.node.key,
+  }),
+}
 
 onMounted(() => { void store.refresh() })
 
@@ -340,14 +368,66 @@ function onFilesChosen(event: Event) {
   input.value = ''
 }
 
-function isNodeSelected(treeNode: TreeNode): boolean {
+function parentFolderId(node: DatasetTreeNode): string | null {
+  return node.data.kind === 'folder'
+    ? node.data.record.parent_id
+    : node.data.record.folder_id
+}
+
+function hasSelectedFolderAncestor(
+  node: DatasetTreeNode,
+  selectedIds: Set<string>,
+): boolean {
+  const visited = new Set<string>()
+  let folderId = parentFolderId(node)
+  while (folderId && !visited.has(folderId)) {
+    if (selectedIds.has(folderId)) return true
+    visited.add(folderId)
+    const folder = store.folders.find(item => item.id === folderId)
+    folderId = folder?.parent_id ?? null
+  }
+  return false
+}
+
+function canonicalNode(treeNode: TreeNode): DatasetTreeNode {
+  void allNodes.value
   const node = treeNode as DatasetTreeNode
-  return store.selectionKeys[node.key] === true
+  return nodeMap.value.get(node.key) ?? node
+}
+
+function subtreeKeys(treeNode: TreeNode): string[] {
+  const keys: string[] = []
+  const visit = (node: DatasetTreeNode) => {
+    keys.push(node.key)
+    node.children?.forEach(visit)
+  }
+  visit(canonicalNode(treeNode))
+  return keys
+}
+
+function nodeSelectionState(treeNode: TreeNode): DatasetSelectionState {
+  const keys = subtreeKeys(treeNode)
+  const selectedCount = keys.filter(key => store.selectionKeys[key] === true).length
+  if (selectedCount === 0) return 'none'
+  return selectedCount === keys.length ? 'all' : 'partial'
+}
+
+function ancestorFolderIds(node: DatasetTreeNode): string[] {
+  const ids: string[] = []
+  const visited = new Set<string>()
+  let folderId = parentFolderId(node)
+  while (folderId && !visited.has(folderId)) {
+    ids.push(folderId)
+    visited.add(folderId)
+    const folder = store.folders.find(item => item.id === folderId)
+    folderId = folder?.parent_id ?? null
+  }
+  return ids
 }
 
 function setNodeSelected(treeNode: TreeNode, selected: boolean) {
   if (locked.value) return
-  const node = treeNode as DatasetTreeNode
+  const node = canonicalNode(treeNode)
   if (store.picker) {
     if (node.data.kind === 'folder') return
     store.pickerSelectionId = selected ? node.key : null
@@ -355,9 +435,51 @@ function setNodeSelected(treeNode: TreeNode, selected: boolean) {
     return
   }
   const next = { ...store.selectionKeys }
-  if (selected) next[node.key] = true
-  else delete next[node.key]
+  for (const key of subtreeKeys(node)) {
+    if (selected) next[key] = true
+    else delete next[key]
+  }
+  if (!selected) {
+    for (const folderId of ancestorFolderIds(node)) delete next[folderId]
+  }
   store.selectionKeys = next
+}
+
+function dragNodes(treeNode: TreeNode): DatasetTreeNode[] {
+  const node = canonicalNode(treeNode)
+  return store.selectionKeys[node.key] === true
+    ? selectedRootNodes.value
+    : [node]
+}
+
+function pathsForNodes(nodes: DatasetTreeNode[]): string[] {
+  const selectedIds = new Set(nodes.map(node => node.key))
+  const paths: string[] = []
+  const visit = (node: DatasetTreeNode, ancestorSelected = false) => {
+    const selected = ancestorSelected || selectedIds.has(node.key)
+    if (node.data.kind === 'dataset' && selected) paths.push(node.data.record.path)
+    node.children?.forEach(child => visit(child, selected))
+  }
+  allNodes.value.forEach(node => visit(node))
+  return paths
+}
+
+function onDatasetDragStart(event: DragEvent, treeNode: TreeNode): void {
+  const paths = pathsForNodes(dragNodes(treeNode))
+  if (paths.length === 0) return
+  event.dataTransfer?.setData(
+    DATASET_TREE_DRAG_MIME,
+    encodeDatasetTreeDrag(paths),
+  )
+}
+
+function onTreeDragStart(event: DragEvent): void {
+  const target = event.target
+  if (!(target instanceof Element)) return
+  const content = target.closest<HTMLElement>('[data-dataset-tree-id]')
+  if (!content) return
+  const node = nodeMap.value.get(content.dataset.datasetTreeId ?? '')
+  if (node) onDatasetDragStart(event, node)
 }
 
 function clearSelection() {
@@ -378,7 +500,7 @@ function openAddFolder() {
 }
 
 function openRename() {
-  const node = selectedNodes.value[0]
+  const node = selectedRootNodes.value[0]
   if (!node) return
   editorMode.value = 'rename'
   editorName.value = String(node.label)
@@ -387,8 +509,8 @@ function openRename() {
 }
 
 function newFolderParent(): string | null {
-  if (selectedNodes.value.length !== 1) return null
-  const node = selectedNodes.value[0]
+  if (selectedRootNodes.value.length !== 1) return null
+  const node = selectedRootNodes.value[0]
   return node.data.kind === 'folder' ? node.data.record.id : node.data.record.folder_id
 }
 
@@ -401,7 +523,7 @@ async function saveEditor() {
     if (editorMode.value === 'add') {
       await createDatasetFolder(name, newFolderParent())
     } else {
-      const node = selectedNodes.value[0]
+      const node = selectedRootNodes.value[0]
       if (!node) return
       if (node.data.kind === 'folder') await updateDatasetFolder(node.key, { name })
       else await updateDataset(node.key, { display_name: name })
@@ -443,48 +565,67 @@ async function deleteConfirmed() {
   }
 }
 
-async function moveNode(node: DatasetTreeNode, folderId: string | null) {
-  const currentFolderId = node.data.kind === 'folder'
-    ? node.data.record.parent_id
-    : node.data.record.folder_id
-  if (currentFolderId === folderId) return
-  if (node.data.kind === 'folder') {
-    if (node.key === folderId) return
-    await updateDatasetFolder(node.key, { parent_id: folderId })
-  } else {
-    await updateDataset(node.key, { folder_id: folderId })
+function folderIsWithin(folderId: string | null, ancestorId: string): boolean {
+  const visited = new Set<string>()
+  while (folderId && !visited.has(folderId)) {
+    if (folderId === ancestorId) return true
+    visited.add(folderId)
+    const folder = store.folders.find(item => item.id === folderId)
+    folderId = folder?.parent_id ?? null
   }
-  await store.refresh()
+  return false
+}
+
+function isDropInsideNode(event: DragEvent): boolean {
+  const target = event.target
+  if (!(target instanceof Element)) return true
+  const content = target.closest('.p-tree-node-content, .p-treenode-content')
+  if (!(content instanceof HTMLElement)) return true
+  const rect = content.getBoundingClientRect()
+  if (rect.height <= 0) return true
+  const offset = event.clientY - rect.top
+  return offset >= rect.height * 0.25 && offset <= rect.height * 0.75
+}
+
+function dropFolderId(event: TreeNodeDropEvent): string | null {
+  const dropNode = event.dropNode as DatasetTreeNode | null | undefined
+  if (!dropNode) return null
+  if (
+    dropNode.data.kind === 'folder'
+    && isDropInsideNode(event.originalEvent as DragEvent)
+  ) {
+    return dropNode.key
+  }
+  return parentFolderId(dropNode)
+}
+
+async function moveNodes(nodes: DatasetTreeNode[], folderId: string | null) {
+  for (const node of nodes) {
+    if (node.data.kind === 'folder' && folderIsWithin(folderId, node.key)) {
+      throw new Error(`Cannot move “${node.label}” into itself or one of its subfolders.`)
+    }
+  }
+  const changed = nodes.filter(node => parentFolderId(node) !== folderId)
+  if (changed.length === 0) return
+  try {
+    await Promise.all(changed.map(node => (
+      node.data.kind === 'folder'
+        ? updateDatasetFolder(node.key, { parent_id: folderId })
+        : updateDataset(node.key, { folder_id: folderId })
+    )))
+  } finally {
+    await store.refresh()
+  }
 }
 
 function onNodeDrop(event: TreeNodeDropEvent) {
   const dragNode = event.dragNode as DatasetTreeNode
-  const dropNode = event.dropNode as DatasetTreeNode
   if (locked.value || !dragNode) return
-  const resultingParent = findTreeParent(
-    (event.value as DatasetTreeNode[] | undefined) ?? visibleNodes.value,
-    dragNode.key,
-  )
-  const folderId = resultingParent !== undefined
-    ? resultingParent
-    : dropNode?.data.kind === 'folder'
-      ? dropNode.key
-      : undefined
-  if (folderId === undefined) return
-  void moveNode(dragNode, folderId).catch(error => { actionError.value = message(error) })
-}
-
-function findTreeParent(
-  nodes: DatasetTreeNode[],
-  nodeId: string,
-  parentId: string | null = null,
-): string | null | undefined {
-  for (const node of nodes) {
-    if (node.key === nodeId) return parentId
-    const found = findTreeParent(node.children ?? [], nodeId, node.key)
-    if (found !== undefined) return found
-  }
-  return undefined
+  treeActionError.value = ''
+  const nodes = dragNodes(dragNode)
+  void moveNodes(nodes, dropFolderId(event)).catch(error => {
+    treeActionError.value = message(error)
+  })
 }
 
 async function resolvedSelectedPaths(): Promise<string[]> {
@@ -539,7 +680,8 @@ function nodeTitle(treeNode: TreeNode): string {
 .upload-message.cancelled { color: var(--p-text-muted-color); }
 .dataset-search { width: 100%; }
 .dataset-toolbar, .dataset-footer { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-.dataset-tree { flex: 1; min-height: 0; overflow: auto; padding: 0; }
+.dataset-tree-wrap { flex: 1; min-height: 0; overflow: auto; }
+.dataset-tree { padding: 0; }
 .dataset-tree :deep(.p-tree-node-content),
 .dataset-tree :deep(.p-treenode-content) { padding: .1rem .15rem; }
 .dataset-node { display: inline-flex; align-items: center; gap: .45rem; min-width: 0; }
