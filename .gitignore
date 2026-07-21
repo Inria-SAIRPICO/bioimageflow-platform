@@ -5,7 +5,7 @@ docs/superpowers/
 __pycache__/
 bif_data/
 wetlands/
-workflows/
+/workflows/
 bioimageflow
 external/
 specs.md

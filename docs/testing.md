@@ -16,7 +16,7 @@ bun install --frozen-lockfile
 ```
 
 Local development uses the sibling source checkouts linked into the repository.
-CI instead checks out the exact full commit SHAs configured in `.gitlab-ci.yml` before it installs the backend environment.
+CI instead checks out the exact full commit SHAs configured in `.github/workflows/ci.yml` before it installs the backend environment.
 
 ## Focused tests while editing
 
@@ -119,7 +119,7 @@ The external marker is the lane selector; `common_tools` identifies which extern
 ## Exact CI source bootstrap
 
 The full runner intentionally does not rewrite local sibling source checkouts.
-To reproduce CI from a fresh checkout without existing sibling paths, first use the exact revisions from `.gitlab-ci.yml`:
+To reproduce CI from a fresh checkout without existing sibling paths, first use the exact revisions from `.github/workflows/ci.yml`:
 
 ```bash
 export BIOIMAGEFLOW_SOURCE_REVISION=30473f203fd6dee81b476f20c0b2566675da44aa
@@ -133,6 +133,6 @@ Use a fresh checkout when exact CI reproduction would conflict with development 
 
 ## CI mapping
 
-Merge-request jobs run the deterministic backend, frontend, and Chromium portions in separate container images so they can execute in parallel.
-Scheduled and manual `full:scheduled` jobs use `scripts/test full` and therefore add branch coverage, Firefox, and fresh package-index certification.
+Pull-request jobs run the deterministic backend, frontend, documentation, and Chromium portions in separate GitHub-hosted runners so they can execute in parallel.
+The scheduled and manually dispatched `Full certification` job uses `scripts/test full` and therefore adds branch coverage, Firefox, and fresh package-index certification.
 The published common-tools version has one source of truth in `scripts/ci/test_versions.env`, shared by local and CI runners.

@@ -1,6 +1,6 @@
 # BioImageFlow Platform
 
-A desktop application for building, executing, and inspecting bioimage analysis workflows visually. It wraps the [BioImageFlow](https://gitlab.inria.fr/sairpico/bioimageflow) library with a node-based editor, parameter panels, data viewers, and execution controls.
+A desktop application for building, executing, and inspecting bioimage analysis workflows visually. It wraps the [BioImageFlow](https://github.com/Inria-SAIRPICO/bioimageflow) library with a node-based editor, parameter panels, data viewers, and execution controls.
 
 ## Architecture
 
@@ -61,7 +61,7 @@ package** footer below the table.
 - **Python** >= 3.12
 - **Node.js** >= 20 (or [Bun](https://bun.sh/))
 - **uv** (Python package manager)
-- The [BioImageFlow library](https://gitlab.inria.fr/sairpico/bioimageflow) cloned alongside this repo (symlinked as `bioimageflow/`)
+- The [BioImageFlow library](https://github.com/Inria-SAIRPICO/bioimageflow) cloned alongside this repo (symlinked as `bioimageflow/`)
 
 ## Quick Start — Desktop (production)
 
@@ -178,6 +178,15 @@ ln -sfn \
 Then restart the backend.
 
 ## Documentation
+
+Published documentation is available at <https://bioimageflow-platform.readthedocs.io/latest/>.
+The documentation source is in `docs/` and can be built locally with the same warnings-as-errors policy used by CI and Read the Docs:
+
+```bash
+uv venv
+uv pip install -r docs/requirements.txt
+.venv/bin/sphinx-build -W --keep-going docs docs/_build/html
+```
 
 The versioned specifications are cumulative and have distinct status:
 

@@ -1,5 +1,5 @@
 name: BioImageFlow
-repository: https://gitlab.inria.fr/sairpico/bioimageflow-platform
+repository: https://github.com/Inria-SAIRPICO/bioimageflow-platform
 auto_update: true
 configuration: backend/pyproject.toml
 entrypoint:

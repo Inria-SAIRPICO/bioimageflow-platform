@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-repo_root="${CI_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"
+repo_root="${GITHUB_WORKSPACE:-${CI_PROJECT_DIR:-$(git rev-parse --show-toplevel)}}"
 
 if [[ -z "${BIOIMAGEFLOW_COMMON_TOOLS_VERSION:-}" ]]; then
   # shellcheck source=test_versions.env

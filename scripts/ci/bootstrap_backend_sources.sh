@@ -4,13 +4,13 @@ set -euo pipefail
 
 export GIT_TERMINAL_PROMPT=0
 
-repo_root="${CI_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"
+repo_root="${GITHUB_WORKSPACE:-${CI_PROJECT_DIR:-$(git rev-parse --show-toplevel)}}"
 
 : "${BIOIMAGEFLOW_SOURCE_REVISION:?BIOIMAGEFLOW_SOURCE_REVISION must be a full commit SHA}"
 : "${LAUNCHER_SOURCE_REVISION:?LAUNCHER_SOURCE_REVISION must be a full commit SHA}"
 : "${WETLANDS_SOURCE_REVISION:?WETLANDS_SOURCE_REVISION must be a full commit SHA}"
 
-bioimageflow_url="${BIOIMAGEFLOW_SOURCE_URL:-https://gitlab.inria.fr/sairpico/bioimageflow.git}"
+bioimageflow_url="${BIOIMAGEFLOW_SOURCE_URL:-https://github.com/Inria-SAIRPICO/bioimageflow.git}"
 launcher_url="${LAUNCHER_SOURCE_URL:-https://github.com/arthursw/launcher.git}"
 wetlands_url="${WETLANDS_SOURCE_URL:-https://github.com/arthursw/wetlands.git}"
 
@@ -51,7 +51,7 @@ checkout_exact_revision() {
   fi
 
   mkdir -p "$(dirname "$destination")"
-  temporary_checkout="${destination}.clone-${CI_JOB_ID:-$$}"
+  temporary_checkout="${destination}.clone-${GITHUB_RUN_ID:-${CI_JOB_ID:-$$}}"
   if [[ -e "$temporary_checkout" || -L "$temporary_checkout" ]]; then
     printf 'Temporary checkout path already exists: %s\n' "$temporary_checkout" >&2
     return 1
