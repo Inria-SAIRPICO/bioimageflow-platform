@@ -29,6 +29,8 @@ from bioimageflow_server.models.workflow import (
     WorkflowFile,
     WorkflowFolderDelete,
     WorkflowFolderInfo,
+    WorkflowFormatNotice,
+    WorkflowFormatStatus,
     WorkflowInfo,
     WorkflowImportResponse,
     WorkflowSaveBody,
@@ -60,6 +62,10 @@ from bioimageflow_server.services.workflow_artifacts import (
 )
 from bioimageflow_server.services.workflow_containment import (
     validate_workflow_containment,
+)
+from bioimageflow_server.services.workflow_format import (
+    migrate_legacy_workflow,
+    workflow_format_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_archive import BioImageFlowWorkflowArchiveAdapter
@@ -273,6 +279,7 @@ class WorkflowStoreService:
             storage_base_dir or self.root_dir / "outputs"
         )
         self.archive_adapter = archive_adapter or BioImageFlowWorkflowArchiveAdapter()
+        self._workflow_format_notices: list[WorkflowFormatNotice] = []
         self._workflow_generation_ledger_path = (
             self.workspace_dir / ".bioimageflow" / _WORKFLOW_GENERATION_LEDGER_NAME
         )
@@ -1842,9 +1849,46 @@ class WorkflowStoreService:
                     path = self._existing_path_for(name)
                     raw = self._read_raw(name)
                     workflows.append(self._metadata_from_raw(name, raw, path))
-            except (OSError, json.JSONDecodeError, ValidationError, ValueError):
+            except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+                logger.warning("Workflow %s is hidden because its format is invalid: %s", name, exc)
                 continue
         return workflows
+
+    def migrate_legacy_workflows(self) -> list[WorkflowFormatNotice]:
+        """Upgrade recognized pre-recursive documents without hiding failures."""
+
+        if not self.root_dir.exists():
+            return []
+        notices: list[WorkflowFormatNotice] = []
+        paths = sorted(self.root_dir.glob("**/workflow.json"))
+        for path in paths:
+            if self._is_inside_workflow_dir(path.parent.parent):
+                continue
+            workflow_id = path.parent.relative_to(self.root_dir).as_posix()
+            try:
+                with self.workflow_mutation(workflow_id):
+                    notice = migrate_legacy_workflow(path, workflow_id)
+                if notice is not None:
+                    notices.append(notice)
+                    logger.warning("%s Backups: %s", notice.detail, ", ".join(notice.backup_paths))
+            except (OSError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+                logger.warning("Could not migrate workflow %s: %s", workflow_id, exc)
+        self._workflow_format_notices.extend(notices)
+        return notices
+
+    def workflow_format_status(self) -> WorkflowFormatStatus:
+        """Return startup migrations and currently invalid workflow files."""
+
+        notices = list(self._workflow_format_notices)
+        if self.root_dir.exists():
+            for path in sorted(self.root_dir.glob("**/workflow.json")):
+                if self._is_inside_workflow_dir(path.parent.parent):
+                    continue
+                workflow_id = path.parent.relative_to(self.root_dir).as_posix()
+                issue = workflow_format_error(path, workflow_id)
+                if issue is not None:
+                    notices.append(issue)
+        return WorkflowFormatStatus(notices=notices)
 
     def workflow_tree(self) -> WorkflowFolderInfo:
         """Return workflows grouped by workspace-relative folders."""

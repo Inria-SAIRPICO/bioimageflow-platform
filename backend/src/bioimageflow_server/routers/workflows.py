@@ -18,6 +18,7 @@ from bioimageflow_server.models.workflow import (
     WorkflowFolderCreate,
     WorkflowFolderInfo,
     WorkflowFolderUpdate,
+    WorkflowFormatStatus,
     WorkflowInfo,
     WorkflowImportResponse,
     WorkflowSaveBody,
@@ -228,6 +229,13 @@ async def list_workflows(
     store: WorkflowStoreService = Depends(get_workflow_store),
 ) -> list[WorkflowInfo]:
     return store.list_workflows()
+
+
+@router.get("/format-status", response_model=WorkflowFormatStatus)
+async def workflow_format_status(
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> WorkflowFormatStatus:
+    return store.workflow_format_status()
 
 
 @router.get("/tree", response_model=WorkflowFolderInfo)

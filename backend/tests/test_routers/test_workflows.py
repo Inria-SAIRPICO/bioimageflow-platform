@@ -181,6 +181,20 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     assert deleted.json() == {"deleted": True, "identity_generation": 2}
 
 
+async def test_format_status_reports_hidden_invalid_workflows(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    invalid = tmp_path / "workflows" / "broken" / "workflow.json"
+    invalid.parent.mkdir(parents=True)
+    invalid.write_text('{"not": "a workflow"}', encoding="utf-8")
+
+    response = await client.get("/api/v1/workflows/format-status")
+
+    assert response.status_code == 200
+    assert response.json()["notices"][0]["workflow_id"] == "broken"
+    assert response.json()["notices"][0]["status"] == "error"
+
+
 async def test_empty_folder_promotion_needs_no_move_journal(
     client: httpx.AsyncClient,
 ) -> None:

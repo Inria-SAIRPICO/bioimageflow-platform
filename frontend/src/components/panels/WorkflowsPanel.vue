@@ -7,7 +7,8 @@ import Textarea from 'primevue/textarea'
 import Tree from 'primevue/tree'
 import { useWorkflowStore } from '@/stores/workflow'
 import { api } from '@/api/client'
-import type { WorkflowInfo } from '@/api/types'
+import { getWorkflowFormatNotices } from '@/api/workflowFormats'
+import type { WorkflowFormatNotice, WorkflowInfo } from '@/api/types'
 import type { WorkflowFolderDeletePolicy, WorkflowTreeNode } from '@/stores/workflow'
 import type { TreeNodeDropEvent } from 'primevue/tree'
 import type { TreeNode } from 'primevue/treenode'
@@ -51,6 +52,7 @@ const selectedFolderId = ref<string | null>(null)
 const selectedKeys = ref<Record<string, boolean>>({})
 const expandedKeys = ref<Record<string, boolean>>({})
 const renderedTreeNodes = ref<WorkflowPrimeTreeNode[]>([])
+const workflowFormatNotices = ref<WorkflowFormatNotice[]>([])
 
 const folderDialogVisible = ref(false)
 const folderDialogMode = ref<'create' | 'rename-folder' | 'rename-workflow'>('create')
@@ -304,6 +306,9 @@ watch(
 )
 
 onMounted(() => {
+  void getWorkflowFormatNotices()
+    .then((notices) => { workflowFormatNotices.value = notices })
+    .catch(() => undefined)
   if (workflowStore.workflows.length === 0) {
     void workflowStore.fetchWorkflowTree().catch(() => workflowStore.fetchWorkflows())
   }
@@ -699,6 +704,34 @@ defineExpose({
       data-testid="workflow-list"
     >
       <div
+        v-if="workflowFormatNotices.length > 0"
+        class="workflows-panel__format-warning"
+        role="alert"
+        data-testid="workflow-format-warning"
+      >
+        <i class="pi pi-exclamation-triangle workflows-panel__format-warning-icon" aria-hidden="true" />
+        <div>
+          <strong>Some workflow files needed attention.</strong>
+          <ul>
+            <li v-for="notice in workflowFormatNotices" :key="`${notice.status}:${notice.path}`">
+              <span v-if="notice.status === 'migrated'">
+                “{{ notice.workflow_id }}” was updated to the current format.
+                A backup was preserved.
+              </span>
+              <span v-else>
+                “{{ notice.workflow_id }}” is hidden because its workflow.json is not valid.
+              </span>
+              <details>
+                <summary>Details</summary>
+                <div>{{ notice.detail }}</div>
+                <div>File: {{ notice.path }}</div>
+                <div v-for="backup in notice.backup_paths ?? []" :key="backup">Backup: {{ backup }}</div>
+              </details>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div
         v-if="workflowStore.error"
         class="workflows-panel__error"
         role="alert"
@@ -974,6 +1007,35 @@ defineExpose({
   gap: 0.5rem;
   margin-bottom: 0.5rem;
   padding: 0.45rem 0.5rem;
+}
+
+.workflows-panel__format-warning {
+  align-items: flex-start;
+  background: color-mix(in srgb, var(--p-orange-500, #f97316) 9%, var(--bif-surface));
+  border: 1px solid color-mix(in srgb, var(--p-orange-500, #f97316) 45%, transparent);
+  border-radius: 4px;
+  display: flex;
+  font-size: 0.82rem;
+  gap: 0.5rem;
+  line-height: 1.35;
+  margin-bottom: 0.5rem;
+  overflow-wrap: anywhere;
+  padding: 0.45rem 0.5rem;
+}
+
+.workflows-panel__format-warning ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+}
+
+.workflows-panel__format-warning details {
+  margin-top: 0.2rem;
+}
+
+.workflows-panel__format-warning-icon {
+  color: var(--p-orange-600, #ea580c);
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
 }
 
 .workflows-panel__error-icon {

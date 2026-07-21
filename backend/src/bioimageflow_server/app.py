@@ -356,6 +356,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return
         is_new_workspace = not store.root_dir.exists()
         workflow_move_recovery_service.recover_pending_move()
+        store.migrate_legacy_workflows()
         try:
             nested_workflow_snapshot_service.cleanup_orphaned_snapshots()
         except Exception as exc:  # noqa: BLE001

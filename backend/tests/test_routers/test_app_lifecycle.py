@@ -80,6 +80,16 @@ async def test_lifespan_move_recovery_and_snapshot_cleanup_precede_catalog_refre
         recover_move,
     )
 
+    def migrate_workflows(_service: WorkflowStoreService) -> list[Any]:
+        order.append("workflow_migration")
+        return []
+
+    monkeypatch.setattr(
+        WorkflowStoreService,
+        "migrate_legacy_workflows",
+        migrate_workflows,
+    )
+
     def cleanup_snapshots(_service: NestedWorkflowSnapshotService) -> list[Any]:
         order.append("snapshot_cleanup")
         return []
@@ -106,7 +116,13 @@ async def test_lifespan_move_recovery_and_snapshot_cleanup_precede_catalog_refre
     async with app.router.lifespan_context(app):
         pass
 
-    assert order == ["load", "move_recovery", "snapshot_cleanup", "refresh"], order
+    assert order == [
+        "load",
+        "move_recovery",
+        "workflow_migration",
+        "snapshot_cleanup",
+        "refresh",
+    ], order
 
 
 async def test_lifespan_move_recovery_failure_is_fatal_before_snapshot_cleanup(

@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { api } from '@/api/client'
+import { getWorkflowFormatNotices } from '@/api/workflowFormats'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -19,6 +20,10 @@ vi.mock('@/api/client', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+}))
+
+vi.mock('@/api/workflowFormats', () => ({
+  getWorkflowFormatNotices: vi.fn(),
 }))
 
 const workflows: WorkflowInfo[] = [
@@ -83,8 +88,7 @@ async function dropTreeNode(wrapper: ReturnType<typeof mount>, dragKey: string, 
   } as any)
 }
 
-function mountPanel(items: WorkflowInfo[] = workflows) {
-  const pinia = createPinia()
+function mountPanel(items: WorkflowInfo[] = workflows, pinia = createPinia()) {
   setActivePinia(pinia)
   const store = useWorkflowStore()
   store.workflows = [...items]
@@ -117,6 +121,42 @@ describe('WorkflowsPanel', () => {
     vi.mocked(api.post).mockReset()
     vi.mocked(api.patch).mockReset()
     vi.mocked(api.delete).mockReset()
+    vi.mocked(getWorkflowFormatNotices).mockReset()
+    vi.mocked(getWorkflowFormatNotices).mockResolvedValue([])
+  })
+
+  it('warns when workflow files were migrated or cannot be loaded', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useWorkflowStore()
+    vi.spyOn(store, 'fetchWorkflowTree').mockResolvedValue([])
+    vi.mocked(getWorkflowFormatNotices).mockResolvedValueOnce(
+      [
+        {
+          status: 'migrated',
+          workflow_id: 'Demo/fish',
+          path: '/workspace/workflows/Demo/fish/workflow.json',
+          detail: 'Updated a workflow saved by an earlier platform version.',
+          backup_paths: ['/workspace/workflows/Demo/fish/.bioimageflow/backups/workflow.json'],
+        },
+        {
+          status: 'error',
+          workflow_id: 'broken',
+          path: '/workspace/workflows/broken/workflow.json',
+          detail: 'The workflow document is invalid.',
+          backup_paths: [],
+        },
+      ],
+    )
+    const wrapper = mountPanel([], pinia)
+
+    await flushPromises()
+
+    const warning = wrapper.find('[data-testid="workflow-format-warning"]')
+    expect(warning.text()).toContain('Demo/fish')
+    expect(warning.text()).toContain('updated to the current format')
+    expect(warning.text()).toContain('broken')
+    expect(warning.text()).toContain('hidden')
   })
 
   it('renders compact workflow rows with display name and modified time only', async () => {

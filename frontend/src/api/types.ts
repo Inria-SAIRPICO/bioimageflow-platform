@@ -738,6 +738,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/format-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workflow Format Status */
+        get: operations["workflow_format_status_api_v1_workflows_format_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/tree": {
         parameters: {
             query?: never;
@@ -2917,6 +2934,33 @@ export interface components {
             new_path: string;
         };
         /**
+         * WorkflowFormatNotice
+         * @description Migration or validation notice for a persisted workflow file.
+         */
+        WorkflowFormatNotice: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "migrated" | "error";
+            /** Workflow Id */
+            workflow_id: string;
+            /** Path */
+            path: string;
+            /** Detail */
+            detail: string;
+            /** Backup Paths */
+            backup_paths?: string[];
+        };
+        /**
+         * WorkflowFormatStatus
+         * @description Format notices that should be visible to the workspace user.
+         */
+        WorkflowFormatStatus: {
+            /** Notices */
+            notices?: components["schemas"]["WorkflowFormatNotice"][];
+        };
+        /**
          * WorkflowImportResponse
          * @description Workflow import success response.
          */
@@ -3297,6 +3341,8 @@ export type WorkflowFolderCreate = components['schemas']['WorkflowFolderCreate']
 export type WorkflowFolderDelete = components['schemas']['WorkflowFolderDelete'];
 export type WorkflowFolderInfo = components['schemas']['WorkflowFolderInfo'];
 export type WorkflowFolderUpdate = components['schemas']['WorkflowFolderUpdate'];
+export type WorkflowFormatNotice = components['schemas']['WorkflowFormatNotice'];
+export type WorkflowFormatStatus = components['schemas']['WorkflowFormatStatus'];
 export type WorkflowImportResponse = components['schemas']['WorkflowImportResponse'];
 export type WorkflowInfo = components['schemas']['WorkflowInfo'];
 export type WorkflowInput = components['schemas']['WorkflowInput'];
@@ -4984,6 +5030,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflow_format_status_api_v1_workflows_format_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowFormatStatus"];
                 };
             };
         };

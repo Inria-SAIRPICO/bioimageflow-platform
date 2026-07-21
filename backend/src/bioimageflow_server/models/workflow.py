@@ -79,6 +79,22 @@ class WorkflowInfo(BaseModel):
     identity_generation: int = Field(default=0, ge=0)
 
 
+class WorkflowFormatNotice(BaseModel):
+    """Migration or validation notice for a persisted workflow file."""
+
+    status: Literal["migrated", "error"]
+    workflow_id: str
+    path: str
+    detail: str
+    backup_paths: list[str] = Field(default_factory=list)
+
+
+class WorkflowFormatStatus(BaseModel):
+    """Format notices that should be visible to the workspace user."""
+
+    notices: list[WorkflowFormatNotice] = Field(default_factory=list)
+
+
 class WorkflowDeleteResponse(BaseModel):
     """Confirmation that a workflow identity was deleted."""
 
