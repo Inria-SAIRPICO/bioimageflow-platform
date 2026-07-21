@@ -83,6 +83,20 @@ describe('DatasetsPanel', () => {
     expect(wrapper.find('[data-testid="dataset-delete"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dataset-clear-selection"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="dataset-create-files-node"]').exists()).toBe(true)
+    expect(wrapper.find('.dataset-toolbar').attributes('aria-label')).toBe('Dataset editing actions')
+    for (const [testId, label] of [
+      ['dataset-add-folder', 'Add folder'],
+      ['dataset-rename', 'Rename'],
+      ['dataset-delete', 'Delete'],
+    ]) {
+      const button = wrapper.find(`[data-testid="${testId}"]`)
+      expect(button.text()).toBe('')
+      expect(button.attributes('aria-label')).toBe(label)
+      expect(button.attributes('title')).toBe(label)
+    }
+    const clearSelection = wrapper.find('[data-testid="dataset-clear-selection"]')
+    expect(clearSelection.text()).toBe('Unselect all')
+    expect(clearSelection.element.parentElement?.classList).toContain('dataset-selection-actions')
     expect(wrapper.text()).not.toContain('Datasets root')
     expect(wrapper.text()).not.toContain('Move to top level')
     expect(wrapper.find('[data-testid="dataset-row-menu"]').exists()).toBe(false)

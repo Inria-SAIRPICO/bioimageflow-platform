@@ -62,11 +62,48 @@
 
     <InputText v-model="query" class="dataset-search" placeholder="Search files and folders" />
 
-    <div class="dataset-toolbar">
-      <Button data-testid="dataset-add-folder" label="Add folder" icon="pi pi-folder-plus" size="small" :disabled="locked" @click="openAddFolder" />
-      <Button data-testid="dataset-rename" label="Rename" icon="pi pi-pencil" size="small" :disabled="locked || selectedRootNodes.length !== 1" @click="openRename" />
-      <Button data-testid="dataset-delete" label="Delete" icon="pi pi-trash" size="small" severity="danger" :disabled="locked || selectedNodes.length === 0" @click="confirmDelete" />
-      <Button data-testid="dataset-clear-selection" label="Unselect all" icon="pi pi-times" size="small" text :disabled="selectedNodes.length === 0" @click="clearSelection" />
+    <div class="dataset-toolbar" aria-label="Dataset editing actions">
+      <Button
+        data-testid="dataset-add-folder"
+        icon="pi pi-folder-plus"
+        text
+        size="small"
+        aria-label="Add folder"
+        title="Add folder"
+        :disabled="locked"
+        @click="openAddFolder"
+      />
+      <Button
+        data-testid="dataset-rename"
+        icon="pi pi-pencil"
+        text
+        size="small"
+        aria-label="Rename"
+        title="Rename"
+        :disabled="locked || selectedRootNodes.length !== 1"
+        @click="openRename"
+      />
+      <Button
+        data-testid="dataset-delete"
+        icon="pi pi-trash"
+        text
+        size="small"
+        severity="danger"
+        aria-label="Delete"
+        title="Delete"
+        :disabled="locked || selectedNodes.length === 0"
+        @click="confirmDelete"
+      />
+    </div>
+    <div class="dataset-selection-actions" aria-label="Dataset selection actions">
+      <Button
+        data-testid="dataset-clear-selection"
+        label="Unselect all"
+        size="small"
+        text
+        :disabled="selectedNodes.length === 0"
+        @click="clearSelection"
+      />
     </div>
     <small v-if="treeActionError" class="action-error" aria-live="polite">
       {{ treeActionError }}
@@ -679,7 +716,9 @@ function nodeTitle(treeNode: TreeNode): string {
 .upload-message.success { color: var(--p-green-500); }
 .upload-message.cancelled { color: var(--p-text-muted-color); }
 .dataset-search { width: 100%; }
-.dataset-toolbar, .dataset-footer { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.dataset-toolbar, .dataset-selection-actions, .dataset-footer { display: flex; align-items: center; flex-wrap: wrap; }
+.dataset-toolbar { gap: .25rem; }
+.dataset-selection-actions { justify-content: flex-start; }
 .dataset-tree-wrap { flex: 1; min-height: 0; overflow: auto; }
 .dataset-tree { padding: 0; }
 .dataset-tree :deep(.p-tree-node-content),

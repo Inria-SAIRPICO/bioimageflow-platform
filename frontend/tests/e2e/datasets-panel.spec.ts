@@ -20,6 +20,18 @@ test.describe('Datasets panel', () => {
     await expect(page.getByPlaceholder('Search files and folders')).toBeVisible()
     await expect(page.getByText('Datasets root', { exact: true })).toHaveCount(0)
     await expect(page.locator('.dataset-tree')).toHaveCSS('padding', '0px')
+    const editActions = page.locator('.dataset-toolbar')
+    await expect(editActions.getByRole('button')).toHaveCount(3)
+    for (const name of ['Add folder', 'Rename', 'Delete']) {
+      const button = editActions.getByRole('button', { name, exact: true })
+      await expect(button).toHaveAttribute('title', name)
+      await expect(button.locator('.p-button-label')).toHaveCount(0)
+    }
+    const selectionActions = page.locator('.dataset-selection-actions')
+    const unselectAll = selectionActions.getByRole('button', { name: 'Unselect all' })
+    await expect(unselectAll).toBeVisible()
+    await expect(unselectAll.locator('.p-button-label')).toHaveText('Unselect all')
+    await expect(unselectAll.locator('.p-button-icon')).toHaveCount(0)
 
     await page.locator('.datasets-panel input[type="file"]').setInputFiles({
       name: fileName,
