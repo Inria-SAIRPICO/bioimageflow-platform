@@ -4,12 +4,13 @@ import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
-import type { SettingsResponse } from '@/api/types'
+import type { SettingsResponse, WorkspaceInfo } from '@/api/types'
 import {
   getDemoWorkflowsStatus,
   installDemoWorkflows,
   type DemoWorkflowsStatus,
 } from '@/api/demoWorkflows'
+import { getWorkspaceInfo, revealFilesystemPath } from '@/api/workspace'
 import { useWorkflowStore } from '@/stores/workflow'
 import { requestWorkflowDeletion } from '@/services/workflowDeletion'
 import { workflowPanelId } from '@/utils/canvasPanels'
@@ -17,7 +18,7 @@ import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
 } from '@/sessions/canvasSessionRegistry'
-import { isDesktop, revealPath, selectFolder } from '@/utils/nativeDialogs'
+import { isDesktop, selectFolder } from '@/utils/nativeDialogs'
 
 type StorageSettings = SettingsResponse & {
   workspace_path?: string | null
@@ -46,6 +47,13 @@ try {
 const demoStatus = ref<DemoWorkflowsStatus | null>(null)
 const demoBusy = ref(false)
 const demoError = ref<string | null>(null)
+const workspaceInfo = ref<WorkspaceInfo | null>(null)
+const effectiveWorkspacePath = computed(() => (
+  workspaceInfo.value?.workspace_path
+  ?? props.modelValue.workspace_path
+  ?? props.modelValue.workspaces_root
+  ?? ''
+))
 const installedDemoCount = computed(() => (
   demoStatus.value?.workflows.filter(item => item.status === 'installed').length ?? 0
 ))
@@ -83,7 +91,20 @@ async function refreshDemoStatus(): Promise<void> {
   }
 }
 
-defineExpose({ refreshDemoStatus })
+async function refreshWorkspaceInfo(): Promise<void> {
+  try {
+    workspaceInfo.value = await getWorkspaceInfo()
+  } catch (error) {
+    toast?.add({
+      severity: 'error',
+      summary: 'Could not resolve workspace path',
+      detail: errorMessage(error),
+      life: 6000,
+    })
+  }
+}
+
+defineExpose({ refreshDemoStatus, refreshWorkspaceInfo })
 
 function captureDeletionRequest(workflowName: string) {
   const canvasId = canvasIdFromPanelId(workflowPanelId(workflowName))
@@ -186,7 +207,10 @@ function confirmRemoveDemos(): void {
   })
 }
 
-onMounted(() => void refreshDemoStatus())
+onMounted(() => {
+  void refreshDemoStatus()
+  void refreshWorkspaceInfo()
+})
 watch(
   () => workflowStore.workflows.map(workflow => (
     workflowId(workflow)
@@ -194,18 +218,25 @@ watch(
   () => void refreshDemoStatus(),
 )
 
-async function reveal() {
+async function reveal(path: string, label: string) {
   try {
-    await revealPath(props.modelValue.resolved_output_data_folder)
-  } catch (e) {
+    await revealFilesystemPath(path)
+  } catch (error) {
     toast?.add({
-      severity: 'info',
-      summary: 'Folder unavailable',
-      detail:
-        'The folder does not exist yet. It will be created when the next workflow runs.',
-      life: 5000,
+      severity: 'error',
+      summary: `Could not reveal ${label}`,
+      detail: errorMessage(error),
+      life: 6000,
     })
   }
+}
+
+function revealWorkspace() {
+  return reveal(effectiveWorkspacePath.value, 'workspace folder')
+}
+
+function revealOutputFolder() {
+  return reveal(props.modelValue.resolved_output_data_folder, 'output data folder')
 }
 
 async function changeFolder() {
@@ -240,14 +271,21 @@ async function changeWorkspacePath() {
       <div class="field-row">
         <InputText
           id="workspace-path-input"
-          :model-value="modelValue.workspace_path || modelValue.workspaces_root || ''"
+          :model-value="effectiveWorkspacePath"
           readonly
           data-testid="workspace-path-input"
           class="grow"
         />
         <Button
+          label="Reveal"
+          severity="secondary"
+          :disabled="!effectiveWorkspacePath"
+          data-testid="workspace-path-reveal-button"
+          @click="revealWorkspace"
+        />
+        <Button
           v-if="modelValue.deployment_mode === 'desktop' && isDesktop()"
-          label="Change..."
+          label="Browse..."
           severity="secondary"
           data-testid="workspace-path-change-button"
           @click="changeWorkspacePath"
@@ -277,11 +315,11 @@ async function changeWorkspacePath() {
           label="Reveal"
           severity="secondary"
           data-testid="output-reveal-button"
-          @click="reveal"
+          @click="revealOutputFolder"
         />
         <Button
           v-if="isDesktop()"
-          label="Change..."
+          label="Browse..."
           severity="secondary"
           data-testid="output-change-button"
           @click="changeFolder"

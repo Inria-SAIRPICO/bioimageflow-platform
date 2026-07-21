@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ConfirmationService from 'primevue/confirmationservice'
@@ -10,6 +10,7 @@ import NapariSection from '@/components/panels/sections/NapariSection.vue'
 import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import * as nativeDialogs from '@/utils/nativeDialogs'
+import * as workspaceApi from '@/api/workspace'
 
 vi.mock('@/api/demoWorkflows', () => ({
   getDemoWorkflowsStatus: vi.fn().mockResolvedValue({
@@ -20,6 +21,18 @@ vi.mock('@/api/demoWorkflows', () => ({
     can_remove: false,
   }),
   installDemoWorkflows: vi.fn(),
+}))
+
+vi.mock('@/api/workspace', () => ({
+  getWorkspaceInfo: vi.fn().mockResolvedValue({
+    workspace_path: '/Users/me/bif-workspace',
+    workflows_root: '/Users/me/bif-workspace/workflows',
+    tools_root: '/Users/me/bif-workspace/tools',
+    outputs_root: '/Users/me/bif-workspace/outputs',
+    deployment_mode: 'desktop',
+    user_editable: true,
+  }),
+  revealFilesystemPath: vi.fn().mockResolvedValue(undefined),
 }))
 
 // In jsdom, ResizeObserver and matchMedia are missing — PrimeVue Select uses
@@ -188,6 +201,33 @@ describe('ExecutionSection', () => {
 describe('StorageSection', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.clearAllMocks()
+  })
+
+  it('renders the effective default workspace when no override is stored', async () => {
+    vi.mocked(workspaceApi.getWorkspaceInfo).mockResolvedValueOnce({
+      workspace_path: '/Users/me/BioImageFlow/workspace',
+      workflows_root: '/Users/me/BioImageFlow/workspace/workflows',
+      tools_root: '/Users/me/BioImageFlow/workspace/tools',
+      outputs_root: '/Users/me/BioImageFlow/workspace/outputs',
+      deployment_mode: 'desktop',
+      user_editable: true,
+    })
+    const wrapper = mount(StorageSection, {
+      ...globalOpts,
+      props: {
+        modelValue: {
+          ...baseSettings,
+          workspace_path: null,
+          workspaces_root: null,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect((wrapper.get('[data-testid="workspace-path-input"]').element as HTMLInputElement).value)
+      .toBe('/Users/me/BioImageFlow/workspace')
   })
 
   it('renders the resolved output folder, not the raw value', () => {
@@ -212,18 +252,31 @@ describe('StorageSection', () => {
     )
   })
 
-  it('Reveal button shows toast when revealPath rejects', async () => {
-    vi.spyOn(nativeDialogs, 'revealPath').mockRejectedValue(
-      new Error('not found'),
-    )
+  it('reveals the output folder through the backend', async () => {
     const wrapper = mount(StorageSection, {
       ...globalOpts,
       props: { modelValue: baseSettings },
     })
     await wrapper.find('[data-testid="output-reveal-button"]').trigger('click')
-    // Toast emission is internal to PrimeVue; we just assert no throw and that
-    // revealPath was attempted.
-    expect(nativeDialogs.revealPath).toHaveBeenCalled()
+    await flushPromises()
+
+    expect(workspaceApi.revealFilesystemPath).toHaveBeenCalledWith(
+      '/Users/me/bioimageflow_data',
+    )
+  })
+
+  it('reveals the effective workspace through the backend', async () => {
+    const wrapper = mount(StorageSection, {
+      ...globalOpts,
+      props: { modelValue: baseSettings },
+    })
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-path-reveal-button"]').trigger('click')
+    await flushPromises()
+
+    expect(workspaceApi.revealFilesystemPath).toHaveBeenCalledWith(
+      '/Users/me/bif-workspace',
+    )
   })
 
   it('lets desktop users pick a workspace path', async () => {

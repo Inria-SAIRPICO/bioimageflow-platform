@@ -18,6 +18,17 @@ vi.mock('@/api/demoWorkflows', () => ({
   }),
   installDemoWorkflows: vi.fn(),
 }))
+vi.mock('@/api/workspace', () => ({
+  getWorkspaceInfo: vi.fn().mockResolvedValue({
+    workspace_path: '/Users/me/BioImageFlow/workspace',
+    workflows_root: '/Users/me/BioImageFlow/workspace/workflows',
+    tools_root: '/Users/me/BioImageFlow/workspace/tools',
+    outputs_root: '/Users/me/BioImageFlow/workspace/outputs',
+    deployment_mode: 'desktop',
+    user_editable: true,
+  }),
+  revealFilesystemPath: vi.fn().mockResolvedValue(undefined),
+}))
 
 import { api } from '@/api/client'
 import SettingsPanel from '@/components/panels/SettingsPanel.vue'

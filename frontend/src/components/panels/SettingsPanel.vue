@@ -35,6 +35,7 @@ watch(panel.isOpen, async (open) => {
   if (!open) return
   if (!settingsStore.isLoaded) await settingsStore.fetchSettings()
   await nextTick()
+  await storageSection.value?.refreshWorkspaceInfo()
   await storageSection.value?.refreshDemoStatus()
 })
 
@@ -92,6 +93,7 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
   )
   if (payload.field === 'workspace_path' && !settingsStore.error) {
     await workflowStore.fetchWorkflowTree()
+    await storageSection.value?.refreshWorkspaceInfo()
     await storageSection.value?.refreshDemoStatus()
   }
 }

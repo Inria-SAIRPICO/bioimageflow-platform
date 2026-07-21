@@ -13,9 +13,20 @@ vi.mock('@/api/demoWorkflows', () => ({
   installDemoWorkflows: vi.fn(),
 }))
 
+vi.mock('@/api/workspace', () => ({
+  getWorkspaceInfo: vi.fn().mockResolvedValue({
+    workspace_path: '/tmp/workspace',
+    workflows_root: '/tmp/workspace/workflows',
+    tools_root: '/tmp/workspace/tools',
+    outputs_root: '/tmp/workspace/outputs',
+    deployment_mode: 'desktop',
+    user_editable: true,
+  }),
+  revealFilesystemPath: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@/utils/nativeDialogs', () => ({
   isDesktop: () => false,
-  revealPath: vi.fn(),
   selectFolder: vi.fn(),
 }))
 
