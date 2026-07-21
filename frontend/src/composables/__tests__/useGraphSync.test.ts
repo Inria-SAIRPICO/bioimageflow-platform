@@ -49,25 +49,19 @@ describe('canonical canvas serialization', () => {
       .toThrow(/discriminator/)
   })
 
-  it('uses the platform discriminator while Vue Flow normalises its renderer type', () => {
-    const graph = serializeGraph({
+  it('rejects a renderer-only discriminator', () => {
+    expect(() => serializeGraph({
       nodes: [{
         id: 'cross_join_1',
+        type: 'tool',
         position: { x: 0, y: 0 },
         data: {
-          nodeType: 'tool',
           name: 'Cross join',
           toolName: 'CrossJoin',
           parameters: {},
         },
       }],
       edges: [],
-    })
-
-    expect(graph.nodes[0]).toMatchObject({
-      type: 'tool',
-      id: 'cross_join_1',
-      tool_name: 'CrossJoin',
-    })
+    })).toThrow(/cross_join_1 has no valid discriminator/)
   })
 })

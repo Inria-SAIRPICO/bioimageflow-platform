@@ -81,12 +81,7 @@ function serializeNode(n: any): NodeState {
     enabled: data.enabled ?? true,
     collapsed: data.collapsed ?? false,
   }
-  // `data.nodeType` is the platform discriminator. Vue Flow owns the top-level
-  // `type` as a renderer key and can temporarily omit it while normalising a
-  // newly inserted node. Serialisation must not fail in that window: an
-  // exception from an `onConnect` listener also prevents Vue Flow from ending
-  // the pointer gesture, leaving its connection line attached to the cursor.
-  if (data.nodeType === 'workflow') {
+  if (n.type === 'workflow' && data.nodeType === 'workflow') {
     return {
       type: 'workflow',
       ...common,
@@ -95,7 +90,7 @@ function serializeNode(n: any): NodeState {
       source: data.source == null ? null : deepCloneJson(data.source),
     }
   }
-  if (data.nodeType !== 'tool') {
+  if (n.type !== 'tool' || data.nodeType !== 'tool') {
     throw new Error(`Canvas node ${n.id} has no valid discriminator`)
   }
   return {

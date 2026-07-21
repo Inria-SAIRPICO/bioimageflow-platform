@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 
 const API_BASE = `http://127.0.0.1:${process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000'}`
 
@@ -79,6 +79,35 @@ async function addSeedNumbersNode(page: Page) {
   return { node, tool: source, response }
 }
 
+async function addToolNode(
+  page: Page,
+  toolName: string,
+  position: { x: number; y: number },
+) {
+  await page.locator('.dv-tab').filter({ hasText: 'Tools' }).click()
+  await page.getByTestId('tool-search').fill(toolName)
+  const tool = page.getByTestId(`tool-item-${toolName}`)
+  await expect(tool).toBeVisible({ timeout: 5000 })
+  const nodeCount = await page.locator('.vue-flow__node').count()
+  await tool.dragTo(page.locator('.vue-flow'), { targetPosition: position })
+  const node = page.locator('.vue-flow__node').nth(nodeCount)
+  await expect(node).toBeVisible({ timeout: 5000 })
+  return node
+}
+
+async function connectDataFrames(page: Page, source: Locator, target: Locator) {
+  const sourceHandle = source.locator('.header-outputs .vue-flow__handle')
+  const targetHandle = target.locator('.header-inputs .vue-flow__handle').last()
+  const sourceBox = await sourceHandle.boundingBox()
+  const targetBox = await targetHandle.boundingBox()
+  expect(sourceBox).not.toBeNull()
+  expect(targetBox).not.toBeNull()
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 })
+  await page.mouse.up()
+}
+
 test.describe('Canvas interactions', () => {
   test.describe.configure({ mode: 'serial' })
   let workflowName: string
@@ -109,5 +138,28 @@ test.describe('Canvas interactions', () => {
     const nodePanel = page.locator('[data-testid="panel-nodePanel"]')
     await expect(nodePanel).toBeVisible()
     await expect(nodePanel.locator('.node-name')).toBeVisible({ timeout: 3000 })
+  })
+
+  test('new dynamic tools connect cleanly and expose their resolved columns', async ({ page }) => {
+    const generate = await addToolNode(page, 'Generate', { x: 220, y: 180 })
+    const crossJoin = await addToolNode(page, 'CrossJoin', { x: 520, y: 180 })
+
+    await generate.click()
+    await page.locator('.dv-tab').filter({ hasText: 'Nodes' }).click()
+    const nodePanel = page.getByTestId('panel-nodePanel')
+    const columnNameRow = nodePanel.locator('.param-row').filter({ hasText: 'column_name' })
+    await columnNameRow.locator('input').fill('sensitivity')
+    await nodePanel.getByTestId('list-input-values').fill('[0.1, 0.2]')
+    await nodePanel.getByTestId('list-input-values').press('Tab')
+    await expect(nodePanel.locator('.list-input-error')).toHaveCount(0)
+
+    await connectDataFrames(page, generate, crossJoin)
+
+    await expect(page.locator('.vue-flow__edge')).toHaveCount(1)
+    await expect(page.locator('.vue-flow__connection')).toHaveCount(0)
+    await expect(crossJoin.locator('.body-outputs .pin-label')).toContainText('sensitivity', {
+      timeout: 5000,
+    })
+    await expect(nodePanel.locator('.list-input-error')).toHaveCount(0)
   })
 })

@@ -1814,10 +1814,7 @@ onConnect((connection) => {
   // A new positional edge into a dynamic_outputs node changes its resolved
   // schema (e.g. CrossJoin's column union depends on the upstream tables).
   if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
-    // Vue Flow commits `addEdges` reactively. Resolve against the next tick so
-    // the backend receives the new positional input rather than the graph from
-    // immediately before the drop.
-    void nextTick(() => refreshIfDynamicOutputs(connection.target))
+    refreshIfDynamicOutputs(connection.target)
   }
 
   emitGraphChanged()
@@ -1897,7 +1894,7 @@ function disconnectEdgeByInput(edgeId: string) {
   cleanupDisconnectedInput(target, targetHandle)
   removeEdges([edgeId])
   if (decodeEndpointHandle(targetHandle).kind === 'dataframe-position') {
-    void nextTick(() => refreshIfDynamicOutputs(target))
+    refreshIfDynamicOutputs(target)
   }
   emitGraphChanged()
 }
@@ -1971,10 +1968,10 @@ onEdgeUpdate(({ edge, connection }) => {
   // Refresh schemas on either side of a positional re-route — both the old
   // and the new targets may have dynamic_outputs schemas to recompute.
   if (decodeEndpointHandle(edge.targetHandle ?? '').kind === 'dataframe-position') {
-    void nextTick(() => refreshIfDynamicOutputs(edge.target))
+    refreshIfDynamicOutputs(edge.target)
   }
   if (decodeEndpointHandle(newTargetHandle).kind === 'dataframe-position') {
-    void nextTick(() => refreshIfDynamicOutputs(newTarget))
+    refreshIfDynamicOutputs(newTarget)
   }
 
   emitGraphChanged()
@@ -2334,6 +2331,7 @@ function onAddNode({
     type: 'tool',
     position: position ?? { x: 0, y: 0 },
     data: {
+      nodeType: 'tool',
       name,
       toolName,
       tool,

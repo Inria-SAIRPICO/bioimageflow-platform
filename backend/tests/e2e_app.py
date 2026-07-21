@@ -6,15 +6,68 @@ import os
 import tempfile
 import time
 from pathlib import Path
+from typing import Annotated, Any
 
+import pandas as pd
+from bioimageflow import DataFrameTool
+from bioimageflow_core import Connectable, GUIMeta, IOModel
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from bioimageflow_server.app import create_app as create_platform_app
 from bioimageflow_server.models.execution import ExecutionContext
-from bioimageflow_server.models.tools import AppConfig
+from bioimageflow_server.models.tools import AppConfig, InputFieldSchema, ToolMetadata
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.settings_store import SettingsStore
+from bioimageflow_server.services.tool_registry import ToolRegistryService
+
+
+class Generate(DataFrameTool):
+    """Dynamic source fixture matching the common-tools GUI contract."""
+
+    display_name = "Generate"
+    accepts_upstream = False
+
+    class Inputs(IOModel):
+        column_name: Annotated[str, GUIMeta(connectable=Connectable.NEVER)]
+        values: Annotated[list[Any], GUIMeta(connectable=Connectable.NEVER)]
+
+    @classmethod
+    def resolve_outputs(cls, inputs=None):
+        name = (inputs or {}).get("column_name")
+        if not name:
+            return None
+        return {name: {"type": "any", "default": None, "image_spec": None}}
+
+    def transform(self, df, arguments):
+        return pd.DataFrame({arguments.column_name: arguments.values})
+
+
+class CrossJoin(DataFrameTool):
+    """Dynamic merge fixture matching the common-tools GUI contract."""
+
+    display_name = "Cross Join"
+
+    class Inputs(IOModel):
+        pass
+
+    @classmethod
+    def resolve_merge_schema(cls, upstream_schemas, inputs=None):
+        if not upstream_schemas or any(schema is None for schema in upstream_schemas):
+            return None
+        return {
+            column: entry
+            for schema in upstream_schemas
+            for column, entry in schema.items()
+        }
+
+    def merge_dataframes(self, dfs, arguments):
+        if not dfs:
+            return pd.DataFrame()
+        result = dfs[0]
+        for dataframe in dfs[1:]:
+            result = result.merge(dataframe, how="cross")
+        return result
 
 
 class ExecutionFailureEvent(BaseModel):
@@ -59,8 +112,44 @@ def create_app() -> FastAPI:
     if hot_reload_fixture:
         _write_hot_reload_fixture(Path(hot_reload_fixture))
 
+    registry = ToolRegistryService()
+    registry.register_tool(
+        "Generate",
+        ToolMetadata(
+            name="Generate",
+            display_name="Generate",
+            package="bioimageflow-e2e-dynamic",
+            package_version="1.0.0",
+            tool_type="DataFrameTool",
+            accepts_upstream=False,
+            dynamic_outputs=True,
+            inputs={
+                "column_name": InputFieldSchema(
+                    type="str", required=True, connectable="never"
+                ),
+                "values": InputFieldSchema(
+                    type="list", required=True, connectable="never"
+                ),
+            },
+        ),
+        tool_class=Generate,
+    )
+    registry.register_tool(
+        "CrossJoin",
+        ToolMetadata(
+            name="CrossJoin",
+            display_name="Cross Join",
+            package="bioimageflow-e2e-dynamic",
+            package_version="1.0.0",
+            tool_type="DataFrameTool",
+            accepts_upstream=True,
+            dynamic_outputs=True,
+        ),
+        tool_class=CrossJoin,
+    )
     app = create_platform_app(
         AppConfig(
+            tool_registry=registry,
             settings_store=SettingsStore(path=root / "settings.json"),
             workspace_path=root / "workspace",
             pypi_versions=_OfflinePyPIVersionService(),

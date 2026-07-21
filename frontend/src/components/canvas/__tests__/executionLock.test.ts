@@ -153,6 +153,7 @@ import NodePanel from '@/components/panels/NodePanel.vue'
 import { api } from '@/api/client'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { _resetClipboardForTest, writeClipboardPayload } from '@/utils/clipboard'
 import {
   _resetCanvasStatusProjectionForTest,
@@ -319,6 +320,43 @@ describe('CanvasView execution lock', () => {
     const vm = w.vm as any
     vm.onAddNode({ toolName: 'gaussian_blur', position: { x: 0, y: 0 } })
     expect(mockNodes).toEqual([])
+    w.unmount()
+  })
+
+  it('creates tool nodes with both canonical and renderer discriminators', () => {
+    useToolRegistryStore().tools = [{
+      name: 'CrossJoin',
+      display_name: 'Cross join',
+      package: 'bioimageflow-common-tools',
+      package_version: '1.0.0',
+      tool_type: 'DataFrameTool',
+      accepts_upstream: true,
+      dynamic_outputs: true,
+      dataframe_output: true,
+      documentation: '',
+      tags: [],
+      categories: [],
+      inputs: {},
+      outputs: {},
+      environment: null,
+      source_kind: 'package',
+      editable: false,
+    }]
+    const w = mountCanvas()
+
+    const nodeId = (w.vm as any).onAddNode({
+      toolName: 'CrossJoin',
+      position: { x: 0, y: 0 },
+    })
+
+    const node = mockNodes.find(candidate => candidate.id === nodeId)
+    expect(node).toMatchObject({
+      type: 'tool',
+      data: {
+        nodeType: 'tool',
+        toolName: 'CrossJoin',
+      },
+    })
     w.unmount()
   })
 
