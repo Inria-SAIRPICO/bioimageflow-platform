@@ -698,6 +698,24 @@ describe('MenuBar', () => {
       wrapper.unmount()
     })
 
+    it('opens the workflow chooser for an open command without a workflow name', async () => {
+      const workflows = [
+        { name: 'a', display_name: 'Workflow A' } as WorkflowInfo,
+      ]
+      apiMocks.get.mockResolvedValueOnce({ data: workflows })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+
+      window.dispatchEvent(new CustomEvent('bioimageflow:workflow-command', {
+        detail: { action: 'open' },
+      }))
+      await flushPromises()
+
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows')
+      expect(vm.openDialogVisible).toBe(true)
+      expect(document.body.querySelector('[data-testid="open-workflow-dialog"]')).not.toBeNull()
+    })
+
     it('opens the workflow that finished loading even if global current changes later', async () => {
       const graphA: GraphState = makeGraph()
       apiMocks.get.mockResolvedValueOnce({

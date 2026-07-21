@@ -840,8 +840,12 @@ function onWorkflowPanelCommand(event: Event): void {
     void saveWorkflow()
   } else if (action === 'import') {
     chooseImportFile()
-  } else if (action === 'open' && detail.name) {
-    void onOpenWorkflow(detail.name)
+  } else if (action === 'open') {
+    if (detail.name) {
+      void onOpenWorkflow(detail.name)
+    } else {
+      void openWorkflow()
+    }
   } else if (action === 'duplicate' && detail.name) {
     void duplicateWorkflowByName(detail.name)
   } else if (action === 'export' && detail.name) {
