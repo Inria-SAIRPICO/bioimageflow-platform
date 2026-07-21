@@ -94,6 +94,7 @@ reportMissingTypeStubs = false
 [tool.uv.sources]
 bioimageflow-core = { path = "../bioimageflow/packages/bioimageflow-core", editable = true }
 bioimageflow = { path = "../bioimageflow/packages/bioimageflow", editable = true }
+wetlands = { path = "../../wetlands", editable = true }
 launcher = { path = "../../launcher", editable = true }
 
 [dependency-groups]
