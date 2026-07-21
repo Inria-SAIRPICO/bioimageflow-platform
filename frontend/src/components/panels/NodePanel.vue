@@ -223,15 +223,24 @@ function listParameterText(key: string, field: InputFieldSchema): string {
 }
 
 function updateListParameter(key: string, event: Event) {
+  let value: unknown
   try {
-    const value = JSON.parse((event.target as HTMLTextAreaElement).value)
+    value = JSON.parse((event.target as HTMLTextAreaElement).value)
     if (!Array.isArray(value)) throw new Error('Value must be a JSON array')
     delete listInputErrors.value[key]
-    updateParameter(key, value)
   } catch (error) {
     listInputErrors.value[key] = error instanceof Error ? error.message : 'Invalid JSON array'
+    return
   }
+  // Keep command/graph failures out of the field's JSON validation message.
+  // In particular, an editor blur caused by selecting another node must never
+  // display an unrelated graph error below that node's list input.
+  updateParameter(key, value)
 }
+
+watch(() => selectedNode.value?.id, () => {
+  listInputErrors.value = {}
+})
 
 function trackParameterFocus(fieldName: string, event: FocusEvent): void {
   const canvasId = canvasSessionRegistry.activeCanvasId.value
