@@ -18,6 +18,7 @@ dependencies = [
     "keyring>=25.0",
     "bioimageflow-core>=0.1.6",
     "bioimageflow>=0.1.6",
+    "wetlands>=1.1.1",
     "mcp>=1.0",
 ]
 
