@@ -920,6 +920,27 @@ const menuItems = computed<MenuItem[]>(() => [
           runDisabledReason() !== null || uiStore.selectedNodeIds.length === 0,
         command: () => runButtonRef.value?.onRunSelected(),
       },
+      { separator: true },
+      {
+        label: 'Retry Failed Execution',
+        icon: 'pi pi-refresh',
+        disabled: !runButtonRef.value?.retryAvailable,
+        command: () => runButtonRef.value?.onRetry(),
+      },
+      {
+        label: 'Invalidate Failed Nodes and Retry…',
+        icon: 'pi pi-replay',
+        disabled: !runButtonRef.value?.invalidateFailedAvailable,
+        command: () => runButtonRef.value?.onInvalidateFailed(),
+      },
+      { separator: true },
+      {
+        label: 'Recompute Workflow…',
+        icon: 'pi pi-sync',
+        disabled: runDisabledReason() !== null,
+        command: () => runButtonRef.value?.onRecompute(),
+      },
+      { separator: true },
       {
         label: 'Stop',
         icon: 'pi pi-stop',

@@ -2045,13 +2045,16 @@ describe('MenuBar', () => {
   })
 
   describe('Execution menu', () => {
-    it('exposes Run Workflow / Run Selected / Stop entries', () => {
+    it('exposes workflow, retry, recompute, and stop entries', () => {
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const exec = vm.menuItems.find((item: any) => item.label === 'Execution')
-      expect(exec.items.map((i: any) => i.label)).toEqual([
+      expect(exec.items.map((i: any) => i.label).filter(Boolean)).toEqual([
         'Run Workflow',
         'Run Selected',
+        'Retry Failed Execution',
+        'Invalidate Failed Nodes and Retry…',
+        'Recompute Workflow…',
         'Stop',
       ])
     })

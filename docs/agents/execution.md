@@ -47,6 +47,16 @@ Run selected target nodes from the latest draft:
 Selected-node execution still depends on the current workflow graph and its upstream dependencies.
 Use exact node ids from `describe_workflow`.
 
+## Frontend Execution Modes
+
+The desktop frontend exposes additional commands in the Run Workflow split-button menu.
+Retry Failed Execution addresses the latest failed execution for the active workflow, preserves its original full-workflow or selected-node target set, and reuses successful cached results.
+Invalidate Failed Nodes and Retry invalidates failed nodes plus their downstream selections before starting that retry under the same execution reservation.
+Recompute Workflow invalidates every enabled node and then runs the complete workflow; disabled nodes remain untouched.
+Cache invalidation does not delete retained record data or immediately reclaim disk space.
+
+These frontend commands currently use the execution REST contract and are not separate MCP tools.
+
 ## Status
 
 Use `get_execution_status` for progress and final state.

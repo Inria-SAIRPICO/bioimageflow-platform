@@ -6,6 +6,7 @@ import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import Tree from 'primevue/tree'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useSettingsStore } from '@/stores/settings'
 import { api } from '@/api/client'
 import { getWorkflowFormatNotices } from '@/api/workflowFormats'
 import type { WorkflowFormatNotice, WorkflowInfo } from '@/api/types'
@@ -46,6 +47,7 @@ export type WorkflowPrimeTreeNode = TreeNode & {
 }
 
 const workflowStore = useWorkflowStore()
+const settingsStore = useSettingsStore()
 const searchQuery = ref('')
 const selectedName = ref<string | null>(workflowStore.currentName)
 const selectedFolderId = ref<string | null>(null)
@@ -501,16 +503,12 @@ async function submitDescriptionDialog(): Promise<void> {
   })
 }
 
-function parentPath(path: string): string {
-  const index = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return index === -1 ? path : path.slice(0, index)
-}
-
 async function revealSelectedWorkflowFolder(): Promise<void> {
-  const path = selectedWorkflow.value?.path
-  if (!path) return
+  const workflow = selectedWorkflow.value
+  if (!workflow) return
   await runPanelAction(async () => {
-    await api.post('/api/v1/fs/reveal', { path: parentPath(path) })
+    const encodedId = workflowId(workflow).split('/').map(encodeURIComponent).join('/')
+    await api.post(`/api/v1/workflows/${encodedId}/outputs/latest/reveal`)
   })
 }
 
@@ -842,19 +840,20 @@ defineExpose({
         </div>
         <div>
           <dt class="workflow-detail__term-with-action">
-            <span>Storage path</span>
+            <span>Latest outputs</span>
             <Button
               icon="pi pi-external-link"
               text
               size="small"
-              aria-label="Open workflow folder"
-              title="Open workflow folder"
+              aria-label="Open latest outputs"
+              title="Open latest outputs"
               data-testid="workflow-reveal-folder-btn"
+              :disabled="settingsStore.isWebapp"
               @click="revealSelectedWorkflowFolder"
             />
           </dt>
           <dd data-testid="workflow-detail-storage-path">
-            {{ selectedWorkflow.storage_path || 'Default workflow storage' }}
+            Per-node latest successful results
           </dd>
         </div>
       </dl>

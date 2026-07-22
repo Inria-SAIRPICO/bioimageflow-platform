@@ -243,8 +243,8 @@ describe('RunButton', () => {
 
   it('Run Selected is disabled when no nodes selected', () => {
     const { wrapper } = mountButton()
-    const btn = wrapper.find('[data-testid="run-selected-button"]')
-    expect(btn.attributes('disabled')).toBeDefined()
+    const exposed = wrapper.vm as unknown as { runSelectedDisabled: boolean }
+    expect(exposed.runSelectedDisabled).toBe(true)
   })
 
   it('Run Selected passes selected node IDs to run', async () => {
@@ -254,11 +254,12 @@ describe('RunButton', () => {
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
     ui.setSelectedNodes(['n1', 'n2'])
     await nextTick()
-    await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
+    await (wrapper.vm as unknown as { onRunSelected(): Promise<void> }).onRunSelected()
     await nextTick()
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['n1', 'n2'], 'wf_a', {
       canvasId: persistenceMocks.canvasId,
       draftRevision: 1,
+      mode: 'normal',
     })
   })
 
@@ -288,13 +289,14 @@ describe('RunButton', () => {
     const exec = useExecutionStore()
     const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
 
-    await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
+    await (wrapper.vm as unknown as { onRunSelected(): Promise<void> }).onRunSelected()
     await nextTick()
     await nextTick()
 
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['node-a'], 'wf_a', {
       canvasId: canvasA,
       draftRevision: 3,
+      mode: 'normal',
     })
   })
 
@@ -315,6 +317,7 @@ describe('RunButton', () => {
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a', {
       canvasId,
       draftRevision: 7,
+      mode: 'normal',
     })
   })
 
@@ -359,16 +362,14 @@ describe('RunButton', () => {
     const runSpy = vi.spyOn(useExecutionStore(), 'run').mockResolvedValue()
 
     const run = wrapper.find('[data-testid="run-workflow-button"]')
-    const runSelected = wrapper.find('[data-testid="run-selected-button"]')
-    expect(run.attributes('disabled')).toBeDefined()
-    expect(runSelected.attributes('disabled')).toBeDefined()
-    expect(run.attributes('title')).toMatch(/owning root workflow/i)
-    expect(runSelected.attributes('title')).toMatch(/owning root workflow/i)
-
     const exposed = wrapper.vm as unknown as {
       onRun(): Promise<void>
       onRunSelected(): Promise<void>
+      runSelectedDisabled: boolean
     }
+    expect(run.attributes('disabled')).toBeDefined()
+    expect(exposed.runSelectedDisabled).toBe(true)
+    expect(run.attributes('title')).toMatch(/owning root workflow/i)
     await exposed.onRun()
     await exposed.onRunSelected()
 
@@ -399,6 +400,7 @@ describe('RunButton', () => {
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a', {
       canvasId: persistenceMocks.canvasId,
       draftRevision: 1,
+      mode: 'normal',
     })
     expect(persistenceMocks.ensureFreshForCriticalOperation).toHaveBeenCalledOnce()
     expect(workflowDraftMocks.ensureFreshForCriticalOperation).not.toHaveBeenCalled()
@@ -451,6 +453,7 @@ describe('RunButton', () => {
     expect(runSpy).toHaveBeenCalledWith(freshGraph, undefined, 'wf_a', {
       canvasId: persistenceMocks.canvasId,
       draftRevision: 1,
+      mode: 'normal',
     })
   })
 
@@ -545,7 +548,7 @@ describe('RunButton', () => {
     ui.setSelectedNodes(['selected'])
     await nextTick()
 
-    await wrapper.find('[data-testid="run-selected-button"]').trigger('click')
+    await (wrapper.vm as unknown as { onRunSelected(): Promise<void> }).onRunSelected()
     await nextTick()
     await nextTick()
 
@@ -553,6 +556,7 @@ describe('RunButton', () => {
     expect(runSpy).toHaveBeenCalledWith(expect.anything(), ['selected'], 'wf_a', {
       canvasId: persistenceMocks.canvasId,
       draftRevision: 1,
+      mode: 'normal',
     })
   })
 
@@ -639,6 +643,7 @@ describe('RunButton', () => {
     expect(runSpy).toHaveBeenCalledWith(graphB, undefined, 'wf_a', {
       canvasId,
       draftRevision: 8,
+      mode: 'normal',
     })
   })
 
@@ -803,5 +808,50 @@ describe('RunButton', () => {
 
     // First offending node auto-selected.
     expect(ui.selectedNodeIds).toEqual(['files_1'])
+  })
+
+  it('retries the latest failed execution with its retained identity', async () => {
+    const { wrapper } = mountButton()
+    const exec = useExecutionStore()
+    exec.applyStatusSnapshot({
+      execution_id: 'exec-failed',
+      workflow_id: 'wf_a',
+      draft_revision: 1,
+      mode: 'normal',
+      requested_nodes: ['selected'],
+      retry_of_execution_id: null,
+      state: 'idle',
+      last_result: { success: false, errors: [], node_statuses: {} },
+      progress: null,
+      node_statuses: {},
+    })
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    await (wrapper.vm as unknown as { onRetry(): Promise<void> }).onRetry()
+
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a', {
+      canvasId: persistenceMocks.canvasId,
+      draftRevision: 1,
+      mode: 'retry',
+      retryOfExecutionId: 'exec-failed',
+    })
+  })
+
+  it('confirms before recomputing the complete workflow', async () => {
+    const { wrapper } = mountButton()
+    const exec = useExecutionStore()
+    const runSpy = vi.spyOn(exec, 'run').mockResolvedValue()
+
+    ;(wrapper.vm as unknown as { onRecompute(): void }).onRecompute()
+    await nextTick()
+    expect(wrapper.find('[data-testid="advanced-run-confirm"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="advanced-run-continue"]').trigger('click')
+    await nextTick()
+
+    expect(runSpy).toHaveBeenCalledWith(expect.anything(), undefined, 'wf_a', {
+      canvasId: persistenceMocks.canvasId,
+      draftRevision: 1,
+      mode: 'recompute',
+    })
   })
 })

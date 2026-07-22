@@ -182,13 +182,13 @@ describe('WorkflowsPanel', () => {
     expect(wrapper.find('[data-testid="workflow-detail-api-name"]').text()).toContain('beta_api')
     expect(wrapper.find('[data-testid="workflow-detail-path"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workflow-detail-storage-path"]').text()).toContain(
-      '/library/workflows/beta_api',
+      'Per-node latest successful results',
     )
     const openButton = wrapper.find('[data-testid="workflow-open-btn"]')
     expect(openButton.attributes('label')).toBe('Open workflow')
     expect(openButton.attributes('icon')).toBeUndefined()
     const revealButton = wrapper.find('[data-testid="workflow-reveal-folder-btn"]')
-    expect(revealButton.element.closest('dt')?.textContent).toContain('Storage path')
+    expect(revealButton.element.closest('dt')?.textContent).toContain('Latest outputs')
   })
 
 
@@ -224,9 +224,9 @@ describe('WorkflowsPanel', () => {
     await wrapper.find('[data-testid="workflow-reveal-folder-btn"]').trigger('click')
     await flushPromises()
 
-    expect(api.post).toHaveBeenCalledWith('/api/v1/fs/reveal', {
-      path: '/library/workflows/beta_api',
-    })
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/workflows/beta_api/outputs/latest/reveal',
+    )
   })
 
   it('selects full workflow ids when duplicate leaf names live in different folders', async () => {
@@ -573,9 +573,9 @@ describe('WorkflowsPanel', () => {
     await (wrapper.vm as any).revealSelectedWorkflowFolder()
     await flushPromises()
 
-    expect(api.post).toHaveBeenCalledWith('/api/v1/fs/reveal', {
-      path: '/library/workflows/alpha_api',
-    })
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/workflows/alpha_api/outputs/latest/reveal',
+    )
     expect(wrapper.find('[data-testid="workflow-action-error"]').exists()).toBe(false)
   })
 

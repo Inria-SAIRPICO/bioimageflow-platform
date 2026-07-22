@@ -71,6 +71,7 @@ const fallback: WorkspaceSettings & {
   napari_env_path: null,
   omero_instances: [],
   output_data_folder: '~/bioimageflow_data/',
+  latest_output_mode: 'auto',
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto',
   execution_engine: 'sequential',
@@ -83,6 +84,9 @@ const fallback: WorkspaceSettings & {
   workspaces_root: null,
   resolved_tool_store_path: '',
   resolved_output_data_folder: '',
+  latest_output_effective_mode: 'pointer',
+  latest_output_warning: null,
+  latest_output_capabilities: {},
 }
 const liveSettings = computed(() => settingsStore.settings ?? fallback)
 
@@ -130,6 +134,7 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
             ref="storageSection"
             :model-value="liveSettings"
             @update:field="onUpdate"
+            @refresh-output-capabilities="settingsStore.fetchSettings"
           />
         </TabPanel>
         <TabPanel value="omero">

@@ -264,7 +264,9 @@ async def test_broadcast_log_preserves_execution_context_and_global_logs() -> No
         "message": "node message",
         "node_id": "shared",
         "timestamp": 1.0,
-        **_TEST_CONTEXT.model_dump(),
+        "execution_id": _TEST_CONTEXT.execution_id,
+        "workflow_id": _TEST_CONTEXT.workflow_id,
+        "draft_revision": _TEST_CONTEXT.draft_revision,
     }
     assert "execution_id" not in ws.sent[1]
     assert "workflow_id" not in ws.sent[1]

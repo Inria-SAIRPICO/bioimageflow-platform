@@ -128,6 +128,7 @@ describe('execution store', () => {
       graph,
       nodes: undefined,
       workflow_name: 'wf_a',
+      mode: 'normal',
     })
     expect(store.state).toBe('running')
     expect(store.lastResult).toBeNull()
@@ -348,6 +349,7 @@ describe('execution store', () => {
       graph,
       nodes,
       workflow_name: 'wf_a',
+      mode: 'normal',
     })
   })
 

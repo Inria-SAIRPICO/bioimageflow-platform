@@ -32,6 +32,20 @@ workspace/
 
 Execution outputs use the configured output-data folder, which defaults to `~/bioimageflow_data/`, and are scoped by workflow ID. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`; neither is owned by `workspace/data` or `workspace/outputs` in the current implementation.
 
+For each workflow, the file-browser-friendly output projection is `outputs/latest/<node>/<asset-relative-path>` beneath that workflow's storage directory.
+The `latest` projection means the latest successful result independently for each node, so it can contain results from different executions after selected, failed, cancelled, or overlapping runs; it is not a single workflow-run snapshot.
+The canonical cache and run views remain unchanged.
+
+Preferences → Storage controls how this disposable projection is published.
+Automatic mode uses symbolic links when the output filesystem permits them and otherwise uses portable `*.bioimageflow-link.json` pointer files with a warning.
+Pointer files require no link permission but are not directly openable as images, symbolic links may require Windows Developer Mode or link privileges, and copying is an explicit option that can use roughly twice the asset space.
+The workflow panel's Open latest outputs action opens this per-workflow directory directly in desktop mode.
+
+The Run Workflow split button offers Run Selected, Retry Failed Execution, Invalidate Failed Nodes and Retry, and Recompute Workflow.
+Retry reuses successful cached work and the original execution target set.
+Invalidating a failed retry clears the failed nodes and their downstream cache selections atomically before retrying, while Recompute invalidates every enabled node before a full run.
+Invalidation changes cache selection but does not delete retained records or immediately reclaim disk space.
+
 When the application initializes a workflow root that did not previously exist, it installs the bundled **Fish Analysis** and **Parameters Space Exploration** workflows under `Demo/`. Existing workflow roots, including existing empty roots, are not seeded. The Storage tab in Settings reports their derived status and provides explicit **Install demos** and **Remove demos** actions. Removing demos never removes unrelated workflows from the `Demo` folder, and changing to another existing workspace does not copy demos into it automatically.
 
 The two demo definitions are generated from the maintained Python examples by `scripts/export_demo_workflows.py`. They download public input images into workflow-managed run assets, do not depend on repository-local data, and retain ordinary missing-package diagnostics without installing packages automatically.

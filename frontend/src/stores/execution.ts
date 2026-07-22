@@ -38,6 +38,9 @@ interface ExecutionContextFields {
   execution_id?: string | null
   workflow_id?: string | null
   draft_revision?: number | null
+  mode?: ExecutionMode
+  requested_nodes?: string[] | null
+  retry_of_execution_id?: string | null
 }
 
 interface RequiredExecutionContextFields {
@@ -63,11 +66,8 @@ interface NodeStateMessage extends RequiredExecutionContextFields {
   record_id?: string | null
 }
 
-interface ExecutionStatusResponse extends ExecutionStatus {
+interface ExecutionStatusResponse extends ExecutionStatus, ExecutionContextFields {
   node_statuses?: Record<string, NodeStatus>
-  execution_id?: string | null
-  workflow_id?: string | null
-  draft_revision?: number | null
 }
 
 interface ExecutionStatusSnapshot extends ExecutionStatus, ExecutionContextFields {
@@ -86,7 +86,18 @@ interface ProgressPayload extends ProgressInfo, RequiredExecutionContextFields {
 export interface RunExecutionOptions {
   canvasId: CanvasId | null
   draftRevision: number | null
+  mode?: ExecutionMode
+  retryOfExecutionId?: string | null
 }
+
+export type ExecutionMode = 'normal' | 'retry' | 'invalidate_failed' | 'recompute'
+
+export type ExecutionCommand =
+  | { kind: 'workflow' }
+  | { kind: 'selected'; nodes: string[] }
+  | { kind: 'retry'; retryOf: string }
+  | { kind: 'invalidate_failed'; retryOf: string }
+  | { kind: 'recompute' }
 
 interface PendingRun {
   requestId: number
@@ -272,6 +283,9 @@ export const useExecutionStore = defineStore('execution', () => {
   const executionId = ref<string | null>(null)
   const executionWorkflowId = ref<string | null>(null)
   const executionDraftRevision = ref<number | null>(null)
+  const executionMode = ref<ExecutionMode>('normal')
+  const requestedNodes = ref<string[] | null>(null)
+  const retryOfExecutionId = ref<string | null>(null)
   const originCanvasId = ref<CanvasId | null>(null)
   const originGraph = ref<GraphState | null>(null)
 
@@ -289,6 +303,17 @@ export const useExecutionStore = defineStore('execution', () => {
   const isStopping = computed(() => state.value === 'stopping')
   const isMutationLocked = computed(() => state.value !== 'idle')
   const canStop = computed(() => state.value === 'running')
+  const canRetry = computed(() => (
+    state.value === 'idle'
+    && executionId.value !== null
+    && lastResult.value !== null
+    && !lastResult.value.success
+  ))
+  const canInvalidateFailed = computed(() => (
+    canRetry.value
+    && Object.values(lastResult.value?.node_statuses ?? {})
+      .some(status => status.status === 'failed')
+  ))
   const isEnvironmentRecoveryDialogVisible = computed(() => {
     const action = environmentRecoveryAction.value
     if (action === null) return false
@@ -418,6 +443,18 @@ export const useExecutionStore = defineStore('execution', () => {
     originGraph.value = graph === null ? null : cloneGraph(graph)
   }
 
+  function adoptExecutionIntent(value: ExecutionContextFields): void {
+    if (value.mode !== undefined) executionMode.value = value.mode
+    if (value.requested_nodes !== undefined) {
+      requestedNodes.value = value.requested_nodes === null
+        ? null
+        : [...value.requested_nodes]
+    }
+    if (value.retry_of_execution_id !== undefined) {
+      retryOfExecutionId.value = value.retry_of_execution_id
+    }
+  }
+
   function acceptPayloadContext(
     payload: ExecutionContextFields,
     source: 'event' | 'response' | 'snapshot',
@@ -459,10 +496,12 @@ export const useExecutionStore = defineStore('execution', () => {
       if (current === null || !sameExecutionContext(current, incoming)) {
         adoptExecutionContext(incoming, pendingRun.canvasId, pendingRun.graph)
       }
+      adoptExecutionIntent(payload)
       return true
     }
 
     if (current !== null && sameExecutionContext(current, incoming)) {
+      adoptExecutionIntent(payload)
       return source === 'snapshot'
         || !isTerminalExecution(incoming.execution_id)
     }
@@ -482,6 +521,7 @@ export const useExecutionStore = defineStore('execution', () => {
       resolveOriginCanvas(incoming.workflow_id),
       null,
     )
+    adoptExecutionIntent(payload)
     return true
   }
 
@@ -571,6 +611,10 @@ export const useExecutionStore = defineStore('execution', () => {
         graph,
         nodes,
         workflow_name: workflowName,
+        mode: options?.mode ?? 'normal',
+        ...(options?.retryOfExecutionId
+          ? { retry_of_execution_id: options.retryOfExecutionId }
+          : {}),
         ...(options?.draftRevision !== undefined
           ? { draft_revision: options.draftRevision }
           : {}),
@@ -852,9 +896,14 @@ export const useExecutionStore = defineStore('execution', () => {
     isStopping,
     isMutationLocked,
     canStop,
+    canRetry,
+    canInvalidateFailed,
     executionId,
     executionWorkflowId,
     executionDraftRevision,
+    executionMode,
+    requestedNodes,
+    retryOfExecutionId,
     originCanvasId,
     originGraph,
     appliesToCanvas,

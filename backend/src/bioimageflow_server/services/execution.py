@@ -177,6 +177,10 @@ class ExecutionConflictError(RuntimeError):
     """Raised when ``start()`` is called while an execution is already running."""
 
 
+class ExecutionRetryError(RuntimeError):
+    """Raised when a retry does not address the latest failed execution."""
+
+
 class WorkflowBuildError(RuntimeError):
     """Raised when ``graph_builder.build_workflow`` fails structurally.
 
@@ -279,7 +283,11 @@ class ExecutionManager:
         graph = graph.model_copy(deep=True)
         nodes = list(nodes) if nodes is not None else None
         if reserved_context is None:
-            async with self.reserve_start(workflow_id, draft_revision) as context:
+            async with self.reserve_start(
+                workflow_id,
+                draft_revision,
+                requested_nodes=nodes,
+            ) as context:
                 return await self._start_reserved(
                     context,
                     graph,
@@ -307,6 +315,10 @@ class ExecutionManager:
         self,
         workflow_id: str,
         draft_revision: int | None,
+        *,
+        mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal",
+        requested_nodes: list[str] | None = None,
+        retry_of_execution_id: str | None = None,
     ) -> AsyncIterator[ExecutionContext]:
         """Reserve the engine before any offloaded Run authority preparation."""
 
@@ -319,10 +331,19 @@ class ExecutionManager:
                 raise ExecutionConflictError(
                     "An execution is already running; stop it before starting a new one"
                 )
+            effective_nodes = self.resolve_requested_nodes(
+                mode=mode,
+                workflow_id=workflow_id,
+                requested_nodes=requested_nodes,
+                retry_of_execution_id=retry_of_execution_id,
+            )
             context = ExecutionContext(
                 execution_id=str(uuid4()),
                 workflow_id=workflow_id,
                 draft_revision=draft_revision,
+                mode=mode,
+                requested_nodes=effective_nodes,
+                retry_of_execution_id=retry_of_execution_id,
             )
             self._pending_context = context
             self._starting = True
@@ -331,6 +352,34 @@ class ExecutionManager:
             finally:
                 self._starting = False
                 self._pending_context = None
+
+    def resolve_requested_nodes(
+        self,
+        *,
+        mode: Literal["normal", "retry", "invalidate_failed", "recompute"],
+        workflow_id: str,
+        requested_nodes: list[str] | None,
+        retry_of_execution_id: str | None,
+    ) -> list[str] | None:
+        """Validate intent and recover the original target set for retries."""
+        if mode in {"normal", "recompute"}:
+            return list(requested_nodes) if requested_nodes is not None else None
+        previous = self.context
+        if (
+            previous is None
+            or self.last_result is None
+            or self.last_result.success
+            or retry_of_execution_id != previous.execution_id
+            or workflow_id != previous.workflow_id
+        ):
+            raise ExecutionRetryError(
+                "Retry must reference the latest failed execution for this workflow"
+            )
+        return (
+            list(previous.requested_nodes)
+            if previous.requested_nodes is not None
+            else None
+        )
 
     async def _start_reserved(
         self,
@@ -387,6 +436,8 @@ class ExecutionManager:
                 )
 
         workflow = validation_output.compilation.workflow
+        # The host setting is authoritative for disposable latest outputs.
+        workflow.output_view = None
         self._workflow = workflow
         targets: tuple[Any, ...] = ()
         if nodes:
@@ -409,13 +460,21 @@ class ExecutionManager:
                 use_explicit_engine = callable(getattr(workflow, "_make_engine", None))
                 engine = self._make_execution_engine(workflow)
                 self._attach_environment_status_hook(engine)
-                if engine is None or not use_explicit_engine:
-                    return workflow.compute(*targets, dev_mode=dev_mode)
-                return workflow.compute(
-                    *targets,
-                    dev_mode=dev_mode,
-                    engine=engine,
-                )
+                try:
+                    if engine is None or not use_explicit_engine:
+                        return workflow.compute(*targets, dev_mode=dev_mode)
+                    return workflow.compute(
+                        *targets,
+                        dev_mode=dev_mode,
+                        engine=engine,
+                    )
+                finally:
+                    self._materialize_latest_outputs(
+                        workflow,
+                        live_settings,
+                        run_storage_path,
+                        context,
+                    )
 
         loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
@@ -427,6 +486,47 @@ class ExecutionManager:
             )
         )
         return context
+
+    def _materialize_latest_outputs(
+        self,
+        workflow: Any,
+        settings: Settings,
+        storage_path: Path | None,
+        context: ExecutionContext,
+    ) -> None:
+        """Best-effort human output publication that never changes run success."""
+        if storage_path is None:
+            return
+        from bioimageflow_server.services.output_views import materialize_latest_outputs
+
+        try:
+            resolved = materialize_latest_outputs(
+                workflow,
+                settings,
+                storage_path=storage_path,
+            )
+            if resolved.warning:
+                logger.warning(resolved.warning)
+                self.event_bus.publish_log(
+                    "WARNING",
+                    resolved.warning,
+                    None,
+                    time.time(),
+                    context=context,
+                )
+        except Exception as exc:
+            message = (
+                "Workflow computation finished, but latest outputs could not be "
+                f"materialized: {exc}"
+            )
+            logger.warning(message, exc_info=True)
+            self.event_bus.publish_log(
+                "WARNING",
+                message,
+                None,
+                time.time(),
+                context=context,
+            )
 
     async def stop(self) -> None:
         async with self._preparation_lock:

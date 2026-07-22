@@ -641,7 +641,11 @@ def _dump_plain(value: Any) -> Any:
 
 
 def _context_payload(context: ExecutionContext) -> dict[str, Any]:
-    return context.model_dump()
+    return {
+        "execution_id": context.execution_id,
+        "workflow_id": context.workflow_id,
+        "draft_revision": context.draft_revision,
+    }
 
 
 def _status_snapshot_payload(status: Any) -> dict[str, Any]:

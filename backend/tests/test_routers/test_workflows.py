@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import pytest
+from unittest.mock import MagicMock
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
@@ -179,6 +180,30 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     deleted = await client.delete("/api/v1/workflows/wf")
     assert deleted.status_code == 200
     assert deleted.json() == {"deleted": True, "identity_generation": 2}
+
+
+async def test_reveal_latest_outputs_opens_the_workflow_projection(
+    client: httpx.AsyncClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reveal = MagicMock()
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.workflows.reveal_in_file_browser",
+        reveal,
+    )
+    created = await client.post("/api/v1/workflows", json={"name": "folder/wf"})
+    assert created.status_code == 201
+
+    response = await client.post(
+        "/api/v1/workflows/folder/wf/outputs/latest/reveal"
+    )
+
+    assert response.status_code == 200, response.text
+    expected = tmp_path / "outputs" / "folder" / "wf" / "outputs" / "latest"
+    assert response.json()["path"] == str(expected)
+    assert expected.is_dir()
+    reveal.assert_called_once_with(str(expected))
 
 
 async def test_format_status_reports_hidden_invalid_workflows(

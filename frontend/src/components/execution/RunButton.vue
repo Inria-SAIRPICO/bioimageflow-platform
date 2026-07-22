@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, type Ref } from 'vue'
 import Button from 'primevue/button'
+import SplitButton from 'primevue/splitbutton'
+import type { MenuItem } from 'primevue/menuitem'
 import Dialog from 'primevue/dialog'
 import { useExecutionLock, type ExecutionGraphSync } from '@/composables/useExecutionLock'
-import { useExecutionStore } from '@/stores/execution'
+import {
+  useExecutionStore,
+  type ExecutionCommand,
+  type ExecutionMode,
+} from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
 import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
@@ -37,6 +43,8 @@ const { lockForExecution } = useExecutionLock()
 const confirmOpen = ref(false)
 const confirmResolve = ref<((value: boolean) => void) | null>(null)
 const pendingOutOfDateNodes = ref<string[]>([])
+const advancedConfirmOpen = ref(false)
+const pendingAdvancedCommand = ref<ExecutionCommand | null>(null)
 const activeWorkflowId = computed(() => ui.activeWorkflowId)
 const activeCanvasLifecycleBusy = computed(() => {
   const canvasId = canvasSessionRegistry.activeCanvasId.value
@@ -67,10 +75,54 @@ const runTooltip = computed(() => {
 
 const runLabel = computed(() => exec.isStarting ? 'Starting...' : 'Run Workflow')
 const stopLabel = computed(() => exec.isStopping ? 'Stopping...' : 'Stop')
+const primaryButtonProps = computed(() => ({
+  title: runTooltip.value,
+  'data-testid': 'run-workflow-button',
+}))
 
 const runSelectedDisabled = computed(
   () => runDisabled.value || ui.selectedNodeIds.length === 0,
 )
+const retryAvailable = computed(() => (
+  !runDisabled.value
+  && exec.canRetry
+  && exec.executionWorkflowId === activeWorkflowId.value
+  && exec.executionId !== null
+))
+const invalidateFailedAvailable = computed(() => (
+  retryAvailable.value && exec.canInvalidateFailed
+))
+const runMenuItems = computed<MenuItem[]>(() => [
+  {
+    label: 'Run Selected',
+    icon: 'pi pi-forward',
+    disabled: runSelectedDisabled.value,
+    command: () => void onRunSelected(),
+  },
+  { separator: true },
+  {
+    label: 'Retry Failed Execution',
+    icon: 'pi pi-refresh',
+    disabled: !retryAvailable.value,
+    command: () => void onRetry(),
+  },
+  {
+    label: 'Invalidate Failed Nodes and Retry…',
+    icon: 'pi pi-replay',
+    disabled: !invalidateFailedAvailable.value,
+    command: () => requestAdvancedCommand({
+      kind: 'invalidate_failed',
+      retryOf: exec.executionId!,
+    }),
+  },
+  { separator: true },
+  {
+    label: 'Recompute Workflow…',
+    icon: 'pi pi-sync',
+    disabled: runDisabled.value,
+    command: () => requestAdvancedCommand({ kind: 'recompute' }),
+  },
+])
 
 async function confirmOutOfDate(nodeIds: string[]): Promise<boolean> {
   pendingOutOfDateNodes.value = nodeIds
@@ -118,7 +170,20 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-async function runCore(nodes?: string[]) {
+function commandMode(command: ExecutionCommand): ExecutionMode {
+  if (command.kind === 'workflow' || command.kind === 'selected') return 'normal'
+  return command.kind
+}
+
+function validationNodes(command: ExecutionCommand): string[] | undefined {
+  if (command.kind === 'selected') return command.nodes
+  if (command.kind === 'retry' || command.kind === 'invalidate_failed') {
+    return exec.requestedNodes ?? undefined
+  }
+  return undefined
+}
+
+async function runCore(command: ExecutionCommand) {
   if (isNestedCanvasActive.value) return
   if (exec.isMutationLocked || activeCanvasLifecycleBusy.value) return
   const targetCanvasId = canvasPersistence.canvasId
@@ -149,7 +214,8 @@ async function runCore(nodes?: string[]) {
       if (targetCanvasId !== null && preparedDraftRevision === null) {
         throw new Error('An accepted draft revision is required for execution')
       }
-      const outOfDate = findOutOfDateNodes(
+      const nodes = validationNodes(command)
+      const outOfDate = command.kind === 'recompute' ? [] : findOutOfDateNodes(
         preparedValidation,
         preparedGraph,
         nodes,
@@ -169,9 +235,15 @@ async function runCore(nodes?: string[]) {
       graph = preparedGraph
       const started = await lockForExecution({
         graph: preparedGraph,
-        nodes,
+        ...(command.kind === 'selected' ? { nodes: command.nodes } : {}),
         validationResult: preparedValidation,
         workflowName,
+        mode: commandMode(command),
+        ...(
+          command.kind === 'retry' || command.kind === 'invalidate_failed'
+            ? { retryOfExecutionId: command.retryOf }
+            : {}
+        ),
         isTargetActive,
         ...(targetCanvasId !== null
           ? {
@@ -203,6 +275,14 @@ async function runCore(nodes?: string[]) {
         })
         return
       }
+      if (conflictCode === 'execution_retry_unavailable') {
+        emit('toast', {
+          severity: 'warn',
+          summary: 'Retry is no longer available',
+          detail: exec.error ?? 'Run the workflow again to establish a new retry point.',
+        })
+        return
+      }
       emit('toast', {
         severity: 'warn',
         summary: 'An execution is already running',
@@ -219,7 +299,7 @@ async function runCore(nodes?: string[]) {
           : validationErrorsForExecution(
               props.graphSync.validationResult.value?.errors ?? [],
               graph,
-              nodes,
+              validationNodes(command),
             )
       const firstBadNode = errs.find((e) => e.node)?.node
       if (firstBadNode) {
@@ -260,13 +340,35 @@ async function runCore(nodes?: string[]) {
 }
 
 async function onRun() {
-  await runCore()
+  await runCore({ kind: 'workflow' })
 }
 
 async function onRunSelected() {
   const selected = [...ui.selectedNodeIds]
   if (selected.length === 0) return
-  await runCore(selected)
+  await runCore({ kind: 'selected', nodes: selected })
+}
+
+async function onRetry() {
+  if (!retryAvailable.value || exec.executionId === null) return
+  await runCore({ kind: 'retry', retryOf: exec.executionId })
+}
+
+function requestAdvancedCommand(command: ExecutionCommand): void {
+  pendingAdvancedCommand.value = command
+  advancedConfirmOpen.value = true
+}
+
+async function confirmAdvancedCommand(): Promise<void> {
+  const command = pendingAdvancedCommand.value
+  advancedConfirmOpen.value = false
+  pendingAdvancedCommand.value = null
+  if (command) await runCore(command)
+}
+
+function cancelAdvancedCommand(): void {
+  advancedConfirmOpen.value = false
+  pendingAdvancedCommand.value = null
 }
 
 async function onStop() {
@@ -276,6 +378,13 @@ async function onStop() {
 defineExpose({
   onRun,
   onRunSelected,
+  onRetry,
+  onInvalidateFailed: () => {
+    if (invalidateFailedAvailable.value && exec.executionId !== null) {
+      requestAdvancedCommand({ kind: 'invalidate_failed', retryOf: exec.executionId })
+    }
+  },
+  onRecompute: () => requestAdvancedCommand({ kind: 'recompute' }),
   onStop,
   confirmOpen,
   pendingOutOfDateNodes,
@@ -283,29 +392,21 @@ defineExpose({
   runDisabled,
   runTooltip,
   runSelectedDisabled,
+  retryAvailable,
+  invalidateFailedAvailable,
 })
 </script>
 
 <template>
   <div class="run-button-group" data-testid="run-button-group">
-    <Button
+    <SplitButton
       v-if="!exec.isRunning"
       icon="pi pi-play"
       :label="runLabel"
       :disabled="runDisabled"
-      :title="runTooltip"
-      data-testid="run-workflow-button"
+      :button-props="primaryButtonProps"
+      :model="runMenuItems"
       @click="onRun"
-    />
-    <Button
-      v-if="!exec.isRunning"
-      icon="pi pi-play"
-      label="Run Selected"
-      :disabled="runSelectedDisabled"
-      :title="runTooltip"
-      data-testid="run-selected-button"
-      severity="secondary"
-      @click="onRunSelected"
     />
     <Button
       v-if="exec.isRunning"
@@ -345,6 +446,31 @@ defineExpose({
           label="Continue"
           data-testid="out-of-date-continue"
           @click="resolveConfirm(true)"
+        />
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="advancedConfirmOpen"
+      modal
+      header="Confirm cache invalidation"
+      :style="{ width: '32rem' }"
+      data-testid="advanced-run-confirm"
+      @hide="pendingAdvancedCommand = null"
+    >
+      <p v-if="pendingAdvancedCommand?.kind === 'recompute'">
+        Recompute the complete enabled workflow? Existing cache selections will be invalidated before execution. Cached records remain on disk until a separate cleanup.
+      </p>
+      <p v-else>
+        Invalidate the failed nodes and everything downstream, then retry the original execution targets? Cached records remain on disk until a separate cleanup.
+      </p>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" @click="cancelAdvancedCommand" />
+        <Button
+          label="Continue"
+          severity="danger"
+          data-testid="advanced-run-continue"
+          @click="confirmAdvancedCommand"
         />
       </template>
     </Dialog>

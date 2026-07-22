@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import nullcontext
+from pathlib import Path
 from typing import Any, Never
 from uuid import UUID
 
@@ -24,6 +26,8 @@ from bioimageflow_server.models.workflow import (
     WorkflowSaveBody,
     WorkflowUpdate,
 )
+from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.routers.filesystem import reveal_in_file_browser
 from bioimageflow_server.models.workflow_sources import (
     PythonSourcePreviewRequest,
     WorkflowSourceApplyRequest,
@@ -65,6 +69,10 @@ def get_connection_manager() -> Any | None:
 
 
 def get_nested_workflow_snapshot_service() -> NestedWorkflowSnapshotService | None:
+    return None
+
+
+def get_settings() -> Settings | None:
     return None
 
 
@@ -440,6 +448,31 @@ async def create_workflow(
                 "suggested_name": store.suggest_name(body.name),
             },
         )
+
+
+@router.post("/{name:path}/outputs/latest/reveal")
+async def reveal_latest_workflow_outputs(
+    name: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    settings: Settings | None = Depends(get_settings),
+) -> dict[str, str]:
+    """Open the authoritative per-node latest output projection."""
+    if settings is not None and settings.deployment_mode != "desktop":
+        raise HTTPException(
+            status_code=403,
+            detail="Opening a server filesystem folder is available only in desktop mode",
+        )
+    try:
+        output_path = Path(store.get_storage_path(name)) / "outputs" / "latest"
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
+    try:
+        await asyncio.to_thread(output_path.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(reveal_in_file_browser, str(output_path))
+    except OSError as exc:
+        logger.error("Could not reveal latest outputs for %s", name, exc_info=exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"status": "ok", "path": str(output_path)}
 
 
 @router.get("/{name:path}", response_model=WorkflowFile)

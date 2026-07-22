@@ -745,8 +745,13 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
     async def reserve_start_with_pending_move(
         workflow_id: str,
         draft_revision: int | None,
+        **intent: Any,
     ) -> AsyncIterator[Any]:
-        async with original_reserve_start(workflow_id, draft_revision) as context:
+        async with original_reserve_start(
+            workflow_id,
+            draft_revision,
+            **intent,
+        ) as context:
             operation_id = store.prepare_workflow_patch_move(
                 "move-source",
                 WorkflowUpdate(action="update", new_id="move-destination"),

@@ -36,6 +36,7 @@ const settings = {
   napari_env_path: null,
   omero_instances: [],
   output_data_folder: '~/bioimageflow_data/',
+  latest_output_mode: 'auto' as const,
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
@@ -46,6 +47,9 @@ const settings = {
   max_upload_size: 2147483648,
   resolved_tool_store_path: '/tmp/tools',
   resolved_output_data_folder: '/tmp/outputs',
+  latest_output_effective_mode: 'symlink',
+  latest_output_warning: null,
+  latest_output_capabilities: {},
   workspace_path: '/tmp/workspace',
 }
 

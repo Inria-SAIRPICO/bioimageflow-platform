@@ -79,6 +79,7 @@ class Settings(BaseModel):
     thumbnail_env_path: str | None = None
     omero_instances: list[OMEROInstance] = []
     output_data_folder: str = Field(default_factory=lambda: _DEFAULT_OUTPUT_DATA_FOLDER)
+    latest_output_mode: Literal["auto", "pointer", "symlink", "copy"] = "auto"
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
     execution_engine: Literal["sequential", "parallel"] = "sequential"

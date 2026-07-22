@@ -143,6 +143,7 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     napari_env_path: null,
     omero_instances: [],
     output_data_folder: '/out',
+    latest_output_mode: 'auto',
     tool_store_path: '~/.bioimageflow/tool_packages/',
     update_mode: 'auto',
     execution_engine: 'sequential',
@@ -153,6 +154,9 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     max_upload_size: 2147483648,
     resolved_tool_store_path: '~/.bioimageflow/tool_packages/',
     resolved_output_data_folder: '/out',
+    latest_output_effective_mode: 'symlink',
+    latest_output_warning: null,
+    latest_output_capabilities: {},
     ...overrides,
   }
 }

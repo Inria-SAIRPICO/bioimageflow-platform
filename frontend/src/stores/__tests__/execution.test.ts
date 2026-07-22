@@ -217,6 +217,7 @@ describe('execution store', () => {
       graph,
       nodes: undefined,
       workflow_name: 'wf_a',
+      mode: 'normal',
     })
   })
 
@@ -242,6 +243,7 @@ describe('execution store', () => {
       graph,
       nodes: undefined,
       workflow_name: 'wf_a',
+      mode: 'normal',
       draft_revision: 7,
     })
     expect(execution.executionId).toBe('exec-123')
@@ -931,5 +933,60 @@ describe('execution store', () => {
       nodes: ['n1'],
       workflow_name: 'wf_a',
     })
+  })
+
+  it('retains failed execution intent and posts a server-targeted retry', async () => {
+    const execution = useExecutionStore()
+    execution.applyStatusSnapshot({
+      execution_id: 'exec-failed',
+      workflow_id: 'wf_a',
+      draft_revision: 7,
+      mode: 'normal',
+      requested_nodes: ['selected'],
+      retry_of_execution_id: null,
+      state: 'idle',
+      last_result: {
+        success: false,
+        errors: [],
+        node_statuses: {
+          selected: {
+            node_id: 'selected',
+            status: 'failed',
+            cached: false,
+          },
+        },
+      },
+      progress: null,
+      node_statuses: {},
+    })
+
+    expect(execution.canRetry).toBe(true)
+    expect(execution.canInvalidateFailed).toBe(true)
+    expect(execution.requestedNodes).toEqual(['selected'])
+
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        status: 'started',
+        execution_id: 'exec-retry',
+        workflow_id: 'wf_a',
+        draft_revision: 8,
+        mode: 'retry',
+        requested_nodes: ['selected'],
+        retry_of_execution_id: 'exec-failed',
+      },
+    })
+    await execution.run(makeGraph(), undefined, 'wf_a', {
+      canvasId: canvasIdFromPanelId('workflow:a'),
+      draftRevision: 8,
+      mode: 'retry',
+      retryOfExecutionId: 'exec-failed',
+    })
+
+    expect(api.post).toHaveBeenLastCalledWith('/api/v1/execution/run', expect.objectContaining({
+      nodes: undefined,
+      mode: 'retry',
+      retry_of_execution_id: 'exec-failed',
+    }))
+    expect(execution.requestedNodes).toEqual(['selected'])
   })
 })

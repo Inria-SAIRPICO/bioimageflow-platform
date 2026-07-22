@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from bioimageflow_server.models.validation import NodeStatus
 from bioimageflow_server.models.workflow import validate_workflow_id
@@ -23,11 +23,26 @@ class ExecutionRequest(BaseModel):
             "no draft file exists; the submitted graph must still match that view."
         ),
     )
+    mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal"
+    retry_of_execution_id: str | None = Field(default=None, min_length=1)
 
     @field_validator("workflow_name")
     @classmethod
     def validate_workflow_name(cls, value: str) -> str:
         return validate_workflow_id(value)
+
+    @model_validator(mode="after")
+    def validate_execution_mode(self) -> "ExecutionRequest":
+        retry_modes = {"retry", "invalidate_failed"}
+        if self.mode in retry_modes and self.retry_of_execution_id is None:
+            raise ValueError(f"retry_of_execution_id is required for mode '{self.mode}'")
+        if self.mode in retry_modes and self.nodes is not None:
+            raise ValueError(f"mode '{self.mode}' reuses the original execution targets")
+        if self.mode not in retry_modes and self.retry_of_execution_id is not None:
+            raise ValueError(f"retry_of_execution_id is not valid for mode '{self.mode}'")
+        if self.mode == "recompute" and self.nodes is not None:
+            raise ValueError("recompute always targets the complete enabled workflow")
+        return self
 
 
 class DraftGraphMismatchResponse(BaseModel):
@@ -47,6 +62,9 @@ class ExecutionContext(BaseModel):
     execution_id: str = Field(min_length=1)
     workflow_id: str = Field(min_length=1)
     draft_revision: int | None = Field(default=None, ge=0)
+    mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal"
+    requested_nodes: list[str] | None = None
+    retry_of_execution_id: str | None = None
 
     @field_validator("workflow_id")
     @classmethod
@@ -82,3 +100,6 @@ class ExecutionStatus(BaseModel):
     execution_id: str | None = None
     workflow_id: str | None = None
     draft_revision: int | None = None
+    mode: Literal["normal", "retry", "invalidate_failed", "recompute"] = "normal"
+    requested_nodes: list[str] | None = None
+    retry_of_execution_id: str | None = None

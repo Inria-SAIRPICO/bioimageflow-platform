@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/ui'
 import { validationErrorsForExecution } from '@/utils/executionSelection'
 import type { GraphState, ValidationResult } from '@/api/types'
 import type { CanvasId } from '@/sessions/canvasSessionRegistry'
+import type { ExecutionMode } from '@/stores/execution'
 
 export interface ExecutionGraphSync {
   flushNow: () => Promise<unknown>
@@ -19,6 +20,8 @@ export interface LockForExecutionOptions {
   workflowName: string
   canvasId?: CanvasId | null
   acceptedDraftRevision?: number | null
+  mode?: ExecutionMode
+  retryOfExecutionId?: string | null
   isTargetActive?: () => boolean
 }
 
@@ -71,6 +74,10 @@ export function useExecutionLock() {
       await exec.run(graph, nodes, workflowName, {
         canvasId: options.canvasId ?? null,
         draftRevision: options.acceptedDraftRevision ?? null,
+        ...(options.mode ? { mode: options.mode } : {}),
+        ...(options.retryOfExecutionId
+          ? { retryOfExecutionId: options.retryOfExecutionId }
+          : {}),
       })
     } else {
       await exec.run(graph, nodes, workflowName)

@@ -807,6 +807,26 @@ export interface paths {
         patch: operations["rename_folder_api_v1_workflows_folders__path__patch"];
         trace?: never;
     };
+    "/api/v1/workflows/{name}/outputs/latest/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reveal Latest Workflow Outputs
+         * @description Open the authoritative per-node latest output projection.
+         */
+        post: operations["reveal_latest_workflow_outputs_api_v1_workflows__name__outputs_latest_reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/{name}": {
         parameters: {
             query?: never;
@@ -1709,6 +1729,14 @@ export interface components {
              * @description Current accepted root-draft revision to verify. Revision 0 is the non-historical view synthesized from the current saved workflow when no draft file exists; the submitted graph must still match that view.
              */
             draft_revision?: number | null;
+            /**
+             * Mode
+             * @default normal
+             * @enum {string}
+             */
+            mode: "normal" | "retry" | "invalidate_failed" | "recompute";
+            /** Retry Of Execution Id */
+            retry_of_execution_id?: string | null;
         };
         /** ExposeWorkflowInputOperation */
         ExposeWorkflowInputOperation: {
@@ -2139,6 +2167,20 @@ export interface components {
             /** Password Stored */
             password_stored: boolean;
         };
+        /**
+         * OutputViewCapabilityResponse
+         * @description Filesystem support for one latest-output materialization mode.
+         */
+        OutputViewCapabilityResponse: {
+            /** Mode */
+            mode: string;
+            /** Supported */
+            supported: boolean;
+            /** Code */
+            code: string;
+            /** Detail */
+            detail?: string | null;
+        };
         /** OutputViewConfig */
         OutputViewConfig: {
             /**
@@ -2321,6 +2363,12 @@ export interface components {
             /** Output Data Folder */
             output_data_folder?: string;
             /**
+             * Latest Output Mode
+             * @default auto
+             * @enum {string}
+             */
+            latest_output_mode: "auto" | "pointer" | "symlink" | "copy";
+            /**
              * Tool Store Path
              * @default ~/.bioimageflow/tool_packages/
              */
@@ -2368,6 +2416,14 @@ export interface components {
             resolved_tool_store_path: string;
             /** Resolved Output Data Folder */
             resolved_output_data_folder: string;
+            /** Latest Output Effective Mode */
+            latest_output_effective_mode: string;
+            /** Latest Output Warning */
+            latest_output_warning?: string | null;
+            /** Latest Output Capabilities */
+            latest_output_capabilities: {
+                [key: string]: components["schemas"]["OutputViewCapabilityResponse"];
+            };
         } & {
             [key: string]: unknown;
         };
@@ -3297,6 +3353,7 @@ export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeStatus = components['schemas']['NodeStatus'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
+export type OutputViewCapabilityResponse = components['schemas']['OutputViewCapabilityResponse'];
 export type OutputViewConfig = components['schemas']['OutputViewConfig'];
 export type PackageImportResponse = components['schemas']['PackageImportResponse'];
 export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
@@ -5164,6 +5221,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowFolderInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_latest_workflow_outputs_api_v1_workflows__name__outputs_latest_reveal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -33,6 +33,7 @@ from bioimageflow_server.services.execution import (
     ExecutionManager,
     NullEventBus,
     WorkflowBuildError,
+    ExecutionRetryError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -1355,3 +1356,63 @@ class TestExecutionManagerStoragePath:
 
         assert builder.call_args.args[0].nodes[0].id == "n1"
         assert builder.call_args.kwargs["storage_path"] == Path("/tmp/workflows/new")
+
+
+class TestExecutionRetryIntent:
+    def test_retry_reuses_original_targets(self) -> None:
+        manager = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        manager.context = ExecutionContext(
+            execution_id="failed-run",
+            workflow_id="wf-test",
+            requested_nodes=["selected"],
+        )
+        manager.last_result = ExecutionResult(success=False)
+
+        nodes = manager.resolve_requested_nodes(
+            mode="retry",
+            workflow_id="wf-test",
+            requested_nodes=None,
+            retry_of_execution_id="failed-run",
+        )
+
+        assert nodes == ["selected"]
+
+    def test_retry_rejects_a_different_or_successful_execution(self) -> None:
+        manager = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        manager.context = ExecutionContext(
+            execution_id="successful-run",
+            workflow_id="wf-test",
+        )
+        manager.last_result = ExecutionResult(success=True)
+
+        with pytest.raises(ExecutionRetryError, match="latest failed execution"):
+            manager.resolve_requested_nodes(
+                mode="retry",
+                workflow_id="wf-test",
+                requested_nodes=None,
+                retry_of_execution_id="successful-run",
+            )
+
+    async def test_status_retains_execution_intent_while_idle(self) -> None:
+        manager = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
+        manager.context = ExecutionContext(
+            execution_id="failed-run",
+            workflow_id="wf-test",
+            requested_nodes=["selected"],
+        )
+        manager.last_result = ExecutionResult(success=False)
+        async with manager.reserve_start(
+            "wf-test",
+            4,
+            mode="invalidate_failed",
+            requested_nodes=None,
+            retry_of_execution_id="failed-run",
+        ) as context:
+            manager.context = context
+        manager.last_result = ExecutionResult(success=False)
+
+        status = manager.get_status()
+
+        assert status.mode == "invalidate_failed"
+        assert status.requested_nodes == ["selected"]
+        assert status.retry_of_execution_id == "failed-run"

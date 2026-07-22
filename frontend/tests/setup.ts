@@ -19,3 +19,16 @@ config.global.provide = {
   [PrimeVueToastSymbol]: testToastService,
   [PrimeVueConfirmSymbol]: testConfirmationService,
 }
+
+if (typeof window !== 'undefined' && !window.matchMedia) {
+  window.matchMedia = () => ({
+    matches: false,
+    media: '',
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }) as unknown as MediaQueryList
+}

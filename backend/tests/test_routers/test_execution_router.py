@@ -188,6 +188,7 @@ class _FakeExecutionManager:
             )
         )
         self.stop = AsyncMock()
+        self.reserved_intents: list[dict[str, Any]] = []
         if start_error is not None:
             self.start.side_effect = start_error
         self._status = status or ExecutionStatus(
@@ -206,14 +207,32 @@ class _FakeExecutionManager:
         self,
         workflow_id: str,
         draft_revision: int | None,
+        **intent: Any,
     ) -> AsyncIterator[ExecutionContext]:
         if self.is_running:
             raise ExecutionConflictError("already running")
+        effective_nodes = self.resolve_requested_nodes(
+            mode=intent.get("mode", "normal"),
+            workflow_id=workflow_id,
+            requested_nodes=intent.get("requested_nodes"),
+            retry_of_execution_id=intent.get("retry_of_execution_id"),
+        )
+        intent["requested_nodes"] = effective_nodes
+        self.reserved_intents.append(intent)
         yield ExecutionContext(
             execution_id="reserved-exec",
             workflow_id=workflow_id,
             draft_revision=draft_revision,
+            **intent,
         )
+
+    def resolve_requested_nodes(
+        self,
+        *,
+        requested_nodes: list[str] | None,
+        **_intent: Any,
+    ) -> list[str] | None:
+        return requested_nodes
 
     @asynccontextmanager
     async def exclusive_idle_mutation(self) -> AsyncIterator[None]:
@@ -282,9 +301,12 @@ async def test_run_returns_202(idle_client) -> None:
     assert resp.json() == {
         "status": "started",
         "execution_id": "exec-123",
-        "workflow_id": "wf",
-        "draft_revision": 7,
-    }
+            "workflow_id": "wf",
+            "draft_revision": 7,
+            "mode": "normal",
+            "requested_nodes": None,
+            "retry_of_execution_id": None,
+        }
     em.start.assert_awaited_once()
     assert em.start.await_args.kwargs["workflow_id"] == "wf"
     assert em.start.await_args.kwargs["draft_revision"] == 7
@@ -881,6 +903,75 @@ async def test_run_passes_nodes_subset(idle_client) -> None:
     # graph as first arg, nodes as second
     assert call_args.args[0].nodes[0].id == "n1"
     assert call_args.kwargs.get("nodes") == ["n1"] or call_args.args[1] == ["n1"]
+
+
+async def test_retry_reuses_the_server_resolved_original_targets(idle_client) -> None:
+    client, em = idle_client
+    em.resolve_requested_nodes = MagicMock(return_value=["n1"])
+
+    response = await client.post(
+        "/api/v1/execution/run",
+        json={
+            "graph": _minimal_graph(),
+            "workflow_name": "wf",
+            "draft_revision": 7,
+            "mode": "retry",
+            "retry_of_execution_id": "exec-failed",
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    em.resolve_requested_nodes.assert_called_once_with(
+        mode="retry",
+        workflow_id="wf",
+        requested_nodes=None,
+        retry_of_execution_id="exec-failed",
+    )
+    assert em.start.call_args.kwargs["nodes"] == ["n1"]
+    assert em.reserved_intents[-1] == {
+        "mode": "retry",
+        "requested_nodes": ["n1"],
+        "retry_of_execution_id": "exec-failed",
+    }
+
+
+async def test_recompute_invalidates_all_enabled_nodes_before_start(
+    idle_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, em = idle_client
+    plan = MagicMock()
+    prepare = MagicMock(return_value=plan)
+    commit = MagicMock(return_value={})
+    ensure = MagicMock(return_value=None)
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.execution.prepare_node_cache_clear",
+        prepare,
+    )
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.execution._commit_clear_workflow_context",
+        commit,
+    )
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.execution._ensure_run_workflow_context",
+        ensure,
+    )
+
+    response = await client.post(
+        "/api/v1/execution/run",
+        json={
+            "graph": _minimal_graph(),
+            "workflow_name": "wf",
+            "draft_revision": 7,
+            "mode": "recompute",
+        },
+    )
+
+    assert response.status_code == 202, response.text
+    assert prepare.call_args.args[0] == ["n1"]
+    assert commit.call_args.args[-1] is plan
+    assert em.start.await_count == 1
+    assert em.reserved_intents[-1]["mode"] == "recompute"
 
 
 async def test_run_resolves_workflow_storage_path(tmp_path: Path) -> None:

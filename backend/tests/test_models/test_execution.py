@@ -32,6 +32,27 @@ class TestExecutionRequest:
         er = ExecutionRequest(graph={"nodes": []}, workflow_name="wf_a")
         assert er.nodes is None
 
+    def test_retry_requires_an_execution_id_and_reuses_server_targets(self) -> None:
+        with pytest.raises(ValidationError):
+            ExecutionRequest(graph={"nodes": []}, workflow_name="wf_a", mode="retry")
+        with pytest.raises(ValidationError):
+            ExecutionRequest(
+                graph={"nodes": []},
+                workflow_name="wf_a",
+                mode="retry",
+                retry_of_execution_id="exec-1",
+                nodes=["client-target"],
+            )
+
+    def test_recompute_rejects_a_selected_subset(self) -> None:
+        with pytest.raises(ValidationError):
+            ExecutionRequest(
+                graph={"nodes": []},
+                workflow_name="wf_a",
+                mode="recompute",
+                nodes=["selected"],
+            )
+
 
 class TestExecutionContext:
     def test_roundtrip(self) -> None:
@@ -126,4 +147,7 @@ class TestExecutionStatus:
             "execution_id": "exec-123",
             "workflow_id": "wf_a",
             "draft_revision": 7,
+            "mode": "normal",
+            "requested_nodes": None,
+            "retry_of_execution_id": None,
         }

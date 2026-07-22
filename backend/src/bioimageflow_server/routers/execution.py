@@ -33,6 +33,7 @@ from bioimageflow_server.models.workflow_draft import (
 from bioimageflow_server.services.execution import (
     ExecutionConflictError,
     ExecutionManager,
+    ExecutionRetryError,
     WorkflowBuildError,
     NodeCacheClearPlan,
     commit_node_cache_clear,
@@ -155,6 +156,9 @@ async def run_execution(
     storage_path: Path | None = Depends(get_storage_path),
     workflow_store: WorkflowStoreService | None = Depends(get_workflow_store),
     workflow_draft_service: WorkflowDraftService | None = Depends(get_workflow_draft_service),
+    registry: ToolRegistryService = Depends(get_tool_registry),
+    dev_mode: bool = Depends(get_dev_mode),
+    settings: Settings | None = Depends(get_settings),
 ) -> dict | JSONResponse:
     if execution_manager is None:
         raise HTTPException(
@@ -181,7 +185,11 @@ async def run_execution(
         async with execution_manager.reserve_start(
             body.workflow_name,
             body.draft_revision,
+            mode=body.mode,
+            requested_nodes=body.nodes,
+            retry_of_execution_id=body.retry_of_execution_id,
         ) as reserved_context:
+            effective_nodes = reserved_context.requested_nodes
             # A Run that bypassed request-wide serialization because another
             # admission was active may acquire the reservation after that
             # state changes. Recheck the durable move fence while this
@@ -214,6 +222,28 @@ async def run_execution(
                 graph = draft.graph
 
             graph = graph.model_copy(deep=True)
+            invalidate_node_ids: list[str] = []
+            if body.mode == "invalidate_failed":
+                assert execution_manager.last_result is not None
+                invalidate_node_ids = [
+                    node_id
+                    for node_id, node_status in execution_manager.last_result.node_statuses.items()
+                    if node_status.status == "failed"
+                ]
+                if not invalidate_node_ids:
+                    raise ExecutionRetryError(
+                        "The failed execution has no failed node cache to invalidate; use Retry instead"
+                    )
+            elif body.mode == "recompute":
+                invalidate_node_ids = [node.id for node in graph.nodes if node.enabled]
+            if body.mode in {"retry", "invalidate_failed"} and effective_nodes is not None:
+                known_node_ids = {node.id for node in graph.nodes}
+                missing_targets = sorted(set(effective_nodes) - known_node_ids)
+                if missing_targets:
+                    raise ExecutionRetryError(
+                        "The original execution targets no longer exist in the current draft: "
+                        + ", ".join(missing_targets)
+                    )
             while True:
                 if runtime_context is None:
                     runtime_context = await run_graph_work(
@@ -241,9 +271,32 @@ async def run_execution(
                     )
 
                 try:
+                    if invalidate_node_ids:
+                        plan = await run_graph_work(
+                            partial(
+                                prepare_node_cache_clear,
+                                invalidate_node_ids,
+                                graph,
+                                registry,
+                                attempt_context.storage_path,
+                                dev_mode=dev_mode,
+                                settings=settings,
+                            )
+                        )
+                        await ensure_context_current()
+                        await run_graph_work(
+                            partial(
+                                _commit_clear_workflow_context,
+                                workflow_store,
+                                body.workflow_name,
+                                storage_path,
+                                attempt_context,
+                                plan,
+                            )
+                        )
                     context = await execution_manager.start(
                         graph,
-                        nodes=body.nodes,
+                        nodes=effective_nodes,
                         storage_path=attempt_context.storage_path,
                         workflow_id=body.workflow_name,
                         draft_revision=body.draft_revision,
@@ -251,7 +304,7 @@ async def run_execution(
                         reserved_context=reserved_context,
                     )
                     return {"status": "started", **context.model_dump()}
-                except _RunWorkflowContextChanged:
+                except (_RunWorkflowContextChanged, _ClearWorkflowContextChanged):
                     if body.draft_revision is None:
                         runtime_context = None
                     else:
@@ -279,6 +332,11 @@ async def run_execution(
         ) from exc
     except ExecutionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ExecutionRetryError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={"error": "execution_retry_unavailable", "detail": str(exc)},
+        )
     except WorkflowBuildError as exc:
         return JSONResponse(
             status_code=422,
