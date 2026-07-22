@@ -742,6 +742,7 @@ class Settings(BaseModel):
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
     execution_engine: Literal["sequential", "parallel"] = "sequential"
+    node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
     keyboard_shortcuts: dict[str, str] = {}
     dev_mode: bool = True
     enable_unsafe_webapp_features: bool = False
@@ -985,7 +986,7 @@ The application uses a Dockview-based multi-panel layout. Panels are resizable, 
 |          |                            |              |
 +----------+----------------------------+--------------+
 |                                                      |
-|   Data Table  |  Logger  |  (tabbed bottom panel)    |
+|   Node Data   |  Logger  |  (tabbed bottom panel)    |
 |                                                      |
 +------------------------------------------------------+
 ```
@@ -1159,7 +1160,7 @@ Title: Nodes.
 
 Displays details and parameters for the currently selected node(s).
 
-**Multi-selection:** When multiple nodes are selected, the Node Panel shows only bulk actions: Enable/Disable all, Delete all, Clear all. No parameter editing. The Data Table shows the outputs of all selected nodes.
+**Multi-selection:** When multiple nodes are selected, the Node Panel shows only bulk actions: Enable/Disable all, Delete all, Clear all. No parameter editing. Node Data shows the outputs of all selected nodes.
 
 **Dynamic outputs refresh:** When an input field changes on a node whose tool has `dynamic_outputs === true`, a debounced (200ms) call to `POST /graph/nodes/{node_id}/output_schema` refreshes the node's resolved output pins. The refresh also propagates downstream along positional edges to any visited node with `dynamic_outputs === true`.
 
@@ -1261,7 +1262,7 @@ A collapsible section at the bottom of the Node Panel that displays execution ou
 
 A collapsible section at the bottom of the Node Panel that shows the tool's documentation (from `tool.documentation`). **Open by default** so users see the docs without extra interaction. The toggle is a chevron icon rendered **before** the "Documentation" label (right-pointing when collapsed, down-pointing when expanded).
 
-### 3.6 Data Table (Bottom Panel, Tab 1)
+### 3.6 Node Data (Bottom Panel, Tab 1)
 
 Displays the output DataFrames of selected nodes in a tabular view.
 
@@ -1269,11 +1270,14 @@ Displays the output DataFrames of selected nodes in a tabular view.
 - When one or more nodes are selected, the table shows their outputs.
 - When no nodes are selected, the table shows the terminal node(s) outputs.
 - If selected nodes have no output yet, a placeholder message is shown.
-- **Disabled nodes:** If a disabled node was previously executed, the Data Table shows its cached data with a dimmed appearance and a banner: "This node is disabled." If a disabled node has no cached data, the standard placeholder is shown. When no nodes are selected and all terminal nodes are disabled, the placeholder reads: "All terminal nodes are disabled."
+- **Disabled nodes:** If a disabled node was previously executed, Node Data shows its cached data with a dimmed appearance and a banner: "This node is disabled." If a disabled node has no cached data, the standard placeholder is shown. When no nodes are selected and all terminal nodes are disabled, the placeholder reads: "All terminal nodes are disabled."
 
 **Layout — vertical flex column:**
 
-When multiple nodes are selected, their DataFrames are displayed in a **vertical flex column layout** (stacked vertically, not in separate tabs). Each DataFrame has a header showing the node name and its own independent pagination controls (page selector, page size). The user can scroll through all DataFrames in a single view for quick comparison.
+The panel header, column headers, and paginator remain outside the vertically scrolling row viewport.
+The row viewport consumes the remaining panel height so navigation remains visible even when the docked panel is short.
+
+When multiple nodes are selected, their DataFrames are displayed in a **vertical flex column layout** (stacked vertically, not in separate tabs). Each DataFrame has a header showing the node name and its own independently visible pagination controls. Each stacked card is bounded by the available panel viewport, and its rows scroll internally before the outer panel moves to the next card.
 
 **Display limit:** When more than 5 nodes are selected, only the first 5 DataFrames are shown, with a "Show all ({N})" toggle to display the rest.
 
@@ -1281,14 +1285,17 @@ When multiple nodes are selected, their DataFrames are displayed in a **vertical
 
 **Table features:**
 - **Column types:** Columns are annotated with their type. Image columns show special rendering.
-- **Pagination:** Large DataFrames are paginated (server-side, via `/nodes/{node_id}/data?page=0&page_size=50`).
-- **Sorting:** Click column header to sort.
+- **Column sizing:** Columns use compact type-based defaults and may be resized from their header separators. Narrow tables do not stretch to fill the panel; wide tables scroll horizontally. Fit, automatic sizing, and reset actions are available, and manual widths are remembered by column schema.
+- **Pagination:** Large DataFrames are paginated server-side. The application default is 250 rows and the user may choose 25, 50, 100, 250, or 500 in Preferences → Display. Each table may temporarily choose another page size.
+- **Direct navigation:** The paginator provides first, previous, next, and last controls; a 1-based page input applied on Enter or blur; total pages; the visible row range; and filtered and unfiltered totals. Page input is clamped to the valid range.
+- **Sorting:** A column header cycles visibly through unsorted, ascending, descending, and unsorted. Sorting is server-side and resets pagination to the first page.
+- **Filtering:** Column-header popovers provide type-appropriate text, numeric, boolean, and empty-value operators. Filters combine with AND semantics, run server-side before sorting and pagination, appear as removable chips, and are applied to CSV export.
 - **Image cells:** For columns typed as `ImageFile` or `ImageShared`:
-  - Show a thumbnail (loaded lazily from `/nodes/{node_id}/thumbnail?row=0&col=mask`)
+  - Reserve a 96×96 thumbnail area, but request `/nodes/{node_id}/thumbnail?row=0&col=mask` only after the row intersects the visible table viewport.
   - **Open in Napari** button: Opens in Napari (`POST /napari/open`). Ctrl+Click clears existing layers.
   - **Reveal in file browser** button.
 - **Scalar cells:** Show the value directly.
-- **Path cells (non-image):** Show the filename with two buttons:
+- **Path cells (non-image):** Preserve left-to-right path order while right-aligning and truncating from the beginning so the filename and final directories remain visible. The full path remains available through its tooltip, inspector, and copy action. Show the filename with two buttons:
   - **Open** button: Opens in the external editor.
   - **Reveal in file browser** button.
 
@@ -1383,19 +1390,19 @@ Clicking a row selects it. Double-clicking a workflow, pressing Enter on a selec
 
 **During execution — Non-Modal Execution Banner:**
 
-Instead of a blocking modal, the GUI shows a **persistent execution banner** at the top of the canvas. The user can inspect completed nodes, view the Data Table, and browse the Logger Panel while execution is in progress. Graph **mutations** are locked (node/edge creation, deletion, parameter changes, drag-to-reorder), but read-only inspection is allowed.
+Instead of a blocking modal, the GUI shows a **persistent execution banner** at the top of the canvas. The user can inspect completed nodes, view Node Data, and browse the Logger Panel while execution is in progress. Graph **mutations** are locked (node/edge creation, deletion, parameter changes, drag-to-reorder), but read-only inspection is allowed.
 
 - **Banner content:** "Executing workflow..." + overall progress bar (nodes completed / total) + current node name + row progress bar + **Stop** button.
 - **Canvas overlay:** Running nodes show a pulsing blue border. Completed nodes turn green in real-time.
 - **Locked interactions during execution:** Adding/removing nodes or edges, changing parameters, enable/disable toggle, clear outputs, save workflow, undo/redo. These actions are grayed out with a tooltip: "Locked during execution."
-- **Allowed interactions during execution:** Selecting nodes, viewing the Node Panel (read-only), browsing the Data Table (completed nodes show their output), scrolling the Logger Panel, panning/zooming the canvas, opening images in Napari.
+- **Allowed interactions during execution:** Selecting nodes, viewing the Node Panel (read-only), browsing Node Data (completed nodes show their output), scrolling the Logger Panel, panning/zooming the canvas, opening images in Napari.
 - **Stop button:** Cancels execution. The banner updates to "Execution stopped" and disappears after 3 seconds (or on click).
 - **On completion:** The banner shows "Execution complete" (green) or "Execution failed" (red, with error summary) and disappears after 5 seconds (or on click). On failure, the failed node is auto-selected so its error is visible in the Node Panel.
 - **Safety guarantee:** Since all graph mutations are locked, the running workflow cannot be affected by user actions. The server also rejects graph validation, draft mutations, workflow mutations, and cache clearing during execution with HTTP 423 Locked.
 
 ### 3.10 Image Viewer
 
-Image-valued Data Table cells expose both the managed desktop viewer and a browser viewer action.
+Image-valued Node Data cells expose both the managed desktop viewer and a browser viewer action.
 
 **Avivator:** The browser action requests the selected cell through the workflow-scoped node-image endpoint with `format=ome-tiff`, then opens the external Avivator application in a Dockview iframe using that absolute image URL. The panel can be activated, closed, or moved into a separate window. This current integration does not provide the embedded Viv component or OME-Zarr static-tree serving proposed by v3.
 
@@ -1407,7 +1414,7 @@ Image-valued Data Table cells expose both the managed desktop viewer and a brows
 4. Auto-reconnects if Napari crashes or is closed by the user
 
 **Interactions:**
-- **Open in Napari:** Triggered from Data Table image cells. Sends `POST /napari/open {paths, clear_layers: false}`.
+- **Open in Napari:** Triggered from Node Data image cells. Sends `POST /napari/open {paths, clear_layers: false}`.
 - **Replace in Napari (Ctrl+Click):** Same endpoint with `clear_layers: true`.
 - Napari is launched lazily on first use.
 
@@ -1441,13 +1448,17 @@ A dedicated panel or modal for application configuration. Settings are persisted
 - **Execution backend:** Read-only summary of the effective backend (`Automatic`, `Wetlands`, or `Direct`) when supplied by the runtime settings contract.
 - **Scheduling:** Read-only summary of `Sequential` or `Parallel`, derived from the effective execution settings and the compatibility `execution_engine` field.
 
-#### 3.12.4 Storage
+#### 3.12.4 Display
+
+- **Node Data rows per page:** Select 25, 50, 100, 250, or 500 as the default for newly inspected tables. The initial default is 250, and a table-local page-size change does not rewrite this preference.
+
+#### 3.12.5 Storage
 
 - **Workspace path:** read-only display with a native Change action in desktop pywebview mode. The current workspace endpoint changes the active path in memory but does not migrate or create directories.
 - **Output data folder:** resolved path display with Reveal and, in desktop mode, Change actions. Changing it does not move existing data.
 - **Tool store path:** read-only resolved path display (default: `~/.bioimageflow/tool_packages/`, with environment overrides applied).
 
-#### 3.12.5 OMERO
+#### 3.12.6 OMERO
 
 OMERO data access is supplied by dedicated tool packages; the platform UI manages credentials but does not browse or broker OMERO data itself.
 
@@ -1706,9 +1717,10 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 22 | `POST` | `/api/v1/workflow-draft-operations/{id}` | Structured validated draft operations for agents |
 | 23 | `PUT` | `/api/v1/graph` | Stateless request-local compatibility or transient graph validation; normal root canvases use validated draft writes |
 | 23a | `POST` | `/api/v1/graph/nodes/{node_id}/output_schema` | Request-local dynamic output-schema resolution from a complete graph |
-| 24 | `GET` | `/api/v1/nodes/{node_id}/data` | Selecting a node to view its output in Data Table |
-| 25 | `GET` | `/api/v1/nodes/{node_id}/data/csv` | "Download CSV" button in Data Table |
-| 26 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Lazy-loading image thumbnails in Data Table cells |
+| 24 | `GET` | `/api/v1/nodes/{node_id}/data` | Compatibility query for a node output in Node Data |
+| 24a | `POST` | `/api/v1/nodes/{node_id}/data/query` | Filtered, sorted, paginated Node Data query |
+| 25 | `GET`/`POST` | `/api/v1/nodes/{node_id}/data/csv` | Unfiltered compatibility download or filtered Node Data CSV export |
+| 26 | `GET` | `/api/v1/nodes/{node_id}/thumbnail` | Viewport-triggered image thumbnails in Node Data cells |
 | 26a | `GET` | `/api/v1/nodes/{node_id}/image` | Serve an image-valued result cell, optionally converted to OME-TIFF |
 | 26b | `GET` | `/api/v1/nodes/{node_id}/image/{filename}` | Serve the same image with an Avivator-compatible response filename |
 | 26c | `POST` | `/api/v1/nodes/{node_id}/reveal` | Reveal the image-valued result cell in the system file browser |
@@ -1719,9 +1731,9 @@ This table summarizes the primary frontend and agent routes. The generated OpenA
 | 32 | `GET` | `/api/v1/settings` | Opening Settings panel; startup |
 | 33 | `PATCH` | `/api/v1/settings` | Changing non-workspace settings |
 | 34 | `POST` | `/api/v1/fs/reveal` | "Open output folder" or "Reveal in file browser" |
-| 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Data Table |
+| 35 | `POST` | `/api/v1/napari/open` | "Open in Napari" button in Node Data |
 | 36 | `GET` | `/api/v1/napari/status` | Checking Napari availability |
-| 37 | `POST` | `/api/v1/editor/open` | "Open" from Data Table path cells after the active canvas persistence barrier |
+| 37 | `POST` | `/api/v1/editor/open` | "Open" from Node Data path cells after the active canvas persistence barrier |
 | 38 | `POST` | `/api/v1/editor/open-tool` | "Open in editor" from Tools Panel or node source links after the active canvas persistence barrier |
 | 39 | `GET` | `/api/v1/health` | Health check |
 | 40 | `GET` | `/api/v1/datasets` | Dataset Browser modal; populate list in browser mode |

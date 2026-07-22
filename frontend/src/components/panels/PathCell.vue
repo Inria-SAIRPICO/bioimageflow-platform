@@ -76,6 +76,7 @@ async function reveal() {
         type="button"
         :title="value"
         data-testid="path-display"
+        style="text-align: right"
         @click="editPath"
       >
         {{ value }}
@@ -108,11 +109,13 @@ async function reveal() {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  min-width: 260px;
+  width: 100%;
+  min-width: 0;
 }
 
 .path-cell__text {
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
@@ -123,7 +126,8 @@ async function reveal() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 320px;
+  width: 100%;
+  max-width: 100%;
   border: 0;
   background: transparent;
   color: inherit;
@@ -131,12 +135,13 @@ async function reveal() {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.8125rem;
   padding: 0;
-  text-align: left;
+  direction: ltr;
+  text-align: right !important;
 }
 
 .path-cell__input {
-  width: min(520px, 48vw);
-  max-width: 520px;
+  width: 100%;
+  max-width: min(520px, 48vw);
   border: 1px solid var(--p-primary-color);
   border-radius: 4px;
   background: var(--bif-surface);
@@ -144,10 +149,13 @@ async function reveal() {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.8125rem;
   padding: 0.125rem 0.25rem;
+  direction: ltr;
+  text-align: right;
 }
 
 .path-cell__name {
   color: var(--p-text-muted-color);
   font-size: 0.75rem;
+  text-align: right;
 }
 </style>

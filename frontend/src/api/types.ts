@@ -1034,6 +1034,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{node_id}/data/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Query Node Data */
+        post: operations["query_node_data_api_v1_nodes__node_id__data_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{node_id}/data/csv": {
         parameters: {
             query?: never;
@@ -1044,7 +1061,8 @@ export interface paths {
         /** Download Node Csv */
         get: operations["download_node_csv_api_v1_nodes__node_id__data_csv_get"];
         put?: never;
-        post?: never;
+        /** Download Filtered Node Csv */
+        post: operations["download_filtered_node_csv_api_v1_nodes__node_id__data_csv_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1354,6 +1372,25 @@ export interface components {
              * @enum {string}
              */
             sort_order: "asc" | "desc";
+            /** Filters */
+            filters?: components["schemas"]["DataTableFilter"][];
+        };
+        /**
+         * DataTableFilter
+         * @description One server-side column filter applied before sorting and pagination.
+         */
+        DataTableFilter: {
+            /** Column */
+            column: string;
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "contains" | "starts_with" | "equals" | "not_equals" | "gt" | "gte" | "lt" | "lte" | "between" | "is_empty" | "is_not_empty";
+            /** Value */
+            value?: unknown | null;
+            /** Second Value */
+            second_value?: unknown | null;
         };
         /** DataTableMergedResponse */
         DataTableMergedResponse: {
@@ -1371,6 +1408,8 @@ export interface components {
             rows: components["schemas"]["DataTableMergedRow"][];
             /** Total Rows */
             total_rows: number;
+            /** Unfiltered Total Rows */
+            unfiltered_total_rows: number;
             /** Page */
             page: number;
             /** Page Size */
@@ -1391,7 +1430,7 @@ export interface components {
         };
         /**
          * DataTableQueryRequest
-         * @description Consolidated Data Table query parameters.
+         * @description Consolidated Node Data query parameters.
          */
         DataTableQueryRequest: {
             /** Workflow Id */
@@ -1405,7 +1444,7 @@ export interface components {
             page: number;
             /**
              * Page Size
-             * @default 50
+             * @default 250
              */
             page_size: number;
             /** Sort By */
@@ -1416,6 +1455,8 @@ export interface components {
              * @enum {string}
              */
             sort_order: "asc" | "desc";
+            /** Filters */
+            filters?: components["schemas"]["DataTableFilter"][];
         };
         /**
          * DataTableSource
@@ -2088,8 +2129,58 @@ export interface components {
             validation: components["schemas"]["ValidationResult"];
         };
         /**
+         * NodeDataCsvRequest
+         * @description Full filtered CSV query for one node's output DataFrame.
+         */
+        NodeDataCsvRequest: {
+            /** Workflow Name */
+            workflow_name?: string | null;
+            /** Columns */
+            columns?: string[] | null;
+            /** Sort By */
+            sort_by?: string | null;
+            /**
+             * Sort Order
+             * @default asc
+             * @enum {string}
+             */
+            sort_order: "asc" | "desc";
+            /** Filters */
+            filters?: components["schemas"]["DataTableFilter"][];
+        };
+        /**
+         * NodeDataQueryRequest
+         * @description Server-side query for one node's output DataFrame.
+         */
+        NodeDataQueryRequest: {
+            /** Workflow Name */
+            workflow_name?: string | null;
+            /** Tool Name */
+            tool_name?: string | null;
+            /**
+             * Page
+             * @default 0
+             */
+            page: number;
+            /**
+             * Page Size
+             * @default 250
+             */
+            page_size: number;
+            /** Sort By */
+            sort_by?: string | null;
+            /**
+             * Sort Order
+             * @default asc
+             * @enum {string}
+             */
+            sort_order: "asc" | "desc";
+            /** Filters */
+            filters?: components["schemas"]["DataTableFilter"][];
+        };
+        /**
          * NodeDataResponse
-         * @description Paginated DataFrame payload for the Data Table panel.
+         * @description Paginated DataFrame payload for the Node Data panel.
          */
         NodeDataResponse: {
             /** Columns */
@@ -2104,6 +2195,8 @@ export interface components {
             absolute_rows: number[];
             /** Total Rows */
             total_rows: number;
+            /** Unfiltered Total Rows */
+            unfiltered_total_rows: number;
             /** Page */
             page: number;
             /** Page Size */
@@ -2384,6 +2477,12 @@ export interface components {
              * @enum {string}
              */
             execution_engine: "sequential" | "parallel";
+            /**
+             * Node Data Page Size
+             * @default 250
+             * @enum {integer}
+             */
+            node_data_page_size: 25 | 50 | 100 | 250 | 500;
             /**
              * Keyboard Shortcuts
              * @default {}
@@ -3298,6 +3397,7 @@ export type CreateWorkflowNodeOperation = components['schemas']['CreateWorkflowN
 export type DataFrameEdge = components['schemas']['DataFrameEdge'];
 export type DataTableColumn = components['schemas']['DataTableColumn'];
 export type DataTableCsvRequest = components['schemas']['DataTableCsvRequest'];
+export type DataTableFilter = components['schemas']['DataTableFilter'];
 export type DataTableMergedResponse = components['schemas']['DataTableMergedResponse'];
 export type DataTableMergedRow = components['schemas']['DataTableMergedRow'];
 export type DataTableQueryRequest = components['schemas']['DataTableQueryRequest'];
@@ -3349,6 +3449,8 @@ export type NestedWorkflowSnapshotLockedResponse = components['schemas']['Nested
 export type NestedWorkflowSnapshotOpenRequest = components['schemas']['NestedWorkflowSnapshotOpenRequest'];
 export type NestedWorkflowSnapshotPutRequest = components['schemas']['NestedWorkflowSnapshotPutRequest'];
 export type NestedWorkflowSnapshotResponse = components['schemas']['NestedWorkflowSnapshotResponse'];
+export type NodeDataCsvRequest = components['schemas']['NodeDataCsvRequest'];
+export type NodeDataQueryRequest = components['schemas']['NodeDataQueryRequest'];
 export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeStatus = components['schemas']['NodeStatus'];
@@ -5747,6 +5849,41 @@ export interface operations {
             };
         };
     };
+    query_node_data_api_v1_nodes__node_id__data_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeDataQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeDataResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     download_node_csv_api_v1_nodes__node_id__data_csv_get: {
         parameters: {
             query?: {
@@ -5760,6 +5897,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_filtered_node_csv_api_v1_nodes__node_id__data_csv_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeDataCsvRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -281,7 +281,7 @@ describe('MenuBar', () => {
       'Workflows Panel',
       'Datasets Panel',
       'Nodes',
-      'Data Table',
+      'Node Data',
       'Logger',
       'Code Editor',
     ])

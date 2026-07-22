@@ -1,4 +1,4 @@
-"""Build obvious, lossless DataFrame projections for the Data Table panel."""
+"""Build obvious, lossless DataFrame projections for the Node Data panel."""
 
 from __future__ import annotations
 
@@ -11,10 +11,16 @@ from bioimageflow_core.arguments import parse_index_lineage
 
 from bioimageflow_server.models.data_table import (
     DataTableColumn,
+    DataTableFilter,
     DataTableMergedResponse,
     DataTableMergedRow,
     DataTableSource,
     DataTableStackedResponse,
+)
+from bioimageflow_server.services.dataframe_query import (
+    DataFrameQueryError,
+    filter_positions,
+    sort_positions,
 )
 from bioimageflow_server.services.result_store import (
     ResultDataNotReadyError,
@@ -62,12 +68,20 @@ class DataTableProjectionService:
         page_size: int,
         sort_by: str | None,
         sort_order: Literal["asc", "desc"],
+        filters: list[DataTableFilter] | None = None,
     ) -> DataTableMergedResponse | DataTableStackedResponse:
         loaded = self._load_sources(sources, storage_path)
         built = self._build(loaded)
         if isinstance(built, DataTableStackedResponse):
             return built
         dataframe, columns, source_rows = built
+        unfiltered_total_rows = len(dataframe)
+        try:
+            positions = filter_positions(dataframe, filters or [])
+        except DataFrameQueryError as exc:
+            raise DataTableProjectionInputError(str(exc)) from exc
+        dataframe = dataframe.iloc[positions]
+        source_rows = [source_rows[position] for position in positions]
         dataframe, source_rows = self._sort(dataframe, source_rows, sort_by, sort_order)
         total_rows = len(dataframe)
         start = page * page_size
@@ -88,6 +102,7 @@ class DataTableProjectionService:
             columns=columns,
             rows=rows,
             total_rows=total_rows,
+            unfiltered_total_rows=unfiltered_total_rows,
             page=page,
             page_size=page_size,
         )
@@ -99,12 +114,19 @@ class DataTableProjectionService:
         storage_path: Path | None,
         sort_by: str | None,
         sort_order: Literal["asc", "desc"],
+        filters: list[DataTableFilter] | None = None,
     ) -> CsvProjection | DataTableStackedResponse:
         loaded = self._load_sources(sources, storage_path)
         built = self._build(loaded)
         if isinstance(built, DataTableStackedResponse):
             return built
         dataframe, columns, source_rows = built
+        try:
+            positions = filter_positions(dataframe, filters or [])
+        except DataFrameQueryError as exc:
+            raise DataTableProjectionInputError(str(exc)) from exc
+        dataframe = dataframe.iloc[positions]
+        source_rows = [source_rows[position] for position in positions]
         dataframe, _ = self._sort(dataframe, source_rows, sort_by, sort_order)
         dataframe = dataframe.copy()
         dataframe.columns = [column.label for column in columns]
@@ -278,7 +300,8 @@ class DataTableProjectionService:
             return dataframe, source_rows
         if sort_by not in dataframe.columns:
             raise DataTableProjectionInputError(f"Unknown sort column: '{sort_by}'")
-        positions = cast(pd.Series, dataframe[sort_by]).reset_index(drop=True).sort_values(
-            ascending=(sort_order == "asc"), kind="mergesort"
-        ).index.tolist()
+        try:
+            positions = sort_positions(dataframe, sort_by, sort_order)
+        except DataFrameQueryError as exc:
+            raise DataTableProjectionInputError(str(exc)) from exc
         return dataframe.iloc[positions], [source_rows[position] for position in positions]

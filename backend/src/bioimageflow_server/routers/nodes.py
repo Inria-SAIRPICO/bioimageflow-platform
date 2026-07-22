@@ -8,7 +8,7 @@ import mimetypes
 import tempfile
 import time
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,17 @@ from fastapi.responses import JSONResponse
 from starlette.responses import FileResponse
 
 from bioimageflow_server.routers.filesystem import reveal_in_file_browser
-from bioimageflow_server.models.nodes import NodeDataResponse
+from bioimageflow_server.models.data_table import DataTableFilter
+from bioimageflow_server.models.nodes import (
+    NodeDataCsvRequest,
+    NodeDataQueryRequest,
+    NodeDataResponse,
+)
+from bioimageflow_server.services.dataframe_query import (
+    DataFrameQueryError,
+    filter_positions,
+    sort_positions,
+)
 from bioimageflow_server.services.result_store import (
     DATAFRAME_RECORD_DIR_ATTR,
     ResultDataNotReadyError,
@@ -80,6 +90,69 @@ def _get_node_dataframe(
     if df is None:
         raise HTTPException(status_code=404, detail=f"No output data for node '{node_id}'")
     return df
+
+
+def _node_data_response(
+    dataframe: pd.DataFrame,
+    result_store: ResultStoreService,
+    *,
+    page: int,
+    page_size: int,
+    sort_by: str | None,
+    sort_order: Literal["asc", "desc"],
+    filters: list[DataTableFilter],
+    tool_name: str | None,
+) -> NodeDataResponse:
+    dataframe = dataframe.copy()
+    dataframe.columns = [str(column) for column in dataframe.columns]
+    column_types = result_store.get_column_types(dataframe, tool_name=tool_name)
+    unfiltered_total_rows = len(dataframe)
+    try:
+        filtered_positions = filter_positions(dataframe, filters)
+        dataframe = dataframe.iloc[filtered_positions]
+        original_positions = filtered_positions
+        sorted_positions = sort_positions(dataframe, sort_by, sort_order)
+    except DataFrameQueryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    dataframe = dataframe.iloc[sorted_positions]
+    original_positions = [original_positions[position] for position in sorted_positions]
+
+    total_rows = len(dataframe)
+    start = page * page_size
+    page_df = dataframe.iloc[start : start + page_size]
+    page_positions = original_positions[start : start + page_size]
+    return NodeDataResponse(
+        columns=dataframe.columns.tolist(),
+        index=[str(value) for value in page_df.index.tolist()],
+        rows=page_df.to_dict(orient="records"),
+        absolute_rows=page_positions,
+        total_rows=total_rows,
+        unfiltered_total_rows=unfiltered_total_rows,
+        page=page,
+        page_size=page_size,
+        column_types=column_types,
+    )
+
+
+def _filtered_node_csv(
+    dataframe: pd.DataFrame,
+    request: NodeDataCsvRequest,
+) -> pd.DataFrame:
+    dataframe = dataframe.copy()
+    dataframe.columns = [str(column) for column in dataframe.columns]
+    try:
+        positions = filter_positions(dataframe, request.filters)
+        dataframe = dataframe.iloc[positions]
+        positions = sort_positions(dataframe, request.sort_by, request.sort_order)
+    except DataFrameQueryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    dataframe = dataframe.iloc[positions]
+    if request.columns:
+        unknown = [column for column in request.columns if column not in dataframe.columns]
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"Unknown column: '{unknown[0]}'")
+        dataframe = dataframe.loc[:, request.columns]
+    return dataframe
 
 
 def _get_dataframe_cell(df: pd.DataFrame, row: int, col: str) -> object:
@@ -297,49 +370,42 @@ async def get_node_data(
     result_store: Annotated[ResultStoreService, Depends(get_result_store)],
     workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
     page: Annotated[int, Query(ge=0)] = 0,
-    page_size: Annotated[int, Query(ge=1, le=500)] = 50,
+    page_size: Annotated[int, Query(ge=1, le=500)] = 250,
     sort_by: str | None = None,
     sort_order: Literal["asc", "desc"] = "asc",
     tool_name: str | None = None,
     workflow_name: str | None = None,
 ) -> NodeDataResponse:
     storage_path = _workflow_storage_path(workflow_name, workflow_store)
-    df = _get_node_dataframe(node_id, result_store, storage_path)
-
-    df = df.copy()
-    df.columns = [str(column) for column in df.columns]
-    original_positions = list(range(len(df)))
-    if sort_by is not None:
-        if sort_by not in df.columns:
-            raise HTTPException(status_code=422, detail=f"Unknown sort column: '{sort_by}'")
-        sort_series = cast(pd.Series, df[sort_by])
-        sorted_positions = sort_series.reset_index(drop=True).sort_values(
-            ascending=(sort_order == "asc"),
-            kind="mergesort",
-        ).index.tolist()
-        df = df.iloc[sorted_positions]
-        original_positions = sorted_positions
-
-    total_rows = len(df)
-    start = page * page_size
-    end = start + page_size
-    page_df = df.iloc[start:end]
-    page_positions = original_positions[start:end]
-
-    columns = df.columns.tolist()
-    rows = page_df.to_dict(orient="records")
-    index = [str(i) for i in page_df.index.tolist()]
-    column_types = result_store.get_column_types(page_df, tool_name=tool_name)
-
-    return NodeDataResponse(
-        columns=columns,
-        index=index,
-        rows=rows,
-        absolute_rows=page_positions,
-        total_rows=total_rows,
+    return _node_data_response(
+        _get_node_dataframe(node_id, result_store, storage_path),
+        result_store,
         page=page,
         page_size=page_size,
-        column_types=column_types,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        filters=[],
+        tool_name=tool_name,
+    )
+
+
+@router.post("/{node_id:path}/data/query", response_model=NodeDataResponse)
+async def query_node_data(
+    node_id: str,
+    request: NodeDataQueryRequest,
+    result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+) -> NodeDataResponse:
+    storage_path = _workflow_storage_path(request.workflow_name, workflow_store)
+    return _node_data_response(
+        _get_node_dataframe(node_id, result_store, storage_path),
+        result_store,
+        page=request.page,
+        page_size=request.page_size,
+        sort_by=request.sort_by,
+        sort_order=request.sort_order,
+        filters=request.filters,
+        tool_name=request.tool_name,
     )
 
 
@@ -375,6 +441,25 @@ async def download_node_csv(
         content=df.to_csv(index=True),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{node_id:path}/data/csv")
+async def download_filtered_node_csv(
+    node_id: str,
+    request: NodeDataCsvRequest,
+    result_store: Annotated[ResultStoreService, Depends(get_result_store)],
+    workflow_store: Annotated[WorkflowStoreService | None, Depends(get_workflow_store)],
+) -> Response:
+    storage_path = _workflow_storage_path(request.workflow_name, workflow_store)
+    dataframe = _filtered_node_csv(
+        _get_node_dataframe(node_id, result_store, storage_path),
+        request,
+    )
+    return Response(
+        content=dataframe.to_csv(index=True),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{node_id}.csv"'},
     )
 
 

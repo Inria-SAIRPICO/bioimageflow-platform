@@ -1,4 +1,4 @@
-"""Consolidated Data Table query and CSV endpoints."""
+"""Consolidated Node Data query and CSV endpoints."""
 
 from __future__ import annotations
 
@@ -49,6 +49,7 @@ async def query_data_table(
             page_size=request.page_size,
             sort_by=request.sort_by,
             sort_order=request.sort_order,
+            filters=request.filters,
         )
     except ResultDataNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -69,6 +70,7 @@ async def download_data_table_csv(
             storage_path=_storage_path(request.workflow_id, workflow_store),
             sort_by=request.sort_by,
             sort_order=request.sort_order,
+            filters=request.filters,
         )
     except ResultDataNotReadyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -518,7 +518,7 @@ function onDockviewReady(event: DockviewReadyEvent) {
   const dataTablePanel = api.addPanel({
     id: 'dataTable',
     component: 'dataTable',
-    title: 'Data Table',
+    title: 'Node Data',
     initialHeight: 250,
     position: { referencePanel: CANVAS_LOADING_PANEL_ID, direction: 'below' },
   })
@@ -1444,7 +1444,7 @@ function getPanelAddOptions(key: string) {
     case 'nodePanel':
       return { id: 'nodePanel', component: 'nodePanel', title: 'Nodes', initialWidth: 320, position: { direction: 'right' as const } }
     case 'dataTable':
-      return { id: 'dataTable', component: 'dataTable', title: 'Data Table', initialHeight: 250, position: { direction: 'below' as const } }
+      return { id: 'dataTable', component: 'dataTable', title: 'Node Data', initialHeight: 250, position: { direction: 'below' as const } }
     case 'logger': {
       const dataTablePanel = dockviewApi.value?.getPanel('dataTable')
       if (dataTablePanel) {

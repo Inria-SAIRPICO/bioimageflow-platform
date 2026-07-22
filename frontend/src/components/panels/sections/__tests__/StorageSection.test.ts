@@ -40,6 +40,7 @@ const settings = {
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
+  node_data_page_size: 250 as const,
   keyboard_shortcuts: {},
   dev_mode: false,
   enable_unsafe_webapp_features: false,

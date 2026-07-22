@@ -147,6 +147,7 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     tool_store_path: '~/.bioimageflow/tool_packages/',
     update_mode: 'auto',
     execution_engine: 'sequential',
+    node_data_page_size: 250,
     keyboard_shortcuts: {},
     dev_mode: true,
     enable_unsafe_webapp_features: false,

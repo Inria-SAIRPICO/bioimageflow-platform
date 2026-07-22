@@ -148,6 +148,21 @@ test.describe('execution lifecycle', () => {
       { timeout: 5000 },
     )
 
+    await node.click()
+    await page.locator('.dv-tab').filter({ hasText: /^Node Data$/ }).click()
+    const nodeDataPanel = page.locator('[data-testid="data-table-panel"]')
+    const paginator = page.locator('[data-testid="node-data-paginator"]')
+    await expect(nodeDataPanel).toBeVisible()
+    await expect(paginator).toBeVisible()
+    await expect(page.locator('[data-p-resizable-column="true"]').first()).toBeVisible()
+    const panelBox = await nodeDataPanel.boundingBox()
+    const paginatorBox = await paginator.boundingBox()
+    expect(panelBox).toBeTruthy()
+    expect(paginatorBox).toBeTruthy()
+    expect(paginatorBox!.y + paginatorBox!.height).toBeLessThanOrEqual(
+      panelBox!.y + panelBox!.height + 1,
+    )
+
     await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
   })
 })

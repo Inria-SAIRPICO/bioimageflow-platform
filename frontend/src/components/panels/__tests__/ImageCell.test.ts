@@ -128,6 +128,7 @@ describe('ImageCell', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mountCell()
+    await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(wrapper.find('img.image-cell__thumb').exists()).toBe(false)
@@ -302,5 +303,42 @@ describe('ImageCell', () => {
     expect(parsedImageUrl.searchParams.get('col')).toBe('mask')
     expect(parsedImageUrl.searchParams.get('workflow_name')).toBe('wf a')
     expect(parsedImageUrl.searchParams.get('format')).toBe('ome-tiff')
+  })
+
+  it('waits for viewport intersection before requesting a thumbnail', async () => {
+    let callback!: IntersectionObserverCallback
+    const observe = vi.fn()
+    const unobserve = vi.fn()
+    class MockIntersectionObserver {
+      constructor(next: IntersectionObserverCallback) {
+        callback = next
+      }
+      observe = observe
+      unobserve = unobserve
+      disconnect = vi.fn()
+      takeRecords = vi.fn(() => [])
+      root = null
+      rootMargin = '0px'
+      thresholds = [0]
+    }
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver)
+    const fetchMock = vi.fn().mockResolvedValueOnce(makeFetchResponse('ready', READY_BYTES))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountCell()
+    await flushPromises()
+
+    expect(observe).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="image-thumbnail"]').attributes('aria-label')).toBe(
+      'thumbnail not loaded',
+    )
+
+    const target = observe.mock.calls[0][0] as Element
+    callback([{ target, isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(unobserve).toHaveBeenCalledWith(target)
   })
 })

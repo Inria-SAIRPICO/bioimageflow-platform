@@ -12,6 +12,27 @@ export interface DataTablePageState {
   pageSize: number
   sortBy: string | null
   sortOrder: 'asc' | 'desc'
+  filters: DataTableFilter[]
+}
+
+export type DataTableFilterOperator =
+  | 'contains'
+  | 'starts_with'
+  | 'equals'
+  | 'not_equals'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'between'
+  | 'is_empty'
+  | 'is_not_empty'
+
+export interface DataTableFilter {
+  column: string
+  operator: DataTableFilterOperator
+  value?: string | number | boolean | null
+  second_value?: string | number | boolean | null
 }
 
 export interface DataTableSourceRequest {
@@ -43,6 +64,7 @@ export interface MergedDataTableResponse {
   columns: ConsolidatedDataTableColumn[]
   rows: ConsolidatedDataTableRow[]
   total_rows: number
+  unfiltered_total_rows: number
   page: number
   page_size: number
 }
@@ -68,6 +90,7 @@ interface FetchOpts {
   pageSize?: number
   sortBy?: string | null
   sortOrder?: 'asc' | 'desc'
+  filters?: DataTableFilter[]
   retryAttempt?: number
 }
 
@@ -100,13 +123,15 @@ const EMPTY_NODE_DATA = Object.freeze({}) as Record<string, NodeDataResponse>
 const EMPTY_PAGINATION = Object.freeze({}) as Record<string, DataTablePageState>
 const EMPTY_FLAGS = Object.freeze({}) as Record<string, boolean>
 const EMPTY_ERRORS = Object.freeze({}) as Record<string, string | null>
+let preferredPageSize = 250
 
 function defaultPageState(): DataTablePageState {
   return {
     page: 0,
-    pageSize: 50,
+    pageSize: preferredPageSize,
     sortBy: null,
     sortOrder: 'asc',
+    filters: [],
   }
 }
 
@@ -248,6 +273,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
           page_size: pageState.pageSize,
           sort_by: pageState.sortBy,
           sort_order: pageState.sortOrder,
+          filters: pageState.filters,
         },
         { signal: controller.signal },
       )
@@ -304,7 +330,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
     })
   }
 
-  function setProjectionSort(sortBy: string, sortOrder: 'asc' | 'desc'): Promise<void> {
+  function setProjectionSort(sortBy: string | null, sortOrder: 'asc' | 'desc'): Promise<void> {
     const context = activeContext(true)
     if (!context?.state.projectionRequest) return Promise.resolve()
     return fetchProjectionInContext(context, context.state.projectionRequest, {
@@ -312,6 +338,16 @@ export const useDataTableStore = defineStore('dataTable', () => {
       page: 0,
       sortBy,
       sortOrder,
+    })
+  }
+
+  function setProjectionFilters(filters: DataTableFilter[]): Promise<void> {
+    const context = activeContext(true)
+    if (!context?.state.projectionRequest) return Promise.resolve()
+    return fetchProjectionInContext(context, context.state.projectionRequest, {
+      ...context.state.projectionPage,
+      page: 0,
+      filters: [...filters],
     })
   }
 
@@ -327,6 +363,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
           ...request,
           sort_by: context.state.projectionPage.sortBy,
           sort_order: context.state.projectionPage.sortOrder,
+          filters: context.state.projectionPage.filters,
         },
         { responseType: 'blob' },
       )
@@ -416,8 +453,9 @@ export const useDataTableStore = defineStore('dataTable', () => {
     const nextState: DataTablePageState = {
       page: opts.page ?? current.page,
       pageSize: opts.pageSize ?? current.pageSize,
-      sortBy: opts.sortBy ?? current.sortBy,
+      sortBy: opts.sortBy !== undefined ? opts.sortBy : current.sortBy,
       sortOrder: opts.sortOrder ?? current.sortOrder,
+      filters: opts.filters ?? current.filters,
     }
     context.state.paginationState[nodeId] = nextState
 
@@ -431,21 +469,18 @@ export const useDataTableStore = defineStore('dataTable', () => {
     context.state.loading[nodeId] = true
     context.state.errors[nodeId] = null
     try {
-      const params: Record<string, string | number> = {
-        page: nextState.page,
-        page_size: nextState.pageSize,
-        sort_order: nextState.sortOrder,
-      }
-      if (nextState.sortBy) params.sort_by = nextState.sortBy
-      if (opts.toolName && opts.toolName.trim() !== '') {
-        params.tool_name = opts.toolName
-      }
-      if (opts.workflowName && opts.workflowName.trim() !== '') {
-        params.workflow_name = opts.workflowName
-      }
-      const { data } = await api.get<NodeDataResponse>(
-        `/api/v1/nodes/${encodeURIComponent(nodeId)}/data`,
-        { params, signal: controller.signal },
+      const { data } = await api.post<NodeDataResponse>(
+        `/api/v1/nodes/${encodeURIComponent(nodeId)}/data/query`,
+        {
+          page: nextState.page,
+          page_size: nextState.pageSize,
+          sort_by: nextState.sortBy,
+          sort_order: nextState.sortOrder,
+          filters: nextState.filters,
+          tool_name: opts.toolName || null,
+          workflow_name: opts.workflowName || null,
+        },
+        { signal: controller.signal },
       )
       if (isCurrentRequest(context, nodeId, requestId)) {
         context.state.nodeDataCache[nodeId] = data
@@ -494,28 +529,37 @@ export const useDataTableStore = defineStore('dataTable', () => {
     return context ? fetchInContext(context, nodeId, opts) : Promise.resolve()
   }
 
-  function downloadCsv(
+  async function downloadCsv(
     nodeId: string,
     workflowName?: string | null,
     columns?: string[] | null,
-  ) {
-    const link = document.createElement('a')
-    const params = new URLSearchParams()
-    if (workflowName && workflowName.trim() !== '') {
-      params.set('workflow_name', workflowName)
+  ): Promise<void> {
+    const context = activeContext(false)
+    const pageState = context ? stateFor(context, nodeId) : defaultPageState()
+    try {
+      const { data } = await api.post(
+        `/api/v1/nodes/${encodeURIComponent(nodeId)}/data/csv`,
+        {
+          workflow_name: workflowName || null,
+          columns: columns ?? null,
+          sort_by: pageState.sortBy,
+          sort_order: pageState.sortOrder,
+          filters: pageState.filters,
+        },
+        { responseType: 'blob' },
+      )
+      const href = URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href = href
+      link.download = `${nodeId}.csv`
+      link.style.display = 'none'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(href)
+    } catch (exc: unknown) {
+      if (context) context.state.errors[nodeId] = errorMessage(exc)
     }
-    for (const column of columns ?? []) {
-      params.append('columns', column)
-    }
-    const query = params.toString()
-    link.href =
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/data/csv` +
-      (query ? `?${query}` : '')
-    link.download = `${nodeId}.csv`
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
   }
 
   function clearContextCache(context: DataTableContext, nodeId?: string): void {
@@ -608,6 +652,26 @@ export const useDataTableStore = defineStore('dataTable', () => {
       : Promise.resolve()
   }
 
+  function setFilters(
+    nodeId: string,
+    filters: DataTableFilter[],
+    opts: { toolName?: string | null; workflowName?: string | null } = {},
+  ): Promise<void> {
+    const context = activeContext(true)
+    return context
+      ? fetchInContext(context, nodeId, {
+          ...stateFor(context, nodeId),
+          page: 0,
+          filters: [...filters],
+          ...opts,
+        })
+      : Promise.resolve()
+  }
+
+  function setPreferredPageSize(pageSize: number): void {
+    preferredPageSize = pageSize
+  }
+
   function getNodeData(nodeId: string): NodeDataResponse | undefined {
     return activeContext(false)?.state.nodeDataCache[nodeId]
   }
@@ -679,6 +743,7 @@ export const useDataTableStore = defineStore('dataTable', () => {
     clearProjection,
     setProjectionPage,
     setProjectionSort,
+    setProjectionFilters,
     downloadProjectionCsv,
     registerCanvas,
     fetchNodeData,
@@ -689,6 +754,8 @@ export const useDataTableStore = defineStore('dataTable', () => {
     setPage,
     setPageSize,
     setSort,
+    setFilters,
+    setPreferredPageSize,
     getNodeData,
     getCanvasNodeData,
     getPageState,

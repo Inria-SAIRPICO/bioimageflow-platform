@@ -67,6 +67,7 @@ class TestSettings:
         assert s.tool_store_path == "~/.bioimageflow/tool_packages/"
         assert s.update_mode == "auto"
         assert s.execution_engine == "sequential"
+        assert s.node_data_page_size == 250
         assert s.keyboard_shortcuts == {}
         assert s.dev_mode is True
         assert s.enable_unsafe_webapp_features is False
