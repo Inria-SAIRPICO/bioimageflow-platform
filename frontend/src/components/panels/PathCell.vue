@@ -76,10 +76,9 @@ async function reveal() {
         type="button"
         :title="value"
         data-testid="path-display"
-        style="text-align: right"
         @click="editPath"
       >
-        {{ value }}
+        <span class="path-cell__path-value">{{ value }}</span>
       </button>
       <span class="path-cell__name">{{ filename }}</span>
     </div>
@@ -123,11 +122,11 @@ async function reveal() {
 
 .path-cell__path {
   display: block;
+  position: relative;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   width: 100%;
   max-width: 100%;
+  min-height: 1.25rem;
   border: 0;
   background: transparent;
   color: inherit;
@@ -135,8 +134,15 @@ async function reveal() {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.8125rem;
   padding: 0;
-  direction: ltr;
-  text-align: right !important;
+}
+
+.path-cell__path-value {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  min-width: 100%;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .path-cell__input {

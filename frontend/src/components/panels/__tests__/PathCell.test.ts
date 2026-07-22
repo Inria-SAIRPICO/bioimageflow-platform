@@ -4,17 +4,19 @@ import PrimeVue from 'primevue/config'
 import PathCell from '../PathCell.vue'
 
 describe('PathCell', () => {
-  it('keeps the full path while anchoring its visible text to the right', () => {
+  it('anchors overflowing path text to its right edge so the filename stays visible', () => {
     const path = '/Users/researcher/shared/experiment/segmentation/cells.ome.tif'
     const wrapper = mount(PathCell, {
       props: { value: path, showActions: false },
       global: { plugins: [PrimeVue] },
     })
     const display = wrapper.get('[data-testid="path-display"]')
+    const value = display.get('.path-cell__path-value')
 
     expect(display.text()).toBe(path)
     expect(display.attributes('title')).toBe(path)
-    expect(getComputedStyle(display.element).textAlign).toBe('right')
+    expect(display.classes()).toContain('path-cell__path')
+    expect(value.classes()).toContain('path-cell__path-value')
     expect(wrapper.text()).toContain('cells.ome.tif')
   })
 })
