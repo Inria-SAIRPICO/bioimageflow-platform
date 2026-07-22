@@ -48,7 +48,7 @@ Invalidation changes cache selection but does not delete retained records or imm
 
 When the application initializes a workflow root that did not previously exist, it installs the bundled **Fish Analysis** and **Parameters Space Exploration** workflows under `Demo/`. Existing workflow roots, including existing empty roots, are not seeded. The Storage tab in Settings reports their derived status and provides explicit **Install demos** and **Remove demos** actions. Removing demos never removes unrelated workflows from the `Demo` folder, and changing to another existing workspace does not copy demos into it automatically.
 
-The two demo definitions are generated from the maintained Python examples by `scripts/export_demo_workflows.py`. They download public input images into workflow-managed run assets, do not depend on repository-local data, and retain ordinary missing-package diagnostics without installing packages automatically.
+The two demo definitions are generated from the maintained Python examples by `scripts/export_demo_workflows.py --bioimageflow-source /path/to/bioimageflow`. This maintainer command explicitly consumes a BioImageFlow source checkout; normal platform development and CI use only registry packages. The demos download public input images into workflow-managed run assets, do not depend on repository-local data, and retain ordinary missing-package diagnostics without installing packages automatically.
 
 Workflow ids are paths relative to `workspace/workflows/`, such as
 `segmentation/nuclei` or `My Project/quality_control`. Folder path segments can

@@ -58,17 +58,39 @@ The quick lane runs independent phases in parallel:
 - Frontend tests in the Node Vitest project.
 
 It deliberately omits browsers, coverage instrumentation, external packages, and tests that cross application or process-global boundaries.
-Use it frequently during an implementation, but do not treat it as completion validation.
+Use it at intermediate checkpoints when development will continue, but do not treat it as completion validation.
+Do not run it immediately before a completion check that already includes the same phases.
 
-## Deterministic completion check
+## Scoped completion checks
 
 ```bash
-scripts/test check
+scripts/test check backend
+scripts/test check frontend
+scripts/test check docs
+scripts/test check browser-smoke
+scripts/test check browser
+scripts/test check app
+scripts/test check all
 ```
 
-The check lane runs all repository-owned backend and frontend tests, lint, type checking, the production frontend build, the logging-order regression, and the complete Chromium suite.
-It excludes only tests marked `external`, and reports that exclusion explicitly at the end.
-It does not require network access or inspect packages from a developer's runtime tool store.
+Use the smallest scope that covers the changed surface:
+
+| Change surface | Required completion check |
+| --- | --- |
+| Backend implementation or tests | `check backend` |
+| Frontend logic or unit tests | `check frontend` |
+| Documentation only | `check docs` |
+| Backend/frontend API, schemas, dependencies, or runtime behavior | `check app` |
+| Browser interaction, layout, persistence, or E2E infrastructure | `check frontend` and `check browser` |
+| Broad architecture or test-runner changes | `check all` |
+
+`check backend` runs backend lint, every non-external backend test, and the logging-order certification.
+`check frontend` runs frontend lint, type checking, every Vitest project, and the production build.
+`check docs` runs Sphinx with warnings treated as failures.
+`check browser-smoke` runs only Chromium tests tagged `@critical`, while `check browser` runs the complete Chromium project.
+`check app` runs the backend and frontend checks in parallel and follows them with the critical Chromium smoke.
+`check all`, and the compatibility alias `check`, run the previous complete deterministic lane with the full Chromium project.
+All scoped checks avoid network access and developer runtime tool stores unless their description explicitly says otherwise.
 
 ## Comprehensive end-of-iteration suite
 

@@ -103,18 +103,3 @@ def test_unrelated_workflow_at_canonical_path_is_a_visible_conflict(tmp_path: Pa
     assert status.can_install is False
     with pytest.raises(DemoWorkflowConflictError):
         service.install()
-
-
-def test_generated_templates_match_python_examples() -> None:
-    import subprocess
-    import sys
-
-    root = Path(__file__).resolve().parents[3]
-    result = subprocess.run(
-        [sys.executable, str(root / "scripts" / "export_demo_workflows.py"), "--check"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr

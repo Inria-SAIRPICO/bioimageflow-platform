@@ -25,7 +25,14 @@ Coding-loop commands:
   quick                            Run fast, repository-owned checks in parallel.
 
 Completion commands:
-  check                            Run all deterministic checks and Chromium E2E.
+  check backend                    Run backend lint, deterministic tests, and logging certification.
+  check frontend                   Run frontend lint, type-checking, units, and production build.
+  check docs                       Build documentation with warnings treated as failures.
+  check browser-smoke              Run critical Chromium end-to-end tests.
+  check browser                    Run all Chromium end-to-end tests.
+  check app                        Run backend/frontend checks and critical Chromium tests.
+  check all                        Run backend/frontend checks and all Chromium tests.
+  check                            Alias for check all.
   full                             Run coverage, all browsers, and external certification.
   certification                    Certify the pinned published common-tools package only.
 
@@ -211,6 +218,79 @@ check_lane() {
   printf '\nCheck lane passed. External package certification and Firefox were intentionally not run.\n'
 }
 
+backend_check_lane() {
+  require_command uv
+  run_parallel backend_lint backend_deterministic
+  backend_logging_order
+  printf '\nBackend check passed. External package certification was intentionally not run.\n'
+}
+
+frontend_check_lane() {
+  require_command bun
+  run_parallel frontend_lint frontend_typecheck frontend_all_units frontend_build
+  printf '\nFrontend check passed. Browser tests were intentionally not run.\n'
+}
+
+docs_check_lane() {
+  local sphinx_build="$repo_root/.venv/bin/sphinx-build"
+  if [[ ! -x "$sphinx_build" ]]; then
+    printf 'Documentation environment missing: run uv venv && uv pip install -r docs/requirements.txt\n' >&2
+    return 1
+  fi
+  phase 'Documentation' "$sphinx_build" -W --keep-going "$repo_root/docs" "$repo_root/docs/_build/html"
+  printf '\nDocumentation check passed.\n'
+}
+
+browser_smoke_check_lane() {
+  phase 'Critical Chromium end-to-end tests' run_e2e --project=chromium --grep @critical
+  printf '\nCritical Chromium smoke check passed.\n'
+}
+
+browser_check_lane() {
+  phase 'Chromium end-to-end tests' run_e2e --project=chromium
+  printf '\nChromium check passed.\n'
+}
+
+app_check_lane() {
+  require_command uv
+  require_command bun
+  run_parallel backend_lint backend_deterministic frontend_lint frontend_typecheck frontend_all_units frontend_build
+  backend_logging_order
+  phase 'Critical Chromium end-to-end tests' run_e2e --project=chromium --grep @critical
+  printf '\nApplication check passed. External package certification and non-critical browser tests were intentionally not run.\n'
+}
+
+scoped_check_lane() {
+  local scope="${1:-all}"
+  case "$scope" in
+    backend)
+      backend_check_lane
+      ;;
+    frontend)
+      frontend_check_lane
+      ;;
+    docs)
+      docs_check_lane
+      ;;
+    browser-smoke)
+      browser_smoke_check_lane
+      ;;
+    browser)
+      browser_check_lane
+      ;;
+    app)
+      app_check_lane
+      ;;
+    all)
+      check_lane
+      ;;
+    *)
+      printf 'Unknown check scope: %s\n' "$scope" >&2
+      return 2
+      ;;
+  esac
+}
+
 create_certification_store() {
   local certification_root="$1"
   export BIOIMAGEFLOW_TOOL_STORE="$certification_root/tool_packages"
@@ -328,11 +408,11 @@ case "$command" in
     quick_lane
     ;;
   check)
-    if (( $# > 0 )); then
-      printf 'check does not accept selectors; use scripts/test focus instead\n' >&2
+    if (( $# > 1 )); then
+      printf 'check accepts at most one scope\n' >&2
       exit 2
     fi
-    check_lane
+    scoped_check_lane "${1:-all}"
     ;;
   full)
     if (( $# > 0 )); then

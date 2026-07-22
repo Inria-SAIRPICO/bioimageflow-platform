@@ -18,9 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 BACKEND_SRC = ROOT / "backend" / "src"
 if str(BACKEND_SRC) not in sys.path:
     sys.path.insert(0, str(BACKEND_SRC))
-for package_root in sorted((ROOT / "bioimageflow" / "packages").iterdir()):
-    if package_root.is_dir() and str(package_root) not in sys.path:
-        sys.path.insert(0, str(package_root))
 
 from bioimageflow import Workflow  # noqa: E402
 from bioimageflow_server.models.workflow import (  # noqa: E402
@@ -128,13 +125,15 @@ def _materialize_custom_tools(
     return files
 
 
-def _annotate_package_requirements(graph_data: dict[str, Any]) -> None:
+def _annotate_package_requirements(
+    graph_data: dict[str, Any],
+    bioimageflow_source: Path,
+) -> None:
     versions = {
         module: str(
             tomllib.loads(
                 (
-                    ROOT
-                    / "bioimageflow"
+                    bioimageflow_source
                     / "packages"
                     / directory
                     / "pyproject.toml"
@@ -162,8 +161,11 @@ def _annotate_package_requirements(graph_data: dict[str, Any]) -> None:
     visit(graph_data)
 
 
-def _render_definition(definition: DemoDefinition) -> dict[str, bytes]:
-    source_path = ROOT / "bioimageflow" / definition.source
+def _render_definition(
+    definition: DemoDefinition,
+    bioimageflow_source: Path,
+) -> dict[str, bytes]:
+    source_path = bioimageflow_source / definition.source
     workflow = Workflow.from_python(source_path)
     exported = workflow.to_dict(include_custom_tools=True)
     if set(exported) != {"archive_version", "workflow", "custom_sources"}:
@@ -171,7 +173,7 @@ def _render_definition(definition: DemoDefinition) -> dict[str, bytes]:
 
     library_graph = json.loads(json.dumps(exported["workflow"]))
     tool_files = _materialize_custom_tools(library_graph, exported["custom_sources"])
-    _annotate_package_requirements(library_graph)
+    _annotate_package_requirements(library_graph, bioimageflow_source)
     graph = lib_dict_to_graph_state(library_graph)
     graph = graph.model_copy(
         update={
@@ -200,7 +202,7 @@ def _render_definition(definition: DemoDefinition) -> dict[str, bytes]:
     return rendered
 
 
-def _render_bundle() -> dict[str, bytes]:
+def _render_bundle(bioimageflow_source: Path) -> dict[str, bytes]:
     manifest = {
         "bundle_version": BUNDLE_VERSION,
         "workflows": [
@@ -216,7 +218,10 @@ def _render_bundle() -> dict[str, bytes]:
     }
     rendered = {"manifest.json": _json_bytes(manifest)}
     for definition in DEFINITIONS:
-        for relative, content in _render_definition(definition).items():
+        for relative, content in _render_definition(
+            definition,
+            bioimageflow_source,
+        ).items():
             rendered[f"{definition.directory}/{relative}"] = content
     return rendered
 
@@ -234,12 +239,26 @@ def _existing_files() -> dict[str, bytes]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--bioimageflow-source",
+        type=Path,
+        required=True,
+        help="Path to the BioImageFlow source checkout supplying examples and tool packages.",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="Fail when committed templates differ from the Python examples.",
     )
     args = parser.parse_args()
-    rendered = _render_bundle()
+    bioimageflow_source = args.bioimageflow_source.resolve()
+    packages_dir = bioimageflow_source / "packages"
+    if not packages_dir.is_dir():
+        parser.error(f"BioImageFlow packages directory does not exist: {packages_dir}")
+    for package_root in sorted(packages_dir.iterdir()):
+        if package_root.is_dir() and str(package_root) not in sys.path:
+            sys.path.insert(0, str(package_root))
+
+    rendered = _render_bundle(bioimageflow_source)
     existing = _existing_files()
     if args.check:
         if existing == rendered:

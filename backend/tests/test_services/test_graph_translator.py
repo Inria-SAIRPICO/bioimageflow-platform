@@ -196,13 +196,7 @@ def test_column_and_dataframe_edges_round_trip_at_workflow_boundary() -> None:
 
 
 def test_golden_recursive_library_fixture_imports_without_an_adapter_schema() -> None:
-    fixture = (
-        Path(__file__).parents[3]
-        / "bioimageflow"
-        / "tests"
-        / "fixtures"
-        / "unified_workflow_graph.json"
-    )
+    fixture = Path(__file__).parents[1] / "fixtures" / "unified_workflow_graph.json"
     library = json.loads(fixture.read_text(encoding="utf-8"))
     graph = lib_dict_to_graph_state(library)
     translated = graph_state_to_lib_dict(graph, ToolRegistryService())
