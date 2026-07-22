@@ -101,7 +101,7 @@ allocate_port() {
 run_e2e() (
   require_command bun
   if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
-    printf 'Backend environment missing: run cd backend && uv sync --extra dev --frozen\n' >&2
+    printf 'Backend environment missing: run cd backend && uv sync --group dev --frozen\n' >&2
     return 1
   fi
 
@@ -226,7 +226,7 @@ backend_import_preflight() {
 certification_lane() (
   require_command uv
   if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
-    printf 'Backend environment missing: run cd backend && uv sync --extra dev --frozen\n' >&2
+    printf 'Backend environment missing: run cd backend && uv sync --group dev --frozen\n' >&2
     return 1
   fi
 
@@ -247,7 +247,7 @@ full_lane() (
   require_command uv
   require_command bun
   if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
-    printf 'Backend environment missing: run cd backend && uv sync --extra dev --frozen\n' >&2
+    printf 'Backend environment missing: run cd backend && uv sync --group dev --frozen\n' >&2
     return 1
   fi
 

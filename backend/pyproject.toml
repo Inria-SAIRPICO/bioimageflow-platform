@@ -17,20 +17,12 @@ dependencies = [
     "tifffile>=2024.0",
     "keyring>=25.0",
     "bioimageflow-core>=0.1.6",
-    "bioimageflow>=0.1.6",
+    "bioimageflow>=0.1.7",
     "wetlands>=1.1.1",
     "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-cov>=6.0",
-    "anyio[trio]>=4.0",
-    "httpx>=0.27",
-    "ruff>=0.9",
-    "pywebview>=5.0",
-]
 desktop = [
     "pywebview>=5.0",
 ]
@@ -50,7 +42,6 @@ packages = ["src/bioimageflow_server"]
 "src/bioimageflow_server/logging.yaml" = "bioimageflow_server/logging.yaml"
 "src/bioimageflow_server/data/agent_workspace_instructions.md" = "bioimageflow_server/data/agent_workspace_instructions.md"
 "src/bioimageflow_server/data/default_known_packages.txt" = "bioimageflow_server/data/default_known_packages.txt"
-"src/bioimageflow_server/data/demo_workflows" = "bioimageflow_server/data/demo_workflows"
 "src/bioimageflow_server/_external/napari_manager.py" = "bioimageflow_server/_external/napari_manager.py"
 "src/bioimageflow_server/_external/thumbnail_generator.py" = "bioimageflow_server/_external/thumbnail_generator.py"
 "src/bioimageflow_server/_external/opener/README.md" = "bioimageflow_server/_external/opener/README.md"
@@ -96,10 +87,15 @@ reportMissingTypeStubs = false
 bioimageflow-core = { path = "../bioimageflow/packages/bioimageflow-core", editable = true }
 bioimageflow = { path = "../bioimageflow/packages/bioimageflow", editable = true }
 wetlands = { path = "../../wetlands", editable = true }
-launcher = { path = "../../launcher", editable = true }
+wetlands-launcher = { path = "../../launcher", editable = true }
 
 [dependency-groups]
 dev = [
-    "launcher",
     "pyright>=1.1.409",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "anyio[trio]>=4.0",
+    "ruff>=0.9",
+    "pywebview>=5.0",
+    "wetlands-launcher>=0.2.0",
 ]

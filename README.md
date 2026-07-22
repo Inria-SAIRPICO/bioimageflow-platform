@@ -93,8 +93,8 @@ bun run build
 
 ```bash
 cd backend
-uv sync --extra desktop
-uv run bioimageflow-gui
+uv sync --no-dev --extra desktop
+uv run --no-dev --extra desktop bioimageflow-gui
 ```
 
 A native window opens at `http://127.0.0.1:8000` showing the SPA served from `frontend/dist/`. Closing the window shuts the server down cleanly.
@@ -107,7 +107,7 @@ Keep the frontend's hot-module-replacement while iterating on UI code.
 
 ```bash
 cd backend
-uv sync --extra dev
+uv sync --group dev
 uv run python -m bioimageflow_server --host 127.0.0.1 --port 8000 --dev
 ```
 
@@ -141,7 +141,7 @@ cd frontend && bun run dev
 
 # terminal 2 -- desktop window pointing at Vite
 cd backend
-uv sync --extra desktop --extra dev
+uv sync --group dev --extra desktop
 uv run python -m bioimageflow_server --desktop --dev
 ```
 

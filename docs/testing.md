@@ -10,7 +10,7 @@ Prepare both environments once per checkout:
 
 ```bash
 cd backend
-uv sync --extra dev --frozen
+uv sync --group dev --frozen
 cd ../frontend
 bun install --frozen-lockfile
 ```
@@ -118,12 +118,15 @@ The external marker is the lane selector; `common_tools` identifies which extern
 
 ## Exact CI source bootstrap
 
+The `*_SOURCE_REVISION` variables are CI-only integration pins for dependencies replaced by editable paths in `[tool.uv.sources]`; they do not select packages for launcher-managed application installations.
+Update a pin only when the platform intentionally advances its compatibility baseline for that sibling repository, and keep the pinned project's version metadata compatible with `backend/pyproject.toml` and `backend/uv.lock`.
+
 The full runner intentionally does not rewrite local sibling source checkouts.
 To reproduce CI from a fresh checkout without existing sibling paths, first use the exact revisions from `.github/workflows/ci.yml`:
 
 ```bash
-export BIOIMAGEFLOW_SOURCE_REVISION=ff4d6b2205eeff863bbe3311094a927355e7243a
-export LAUNCHER_SOURCE_REVISION=54c38b5e404bac9f3db5203ac29fa75b2b7c5df3
+export BIOIMAGEFLOW_SOURCE_REVISION=2cce0a73adeed3fa4fb905e0d300db702259a86f
+export LAUNCHER_SOURCE_REVISION=c43e2e4c72818da6039cf593d8d6eac837581cd2
 export WETLANDS_SOURCE_REVISION=d0780c44a15c894cb69bed83562e864cc62c6288
 bash scripts/ci/bootstrap_backend_sources.sh
 ```

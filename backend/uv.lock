@@ -57,7 +57,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "../bioimageflow/packages/bioimageflow" }
 dependencies = [
     { name = "bioimageflow-core" },
@@ -117,41 +117,32 @@ dependencies = [
 desktop = [
     { name = "pywebview" },
 ]
+
+[package.dev-dependencies]
 dev = [
     { name = "anyio", extra = ["trio"] },
-    { name = "httpx" },
+    { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pywebview" },
     { name = "ruff" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "launcher" },
-    { name = "pyright" },
+    { name = "wetlands-launcher" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "anyio", extras = ["trio"], marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "bioimageflow", editable = "../bioimageflow/packages/bioimageflow" },
     { name = "bioimageflow-core", editable = "../bioimageflow/packages/bioimageflow-core" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.0" },
     { name = "mcp", specifier = ">=1.0" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pillow", specifier = ">=10.0" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "pywebview", marker = "extra == 'desktop'", specifier = ">=5.0" },
-    { name = "pywebview", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "send2trash", specifier = ">=1.8" },
     { name = "tifffile", specifier = ">=2024.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
@@ -159,12 +150,17 @@ requires-dist = [
     { name = "websockets", specifier = ">=15.0" },
     { name = "wetlands", editable = "../../wetlands" },
 ]
-provides-extras = ["dev", "desktop"]
+provides-extras = ["desktop"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "launcher", editable = "../../launcher" },
+    { name = "anyio", extras = ["trio"], specifier = ">=4.0" },
     { name = "pyright", specifier = ">=1.1.409" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-cov", specifier = ">=6.0" },
+    { name = "pywebview", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.9" },
+    { name = "wetlands-launcher", editable = "../../launcher" },
 ]
 
 [[package]]
@@ -673,35 +669,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/43/4b/674af6ef2f97d56f0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/db/e655086b7f3a705df045bf0933bdd9c2f79bb3c97bfef1384598bb79a217/keyring-25.7.0-py3-none-any.whl", hash = "sha256:be4a0b195f149690c166e850609a477c532ddbfbaed96a404d4e43f8d5e2689f", size = 39160, upload-time = "2025-11-16T16:26:08.402Z" },
 ]
-
-[[package]]
-name = "launcher"
-version = "0.2.0"
-source = { editable = "../../launcher" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "keyring" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "toml" },
-    { name = "wetlands" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=42.0" },
-    { name = "keyring", specifier = ">=24.0" },
-    { name = "pyside6", marker = "extra == 'qt'", specifier = ">=6.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.31" },
-    { name = "textual", marker = "extra == 'textual'", specifier = ">=0.40" },
-    { name = "toml", specifier = ">=0.10" },
-    { name = "wetlands", specifier = ">=1.0.5" },
-]
-provides-extras = ["dev", "qt", "textual"]
 
 [[package]]
 name = "mcp"
@@ -2005,3 +1972,32 @@ dev = [
     { name = "types-psutil", specifier = ">=6.1.0.20241221" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20241230" },
 ]
+
+[[package]]
+name = "wetlands-launcher"
+version = "0.2.0"
+source = { editable = "../../launcher" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "keyring" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "toml" },
+    { name = "wetlands" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=42.0" },
+    { name = "keyring", specifier = ">=24.0" },
+    { name = "pyside6", marker = "extra == 'qt'", specifier = ">=6.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "requests", specifier = ">=2.31" },
+    { name = "textual", marker = "extra == 'textual'", specifier = ">=0.40" },
+    { name = "toml", specifier = ">=0.10" },
+    { name = "wetlands", specifier = ">=1.0.5" },
+]
+provides-extras = ["dev", "qt", "textual"]
