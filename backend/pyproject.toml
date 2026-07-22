@@ -16,8 +16,8 @@ dependencies = [
     "Pillow>=10.0",
     "tifffile>=2024.0",
     "keyring>=25.0",
-    "bioimageflow-core>=0.1.6",
-    "bioimageflow>=0.1.7",
+    "bioimageflow-core>=0.1.7",
+    "bioimageflow>=0.1.8",
     "wetlands>=1.1.1",
     "mcp>=1.0",
 ]
@@ -82,12 +82,6 @@ exclude = [
     "src/bioimageflow_server/data/demo_workflows",
 ]
 reportMissingTypeStubs = false
-
-[tool.uv.sources]
-bioimageflow-core = { path = "../bioimageflow/packages/bioimageflow-core", editable = true }
-bioimageflow = { path = "../bioimageflow/packages/bioimageflow", editable = true }
-wetlands = { path = "../../wetlands", editable = true }
-wetlands-launcher = { path = "../../launcher", editable = true }
 
 [dependency-groups]
 dev = [

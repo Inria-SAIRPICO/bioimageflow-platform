@@ -41,8 +41,8 @@ Examples:
 
 The full lane installs bioimageflow-common-tools from the package index into a
 fresh temporary store. It requires network access and never silently omits the
-external tests. CI bootstraps exact sibling source revisions before invoking
-this runner; local runs use the source checkouts already linked in the checkout.
+external tests. CI and local runs use the published dependency versions locked
+in backend/uv.lock.
 EOF
 }
 

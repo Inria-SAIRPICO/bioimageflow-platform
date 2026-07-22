@@ -19,9 +19,6 @@ permissions:
 env:
   BUN_VERSION: "1.3.8"
   UV_VERSION: "0.10.9"
-  BIOIMAGEFLOW_SOURCE_REVISION: "2cce0a73adeed3fa4fb905e0d300db702259a86f"
-  LAUNCHER_SOURCE_REVISION: "c43e2e4c72818da6039cf593d8d6eac837581cd2"
-  WETLANDS_SOURCE_REVISION: "d0780c44a15c894cb69bed83562e864cc62c6288"
   BIOIMAGEFLOW_HOME: ${{ github.workspace }}/.ci/bioimageflow-home
   BIOIMAGEFLOW_TOOL_STORE: ${{ github.workspace }}/.ci/bioimageflow-home/tool_packages
   BIOIMAGEFLOW_WETLANDS: ${{ github.workspace }}/.ci/bioimageflow-home/wetlands
@@ -67,8 +64,6 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
-      - name: Check out pinned backend sources
-        run: bash scripts/ci/bootstrap_backend_sources.sh
       - name: Install backend dependencies
         working-directory: backend
         run: uv sync --group dev --frozen
@@ -131,8 +126,6 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Install Bun
         run: npm install --global "bun@$BUN_VERSION"
-      - name: Check out pinned backend sources
-        run: bash scripts/ci/bootstrap_backend_sources.sh
       - name: Install backend dependencies
         working-directory: backend
         run: uv sync --group dev --frozen
@@ -171,8 +164,6 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Install Bun
         run: npm install --global "bun@$BUN_VERSION"
-      - name: Check out pinned backend sources
-        run: bash scripts/ci/bootstrap_backend_sources.sh
       - name: Install backend dependencies
         working-directory: backend
         run: uv sync --group dev --frozen
