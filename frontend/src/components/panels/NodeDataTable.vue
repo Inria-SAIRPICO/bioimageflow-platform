@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Button from 'primevue/button'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
-import Paginator from 'primevue/paginator'
 import ImageCell from './ImageCell.vue'
+import NodeDataActiveFilters from './NodeDataActiveFilters.vue'
+import NodeDataColumnHeader from './NodeDataColumnHeader.vue'
+import NodeDataPaginator from './NodeDataPaginator.vue'
 import { useDataTableStore } from '@/stores/dataTable'
+import type { DataTableFilter } from '@/stores/dataTable'
 import { isImagePath } from '@/utils/imagePaths'
 
 const props = defineProps<{
@@ -24,6 +27,8 @@ const loading = computed(() => store.isLoading(props.nodeId))
 const pending = computed(() => store.isPending(props.nodeId))
 const error = computed(() => store.getError(props.nodeId))
 const pageState = computed(() => store.getPageState(props.nodeId))
+const widthMode = ref<'auto' | 'fit'>('auto')
+const tableRenderKey = ref(0)
 
 const rowModels = computed(() => {
   const response = data.value
@@ -56,10 +61,25 @@ function hasImageBehavior(col: string, value: unknown): boolean {
   return isImageColumn(col) || (data.value?.column_types[col] === 'Path' && isImagePath(value))
 }
 
-function toggleSort(col: string) {
-  const current = pageState.value
-  const order = current.sortBy === col && current.sortOrder === 'asc' ? 'desc' : 'asc'
-  void store.setSort(props.nodeId, col, order, {
+const columnLabels = computed(() => Object.fromEntries(
+  visibleColumns.value.map(column => [column, displayColumnName(column)]),
+))
+const tableStateKey = computed(() => {
+  const signature = visibleColumns.value
+    .map(column => `${column}:${data.value?.column_types[column] ?? 'str'}`)
+    .join('|')
+  return `bif-node-data-widths-v1:${props.nodeId}:${signature}`
+})
+
+function setSort(column: string | null, order: 'asc' | 'desc') {
+  void store.setSort(props.nodeId, column, order, {
+    toolName: props.toolName,
+    workflowName: props.workflowName,
+  })
+}
+
+function setFilters(filters: DataTableFilter[]): void {
+  void store.setFilters(props.nodeId, filters, {
     toolName: props.toolName,
     workflowName: props.workflowName,
   })
@@ -70,21 +90,45 @@ function displayColumnName(col: string): string {
 }
 
 function downloadCsv() {
-  store.downloadCsv(props.nodeId, props.workflowName, props.columnFilter)
+  void store.downloadCsv(props.nodeId, props.workflowName, props.columnFilter)
 }
 
-function onPage(event: { page: number; rows: number }) {
-  if (event.rows !== pageState.value.pageSize) {
-    void store.setPageSize(props.nodeId, event.rows, {
-      toolName: props.toolName,
-      workflowName: props.workflowName,
-    })
-    return
-  }
-  void store.setPage(props.nodeId, event.page, {
+function onPageSize(pageSize: number): void {
+  void store.setPageSize(props.nodeId, pageSize, {
     toolName: props.toolName,
     workflowName: props.workflowName,
   })
+}
+
+function onPage(page: number): void {
+  void store.setPage(props.nodeId, page, {
+    toolName: props.toolName,
+    workflowName: props.workflowName,
+  })
+}
+
+function defaultColumnWidth(column: string): string {
+  const type = data.value?.column_types[column] ?? 'str'
+  if (/^(bool|boolean)$/i.test(type)) return '96px'
+  if (/^(u?int|float|double|number|decimal)/i.test(type)) return '120px'
+  if (isImageColumn(column) || isPathColumn(column)) return '320px'
+  return '180px'
+}
+
+function resetColumnWidths(): void {
+  window.localStorage.removeItem(tableStateKey.value)
+  widthMode.value = 'auto'
+  tableRenderKey.value += 1
+}
+
+function autoSizeColumns(): void {
+  window.localStorage.removeItem(tableStateKey.value)
+  widthMode.value = 'auto'
+  tableRenderKey.value += 1
+}
+
+function fitColumns(): void {
+  widthMode.value = 'fit'
 }
 </script>
 
@@ -96,6 +140,9 @@ function onPage(event: { page: number; rows: number }) {
   >
     <div class="node-data-table__toolbar">
       <slot name="toolbar-actions" />
+      <Button icon="pi pi-arrows-h" label="Fit" size="small" text title="Fit columns to panel" @click="fitColumns" />
+      <Button icon="pi pi-sparkles" label="Auto" size="small" text title="Use compact automatic widths" @click="autoSizeColumns" />
+      <Button icon="pi pi-refresh" label="Reset" size="small" text title="Reset saved column widths" @click="resetColumnWidths" />
       <Button
         icon="pi pi-download"
         label="CSV"
@@ -130,27 +177,41 @@ function onPage(event: { page: number; rows: number }) {
       No output data available.
     </div>
     <template v-else>
+      <NodeDataActiveFilters
+        :filters="pageState.filters"
+        :labels="columnLabels"
+        @change="setFilters"
+      />
       <DataTable
+        :key="`${tableStateKey}:${tableRenderKey}`"
         :value="rowModels"
+        data-key="__absoluteRow"
         size="small"
         scrollable
-        scroll-height="260px"
+        scroll-height="flex"
         :loading="loading"
+        resizable-columns
+        :column-resize-mode="widthMode === 'fit' ? 'fit' : 'expand'"
+        state-storage="local"
+        :state-key="tableStateKey"
+        class="node-data-table__grid"
+        :class="{ 'node-data-table__grid--fit': widthMode === 'fit' }"
       >
         <Column
           v-for="col in visibleColumns"
           :key="col"
           :field="col"
+          :style="{ width: defaultColumnWidth(col), minWidth: '72px', maxWidth: '480px' }"
         >
           <template #header>
-            <button
-              class="node-data-table__sort"
-              type="button"
-              @click="toggleSort(col)"
-            >
-              <span>{{ displayColumnName(col) }}</span>
-              <span class="node-data-table__type">{{ data.column_types[col] ?? 'str' }}</span>
-            </button>
+            <NodeDataColumnHeader
+              :column="col"
+              :label="displayColumnName(col)"
+              :type="data.column_types[col] ?? 'str'"
+              :page-state="pageState"
+              @sort="setSort"
+              @filters="setFilters"
+            />
           </template>
           <template #body="slotProps">
             <div
@@ -172,12 +233,13 @@ function onPage(event: { page: number; rows: number }) {
           </template>
         </Column>
       </DataTable>
-      <Paginator
-        :first="pageState.page * pageState.pageSize"
-        :rows="pageState.pageSize"
-        :total-records="data.total_rows"
-        :rows-per-page-options="[25, 50, 100, 250]"
+      <NodeDataPaginator
+        :page="pageState.page"
+        :page-size="pageState.pageSize"
+        :total-rows="data.total_rows"
+        :unfiltered-total-rows="data.unfiltered_total_rows"
         @page="onPage"
+        @page-size="onPageSize"
       />
     </template>
   </section>
@@ -185,6 +247,10 @@ function onPage(event: { page: number; rows: number }) {
 
 <style scoped>
 .node-data-table {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-top: 1px solid var(--bif-border-muted);
   padding-top: 0.5rem;
 }
@@ -195,6 +261,7 @@ function onPage(event: { page: number; rows: number }) {
 
 .node-data-table__toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   justify-content: flex-end;
@@ -206,26 +273,29 @@ function onPage(event: { page: number; rows: number }) {
   padding: 1rem 0.5rem;
 }
 
-.node-data-table__sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  padding: 0;
-  font: inherit;
+.node-data-table__grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
 }
 
-.node-data-table__type {
-  color: var(--p-text-muted-color);
-  font-size: 0.75rem;
+.node-data-table__grid :deep(.p-datatable-table) {
+  width: max-content;
+  min-width: 0;
+}
+
+.node-data-table__grid--fit :deep(.p-datatable-table) {
+  width: 100%;
+  table-layout: fixed;
 }
 
 .node-data-table__image-path {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.node-data-table__image-path > * {
+  min-width: 0;
 }
 </style>

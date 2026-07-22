@@ -239,14 +239,27 @@ Install is idempotent, installs only missing templates, refuses canonical confli
 Remove deletes only recognized canonical demo workflows through the normal generation-aware deletion coordinator, preserves unrelated `Demo` children, and removes the folder only if it is empty.
 Missing tool packages are reported through the ordinary dependency UI and are never installed implicitly.
 
-## 13. API Surface
+## 13. Node Data Inspection
+
+The v1 Data Table panel is named **Node Data** in v2 because it inspects the output DataFrames owned by selected nodes rather than arbitrary datasets.
+For a workflow node, exposed outputs resolve recursively to their scoped internal data nodes while preserving workflow output aliases.
+Related selected nodes and requested upstream context use the consolidated projection service when their stable indices have an obvious lossless alignment; otherwise their DataFrames remain vertically stacked with independent query state.
+
+Filtering, sorting, pagination, totals, and CSV export operate on the same immutable result snapshot and scoped node identities.
+Filtering precedes sorting and pagination, and CSV applies the same active filter and sort contract.
+The default page size is the persisted user preference, initially 250, while infinite scrolling is not part of the platform interaction model.
+
+Node Data is a read-only inspection surface during execution.
+Thumbnail requests are initiated only when their rendered row enters the visible table viewport, and nested canvases use their own canvas-scoped Node Data query state.
+
+## 14. API Surface
 
 The v2 API includes canonical workflow lifecycle routes; root workflow-draft routes; nested workflow-snapshot routes; recursive validation, execution, output-schema, cache, package, and tool routes; source-update preview and apply routes; and trusted Python-source preview using the same apply route.
 
 OpenAPI is the sole frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.
 
-## 14. Keyboard And Context Actions
+## 15. Keyboard And Context Actions
 
 Ctrl/Cmd+S saves the active persistence context.
 In a root tab it saves the workspace workflow; in a nested tab it applies the accepted nested snapshot to its parent.

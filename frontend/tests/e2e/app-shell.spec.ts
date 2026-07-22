@@ -6,6 +6,7 @@ test.describe('app shell', () => {
     await expect(page.locator('#bioimageflow-app')).toBeVisible()
     await expect(page.locator('.dockview-theme-light')).toBeVisible()
     await expect(page.locator('[data-testid="app-menubar"]')).toBeVisible()
+    await expect(page.locator('.dv-tab').filter({ hasText: /^Node Data$/ })).toBeVisible()
 
     // Verify all 5 menu items
     const menubar = page.locator('[data-testid="app-menubar"]')

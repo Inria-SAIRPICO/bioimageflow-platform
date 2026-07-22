@@ -14,7 +14,7 @@ test.describe('Settings Panel', () => {
       .click()
   }
 
-  test('opens via Edit > Preferences... and shows the four tabs', async ({
+  test('opens via Edit > Preferences... and shows the settings tabs', async ({
     page,
   }) => {
     await page.goto('/')
@@ -24,9 +24,19 @@ test.describe('Settings Panel', () => {
 
     const dialog = page.locator('[data-testid="settings-panel"]')
     await expect(dialog).toBeVisible()
-    for (const label of ['External Editor', 'Napari', 'Execution', 'Storage']) {
+    for (const label of ['External Editor', 'Napari', 'Execution', 'Display', 'Storage', 'OMERO']) {
       await expect(dialog.getByText(label, { exact: true })).toBeVisible()
     }
+  })
+
+  test('Display exposes the persisted Node Data page-size preference', async ({ page }) => {
+    await page.goto('/')
+    await openSettings(page)
+    const dialog = page.locator('[data-testid="settings-panel"]')
+
+    await dialog.getByText('Display', { exact: true }).click()
+
+    await expect(dialog.locator('[data-testid="node-data-page-size-setting"]')).toContainText('250')
   })
 
   test('execution settings show current runtime summary without stale controls', async ({

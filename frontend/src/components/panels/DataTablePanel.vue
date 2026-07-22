@@ -14,6 +14,7 @@ import {
 import { useUIStore } from '@/stores/ui'
 import { useExecutionStore } from '@/stores/execution'
 import { useDataTableStore, type DataTableSourceRequest } from '@/stores/dataTable'
+import { useSettingsStore } from '@/stores/settings'
 import type {
   ToolNodeState,
   WorkflowNodeState,
@@ -33,8 +34,10 @@ const uiStore = useUIStore()
 const executionStore = useExecutionStore()
 const activeStatusProjection = useCanvasStatusProjection()
 const dataTableStore = useDataTableStore()
+const settingsStore = useSettingsStore()
 const { currentGraph } = useGraphSync()
 const showAll = ref(false)
+const settingsReady = ref(settingsStore.isLoaded)
 
 interface DataTableEntry {
   key: string
@@ -201,16 +204,19 @@ function statusProjectionForTarget(target: DataTableTarget): CanvasStatusProject
     : getCanvasStatusProjection(target.canvasId)
 }
 
-function fetchEntry(entry: DataTableEntry): void {
-  if (!dataTableStore.getNodeData(entry.dataNodeId) && !dataTableStore.isLoading(entry.dataNodeId)) {
+function fetchEntry(entry: DataTableEntry, force = false): void {
+  if (!settingsReady.value) return
+  if (force || (!dataTableStore.getNodeData(entry.dataNodeId) && !dataTableStore.isLoading(entry.dataNodeId))) {
     void dataTableStore.fetchNodeData(entry.dataNodeId, {
       toolName: entry.toolName,
       workflowName: activeWorkflowId.value,
+      pageSize: settingsStore.settings?.node_data_page_size ?? 250,
     })
   }
 }
 
 function refreshProjection(): void {
+  if (!settingsReady.value) return
   if (projectionSources.value.length === 0 || localFallback.value) {
     dataTableStore.clearProjection()
     return
@@ -225,7 +231,7 @@ watch(maximumDepth, (maximum) => {
   if (dataTableStore.upstreamDepth > maximum) dataTableStore.setUpstreamDepth(maximum)
 })
 watch(projectionKey, refreshProjection, { immediate: true })
-watch(stackedEntries, (entries) => entries.forEach(fetchEntry), { immediate: true })
+watch(stackedEntries, (entries) => entries.forEach(entry => fetchEntry(entry)), { immediate: true })
 watch(() => executionStore.lastResult, (result) => {
   if (result?.success) refreshProjection()
 })
@@ -254,10 +260,31 @@ watch(sourceEntries, (entries) => {
   })
 }, { immediate: true })
 
-onMounted(() => {
+onMounted(async () => {
+  const needsInitialRefresh = !settingsReady.value
+  if (!settingsStore.isLoaded) await settingsStore.fetchSettings()
+  dataTableStore.setPreferredPageSize(settingsStore.settings?.node_data_page_size ?? 250)
+  settingsReady.value = true
+  if (needsInitialRefresh) {
+    refreshProjection()
+    stackedEntries.value.forEach(entry => fetchEntry(entry, true))
+  }
   activeChangeDisposable = props.params?.api?.onDidActiveChange(({ isActive }) => {
     if (isActive) refreshProjection()
   }) ?? null
+})
+
+watch(() => settingsStore.settings?.node_data_page_size, (pageSize, previous) => {
+  if (pageSize === undefined) return
+  dataTableStore.setPreferredPageSize(pageSize)
+  if (!settingsReady.value || previous === undefined || pageSize === previous) return
+  refreshProjection()
+  stackedEntries.value.forEach(entry => {
+    void dataTableStore.setPageSize(entry.dataNodeId, pageSize, {
+      toolName: entry.toolName,
+      workflowName: activeWorkflowId.value,
+    })
+  })
 })
 onBeforeUnmount(() => {
   scope?.stop()
@@ -322,7 +349,7 @@ onBeforeUnmount(() => {
           </div>
         </template>
       </MergedDataTable>
-      <template v-else-if="isStacked">
+      <div v-else-if="isStacked" class="data-table-panel__stack">
         <div class="data-table-panel__info" data-testid="data-table-fallback">
           {{ fallbackMessage }}
         </div>
@@ -371,16 +398,26 @@ onBeforeUnmount(() => {
             </template>
           </NodeDataTable>
         </section>
-      </template>
+      </div>
     </template>
   </div>
 </template>
 
 <style scoped>
 .data-table-panel {
+  box-sizing: border-box;
   height: 100%;
-  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 0.75rem;
+}
+
+.data-table-panel__stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .data-table-panel__placeholder {
@@ -427,7 +464,16 @@ onBeforeUnmount(() => {
 }
 
 .data-table-panel__node {
+  height: 100%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
   margin-bottom: 1rem;
+}
+
+.data-table-panel__node > .node-data-table {
+  flex: 1 1 auto;
+  height: auto;
 }
 
 .data-table-panel__header {

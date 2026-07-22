@@ -15,6 +15,7 @@ import type { WorkspaceSettings } from '@/stores/settings'
 import ExternalEditorSection from '@/components/panels/sections/ExternalEditorSection.vue'
 import NapariSection from '@/components/panels/sections/NapariSection.vue'
 import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
+import DisplaySection from '@/components/panels/sections/DisplaySection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import OmeroSection from '@/components/panels/sections/OmeroSection.vue'
 
@@ -74,6 +75,7 @@ const fallback: WorkspaceSettings & {
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto',
   execution_engine: 'sequential',
+  node_data_page_size: 250,
   keyboard_shortcuts: {},
   dev_mode: true,
   enable_unsafe_webapp_features: false,
@@ -112,6 +114,7 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
         <Tab value="external">External Editor</Tab>
         <Tab value="napari">Napari</Tab>
         <Tab value="execution">Execution</Tab>
+        <Tab value="display">Display</Tab>
         <Tab value="storage">Storage</Tab>
         <Tab value="omero">OMERO</Tab>
       </TabList>
@@ -124,6 +127,9 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
         </TabPanel>
         <TabPanel value="execution">
           <ExecutionSection :model-value="liveSettings" @update:field="onUpdate" />
+        </TabPanel>
+        <TabPanel value="display">
+          <DisplaySection :model-value="liveSettings" @update:field="onUpdate" />
         </TabPanel>
         <TabPanel value="storage">
           <StorageSection

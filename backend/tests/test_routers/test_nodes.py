@@ -79,6 +79,47 @@ async def test_get_node_data_returns_page_and_absolute_rows() -> None:
     assert body["rows"] == [{"x": 3, "y": "c"}, {"x": 1, "y": "a"}]
     assert body["absolute_rows"] == [0, 1]
     assert body["total_rows"] == 3
+    assert body["unfiltered_total_rows"] == 3
+
+
+async def test_post_node_data_filters_before_sorting_and_paging() -> None:
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({
+        "path": ["/a/one.tif", "/b/two.tif", "/a/three.tif"],
+        "score": [1, 3, 2],
+    })
+    store.get_column_types.return_value = {"path": "Path", "score": "int"}
+    async with await _client(store) as client:
+        response = await client.post(
+            "/api/v1/nodes/n1/data/query",
+            json={
+                "page_size": 1,
+                "sort_by": "score",
+                "sort_order": "desc",
+                "filters": [{"column": "path", "operator": "starts_with", "value": "/a"}],
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["rows"] == [{"path": "/a/three.tif", "score": 2}]
+    assert body["absolute_rows"] == [2]
+    assert body["total_rows"] == 2
+    assert body["unfiltered_total_rows"] == 3
+
+
+async def test_post_node_data_rejects_incompatible_filter() -> None:
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({"label": ["cell"]})
+    store.get_column_types.return_value = {"label": "str"}
+    async with await _client(store) as client:
+        response = await client.post(
+            "/api/v1/nodes/n1/data/query",
+            json={"filters": [{"column": "label", "operator": "gt", "value": 1}]},
+        )
+
+    assert response.status_code == 422
+    assert "requires a numeric column" in response.json()["detail"]
 
 
 async def test_get_node_data_accepts_scoped_node_ids() -> None:
@@ -89,6 +130,7 @@ async def test_get_node_data_accepts_scoped_node_ids() -> None:
         resp = await client.get("/api/v1/nodes/sub_1%2Fsegment_1/data")
 
     assert resp.status_code == 200, resp.text
+    assert resp.json()["page_size"] == 250
     store.get_latest_dataframe.assert_called_once()
     assert store.get_latest_dataframe.call_args.args[0] == "sub_1/segment_1"
 
@@ -200,6 +242,27 @@ async def test_download_csv(tmp_path: Path) -> None:
     assert "text/csv" in resp.headers["content-type"]
     assert "n1.csv" in resp.headers["content-disposition"]
     assert resp.text == "x\n1\n"
+
+
+async def test_download_filtered_csv_honors_filters_sort_and_columns() -> None:
+    store = MagicMock()
+    store.get_latest_dataframe.return_value = pd.DataFrame({
+        "label": ["a", "b", "c"],
+        "score": [1, 3, 2],
+    })
+    async with await _client(store) as client:
+        response = await client.post(
+            "/api/v1/nodes/n1/data/csv",
+            json={
+                "columns": ["label"],
+                "sort_by": "score",
+                "sort_order": "desc",
+                "filters": [{"column": "score", "operator": "gte", "value": 2}],
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.text == ",label\n1,b\n2,c\n"
 
 
 async def test_download_csv_generates_csv_when_only_dataframe_is_available() -> None:

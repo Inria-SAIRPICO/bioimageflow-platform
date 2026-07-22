@@ -82,6 +82,7 @@ class Settings(BaseModel):
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
     execution_engine: Literal["sequential", "parallel"] = "sequential"
+    node_data_page_size: Literal[25, 50, 100, 250, 500] = 250
     keyboard_shortcuts: dict[str, str] = {}
     dev_mode: bool = True
     enable_unsafe_webapp_features: bool = False

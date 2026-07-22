@@ -935,7 +935,7 @@ const menuItems = computed<MenuItem[]>(() => [
       panelToggle('Workflows Panel', 'workflows'),
       panelToggle('Datasets Panel', 'datasets'),
       panelToggle('Nodes', 'nodePanel'),
-      panelToggle('Data Table', 'dataTable'),
+      panelToggle('Node Data', 'dataTable'),
       panelToggle('Logger', 'logger'),
       panelToggle('Code Editor', 'codeEditor'),
     ],

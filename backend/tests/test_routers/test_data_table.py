@@ -56,6 +56,45 @@ async def test_query_returns_merged_contract() -> None:
         "values": {"s0:x": 1, "s1:y": 2},
         "source_rows": {"a": 0, "b": 0},
     }]
+    assert body["total_rows"] == 1
+    assert body["unfiltered_total_rows"] == 1
+
+
+async def test_query_defaults_to_250_rows() -> None:
+    store = configured_store({
+        "a": pd.DataFrame({"x": range(300)}, index=[f"r{i}" for i in range(300)]),
+        "b": pd.DataFrame({"y": range(300)}, index=[f"r{i}" for i in range(300)]),
+    })
+    request = payload()
+    request.pop("page_size")
+    async with await client_for(store) as client:
+        response = await client.post("/api/v1/data-table/query", json=request)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["page_size"] == 250
+    assert len(response.json()["rows"]) == 250
+
+
+async def test_query_and_csv_apply_the_same_filters() -> None:
+    store = configured_store({
+        "a": pd.DataFrame({"x": [1, 2, 3]}, index=["r0", "r1", "r2"]),
+        "b": pd.DataFrame({"y": [10, 30, 20]}, index=["r0", "r1", "r2"]),
+    })
+    request = payload()
+    request["filters"] = [{"column": "s1:y", "operator": "gte", "value": 20}]
+    request["sort_by"] = "s1:y"
+    request["sort_order"] = "desc"
+    async with await client_for(store) as client:
+        query_response = await client.post("/api/v1/data-table/query", json=request)
+        request.pop("page")
+        request.pop("page_size")
+        csv_response = await client.post("/api/v1/data-table/csv", json=request)
+
+    assert query_response.status_code == 200, query_response.text
+    assert query_response.json()["total_rows"] == 2
+    assert query_response.json()["unfiltered_total_rows"] == 3
+    assert [row["index"] for row in query_response.json()["rows"]] == ["r1", "r2"]
+    assert csv_response.text == ",x,y\nr1,2,30\nr2,3,20\n"
 
 
 async def test_query_returns_stacked_contract_for_unsafe_alignment() -> None:

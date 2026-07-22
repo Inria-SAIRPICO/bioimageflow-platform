@@ -42,7 +42,7 @@ const graph = makeGraph({
   ],
 })
 
-describe('Data Table source traversal', () => {
+describe('Node Data source traversal', () => {
   it('collects incoming branches to the requested depth and orders them topologically', () => {
     expect(resolveDataTableNodes(graph, ['c'], 2)).toEqual([
       { nodeId: 'a', role: 'context' },

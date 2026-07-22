@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from bioimageflow_server.models.data_table import DataTableSource, DataTableStackedResponse
+from bioimageflow_server.models.data_table import (
+    DataTableFilter,
+    DataTableSource,
+    DataTableStackedResponse,
+)
 from bioimageflow_server.services.data_table_projection import DataTableProjectionService
 
 
@@ -38,6 +42,7 @@ def query(frames: dict[str, pd.DataFrame], sources: list[DataTableSource], **kwa
         page_size=kwargs.get("page_size", 50),
         sort_by=kwargs.get("sort_by"),
         sort_order=kwargs.get("sort_order", "asc"),
+        filters=kwargs.get("filters", []),
     )
     return result, store
 
@@ -143,6 +148,25 @@ def test_colliding_labels_are_qualified_and_sort_happens_before_paging() -> None
     ]
     assert [row.index for row in result.rows] == ["r1", "r2"]
     assert result.rows[0].source_rows == {"a": 1, "b": 1}
+
+
+def test_filters_apply_before_sorting_and_paging_and_report_both_totals() -> None:
+    result, _ = query(
+        {
+            "a": pd.DataFrame({"input": [1, 2, 3, 4]}, index=["r0", "r1", "r2", "r3"]),
+            "b": pd.DataFrame({"score": [10, 40, 20, 30]}, index=["r0", "r1", "r2", "r3"]),
+        },
+        [source("a", "context"), source("b")],
+        page_size=2,
+        sort_by="s1:score",
+        sort_order="desc",
+        filters=[DataTableFilter(column="s1:score", operator="gte", value=20)],
+    )
+
+    assert result.mode == "merged"
+    assert result.total_rows == 3
+    assert result.unfiltered_total_rows == 4
+    assert [row.index for row in result.rows] == ["r1", "r3"]
 
 
 def test_empty_sources_merge_only_when_all_requested_sources_are_empty() -> None:

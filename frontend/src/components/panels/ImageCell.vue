@@ -1,10 +1,40 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { api } from '@/api/client'
 import { useNapariStore } from '@/stores/napari'
 import PathCell from './PathCell.vue'
+
+const intersectionCallbacks = new WeakMap<Element, () => void>()
+const observedElements = new Set<Element>()
+let sharedIntersectionObserver: IntersectionObserver | null = null
+
+function observeIntersection(element: Element, callback: () => void): () => void {
+  if (typeof IntersectionObserver === 'undefined') {
+    callback()
+    return () => undefined
+  }
+  if (sharedIntersectionObserver === null) {
+    sharedIntersectionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) intersectionCallbacks.get(entry.target)?.()
+      }
+    }, { rootMargin: '0px', threshold: 0 })
+  }
+  intersectionCallbacks.set(element, callback)
+  observedElements.add(element)
+  sharedIntersectionObserver.observe(element)
+  return () => {
+    sharedIntersectionObserver?.unobserve(element)
+    intersectionCallbacks.delete(element)
+    observedElements.delete(element)
+    if (observedElements.size === 0) {
+      sharedIntersectionObserver?.disconnect()
+      sharedIntersectionObserver = null
+    }
+  }
+}
 
 const props = withDefaults(defineProps<{
   nodeId: string
@@ -31,6 +61,8 @@ try {
 const napariDisabled = ref(false)
 const napari = useNapariStore()
 const blobUrl = ref<string | null>(null)
+const cellElement = ref<HTMLElement | null>(null)
+const thumbnailActivated = ref(false)
 const thumbnailPending = ref(false)
 const fetchFailed = ref(false)
 
@@ -104,6 +136,7 @@ const avivatorUrl = computed(() => {
 let abort: AbortController | null = null
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 let retryAttempt = 0
+let stopObserving: (() => void) | null = null
 
 function clearTimer() {
   if (retryTimer !== null) {
@@ -178,7 +211,23 @@ function reset() {
   thumbnailPending.value = false
   fetchFailed.value = false
   retryAttempt = 0
-  if (props.thumbnailEnabled) void fetchThumbnail()
+  thumbnailActivated.value = false
+  startObserving()
+}
+
+function activateThumbnail(): void {
+  if (thumbnailActivated.value || !props.thumbnailEnabled) return
+  thumbnailActivated.value = true
+  stopObserving?.()
+  stopObserving = null
+  void fetchThumbnail()
+}
+
+function startObserving(): void {
+  stopObserving?.()
+  stopObserving = null
+  if (!props.thumbnailEnabled || cellElement.value === null) return
+  stopObserving = observeIntersection(cellElement.value, activateThumbnail)
 }
 
 watch(
@@ -188,7 +237,11 @@ watch(
   { immediate: true },
 )
 
+onMounted(startObserving)
+
 onBeforeUnmount(() => {
+  stopObserving?.()
+  stopObserving = null
   clearTimer()
   abort?.abort()
   abort = null
@@ -261,7 +314,7 @@ async function reveal() {
 </script>
 
 <template>
-  <div class="image-cell">
+  <div ref="cellElement" class="image-cell">
     <img
       v-if="shouldShowThumbnail && blobUrl !== null && !fetchFailed"
       class="image-cell__thumb"
@@ -271,17 +324,24 @@ async function reveal() {
       alt=""
     >
     <div
-      v-else-if="shouldShowThumbnail && thumbnailPending"
+      v-else-if="shouldShowThumbnail && thumbnailActivated && thumbnailPending"
       class="image-cell__pending"
       data-testid="image-thumbnail"
       aria-label="thumbnail generating"
       :style="thumbnailStyle"
     />
     <div
-      v-else-if="shouldShowThumbnail"
+      v-else-if="shouldShowThumbnail && thumbnailActivated"
       class="image-cell__unavailable"
       data-testid="image-thumbnail"
       aria-label="thumbnail unavailable"
+      :style="thumbnailStyle"
+    />
+    <div
+      v-else-if="shouldShowThumbnail"
+      class="image-cell__deferred"
+      data-testid="image-thumbnail"
+      aria-label="thumbnail not loaded"
       :style="thumbnailStyle"
     />
     <PathCell
@@ -335,7 +395,8 @@ async function reveal() {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-width: 450px;
+  width: 100%;
+  min-width: 0;
 }
 
 .image-cell__thumb,
@@ -343,6 +404,12 @@ async function reveal() {
 .image-cell__unavailable {
   object-fit: contain;
   border: 1px solid var(--bif-border-strong);
+  background: var(--bif-surface-hover);
+  flex: 0 0 auto;
+}
+
+.image-cell__deferred {
+  border: 1px solid var(--bif-border-muted);
   background: var(--bif-surface-hover);
   flex: 0 0 auto;
 }
@@ -388,6 +455,9 @@ async function reveal() {
 
 .image-cell__actions {
   display: flex;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  max-width: 4.5rem;
   gap: 0.125rem;
 }
 </style>

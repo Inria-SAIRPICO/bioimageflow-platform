@@ -90,6 +90,8 @@ workflow onto the canvas creates a workflow node containing the saved recursive 
 
 The Storage tab in Settings shows whether the two bundled demo workflows are installed, missing, partial, or blocked by canonical-path conflicts. **Install demos** adds only missing recognized templates. **Remove demos** uses the normal generation-aware workflow deletion path, preserves unrelated `Demo` children, and removes the `Demo` folder only when it becomes empty. The status is refreshed when Settings opens and when the workflow tree changes; no special filesystem watcher is used.
 
+The **Node Data** bottom panel inspects selected-node DataFrames with server-side pagination, sorting, filtering, CSV export, resizable columns, and viewport-triggered image thumbnails. Preferences → Display sets the default rows per page to one of 25, 50, 100, 250, or 500; the initial default is 250.
+
 The Tools panel opens source through the editor API that keeps VS Code or
 code-server rooted at the workspace project and focuses the selected tool file.
 

@@ -13,7 +13,6 @@ vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
 }))
 
-const mockedGet = vi.mocked(api.get)
 const mockedPost = vi.mocked(api.post)
 
 function deferred<T>() {
@@ -33,6 +32,7 @@ function response(path: string, page: number): NodeDataResponse {
     rows: [{ path }],
     absolute_rows: [page * 50],
     total_rows: 100,
+    unfiltered_total_rows: 100,
     page,
     page_size: 50,
     column_types: { path: 'Path' },
@@ -51,11 +51,11 @@ describe('dataTable store canvas ownership', () => {
   beforeEach(() => {
     canvasSessionRegistry.dispose()
     setActivePinia(createPinia())
-    mockedGet.mockReset()
     mockedPost.mockReset()
   })
 
   afterEach(() => {
+    useDataTableStore().setPreferredPageSize(250)
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
@@ -66,7 +66,7 @@ describe('dataTable store canvas ownership', () => {
     const store = useDataTableStore()
     const requestA = deferred<{ data: NodeDataResponse }>()
     const requestB = deferred<{ data: NodeDataResponse }>()
-    mockedGet
+    mockedPost
       .mockReturnValueOnce(requestA.promise as any)
       .mockReturnValueOnce(requestB.promise as any)
 
@@ -96,7 +96,7 @@ describe('dataTable store canvas ownership', () => {
     expect(store.getCanvasNodeData(canvasB, 'shared')).toBeUndefined()
     expect(store.getCanvasNodeData(canvasA, 'shared')?.rows[0]?.path).toBe('/a.csv')
 
-    mockedGet.mockRejectedValueOnce({
+    mockedPost.mockRejectedValueOnce({
       response: { status: 409, data: { detail: 'B is preparing' } },
     })
     await store.fetchCanvasNodeData(canvasB, 'shared', {
@@ -117,7 +117,7 @@ describe('dataTable store canvas ownership', () => {
     const requestB = deferred<{ data: NodeDataResponse }>()
     const requestA2 = deferred<{ data: NodeDataResponse }>()
     const signals: AbortSignal[] = []
-    mockedGet.mockImplementation((_url, config) => {
+    mockedPost.mockImplementation((_url, _body, config) => {
       signals.push(config!.signal as AbortSignal)
       if (signals.length === 1) return requestA1.promise as any
       if (signals.length === 2) return requestB.promise as any
@@ -150,8 +150,8 @@ describe('dataTable store canvas ownership', () => {
     const requestB = deferred<{ data: NodeDataResponse }>()
     let requestBSignal: AbortSignal | undefined
     let attemptsA = 0
-    mockedGet.mockImplementation((_url, config) => {
-      const workflowName = config?.params?.workflow_name
+    mockedPost.mockImplementation((_url, body, config) => {
+      const workflowName = (body as { workflow_name?: string })?.workflow_name
       if (workflowName === 'a') {
         attemptsA += 1
         if (attemptsA === 1) {
@@ -189,15 +189,16 @@ describe('dataTable store canvas ownership', () => {
     expect(store.nodeDataCache).toEqual({})
     expect(store.getPageState('shared')).toEqual({
       page: 0,
-      pageSize: 50,
+      pageSize: 250,
       sortBy: null,
       sortOrder: 'asc',
+      filters: [],
     })
     await store.fetchNodeData('shared')
-    expect(mockedGet).not.toHaveBeenCalled()
+    expect(mockedPost).not.toHaveBeenCalled()
 
     const requestA = deferred<{ data: NodeDataResponse }>()
-    mockedGet
+    mockedPost
       .mockReturnValueOnce(requestA.promise as any)
       .mockResolvedValueOnce({ data: response('/b.csv', 0) } as any)
     canvasSessionRegistry.activate(canvasA)
@@ -219,20 +220,20 @@ describe('dataTable store canvas ownership', () => {
   it('does not recreate a released canvas context from a delayed fixed-canvas action', async () => {
     const [canvasA] = registerCanvases()
     const store = useDataTableStore()
-    mockedGet.mockResolvedValue({ data: response('/a.csv', 0) } as any)
+    mockedPost.mockResolvedValue({ data: response('/a.csv', 0) } as any)
 
     await store.fetchCanvasNodeData(canvasA, 'shared', { workflowName: 'a' })
     store.releaseCanvas(canvasA)
     await store.fetchCanvasNodeData(canvasA, 'shared', { workflowName: 'a' })
 
-    expect(mockedGet).toHaveBeenCalledTimes(1)
+    expect(mockedPost).toHaveBeenCalledTimes(1)
     expect(store.getCanvasNodeData(canvasA, 'shared')).toBeUndefined()
 
     store.registerCanvas(canvasA)
-    mockedGet.mockResolvedValueOnce({ data: response('/remounted-a.csv', 0) } as any)
+    mockedPost.mockResolvedValueOnce({ data: response('/remounted-a.csv', 0) } as any)
     await store.fetchCanvasNodeData(canvasA, 'shared', { workflowName: 'a' })
 
-    expect(mockedGet).toHaveBeenCalledTimes(2)
+    expect(mockedPost).toHaveBeenCalledTimes(2)
     expect(store.getCanvasNodeData(canvasA, 'shared')?.rows[0]?.path).toBe(
       '/remounted-a.csv',
     )
@@ -251,6 +252,26 @@ describe('dataTable store canvas ownership', () => {
 
     canvasSessionRegistry.activate(canvasA)
     expect(store.upstreamDepth).toBe(3)
+  })
+
+  it('uses the preferred page size and sends node filters through the typed query', async () => {
+    const [canvasA] = registerCanvases()
+    canvasSessionRegistry.activate(canvasA)
+    const store = useDataTableStore()
+    store.setPreferredPageSize(100)
+    mockedPost.mockResolvedValue({ data: response('/filtered.csv', 0) } as any)
+
+    await store.fetchNodeData('node', { workflowName: 'a' })
+    await store.setFilters('node', [
+      { column: 'path', operator: 'contains', value: 'filtered' },
+    ], { workflowName: 'a' })
+
+    expect(mockedPost.mock.calls[0][0]).toBe('/api/v1/nodes/node/data/query')
+    expect(mockedPost.mock.calls[0][1]).toMatchObject({ page_size: 100, filters: [] })
+    expect(mockedPost.mock.calls[1][1]).toMatchObject({
+      page: 0,
+      filters: [{ column: 'path', operator: 'contains', value: 'filtered' }],
+    })
   })
 
   it('cancels stale consolidated queries and ignores their responses', async () => {
@@ -309,6 +330,7 @@ describe('dataTable store canvas ownership', () => {
       sources: [{ node_id: 'node', role: 'anchor', label: 'Node', column_aliases: {} }],
     })
     await store.setProjectionSort('s0:value', 'desc')
+    await store.setProjectionFilters([{ column: 's0:value', operator: 'gte', value: 2 }])
     await store.setProjectionPage(2)
 
     expect(mockedPost.mock.calls[1][1]).toMatchObject({
@@ -317,9 +339,14 @@ describe('dataTable store canvas ownership', () => {
       sort_order: 'desc',
     })
     expect(mockedPost.mock.calls[2][1]).toMatchObject({
+      page: 0,
+      filters: [{ column: 's0:value', operator: 'gte', value: 2 }],
+    })
+    expect(mockedPost.mock.calls[3][1]).toMatchObject({
       page: 2,
       sort_by: 's0:value',
       sort_order: 'desc',
+      filters: [{ column: 's0:value', operator: 'gte', value: 2 }],
     })
   })
 

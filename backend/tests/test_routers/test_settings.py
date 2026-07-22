@@ -94,6 +94,7 @@ class TestGetSettings:
         # Wrapper contains the Settings fields plus the resolved-path helpers.
         assert body["deployment_mode"] == "desktop"
         assert body["execution_engine"] == "sequential"
+        assert body["node_data_page_size"] == 250
         assert "cache_max_executions" not in body
         assert "cache_max_age" not in body
         assert body["external_editor"] is None
@@ -155,6 +156,18 @@ class TestPatchSettings:
             "/api/v1/settings", json={"execution_engine": "dask"}
         )
         assert response.status_code == 422
+
+    async def test_patch_node_data_page_size(self, settings_client: httpx.AsyncClient) -> None:
+        response = await settings_client.patch(
+            "/api/v1/settings", json={"node_data_page_size": 100}
+        )
+        assert response.status_code == 200
+        assert response.json()["node_data_page_size"] == 100
+
+        invalid = await settings_client.patch(
+            "/api/v1/settings", json={"node_data_page_size": 75}
+        )
+        assert invalid.status_code == 422
 
     async def test_patch_unknown_key(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch("/api/v1/settings", json={"foo": 1})
