@@ -194,6 +194,7 @@ Then restart the backend.
 ## Documentation
 
 Published documentation is available at <https://bioimageflow-platform.readthedocs.io/latest/>.
+Start with the [User Guide](https://bioimageflow-platform.readthedocs.io/latest/user/) to install the launcher, build and run workflows, inspect results, and configure the desktop application.
 The documentation source is in `docs/` and can be built locally with the same warnings-as-errors policy used by CI and Read the Docs:
 
 ```bash
