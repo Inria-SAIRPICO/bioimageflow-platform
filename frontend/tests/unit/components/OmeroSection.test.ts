@@ -80,10 +80,58 @@ describe('OmeroSection', () => {
     confirmRequire.mockClear()
   })
 
+  it('shows an empty state before any instances are configured', () => {
+    const wrapper = mountSection()
+
+    expect(wrapper.get('[data-testid="omero-empty-state"]').text()).toBe(
+      'No OMERO instances configured.',
+    )
+    expect(wrapper.find('[role="table"]').exists()).toBe(false)
+  })
+
+  it('renders labelled instance cards with derived headings and visible actions', () => {
+    const wrapper = mountSection([
+      {
+        name: 'Prod',
+        host: 'omero.example.com',
+        port: 4064,
+        username: 'admin',
+        password_stored: true,
+      },
+      {
+        name: null,
+        host: 'test.example.com',
+        port: 4064,
+        username: 'tester',
+        password_stored: false,
+      },
+    ])
+
+    const cards = wrapper.findAll('[role="listitem"]')
+    expect(cards).toHaveLength(2)
+    expect(cards[0].get('h3').text()).toBe('Prod')
+    expect(cards[1].get('h3').text()).toBe('test.example.com:tester')
+    expect(cards[0].findAll('label').map((label) => label.text())).toEqual([
+      'Name',
+      'Host',
+      'Port',
+      'Username',
+      'Password',
+    ])
+    expect(cards[0].get('button[aria-label="Save OMERO instance"]').text()).toBe('Save')
+    expect(cards[0].get('button[aria-label="Duplicate OMERO instance"]').text()).toBe(
+      'Duplicate',
+    )
+    expect(cards[0].get('button[aria-label="Remove OMERO instance"]').text()).toBe(
+      'Remove',
+    )
+  })
+
   it('adds an instance and emits transient password only on save', async () => {
     const wrapper = mountSection()
 
     await wrapper.get('[data-testid="omero-add-button"]').trigger('click')
+    expect(wrapper.get('[data-testid="omero-card-0"] h3').text()).toBe('OMERO instance 1')
     await wrapper.get('input[aria-label="Host"]').setValue(' omero.example.com ')
     await wrapper.get('input[aria-label="Username"]').setValue(' admin ')
     await wrapper.get('input[aria-label="Password"]').setValue('secret')

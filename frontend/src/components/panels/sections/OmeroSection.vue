@@ -56,6 +56,15 @@ function displayName(row: LocalOmeroInstance): string {
   return `${row.host.trim()}:${row.username.trim()}`
 }
 
+function cardTitle(row: LocalOmeroInstance, index: number): string {
+  const explicit = row.name.trim()
+  if (explicit) return explicit
+  const host = row.host.trim()
+  const username = row.username.trim()
+  if (host && username) return `${host}:${username}`
+  return `OMERO instance ${index + 1}`
+}
+
 function validateRows(): boolean {
   const names = new Set<string>()
   for (const row of rows.value) {
@@ -142,72 +151,104 @@ function removeRow(index: number) {
 
 <template>
   <div class="settings-section" data-testid="omero-section">
-    <div class="omero-table" role="table" aria-label="OMERO instances">
-      <div class="omero-row omero-header" role="row">
-        <span>Name</span>
-        <span>Host</span>
-        <span>Port</span>
-        <span>Username</span>
-        <span>Password</span>
-        <span>Actions</span>
-      </div>
-      <div
+    <p v-if="rows.length === 0" class="empty-state" data-testid="omero-empty-state">
+      No OMERO instances configured.
+    </p>
+
+    <div v-else class="omero-list" role="list" aria-label="OMERO instances">
+      <section
         v-for="(row, index) in rows"
         :key="index"
-        class="omero-row"
-        role="row"
-        :data-testid="`omero-row-${index}`"
+        class="omero-card"
+        role="listitem"
+        :aria-labelledby="`omero-card-title-${index}`"
+        :data-testid="`omero-card-${index}`"
       >
-        <InputText v-model="row.name" aria-label="Name" />
-        <InputText v-model="row.host" aria-label="Host" />
-        <InputNumber
-          v-model="row.port"
-          aria-label="Port"
-          :min="1"
-          :max="65535"
-          :use-grouping="false"
-        />
-        <InputText v-model="row.username" aria-label="Username" />
-        <div class="password-cell">
-          <Password
-            v-model="row.password"
-            aria-label="Password"
-            :feedback="false"
-            toggle-mask
-          />
-          <Tag
-            :severity="row.password_stored ? 'success' : 'secondary'"
-            :value="row.password_stored ? 'Stored' : 'Not stored'"
-          />
+        <h3 :id="`omero-card-title-${index}`" class="omero-card-title">
+          {{ cardTitle(row, index) }}
+        </h3>
+
+        <div class="omero-fields">
+          <div class="omero-field">
+            <label :for="`omero-name-${index}`">Name</label>
+            <InputText
+              :id="`omero-name-${index}`"
+              v-model="row.name"
+              aria-label="Name"
+            />
+          </div>
+          <div class="omero-field">
+            <label :for="`omero-host-${index}`">Host</label>
+            <InputText
+              :id="`omero-host-${index}`"
+              v-model="row.host"
+              aria-label="Host"
+            />
+          </div>
+          <div class="omero-field">
+            <label :for="`omero-port-${index}`">Port</label>
+            <InputNumber
+              :input-id="`omero-port-${index}`"
+              v-model="row.port"
+              aria-label="Port"
+              :min="1"
+              :max="65535"
+              :use-grouping="false"
+            />
+          </div>
+          <div class="omero-field">
+            <label :for="`omero-username-${index}`">Username</label>
+            <InputText
+              :id="`omero-username-${index}`"
+              v-model="row.username"
+              aria-label="Username"
+            />
+          </div>
+          <div class="omero-field password-field">
+            <label :for="`omero-password-${index}`">Password</label>
+            <div class="password-control">
+              <Password
+                :input-id="`omero-password-${index}`"
+                v-model="row.password"
+                aria-label="Password"
+                :feedback="false"
+                toggle-mask
+              />
+              <Tag
+                :severity="row.password_stored ? 'success' : 'secondary'"
+                :value="row.password_stored ? 'Stored' : 'Not stored'"
+              />
+            </div>
+          </div>
         </div>
+
         <div class="actions-cell">
           <Button
+            label="Save"
             icon="pi pi-save"
-            text
-            rounded
             aria-label="Save OMERO instance"
             title="Save OMERO instance"
             @click="emitRows(index)"
           />
           <Button
+            label="Duplicate"
             icon="pi pi-copy"
-            text
-            rounded
+            severity="secondary"
             aria-label="Duplicate OMERO instance"
             title="Duplicate OMERO instance"
             @click="duplicateRow(index)"
           />
           <Button
+            label="Remove"
             icon="pi pi-trash"
-            text
-            rounded
             severity="danger"
+            outlined
             aria-label="Remove OMERO instance"
             title="Remove OMERO instance"
             @click="removeRow(index)"
           />
         </div>
-      </div>
+      </section>
     </div>
 
     <p v-if="validationError" class="error-text" data-testid="omero-validation-error">
@@ -230,36 +271,84 @@ function removeRow(index: number) {
   flex-direction: column;
   gap: 1rem;
 }
-.omero-table {
+.omero-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  overflow-x: auto;
+  gap: 1rem;
 }
-.omero-row {
-  display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.3fr) 6rem minmax(8rem, 1fr) minmax(12rem, 1.2fr) auto;
-  gap: 0.5rem;
-  align-items: center;
-  min-width: 760px;
+.omero-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--p-content-border-color, #d1d5db);
+  border-radius: var(--p-border-radius-md, 6px);
+  background: var(--p-content-background, #fff);
 }
-.omero-header {
-  color: var(--p-text-muted-color, #777);
-  font-size: 0.85rem;
+.omero-card-title {
+  margin: 0 0 1rem;
+  font-size: 1rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
-.password-cell,
+.omero-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+.omero-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.omero-field label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.omero-field :deep(.p-inputtext),
+.omero-field :deep(.p-inputnumber),
+.omero-field :deep(.p-password) {
+  width: 100%;
+  min-width: 0;
+}
+.password-field {
+  grid-column: 1 / -1;
+}
+.password-control,
 .actions-cell {
   display: flex;
   align-items: center;
   gap: 0.4rem;
 }
+.password-control {
+  min-width: 0;
+}
+.password-control :deep(.p-password) {
+  flex: 1 1 auto;
+}
 .actions-cell {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--p-content-border-color, #d1d5db);
+  flex-wrap: wrap;
   justify-content: flex-end;
+}
+.empty-state {
+  margin: 0;
+  color: var(--p-text-muted-color, #777);
 }
 .error-text {
   color: var(--p-red-600, #dc2626);
   margin: 0;
   font-size: 0.9rem;
+}
+
+@media (max-width: 520px) {
+  .omero-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actions-cell {
+    justify-content: flex-start;
+  }
 }
 </style>

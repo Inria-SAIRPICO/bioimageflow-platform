@@ -259,6 +259,15 @@ The v2 API includes canonical workflow lifecycle routes; root workflow-draft rou
 OpenAPI is the sole frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.
 
+### 14.1 Platform-Owned Integration Settings
+
+Application-wide integration settings are platform-owned and are not contributed by installed tool packages through schemas, HTML, Vue components, or other executable frontend extensions.
+An integration that needs global configuration is added to the platform core with its storage, validation, secret handling, UI, tests, and compatibility behavior.
+
+OMERO remains a platform-owned integration consumed by dedicated tool packages.
+The OMERO settings UI renders each named server instance as a separate responsive form card with individually labelled fields and card-local Save, Duplicate, and Remove actions.
+Cards use multiple field columns when space permits, collapse to one column in narrow windows, and do not require horizontal scrolling to reach fields or actions.
+
 ## 15. Keyboard And Context Actions
 
 Ctrl/Cmd+S saves the active persistence context.

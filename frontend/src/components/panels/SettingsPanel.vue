@@ -110,7 +110,7 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
     v-model:visible="visible"
     modal
     header="Preferences"
-    :style="{ width: '640px' }"
+    :style="{ width: 'min(640px, calc(100vw - 2rem))' }"
     data-testid="settings-panel"
   >
     <Tabs value="external" data-testid="settings-tabs">

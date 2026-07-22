@@ -58,4 +58,49 @@ test.describe('Settings Panel', () => {
     ).toHaveCount(0)
     await expect(dialog.locator('[data-testid="cache-max-age-input"]')).toHaveCount(0)
   })
+
+  test('OMERO instance cards keep fields and actions visible without horizontal scrolling', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const settingsLoaded = page.waitForResponse((response) =>
+      response.url().endsWith('/api/v1/settings') && response.request().method() === 'GET',
+    )
+    await openSettings(page)
+    await settingsLoaded
+    const dialog = page.locator('[data-testid="settings-panel"]')
+
+    await dialog.getByText('OMERO', { exact: true }).click()
+    await dialog.locator('[data-testid="omero-add-button"]').click()
+
+    const section = dialog.locator('[data-testid="omero-section"]')
+    const card = section.locator('[data-testid="omero-card-0"]')
+    await expect(card).toBeVisible()
+    for (const label of ['Name', 'Host', 'Port', 'Username', 'Password']) {
+      await expect(card.getByLabel(label, { exact: true })).toBeVisible()
+    }
+    for (const action of [
+      'Save OMERO instance',
+      'Duplicate OMERO instance',
+      'Remove OMERO instance',
+    ]) {
+      await expect(card.getByRole('button', { name: action })).toBeVisible()
+    }
+    expect(await section.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    )
+
+    await page.setViewportSize({ width: 480, height: 800 })
+    await expect(dialog).toBeVisible()
+    await expect(card).toBeVisible()
+    expect(await section.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    )
+
+    const nameBox = await card.getByLabel('Name', { exact: true }).boundingBox()
+    const hostBox = await card.getByLabel('Host', { exact: true }).boundingBox()
+    expect(nameBox).not.toBeNull()
+    expect(hostBox).not.toBeNull()
+    expect(hostBox!.y).toBeGreaterThan(nameBox!.y)
+  })
 })
