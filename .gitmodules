@@ -1,0 +1,3 @@
+[submodule "signing"]
+	path = signing
+	url = git@gitlab-int.inria.fr:amasson/bioimageit.git
