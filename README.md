@@ -189,8 +189,8 @@ export GITLAB_TOKEN="<token>"
 
 uv run python scripts/submit_launcher.py \
   --file ../backend/dist/BioImageFlow-launcher-v0.1.13-macos-arm64.zip \
-  --project-id "<signing-project-id>" \
-  --ref "<signing-project-default-branch>" \
+  --project-id "<signing-project-id_(474)>" \
+  --ref "<signing-project-default-branch_(main)>" \
   --platform macos \
   --release-version v0.1.13
 ```
@@ -237,7 +237,7 @@ Then restart the backend.
 ## Documentation
 
 Published documentation is available at <https://bioimageflow-platform.readthedocs.io/latest/>.
-Start with the [User Guide](https://bioimageflow-platform.readthedocs.io/latest/user/) to install the launcher, build and run workflows, inspect results, and configure the desktop application.
+Start with the [User Guide](https://bioimageflow-platform.readthedocs.io/latest/user/) to download the launcher, build and run workflows, inspect results, and configure the desktop application.
 The documentation source is in `docs/` and can be built locally with the same warnings-as-errors policy used by CI and Read the Docs:
 
 ```bash
