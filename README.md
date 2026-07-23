@@ -170,6 +170,44 @@ See [`docs/testing.md`](docs/testing.md) for exact lane contents, dependency set
 BioImageFlow Platform is distributed with [`wetlands-launcher`](https://github.com/arthursw/launcher).
 To configure release signing, build and upload platform-specific launcher packages, and create the application archive, follow the [`wetlands-launcher` packaging guide](https://github.com/arthursw/launcher/blob/main/docs/packaging.md).
 
+Build and package the unsigned launcher on each target operating system from `backend/`:
+
+```bash
+cd backend
+uv sync --group dev
+uv run launcher build
+uv run launcher build package --version v0.1.13
+```
+
+Do not run `launcher build upload` on this unsigned package.
+For macOS and Windows, submit it to the Inria signing pipeline from the [`signing/`](signing/README.md) submodule.
+The command waits for signing and, on macOS, notarization to finish, verifies the result, and downloads it to `signing/signed/`:
+
+```bash
+cd ../signing
+export GITLAB_TOKEN="<token>"
+
+uv run python scripts/submit_launcher.py \
+  --file ../backend/dist/BioImageFlow-launcher-v0.1.13-macos-arm64.zip \
+  --project-id "<signing-project-id>" \
+  --ref "<signing-project-default-branch>" \
+  --platform macos \
+  --release-version v0.1.13
+```
+
+Use `--platform windows` and the Windows ZIP filename when building on Windows.
+The target GitHub release must already exist.
+After authenticating with `gh auth login`, upload only the downloaded signed ZIP:
+
+```bash
+uv run python scripts/publish_release.py \
+  --repository Inria-SAIRPICO/bioimageflow-platform \
+  --version v0.1.13 \
+  --archive signed/BioImageFlow-launcher-v0.1.13-macos-arm64.zip
+```
+
+Linux launcher ZIPs bypass the Inria signing pipeline and can be uploaded directly because this operating-system code-signing service applies only to macOS and Windows.
+
 ## Development
 
 ### Use the local core package in Wetlands workers
