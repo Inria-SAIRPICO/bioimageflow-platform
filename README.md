@@ -199,12 +199,19 @@ uv run python scripts/submit_launcher.py \
 ```
 
 Use `--platform windows` and the Windows ZIP filename when building on Windows.
-The target GitHub release must already exist.
-After authenticating with `gh auth login`, return to `backend/` and use the launcher command to upload the downloaded signed ZIP.
-This records its download URL in `packaging/launcher/distribution.yml`:
+After authenticating with `gh auth login`, return to `backend/` and create the GitHub release before uploading any assets:
 
 ```bash
 cd ../backend
+uv run launcher release create \
+  v0.1.13 \
+  --notes-text "<release notes>"
+```
+
+Then use the launcher command to upload the downloaded signed ZIP.
+This records its download URL in `packaging/launcher/distribution.yml`:
+
+```bash
 uv run launcher build upload \
   --version v0.1.13 \
   --asset ../signing/signed/BioImageFlow-launcher-v0.1.13-macos-arm64.zip
