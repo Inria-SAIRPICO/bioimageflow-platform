@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+import sys
 import threading
 import time
 from urllib.parse import urlparse
@@ -14,6 +16,87 @@ import webview
 from bioimageflow_server.logging_config import resolve_log_config_path
 
 logger = logging.getLogger(__name__)
+
+_DESKTOP_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+_LINUX_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.png"
+_MACOS_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.icns"
+_WINDOWS_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.ico"
+
+
+def _native_app_icon_path(platform: str | None = None) -> Path:
+    """Return the platform-native desktop icon bundled with the backend."""
+    platform = platform or sys.platform
+    if platform == "darwin":
+        return _MACOS_APP_ICON
+    if platform == "win32":
+        return _WINDOWS_APP_ICON
+    return _LINUX_APP_ICON
+
+
+def _configure_native_window_icon(window: webview.Window) -> None:
+    """Apply native icons where pywebview cannot use ``start(icon=...)``.
+
+    pywebview supports its public icon argument on GTK and Qt. BioImageFlow is
+    installed from a Python release archive instead of a frozen executable, so
+    macOS and Windows need their native application/window APIs at runtime.
+    """
+    if sys.platform not in {"darwin", "win32"}:
+        return
+
+    icon_path = _native_app_icon_path()
+
+    def apply_icon() -> None:
+        try:
+            if sys.platform == "darwin":
+                _set_macos_app_icon(icon_path)
+            else:
+                _set_windows_window_icon(window, icon_path)
+        except Exception:
+            logger.warning(
+                "Could not set the native desktop icon from %s",
+                icon_path,
+                exc_info=True,
+            )
+
+    window.events.shown += apply_icon
+
+
+def _set_macos_app_icon(icon_path: Path) -> None:
+    """Set the macOS Dock icon on the Cocoa main thread."""
+    from AppKit import NSApplication, NSImage  # type: ignore[import-not-found]
+
+    image = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+    if image is None:
+        raise RuntimeError(f"Could not load macOS application icon: {icon_path}")
+
+    application = NSApplication.sharedApplication()
+    application.performSelectorOnMainThread_withObject_waitUntilDone_(
+        "setApplicationIconImage:",
+        image,
+        True,
+    )
+
+
+def _set_windows_window_icon(window: webview.Window, icon_path: Path) -> None:
+    """Set a WinForms window icon through pywebview's native window handle."""
+    from System import Action  # type: ignore[import-not-found]
+    from System.Drawing import Icon  # type: ignore[import-not-found]
+
+    native_window = window.native
+    if native_window is None:
+        raise RuntimeError("pywebview did not expose its native Windows window")
+
+    def apply_icon() -> None:
+        source_icon = Icon(str(icon_path))
+        try:
+            native_window.Icon = source_icon.Clone()
+        finally:
+            source_icon.Dispose()
+
+    if native_window.InvokeRequired:
+        native_window.Invoke(Action(apply_icon))
+    else:
+        apply_icon()
 
 
 class DesktopApi:
@@ -156,6 +239,7 @@ class DesktopApi:
         if window is None:
             return False
 
+        _configure_native_window_icon(window)
         self._code_editor_window = window
 
         def on_closed(*_args: object) -> None:
@@ -236,8 +320,6 @@ def start_desktop(
         log_config: Optional Uvicorn logging config path. Defaults to the
             packaged BioImageFlow logging config.
     """
-    from pathlib import Path
-
     from bioimageflow_server.app import create_app
     from bioimageflow_server.models.tools import AppConfig
 
@@ -293,6 +375,7 @@ def start_desktop(
         js_api=api,
     )
     assert window is not None, "webview.create_window returned None"
+    _configure_native_window_icon(window)
     api.set_window(window)
 
     def on_main_window_closing() -> bool:
@@ -303,7 +386,7 @@ def start_desktop(
 
     try:
         print("BioImageFlow Desktop Initialized")
-        webview.start(debug=True)
+        webview.start(debug=True, icon=str(_LINUX_APP_ICON))
     finally:
         api.close_code_editor_window()
         # Window has been closed (or start() raised) -- run shutdown sequence

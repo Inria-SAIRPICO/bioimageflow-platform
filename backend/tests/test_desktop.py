@@ -34,6 +34,71 @@ class _MockEvent:
         return self
 
 
+@pytest.mark.parametrize(
+    ("platform", "filename"),
+    [
+        ("linux", "app_icon.png"),
+        ("darwin", "app_icon.icns"),
+        ("win32", "app_icon.ico"),
+    ],
+)
+def test_native_app_icon_path_uses_platform_format(platform, filename):
+    from bioimageflow_server.desktop import _native_app_icon_path
+
+    icon_path = _native_app_icon_path(platform)
+
+    assert icon_path.name == filename
+    assert icon_path.is_file()
+
+
+@patch("bioimageflow_server.desktop._set_macos_app_icon")
+def test_macos_app_icon_is_applied_when_window_is_shown(mock_set_icon):
+    from bioimageflow_server.desktop import (
+        _configure_native_window_icon,
+        _native_app_icon_path,
+    )
+
+    window = MagicMock()
+    window.events.shown = _MockEvent()
+
+    with patch("bioimageflow_server.desktop.sys.platform", "darwin"):
+        _configure_native_window_icon(window)
+        assert len(window.events.shown.handlers) == 1
+        window.events.shown.handlers[0]()
+
+    mock_set_icon.assert_called_once_with(_native_app_icon_path("darwin"))
+
+
+@patch("bioimageflow_server.desktop._set_windows_window_icon")
+def test_windows_app_icon_is_applied_when_window_is_shown(mock_set_icon):
+    from bioimageflow_server.desktop import (
+        _configure_native_window_icon,
+        _native_app_icon_path,
+    )
+
+    window = MagicMock()
+    window.events.shown = _MockEvent()
+
+    with patch("bioimageflow_server.desktop.sys.platform", "win32"):
+        _configure_native_window_icon(window)
+        assert len(window.events.shown.handlers) == 1
+        window.events.shown.handlers[0]()
+
+    mock_set_icon.assert_called_once_with(window, _native_app_icon_path("win32"))
+
+
+def test_linux_app_icon_uses_pywebview_without_native_callback():
+    from bioimageflow_server.desktop import _configure_native_window_icon
+
+    window = MagicMock()
+    window.events.shown = _MockEvent()
+
+    with patch("bioimageflow_server.desktop.sys.platform", "linux"):
+        _configure_native_window_icon(window)
+
+    assert window.events.shown.handlers == []
+
+
 @patch("bioimageflow_server.desktop.webview")
 @patch("bioimageflow_server.desktop.uvicorn")
 @patch("bioimageflow_server.app.create_app")
@@ -147,7 +212,12 @@ def test_webview_window_created_with_correct_url(
         confirm_close=True,
         js_api=ANY,
     )
-    mock_webview.start.assert_called_once()
+    from bioimageflow_server.desktop import _LINUX_APP_ICON
+
+    mock_webview.start.assert_called_once_with(
+        debug=True,
+        icon=str(_LINUX_APP_ICON),
+    )
 
 
 @patch("bioimageflow_server.desktop.webview")
