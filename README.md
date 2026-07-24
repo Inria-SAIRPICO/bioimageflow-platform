@@ -200,16 +200,34 @@ uv run python scripts/submit_launcher.py \
 
 Use `--platform windows` and the Windows ZIP filename when building on Windows.
 The target GitHub release must already exist.
-After authenticating with `gh auth login`, upload only the downloaded signed ZIP:
+After authenticating with `gh auth login`, return to `backend/` and use the launcher command to upload the downloaded signed ZIP.
+This records its download URL in `packaging/launcher/distribution.yml`:
 
 ```bash
-uv run python scripts/publish_release.py \
-  --repository Inria-SAIRPICO/bioimageflow-platform \
+cd ../backend
+uv run launcher build upload \
   --version v0.1.13 \
-  --archive signed/BioImageFlow-launcher-v0.1.13-macos-arm64.zip
+  --asset ../signing/signed/BioImageFlow-launcher-v0.1.13-macos-arm64.zip
+
+uv run launcher release update-notes \
+  v0.1.13 \
+  --notes-text "<release notes>"
 ```
 
-Linux launcher ZIPs bypass the Inria signing pipeline and can be uploaded directly because this operating-system code-signing service applies only to macOS and Windows.
+Commit and push the updated `backend/packaging/launcher/distribution.yml` before uploading another platform package.
+Linux launcher ZIPs bypass the Inria signing pipeline and can be passed directly to `launcher build upload` because this operating-system code-signing service applies only to macOS and Windows.
+
+The platform-specific launcher ZIP is separate from the application update archive.
+Create, sign, verify, and upload the application update assets with the launcher release commands:
+
+```bash
+uv run launcher release archive v0.1.13
+uv run launcher release sign
+uv run launcher release verify
+uv run launcher release upload
+```
+
+The final command uploads the application archive together with the required `launcher-manifest.yml` and `launcher-manifest.yml.sig`.
 
 ## Development
 

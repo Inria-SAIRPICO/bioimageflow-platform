@@ -137,6 +137,21 @@ A workflow root that does not exist when it is first initialized receives the ve
 
 The pywebview JS bridge (`DesktopApi`) exposes native file/folder pickers, a save dialog, a `reveal_path` call, and a `set_title` call to the frontend as `window.pywebview.api.*`. See `frontend/src/utils/nativeDialogs.ts` for the typed wrappers.
 
+## Launcher packaging
+
+The launcher is built from this backend directory because its configuration and distribution metadata are under `packaging/launcher/`.
+Use PyInstaller in the same uv environment as the launcher:
+
+```bash
+uv sync --group dev
+uv run --with pyinstaller launcher build
+uv run launcher build package --version v0.1.13
+```
+
+Do not upload an unsigned macOS or Windows package.
+Follow the root [packaging release workflow](../README.md#packaging-releases) to submit it to the signing service, retrieve the signed ZIP, and pass that ZIP to `launcher build upload`.
+The launcher workflow owns the public release upload, distribution metadata, release notes, and the signed application release manifest.
+
 ## Testing
 
 ```bash
