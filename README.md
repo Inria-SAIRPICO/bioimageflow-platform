@@ -175,9 +175,12 @@ Build and package the unsigned launcher on each target operating system from `ba
 ```bash
 cd backend
 uv sync --group dev
-uv run launcher build
+uv run --with pyinstaller launcher build
 uv run launcher build package --version v0.1.13
 ```
+
+PyInstaller must be installed in the same `uv run` environment as the launcher.
+Using a `pyinstaller` executable from another Python environment can produce an app that fails at startup because the `launcher` package was not bundled.
 
 Do not run `launcher build upload` on this unsigned package.
 For macOS and Windows, submit it to the Inria signing pipeline from the [`signing/`](signing/README.md) submodule.
