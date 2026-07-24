@@ -180,9 +180,7 @@ uv run launcher build package --version v0.1.13
 ```
 
 PyInstaller must be installed in the same `uv run` environment as the launcher.
-Using a `pyinstaller` executable from another Python environment can produce an app that fails at startup because the `launcher` package was not bundled.
 
-Do not run `launcher build upload` on this unsigned package.
 For macOS and Windows, submit it to the Inria signing pipeline from the [`signing/`](signing/README.md) submodule.
 The command waits for signing and, on macOS, notarization to finish, verifies the result, and downloads it to `signing/signed/`:
 
@@ -222,7 +220,6 @@ uv run launcher release update-notes \
 ```
 
 Commit and push the updated `backend/packaging/launcher/distribution.yml` before uploading another platform package.
-Linux launcher ZIPs bypass the Inria signing pipeline and can be passed directly to `launcher build upload` because this operating-system code-signing service applies only to macOS and Windows.
 
 The platform-specific launcher ZIP is separate from the application update archive.
 Create, sign, verify, and upload the application update assets with the launcher release commands:
