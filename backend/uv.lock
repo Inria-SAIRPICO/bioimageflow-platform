@@ -86,7 +86,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow-server"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "bioimageflow" },
@@ -155,7 +155,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.9" },
-    { name = "wetlands-launcher", specifier = ">=0.3.3" },
+    { name = "wetlands-launcher", specifier = ">=0.3.4" },
 ]
 
 [[package]]
@@ -1925,7 +1925,7 @@ wheels = [
 
 [[package]]
 name = "wetlands"
-version = "1.1.4"
+version = "1.1.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "json5" },
@@ -1934,14 +1934,14 @@ dependencies = [
     { name = "pyyaml" },
     { name = "send2trash" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/83/46/e5308c516fb5f3f39623ba49dd87eb5080aeadde373eebd5f57f44520718/wetlands-1.1.4.tar.gz", hash = "sha256:1e6ad711c5feeb5f6d4f8bb864db97e5df8b9561e0dfd50045bc8537c3ce4b4e", size = 586481, upload-time = "2026-07-24T08:04:47.739Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/9a/b560e115d7328910bbc5280f738973aaccfc36b5cc63d64174e5b9cd3225/wetlands-1.1.6.tar.gz", hash = "sha256:607bafee06094b464bc8988b697f358542e7b9674dee0916fee69c583ee911a0", size = 591423, upload-time = "2026-07-24T14:00:52.609Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/34/956cde55f4926887022c2a9df4b5c11876c4a7390fce1e4695264294049b/wetlands-1.1.4-py3-none-any.whl", hash = "sha256:f224763ecefef6659d71bd95ff30d30d31d1f5a1246cb77136d88cbf9b1fae4c", size = 83664, upload-time = "2026-07-24T08:04:46.139Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/65/9ee54248d41dfc800e5120d08047e00a3d4440a9a8bfbea2409f5a6c1af5/wetlands-1.1.6-py3-none-any.whl", hash = "sha256:fff66849a1f90655c3b34592d7e78b0f8c76acba0302d02ffb741021b9aa9773", size = 85673, upload-time = "2026-07-24T14:00:51.264Z" },
 ]
 
 [[package]]
 name = "wetlands-launcher"
-version = "0.3.3"
+version = "0.3.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -1951,7 +1951,7 @@ dependencies = [
     { name = "toml" },
     { name = "wetlands" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/dd/4a7373b2428417320ef3df3bc48327c8117a23008a11217c4aa709f26061/wetlands_launcher-0.3.3.tar.gz", hash = "sha256:2ebebe9fb1052c7bb3f680010cb9f4c6466e0aaf35392e668c2dbdd2a582405a", size = 398076, upload-time = "2026-07-24T11:49:11.046Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/39/dd/6b56a8ad0df14d79b56adf628c46d3eb24c458089df869b79199b9875d1f/wetlands_launcher-0.3.4.tar.gz", hash = "sha256:11dec23dd1c496d56ed9c69e3c398803fbf686d07c0ce3a73543c346732e0f69", size = 398068, upload-time = "2026-07-24T14:07:30.936Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/f4/878a74a8aaf4efb023f555883e85b5a9e8ac9045045350809c7fbdfc7346/wetlands_launcher-0.3.3-py3-none-any.whl", hash = "sha256:9b19c31047612ccac54f7ba99971e40b7443f6ad034b91348514ac378f430c69", size = 87041, upload-time = "2026-07-24T11:49:09.592Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/44/e9e0a2c3f5a96e91b4574e8d32ca808f52911523cf4e3e306ef61bc5c409/wetlands_launcher-0.3.4-py3-none-any.whl", hash = "sha256:9ecc94a435de3b0333f708b5f009802da7b64585dd630e2b93ac278014dbe411", size = 87041, upload-time = "2026-07-24T14:07:29.717Z" },
 ]

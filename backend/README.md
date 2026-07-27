@@ -133,16 +133,6 @@ Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Runti
 
 A workflow root that does not exist when it is first initialized receives the versioned bundled templates at `Demo/Fish Analysis` and `Demo/Parameters Space Exploration`. An existing root is never seeded merely because it is empty. Installation state is derived from canonical workflow paths plus `metadata.bundled_template`; no home-directory flag or launcher post-install hook is used. Reinstall skips recognized templates, reports unrelated occupants as conflicts, and materializes bundled custom tools into each workflow's `tools/` directory.
 
-### How it fits together
-
-`desktop.py` starts uvicorn in a background daemon thread, waits for `server.started`, then opens a pywebview window. When the window closes, a shutdown sequence stops the execution (placeholder), cleans up shared memory (placeholder), saves settings (placeholder), and signals uvicorn to exit.
-
-The pywebview JS bridge (`DesktopApi`) exposes native file/folder pickers, a save dialog, a `reveal_path` call, and a `set_title` call to the frontend as `window.pywebview.api.*`. See `frontend/src/utils/nativeDialogs.ts` for the typed wrappers.
-
-The desktop application icon is derived from [`logo/microscope.svg`](../logo/microscope.svg) and bundled with the backend as PNG for Linux, ICNS for macOS, and ICO for Windows.
-Linux uses pywebview's public GTK/Qt icon option; macOS and Windows apply their native runtime icon APIs because the application is installed from a Python release archive rather than frozen into its own executable.
-These assets are independent of the launcher icon under `packaging/launcher/`.
-
 ## Launcher packaging
 
 The launcher is built from this backend directory because its configuration and distribution metadata are under `packaging/launcher/`.
