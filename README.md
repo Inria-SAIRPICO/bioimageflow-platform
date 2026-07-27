@@ -171,6 +171,8 @@ See [`docs/testing.md`](docs/testing.md) for exact lane contents, dependency set
 BioImageFlow Platform is distributed with [`wetlands-launcher`](https://github.com/arthursw/launcher).
 To configure release signing, build and upload platform-specific launcher packages, and create the application archive, follow the [`wetlands-launcher` packaging guide](https://github.com/arthursw/launcher/blob/main/docs/packaging.md).
 
+Icons are generated with `scripts/generate_desktop_icons.py`.
+
 Build and package the unsigned launcher on each target operating system from `backend/`:
 
 ```bash
