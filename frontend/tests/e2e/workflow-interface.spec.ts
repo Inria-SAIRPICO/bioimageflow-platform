@@ -48,11 +48,11 @@ async function saveWorkflow(page: Page, name: string): Promise<void> {
   const saved = page.waitForResponse(response => (
     response.url().includes(`/api/v1/workflows/${name}`)
     && response.request().method() === 'PUT'
-    && response.ok()
   ))
   await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
-  await saved
+  const response = await saved
+  expect(response.ok(), await response.text()).toBeTruthy()
 }
 
 async function savedGraph(page: Page, name: string): Promise<GraphState> {
@@ -81,6 +81,7 @@ test.describe('workflow interface and grouping', () => {
     await page.getByTestId('interface-output-toggle-output_image').click()
     await page.getByTestId('workflow-output-name-output_image').fill('Blurred image')
     await saveWorkflow(page, name)
+    await expect(page.getByTestId('workflow-title')).not.toContainText('*')
 
     const first = await savedGraph(page, name)
     expect(first.interface.inputs[0]).toMatchObject({
