@@ -30,14 +30,22 @@ describe('settings store', () => {
       deployment_mode: 'desktop' as const,
       output_data_folder: '/out',
     }
-    mockedApi.get.mockResolvedValueOnce({ data: settings })
+    let resolveRequest!: (value: { data: typeof settings }) => void
+    mockedApi.get.mockReturnValueOnce(new Promise((resolve) => {
+      resolveRequest = resolve
+    }))
 
     const store = useSettingsStore()
-    await store.fetchSettings()
+    const request = store.fetchSettings()
+
+    expect(store.isLoading).toBe(true)
+    resolveRequest({ data: settings })
+    await request
 
     expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/settings')
     expect(store.settings).toEqual(settings)
     expect(store.isLoaded).toBe(true)
+    expect(store.isLoading).toBe(false)
   })
 
   it('isDesktop returns true for desktop mode', async () => {
@@ -158,6 +166,7 @@ describe('settings store', () => {
 
     expect(store.error).toBe('Network error')
     expect(store.settings).toBeNull()
+    expect(store.isLoading).toBe(false)
   })
 
   it('updateSettings handles API errors gracefully', async () => {

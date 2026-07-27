@@ -3,7 +3,6 @@ import { defineStore } from 'pinia'
 import { fetchNodeOutputSchema } from '@/api/client'
 import { serializeGraph } from '@/composables/useGraphSync'
 import type { NodeOutputSchemaResponse, ToolMetadata } from '@/api/types'
-import { decodeEndpointHandle } from '@/utils/endpointHandles'
 import {
   canvasSessionRegistry,
   type CanvasId,
@@ -152,7 +151,6 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
         context,
         nodeId,
         requestId,
-        raw,
         graph,
         getToolForNode,
       )
@@ -183,7 +181,6 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
     context: ResolvedOutputContext,
     startNodeId: string,
     startRequestId: number,
-    raw: RawGraph,
     graph: SerializedGraph,
     getToolForNode: ToolGetter,
   ): Promise<void> {
@@ -196,14 +193,17 @@ export const useResolvedOutputsStore = defineStore('resolvedOutputs', () => {
       if (visited.has(current)) continue
       visited.add(current)
 
-      for (const edge of raw.edges) {
-        if (edge.source !== current) continue
-        const targetHandle = decodeEndpointHandle(edge.targetHandle ?? '')
+      // Traverse the same serialized snapshot used for the source request.
+      // The raw Vue Flow arrays remain live while that request is in flight;
+      // mixing newer edges with this older request would cancel a correctly
+      // scheduled target refresh and then resolve it against stale wiring.
+      for (const edge of graph.edges) {
         if (
-          targetHandle.kind !== 'dataframe-position'
-          && targetHandle.kind !== 'dataframe-input'
+          edge.type !== 'dataframe'
+          || edge.source_node !== current
+          || (edge.target_position === null && edge.target_input === null)
         ) continue
-        const targetId = edge.target
+        const targetId = edge.target_node
         if (visited.has(targetId)) continue
 
         const targetTool = getToolForNode(targetId)

@@ -52,13 +52,6 @@ async function rememberLastOpenedWorkflow(page: Page, name: string) {
   }, name)
 }
 
-async function lastOpenedWorkflow(page: Page): Promise<string | null> {
-  return page.evaluate(async () => {
-    const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
-    return useAutoSave().getLastOpenedWorkflow()
-  })
-}
-
 async function installDraftWebSocketProbe(page: Page) {
   await page.addInitScript(() => {
     type DraftProbeWindow = Window & {
@@ -101,68 +94,65 @@ test.describe('agent draft sync', () => {
     expect(seed.ok()).toBeTruthy()
     await createServerWorkflow(page, workflowName, emptyGraph(workflowName))
 
-    await page.goto('/')
-    await expect(page.locator('#bioimageflow-app')).toBeVisible()
-    // The initial startup canvas creates its fallback workflow asynchronously.
-    // Wait for that transaction before replacing the preference, otherwise its
-    // late last-opened write can race this fixture and make reload nondeterministic.
-    await expect.poll(() => lastOpenedWorkflow(page)).not.toBeNull()
-    await rememberLastOpenedWorkflow(page, workflowName)
-    await expect.poll(() => lastOpenedWorkflow(page)).toBe(workflowName)
-    await page.reload()
-    await expect(page.locator('[data-testid="workflow-title"]')).toContainText(workflowName)
-    await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
-    await expect.poll(
-      () => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0),
-    ).toBeGreaterThan(0)
+    try {
+      await page.goto('/')
+      await expect(page.locator('#bioimageflow-app')).toBeVisible()
+      await rememberLastOpenedWorkflow(page, workflowName)
+      await page.reload()
+      await expect(page.locator('[data-testid="workflow-title"]')).toContainText(workflowName)
+      await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
+      await expect.poll(
+        () => page.evaluate(() => window.__agentDraftSyncWsOpenCount ?? 0),
+      ).toBeGreaterThan(0)
 
-    let navigationsAfterOperation = 0
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) navigationsAfterOperation += 1
-    })
+      let navigationsAfterOperation = 0
+      page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) navigationsAfterOperation += 1
+      })
 
-    const response = await page.request.post(
-      `${API_BASE}/api/v1/workflow-draft-operations/${workflowName}`,
-      {
-        data: {
-          expected_revision: 0,
-          operations: [
-            {
-              type: 'create_tool_node',
-              node_id: 'agent_seed_1',
-              tool_name: 'SeedNumbers',
-              name: 'Agent Seed',
-              position: [160, 120],
-              parameters: {},
-            },
-          ],
+      const response = await page.request.post(
+        `${API_BASE}/api/v1/workflow-draft-operations/${workflowName}`,
+        {
+          data: {
+            expected_revision: 0,
+            operations: [
+              {
+                type: 'create_tool_node',
+                node_id: 'agent_seed_1',
+                tool_name: 'SeedNumbers',
+                name: 'Agent Seed',
+                position: [160, 120],
+                parameters: {},
+              },
+            ],
+          },
         },
-      },
-    )
-    expect(response.ok()).toBeTruthy()
+      )
+      expect(response.ok()).toBeTruthy()
 
-    await expect.poll(
-      () => page.evaluate((id) => {
-        const messages = window.__agentDraftSyncMessages ?? []
-        return messages.some((message) => {
-          if (typeof message !== 'object' || message === null) return false
-          const draftMessage = message as {
-            type?: unknown
-            workflow_id?: unknown
-            updated_by?: unknown
-          }
-          return draftMessage.type === 'workflow_draft_changed' &&
-            draftMessage.workflow_id === id &&
-            draftMessage.updated_by === 'agent'
-        })
-      }, workflowName),
-    ).toBe(true)
-    await expect(page.locator('.vue-flow__node[data-id="agent_seed_1"]')).toBeVisible({
-      timeout: 5000,
-    })
-    await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
-    expect(navigationsAfterOperation).toBe(0)
-
-    await deleteWorkflowIfExists(page, workflowName)
+      await expect.poll(
+        () => page.evaluate((id) => {
+          const messages = window.__agentDraftSyncMessages ?? []
+          return messages.some((message) => {
+            if (typeof message !== 'object' || message === null) return false
+            const draftMessage = message as {
+              type?: unknown
+              workflow_id?: unknown
+              updated_by?: unknown
+            }
+            return draftMessage.type === 'workflow_draft_changed' &&
+              draftMessage.workflow_id === id &&
+              draftMessage.updated_by === 'agent'
+          })
+        }, workflowName),
+      ).toBe(true)
+      await expect(page.locator('.vue-flow__node[data-id="agent_seed_1"]')).toBeVisible({
+        timeout: 5000,
+      })
+      await expect(page.locator('.workflow-draft-conflict')).toHaveCount(0)
+      expect(navigationsAfterOperation).toBe(0)
+    } finally {
+      await deleteWorkflowIfExists(page, workflowName)
+    }
   })
 })

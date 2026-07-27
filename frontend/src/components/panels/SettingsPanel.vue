@@ -113,7 +113,15 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
     :style="{ width: 'min(640px, calc(100vw - 2rem))' }"
     data-testid="settings-panel"
   >
-    <Tabs value="external" data-testid="settings-tabs">
+    <p
+      v-if="settingsStore.isLoading"
+      class="settings-loading"
+      role="status"
+      data-testid="settings-loading"
+    >
+      Loading settings…
+    </p>
+    <Tabs v-else value="external" data-testid="settings-tabs">
       <TabList>
         <Tab value="external">External Editor</Tab>
         <Tab value="napari">Napari</Tab>
@@ -158,3 +166,10 @@ async function onUpdate(payload: { field: PropertyKey; value: unknown }) {
     </template>
   </Dialog>
 </template>
+
+<style scoped>
+.settings-loading {
+  margin: 0;
+  color: var(--p-text-muted-color, #777);
+}
+</style>

@@ -492,6 +492,48 @@ describe('resolvedOutputs store', () => {
     expect(mockFetchNodeOutputSchema).not.toHaveBeenCalledWith('sibling_1', expect.anything())
   })
 
+  it('does not cancel a newer target refresh from a live edge absent from the source snapshot', async () => {
+    const [canvasA] = registerCanvases()
+    const store = useResolvedOutputsStore()
+    const sourceResult = deferred<{ resolved: boolean; columns: Record<string, unknown> }>()
+    const requestedGraphs: Array<{ nodeId: string; edgeCount: number }> = []
+    mockFetchNodeOutputSchema.mockImplementation((nodeId: string, graph: { edges: unknown[] }) => {
+      requestedGraphs.push({ nodeId, edgeCount: graph.edges.length })
+      if (nodeId === 'gen_1') return sourceResult.promise
+      return Promise.resolve(
+        graph.edges.length > 0
+          ? { resolved: true, columns: { sensitivity: { type: 'any' } } }
+          : { resolved: false, columns: {} },
+      )
+    })
+    const graph = makeGraph()
+    const positionalEdge = graph.edges[0]
+    graph.edges = []
+    const getTool = (nodeId: string) => (
+      graph.nodes.find((node) => node.id === nodeId)?.data?.tool as ToolMetadata | undefined
+    )
+
+    store.refreshCanvasResolvedOutputs(canvasA, 'gen_1', () => graph, getTool)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(requestedGraphs).toEqual([{ nodeId: 'gen_1', edgeCount: 0 }])
+
+    graph.edges.push(positionalEdge)
+    store.refreshCanvasResolvedOutputs(canvasA, 'cross_1', () => graph, getTool)
+    sourceResult.resolve({ resolved: true, columns: { sensitivity: { type: 'any' } } })
+    await Promise.resolve()
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(requestedGraphs).toEqual([
+      { nodeId: 'gen_1', edgeCount: 0 },
+      { nodeId: 'cross_1', edgeCount: 1 },
+    ])
+    expect(store.getCanvasResolvedOutput(canvasA, 'cross_1')).toEqual({
+      resolved: true,
+      columns: { sensitivity: { type: 'any' } },
+    })
+  })
+
   it('does not recreate a released canvas context from delayed fixed-canvas work', async () => {
     const [canvasA] = registerCanvases()
     const store = useResolvedOutputsStore()

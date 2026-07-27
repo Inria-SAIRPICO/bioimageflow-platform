@@ -63,6 +63,9 @@ async function createWorkflowInGui(page: Page, displayName: string) {
 }
 
 async function addSourceNode(page: Page, source: ToolMetadata, workflowName: string) {
+  // The fixture updates the saved workflow directly. Unmount the active canvas
+  // first so its debounced draft writer cannot race the reset-to-saved CAS.
+  await page.goto('about:blank')
   const current = await page.request.get(`${API_BASE}/api/v1/workflows/${workflowName}`)
   expect(current.ok()).toBeTruthy()
   const document = await current.json()
@@ -86,7 +89,7 @@ async function addSourceNode(page: Page, source: ToolMetadata, workflowName: str
     { data: { expected_revision: draftRevision, updated_by: 'frontend' } },
   )
   expect(reset.ok()).toBeTruthy()
-  await page.reload()
+  await page.goto('/')
   const node = page.locator('.vue-flow__node[data-id="seed_1"]')
   await expect(node).toBeVisible({ timeout: 5000 })
   await expect(node.locator('.node-name')).toContainText(source.display_name)
