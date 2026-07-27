@@ -63,6 +63,7 @@ export const useUIStore = defineStore('ui', () => {
   const codeEditorOpeningRequestId = ref<number | null>(null)
   const codeEditorTargetRequestId = ref<number | null>(null)
   const codeEditorDetached = ref(false)
+  const loggerActivationRequest = ref(0)
   const themePreference = ref<ThemePreference>(readStoredThemePreference())
   const systemPrefersDark = ref(false)
 
@@ -243,6 +244,11 @@ export const useUIStore = defineStore('ui', () => {
     panels[panel] = visible
   }
 
+  function openLoggerPanel() {
+    panels.logger = true
+    loggerActivationRequest.value += 1
+  }
+
   function setCodeEditorTarget(
     url: string,
     path: string,
@@ -304,6 +310,7 @@ export const useUIStore = defineStore('ui', () => {
     codeEditorOpeningRequestId,
     codeEditorTargetRequestId,
     codeEditorDetached,
+    loggerActivationRequest,
     themePreference,
     systemPrefersDark,
     panels,
@@ -333,6 +340,7 @@ export const useUIStore = defineStore('ui', () => {
     setThemePreference,
     togglePanel,
     setPanelVisible,
+    openLoggerPanel,
     setCodeEditorTarget,
     setCodeEditorOpening,
     clearCodeEditorOpening,

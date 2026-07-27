@@ -13,6 +13,7 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useExecutionStore } from '@/stores/execution'
+import { useUIStore } from '@/stores/ui'
 import type { ToolCreateResponse, ToolMetadata } from '@/api/types'
 import { api } from '@/api/client'
 import {
@@ -28,6 +29,7 @@ const toolRegistry = useToolRegistryStore()
 const settingsStore = useSettingsStore()
 const workflowStore = useWorkflowStore()
 const executionStore = useExecutionStore()
+const uiStore = useUIStore()
 
 const searchQuery = ref('')
 const isSearchActive = computed(() => searchQuery.value.trim().length > 0)
@@ -87,6 +89,7 @@ function onPackageArchiveSelected(event: Event) {
 async function installPackageSource() {
   if (!canInstallPackageSource.value) return
   packageInstallBusy.value = true
+  uiStore.openLoggerPanel()
   try {
     const url = packageInstallUrl.value.trim()
     let responsePackage = ''
@@ -387,6 +390,7 @@ function getVersionRows(packageName: string): VersionRow[] {
 async function installVersion(packageName: string, version: string) {
   const key = busyKey(packageName, version)
   markBusy(key, true)
+  uiStore.openLoggerPanel()
   toast.add({
     severity: 'info',
     summary: 'Installing',
@@ -1024,26 +1028,29 @@ defineExpose({
                         Current
                       </span>
                       <Button
-                        v-else-if="row.installed && !row.loadError"
+                        v-else-if="row.installed && !row.loadError && !isBusy(node.data.name, row.version)"
                         label="Set current"
                         icon="pi pi-check"
                         size="small"
                         severity="secondary"
                         text
                         class="version-action"
-                        :loading="isBusy(node.data.name, row.version)"
-                        :disabled="isBusy(node.data.name, row.version)"
                         :data-testid="`set-current-version-${node.data.name}-${row.version}`"
                         @click="useVersionInWorkflow(node.data.name, row.version)"
                       />
+                      <i
+                        v-if="isBusy(node.data.name, row.version)"
+                        class="pi pi-spinner pi-spin version-action-spinner"
+                        role="status"
+                        aria-label="Package operation in progress"
+                        :data-testid="`version-busy-${node.data.name}-${row.version}`"
+                      />
                       <Button
-                        v-if="!row.installed"
+                        v-else-if="!row.installed"
                         label="Install"
                         icon="pi pi-download"
                         size="small"
                         class="version-action"
-                        :loading="isBusy(node.data.name, row.version)"
-                        :disabled="isBusy(node.data.name, row.version)"
                         :data-testid="`install-version-${node.data.name}-${row.version}`"
                         @click="installVersion(node.data.name, row.version)"
                       />
@@ -1055,8 +1062,6 @@ defineExpose({
                         severity="secondary"
                         outlined
                         class="version-action"
-                        :loading="isBusy(node.data.name, row.version)"
-                        :disabled="isBusy(node.data.name, row.version)"
                         :data-testid="`uninstall-version-${node.data.name}-${row.version}`"
                         @click="uninstallVersion(node.data.name, row.version)"
                       />
@@ -1190,11 +1195,18 @@ defineExpose({
         >
           {{ packageArchiveLabel }}
         </span>
+        <i
+          v-if="packageInstallBusy"
+          class="pi pi-spinner pi-spin package-install-spinner"
+          role="status"
+          aria-label="Installing tool package"
+          data-testid="package-install-busy"
+        />
         <Button
+          v-else
           label="Install"
           icon="pi pi-download"
           data-testid="package-install-button"
-          :loading="packageInstallBusy"
           :disabled="!canInstallPackageSource"
           @click="installPackageSource"
         />
@@ -1595,6 +1607,20 @@ defineExpose({
 
 .version-action {
   flex-shrink: 0;
+}
+
+.version-action-spinner,
+.package-install-spinner {
+  color: var(--p-primary-color);
+  flex-shrink: 0;
+}
+
+.version-action-spinner {
+  margin: 0 12px;
+}
+
+.package-install-spinner {
+  margin: 0 16px;
 }
 
 .tool-documentation {

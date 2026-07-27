@@ -215,6 +215,16 @@ describe('UI store', () => {
     expect(store.panels.tools).toBe(true)
   })
 
+  it('requests Logger activation and makes the panel visible', () => {
+    const store = useUIStore()
+    store.panels.logger = false
+
+    store.openLoggerPanel()
+
+    expect(store.panels.logger).toBe(true)
+    expect(store.loggerActivationRequest).toBe(1)
+  })
+
   it('tab title with no workflow', () => {
     registerRootCanvas('untitled', { present: false })
     const store = useUIStore()

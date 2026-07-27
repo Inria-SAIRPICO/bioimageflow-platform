@@ -264,6 +264,12 @@ watch(
     nextTick(() => dockviewApi.value?.getPanel('logger')?.api.setActive())
   },
 )
+watch(
+  () => uiStore.loggerActivationRequest,
+  () => {
+    nextTick(() => dockviewApi.value?.getPanel('logger')?.api.setActive())
+  },
+)
 const dockviewDisposables: DockviewIDisposable[] = []
 const confirmedNestedWorkflowPanelCloses = new Set<string>()
 const removedWorkflowNestedWorkflowCloses = new Set<string>()

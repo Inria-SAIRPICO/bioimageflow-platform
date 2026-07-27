@@ -21,6 +21,7 @@ import { api } from '@/api/client'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useSettingsStore } from '@/stores/settings'
 import { useExecutionStore } from '@/stores/execution'
+import { useUIStore } from '@/stores/ui'
 import {
   _resetCanvasPersistenceForTest,
   useCanvasPersistence,
@@ -180,7 +181,10 @@ function setPywebviewDesktop(enabled: boolean) {
   })
 }
 
-function mountPanel(options: { settings?: SettingsResponse | null } = {}) {
+function mountPanel(options: {
+  settings?: SettingsResponse | null
+  renderManageTable?: boolean
+} = {}) {
   // Mock fetchTools and fetchPackages calls in onMounted
   mockedApi.get.mockImplementation((url: string) => {
     if (url === '/api/v1/tools') return Promise.resolve({ data: mockTools })
@@ -208,8 +212,8 @@ function mountPanel(options: { settings?: SettingsResponse | null } = {}) {
     global: {
       plugins: [pinia, PrimeVue, ConfirmationService, ToastService],
       stubs: {
-        TreeTable: true,
-        Column: true,
+        TreeTable: options.renderManageTable ? false : true,
+        Column: options.renderManageTable ? false : true,
         InputText: true,
         Button: true,
         Dialog: { template: '<div><slot /><slot name="footer" /></div>' },
@@ -549,6 +553,45 @@ describe('ToolsPanel', () => {
     })
   })
 
+  it('shows an in-place busy state and opens Logger while installing a version', async () => {
+    const wrapper = mountPanel({ renderManageTable: true })
+    await vi.waitFor(() => {
+      const store = useToolRegistryStore()
+      expect(store.packages.length).toBeGreaterThan(0)
+    })
+
+    let finishInstall: () => void = () => {}
+    mockedApi.post.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finishInstall = () => resolve({ data: {} })
+      }),
+    )
+    const vm = wrapper.vm as unknown as {
+      showManageDialog: boolean
+      toggleVersionsExpanded: (name: string) => void
+      installVersion: (name: string, version: string) => Promise<void>
+      isBusy: (name: string, version: string) => boolean
+    }
+
+    vm.showManageDialog = true
+    vm.toggleVersionsExpanded('bioimageflow-core')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="install-version-bioimageflow-core-0.2.0"]').exists()).toBe(true)
+
+    const install = vm.installVersion('bioimageflow-core', '0.2.0')
+    await wrapper.vm.$nextTick()
+
+    expect(vm.isBusy('bioimageflow-core', '0.2.0')).toBe(true)
+    expect(wrapper.find('[data-testid="install-version-bioimageflow-core-0.2.0"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="version-busy-bioimageflow-core-0.2.0"]').exists()).toBe(true)
+    expect(useUIStore().loggerActivationRequest).toBe(1)
+    expect(useUIStore().panels.logger).toBe(true)
+
+    finishInstall()
+    await install
+    expect(vm.isBusy('bioimageflow-core', '0.2.0')).toBe(false)
+  })
+
 
   it('renders an explicit inline install package footer in Manage Tools', async () => {
     const wrapper = mountPanel()
@@ -639,6 +682,7 @@ describe('ToolsPanel', () => {
     })
     expect(vm.packageInstallUrl).toBe('')
     expect(vm.packageArchiveFile).toBeNull()
+    expect(useUIStore().loggerActivationRequest).toBe(1)
   })
 
   it('installs an unknown package from a zip archive upload', async () => {
