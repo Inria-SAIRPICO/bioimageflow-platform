@@ -29,6 +29,7 @@ function _extractError(e: unknown): string {
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<WorkspaceSettings | null>(null)
   const error = ref<string | null>(null)
+  const isLoading = ref(false)
 
   // Internal serialization chain: each updateSettings() call appends to it
   // so concurrent calls run in submit order rather than racing the server.
@@ -42,12 +43,15 @@ export const useSettingsStore = defineStore('settings', () => {
   )
 
   async function fetchSettings() {
+    isLoading.value = true
     try {
       const { data } = await api.get<WorkspaceSettings>('/api/v1/settings')
       settings.value = data
       error.value = null
     } catch (e: unknown) {
       error.value = _extractError(e)
+    } finally {
+      isLoading.value = false
     }
   }
 
@@ -97,6 +101,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     settings,
     error,
+    isLoading,
     isLoaded,
     isDesktop,
     isWebapp,

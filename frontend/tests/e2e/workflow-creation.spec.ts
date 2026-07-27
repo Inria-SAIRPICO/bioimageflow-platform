@@ -10,6 +10,13 @@ async function deleteAllWorkflows(page: Page) {
   }
 }
 
+async function rememberLastOpenedWorkflow(page: Page, name: string) {
+  await page.evaluate(async (workflowName) => {
+    const { useAutoSave } = await import('/src/composables/useAutoSave.ts')
+    await useAutoSave().setLastOpenedWorkflow(workflowName)
+  }, name)
+}
+
 test.describe('workflow creation', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
@@ -71,25 +78,29 @@ test.describe('workflow creation', () => {
       data: { name, display_name: displayName },
     })
     expect(created.status()).toBe(201)
-    await page.reload()
-    await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
+    try {
+      await rememberLastOpenedWorkflow(page, name)
+      await page.reload()
+      await expect(page.getByTestId('canvas-tab').filter({ hasText: displayName })).toBeVisible()
 
-    // Vue Flow container rendered
-    await expect(page.locator('.vue-flow')).toBeVisible()
+      // Vue Flow container rendered
+      await expect(page.locator('.vue-flow')).toBeVisible()
 
-    // Background dots present (SVG with pattern)
-    const bgExists = await page.evaluate(() => {
-      const bg = document.querySelector('.vue-flow__background')
-      return bg !== null && bg.querySelector('pattern') !== null
-    })
-    expect(bgExists).toBe(true)
+      // Background dots present (SVG with pattern)
+      const bgExists = await page.evaluate(() => {
+        const bg = document.querySelector('.vue-flow__background')
+        return bg !== null && bg.querySelector('pattern') !== null
+      })
+      expect(bgExists).toBe(true)
 
-    // MiniMap must NOT be present
-    const minimapExists = await page.evaluate(() =>
-      document.querySelector('.vue-flow__minimap') !== null,
-    )
-    expect(minimapExists).toBe(false)
-    await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+      // MiniMap must NOT be present
+      const minimapExists = await page.evaluate(() =>
+        document.querySelector('.vue-flow__minimap') !== null,
+      )
+      expect(minimapExists).toBe(false)
+    } finally {
+      await page.request.delete(`${API_BASE}/api/v1/workflows/${name}`)
+    }
   })
 
   test('shows a non-persistent chooser when no workflow exists', async ({ page }) => {

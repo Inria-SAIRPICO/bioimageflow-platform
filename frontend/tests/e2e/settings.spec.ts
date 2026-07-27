@@ -17,6 +17,14 @@ test.describe('Settings Panel', () => {
   test('opens via Edit > Preferences... and shows the settings tabs', async ({
     page,
   }) => {
+    let releaseSettings!: () => void
+    const settingsReleased = new Promise<void>((resolve) => {
+      releaseSettings = resolve
+    })
+    await page.route('**/api/v1/settings', async (route) => {
+      if (route.request().method() === 'GET') await settingsReleased
+      await route.continue()
+    })
     await page.goto('/')
     await expect(page.locator('[data-testid="app-menubar"]')).toBeVisible()
 
@@ -24,6 +32,9 @@ test.describe('Settings Panel', () => {
 
     const dialog = page.locator('[data-testid="settings-panel"]')
     await expect(dialog).toBeVisible()
+    await expect(dialog.locator('[data-testid="settings-loading"]')).toBeVisible()
+    releaseSettings()
+    await expect(dialog.locator('[data-testid="settings-tabs"]')).toBeVisible()
     for (const label of ['External Editor', 'Napari', 'Execution', 'Display', 'Storage', 'OMERO']) {
       await expect(dialog.getByText(label, { exact: true })).toBeVisible()
     }
@@ -63,12 +74,9 @@ test.describe('Settings Panel', () => {
     page,
   }) => {
     await page.goto('/')
-    const settingsLoaded = page.waitForResponse((response) =>
-      response.url().endsWith('/api/v1/settings') && response.request().method() === 'GET',
-    )
     await openSettings(page)
-    await settingsLoaded
     const dialog = page.locator('[data-testid="settings-panel"]')
+    await expect(dialog.locator('[data-testid="settings-tabs"]')).toBeVisible()
 
     await dialog.getByText('OMERO', { exact: true }).click()
     await dialog.locator('[data-testid="omero-add-button"]').click()
