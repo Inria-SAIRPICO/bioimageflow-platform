@@ -48,6 +48,30 @@ describe('settings store', () => {
     expect(store.isLoading).toBe(false)
   })
 
+  it('coalesces concurrent settings fetches into one state publication', async () => {
+    const settings = {
+      deployment_mode: 'desktop' as const,
+      output_data_folder: '/out',
+    }
+    let resolveRequest!: (value: { data: typeof settings }) => void
+    mockedApi.get.mockReturnValueOnce(new Promise((resolve) => {
+      resolveRequest = resolve
+    }))
+    const store = useSettingsStore()
+
+    const first = store.fetchSettings()
+    const second = store.fetchSettings()
+
+    expect(mockedApi.get).toHaveBeenCalledTimes(1)
+    expect(store.isLoading).toBe(true)
+
+    resolveRequest({ data: settings })
+    await Promise.all([first, second])
+
+    expect(store.settings).toEqual(settings)
+    expect(store.isLoading).toBe(false)
+  })
+
   it('isDesktop returns true for desktop mode', async () => {
     mockedApi.get.mockResolvedValueOnce({
       data: { deployment_mode: 'desktop', output_data_folder: '/out' },
