@@ -141,11 +141,12 @@ Use PyInstaller in the same uv environment as the launcher:
 ```bash
 uv sync --group dev
 uv run --with pyinstaller launcher build
-uv run launcher build package --version v0.1.13
+uv run launcher build package
 ```
 
 Do not upload an unsigned macOS or Windows package.
 Follow the root [packaging release workflow](../README.md#packaging-releases) to submit it to the signing service, retrieve the signed ZIP, and pass that ZIP to `launcher build upload`.
+Launcher reads the exact release tag from the static project version in `pyproject.toml`; explicit version arguments are only needed as checked overrides.
 The launcher workflow owns the public release upload, distribution metadata, release notes, and the signed application release manifest.
 
 ## Testing

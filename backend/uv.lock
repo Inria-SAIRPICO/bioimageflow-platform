@@ -86,7 +86,7 @@ wheels = [
 
 [[package]]
 name = "bioimageflow-server"
-version = "0.1.16"
+version = "0.1.18"
 source = { editable = "." }
 dependencies = [
     { name = "bioimageflow" },
@@ -155,7 +155,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.9" },
-    { name = "wetlands-launcher", specifier = ">=0.3.4" },
+    { name = "wetlands-launcher", specifier = ">=0.3.6" },
 ]
 
 [[package]]
@@ -1941,7 +1941,7 @@ wheels = [
 
 [[package]]
 name = "wetlands-launcher"
-version = "0.3.4"
+version = "0.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -1949,9 +1949,10 @@ dependencies = [
     { name = "pyyaml" },
     { name = "requests" },
     { name = "toml" },
+    { name = "typing-extensions" },
     { name = "wetlands" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/dd/6b56a8ad0df14d79b56adf628c46d3eb24c458089df869b79199b9875d1f/wetlands_launcher-0.3.4.tar.gz", hash = "sha256:11dec23dd1c496d56ed9c69e3c398803fbf686d07c0ce3a73543c346732e0f69", size = 398068, upload-time = "2026-07-24T14:07:30.936Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/87/b4/90d33372e7f222cd1982a6d0f2c7a319cfd4256fd63a387ae284ac32911c/wetlands_launcher-0.3.6.tar.gz", hash = "sha256:9c1df5b496091b6b5e938b3c271d5e27c83cc4d7703600e4fb2a91ce997fc4bf", size = 405698, upload-time = "2026-07-27T16:15:24.764Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/44/e9e0a2c3f5a96e91b4574e8d32ca808f52911523cf4e3e306ef61bc5c409/wetlands_launcher-0.3.4-py3-none-any.whl", hash = "sha256:9ecc94a435de3b0333f708b5f009802da7b64585dd630e2b93ac278014dbe411", size = 87041, upload-time = "2026-07-24T14:07:29.717Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/14/f8770d823873aa9bdda4f3d113646d5afa8c07f7f5e97c6d2419c76b1fae/wetlands_launcher-0.3.6-py3-none-any.whl", hash = "sha256:2f82a9c828dc8d2744f0dfc518ddf75881ef57bbd702320f9b5597ad7d1028ba", size = 92907, upload-time = "2026-07-27T16:15:23.347Z" },
 ]

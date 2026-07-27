@@ -179,7 +179,7 @@ Build and package the unsigned launcher on each target operating system from `ba
 cd backend
 uv sync --group dev
 uv run --with pyinstaller launcher build
-uv run launcher build package --version v0.1.13
+uv run launcher build package
 ```
 
 PyInstaller must be installed in the same `uv run` environment as the launcher.
@@ -195,49 +195,48 @@ export GITLAB_TOKEN="<token>"
 # $env:GITLAB_TOKEN="<token>"
 
 uv run python scripts/submit_launcher.py \
-  --file ../backend/dist/BioImageFlow-launcher-v0.1.13-macos-arm64.zip \
+  --file ../backend/dist/BioImageFlow-launcher-0.1.18-macos-arm64.zip \
   --project-id "<signing-project-id_(474)>" \
   --ref "<signing-project-default-branch_(main)>" \
-  --platform macos \
-  --release-version v0.1.13
+  --platform macos
 ```
 
 Use `--platform windows` and the Windows ZIP filename when building on Windows.
+The signing helper infers the exact release tag from the standard launcher ZIP filename and rejects a platform or explicit-tag mismatch.
+
 After authenticating with `gh auth login`, return to `backend/` and create the GitHub release before uploading any assets:
 
 ```bash
 cd ../backend
 uv run launcher release create \
-  v0.1.13 \
+  --tag \
+  --push \
   --notes-text "<release notes>"
 ```
-
-Then use the launcher command to upload the downloaded signed ZIP.
-This records its download URL in `packaging/launcher/distribution.yml`:
-
-```bash
-uv run launcher build upload \
-  --version v0.1.13 \
-  --asset ../signing/signed/BioImageFlow-launcher-v0.1.13-macos-arm64.zip
-
-uv run launcher release update-notes \
-  v0.1.13 \
-  --notes-text "<release notes>"
-```
-
-Commit and push the updated `backend/packaging/launcher/distribution.yml` before uploading another platform package.
 
 The platform-specific launcher ZIP is separate from the application update archive.
-Create, sign, verify, and upload the application update assets with the launcher release commands:
+Create, sign, verify, and upload the application update assets while the inferred release tag still resolves to the current commit:
 
 ```bash
-uv run launcher release archive v0.1.13
+uv run launcher release archive
 uv run launcher release sign
 uv run launcher release verify
 uv run launcher release upload
 ```
 
-The final command uploads the application archive together with the required `launcher-manifest.yml` and `launcher-manifest.yml.sig`.
+Then upload each downloaded signed launcher ZIP.
+The command infers the tag and platform from the standard asset name and records its download URL in `packaging/launcher/distribution.yml`:
+
+```bash
+uv run launcher build upload \
+  --asset ../signing/signed/BioImageFlow-launcher-0.1.18-macos-arm64.zip
+
+uv run launcher release update-notes \
+  --notes-text "<release notes>"
+```
+
+Commit and push the updated `backend/packaging/launcher/distribution.yml` before uploading another platform package.
+The application upload publishes the application archive together with the required `launcher-manifest.yml` and `launcher-manifest.yml.sig`.
 
 ## Development
 
