@@ -187,6 +187,24 @@ def test_server_run_is_thread_target(
     assert kwargs["target"] is mock_server.run
 
 
+def test_wait_for_server_reports_generic_startup_failure():
+    from bioimageflow_server.desktop import _wait_for_server
+
+    server = MagicMock(started=False)
+    server_thread = MagicMock()
+    server_thread.is_alive.return_value = False
+
+    with pytest.raises(RuntimeError) as caught:
+        _wait_for_server(
+            server,
+            server_thread,
+            health_url="http://127.0.0.1:8765/api/v1/health",
+        )
+
+    assert "Review the preceding uvicorn error" in str(caught.value)
+    assert "address is likely already in use" not in str(caught.value)
+
+
 @patch("bioimageflow_server.desktop.webview")
 @patch("bioimageflow_server.desktop.uvicorn")
 @patch("bioimageflow_server.app.create_app")
@@ -200,7 +218,8 @@ def test_webview_window_created_with_correct_url(
 
     _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
 
-    start_desktop(host="127.0.0.1", port=8000)
+    with patch("bioimageflow_server.desktop.sys.platform", "linux"):
+        start_desktop(host="127.0.0.1", port=8000)
 
     mock_webview.create_window.assert_called_once_with(
         "BioImageFlow",
@@ -218,6 +237,25 @@ def test_webview_window_created_with_correct_url(
         debug=False,
         icon=str(_LINUX_APP_ICON),
     )
+
+
+@patch("bioimageflow_server.desktop.webview")
+@patch("bioimageflow_server.desktop.uvicorn")
+@patch("bioimageflow_server.app.create_app")
+@patch("bioimageflow_server.desktop.threading.Thread")
+@patch("bioimageflow_server.desktop.urllib.request.urlopen")
+def test_windows_webview_start_does_not_receive_png_icon(
+    mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
+):
+    """WinForms receives its ICO through the shown callback, not start(icon=)."""
+    from bioimageflow_server.desktop import start_desktop
+
+    _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+    with patch("bioimageflow_server.desktop.sys.platform", "win32"):
+        start_desktop()
+
+    mock_webview.start.assert_called_once_with(debug=False)
 
 
 @patch("bioimageflow_server.desktop.webview")
@@ -814,7 +852,8 @@ class TestStartDesktopDevUrl:
 
         _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
 
-        start_desktop(host="127.0.0.1", port=8000, dev=True)
+        with patch("bioimageflow_server.desktop.sys.platform", "linux"):
+            start_desktop(host="127.0.0.1", port=8000, dev=True)
 
         args, _ = mock_webview.create_window.call_args
         assert args[1] == "http://localhost:5173"
@@ -833,7 +872,8 @@ class TestStartDesktopDevUrl:
 
         _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
 
-        start_desktop(host="127.0.0.1", port=8000, dev=False)
+        with patch("bioimageflow_server.desktop.sys.platform", "linux"):
+            start_desktop(host="127.0.0.1", port=8000, dev=False)
 
         args, _ = mock_webview.create_window.call_args
         assert args[1] == "http://127.0.0.1:8000"

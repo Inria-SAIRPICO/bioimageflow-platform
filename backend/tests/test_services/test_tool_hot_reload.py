@@ -178,6 +178,46 @@ async def _wait_for(condition, timeout: float = 1.0, interval: float = 0.01):
 # ---------------------------------------------------------------------------
 
 
+async def test_start_creates_missing_watch_root(tmp_path, monkeypatch):
+    from bioimageflow_server.services import tool_hot_reload
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    root = tmp_path / "missing-tool-store"
+    observer = MagicMock()
+    monkeypatch.setattr(tool_hot_reload, "Observer", MagicMock(return_value=observer))
+    svc = ToolHotReloadService(
+        registry=FakeRegistry(root),
+        connection_manager=MagicMock(),
+    )
+
+    await svc.start(root)
+
+    assert root.is_dir()
+    observer.schedule.assert_called_once()
+    assert observer.schedule.call_args.args[1] == str(root)
+    observer.start.assert_called_once_with()
+    await svc.stop()
+
+
+def test_add_watch_root_creates_missing_directory(tmp_path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    root = tmp_path / "missing-workflow-root"
+    observer = MagicMock()
+    handler = MagicMock()
+    svc = ToolHotReloadService(
+        registry=FakeRegistry(tmp_path),
+        connection_manager=MagicMock(),
+    )
+    svc._observer = observer
+    svc._handler = handler
+
+    svc.add_watch_root(root)
+
+    assert root.is_dir()
+    observer.schedule.assert_called_once_with(handler, str(root), recursive=True)
+
+
 async def test_single_file_change_emits_one_tool_reload(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 

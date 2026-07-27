@@ -211,6 +211,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
         config = AppConfig()
 
+    from bioimageflow.paths import get_tool_store_path
+
+    tool_store_path = get_tool_store_path()
+    tool_store_path.mkdir(parents=True, exist_ok=True)
+
     # Configure the process-wide BioImageFlow/Wetlands manager before any
     # service can initialize it through a direct get_shared_environment_manager()
     # call. Plain Wetlands defaults to cwd-relative ./wetlands; BioImageFlow
@@ -221,7 +226,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # close owned resources (e.g. the PyPI httpx client).
     registry = config.tool_registry or ToolRegistryService()
     if config.tool_registry is None:
-        registry.scan_tool_store()
+        registry.scan_tool_store(tool_store_path)
 
     # Resolve Settings once: a loaded SettingsStore wins, then caller-supplied
     # settings, then a minimal default. Used for the initial services graph;
@@ -388,10 +393,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     known = config.known_packages or KnownPackagesService.default()
     pypi = config.pypi_versions or PyPIVersionService()
     _owns_pypi = config.pypi_versions is None
-
-    from bioimageflow.paths import get_tool_store_path
-
-    tool_store_path = get_tool_store_path()
 
     if config.disable_hot_reload:
         hot_reload: ToolHotReloadService | None = None

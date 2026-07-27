@@ -8,3 +8,7 @@ launcher_downloads:
     version: v0.1.12
     asset: BioImageFlow-launcher-v0.1.12-windows-x64.zip
     url: https://github.com/Inria-SAIRPICO/bioimageflow-platform/releases/download/v0.1.12/BioImageFlow-launcher-v0.1.12-windows-x64.zip
+  windows:
+    version: v0.1.15
+    asset: BioImageFlow-launcher-v0.1.15-windows-x64.zip
+    url: https://github.com/Inria-SAIRPICO/bioimageflow-platform/releases/download/v0.1.15/BioImageFlow-launcher-v0.1.15-windows-x64.zip
