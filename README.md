@@ -191,6 +191,9 @@ The command waits for signing and, on macOS, notarization to finish, verifies th
 cd ../signing
 export GITLAB_TOKEN="<token>"
 
+# or on Windows Powershell:
+# $env:GITLAB_TOKEN="<token>"
+
 uv run python scripts/submit_launcher.py \
   --file ../backend/dist/BioImageFlow-launcher-v0.1.13-macos-arm64.zip \
   --project-id "<signing-project-id_(474)>" \
