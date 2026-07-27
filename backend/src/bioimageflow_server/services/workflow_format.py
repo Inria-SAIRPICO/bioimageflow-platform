@@ -19,6 +19,7 @@ from bioimageflow_server.models.workflow import (
     WorkspaceWorkflowMetadata,
 )
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
+from bioimageflow_server.services.filesystem_durability import fsync_directory
 from bioimageflow_server.services.workflow_artifacts import artifact_hash
 
 
@@ -38,11 +39,7 @@ def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary_name, path)
-        directory_descriptor = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
+        fsync_directory(path.parent)
     except Exception:
         try:
             os.unlink(temporary_name)

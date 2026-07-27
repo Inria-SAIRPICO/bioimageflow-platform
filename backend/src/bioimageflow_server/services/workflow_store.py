@@ -47,6 +47,10 @@ from bioimageflow_server.models.workflow_move_recovery import (
     WorkflowMovePhase,
     WorkflowPromotionChildMove,
 )
+from bioimageflow_server.services.filesystem_durability import (
+    fsync_directory as _fsync_directory,
+    fsync_file as _fsync_file,
+)
 from bioimageflow_server.services.graph_translator import (
     _detect_missing_packages,
     _detect_missing_tools,
@@ -169,22 +173,6 @@ def _identity_locked(method: Any) -> Any:
             return method(self, name, *args, **kwargs)
 
     return wrapped
-
-
-def _fsync_file(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
 
 
 def _ensure_directory_durable(path: Path, *, anchor: Path) -> None:

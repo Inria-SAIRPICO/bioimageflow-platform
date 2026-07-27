@@ -388,7 +388,10 @@ def start_desktop(
 
     try:
         print("BioImageFlow Desktop Initialized")
-        webview.start(debug=dev, icon=str(_LINUX_APP_ICON))
+        if sys.platform in {"darwin", "win32"}:
+            webview.start(debug=dev)
+        else:
+            webview.start(debug=dev, icon=str(_LINUX_APP_ICON))
     finally:
         api.close_code_editor_window()
         # Window has been closed (or start() raised) -- run shutdown sequence
@@ -477,9 +480,8 @@ def _wait_for_server(
     """Wait until uvicorn has started, or raise if the thread died first.
 
     Watches ``server.started`` and fails fast if the uvicorn thread exits
-    before the server is ready -- the most common cause is a port-in-use
-    error, which otherwise manifests as a silent hang or, worse, a window
-    that unknowingly connects to a different server bound to the same port.
+    before the server is ready. Uvicorn logs the underlying startup exception;
+    this guard prevents a silent hang after any such failure.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -492,8 +494,8 @@ def _wait_for_server(
         if not server_thread.is_alive():
             raise RuntimeError(
                 "Backend server failed to start. The uvicorn thread exited "
-                "before the server became ready -- the address is likely "
-                "already in use. Try a different --port."
+                "before the server became ready. Review the preceding uvicorn "
+                "error for the root cause."
             )
         time.sleep(interval)
     raise TimeoutError(f"Server did not become ready within {timeout}s")

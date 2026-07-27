@@ -73,6 +73,24 @@ class _FakePypi(PyPIVersionService):
         pass
 
 
+async def test_create_app_creates_missing_tool_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = tmp_path / "missing-tool-store"
+    monkeypatch.setenv("BIOIMAGEFLOW_TOOL_STORE", str(store))
+
+    create_app(
+        AppConfig(
+            tool_registry=ToolRegistryService(),
+            pypi_versions=_FakePypi(),
+            disable_hot_reload=True,
+        )
+    )
+
+    assert store.is_dir()
+
+
 async def test_install_endpoint_no_longer_500s_by_default(
     empty_tool_store: Path, monkeypatch: pytest.MonkeyPatch
 ):

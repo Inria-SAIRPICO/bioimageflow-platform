@@ -95,6 +95,10 @@ class ToolHotReloadService:
         self._loop = asyncio.get_running_loop()
         self._stopped = False
 
+        roots = [watch_root] if isinstance(watch_root, Path) else watch_root
+        for root in roots:
+            root.mkdir(parents=True, exist_ok=True)
+
         observer = Observer()
         handler = PatternMatchingEventHandler(
             patterns=["*.py"],
@@ -102,7 +106,6 @@ class ToolHotReloadService:
             ignore_directories=True,
         )
         handler.on_any_event = self._on_any_event  # type: ignore[assignment]
-        roots = [watch_root] if isinstance(watch_root, Path) else watch_root
         for root in roots:
             observer.schedule(handler, str(root), recursive=True)
         observer.start()
@@ -113,6 +116,7 @@ class ToolHotReloadService:
         """Add another root to the running observer."""
         if self._observer is None or self._handler is None:
             return
+        watch_root.mkdir(parents=True, exist_ok=True)
         self._observer.schedule(self._handler, str(watch_root), recursive=True)
 
     async def stop(self) -> None:

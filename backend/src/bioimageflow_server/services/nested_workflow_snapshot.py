@@ -24,6 +24,7 @@ from bioimageflow_server.models.nested_workflow_snapshot import (
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import ValidationResult
 from bioimageflow_server.models.workflow import validate_workflow_id
+from bioimageflow_server.services.filesystem_durability import fsync_directory
 from bioimageflow_server.services.graph_validator import validate_graph
 from bioimageflow_server.services.graph_worker import run_graph_work
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
@@ -1077,11 +1078,7 @@ class NestedWorkflowSnapshotService:
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:
-        descriptor = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        fsync_directory(path)
 
     @staticmethod
     def _remove_staged_files(staged: list[tuple[Path, Path]]) -> None:
