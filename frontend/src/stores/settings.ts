@@ -34,6 +34,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // Internal serialization chain: each updateSettings() call appends to it
   // so concurrent calls run in submit order rather than racing the server.
   let lastPromise: Promise<unknown> = Promise.resolve()
+  let fetchPromise: Promise<void> | null = null
 
   const isLoaded = computed(() => settings.value !== null)
   const isDesktop = computed(() => settings.value?.deployment_mode === 'desktop')
@@ -42,17 +43,22 @@ export const useSettingsStore = defineStore('settings', () => {
     () => settings.value?.enable_unsafe_webapp_features === true,
   )
 
-  async function fetchSettings() {
+  function fetchSettings(): Promise<void> {
+    if (fetchPromise !== null) return fetchPromise
     isLoading.value = true
-    try {
-      const { data } = await api.get<WorkspaceSettings>('/api/v1/settings')
-      settings.value = data
-      error.value = null
-    } catch (e: unknown) {
-      error.value = _extractError(e)
-    } finally {
-      isLoading.value = false
-    }
+    fetchPromise = (async () => {
+      try {
+        const { data } = await api.get<WorkspaceSettings>('/api/v1/settings')
+        settings.value = data
+        error.value = null
+      } catch (e: unknown) {
+        error.value = _extractError(e)
+      } finally {
+        isLoading.value = false
+        fetchPromise = null
+      }
+    })()
+    return fetchPromise
   }
 
   function _sanitizeOptimisticPatch(partial: SettingsPatch): Partial<WorkspaceSettings> {

@@ -55,34 +55,56 @@ test.describe('hot-reload', () => {
     const node = page.locator('.vue-flow__node').first()
     await expect(node).toBeVisible({ timeout: 3000 })
 
-    // Capture the next `tool_reload` message via a page-side promise.
-    const toolReloadReceived = page.evaluate(() => {
-      return new Promise<{ tool_name: string }>((resolve, reject) => {
-        const sock = new WebSocket(
-          (location.protocol === 'https:' ? 'wss://' : 'ws://')
-          + location.host
-          + '/ws',
-        )
-        const timeout = setTimeout(() => {
-          try { sock.close() } catch { /* */ }
-          reject(new Error('Did not receive tool_reload within timeout.'))
-        }, 4500)
-        sock.onmessage = (ev) => {
+    // Register the listener and wait for the backend to accept its socket
+    // before editing the fixture. Otherwise Firefox can trigger the file
+    // event before the page.evaluate call has established its connection.
+    await page.evaluate(async () => {
+      type HotReloadMessage = { tool_name: string }
+      type HotReloadWindow = typeof window & {
+        __bioimageflowHotReloadMessage?: Promise<HotReloadMessage>
+        __bioimageflowHotReloadSocket?: WebSocket
+      }
+      const state = window as HotReloadWindow
+      const socket = new WebSocket(
+        (location.protocol === 'https:' ? 'wss://' : 'ws://')
+        + location.host
+        + '/ws',
+      )
+      state.__bioimageflowHotReloadSocket = socket
+
+      state.__bioimageflowHotReloadMessage = new Promise<HotReloadMessage>((resolve, reject) => {
+        let timeout: number | undefined
+        socket.addEventListener('open', () => {
+          timeout = window.setTimeout(() => {
+            socket.close()
+            reject(new Error('Did not receive tool_reload within timeout.'))
+          }, 4500)
+        }, { once: true })
+        socket.addEventListener('message', (event) => {
           try {
-            const msg = JSON.parse(ev.data as string)
-            if (msg.type === 'tool_reload') {
-              clearTimeout(timeout)
-              try { sock.close() } catch { /* */ }
-              resolve({ tool_name: msg.tool_name })
+            const message = JSON.parse(event.data as string)
+            if (message.type === 'tool_reload') {
+              if (timeout !== undefined)
+                window.clearTimeout(timeout)
+              socket.close()
+              resolve({ tool_name: message.tool_name })
             }
           } catch {
-            /* */
+            /* Ignore unrelated non-JSON WebSocket traffic. */
           }
-        }
-        sock.onerror = () => {
-          clearTimeout(timeout)
+        })
+        socket.addEventListener('error', () => {
+          if (timeout !== undefined)
+            window.clearTimeout(timeout)
           reject(new Error('WebSocket error'))
-        }
+        }, { once: true })
+      })
+
+      await new Promise<void>((resolve, reject) => {
+        socket.addEventListener('open', () => resolve(), { once: true })
+        socket.addEventListener('error', () => reject(new Error('WebSocket connection failed')), {
+          once: true,
+        })
       })
     })
 
@@ -95,7 +117,15 @@ test.describe('hot-reload', () => {
       expect(modified).not.toBe(original)
       writeFileSync(filePath, modified, 'utf-8')
 
-      const result = await toolReloadReceived
+      const result = await page.evaluate(async () => {
+        type HotReloadWindow = typeof window & {
+          __bioimageflowHotReloadMessage?: Promise<{ tool_name: string }>
+        }
+        const message = (window as HotReloadWindow).__bioimageflowHotReloadMessage
+        if (!message)
+          throw new Error('Hot-reload listener was not initialized.')
+        return message
+      })
       expect(result.tool_name.length).toBeGreaterThan(0)
 
       // Edit affects every class re-exported from this file (including Files),
@@ -108,6 +138,16 @@ test.describe('hot-reload', () => {
     } finally {
       // Restore the fixture file even if assertions failed.
       writeFileSync(filePath, original, 'utf-8')
+      await page.evaluate(() => {
+        type HotReloadWindow = typeof window & {
+          __bioimageflowHotReloadMessage?: Promise<{ tool_name: string }>
+          __bioimageflowHotReloadSocket?: WebSocket
+        }
+        const state = window as HotReloadWindow
+        state.__bioimageflowHotReloadSocket?.close()
+        delete state.__bioimageflowHotReloadMessage
+        delete state.__bioimageflowHotReloadSocket
+      }).catch(() => undefined)
       await page.request.delete(`${API_BASE}/api/v1/workflows/${workflowName}`).catch(() => undefined)
     }
   })
