@@ -97,7 +97,7 @@ uv sync --no-dev --extra desktop
 uv run --no-dev --extra desktop bioimageflow-gui
 ```
 
-A native window opens at `http://127.0.0.1:8000` showing the SPA served from `frontend/dist/`. Closing the window shuts the server down cleanly.
+A native window opens at `http://127.0.0.1:8000` showing the SPA served from `frontend/dist/`. Pywebview's developer tools stay disabled in this production mode. Closing the window shuts the server down cleanly.
 
 ## Quick Start — Browser (development)
 
@@ -133,7 +133,7 @@ uv run uvicorn bioimageflow_server.app:create_app --factory --host 127.0.0.1 --p
 
 ## Quick Start — Desktop + HMR (development)
 
-Get hot reload inside the native window.
+Get hot reload and pywebview's developer tools inside the native window.
 
 ```bash
 # terminal 1 -- frontend dev server
@@ -147,7 +147,8 @@ uv run python -m bioimageflow_server --desktop --dev
 
 Use `--log-config /path/to/logging.yaml` with `python -m bioimageflow_server` when you need deployment-specific logging levels or handlers.
 
-The pywebview window loads `http://localhost:5173` while the FastAPI backend runs on port 8000; API calls reach the backend through Vite's proxy.
+The `--dev` flag makes the pywebview window load `http://localhost:5173` and open its developer tools while the FastAPI backend runs on port 8000; API calls reach the backend through Vite's proxy.
+The repository's VS Code **Desktop** launch profile selects this same development mode.
 
 ## Testing
 

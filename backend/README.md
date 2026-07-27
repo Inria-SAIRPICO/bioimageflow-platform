@@ -90,7 +90,7 @@ If you launch raw Uvicorn directly, pass `--log-config src/bioimageflow_server/l
 
 Opens a native pywebview window around the SPA. Requires `uv sync --extra desktop`.
 
-**Production** (uses the pre-built frontend in `../frontend/dist/`):
+**Production** (uses the pre-built frontend in `../frontend/dist/` with pywebview's developer tools disabled):
 
 ```bash
 # Build the frontend first
@@ -105,7 +105,7 @@ uv run python -m bioimageflow_server --desktop --port 8765
 
 `bioimageflow-gui` binds `127.0.0.1:8000` by default. If that port is in use, the backend will fail to start and `start_desktop` raises a clear `RuntimeError`; switch to `python -m bioimageflow_server --desktop --port <other>`.
 
-**Development** (Vite HMR inside the window):
+**Development** (Vite HMR and pywebview's developer tools inside the window):
 
 ```bash
 # terminal 1
@@ -115,7 +115,9 @@ cd ../frontend && bun run dev
 uv run python -m bioimageflow_server --desktop --dev
 ```
 
-With `--dev` the pywebview window points at `http://localhost:5173` (the Vite dev server) while FastAPI still runs on `127.0.0.1:8000` so `/api` calls work through Vite's proxy.
+With `--dev` the pywebview window points at `http://localhost:5173` (the Vite dev server) and opens its developer tools, while FastAPI still runs on `127.0.0.1:8000` so `/api` calls work through Vite's proxy.
+The repository's VS Code **Desktop** launch profile passes `--dev` and therefore uses this development behavior.
+Without `--dev`, including through `bioimageflow-gui` and the packaged launcher, the desktop window serves the production frontend and keeps developer tools disabled.
 
 ## Workspace Storage
 

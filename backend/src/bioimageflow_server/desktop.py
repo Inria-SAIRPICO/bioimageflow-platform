@@ -305,9 +305,10 @@ def start_desktop(
 
     When *dev* is ``True`` the window loads the Vite dev server at
     ``http://localhost:5173`` so that frontend changes are reflected
-    instantly via HMR.  When *dev* is ``False`` (the default, used in
-    production), the window loads the FastAPI server which serves the
-    pre-built frontend assets.
+    instantly via HMR, and pywebview opens its developer tools.  When
+    *dev* is ``False`` (the default, used in production), the window loads
+    the FastAPI server which serves the pre-built frontend assets and
+    pywebview's developer tools remain disabled.
 
     The FastAPI backend is always started regardless of *dev* because
     the frontend needs the API endpoints.
@@ -316,7 +317,8 @@ def start_desktop(
         host: The host to bind the FastAPI server to.
         port: The port to bind the FastAPI server to.
         dev: If ``True``, point the window at the Vite dev server
-            (``http://localhost:5173``) for hot-module-replacement.
+            (``http://localhost:5173``) for hot-module-replacement and
+            enable pywebview's developer tools.
         log_config: Optional Uvicorn logging config path. Defaults to the
             packaged BioImageFlow logging config.
     """
@@ -386,7 +388,7 @@ def start_desktop(
 
     try:
         print("BioImageFlow Desktop Initialized")
-        webview.start(debug=True, icon=str(_LINUX_APP_ICON))
+        webview.start(debug=dev, icon=str(_LINUX_APP_ICON))
     finally:
         api.close_code_editor_window()
         # Window has been closed (or start() raised) -- run shutdown sequence

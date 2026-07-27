@@ -215,7 +215,7 @@ def test_webview_window_created_with_correct_url(
     from bioimageflow_server.desktop import _LINUX_APP_ICON
 
     mock_webview.start.assert_called_once_with(
-        debug=True,
+        debug=False,
         icon=str(_LINUX_APP_ICON),
     )
 
@@ -806,10 +806,10 @@ class TestStartDesktopDevUrl:
     @patch("bioimageflow_server.app.create_app")
     @patch("bioimageflow_server.desktop.threading.Thread")
     @patch("bioimageflow_server.desktop.urllib.request.urlopen")
-    def test_dev_true_uses_vite_url(
+    def test_dev_true_uses_vite_url_and_enables_devtools(
         self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
     ):
-        """dev=True points the window at the Vite dev server."""
+        """dev=True uses Vite and opens pywebview's developer tools."""
         from bioimageflow_server.desktop import start_desktop
 
         _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
@@ -818,16 +818,17 @@ class TestStartDesktopDevUrl:
 
         args, _ = mock_webview.create_window.call_args
         assert args[1] == "http://localhost:5173"
+        mock_webview.start.assert_called_once_with(debug=True, icon=ANY)
 
     @patch("bioimageflow_server.desktop.webview")
     @patch("bioimageflow_server.desktop.uvicorn")
     @patch("bioimageflow_server.app.create_app")
     @patch("bioimageflow_server.desktop.threading.Thread")
     @patch("bioimageflow_server.desktop.urllib.request.urlopen")
-    def test_dev_false_uses_fastapi_url(
+    def test_dev_false_uses_fastapi_url_and_disables_devtools(
         self, mock_urlopen, mock_thread_cls, mock_create_app, mock_uvicorn, mock_webview
     ):
-        """dev=False points the window at the FastAPI server."""
+        """dev=False uses FastAPI and keeps pywebview's developer tools closed."""
         from bioimageflow_server.desktop import start_desktop
 
         _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
@@ -836,6 +837,7 @@ class TestStartDesktopDevUrl:
 
         args, _ = mock_webview.create_window.call_args
         assert args[1] == "http://127.0.0.1:8000"
+        mock_webview.start.assert_called_once_with(debug=False, icon=ANY)
 
     @patch("bioimageflow_server.desktop.webview")
     @patch("bioimageflow_server.desktop.uvicorn")

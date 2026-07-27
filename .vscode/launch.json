@@ -14,6 +14,7 @@
             "python": "${workspaceFolder}/backend/.venv/bin/python",
             "args": [
                 "--desktop",
+                "--dev",
                 "--log-config",
                 "${workspaceFolder}/backend/src/bioimageflow_server/logging.yaml"
             ],

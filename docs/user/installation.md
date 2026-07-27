@@ -27,6 +27,7 @@ On its first run, the launcher:
 This preparation can take several minutes.
 Keep the launcher open while it displays download or environment progress.
 Later launches reuse the prepared environment and are normally faster.
+The launcher starts BioImageFlow in production desktop mode, with frontend hot reload and browser developer tools disabled.
 
 BioImageFlow also uses the internet when it installs tool packages or tool environments and when an example workflow downloads its public input data.
 
