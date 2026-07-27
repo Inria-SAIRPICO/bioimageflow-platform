@@ -20,7 +20,6 @@ from bioimageflow_server.services.package_installer import (
     PackageNetworkError,
     PackageNotFoundError,
     PypiPackageInstaller,
-    _project_version,
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -157,29 +156,59 @@ async def test_install_resolves_latest_when_no_version(
     assert calls[0][2] == "bioimageflow-core"
 
 
-async def test_install_common_tools_uses_local_checkout_without_pypi(
+async def test_install_common_tools_delegates_selected_version_to_package_index(
     installer: PypiPackageInstaller,
     tool_store: Path,
     registry: MagicMock,
     pypi: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    source_root = Path(__file__).parents[1] / "fixtures" / "common_tools_checkout"
-    monkeypatch.setattr(installer_module, "_local_common_tools_root", lambda: source_root)
+    calls: list[tuple[str, str, str, Path]] = []
     monkeypatch.setattr(
         installer_module,
         "ensure_installed",
-        _ensure_installed_failure_factory("network should not be used"),
+        _ensure_installed_success_factory(calls),
+    )
+
+    await installer.install("bioimageflow_common_tools", version="0.1.6")
+
+    pypi.get_latest_stable.assert_not_called()
+    assert calls == [
+        (
+            "bioimageflow_common_tools",
+            "0.1.6",
+            "bioimageflow-common-tools",
+            tool_store,
+        )
+    ]
+    registry.scan_tool_store.assert_called_once_with(tool_store)
+
+
+async def test_install_common_tools_resolves_latest_from_package_index(
+    installer: PypiPackageInstaller,
+    tool_store: Path,
+    pypi: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls: list[tuple[str, str, str, Path]] = []
+    pypi.get_latest_stable.return_value = "0.1.6"
+    monkeypatch.setattr(
+        installer_module,
+        "ensure_installed",
+        _ensure_installed_success_factory(calls),
     )
 
     await installer.install("bioimageflow_common_tools", version=None)
 
-    pypi.get_latest_stable.assert_not_called()
-    version = _project_version(source_root)
-    installed = tool_store / "bioimageflow_common_tools" / version / "bioimageflow_common_tools"
-    assert (installed / "__init__.py").exists()
-    assert (installed / "fixture_tool.py").exists()
-    registry.scan_tool_store.assert_called_once_with(tool_store)
+    pypi.get_latest_stable.assert_awaited_once_with("bioimageflow_common_tools")
+    assert calls == [
+        (
+            "bioimageflow_common_tools",
+            "0.1.6",
+            "bioimageflow-common-tools",
+            tool_store,
+        )
+    ]
 
 
 async def test_install_not_found_raises_package_not_found(
