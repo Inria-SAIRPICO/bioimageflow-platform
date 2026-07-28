@@ -135,7 +135,10 @@ function busyKey(packageName: string, version: string): string {
 }
 
 function isBusy(packageName: string, version: string): boolean {
-  return busy.value.has(busyKey(packageName, version))
+  return (
+    busy.value.has(busyKey(packageName, version))
+    || toolRegistry.isPackageVersionInstalling(packageName, version)
+  )
 }
 
 function markBusy(key: string, on: boolean) {
@@ -388,8 +391,6 @@ function getVersionRows(packageName: string): VersionRow[] {
 }
 
 async function installVersion(packageName: string, version: string) {
-  const key = busyKey(packageName, version)
-  markBusy(key, true)
   uiStore.openLoggerPanel()
   toast.add({
     severity: 'info',
@@ -398,8 +399,7 @@ async function installVersion(packageName: string, version: string) {
     life: 3000,
   })
   try {
-    await api.post(`/api/v1/tools/packages/${packageName}/install`, { version })
-    await Promise.all([toolRegistry.fetchPackages(), toolRegistry.fetchTools()])
+    await toolRegistry.installPackageVersion(packageName, version)
     toast.add({
       severity: 'success',
       summary: 'Installed',
@@ -407,7 +407,9 @@ async function installVersion(packageName: string, version: string) {
       life: 3000,
     })
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e)
+    const message = toolRegistry.error ?? (
+      e instanceof Error ? e.message : String(e)
+    )
     toolRegistry.error = message
     toast.add({
       severity: 'error',
@@ -415,8 +417,6 @@ async function installVersion(packageName: string, version: string) {
       detail: `${packageName}==${version}: ${message}`,
       life: 5000,
     })
-  } finally {
-    markBusy(key, false)
   }
 }
 
@@ -975,6 +975,13 @@ defineExpose({
                   :data-testid="`version-toggle-${node.data.name}`"
                   @click.stop="toggleVersionsExpanded(node.data.name)"
                 >
+                  <i
+                    v-if="toolRegistry.isPackageInstalling(node.data.name)"
+                    class="pi pi-spinner pi-spin version-dropdown-busy"
+                    role="status"
+                    aria-label="Package installation in progress"
+                    :data-testid="`version-toggle-busy-${node.data.name}`"
+                  />
                   <span
                     class="version-dropdown-summary"
                     :class="{ 'version-dropdown-summary-empty': !node.data.versions }"
@@ -1502,6 +1509,7 @@ defineExpose({
 }
 
 .version-dropdown-summary {
+  flex: 1;
   font-family: var(--font-family-mono, monospace);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1517,6 +1525,11 @@ defineExpose({
 .version-dropdown-chevron {
   font-size: 11px;
   color: var(--p-text-muted-color);
+  flex-shrink: 0;
+}
+
+.version-dropdown-busy {
+  color: var(--p-primary-color);
   flex-shrink: 0;
 }
 

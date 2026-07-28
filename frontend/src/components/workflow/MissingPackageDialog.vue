@@ -7,10 +7,15 @@ defineProps<{
   visible: boolean
   packages: MissingPackage[]
   tools: MissingTool[]
+  installing?: boolean
+  installProgress?: string | null
+  installErrors?: Record<string, string>
+  canRebind?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:visible': [value: boolean]
+  'install-all': []
   rebind: []
 }>()
 </script>
@@ -36,6 +41,12 @@ const emit = defineEmits<{
           Installed: {{ pkg.installed_versions?.length ? pkg.installed_versions.join(', ') : 'none' }}
         </span>
         <small>Affected nodes: {{ pkg.affected_nodes?.join(', ') || 'unknown' }}</small>
+        <small
+          v-if="installErrors?.[`${pkg.package_name}@${pkg.required_version}`]"
+          class="dependency-error"
+        >
+          {{ installErrors[`${pkg.package_name}@${pkg.required_version}`] }}
+        </small>
       </div>
     </section>
 
@@ -57,15 +68,34 @@ const emit = defineEmits<{
     <p v-if="!packages.length && !tools.length" class="empty">
       This workflow has no missing package or tool metadata.
     </p>
+    <p v-if="installProgress" class="install-progress" role="status">
+      {{ installProgress }}
+    </p>
 
     <template #footer>
-      <Button label="Close" text @click="emit('update:visible', false)" />
       <Button
-        label="Use installed versions"
+        label="Close"
+        text
+        :disabled="installing"
+        @click="emit('update:visible', false)"
+      />
+      <Button
+        v-if="canRebind"
+        label="Use installed alternatives…"
         icon="pi pi-refresh"
-        :disabled="packages.length === 0"
+        severity="secondary"
+        outlined
+        :disabled="installing"
         data-testid="missing-package-rebind"
         @click="emit('rebind')"
+      />
+      <Button
+        v-if="packages.length"
+        label="Install all missing packages"
+        :icon="installing ? 'pi pi-spinner pi-spin' : 'pi pi-download'"
+        :disabled="installing"
+        data-testid="missing-package-install-all"
+        @click="emit('install-all')"
       />
     </template>
   </Dialog>
@@ -91,7 +121,16 @@ const emit = defineEmits<{
 }
 .dependency-card span,
 .dependency-card small,
-.empty {
+.empty,
+.install-progress {
   color: var(--p-text-muted-color);
+}
+
+.install-progress {
+  margin: 0.75rem 0 0;
+}
+
+.dependency-error {
+  color: var(--p-red-500) !important;
 }
 </style>

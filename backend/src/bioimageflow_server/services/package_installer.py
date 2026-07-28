@@ -166,9 +166,7 @@ class PypiPackageInstaller(PackageInstallerService):
                 raise
 
             if self._hot_reload is not None:
-                # resume(emit_batch=True) discovers the new (pkg, ver) pair
-                # and broadcasts one tool_reload per discovered tool.
-                self._hot_reload.resume(emit_batch=True)
+                await self._hot_reload.resume_after_install(package_name, version)
             else:
                 await anyio_to_thread.run_sync(
                     self._registry.scan_tool_store, self._tool_store
@@ -227,7 +225,10 @@ class PypiPackageInstaller(PackageInstallerService):
                 await anyio_to_thread.run_sync(shutil.rmtree, staging_parent, True)
 
             if self._hot_reload is not None:
-                self._hot_reload.resume(emit_batch=True)
+                await self._hot_reload.resume_after_install(
+                    result.package,
+                    result.version,
+                )
             else:
                 await anyio_to_thread.run_sync(
                     self._registry.scan_tool_store, self._tool_store

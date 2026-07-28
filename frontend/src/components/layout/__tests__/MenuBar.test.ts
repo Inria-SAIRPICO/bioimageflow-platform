@@ -1306,6 +1306,133 @@ describe('MenuBar', () => {
       window.removeEventListener('bioimageflow:apply-graph', onApply)
     })
 
+    it('installs every exact missing dependency and refreshes diagnostics', async () => {
+      const { workflow } = registerActiveRootWorkflow()
+      const store = useWorkflowStore()
+      store.missingPackages = [
+        {
+          package_name: 'common',
+          required_version: '1.2.3',
+          installed_versions: [],
+          affected_nodes: ['generate'],
+        },
+        {
+          package_name: 'spots',
+          required_version: '2.0.0',
+          installed_versions: [],
+          affected_nodes: ['detect'],
+        },
+      ]
+      apiMocks.post.mockResolvedValue({ data: { status: 'installed' } })
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/tools/packages') return Promise.resolve({ data: [] })
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [] })
+        if (url === '/api/v1/workflows/wf_a') {
+          return Promise.resolve({
+            data: {
+              info: workflow,
+              graph: makeGraph(),
+              missing_packages: [],
+              missing_tools: [],
+            },
+          })
+        }
+        return Promise.resolve({ data: {} })
+      })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      vm.dependencyDialogVisible = true
+
+      await vm.installMissingDependencies()
+
+      expect(apiMocks.post.mock.calls).toEqual([
+        ['/api/v1/tools/packages/common/install', { version: '1.2.3' }],
+        ['/api/v1/tools/packages/spots/install', { version: '2.0.0' }],
+      ])
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/tools/packages')
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/tools')
+      expect(apiMocks.get).toHaveBeenCalledWith('/api/v1/workflows/wf_a')
+      expect(store.missingPackages).toEqual([])
+      expect(vm.dependencyDialogVisible).toBe(false)
+      expect(useUIStore().panels.logger).toBe(true)
+    })
+
+    it('continues bulk installation after one package fails and keeps diagnostics open', async () => {
+      const { workflow } = registerActiveRootWorkflow()
+      const store = useWorkflowStore()
+      const missing = {
+        package_name: 'common',
+        required_version: '1.2.3',
+        installed_versions: [],
+        affected_nodes: ['generate'],
+      }
+      store.missingPackages = [
+        missing,
+        {
+          package_name: 'spots',
+          required_version: '2.0.0',
+          installed_versions: [],
+          affected_nodes: ['detect'],
+        },
+      ]
+      apiMocks.post
+        .mockRejectedValueOnce(new Error('network unavailable'))
+        .mockResolvedValueOnce({ data: { status: 'installed' } })
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/tools/packages') return Promise.resolve({ data: [] })
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [] })
+        if (url === '/api/v1/workflows/wf_a') {
+          return Promise.resolve({
+            data: {
+              info: workflow,
+              graph: makeGraph(),
+              missing_packages: [missing],
+              missing_tools: [],
+            },
+          })
+        }
+        return Promise.resolve({ data: {} })
+      })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      vm.dependencyDialogVisible = true
+
+      await vm.installMissingDependencies()
+
+      expect(apiMocks.post).toHaveBeenCalledTimes(2)
+      expect(store.missingPackages).toEqual([missing])
+      expect(vm.dependencyDialogVisible).toBe(true)
+      expect(vm.dependencyInstallErrors).toEqual({
+        'common@1.2.3': 'network unavailable',
+      })
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'error',
+        summary: 'Some packages could not be installed',
+        detail: expect.stringContaining('network unavailable'),
+      }))
+    })
+
+    it('only offers dependency rebinding when every package has an alternative', async () => {
+      registerActiveRootWorkflow()
+      const store = useWorkflowStore()
+      store.missingPackages = [{
+        package_name: 'common',
+        required_version: '1.2.3',
+        installed_versions: [],
+        affected_nodes: ['generate'],
+      }]
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+
+      expect(vm.canRebindDependencies).toBe(false)
+      store.missingPackages = [{
+        ...store.missingPackages[0],
+        installed_versions: ['1.2.2'],
+      }]
+      await wrapper.vm.$nextTick()
+      expect(vm.canRebindDependencies).toBe(true)
+    })
+
     it('clears captured delete state when the lifecycle request succeeds after execution locks', async () => {
       const { canvasId } = registerActiveRootWorkflow()
       let deletionRequest: WorkflowDeletionEventDetail | null = null

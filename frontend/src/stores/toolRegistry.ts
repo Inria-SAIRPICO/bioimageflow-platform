@@ -34,12 +34,49 @@ export interface EnvironmentDeleteResponse {
   status: string
 }
 
+export interface PackageInstallPayload {
+  type: 'package_install'
+  package_name: string
+  status: string
+  detail?: string | null
+}
+
+function apiErrorMessage(error: unknown): string {
+  const response = (error as {
+    response?: { data?: { detail?: string; message?: string } }
+  })?.response?.data
+  return response?.detail
+    ?? response?.message
+    ?? (error instanceof Error ? error.message : String(error))
+}
+
 export const useToolRegistryStore = defineStore('toolRegistry', () => {
   const tools = ref<ToolMetadata[]>([])
   const packages = ref<PackageInfo[]>([])
   const environmentStatuses = ref<Record<string, string>>({})
   const error = ref<string | null>(null)
   const customToolBusy = ref(false)
+  const packageInstallOperations = ref(new Set<string>())
+
+  function packageInstallKey(packageName: string, version: string): string {
+    return `${packageName}@${version}`
+  }
+
+  function markPackageInstallBusy(key: string, active: boolean): void {
+    const next = new Set(packageInstallOperations.value)
+    if (active) next.add(key)
+    else next.delete(key)
+    packageInstallOperations.value = next
+  }
+
+  function isPackageVersionInstalling(packageName: string, version: string): boolean {
+    return packageInstallOperations.value.has(packageInstallKey(packageName, version))
+  }
+
+  function isPackageInstalling(packageName: string): boolean {
+    const prefix = `${packageName}@`
+    return Array.from(packageInstallOperations.value).some(key => key.startsWith(prefix))
+  }
 
   function currentWorkflowRequestConfig():
     | { params: { workflow_name: string } }
@@ -67,6 +104,34 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
       error.value = null
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  async function installPackageVersion(
+    packageName: string,
+    version: string,
+    options: { refresh?: boolean } = {},
+  ): Promise<void> {
+    const key = packageInstallKey(packageName, version)
+    if (packageInstallOperations.value.has(key)) return
+    markPackageInstallBusy(key, true)
+    try {
+      await api.post(`/api/v1/tools/packages/${packageName}/install`, { version })
+      if (options.refresh !== false) {
+        await Promise.all([fetchPackages(), fetchTools()])
+      }
+      error.value = null
+    } catch (e: unknown) {
+      error.value = apiErrorMessage(e)
+      throw e
+    } finally {
+      markPackageInstallBusy(key, false)
+    }
+  }
+
+  function applyPackageInstall(payload: PackageInstallPayload): void {
+    if (payload.status === 'installed' || payload.status === 'uninstalled') {
+      void Promise.all([fetchPackages(), fetchTools()])
     }
   }
 
@@ -316,8 +381,13 @@ export const useToolRegistryStore = defineStore('toolRegistry', () => {
     environmentStatuses,
     error,
     customToolBusy,
+    packageInstallOperations,
     fetchTools,
     fetchPackages,
+    installPackageVersion,
+    isPackageVersionInstalling,
+    isPackageInstalling,
+    applyPackageInstall,
     createTool,
     getToolUsage,
     renameTool,

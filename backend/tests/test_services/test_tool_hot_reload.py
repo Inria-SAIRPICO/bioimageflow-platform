@@ -583,6 +583,29 @@ async def test_suppress_blocks_broadcasts_resume_emits_batch(tmp_path):
     assert pairs == [("p1", "1.0.0"), ("p2", "1.0.0")]
 
 
+async def test_resume_after_install_indexes_fresh_package_before_returning(tmp_path):
+    from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
+
+    reg = FakeRegistry(tmp_path)
+    reg.set_reload_outcome(
+        "fresh",
+        "1.0.0",
+        {"NewTool": _meta("NewTool", package="fresh")},
+    )
+    cm = MagicMock()
+    cm.broadcast_tool_reload = AsyncMock()
+    cm.broadcast_tool_removed = AsyncMock()
+    cm.broadcast_system_error = AsyncMock()
+    svc = ToolHotReloadService(registry=reg, connection_manager=cm, debounce_ms=15)
+
+    svc.suppress()
+    await svc.resume_after_install("fresh", "1.0.0")
+
+    assert reg.reload_calls == [("fresh", "1.0.0")]
+    cm.broadcast_tool_reload.assert_awaited_once()
+    assert cm.broadcast_tool_reload.await_args.args[0] == "NewTool"
+
+
 async def test_resume_emit_batch_false_drops_events(tmp_path):
     from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
 

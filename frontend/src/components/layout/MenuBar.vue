@@ -26,6 +26,7 @@ import {
 import { useCanvasCommands } from '@/composables/useCanvasCommands'
 import { useWorkflowStore, WorkflowConflictError } from '@/stores/workflow'
 import { useSettingsStore } from '@/stores/settings'
+import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { api } from '@/api/client'
 import {
   applyWorkflowSourceOperation,
@@ -65,6 +66,7 @@ const executionStore = useExecutionStore()
 const canvasLifecycleStore = useCanvasLifecycleStore()
 const workflowStore = useWorkflowStore()
 const settingsStore = useSettingsStore()
+const toolRegistryStore = useToolRegistryStore()
 const { flushNow, validationResult, isPending, currentGraph } = useGraphSync()
 const canvasPersistence = useCanvasPersistence()
 const canvasCommands = useCanvasCommands()
@@ -140,6 +142,15 @@ const renameDisplayName = ref('')
 const importFileInput = ref<HTMLInputElement | null>(null)
 const pendingImportFile = ref<File | null>(null)
 const dependencyDialogVisible = ref(false)
+const dependencyInstallBusy = ref(false)
+const dependencyInstallProgress = ref<string | null>(null)
+const dependencyInstallErrors = ref<Record<string, string>>({})
+const canRebindDependencies = computed(() => (
+  workflowStore.missingPackages.length > 0
+  && workflowStore.missingPackages.every(
+    item => (item.installed_versions?.length ?? 0) > 0,
+  )
+))
 const themeMenu = ref<{ toggle: (event: Event) => void } | null>(null)
 const workflowDialogTarget = ref<{
   canvasId: CanvasId | null
@@ -615,6 +626,98 @@ async function rebindImportedDependencies(): Promise<void> {
   }
 }
 
+function requestDependencyRebind(): void {
+  if (!canRebindDependencies.value) return
+  const substitutions = workflowStore.missingPackages.map((item) => {
+    const installed = toolRegistryStore.packages.find(
+      pkg => pkg.name === item.package_name,
+    )
+    const alternatives = item.installed_versions ?? []
+    const replacement = installed?.active_version
+      ?? alternatives[alternatives.length - 1]
+      ?? 'installed version'
+    return `${item.package_name}: ${item.required_version} → ${replacement}`
+  })
+  const confirmed = window.confirm(
+    `Replace the workflow's required package versions?\n\n${substitutions.join('\n')}`,
+  )
+  if (confirmed) void rebindImportedDependencies()
+}
+
+async function installMissingDependencies(): Promise<void> {
+  if (dependencyInstallBusy.value || executionStore.isMutationLocked) return
+  const workflowName = activeWorkflowId.value
+  if (!workflowName) return
+  const requirements = Array.from(new Map(
+    workflowStore.missingPackages.map(item => [
+      `${item.package_name}@${item.required_version}`,
+      item,
+    ]),
+  ).values())
+  if (requirements.length === 0) return
+
+  dependencyInstallBusy.value = true
+  dependencyInstallErrors.value = {}
+  uiStore.openLoggerPanel()
+  const failures: string[] = []
+  try {
+    for (const [index, requirement] of requirements.entries()) {
+      dependencyInstallProgress.value = (
+        `Installing ${index + 1} of ${requirements.length}: `
+        + `${requirement.package_name} ${requirement.required_version}`
+      )
+      try {
+        await toolRegistryStore.installPackageVersion(
+          requirement.package_name,
+          requirement.required_version,
+          { refresh: false },
+        )
+      } catch (err: unknown) {
+        const detail = toolRegistryStore.error
+          ?? (err instanceof Error ? err.message : String(err))
+        dependencyInstallErrors.value = {
+          ...dependencyInstallErrors.value,
+          [`${requirement.package_name}@${requirement.required_version}`]: detail,
+        }
+        failures.push(
+          `${requirement.package_name} ${requirement.required_version}: ${detail}`,
+        )
+      }
+    }
+    await Promise.all([
+      toolRegistryStore.fetchPackages(),
+      toolRegistryStore.fetchTools(),
+    ])
+    await workflowStore.refreshWorkflowDependencies(workflowName)
+
+    if (
+      activeWorkflowId.value === workflowName
+      && !hasMissingImportDependencies()
+    ) {
+      dependencyDialogVisible.value = false
+    }
+    if (failures.length > 0) {
+      toast?.add({
+        severity: 'error',
+        summary: 'Some packages could not be installed',
+        detail: failures.join('\n'),
+      })
+    } else {
+      toast?.add({
+        severity: 'success',
+        summary: 'Workflow dependencies installed',
+        detail: `Installed ${requirements.length} package version${requirements.length === 1 ? '' : 's'}.`,
+        life: 3000,
+      })
+    }
+  } catch (err: unknown) {
+    showError('Dependency refresh failed', err)
+  } finally {
+    dependencyInstallProgress.value = null
+    dependencyInstallBusy.value = false
+  }
+}
+
 function saveWorkflowAs(): void {
   if (executionStore.isMutationLocked) return
   const target = currentSaveTarget()
@@ -1005,6 +1108,12 @@ defineExpose({
   renameDialogVisible,
   importRenameDialogVisible,
   dependencyDialogVisible,
+  dependencyInstallBusy,
+  dependencyInstallProgress,
+  dependencyInstallErrors,
+  canRebindDependencies,
+  installMissingDependencies,
+  requestDependencyRebind,
   themeButtonIcon,
   themeButtonLabel,
   themeMenuItems,
@@ -1099,7 +1208,12 @@ defineExpose({
     v-model:visible="dependencyDialogVisible"
     :packages="workflowStore.missingPackages"
     :tools="workflowStore.missingTools"
-    @rebind="rebindImportedDependencies"
+    :installing="dependencyInstallBusy"
+    :install-progress="dependencyInstallProgress"
+    :install-errors="dependencyInstallErrors"
+    :can-rebind="canRebindDependencies"
+    @install-all="installMissingDependencies"
+    @rebind="requestDependencyRebind"
   />
 
   <Dialog

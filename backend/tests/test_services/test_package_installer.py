@@ -494,7 +494,7 @@ async def test_uninstall_missing_path_raises_not_found(
 
 
 class _FakeHotReload:
-    """Records suppress / resume calls to assert ordering and arguments."""
+    """Records package-operation lifecycle calls."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, bool | None]] = []
@@ -504,6 +504,9 @@ class _FakeHotReload:
 
     def resume(self, emit_batch: bool = True) -> None:
         self.calls.append(("resume", emit_batch))
+
+    async def resume_after_install(self, package: str, version: str) -> None:
+        self.calls.append((f"install:{package}@{version}", None))
 
 
 @pytest.fixture
@@ -526,7 +529,7 @@ def installer_with_hot_reload(
     )
 
 
-async def test_install_success_suppresses_then_resumes_with_batch(
+async def test_install_success_suppresses_then_indexes_installed_version(
     installer_with_hot_reload: PypiPackageInstaller,
     hot_reload: _FakeHotReload,
     monkeypatch: pytest.MonkeyPatch,
@@ -539,7 +542,10 @@ async def test_install_success_suppresses_then_resumes_with_batch(
 
     await installer_with_hot_reload.install("foo", "1.0")
 
-    assert hot_reload.calls == [("suppress", None), ("resume", True)]
+    assert hot_reload.calls == [
+        ("suppress", None),
+        ("install:foo@1.0", None),
+    ]
 
 
 async def test_install_failure_resumes_with_emit_batch_false(
@@ -587,13 +593,12 @@ async def test_uninstall_failure_resumes_with_emit_batch_false(
     assert ("resume", True) not in hot_reload.calls
 
 
-async def test_install_skips_scan_tool_store_when_hot_reload_wired(
+async def test_install_uses_hot_reload_indexing_instead_of_full_store_scan(
     installer_with_hot_reload: PypiPackageInstaller,
     registry: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """When hot-reload is wired, resume(emit_batch=True) performs the
-    load + index — a second scan_tool_store would double the work."""
+    """The awaited hot-reload path performs the targeted load and index."""
     monkeypatch.setattr(
         installer_module,
         "ensure_installed",

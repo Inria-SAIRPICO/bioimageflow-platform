@@ -125,6 +125,43 @@ describe('toolRegistry custom tool actions', () => {
     expect(store.customToolBusy).toBe(false)
   })
 
+  it('tracks a package install until refreshed read models are available', async () => {
+    let resolveInstall: (value: unknown) => void = () => {}
+    mockedApi.post.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveInstall = resolve
+      }),
+    )
+    const store = useToolRegistryStore()
+
+    const pending = store.installPackageVersion('common', '1.2.3')
+
+    expect(store.isPackageVersionInstalling('common', '1.2.3')).toBe(true)
+    expect(store.isPackageInstalling('common')).toBe(true)
+    resolveInstall({ data: { status: 'installed' } })
+    await pending
+
+    expect(mockedApi.post).toHaveBeenCalledWith(
+      '/api/v1/tools/packages/common/install',
+      { version: '1.2.3' },
+    )
+    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools')
+    expect(mockedApi.get).toHaveBeenCalledWith('/api/v1/tools/packages')
+    expect(store.isPackageVersionInstalling('common', '1.2.3')).toBe(false)
+  })
+
+  it('clears package install state and propagates failures', async () => {
+    mockedApi.post.mockRejectedValueOnce(new Error('install failed'))
+    const store = useToolRegistryStore()
+
+    await expect(store.installPackageVersion('common', '1.2.3')).rejects.toThrow(
+      'install failed',
+    )
+
+    expect(store.error).toBe('install failed')
+    expect(store.isPackageInstalling('common')).toBe(false)
+  })
+
   it('applyToolReload upserts tools and package membership', () => {
     const store = useToolRegistryStore()
     store.packages = [{

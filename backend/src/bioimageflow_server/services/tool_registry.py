@@ -685,7 +685,31 @@ class ToolRegistryService:
                     version,
                 )
 
-        return self.snapshot(package, version)
+        current = self.snapshot(package, version)
+        tool_names = sorted(current)
+        if pkg_info is None:
+            self._packages[package] = PackageInfo(
+                name=package,
+                installed_versions=[version],
+                available_versions=[version],
+                active_version=version,
+                tools={version: tool_names},
+                load_errors={},
+                environment_status="stopped",
+            )
+        else:
+            if version not in pkg_info.installed_versions:
+                pkg_info.installed_versions.append(version)
+                pkg_info.installed_versions.sort(key=_version_sort_key)
+            if version not in pkg_info.available_versions:
+                pkg_info.available_versions.append(version)
+                pkg_info.available_versions.sort(key=_version_sort_key)
+            pkg_info.tools[version] = tool_names
+            pkg_info.load_errors.pop(version, None)
+            if pkg_info.active_version is None:
+                pkg_info.active_version = version
+
+        return current
 
     def forget_package(self, name: str, version: str | None = None) -> None:
         """Drop a package (or a single version) from the in-memory registry.

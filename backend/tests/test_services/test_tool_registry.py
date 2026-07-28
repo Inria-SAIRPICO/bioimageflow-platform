@@ -482,6 +482,22 @@ def test_reload_stamps_version_metadata_on_classes(
     assert getattr(cls, "_bif_canonical_module") == f"{DUMMY_PKG}.filters"
 
 
+def test_reload_newly_installed_package_updates_package_registry(
+    tmp_path, _cleanup_dummy_modules
+):
+    reg = ToolRegistryService()
+    reg.scan_tool_store(tmp_path)
+    _write_dummy_pkg(tmp_path, "1.0.0")
+
+    reg.reload_package(DUMMY_PKG, "1.0.0")
+
+    package = reg.get_package(DUMMY_PKG)
+    assert package is not None
+    assert package.installed_versions == ["1.0.0"]
+    assert package.active_version == "1.0.0"
+    assert package.tools == {"1.0.0": ["GaussianSmooth"]}
+
+
 def test_resolve_tool_class_after_reload(tmp_path, _cleanup_dummy_modules):
     from bioimageflow.tool_loader import resolve_tool_class
 

@@ -20,7 +20,8 @@ BioImageFlow never overwrites a workflow that already occupies an example's cano
 
 Example workflows use separately distributed tool packages.
 If BioImageFlow reports missing packages, the dependency dialog identifies the required versions and affected nodes.
-Open **Manage Tools** at the bottom of the **Tools** panel to install a required version from its package row, or click **Use installed versions** in the dependency dialog when the versions already on your computer are suitable replacements.
+Click **Install all missing packages** in the dependency dialog to install every exact required version, or open **Manage Tools** at the bottom of the **Tools** panel to install versions individually.
+When alternatives are already installed, **Use installed alternatives…** can rebind the workflow after you confirm the version substitutions.
 
 Package installation may create analysis environments and can take time.
 Wait for the package and tool lists to refresh before running.

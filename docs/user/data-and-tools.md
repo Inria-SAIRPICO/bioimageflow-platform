@@ -61,7 +61,8 @@ Choose the offered restart or rebuild action and wait for recovery before retryi
 A workflow can refer to a tool package or version that is not installed locally.
 BioImageFlow keeps the workflow structure visible, marks missing tools, and blocks execution until the dependency is resolved.
 
-Use the missing-package dialog or Manage Tools to install the requested package version.
+Use **Install all missing packages** in the dependency dialog to install every requested version, or use Manage Tools to install versions individually.
+When every missing dependency has an installed alternative, **Use installed alternatives…** can rebind the workflow after confirmation.
 After importing a workflow, use the rebind action only when the locally available tools are the intended replacements.
 
 ## Create workflow-local tools

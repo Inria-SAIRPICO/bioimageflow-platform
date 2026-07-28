@@ -627,6 +627,21 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return data.graph
   }
 
+  async function refreshWorkflowDependencies(name: string): Promise<void> {
+    const identityGeneration = captureWorkflowIdentity(name)
+    const { data } = await api.get<WorkflowFile>(`/api/v1/workflows/${workflowUrl(name)}`)
+    assertWorkflowIdentityCurrent(name, identityGeneration)
+    if (workflowId(data.info) !== name) {
+      throw new WorkflowIdentityChangedError(name)
+    }
+    upsertWorkflow(data.info)
+    if (currentName.value === name) {
+      current.value = data.info
+      missingPackages.value = data.missing_packages ?? []
+      missingTools.value = data.missing_tools ?? []
+    }
+  }
+
   async function saveWorkflow(
     graph: GraphState,
     target?: WorkflowSaveTarget,
@@ -1240,6 +1255,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     fetchWorkflowTree,
     createWorkflow,
     loadWorkflow,
+    refreshWorkflowDependencies,
     saveWorkflow,
     deleteWorkflow,
     forgetDeletedWorkflow,

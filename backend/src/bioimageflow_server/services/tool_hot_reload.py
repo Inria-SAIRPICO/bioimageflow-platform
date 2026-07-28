@@ -228,6 +228,31 @@ class ToolHotReloadService:
             prior = pre.get(pair, {})
             self._loop.call_soon_threadsafe(self._fire_with_prior, pair, prior)
 
+    async def resume_after_install(self, package: str, version: str) -> None:
+        """Resume watching and synchronously index one installed package.
+
+        Installation is not complete from the API's perspective until the
+        in-memory registry contains the new version. Waiting here prevents
+        the package catalog from rebuilding against stale state while still
+        broadcasting the ordinary tool diffs to connected clients.
+        """
+        pair = (package, version)
+        with self._lock:
+            self._suppressed.clear()
+            pending = self._pending.copy()
+            pre = self._pre_suppress_snapshots.copy()
+            self._pending.clear()
+            self._pre_suppress_snapshots.clear()
+
+        pending.add(pair)
+        pre.setdefault(pair, {})
+        await asyncio.gather(
+            *(
+                self._do_reload(candidate, pre.get(candidate, {}))
+                for candidate in pending
+            )
+        )
+
     # -- watchdog callback (worker thread) -------------------------------
 
     def _on_any_event(self, event: FileSystemEvent) -> None:
