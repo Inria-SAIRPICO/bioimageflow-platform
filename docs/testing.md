@@ -36,13 +36,20 @@ scripts/test focus related frontend/src/stores/workflow.ts
 # Browser spec, source line, test name, or previous failures
 scripts/test focus e2e tests/e2e/execution.spec.ts
 scripts/test focus e2e tests/e2e/execution.spec.ts:111
+scripts/test focus e2e --project=firefox tests/e2e/hot-reload.spec.ts
 scripts/test focus e2e --grep "executes a source tool"
 scripts/test focus e2e --last-failed
 ```
 
 The backend and frontend arguments after the focus target are forwarded to Pytest, Vitest, or Playwright.
 Related-test selection is advisory because dynamic imports and runtime wiring are not always visible to static dependency analysis.
-Focused browser runs use Chromium, a fresh temporary runtime root, and automatically selected local ports unless the caller explicitly sets the corresponding `BIOIMAGEFLOW_E2E_*` variables.
+Focused browser runs use Chromium unless one or more Playwright `--project` options are provided.
+Explicit project options are honored exactly, so `--project=firefox` does not also launch Chromium.
+Focused runs use a fresh temporary runtime root, automatically selected local ports unless the caller explicitly sets the corresponding `BIOIMAGEFLOW_E2E_*` variables, and `--max-failures=1` unless the caller supplies another limit.
+
+For a failing browser test, first reproduce its exact selector and project.
+After a change, run it once, then use `--repeat-each=5` only when validating a timing or race fix.
+Do not start a complete browser lane while the focused test still fails.
 
 ## Quick coding checkpoint
 
@@ -68,7 +75,10 @@ scripts/test check backend
 scripts/test check frontend
 scripts/test check docs
 scripts/test check browser-smoke
+scripts/test check cross-browser-smoke
 scripts/test check browser
+scripts/test check browser-firefox
+scripts/test check browser-all
 scripts/test check app
 scripts/test check all
 ```
@@ -81,13 +91,18 @@ Use the smallest scope that covers the changed surface:
 | Frontend logic or unit tests | `check frontend` |
 | Documentation only | `check docs` |
 | Backend/frontend API, schemas, dependencies, or runtime behavior | `check app` |
-| Browser interaction, layout, persistence, or E2E infrastructure | `check frontend` and `check browser` |
+| Browser interaction, layout, or persistence | `check frontend` and `check browser` |
+| Localized cross-browser behavior | `check frontend` and `check cross-browser-smoke` |
+| Broad browser or E2E infrastructure | `check frontend` and `check browser-all` |
 | Broad architecture or test-runner changes | `check all` |
 
 `check backend` runs backend lint, every non-external backend test, and the logging-order certification.
 `check frontend` runs frontend lint, type checking, every Vitest project, and the production build.
 `check docs` runs Sphinx with warnings treated as failures.
 `check browser-smoke` runs only Chromium tests tagged `@critical`, while `check browser` runs the complete Chromium project.
+`check cross-browser-smoke` runs critical Chromium and Firefox tests in isolated parallel processes.
+`check browser-firefox` runs the complete Firefox project.
+`check browser-all` runs the complete Chromium and Firefox projects in isolated parallel processes without coverage or external certification.
 `check app` runs the backend and frontend checks in parallel and follows them with the critical Chromium smoke.
 `check all`, and the compatibility alias `check`, run the previous complete deterministic lane with the full Chromium project.
 All scoped checks avoid network access and developer runtime tool stores unless their description explicitly says otherwise.
@@ -98,12 +113,20 @@ All scoped checks avoid network access and developer runtime tool stores unless 
 scripts/test full
 ```
 
-Use the full lane after large plans, before releases, and when changes affect package loading or cross-browser behavior.
+Use the full lane after large plans, before releases, for package-loading or external-compatibility changes, when explicitly requested, or when complete local certification is otherwise required.
+Use the scoped cross-browser lanes for ordinary browser fixes.
 It runs all backend tests in one invocation with no marker exclusion, all frontend unit projects, branch coverage, the production build, the logging-order regression, and the complete Chromium and Firefox suites.
 Before starting the tests it installs the pinned published `bioimageflow-common-tools` package into a fresh temporary tool store.
 The command fails if installation or external certification cannot run, so a successful full result never hides deselected external tests.
+Chromium and Firefox run against separate temporary roots and servers in parallel.
+Local browser lanes stop after the first failure by default.
+
+If a late full-suite phase fails, fix and stress the exact failure first.
+Successful earlier phases remain valid when subsequent edits cannot affect them; run only the scoped checks invalidated by those edits rather than restarting the full lane automatically.
+Record the source revision, command, duration, and result so this reuse is explicit.
 
 Coverage artifacts are written to `backend/.pytest_cache/coverage.xml`, `backend/.pytest_cache/htmlcov/`, and `frontend/test-results/coverage/`.
+The transient Coverage.py database is stored under `backend/.pytest_cache/` and removed on success or failure, so the suite does not leave `backend/.coverage` behind.
 
 The desktop suite remains headless and mocks pywebview, so even a successful full lane does not certify a packaged native window or operating-system dialogs.
 That boundary requires a future platform-specific smoke or manual release check and is not silently represented as automated coverage.
@@ -139,6 +162,8 @@ The external marker is the lane selector; `common_tools` identifies which extern
 
 ## CI mapping
 
-Pull-request jobs run the deterministic backend, frontend, documentation, and Chromium portions in separate GitHub-hosted runners so they can execute in parallel.
-The scheduled and manually dispatched `Full certification` job uses `scripts/test full` and therefore adds branch coverage, Firefox, and fresh package-index certification.
+Pull-request jobs run the selected deterministic backend, frontend, documentation, and Chromium portions in separate GitHub-hosted runners so they can execute in parallel.
+Frontend changes, backend runtime changes, E2E fixtures, and shared test infrastructure also select a critical Firefox smoke job.
+Scheduled and manually dispatched certification splits backend coverage and external certification, frontend coverage and build, Chromium, and Firefox into independent jobs with a final required aggregator.
+This preserves the complete certification surface while making its wall time the longest component rather than the sum of every component.
 The published common-tools version has one source of truth in `scripts/ci/test_versions.env`, shared by local and CI runners.

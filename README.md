@@ -157,12 +157,14 @@ Use the root test runner for the same focused, quick, deterministic, and compreh
 ```bash
 scripts/test focus backend tests/test_services/test_dataset_store.py
 scripts/test focus unit src/stores/__tests__/workflow.test.ts
+scripts/test focus e2e --project=firefox tests/e2e/hot-reload.spec.ts
 scripts/test quick
 scripts/test check
+scripts/test check cross-browser-smoke
 scripts/test full
 ```
 
-Use focused tests during editing, `quick` for frequent coding checkpoints, `check` before completing an ordinary change, and `full` after large iterations or before releases.
+Use focused tests during editing, `quick` for coding checkpoints, the smallest scoped `check` before completing an ordinary change, and `full` only for complete certification after large iterations or before releases.
 Playwright manages isolated backend and frontend servers.
 See [`docs/testing.md`](docs/testing.md) for exact lane contents, dependency setup, selectors, coverage, Firefox, source bootstrap, and external common-tools certification.
 
