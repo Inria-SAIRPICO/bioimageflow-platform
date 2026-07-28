@@ -21,7 +21,7 @@ Coding-loop commands:
   focus backend [PYTEST_ARGS...]  Run an exact backend selection.
   focus unit [VITEST_ARGS...]     Run an exact frontend unit selection.
   focus related FILE...           Run Vitest tests related to source files.
-  focus e2e [PLAYWRIGHT_ARGS...]  Run an exact browser selection in Chromium.
+  focus e2e [PLAYWRIGHT_ARGS...]  Run an exact browser selection; defaults to Chromium.
   quick                            Run fast, repository-owned checks in parallel.
 
 Completion commands:
@@ -29,7 +29,10 @@ Completion commands:
   check frontend                   Run frontend lint, type-checking, units, and production build.
   check docs                       Build documentation with warnings treated as failures.
   check browser-smoke              Run critical Chromium end-to-end tests.
+  check cross-browser-smoke        Run critical Chromium and Firefox tests in parallel.
   check browser                    Run all Chromium end-to-end tests.
+  check browser-firefox            Run all Firefox end-to-end tests.
+  check browser-all                Run all Chromium and Firefox tests in parallel.
   check app                        Run backend/frontend checks and critical Chromium tests.
   check all                        Run backend/frontend checks and all Chromium tests.
   check                            Alias for check all.
@@ -44,6 +47,7 @@ Examples:
   scripts/test focus unit src/stores/__tests__/workflow.test.ts -t 'deletes workflow'
   scripts/test focus related frontend/src/stores/workflow.ts
   scripts/test focus e2e tests/e2e/execution.spec.ts:111
+  scripts/test focus e2e --project=firefox tests/e2e/hot-reload.spec.ts
   scripts/test focus e2e --grep 'executes a source tool'
 
 The full lane installs bioimageflow-common-tools from the package index into a
@@ -52,6 +56,18 @@ external tests. CI and local runs use the published dependency versions locked
 in backend/uv.lock.
 EOF
 }
+
+script_started_at=$SECONDS
+command_label="$*"
+
+report_total_time() {
+  local status=$?
+  trap - EXIT
+  printf '\nTOTAL: scripts/test %s (%ss, exit %s)\n' \
+    "${command_label:-help}" "$((SECONDS - script_started_at))" "$status"
+  exit "$status"
+}
+trap report_total_time EXIT
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -63,8 +79,21 @@ require_command() {
 phase() {
   local label="$1"
   shift
+  local started_at=$SECONDS
+  local status=0
   printf '\n==> %s\n' "$label"
-  "$@"
+  if "$@"; then
+    status=0
+  else
+    status=$?
+  fi
+  if (( status == 0 )); then
+    printf '<== PASS: %s (%ss)\n' "$label" "$((SECONDS - started_at))"
+  else
+    printf '<== FAIL: %s (%ss, exit %s)\n' \
+      "$label" "$((SECONDS - started_at))" "$status" >&2
+  fi
+  return "$status"
 }
 
 run_parallel() {
@@ -106,6 +135,13 @@ allocate_port() {
 }
 
 run_e2e() (
+  if [[ "${BIOIMAGEFLOW_TEST_DRY_RUN:-0}" == "1" ]]; then
+    printf 'E2E dry run:'
+    printf ' %q' "$@"
+    printf '\n'
+    return 0
+  fi
+
   require_command bun
   if [[ ! -x "$backend_dir/.venv/bin/python" ]]; then
     printf 'Backend environment missing: run cd backend && uv sync --group dev --frozen\n' >&2
@@ -142,6 +178,84 @@ run_e2e() (
   bun run test:e2e -- "$@"
 )
 
+playwright_has_option() {
+  local option="$1"
+  shift
+  local argument
+  for argument in "$@"; do
+    if [[ "$argument" == "$option" || "$argument" == "$option="* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+run_e2e_fail_fast() {
+  local -a arguments=("$@")
+  if ! playwright_has_option --max-failures "${arguments[@]}"; then
+    arguments+=("--max-failures=${BIOIMAGEFLOW_E2E_MAX_FAILURES:-1}")
+  fi
+  run_e2e "${arguments[@]}"
+}
+
+run_focused_e2e() {
+  local -a arguments=("$@")
+  if ! playwright_has_option --project "${arguments[@]}"; then
+    arguments=("--project=chromium" "${arguments[@]}")
+  fi
+  run_e2e_fail_fast "${arguments[@]}"
+}
+
+run_browser_project() (
+  local project="$1"
+  shift
+  export BIOIMAGEFLOW_E2E_ARTIFACT_SUFFIX="$project"
+  run_e2e_fail_fast "--project=$project" "$@"
+)
+
+run_isolated_browser_project() (
+  unset BIOIMAGEFLOW_E2E_ROOT
+  unset BIOIMAGEFLOW_E2E_BACKEND_PORT
+  unset BIOIMAGEFLOW_E2E_FRONTEND_PORT
+  run_browser_project "$@"
+)
+
+chromium_smoke_e2e() {
+  phase 'Critical Chromium end-to-end tests' \
+    run_browser_project chromium --grep @critical
+}
+
+isolated_chromium_smoke_e2e() {
+  phase 'Critical Chromium end-to-end tests' \
+    run_isolated_browser_project chromium --grep @critical
+}
+
+firefox_smoke_e2e() {
+  phase 'Critical Firefox end-to-end tests' \
+    run_browser_project firefox --grep @critical
+}
+
+isolated_firefox_smoke_e2e() {
+  phase 'Critical Firefox end-to-end tests' \
+    run_isolated_browser_project firefox --grep @critical
+}
+
+chromium_full_e2e() {
+  phase 'Chromium end-to-end tests' run_browser_project chromium
+}
+
+isolated_chromium_full_e2e() {
+  phase 'Chromium end-to-end tests' run_isolated_browser_project chromium
+}
+
+firefox_full_e2e() {
+  phase 'Firefox end-to-end tests' run_browser_project firefox
+}
+
+isolated_firefox_full_e2e() {
+  phase 'Firefox end-to-end tests' run_isolated_browser_project firefox
+}
+
 backend_lint() {
   phase 'Backend lint' bash -c 'cd "$1" && uv run --frozen ruff check .' _ "$backend_dir"
 }
@@ -158,11 +272,16 @@ backend_deterministic() {
     _ "$backend_dir"
 }
 
-backend_full_coverage() {
+backend_full_coverage() (
+  export COVERAGE_FILE="$backend_dir/.pytest_cache/.coverage"
+  cleanup_coverage_data() {
+    rm -f -- "$COVERAGE_FILE"
+  }
+  trap cleanup_coverage_data EXIT
   phase 'Backend full tests with branch coverage' bash -c \
     'cd "$1" && uv run --frozen pytest --run-external --cov=bioimageflow_server --cov-branch --cov-report=term-missing --cov-report=xml:.pytest_cache/coverage.xml --cov-report=html:.pytest_cache/htmlcov --durations=20' \
     _ "$backend_dir"
-}
+)
 
 backend_logging_order() {
   phase 'Backend logging-order certification' bash -c '
@@ -214,7 +333,7 @@ check_lane() {
   require_command bun
   run_parallel backend_lint backend_deterministic frontend_lint frontend_typecheck frontend_all_units frontend_build
   backend_logging_order
-  phase 'Chromium end-to-end tests' run_e2e --project=chromium
+  chromium_full_e2e
   printf '\nCheck lane passed. External package certification and Firefox were intentionally not run.\n'
 }
 
@@ -242,13 +361,28 @@ docs_check_lane() {
 }
 
 browser_smoke_check_lane() {
-  phase 'Critical Chromium end-to-end tests' run_e2e --project=chromium --grep @critical
+  chromium_smoke_e2e
   printf '\nCritical Chromium smoke check passed.\n'
 }
 
+cross_browser_smoke_check_lane() {
+  run_parallel isolated_chromium_smoke_e2e isolated_firefox_smoke_e2e
+  printf '\nCritical Chromium and Firefox smoke checks passed.\n'
+}
+
 browser_check_lane() {
-  phase 'Chromium end-to-end tests' run_e2e --project=chromium
+  chromium_full_e2e
   printf '\nChromium check passed.\n'
+}
+
+firefox_check_lane() {
+  firefox_full_e2e
+  printf '\nFirefox check passed.\n'
+}
+
+all_browsers_check_lane() {
+  run_parallel isolated_chromium_full_e2e isolated_firefox_full_e2e
+  printf '\nChromium and Firefox checks passed.\n'
 }
 
 app_check_lane() {
@@ -256,7 +390,7 @@ app_check_lane() {
   require_command bun
   run_parallel backend_lint backend_deterministic frontend_lint frontend_typecheck frontend_all_units frontend_build
   backend_logging_order
-  phase 'Critical Chromium end-to-end tests' run_e2e --project=chromium --grep @critical
+  chromium_smoke_e2e
   printf '\nApplication check passed. External package certification and non-critical browser tests were intentionally not run.\n'
 }
 
@@ -275,8 +409,17 @@ scoped_check_lane() {
     browser-smoke)
       browser_smoke_check_lane
       ;;
+    cross-browser-smoke)
+      cross_browser_smoke_check_lane
+      ;;
     browser)
       browser_check_lane
+      ;;
+    browser-firefox)
+      firefox_check_lane
+      ;;
+    browser-all)
+      all_browsers_check_lane
       ;;
     app)
       app_check_lane
@@ -340,7 +483,7 @@ full_lane() (
 
   run_parallel backend_lint backend_full_coverage frontend_lint frontend_typecheck frontend_full_coverage frontend_build
   backend_logging_order
-  phase 'Chromium and Firefox end-to-end tests' run_e2e --project=chromium --project=firefox
+  run_parallel isolated_chromium_full_e2e isolated_firefox_full_e2e
   printf '\nFull lane passed: repository tests, external certification, branch coverage, production build, Chromium, and Firefox all completed.\n'
   printf 'Coverage artifacts: backend/.pytest_cache/{coverage.xml,htmlcov/} and frontend/test-results/coverage/.\n'
 )
@@ -379,7 +522,7 @@ focus_lane() {
       bun run vitest related "${related_files[@]}" --run
       ;;
     e2e)
-      run_e2e --project=chromium "$@"
+      run_focused_e2e "$@"
       ;;
     *)
       printf 'Unknown focus target: %s\n' "$target" >&2

@@ -19,6 +19,7 @@ def test_docs_only_selects_documentation() -> None:
         frontend=False,
         documentation=True,
         chromium=False,
+        firefox_smoke=False,
     )
 
 
@@ -28,6 +29,7 @@ def test_backend_selects_backend_and_browser() -> None:
         frontend=False,
         documentation=False,
         chromium=True,
+        firefox_smoke=True,
     )
 
 
@@ -37,6 +39,17 @@ def test_frontend_and_docs_select_their_jobs_and_browser() -> None:
         frontend=True,
         documentation=True,
         chromium=True,
+        firefox_smoke=True,
+    )
+
+
+def test_backend_tests_do_not_select_firefox_smoke() -> None:
+    assert MODULE.select_jobs(["backend/tests/test_service.py"]) == MODULE.Selection(
+        backend=True,
+        frontend=False,
+        documentation=False,
+        chromium=True,
+        firefox_smoke=False,
     )
 
 

@@ -37,6 +37,7 @@ jobs:
       frontend: ${{ steps.select.outputs.frontend }}
       documentation: ${{ steps.select.outputs.documentation }}
       chromium: ${{ steps.select.outputs.chromium }}
+      firefox_smoke: ${{ steps.select.outputs.firefox_smoke }}
     steps:
       - name: Check out repository history
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -185,42 +186,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  required:
-    name: Required CI
-    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
-    needs:
-      - changes
-      - frontend
-      - backend
-      - documentation
-      - chromium
+  firefox-smoke:
+    name: Firefox smoke
+    needs: changes
+    if: needs.changes.outputs.firefox_smoke == 'true'
     runs-on: ubuntu-latest
-    steps:
-      - name: Require every selected job to pass
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          FRONTEND_RESULT: ${{ needs.frontend.result }}
-          BACKEND_RESULT: ${{ needs.backend.result }}
-          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
-          CHROMIUM_RESULT: ${{ needs.chromium.result }}
-        run: |
-          for result in \
-            "$CHANGES_RESULT" \
-            "$FRONTEND_RESULT" \
-            "$BACKEND_RESULT" \
-            "$DOCUMENTATION_RESULT" \
-            "$CHROMIUM_RESULT"; do
-            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
-              printf 'Required CI dependency did not pass: %s\n' "$result" >&2
-              exit 1
-            fi
-          done
-
-  full:
-    name: Full certification
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -238,21 +209,277 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: bun install --frozen-lockfile
-      - name: Install browsers
+      - name: Install Firefox
         working-directory: frontend
-        run: bunx playwright install --with-deps chromium firefox
-      - name: Run full suite
-        run: scripts/test full
-      - name: Upload certification artifacts
+        run: bunx playwright install --with-deps firefox
+      - name: Run critical Firefox tests
+        run: scripts/test focus e2e --project=firefox --grep @critical
+      - name: Upload browser artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: full-certification-results
+          name: firefox-smoke-results
           path: |
             frontend/playwright-report/
             frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  required:
+    name: Required CI
+    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
+    needs:
+      - changes
+      - frontend
+      - backend
+      - documentation
+      - chromium
+      - firefox-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected job to pass
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+          CHROMIUM_RESULT: ${{ needs.chromium.result }}
+          FIREFOX_SMOKE_RESULT: ${{ needs['firefox-smoke'].result }}
+        run: |
+          for result in \
+            "$CHANGES_RESULT" \
+            "$FRONTEND_RESULT" \
+            "$BACKEND_RESULT" \
+            "$DOCUMENTATION_RESULT" \
+            "$CHROMIUM_RESULT" \
+            "$FIREFOX_SMOKE_RESULT"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              printf 'Required CI dependency did not pass: %s\n' "$result" >&2
+              exit 1
+            fi
+          done
+
+  full-backend:
+    name: Full backend coverage
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Import backend source
+        run: backend/.venv/bin/python -c 'import bioimageflow_server.app'
+      - name: Ruff
+        working-directory: backend
+        run: uv run --frozen ruff check .
+      - name: Run backend tests with branch coverage
+        working-directory: backend
+        env:
+          COVERAGE_FILE: .pytest_cache/.coverage
+        run: >-
+          uv run --frozen pytest
+          -m 'not external'
+          --cov=bioimageflow_server
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml:.pytest_cache/coverage.xml
+          --cov-report=html:.pytest_cache/htmlcov
+          --durations=20
+      - name: Remove transient coverage database
+        if: always()
+        run: rm -f backend/.coverage backend/.pytest_cache/.coverage
+      - name: Check logging order
+        working-directory: backend
+        run: >-
+          uv run --frozen pytest
+          tests/test_logging_config.py
+          tests/test_ws/test_handler.py::test_publish_without_loop_drops_silently
+          tests/test_ws/test_handler.py::test_publish_logs_future_exceptions
+          tests/test_ws/test_logging_bridge.py::test_attach_to_bioimageflow_logger
+          -q
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-backend-coverage
+          path: |
             backend/.pytest_cache/coverage.xml
             backend/.pytest_cache/htmlcov/
           if-no-files-found: ignore
           include-hidden-files: true
           retention-days: 7
+
+  full-external:
+    name: Full external certification
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Certify published common tools
+        run: scripts/test certification
+
+  full-frontend:
+    name: Full frontend coverage
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install Bun
+        run: npm install --global "bun@$BUN_VERSION"
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+      - name: Lint
+        working-directory: frontend
+        run: bun run lint
+      - name: Type-check
+        working-directory: frontend
+        run: bun run type-check
+      - name: Run frontend tests with branch coverage
+        working-directory: frontend
+        run: >-
+          bun run test:unit --
+          --coverage
+          --coverage.reporter=text
+          --coverage.reporter=html
+          --coverage.reportsDirectory=test-results/coverage
+      - name: Build frontend
+        working-directory: frontend
+        run: bun run build
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-frontend-coverage
+          path: frontend/test-results/coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  full-chromium:
+    name: Full Chromium
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install Bun
+        run: npm install --global "bun@$BUN_VERSION"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+      - name: Install Chromium
+        working-directory: frontend
+        run: bunx playwright install --with-deps chromium
+      - name: Run Chromium
+        run: scripts/test check browser
+      - name: Upload Chromium artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-chromium-results
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  full-firefox:
+    name: Full Firefox
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install Bun
+        run: npm install --global "bun@$BUN_VERSION"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --group dev --frozen
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+      - name: Install Firefox
+        working-directory: frontend
+        run: bunx playwright install --with-deps firefox
+      - name: Run Firefox
+        run: scripts/test check browser-firefox
+      - name: Upload Firefox artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-firefox-results
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  full-required:
+    name: Full certification
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    needs:
+      - full-backend
+      - full-external
+      - full-frontend
+      - full-chromium
+      - full-firefox
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every certification component to pass
+        env:
+          BACKEND_RESULT: ${{ needs['full-backend'].result }}
+          EXTERNAL_RESULT: ${{ needs['full-external'].result }}
+          FRONTEND_RESULT: ${{ needs['full-frontend'].result }}
+          CHROMIUM_RESULT: ${{ needs['full-chromium'].result }}
+          FIREFOX_RESULT: ${{ needs['full-firefox'].result }}
+        run: |
+          for result in \
+            "$BACKEND_RESULT" \
+            "$EXTERNAL_RESULT" \
+            "$FRONTEND_RESULT" \
+            "$CHROMIUM_RESULT" \
+            "$FIREFOX_RESULT"; do
+            if [[ "$result" != "success" ]]; then
+              printf 'Full certification component did not pass: %s\n' "$result" >&2
+              exit 1
+            fi
+          done

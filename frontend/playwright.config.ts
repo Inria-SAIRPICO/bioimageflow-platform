@@ -7,6 +7,8 @@ const e2eRoot = process.env.BIOIMAGEFLOW_E2E_ROOT
   ?? mkdtempSync(join(tmpdir(), 'bioimageflow-platform-playwright-'));
 const frontendPort = process.env.BIOIMAGEFLOW_E2E_FRONTEND_PORT ?? '5173';
 const backendPort = process.env.BIOIMAGEFLOW_E2E_BACKEND_PORT ?? '8000';
+const artifactSuffix = process.env.BIOIMAGEFLOW_E2E_ARTIFACT_SUFFIX
+  ?.replace(/[^a-zA-Z0-9_-]/g, '_');
 const hotReloadFixture = join(
   e2eRoot,
   'tool_packages',
@@ -21,6 +23,7 @@ process.env.BIOIMAGEFLOW_HOT_RELOAD_FIXTURE = hotReloadFixture;
 
 export default defineConfig({
   testDir: './tests/e2e',
+  outputDir: artifactSuffix ? join('test-results', artifactSuffix) : 'test-results',
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
