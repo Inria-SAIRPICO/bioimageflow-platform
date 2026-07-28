@@ -23,6 +23,11 @@ After selecting data, use one of these actions:
 - **Set files on “node name”** replaces the files on the selected compatible Files node.
 - dragging files or folders from the dataset tree onto the canvas creates or updates a compatible input flow.
 
+For a Files node in the desktop application, **Select files** fills its explicit Files list and **Select folder** fills its singular Directory source.
+Choosing either source clears the other because they are mutually exclusive.
+In the web application, **Select in Datasets panel** reveals this panel instead; select any combination of managed files and folders, then use **Set files on “node name”**.
+Managed folders are expanded into an explicit ordered file list and do not become a Directory value.
+
 Dropping local files anywhere on the application uploads them into managed dataset storage and selects them in the Datasets panel.
 After the upload completes, click **Create Files node** or drag the new dataset entry onto the canvas.
 

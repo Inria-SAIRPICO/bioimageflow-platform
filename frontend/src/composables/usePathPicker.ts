@@ -1,4 +1,9 @@
-import { isDesktop, selectFile, selectFolder } from '@/utils/nativeDialogs'
+import {
+  isDesktop,
+  selectFile,
+  selectFiles,
+  selectFolder,
+} from '@/utils/nativeDialogs'
 import { useDatasetsStore } from '@/stores/datasets'
 
 export interface PickFileOptions {
@@ -40,5 +45,20 @@ export function usePathPicker() {
     throw new BrowserModeUnsupported()
   }
 
-  return { pickFile, pickFolder, isDesktop }
+  async function pickFiles(opts: PickFileOptions): Promise<string[]> {
+    if (!isDesktop()) return []
+    return selectFiles(`Select files for: ${opts.parameterName}`, opts.fileTypes ?? [])
+  }
+
+  function showDatasetsPanel(): void {
+    store.activate()
+  }
+
+  return {
+    pickFile,
+    pickFiles,
+    pickFolder,
+    showDatasetsPanel,
+    isDesktop,
+  }
 }

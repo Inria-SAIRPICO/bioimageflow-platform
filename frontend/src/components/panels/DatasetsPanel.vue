@@ -146,26 +146,28 @@
 
     <div class="dataset-footer">
       <span data-testid="dataset-selection-summary" :data-selected-ids="selectedNodeIds.join(',')">{{ selectionSummary }}</span>
-      <template v-if="store.picker">
-        <Button label="Cancel" text @click="store.finishPicker(null)" />
-        <Button label="Use file" :disabled="!store.pickerSelectionId" @click="finishPicker" />
-      </template>
-      <Button
-        v-else
-        data-testid="dataset-create-files-node"
-        label="Create Files node"
-        icon="pi pi-plus"
-        :disabled="locked || selectedNodes.length === 0"
-        @click="createFilesNode"
-      />
-      <Button
-        v-if="!store.picker && selectedFilesNode"
-        data-testid="dataset-set-files-node"
-        :label="`Set files on “${selectedFilesNode.name}”`"
-        icon="pi pi-check"
-        :disabled="locked || selectedNodes.length === 0"
-        @click="setSelectedFilesNode"
-      />
+      <div class="dataset-footer-actions">
+        <template v-if="store.picker">
+          <Button label="Cancel" text @click="store.finishPicker(null)" />
+          <Button label="Use file" :disabled="!store.pickerSelectionId" @click="finishPicker" />
+        </template>
+        <Button
+          v-else
+          data-testid="dataset-create-files-node"
+          label="Create Files node"
+          icon="pi pi-plus"
+          :disabled="locked || selectedNodes.length === 0"
+          @click="createFilesNode"
+        />
+        <Button
+          v-if="!store.picker && selectedFilesNode"
+          data-testid="dataset-set-files-node"
+          :label="`Set files on “${selectedFilesNode.name}”`"
+          icon="pi pi-check"
+          :disabled="locked || selectedNodes.length === 0"
+          @click="setSelectedFilesNode"
+        />
+      </div>
     </div>
 
     <Dialog v-model:visible="editorVisible" modal :header="editorMode === 'add' ? 'Add folder' : 'Rename'">
@@ -685,8 +687,7 @@ async function setSelectedFilesNode() {
   actionError.value = ''
   try {
     const files = await resolvedSelectedPaths()
-    commands.updateParameter(node.id, 'path', null)
-    commands.updateParameter(node.id, 'files', files)
+    commands.updateParameters(node.id, { path: null, files })
   } catch (error) {
     actionError.value = message(error)
   }
@@ -716,7 +717,7 @@ function nodeTitle(treeNode: TreeNode): string {
 .upload-message.success { color: var(--p-green-500); }
 .upload-message.cancelled { color: var(--p-text-muted-color); }
 .dataset-search { width: 100%; }
-.dataset-toolbar, .dataset-selection-actions, .dataset-footer { display: flex; align-items: center; flex-wrap: wrap; }
+.dataset-toolbar, .dataset-selection-actions { display: flex; align-items: center; flex-wrap: wrap; }
 .dataset-toolbar { gap: .25rem; }
 .dataset-selection-actions { justify-content: flex-start; }
 .dataset-tree-wrap { flex: 1; min-height: 0; overflow: auto; }
@@ -725,7 +726,17 @@ function nodeTitle(treeNode: TreeNode): string {
 .dataset-tree :deep(.p-treenode-content) { padding: .1rem .15rem; }
 .dataset-node { display: inline-flex; align-items: center; gap: .45rem; min-width: 0; }
 .dataset-node-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dataset-footer { justify-content: flex-end; }
-.dataset-footer > span { margin-right: auto; color: var(--p-text-muted-color); font-size: .8rem; }
+.dataset-footer { display: grid; gap: .5rem; }
+.dataset-footer > span { color: var(--p-text-muted-color); font-size: .8rem; }
+.dataset-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+  min-width: 0;
+}
+.dataset-footer-actions :deep(.p-button) { max-width: 100%; }
+.dataset-footer-actions :deep(.p-button-label) { white-space: normal; overflow-wrap: anywhere; }
 .dialog-field { display: grid; gap: .4rem; min-width: 20rem; }
 </style>

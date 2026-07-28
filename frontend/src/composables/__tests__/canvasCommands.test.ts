@@ -195,6 +195,31 @@ describe('active canvas commands', () => {
     expect(updateNested).toHaveBeenCalledOnce()
   })
 
+  it('routes an atomic parameter update to the active canvas', () => {
+    const rootId = canvasIdFromPanelId('workflow:root')
+    const updateParameters = vi.fn(() => true)
+    useCanvasCommands({
+      descriptor: {
+        kind: 'root',
+        canvasId: rootId,
+        workflowId: 'root',
+      },
+      ...makeCanvasCommandHandlers(),
+      updateParameter: vi.fn(() => true),
+      updateParameters,
+    })
+    graphSyncCanvasSessions.activate(rootId)
+
+    expect(useCanvasCommands().updateParameters('files', {
+      path: null,
+      files: ['/data/a.tif', '/data/b.tif'],
+    })).toBe(true)
+    expect(updateParameters).toHaveBeenCalledWith('files', {
+      path: null,
+      files: ['/data/a.tif', '/data/b.tif'],
+    })
+  })
+
   it.each(nodeEditCases)(
     'routes $name only to the explicitly active canvas with shared node ids',
     ({ invoke, spy, expectedArgs }) => {

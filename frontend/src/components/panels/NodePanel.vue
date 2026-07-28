@@ -58,7 +58,13 @@ function canConnect(field: InputFieldSchema): boolean {
   return field.connectable !== 'never'
 }
 
-const { pickFile: pickFileNative, pickFolder: pickFolderNative, isDesktop } = usePathPicker()
+const {
+  pickFile: pickFileNative,
+  pickFiles: pickFilesNative,
+  pickFolder: pickFolderNative,
+  showDatasetsPanel,
+  isDesktop,
+} = usePathPicker()
 
 const MASK_EXTS = ['*.tif', '*.tiff', '*.png']
 
@@ -220,6 +226,18 @@ function updateParameter(key: string, value: unknown) {
 
 function listParameterText(key: string, field: InputFieldSchema): string {
   return JSON.stringify(nodeData.value.parameters[key] ?? field.default ?? [], null, 2)
+}
+
+function isFilesSourceNode(): boolean {
+  if (String(nodeData.value?.toolName ?? '').toLocaleLowerCase() !== 'files') {
+    return false
+  }
+  const inputs = nodeData.value?.tool?.inputs
+  return inputs?.files?.type === 'list' && inputs?.path?.path_picker === 'folder'
+}
+
+function isFilesListField(key: string, field: InputFieldSchema): boolean {
+  return key === 'files' && field.type === 'list' && isFilesSourceNode()
 }
 
 function updateListParameter(key: string, event: Event) {
@@ -468,7 +486,24 @@ async function pickFile(key: string, type: string) {
 async function pickFolder(key: string) {
   const path = await pickFolderNative({ parameterName: key })
   if (path !== null) {
-    updateParameter(key, path)
+    const nodeId = selectedNode.value?.id
+    if (nodeId && key === 'path' && isFilesSourceNode()) {
+      canvasCommands.updateParameters(nodeId, { path, files: null })
+    } else {
+      updateParameter(key, path)
+    }
+  }
+}
+
+async function pickFiles(key: string) {
+  if (!isDesktop()) {
+    showDatasetsPanel()
+    return
+  }
+  const paths = await pickFilesNative({ parameterName: key })
+  const nodeId = selectedNode.value?.id
+  if (paths.length > 0 && nodeId) {
+    canvasCommands.updateParameters(nodeId, { path: null, files: paths })
   }
 }
 </script>
@@ -772,6 +807,15 @@ async function pickFolder(key: string) {
             <span v-else class="connect-hint">Connect to upstream node</span>
           </ParameterFieldError>
           <span v-else class="null-indicator">null</span>
+          <Button
+            v-if="isFilesListField(key, field as InputFieldSchema)"
+            :label="isDesktop() ? 'Select files' : 'Select in Datasets panel'"
+            :icon="isDesktop() ? 'pi pi-file' : 'pi pi-folder-open'"
+            class="p-button-sm files-source-picker"
+            :disabled="isNodeEditingDisabled"
+            data-testid="select-files-source"
+            @click="pickFiles(key)"
+          />
         </div>
       </div>
 
@@ -1308,6 +1352,7 @@ h4 {
 .list-input-row { display: grid; gap: 4px; }
 .list-input { min-height: 7rem; resize: vertical; font: 12px ui-monospace, monospace; }
 .list-input-error { color: var(--p-red-700, #b91c1c); }
+.files-source-picker { justify-self: start; max-width: 100%; }
 
 .param-number {
   display: flex;

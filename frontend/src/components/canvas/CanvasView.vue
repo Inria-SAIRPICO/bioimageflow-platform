@@ -263,6 +263,7 @@ const canvasCommands = useCanvasCommands({
   renameWorkflowInput,
   renameWorkflowOutput,
   updateParameter: updateNodeParameter,
+  updateParameters: updateNodeParameters,
 })
 uiStore.setCanvasWorkflow(
   canvasId,
@@ -3415,6 +3416,13 @@ function updateNodeParameter(
   key: string,
   value: unknown,
 ): boolean {
+  return updateNodeParameters(nodeId, { [key]: value })
+}
+
+function updateNodeParameters(
+  nodeId: string,
+  values: Record<string, unknown>,
+): boolean {
   if (isLocked.value) return false
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
   if (!node?.data) return false
@@ -3423,7 +3431,7 @@ function updateNodeParameter(
     ?.presentationStatus
   node.data.parameters = {
     ...(node.data.parameters ?? {}),
-    [key]: value,
+    ...values,
   }
   canvasStatusProjection.stageCurrentSemanticStatuses()
   canvasStatusProjection.stageSemanticStatus(nodeId, {

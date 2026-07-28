@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   resolveSelection: vi.fn(),
   addToolNode: vi.fn().mockReturnValue('files_1'),
   updateParameter: vi.fn().mockReturnValue(true),
+  updateParameters: vi.fn().mockReturnValue(true),
   updateDataset: vi.fn(),
   updateFolder: vi.fn(),
 }))
@@ -30,6 +31,7 @@ vi.mock('@/composables/useCanvasCommands', () => ({
   useCanvasCommands: () => ({
     addToolNode: mocks.addToolNode,
     updateParameter: mocks.updateParameter,
+    updateParameters: mocks.updateParameters,
   }),
 }))
 
@@ -97,6 +99,10 @@ describe('DatasetsPanel', () => {
     const clearSelection = wrapper.find('[data-testid="dataset-clear-selection"]')
     expect(clearSelection.text()).toBe('Unselect all')
     expect(clearSelection.element.parentElement?.classList).toContain('dataset-selection-actions')
+    expect(wrapper.get('[data-testid="dataset-selection-summary"]').element.parentElement?.classList)
+      .toContain('dataset-footer')
+    expect(wrapper.get('[data-testid="dataset-create-files-node"]').element.parentElement?.classList)
+      .toContain('dataset-footer-actions')
     expect(wrapper.text()).not.toContain('Datasets root')
     expect(wrapper.text()).not.toContain('Move to top level')
     expect(wrapper.find('[data-testid="dataset-row-menu"]').exists()).toBe(false)
@@ -349,7 +355,9 @@ describe('DatasetsPanel', () => {
     await button.trigger('click')
     await flushPromises()
 
-    expect(mocks.updateParameter).toHaveBeenNthCalledWith(1, 'files_7', 'path', null)
-    expect(mocks.updateParameter).toHaveBeenNthCalledWith(2, 'files_7', 'files', ['/managed/a.tif'])
+    expect(mocks.updateParameters).toHaveBeenCalledWith('files_7', {
+      path: null,
+      files: ['/managed/a.tif'],
+    })
   })
 })

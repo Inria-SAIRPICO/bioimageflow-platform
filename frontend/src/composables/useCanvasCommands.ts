@@ -53,6 +53,10 @@ export interface CanvasScopedCommandsOptions {
     name: string,
   ) => CanvasInterfaceCommandResult
   updateParameter: (nodeId: string, key: string, value: unknown) => boolean
+  updateParameters?: (
+    nodeId: string,
+    values: Record<string, unknown>,
+  ) => boolean
 }
 
 export interface CanvasCommandsApi {
@@ -75,6 +79,7 @@ export interface CanvasCommandsApi {
     name: string,
   ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
+  updateParameters(nodeId: string, values: Record<string, unknown>): boolean
   dispose(): void
 }
 
@@ -98,6 +103,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
     name: string,
   ): CanvasInterfaceCommandResult
   updateParameter(nodeId: string, key: string, value: unknown): boolean
+  updateParameters(nodeId: string, values: Record<string, unknown>): boolean
 }
 
 // Shell panels use this state-free adapter to follow Dockview activation.
@@ -155,6 +161,9 @@ export function useCanvasCommands(
     ),
     updateParameter: (nodeId, key, value) => (
       resource.updateParameter(nodeId, key, value)
+    ),
+    updateParameters: (nodeId, values) => (
+      resource.updateParameters(nodeId, values)
     ),
     dispose: () => graphSyncCanvasSessions.unregister(options.descriptor.canvasId),
   }
@@ -218,6 +227,13 @@ function createCommandResource(
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.updateParameter(nodeId, key, value)
     },
+    updateParameters: (nodeId, values) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      if (options.updateParameters) return options.updateParameters(nodeId, values)
+      return Object.entries(values).every(([key, value]) => (
+        options.updateParameter(nodeId, key, value)
+      ))
+    },
     dispose: () => {
       disposed = true
     },
@@ -273,6 +289,9 @@ function createActiveFacade(): CanvasCommandsApi {
     ),
     updateParameter: (nodeId, key, value) => {
       return activeCommandResource()?.updateParameter(nodeId, key, value) ?? false
+    },
+    updateParameters: (nodeId, values) => {
+      return activeCommandResource()?.updateParameters(nodeId, values) ?? false
     },
     dispose: () => {
       const activeCanvasId: CanvasId | null =

@@ -85,6 +85,29 @@ test.describe('Datasets panel', () => {
     expect(nodeBox).not.toBeNull()
     expect(Math.abs(nodeBox!.x - (canvasBox!.x + targetPosition.x))).toBeLessThan(40)
     expect(Math.abs(nodeBox!.y - (canvasBox!.y + targetPosition.y))).toBeLessThan(40)
+
+    await filesNode.click()
+    const summary = page.getByTestId('dataset-selection-summary')
+    const createFiles = page.getByTestId('dataset-create-files-node')
+    const setFiles = page.getByTestId('dataset-set-files-node')
+    await expect(setFiles).toBeVisible()
+    const [summaryBox, createFilesBox, setFilesBox] = await Promise.all([
+      summary.boundingBox(),
+      createFiles.boundingBox(),
+      setFiles.boundingBox(),
+    ])
+    expect(summaryBox).not.toBeNull()
+    expect(createFilesBox).not.toBeNull()
+    expect(setFilesBox).not.toBeNull()
+    expect(summaryBox!.y + summaryBox!.height).toBeLessThan(createFilesBox!.y)
+    expect(summaryBox!.y + summaryBox!.height).toBeLessThan(setFilesBox!.y)
+    const actionGap = Math.max(
+      setFilesBox!.x - (createFilesBox!.x + createFilesBox!.width),
+      createFilesBox!.x - (setFilesBox!.x + setFilesBox!.width),
+      setFilesBox!.y - (createFilesBox!.y + createFilesBox!.height),
+      createFilesBox!.y - (setFilesBox!.y + setFilesBox!.height),
+    )
+    expect(actionGap).toBeGreaterThanOrEqual(4)
   })
 
   test('cancels a file dropped on the canvas while its upload is active', async ({ page }) => {

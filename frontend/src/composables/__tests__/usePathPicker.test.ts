@@ -4,15 +4,22 @@ import { setActivePinia, createPinia } from 'pinia'
 vi.mock('@/utils/nativeDialogs', () => ({
   isDesktop: vi.fn(),
   selectFile: vi.fn(),
+  selectFiles: vi.fn(),
   selectFolder: vi.fn(),
 }))
 
-import { isDesktop, selectFile, selectFolder } from '@/utils/nativeDialogs'
+import {
+  isDesktop,
+  selectFile,
+  selectFiles,
+  selectFolder,
+} from '@/utils/nativeDialogs'
 import { usePathPicker, BrowserModeUnsupported } from '../usePathPicker'
 import { useDatasetsStore } from '@/stores/datasets'
 
 const mockedIsDesktop = vi.mocked(isDesktop)
 const mockedSelectFile = vi.mocked(selectFile)
+const mockedSelectFiles = vi.mocked(selectFiles)
 const mockedSelectFolder = vi.mocked(selectFolder)
 
 describe('usePathPicker.pickFile', () => {
@@ -83,6 +90,36 @@ describe('usePathPicker.pickFile', () => {
   })
 })
 
+describe('usePathPicker.pickFiles', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('calls selectFiles in desktop mode and returns every selected path', async () => {
+    mockedIsDesktop.mockReturnValue(true)
+    mockedSelectFiles.mockResolvedValueOnce(['/chosen/a.tif', '/chosen/b.tif'])
+
+    const { pickFiles } = usePathPicker()
+    const result = await pickFiles({ parameterName: 'files', fileTypes: ['*.tif'] })
+
+    expect(result).toEqual(['/chosen/a.tif', '/chosen/b.tif'])
+    expect(mockedSelectFiles).toHaveBeenCalledWith(
+      'Select files for: files',
+      ['*.tif'],
+    )
+  })
+
+  it('does not open a native dialog in browser mode', async () => {
+    mockedIsDesktop.mockReturnValue(false)
+
+    const { pickFiles } = usePathPicker()
+
+    await expect(pickFiles({ parameterName: 'files' })).resolves.toEqual([])
+    expect(mockedSelectFiles).not.toHaveBeenCalled()
+  })
+})
+
 describe('usePathPicker.pickFolder', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -105,5 +142,17 @@ describe('usePathPicker.pickFolder', () => {
     await expect(pickFolder({ parameterName: 'output_dir' })).rejects.toBeInstanceOf(
       BrowserModeUnsupported,
     )
+  })
+})
+
+describe('usePathPicker.showDatasetsPanel', () => {
+  it('requests Datasets panel activation without entering picker mode', () => {
+    setActivePinia(createPinia())
+    const store = useDatasetsStore()
+
+    usePathPicker().showDatasetsPanel()
+
+    expect(store.activationRequest).toBe(1)
+    expect(store.picker).toBeNull()
   })
 })

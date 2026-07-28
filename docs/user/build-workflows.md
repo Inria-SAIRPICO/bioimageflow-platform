@@ -35,6 +35,7 @@ The **Parameters** section uses controls that match each tool input, including t
 
 For file or folder parameters, use the picker button instead of typing a path when possible.
 Managed datasets can also populate compatible Files nodes from the **Datasets** panel.
+In the web application, **Select in Datasets panel** on a Files node reveals that panel so its selected managed files or folders can be applied as the node's explicit Files list.
 
 ## Connect nodes
 

@@ -275,3 +275,22 @@ In a root tab it saves the workspace workflow; in a nested tab it applies the ac
 
 The workflow-node context actions are **Open workflow**, source actions when provenance exists, Rename, Enable/Disable, and Delete.
 The selection action is **Group into workflow**.
+
+## 16. Files Source Selection
+
+The Files source tool accepts either one filesystem Directory or an explicit ordered Files list.
+Directory remains singular because its Glob pattern and Recursive settings describe one directory scan.
+The two source parameters are mutually exclusive.
+
+In desktop mode, Directory provides **Select folder** and Files provides **Select files**.
+Selecting one source replaces its value and clears the other source in one graph edit.
+Cancelling a native dialog changes nothing.
+
+In webapp mode, the Files source controls provide one shared **Select in Datasets panel** action instead of native filesystem actions.
+The action reveals and activates the Datasets panel without changing parameters or entering the single-file parameter picker.
+Users may select managed files or multiple managed folders there; **Set files on “node name”** resolves the selection to an explicit ordered Files list and clears Directory in one graph edit.
+Managed folders do not populate Directory because they are logical dataset groups rather than server filesystem paths.
+
+The Datasets panel selection summary occupies its own footer row.
+Footer actions appear below it with visible spacing and wrap without touching at narrow panel widths.
+This section overrides the Files-source-specific browser folder behavior inherited from v1 Section 3.5.3; other path parameters retain the v1 picker behavior.
