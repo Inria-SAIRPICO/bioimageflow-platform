@@ -79,6 +79,23 @@ def test_runner_reports_total_elapsed_time() -> None:
     assert "TOTAL: scripts/test focus e2e --project=firefox" in output
 
 
+def test_timed_phase_preserves_fail_fast_behavior() -> None:
+    environment = os.environ.copy()
+    environment["BIOIMAGEFLOW_TEST_PHASE_FAILURE"] = "1"
+    result = subprocess.run(
+        [str(SCRIPT), "check", "browser"],
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=5,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr.count("Forced E2E phase failure.") == 1
+    assert "ERROR: E2E continued after failure." not in result.stderr
+    assert "TOTAL: scripts/test check browser" in result.stdout
+
+
 def test_backend_coverage_database_is_transient() -> None:
     runner = SCRIPT.read_text()
 

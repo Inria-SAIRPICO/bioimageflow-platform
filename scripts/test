@@ -81,8 +81,14 @@ phase() {
   shift
   local started_at=$SECONDS
   local status=0
+  local pid
   printf '\n==> %s\n' "$label"
-  if "$@"; then
+  # Run the phase in its own process before waiting for it. Testing a shell
+  # function directly in `if` disables errexit throughout that function's
+  # dynamic scope, which can let setup failures continue into later commands.
+  "$@" &
+  pid=$!
+  if wait "$pid"; then
     status=0
   else
     status=$?
@@ -135,6 +141,12 @@ allocate_port() {
 }
 
 run_e2e() (
+  if [[ "${BIOIMAGEFLOW_TEST_PHASE_FAILURE:-0}" == "1" ]]; then
+    printf 'Forced E2E phase failure.\n' >&2
+    false
+    printf 'ERROR: E2E continued after failure.\n' >&2
+  fi
+
   if [[ "${BIOIMAGEFLOW_TEST_DRY_RUN:-0}" == "1" ]]; then
     printf 'E2E dry run:'
     printf ' %q' "$@"
