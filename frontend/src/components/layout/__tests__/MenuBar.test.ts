@@ -1357,6 +1357,51 @@ describe('MenuBar', () => {
       expect(useUIStore().panels.logger).toBe(true)
     })
 
+    it('never sends workflow-local custom tools to the package installer', async () => {
+      const { workflow } = registerActiveRootWorkflow()
+      const store = useWorkflowStore()
+      store.missingPackages = [
+        {
+          package_name: '__custom__',
+          required_version: 'local',
+          installed_versions: [],
+          affected_nodes: ['custom'],
+        },
+        {
+          package_name: 'common',
+          required_version: '1.2.3',
+          installed_versions: [],
+          affected_nodes: ['generate'],
+        },
+      ]
+      apiMocks.post.mockResolvedValue({ data: { status: 'installed' } })
+      apiMocks.get.mockImplementation((url: string) => {
+        if (url === '/api/v1/tools/packages') return Promise.resolve({ data: [] })
+        if (url === '/api/v1/tools') return Promise.resolve({ data: [] })
+        if (url === '/api/v1/workflows/wf_a') {
+          return Promise.resolve({
+            data: {
+              info: workflow,
+              graph: makeGraph(),
+              missing_packages: [],
+              missing_tools: [],
+            },
+          })
+        }
+        return Promise.resolve({ data: {} })
+      })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      vm.dependencyDialogVisible = true
+
+      await vm.installMissingDependencies()
+
+      expect(apiMocks.post.mock.calls).toEqual([
+        ['/api/v1/tools/packages/common/install', { version: '1.2.3' }],
+      ])
+      expect(vm.dependencyDialogVisible).toBe(false)
+    })
+
     it('continues bulk installation after one package fails and keeps diagnostics open', async () => {
       const { workflow } = registerActiveRootWorkflow()
       const store = useWorkflowStore()

@@ -315,6 +315,25 @@ def _walk_library_nodes(workflow_data: dict[str, Any], scope: tuple[str, ...] = 
             yield from _walk_library_nodes(node["workflow"], (*scope, node_id))
 
 
+def _is_local_tool_reference(
+    node: dict[str, Any],
+    metadata: Any = None,
+) -> bool:
+    """Return whether a tool is workflow-local rather than installable."""
+
+    return (
+        node.get("tool_package") == "__custom__"
+        or isinstance(node.get("source_module"), str)
+        or getattr(metadata, "source_kind", None) == "custom"
+    )
+
+
+def _has_embedded_tool_source(node: dict[str, Any]) -> bool:
+    """Return whether the workflow carries the tool's source module."""
+
+    return isinstance(node.get("source_module"), str)
+
+
 def collect_required_packages(
     workflow_data: dict[str, Any],
     registry: ToolRegistryService,
@@ -330,6 +349,10 @@ def collect_required_packages(
         package = node.get("tool_package")
         version = node.get("tool_package_version")
         metadata = registry.get_tool(tool_name)
+        if _is_local_tool_reference(node, metadata):
+            if tool_name:
+                local.setdefault(tool_name, []).append("/".join(path))
+            continue
         if not isinstance(package, str) or not isinstance(version, str):
             if metadata is not None:
                 package, version = metadata.package, metadata.package_version
@@ -355,7 +378,12 @@ def _detect_missing_packages(
     for path, node in _walk_library_nodes(workflow_data):
         package = node.get("tool_package")
         version = node.get("tool_package_version")
-        if node.get("type") != "tool" or not isinstance(package, str) or not isinstance(version, str):
+        if (
+            node.get("type") != "tool"
+            or _is_local_tool_reference(node)
+            or not isinstance(package, str)
+            or not isinstance(version, str)
+        ):
             continue
         info = registry.get_package(package)
         installed = info.installed_versions if info is not None else []
@@ -380,11 +408,16 @@ def _detect_missing_tools(
     for path, node in _walk_library_nodes(workflow_data):
         if node.get("type") != "tool":
             continue
+        if _has_embedded_tool_source(node):
+            continue
         tool_name = str(node.get("tool_class") or "")
         if not tool_name or registry.get_tool(tool_name) is not None:
             continue
         package = node.get("tool_package")
         version = node.get("tool_package_version")
+        if _is_local_tool_reference(node):
+            package = None
+            version = None
         info = registry.get_package(package) if isinstance(package, str) else None
         missing.append(
             MissingTool(
@@ -409,6 +442,8 @@ def rebind_lib_dict_versions(
             continue
         tool_name = str(node.get("tool_class") or "")
         metadata = registry.get_tool(tool_name)
+        if _is_local_tool_reference(node, metadata):
+            continue
         package_name = str(node.get("tool_package") or (metadata.package if metadata else ""))
         package = registry.get_package(package_name) if package_name else None
         version = package.active_version if package and package.active_version else None

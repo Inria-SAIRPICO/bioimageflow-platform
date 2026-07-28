@@ -14,6 +14,7 @@ from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.tools import PackageInfo, ToolMetadata
 from bioimageflow_server.services.graph_translator import (
     _detect_missing_packages,
+    _detect_missing_tools,
     collect_required_packages,
     graph_state_to_lib_dict,
     lib_dict_to_graph_state,
@@ -270,6 +271,58 @@ def test_missing_packages_report_scoped_node_paths() -> None:
     missing = _detect_missing_packages(library, ToolRegistryService())
 
     assert missing[0].affected_nodes == ["child/tool"]
+
+
+def test_custom_tools_are_local_references_not_installable_packages() -> None:
+    library = _graph("root")
+    library["nodes"] = [
+        {
+            "name": "custom",
+            "type": "tool",
+            "tool_module": "workflow_tools.custom",
+            "tool_class": "CustomTool",
+            "tool_package": "__custom__",
+            "tool_package_version": "local",
+            "source_module": "sha256-custom-source",
+            "constants": {},
+        }
+    ]
+    registry = ToolRegistryService()
+
+    packages, local = collect_required_packages(library, registry)
+    missing_packages = _detect_missing_packages(library, registry)
+    missing_tools = _detect_missing_tools(library, registry)
+    rebound = rebind_lib_dict_versions(library, registry)
+
+    assert packages == []
+    assert [(item.tool_name, item.node_ids) for item in local] == [
+        ("CustomTool", ["custom"])
+    ]
+    assert missing_packages == []
+    assert missing_tools == []
+    assert rebound["nodes"][0]["tool_package"] == "__custom__"
+    assert rebound["nodes"][0]["tool_package_version"] == "local"
+
+
+def test_unavailable_custom_tool_is_not_labeled_as_a_package_dependency() -> None:
+    library = _graph("root")
+    library["nodes"] = [
+        {
+            "name": "custom",
+            "type": "tool",
+            "tool_module": "workflow_tools.custom",
+            "tool_class": "CustomTool",
+            "tool_package": "__custom__",
+            "tool_package_version": "local",
+            "constants": {},
+        }
+    ]
+
+    missing_tools = _detect_missing_tools(library, ToolRegistryService())
+
+    assert len(missing_tools) == 1
+    assert missing_tools[0].package_name is None
+    assert missing_tools[0].required_version is None
 
 
 def test_library_validation_paths_are_preserved() -> None:

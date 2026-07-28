@@ -145,9 +145,12 @@ const dependencyDialogVisible = ref(false)
 const dependencyInstallBusy = ref(false)
 const dependencyInstallProgress = ref<string | null>(null)
 const dependencyInstallErrors = ref<Record<string, string>>({})
+const installableMissingPackages = computed(() => (
+  workflowStore.missingPackages.filter(item => item.package_name !== '__custom__')
+))
 const canRebindDependencies = computed(() => (
-  workflowStore.missingPackages.length > 0
-  && workflowStore.missingPackages.every(
+  installableMissingPackages.value.length > 0
+  && installableMissingPackages.value.every(
     item => (item.installed_versions?.length ?? 0) > 0,
   )
 ))
@@ -262,13 +265,13 @@ function showDraftConflictWarning(action: 'saving' | 'running' | 'exporting' = '
 }
 
 function hasMissingImportDependencies(): boolean {
-  return workflowStore.missingPackages.length > 0 || workflowStore.missingTools.length > 0
+  return installableMissingPackages.value.length > 0 || workflowStore.missingTools.length > 0
 }
 
 watch(
   [
     activeWorkflowId,
-    () => workflowStore.missingPackages.map(item => (
+    () => installableMissingPackages.value.map(item => (
       `${item.package_name}@${item.required_version}`
     )).join(','),
     () => workflowStore.missingTools.map(item => item.node_id).join(','),
@@ -628,7 +631,7 @@ async function rebindImportedDependencies(): Promise<void> {
 
 function requestDependencyRebind(): void {
   if (!canRebindDependencies.value) return
-  const substitutions = workflowStore.missingPackages.map((item) => {
+  const substitutions = installableMissingPackages.value.map((item) => {
     const installed = toolRegistryStore.packages.find(
       pkg => pkg.name === item.package_name,
     )
@@ -649,7 +652,7 @@ async function installMissingDependencies(): Promise<void> {
   const workflowName = activeWorkflowId.value
   if (!workflowName) return
   const requirements = Array.from(new Map(
-    workflowStore.missingPackages.map(item => [
+    installableMissingPackages.value.map(item => [
       `${item.package_name}@${item.required_version}`,
       item,
     ]),
@@ -1206,7 +1209,7 @@ defineExpose({
 
   <MissingPackageDialog
     v-model:visible="dependencyDialogVisible"
-    :packages="workflowStore.missingPackages"
+    :packages="installableMissingPackages"
     :tools="workflowStore.missingTools"
     :installing="dependencyInstallBusy"
     :install-progress="dependencyInstallProgress"
