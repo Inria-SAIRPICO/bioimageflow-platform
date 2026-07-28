@@ -25,6 +25,11 @@ export function useUndoRedo<T>(maxSize = 100) {
     redoStack.value = []
   }
 
+  function reset(state: T): void {
+    undoStack.value = [deepClone(state)]
+    redoStack.value = []
+  }
+
   function undo(): T | undefined {
     if (undoStack.value.length <= 1) return undefined
     const stack = [...undoStack.value]
@@ -48,5 +53,5 @@ export function useUndoRedo<T>(maxSize = 100) {
     redoStack.value = []
   }
 
-  return { push, undo, redo, canUndo, canRedo, clear }
+  return { push, reset, undo, redo, canUndo, canRedo, clear }
 }

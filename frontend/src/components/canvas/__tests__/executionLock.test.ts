@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, ref, computed, nextTick, reactive } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import InputText from 'primevue/inputtext'
@@ -43,17 +43,25 @@ vi.mock('@vue-flow/core', () => {
       },
       removeNodes: (ids: string[]) => {
         const idSet = new Set(ids)
-        mockNodes = mockNodes.filter((n: any) => !idSet.has(n.id))
+        mockNodes.splice(
+          0,
+          mockNodes.length,
+          ...mockNodes.filter((n: any) => !idSet.has(n.id)),
+        )
       },
       removeEdges: (ids: string[]) => {
         const idSet = new Set(ids)
-        mockEdges = mockEdges.filter((e: any) => !idSet.has(e.id))
+        mockEdges.splice(
+          0,
+          mockEdges.length,
+          ...mockEdges.filter((e: any) => !idSet.has(e.id)),
+        )
       },
       setNodes: (nodes: any[]) => {
-        mockNodes = [...nodes]
+        mockNodes.splice(0, mockNodes.length, ...nodes)
       },
       setEdges: (edges: any[]) => {
-        mockEdges = [...edges]
+        mockEdges.splice(0, mockEdges.length, ...edges)
       },
       updateEdge: vueFlowMocks.updateEdge,
       getNodes: computed(() => mockNodes),
@@ -88,6 +96,9 @@ vi.mock('@vue-flow/controls', () => ({
 
 vi.mock('@/composables/useGraphSync', () => ({
   serializeGraph: (raw: { nodes: any[]; edges: any[] }) => ({
+    schema_version: 1,
+    name: 'execution-lock',
+    display_name: 'Execution lock',
     nodes: raw.nodes.map((node) => ({
       type: 'tool',
       id: node.id,
@@ -101,6 +112,12 @@ vi.mock('@/composables/useGraphSync', () => ({
       collapsed: node.data?.collapsed ?? false,
     })),
     edges: [],
+    interface: (raw as any).interface ?? { inputs: [], outputs: [] },
+    config: {
+      storage_path: './bif_data',
+      engine: 'wetlands',
+      execution: 'parallel',
+    },
   }),
   useGraphSync: () => ({
     syncGraph: vi.fn(),
@@ -160,6 +177,7 @@ import {
 } from '@/composables/useCanvasStatusProjection'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { rootCanvasId, rootCanvasParams } from '@/test-utils/canvasFixtures'
+import { makeGraph, makeGraphNode } from '@/test-utils/graphFixtures'
 import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 
 const EXECUTION_CONTEXT = {
@@ -173,12 +191,12 @@ const mockedApi = api as unknown as {
   post: ReturnType<typeof vi.fn>
 }
 
-function mountCanvas() {
+function mountCanvas(graph = makeGraph()) {
   const wrapper = mount(CanvasView, {
     props: {
       nodes: [],
       edges: [],
-      params: rootCanvasParams('execution-lock'),
+      params: rootCanvasParams('execution-lock', { graph }),
     },
     attachTo: document.body,
   })
@@ -268,6 +286,118 @@ describe('CanvasView execution lock', () => {
     nodeDragStopHandler!({ nodes: [node] })
 
     expect(node.position).toEqual({ x: 0, y: 0 })
+    w.unmount()
+  })
+
+  it('restores every node through repeated movement undo and redo', async () => {
+    const initialPositions = [
+      [0, 0],
+      [100, 20],
+      [200, 40],
+    ] as const
+    const graph = makeGraph({
+      nodes: initialPositions.map((position, index) => makeGraphNode({
+        id: `node-${index + 1}`,
+        name: `Node ${index + 1}`,
+        tool_name: `Tool${index + 1}`,
+        position: [...position],
+      })),
+    })
+    const w = mountCanvas(graph)
+    await flushPromises()
+    await nextTick()
+
+    for (let index = 0; index < initialPositions.length; index += 1) {
+      const node = mockNodes[index]
+      nodeDragStartHandler!({ nodes: [node] })
+      node.position = {
+        x: initialPositions[index][0] + 25,
+        y: initialPositions[index][1] + 50,
+      }
+      nodeDragStopHandler!({ nodes: [node] })
+    }
+
+    for (let remaining = initialPositions.length; remaining > 0; remaining -= 1) {
+      await w.find('.canvas-view').trigger('keydown', {
+        key: 'z',
+        ctrlKey: true,
+      })
+      await nextTick()
+
+      expect(mockNodes.map(node => node.id)).toEqual([
+        'node-1',
+        'node-2',
+        'node-3',
+      ])
+      for (let index = 0; index < initialPositions.length; index += 1) {
+        const moved = index < remaining - 1
+        expect(mockNodes[index].position).toEqual({
+          x: initialPositions[index][0] + (moved ? 25 : 0),
+          y: initialPositions[index][1] + (moved ? 50 : 0),
+        })
+      }
+    }
+
+    for (let restored = 1; restored <= initialPositions.length; restored += 1) {
+      await w.find('.canvas-view').trigger('keydown', {
+        key: 'Z',
+        ctrlKey: true,
+        shiftKey: true,
+      })
+      await nextTick()
+
+      expect(mockNodes).toHaveLength(initialPositions.length)
+      for (let index = 0; index < initialPositions.length; index += 1) {
+        const moved = index < restored
+        expect(mockNodes[index].position).toEqual({
+          x: initialPositions[index][0] + (moved ? 25 : 0),
+          y: initialPositions[index][1] + (moved ? 50 : 0),
+        })
+      }
+    }
+    w.unmount()
+  })
+
+  it('undoes and redoes deleting every node without corrupting the baseline', async () => {
+    const graph = makeGraph({
+      nodes: [
+        makeGraphNode({ id: 'first', name: 'First', position: [10, 20] }),
+        makeGraphNode({ id: 'second', name: 'Second', position: [30, 40] }),
+      ],
+    })
+    const w = mountCanvas(graph)
+    await flushPromises()
+    await nextTick()
+
+    for (const node of mockNodes) node.selected = true
+    ;(w.vm as any).deleteSelected()
+    expect(mockNodes).toEqual([])
+
+    await w.find('.canvas-view').trigger('keydown', {
+      key: 'z',
+      ctrlKey: true,
+    })
+    await nextTick()
+    expect(mockNodes.map(node => node.id)).toEqual(['first', 'second'])
+    expect(mockNodes.map(node => node.position)).toEqual([
+      { x: 10, y: 20 },
+      { x: 30, y: 40 },
+    ])
+
+    await w.find('.canvas-view').trigger('keydown', {
+      key: 'Z',
+      ctrlKey: true,
+      shiftKey: true,
+    })
+    await nextTick()
+    expect(mockNodes).toEqual([])
+
+    await w.find('.canvas-view').trigger('keydown', {
+      key: 'z',
+      ctrlKey: true,
+    })
+    await nextTick()
+    expect(mockNodes.map(node => node.id)).toEqual(['first', 'second'])
     w.unmount()
   })
 

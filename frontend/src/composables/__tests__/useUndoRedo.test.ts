@@ -40,6 +40,24 @@ describe('useUndoRedo', () => {
     expect(canRedo.value).toBe(false)
   })
 
+  it('reset installs an isolated baseline and discards all prior history', () => {
+    const { push, reset, undo, redo, canUndo, canRedo } = useUndoRedo<{ nodes: string[] }>()
+    push({ nodes: ['obsolete'] })
+    push({ nodes: ['obsolete', 'changed'] })
+    undo()
+    const baseline = { nodes: ['initial'] }
+
+    reset(baseline)
+    baseline.nodes.splice(0)
+    push({ nodes: ['initial', 'next'] })
+
+    expect(undo()).toEqual({ nodes: ['initial'] })
+    expect(undo()).toBeUndefined()
+    expect(redo()).toEqual({ nodes: ['initial', 'next'] })
+    expect(canUndo.value).toBe(true)
+    expect(canRedo.value).toBe(false)
+  })
+
   it('max size eviction', () => {
     const { push, undo, canUndo } = useUndoRedo<number>(3)
     push(1)

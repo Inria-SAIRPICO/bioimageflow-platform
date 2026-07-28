@@ -271,7 +271,6 @@ uiStore.setCanvasWorkflow(
 )
 uiStore.setCanvasGraphNodes(canvasId, getNodes.value)
 const {
-  syncGraph,
   syncGraphState,
   revalidateGraphState,
   flushNow,
@@ -574,9 +573,7 @@ interface CanvasVueFlowState {
   interface?: GraphState['interface']
 }
 
-interface CanvasHistoryState extends CanvasVueFlowState {
-  interface: GraphState['interface']
-}
+type CanvasHistoryState = GraphState
 
 interface GraphChangeOptions {
   state?: CanvasVueFlowState
@@ -822,8 +819,7 @@ async function applyGraphState(
     if (isCanvasUnmounted) return
     const authoritativeGraph = rememberAuthoritativeGraph(graph)
     if (synchronize) syncGraphState(authoritativeGraph)
-    undoRedo.clear()
-    undoRedo.push(canvasHistoryState(currentVueFlowState(), authoritativeGraph))
+    undoRedo.reset(authoritativeGraph)
     if (!isNestedWorkflowEditor) {
       const identity = workflowIdentity()
       uiStore.setCanvasWorkflow(
@@ -2612,23 +2608,6 @@ function currentVueFlowState(): CanvasVueFlowState {
   }
 }
 
-function canvasHistoryState(
-  state: CanvasVueFlowState = currentVueFlowState(),
-  authoritativeGraph?: GraphState,
-): CanvasHistoryState {
-  const context = currentInterfaceContext()
-  return {
-    nodes: state.nodes,
-    edges: authoritativeGraph
-      ? authoritativeGraph.edges.map(edge => vueFlowEdgeFromGraphEdge(edge))
-      : state.edges,
-    interface: {
-      inputs: context?.inputs ?? state.interface?.inputs ?? [],
-      outputs: context?.outputs ?? state.interface?.outputs ?? [],
-    },
-  }
-}
-
 function populateConnectedInputsForPastedNodes(nodes: any[], edges: any[]) {
   const byId = new Map(nodes.map((node) => [node.id, node]))
   for (const edge of edges) {
@@ -3030,23 +3009,34 @@ function historyNodesWithCurrentToolRuntime(nodes: any[]): any[] {
 }
 
 function applyHistoryState(state: CanvasHistoryState) {
+  const vueFlowGraph = graphStateToVueFlow(
+    state,
+    toolRegistryStore.getToolByName,
+    workflowStore.missingTools,
+  )
+  if (!replaceWorkflowInterface(
+    deepClone(state.interface.inputs),
+    deepClone(state.interface.outputs),
+  )) return
+  const restoredNodes = historyNodesWithCurrentToolRuntime(vueFlowGraph.nodes)
+  attachInterfaceContextToNodes(restoredNodes)
   isApplyingGraphState = true
   try {
-    setNodes(historyNodesWithCurrentToolRuntime(state.nodes))
-    setEdges(state.edges)
+    setNodes(restoredNodes)
+    setEdges(vueFlowGraph.edges)
     refreshConnectedInputLabels()
-    if (!replaceWorkflowInterface(state.interface.inputs, state.interface.outputs)) return
     const currentState = currentVueFlowState()
+    const authoritativeGraph = rememberAuthoritativeGraph(state)
+    syncGraphState(authoritativeGraph)
     if (isNestedWorkflowEditor && props.nestedWorkflowSessionId) {
-      syncGraph(currentState)
-      const graph = rememberAuthoritativeGraph(
-        serializeGraph(currentState) as GraphState,
+      nestedWorkflowSessionsStore.updateDraft(
+        props.nestedWorkflowSessionId,
+        authoritativeGraph,
       )
-      nestedWorkflowSessionsStore.updateDraft(props.nestedWorkflowSessionId, graph)
       refreshInterfaceContextOnNodes()
       uiStore.markCanvasDirty(canvasId)
     } else {
-      markDirtyAndAutoSave(currentState)
+      markDirtyAndAutoSave(currentState, authoritativeGraph)
     }
   } finally {
     void nextTick().then(() => {
@@ -3451,34 +3441,29 @@ function stageGraphValidation(): void {
 
 function emitGraphChanged(options: GraphChangeOptions = {}) {
   const state = options.state ?? currentVueFlowState()
-  const authoritativeGraph = options.authoritativeGraph
-    ? rememberAuthoritativeGraph(options.authoritativeGraph)
-    : null
-  const exposedState = authoritativeGraph
+  const exposedState = options.authoritativeGraph
     ? {
         ...state,
-        edges: authoritativeGraph.edges.map(edge => vueFlowEdgeFromGraphEdge(edge)),
+        edges: options.authoritativeGraph.edges.map(edge => vueFlowEdgeFromGraphEdge(edge)),
       }
     : state
-  const historyState = canvasHistoryState(exposedState)
-  undoRedo.push(historyState)
+  const canonicalGraph = rememberAuthoritativeGraph(
+    options.authoritativeGraph ?? (serializeGraph(state) as GraphState),
+  )
+  undoRedo.push(canonicalGraph)
   if (!options.statusesAlreadyStaged) stageGraphValidation()
+  syncGraphState(canonicalGraph)
   if (isNestedWorkflowEditor && props.nestedWorkflowSessionId) {
-    if (authoritativeGraph) {
-      syncGraphState(authoritativeGraph)
-    } else {
-      syncGraph(state as any)
-    }
-    const graph = authoritativeGraph ?? rememberAuthoritativeGraph(
-      serializeGraph(state) as GraphState,
+    nestedWorkflowSessionsStore.updateDraft(
+      props.nestedWorkflowSessionId,
+      canonicalGraph,
     )
-    nestedWorkflowSessionsStore.updateDraft(props.nestedWorkflowSessionId, graph)
     refreshInterfaceContextOnNodes()
     uiStore.markCanvasDirty(canvasId)
     emit('graph-changed', exposedState)
     return
   }
-  markDirtyAndAutoSave(state, authoritativeGraph ?? undefined)
+  markDirtyAndAutoSave(state, canonicalGraph)
   emit('graph-changed', exposedState)
 }
 

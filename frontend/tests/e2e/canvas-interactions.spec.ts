@@ -108,6 +108,38 @@ async function connectDataFrames(page: Page, source: Locator, target: Locator) {
   await page.mouse.up()
 }
 
+async function moveNode(page: Page, node: Locator, delta: { x: number; y: number }) {
+  const box = await node.boundingBox()
+  expect(box).not.toBeNull()
+  const draftResponse = page.waitForResponse(
+    (resp) =>
+      resp.url().includes('/api/v1/workflow-drafts/') &&
+      resp.request().method() === 'PUT' &&
+      resp.status() === 200,
+  )
+  const start = {
+    x: box!.x + box!.width / 2,
+    y: box!.y + Math.min(24, box!.height / 2),
+  }
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 8 })
+  await page.mouse.up()
+  await draftResponse
+}
+
+async function expectNodeNear(
+  node: Locator,
+  expected: { x: number; y: number },
+) {
+  await expect.poll(async () => {
+    const box = await node.boundingBox()
+    return box !== null
+      && Math.abs(box.x - expected.x) <= 10
+      && Math.abs(box.y - expected.y) <= 10
+  }).toBe(true)
+}
+
 test.describe('Canvas interactions', () => {
   test.describe.configure({ mode: 'serial' })
   let workflowName: string
@@ -161,5 +193,46 @@ test.describe('Canvas interactions', () => {
       timeout: 5000,
     })
     await expect(nodePanel.locator('.list-input-error')).toHaveCount(0)
+  })
+
+  test('repeated undo returns moved nodes to the loaded workflow baseline', async ({ page }) => {
+    await addToolNode(page, 'Generate', { x: 220, y: 180 })
+    await addToolNode(page, 'Generate', { x: 520, y: 260 })
+    const saveResponse = page.waitForResponse(
+      (resp) =>
+        resp.url().includes(`/api/v1/workflows/${workflowName}`) &&
+        resp.request().method() === 'PUT' &&
+        resp.status() === 200,
+    )
+    await page.getByRole('menuitem', { name: 'Workflow', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Save', exact: true }).click()
+    await saveResponse
+
+    await page.reload()
+    await expect(page.getByTestId('workflow-title')).toBeVisible()
+    const nodes = page.locator('.vue-flow__node')
+    await expect(nodes).toHaveCount(2)
+    const first = nodes.nth(0)
+    const second = nodes.nth(1)
+    const firstInitial = await first.boundingBox()
+    const secondInitial = await second.boundingBox()
+    expect(firstInitial).not.toBeNull()
+    expect(secondInitial).not.toBeNull()
+
+    await moveNode(page, first, { x: 70, y: 45 })
+    await moveNode(page, second, { x: -55, y: 65 })
+
+    await page.locator('.canvas-view').press('Control+z')
+    await expect(nodes).toHaveCount(2)
+    await expectNodeNear(second, secondInitial!)
+
+    await page.locator('.canvas-view').press('Control+z')
+    await expect(nodes).toHaveCount(2)
+    await expectNodeNear(first, firstInitial!)
+    await expectNodeNear(second, secondInitial!)
+
+    await page.locator('.canvas-view').press('Control+Shift+z')
+    await page.locator('.canvas-view').press('Control+Shift+z')
+    await expect(nodes).toHaveCount(2)
   })
 })
