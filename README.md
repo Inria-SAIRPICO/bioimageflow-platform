@@ -171,53 +171,118 @@ See [`docs/testing.md`](docs/testing.md) for exact lane contents, dependency set
 ## Packaging releases
 
 BioImageFlow Platform is distributed with [`wetlands-launcher`](https://github.com/arthursw/launcher).
-To configure release signing, build and upload platform-specific launcher packages, and create the application archive, follow the [`wetlands-launcher` packaging guide](https://github.com/arthursw/launcher/blob/main/docs/packaging.md).
+The [`wetlands-launcher` packaging guide](https://github.com/arthursw/launcher/blob/main/docs/packaging.md) is the comprehensive reference for one-time signing setup and generic command behavior.
+This section is the BioImageFlow-specific release checklist.
 
-Icons are generated with `scripts/generate_desktop_icons.py`.
+The exact static version in `backend/pyproject.toml` is the release tag.
+Do not add a `v` prefix: version `0.1.19` produces Git tag `0.1.19`, release asset names containing `0.1.19`, and no `v0.1.19` alias.
+The `RELEASE_TAG` shell variable below is only used to make filenames readable in this checklist; Launcher commands independently infer and verify the same value from `pyproject.toml`.
 
-Build and package the unsigned launcher on each target operating system from `backend/`:
+### 1. Prepare and validate the release commit
+
+Set `[project].version` in `backend/pyproject.toml`, then regenerate the lockfile:
 
 ```bash
+export RELEASE_TAG="0.1.19"
+
 cd backend
-uv sync --group dev
-uv run --with pyinstaller launcher build
-uv run launcher build package
+uv lock
+uv sync --group dev --frozen
+cd ..
 ```
 
-PyInstaller must be installed in the same `uv run` environment as the launcher.
-
-For macOS and Windows, submit it to the Inria signing pipeline from the [`signing/`](signing/README.md) submodule.
-The command waits for signing and, on macOS, notarization to finish, verifies the result, and downloads it to `signing/signed/`:
+Commit every intended source, version, lockfile, configuration, and submodule change before releasing.
+If the version bump is the only uncommitted release preparation, commit it with:
 
 ```bash
-cd ../signing
+git add backend/pyproject.toml backend/uv.lock
+git commit -m "Prepare release ${RELEASE_TAG}"
+```
+
+Run the release-level validation on that exact commit:
+
+```bash
+scripts/test full
+git status --short --untracked-files=no
+```
+
+The tracked worktree and index must be clean.
+If validation requires a fix, commit the fix and rerun the full lane.
+Push the validated release commit to `main` before creating its tag:
+
+```bash
+git push origin main
+```
+
+### 2. Rebuild launchers only when the launcher changed
+
+Every release publishes a new application archive.
+Rebuild, sign, and upload platform launcher packages only when the launcher executable or its bundled inputs changed, including a `wetlands-launcher` upgrade, `application.yml`, icons, PyInstaller inputs, or signing behavior.
+For an app-only release, skip this phase and phase 5; existing launcher downloads remain valid and will install the new application update.
+
+When a rebuild is required, check out the same clean release commit on every target operating system and build from `backend/`:
+
+```bash
+export RELEASE_TAG="0.1.19"
+
+cd backend
+uv sync --group dev --frozen
+uv run --with pyinstaller launcher build
+uv run launcher build package
+cd ..
+```
+
+PyInstaller must be installed in the same `uv run` environment as Launcher.
+Icons are generated with `scripts/generate_desktop_icons.py`.
+Standard packages are named from the inferred release tag, for example:
+
+```text
+backend/dist/BioImageFlow-launcher-0.1.19-macos-arm64.zip
+backend/dist/BioImageFlow-launcher-0.1.19-windows-x64.zip
+```
+
+Do not upload unsigned macOS or Windows packages publicly.
+Submit each of them to the Inria signing pipeline from the [`signing/`](signing/README.md) submodule.
+The helper waits for signing and, on macOS, notarization, then downloads the verified result to `signing/signed/`:
+
+```bash
+cd signing
 export GITLAB_TOKEN="<token>"
 
-# or on Windows Powershell:
+# or on Windows PowerShell:
 # $env:GITLAB_TOKEN="<token>"
 
 uv run python scripts/submit_launcher.py \
-  --file ../backend/dist/BioImageFlow-launcher-0.1.18-macos-arm64.zip \
-  --project-id "<signing-project-id_(474)>" \
-  --ref "<signing-project-default-branch_(main)>" \
+  --file "../backend/dist/BioImageFlow-launcher-${RELEASE_TAG}-macos-arm64.zip" \
+  --project-id "474" \
+  --ref main \
   --platform macos
+cd ..
 ```
 
-Use `--platform windows` and the Windows ZIP filename when building on Windows.
-The signing helper infers the exact release tag from the standard launcher ZIP filename and rejects a platform or explicit-tag mismatch.
+Use `--platform windows` and the `windows-x64` ZIP on Windows.
+The helper infers the exact release tag from the standard package filename and rejects a platform or explicit-tag mismatch.
+Linux launcher packages bypass the Inria operating-system signing pipeline.
 
-After authenticating with `gh auth login`, return to `backend/` and create the GitHub release before uploading any assets:
+### 3. Create the Git tag and GitHub release
+
+Authenticate once with `gh auth login`.
+From `backend/`, create the raw version tag at the current commit, push it, and create the provider release:
 
 ```bash
-cd ../backend
+cd backend
 uv run launcher release create \
   --tag \
   --push \
   --notes-text "<release notes>"
 ```
 
-The platform-specific launcher ZIP is separate from the application update archive.
-Create, sign, verify, and upload the application update assets while the inferred release tag still resolves to the current commit:
+For longer notes, replace `--notes-text` with `--notes ../RELEASE_NOTES.md`.
+Create the provider release only once.
+
+### 4. Publish the signed application update
+
+Still from `backend/`, create the application archive while the inferred release tag resolves to `HEAD`, then sign, verify, and upload it:
 
 ```bash
 uv run launcher release archive
@@ -226,19 +291,54 @@ uv run launcher release verify
 uv run launcher release upload
 ```
 
-Then upload each downloaded signed launcher ZIP.
-The command infers the tag and platform from the standard asset name and records its download URL in `packaging/launcher/distribution.yml`:
+The upload publishes the versioned application ZIP together with `launcher-manifest.yml` and `launcher-manifest.yml.sig`.
+These three assets are mandatory for every release.
+
+### 5. Upload rebuilt launcher packages
+
+Skip this phase for an app-only release.
+When launchers were rebuilt, gather the signed packages in one checkout when practical and upload each one from `backend/`:
 
 ```bash
 uv run launcher build upload \
-  --asset ../signing/signed/BioImageFlow-launcher-0.1.18-macos-arm64.zip
+  --asset "../signing/signed/BioImageFlow-launcher-${RELEASE_TAG}-macos-arm64.zip"
+```
 
+The command infers the tag and platform from project metadata and the package filename, uploads the exact asset, and updates `packaging/launcher/distribution.yml` after success.
+If platforms upload from separate machines, commit and push `distribution.yml` after each upload and pull that commit before the next upload so entries are not overwritten.
+
+After every platform package is recorded, update the existing release notes once:
+
+```bash
 uv run launcher release update-notes \
   --notes-text "<release notes>"
 ```
 
-Commit and push the updated `backend/packaging/launcher/distribution.yml` before uploading another platform package.
-The application upload publishes the application archive together with the required `launcher-manifest.yml` and `launcher-manifest.yml.sig`.
+Commit the final distribution metadata:
+
+```bash
+cd ..
+git add backend/packaging/launcher/distribution.yml
+git commit -m "Record ${RELEASE_TAG} launcher downloads"
+git push origin main
+```
+
+### 6. Verify the published release
+
+Open the release and inspect its tag and assets:
+
+```bash
+gh release view "${RELEASE_TAG}" --web
+```
+
+Confirm that:
+
+- the release tag is exactly `${RELEASE_TAG}`, without `v`;
+- the application ZIP, `launcher-manifest.yml`, and `launcher-manifest.yml.sig` are present;
+- every rebuilt launcher ZIP has the expected platform suffix and is linked from the release notes;
+- the final `distribution.yml` change is committed and pushed;
+- an existing installed launcher can discover, verify, install, and start the new application release;
+- every newly rebuilt launcher starts successfully on a clean target system.
 
 ## Development
 
