@@ -5,7 +5,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 backend_dir="$repo_root/backend"
 assets_dir="$backend_dir/src/bioimageflow_server/assets"
+launcher_assets_dir="$backend_dir/packaging/launcher"
 source_svg="${1:-$repo_root/logo/microscope.svg}"
+launcher_source_icon="$launcher_assets_dir/icon_128x128.png"
 
 # A precomposed macOS icon uses an 824 px visual tile centered on the
 # 1024 px icon canvas, leaving 100 px of transparent margin on each side.
@@ -20,11 +22,13 @@ Usage: scripts/generate_desktop_icons [SOURCE_SVG]
 
 Generate the desktop application's platform-specific icons:
 
-  app_icon.png   Linux, 512x512
-  app_icon.ico   Windows, 16 through 256 px
-  app_icon.icns  macOS, with 100 px transparent margins on a 1024 px canvas
+  assets/app_icon.png            Linux, 512x512
+  assets/app_icon.ico            Windows, 16 through 256 px
+  assets/app_icon.icns           macOS platform icon, inset on a 1024 px canvas
+  packaging/launcher/app.icns    macOS launcher icon, inset on a 1024 px canvas
 
-The default source is logo/microscope.svg.
+The platform icon defaults to logo/microscope.svg.
+The macOS launcher icon is generated from the existing portable launcher PNG.
 Requires rsvg-convert, ImageMagick's magick command, uv, and the backend's
 locked Pillow dependency.
 EOF
@@ -52,19 +56,26 @@ if [[ ! -f "$source_svg" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$launcher_source_icon" ]]; then
+  printf 'Launcher icon not found: %s\n' "$launcher_source_icon" >&2
+  exit 1
+fi
+
 require_command rsvg-convert
 require_command magick
 require_command uv
 
-mkdir -p "$assets_dir"
+mkdir -p "$assets_dir" "$launcher_assets_dir"
 temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/bioimageflow-desktop-icons.XXXXXX")"
 trap 'rm -rf -- "$temporary_dir"' EXIT
 
 full_master="$temporary_dir/app_icon_1024.png"
 macos_master="$temporary_dir/app_icon_macos_1024.png"
+launcher_macos_master="$temporary_dir/launcher_icon_macos_1024.png"
 linux_output="$temporary_dir/app_icon.png"
 windows_output="$temporary_dir/app_icon.ico"
 macos_output="$temporary_dir/app_icon.icns"
+launcher_macos_output="$temporary_dir/launcher_app.icns"
 
 rsvg-convert \
   --width 512 \
@@ -91,6 +102,14 @@ magick \
   -extent "${macos_canvas_size}x${macos_canvas_size}" \
   "$macos_master"
 
+magick \
+  "$launcher_source_icon" \
+  -resize "${macos_artwork_size}x${macos_artwork_size}" \
+  -gravity center \
+  -background none \
+  -extent "${macos_canvas_size}x${macos_canvas_size}" \
+  "$launcher_macos_master"
+
 uv run \
   --project "$backend_dir" \
   --frozen \
@@ -98,7 +117,9 @@ uv run \
   "$linux_output" \
   "$windows_output" \
   "$macos_master" \
-  "$macos_output" <<'PY'
+  "$macos_output" \
+  "$launcher_macos_master" \
+  "$launcher_macos_output" <<'PY'
 from pathlib import Path
 import sys
 
@@ -109,16 +130,38 @@ linux_path = Path(sys.argv[1])
 windows_path = Path(sys.argv[2])
 macos_master_path = Path(sys.argv[3])
 macos_path = Path(sys.argv[4])
+launcher_macos_master_path = Path(sys.argv[5])
+launcher_macos_path = Path(sys.argv[6])
 
-macos_master = Image.open(macos_master_path).convert("RGBA")
-if macos_master.size != (1024, 1024):
-    raise SystemExit(f"Unexpected macOS master size: {macos_master.size}")
-if macos_master.getchannel("A").getbbox() != (100, 100, 924, 924):
-    raise SystemExit(
-        "Unexpected macOS artwork bounds: "
-        f"{macos_master.getchannel('A').getbbox()}"
-    )
-macos_master.save(macos_path, format="ICNS")
+
+def write_macos_icon(master_path: Path, icon_path: Path, label: str) -> None:
+    master = Image.open(master_path).convert("RGBA")
+    if master.size != (1024, 1024):
+        raise SystemExit(f"Unexpected {label} master size: {master.size}")
+    if master.getchannel("A").getbbox() != (100, 100, 924, 924):
+        raise SystemExit(
+            f"Unexpected {label} artwork bounds: "
+            f"{master.getchannel('A').getbbox()}"
+        )
+    master.save(icon_path, format="ICNS")
+
+
+def validate_macos_icon(icon_path: Path, label: str) -> None:
+    icon = Image.open(icon_path).convert("RGBA")
+    if icon.size != (1024, 1024):
+        raise SystemExit(f"Unexpected {label} icon size: {icon.size}")
+    if icon.getchannel("A").getbbox() != (100, 100, 924, 924):
+        raise SystemExit(
+            f"Unexpected {label} icon bounds: {icon.getchannel('A').getbbox()}"
+        )
+
+
+write_macos_icon(macos_master_path, macos_path, "macOS platform")
+write_macos_icon(
+    launcher_macos_master_path,
+    launcher_macos_path,
+    "macOS launcher",
+)
 
 linux_icon = Image.open(linux_path)
 if linux_icon.format != "PNG" or linux_icon.size != (512, 512):
@@ -136,26 +179,26 @@ expected_windows_sizes = {
     (128, 128),
     (256, 256),
 }
-if windows_icon.format != "ICO" or windows_icon.info.get("sizes") != expected_windows_sizes:
+if (
+    windows_icon.format != "ICO"
+    or windows_icon.info.get("sizes") != expected_windows_sizes
+):
     raise SystemExit(
         "Unexpected Windows icon: "
         f"format={windows_icon.format}, sizes={windows_icon.info.get('sizes')}"
     )
 
-macos_icon = Image.open(macos_path).convert("RGBA")
-if macos_icon.size != (1024, 1024):
-    raise SystemExit(f"Unexpected macOS icon size: {macos_icon.size}")
-if macos_icon.getchannel("A").getbbox() != (100, 100, 924, 924):
-    raise SystemExit(
-        f"Unexpected macOS icon bounds: {macos_icon.getchannel('A').getbbox()}"
-    )
+validate_macos_icon(macos_path, "macOS platform")
+validate_macos_icon(launcher_macos_path, "macOS launcher")
 PY
 
 cp "$linux_output" "$assets_dir/app_icon.png"
 cp "$windows_output" "$assets_dir/app_icon.ico"
 cp "$macos_output" "$assets_dir/app_icon.icns"
+cp "$launcher_macos_output" "$launcher_assets_dir/app.icns"
 
 printf '%s\n' \
   "$assets_dir/app_icon.png" \
   "$assets_dir/app_icon.ico" \
-  "$assets_dir/app_icon.icns"
+  "$assets_dir/app_icon.icns" \
+  "$launcher_assets_dir/app.icns"

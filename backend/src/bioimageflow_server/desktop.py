@@ -17,10 +17,33 @@ from bioimageflow_server.logging_config import resolve_log_config_path
 
 logger = logging.getLogger(__name__)
 
+_DESKTOP_APP_NAME = "BioImageFlow"
 _DESKTOP_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _LINUX_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.png"
 _MACOS_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.icns"
 _WINDOWS_APP_ICON = _DESKTOP_ASSETS_DIR / "app_icon.ico"
+
+
+def _configure_macos_application_identity() -> None:
+    """Set the Cocoa bundle and process names before pywebview initializes."""
+    if sys.platform != "darwin":
+        return
+
+    _set_macos_application_identity(_DESKTOP_APP_NAME)
+
+
+def _set_macos_application_identity(app_name: str) -> None:
+    """Apply the name used by the macOS Dock and application menu."""
+    from Foundation import NSBundle, NSProcessInfo  # type: ignore[import-not-found]
+
+    bundle = NSBundle.mainBundle()
+    bundle_info = bundle.infoDictionary()
+    localized_bundle_info = bundle.localizedInfoDictionary()
+    for info in (bundle_info, localized_bundle_info):
+        if info is not None:
+            info["CFBundleName"] = app_name
+            info["CFBundleDisplayName"] = app_name
+    NSProcessInfo.processInfo().setProcessName_(app_name)
 
 
 def _native_app_icon_path(platform: str | None = None) -> Path:
@@ -322,6 +345,8 @@ def start_desktop(
         log_config: Optional Uvicorn logging config path. Defaults to the
             packaged BioImageFlow logging config.
     """
+    _configure_macos_application_identity()
+
     from bioimageflow_server.app import create_app
     from bioimageflow_server.models.tools import AppConfig
 
@@ -367,7 +392,7 @@ def start_desktop(
     logger.info("Window URL: %s (dev=%s)", window_url, dev)
 
     window = webview.create_window(
-        "BioImageFlow",
+        _DESKTOP_APP_NAME,
         window_url,
         width=1440,
         height=900,

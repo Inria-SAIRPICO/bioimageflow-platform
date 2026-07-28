@@ -233,7 +233,8 @@ cd ..
 ```
 
 PyInstaller must be installed in the same `uv run` environment as Launcher.
-Icons are generated with `scripts/generate_desktop_icons.py`.
+Icons are generated with `scripts/generate_desktop_icons`.
+The generator keeps the Windows and Linux launcher artwork full-size and creates an inset `backend/packaging/launcher/app.icns` for the macOS launcher bundle.
 Standard packages are named from the inferred release tag, for example:
 
 ```text

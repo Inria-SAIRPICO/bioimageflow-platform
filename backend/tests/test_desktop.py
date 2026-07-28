@@ -1,5 +1,6 @@
 """Tests for desktop (pywebview) module."""
 
+import sys
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -32,6 +33,50 @@ class _MockEvent:
     def __iadd__(self, handler):
         self.handlers.append(handler)
         return self
+
+
+def test_macos_application_identity_sets_bundle_and_process_names():
+    from bioimageflow_server.desktop import _set_macos_application_identity
+
+    bundle_info = {}
+    localized_bundle_info = {}
+    bundle = MagicMock()
+    bundle.infoDictionary.return_value = bundle_info
+    bundle.localizedInfoDictionary.return_value = localized_bundle_info
+    process_info = MagicMock()
+    foundation = MagicMock()
+    foundation.NSBundle.mainBundle.return_value = bundle
+    foundation.NSProcessInfo.processInfo.return_value = process_info
+
+    with patch.dict(sys.modules, {"Foundation": foundation}):
+        _set_macos_application_identity("BioImageFlow")
+
+    assert bundle_info == {
+        "CFBundleName": "BioImageFlow",
+        "CFBundleDisplayName": "BioImageFlow",
+    }
+    assert localized_bundle_info == {
+        "CFBundleName": "BioImageFlow",
+        "CFBundleDisplayName": "BioImageFlow",
+    }
+    process_info.setProcessName_.assert_called_once_with("BioImageFlow")
+
+
+@patch("bioimageflow_server.desktop._set_macos_application_identity")
+def test_macos_application_identity_is_only_applied_on_macos(mock_set_identity):
+    from bioimageflow_server.desktop import _configure_macos_application_identity
+
+    with patch("bioimageflow_server.desktop.sys.platform", "linux"):
+        _configure_macos_application_identity()
+    with patch("bioimageflow_server.desktop.sys.platform", "win32"):
+        _configure_macos_application_identity()
+
+    mock_set_identity.assert_not_called()
+
+    with patch("bioimageflow_server.desktop.sys.platform", "darwin"):
+        _configure_macos_application_identity()
+
+    mock_set_identity.assert_called_once_with("BioImageFlow")
 
 
 @pytest.mark.parametrize(
@@ -97,6 +142,33 @@ def test_linux_app_icon_uses_pywebview_without_native_callback():
         _configure_native_window_icon(window)
 
     assert window.events.shown.handlers == []
+
+
+@patch("bioimageflow_server.desktop._configure_macos_application_identity")
+@patch("bioimageflow_server.desktop.webview")
+@patch("bioimageflow_server.desktop.uvicorn")
+@patch("bioimageflow_server.app.create_app")
+@patch("bioimageflow_server.desktop.threading.Thread")
+@patch("bioimageflow_server.desktop.urllib.request.urlopen")
+def test_macos_identity_is_configured_before_pywebview_starts(
+    mock_urlopen,
+    mock_thread_cls,
+    mock_create_app,
+    mock_uvicorn,
+    mock_webview,
+    mock_configure_identity,
+):
+    from bioimageflow_server.desktop import start_desktop
+
+    calls = []
+    mock_configure_identity.side_effect = lambda: calls.append("identity")
+    mock_webview.start.side_effect = lambda **_kwargs: calls.append("webview")
+    _make_start_desktop_mocks(mock_webview, mock_uvicorn, mock_thread_cls)
+
+    with patch("bioimageflow_server.desktop.sys.platform", "darwin"):
+        start_desktop()
+
+    assert calls == ["identity", "webview"]
 
 
 @patch("bioimageflow_server.desktop.webview")
