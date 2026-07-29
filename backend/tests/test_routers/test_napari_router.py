@@ -304,7 +304,6 @@ def test_create_app_constructs_default_napari_launcher_from_settings() -> None:
 
     settings = Settings(
         deployment_mode="desktop",
-        output_data_folder="/tmp/out",
         napari_env_path="/envs/napari",
     )
     config = AppConfig(settings=settings)

@@ -65,6 +65,7 @@ function workflowInfo(name: string, lastModified = '2026-05-21T10:00:00Z'): Work
     folder: parts.slice(0, -1).join('/'),
     display_name: `Display ${name}`,
     path: `/workspace/workflows/${name}/workflow.json`,
+    results_path: `/workspace/workflows/${name}/results`,
     last_modified: lastModified,
       identity_generation: 0,
   }

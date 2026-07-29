@@ -28,7 +28,7 @@ class GraphCompiler:
         self,
         graph: GraphState,
         *,
-        storage_path: Path | None = None,
+        storage_path: Path,
         on_progress: Callable[[Any], None] | None = None,
         settings: Settings | None = None,
     ) -> BuildOutput:

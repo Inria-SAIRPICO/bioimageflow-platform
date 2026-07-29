@@ -38,7 +38,8 @@ class BuildOutput(NamedTuple):
 def build_workflow(
     graph: GraphState,
     registry: ToolRegistryService,
-    storage_path: Path | None = None,
+    *,
+    storage_path: Path,
     on_progress: Callable[[Any], None] | None = None,
     settings: "Settings | None" = None,
 ) -> BuildOutput:
@@ -50,7 +51,7 @@ def build_workflow(
     from bioimageflow.workflow import Workflow
 
     translation = graph_state_to_lib_dict(
-        graph, registry, storage_path=storage_path, settings=settings,
+        graph, registry, settings=settings,
     )
     errors: list[GraphValidationError] = list(translation.errors)
 

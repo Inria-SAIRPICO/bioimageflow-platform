@@ -301,8 +301,16 @@ async def seed_image_output(
     Image.fromarray(np.arange(64, dtype=np.uint8).reshape(8, 8)).save(image_path)
 
     sig_hash = "dev-seed"
-    run_id = "dev-seed"
-    dataframe_publish(storage_path, node_id, sig_hash, pd.DataFrame({column: [str(image_path)]}))
+    run_id = "run_00000000000000000000000000000000"
+    dataframe_publish(
+        storage_path,
+        node_id,
+        sig_hash,
+        pd.DataFrame({column: [str(image_path)]}),
+        run_id=run_id,
+        engine="direct:parallel",
+        tool_identity="bioimageflow-platform:dev-seed",
+    )
     storage = Storage(storage_path)
     result_key = dataframe_result_key(node_id, sig_hash)
     pointer = storage.load_current(result_key)

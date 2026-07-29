@@ -23,7 +23,6 @@ def test_desktop_workspace_uses_configured_path(tmp_path: Path) -> None:
     assert info.workspace_path == str(tmp_path / "workspace")
     assert info.workflows_root == str(tmp_path / "workspace" / "workflows")
     assert info.tools_root == str(tmp_path / "workspace" / "tools")
-    assert info.outputs_root == str(tmp_path / "workspace" / "outputs")
     assert info.user_editable is True
 
 

@@ -128,26 +128,35 @@ def test_get_latest_dataframe_loads_library_generated_v1_view(tmp_path: Path) ->
 
     node_id = "n1"
     sig_hash = "sig"
-    dataframe_publish(tmp_path, node_id, sig_hash, pd.DataFrame({"x": [2]}))
+    run_id = "run_0123456789abcdef0123456789abcdef"
+    dataframe_publish(
+        tmp_path,
+        node_id,
+        sig_hash,
+        pd.DataFrame({"x": [2]}),
+        run_id=run_id,
+        engine="direct:parallel",
+        tool_identity="tests:result-store",
+    )
     storage = Storage(tmp_path)
     result_key = dataframe_result_key(node_id, sig_hash)
     pointer = storage.load_current(result_key)
     assert pointer is not None
     storage.write_run_metadata(
-        "run_1",
+        run_id,
         workflow_identity="test",
         engine="direct",
         status="succeeded",
         target_nodes=[node_id],
     )
     storage.write_run_node_result(
-        "run_1",
+        run_id,
         node_id,
         result_key=result_key,
         record_id=pointer.record_id,
         cache_hit=False,
     )
-    storage.update_latest_node(node_id, "run_1")
+    storage.update_latest_node(node_id, run_id)
 
     df = _store(tmp_path).get_latest_dataframe(node_id)
 

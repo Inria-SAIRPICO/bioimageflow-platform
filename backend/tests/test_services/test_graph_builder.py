@@ -115,14 +115,16 @@ def _clear_active_workflow() -> Any:
 # ---- Tests ------------------------------------------------------------------
 
 
-def test_empty_graph(registry: ToolRegistryService) -> None:
-    workflow, errors, disabled = build_workflow(graph_state(nodes=[], edges=[]), registry)
+def test_empty_graph(registry: ToolRegistryService, tmp_path: Path) -> None:
+    workflow, errors, disabled = build_workflow(
+        graph_state(nodes=[], edges=[]), registry, storage_path=tmp_path
+    )
     assert errors == []
     assert workflow.nodes == {}
     assert disabled == set()
 
 
-def test_single_valid_node(registry: ToolRegistryService) -> None:
+def test_single_valid_node(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool",
@@ -135,13 +137,17 @@ def test_single_valid_node(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    workflow, errors, _disabled = build_workflow(graph, registry)
+    workflow, errors, _disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
     assert errors == []
     assert "n1" in workflow.nodes
     assert workflow.nodes["n1"].name == "n1"
 
 
-def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
+def test_built_workflow_uses_wetlands(
+    registry: ToolRegistryService, tmp_path: Path
+) -> None:
     """GUI-built workflows must execute processing tools through Wetlands."""
     graph = graph_state(
         nodes=[
@@ -156,7 +162,9 @@ def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
         edges=[],
     )
 
-    workflow, errors, _disabled = build_workflow(graph, registry)
+    workflow, errors, _disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
 
     assert errors == []
     assert workflow.engine_type == "wetlands"
@@ -164,7 +172,7 @@ def test_built_workflow_uses_wetlands(registry: ToolRegistryService) -> None:
 
 
 def test_processing_tool_can_feed_dataframe_tool_positionally(
-    registry: ToolRegistryService,
+    registry: ToolRegistryService, tmp_path: Path
 ) -> None:
     """A ProcessingTool node's whole output DataFrame may feed a DataFrameTool."""
     metadata = registry.get_tool("MockDataFrameTool")
@@ -199,13 +207,15 @@ def test_processing_tool_can_feed_dataframe_tool_positionally(
         ],
     )
 
-    workflow, errors, _disabled = build_workflow(graph, registry)
+    workflow, errors, _disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
 
     assert errors == []
     assert workflow.nodes["df"]._args == [workflow.nodes["proc"]]
 
 
-def test_missing_tool_error(registry: ToolRegistryService) -> None:
+def test_missing_tool_error(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool",
@@ -218,13 +228,15 @@ def test_missing_tool_error(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    _workflow, errors, _disabled = build_workflow(graph, registry)
+    _workflow, errors, _disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
     assert len(errors) == 1
     assert errors[0].type == "missing_tool"
     assert errors[0].node == "n1"
 
 
-def test_missing_package_error() -> None:
+def test_missing_package_error(tmp_path: Path) -> None:
     """A tool whose class cannot be loaded produces missing_package."""
     reg = ToolRegistryService()
     reg.register_tool(
@@ -249,13 +261,17 @@ def test_missing_package_error() -> None:
         ],
         edges=[],
     )
-    _workflow, errors, _disabled = build_workflow(graph, reg)
+    _workflow, errors, _disabled = build_workflow(
+        graph, reg, storage_path=tmp_path
+    )
     assert len(errors) == 1
     assert errors[0].type == "missing_package"
     assert errors[0].node == "n1"
 
 
-def test_disabled_node_excluded(registry: ToolRegistryService) -> None:
+def test_disabled_node_excluded(
+    registry: ToolRegistryService, tmp_path: Path
+) -> None:
     """Disabled nodes are tracked in ``disabled_node_ids``.
 
     Unlike the pre-library-delegation builder, the library keeps
@@ -276,12 +292,14 @@ def test_disabled_node_excluded(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    _workflow, errors, disabled = build_workflow(graph, registry)
+    _workflow, errors, disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
     assert disabled == {"n1"}
     assert errors == []
 
 
-def test_column_edge(registry: ToolRegistryService) -> None:
+def test_column_edge(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool",
@@ -309,7 +327,9 @@ def test_column_edge(registry: ToolRegistryService) -> None:
             )
         ],
     )
-    workflow, errors, _disabled = build_workflow(graph, registry)
+    workflow, errors, _disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
     assert errors == []
     assert set(workflow.nodes.keys()) == {"src", "dst"}
     dst = workflow.nodes["dst"]
@@ -317,7 +337,9 @@ def test_column_edge(registry: ToolRegistryService) -> None:
     assert dst._column_bindings["mask_input"].column == "mask"
 
 
-def test_dataframe_edges_retain_explicit_positions(registry: ToolRegistryService) -> None:
+def test_dataframe_edges_retain_explicit_positions(
+    registry: ToolRegistryService, tmp_path: Path
+) -> None:
     """DataFrame inputs are ordered by their explicit contiguous positions."""
     graph = graph_state(
         nodes=[
@@ -356,14 +378,16 @@ def test_dataframe_edges_retain_explicit_positions(registry: ToolRegistryService
             DataFrameEdge(type="dataframe", id="e3", source_node="s3", target_node="df", target_position=1),
         ],
     )
-    workflow, errors, _disabled = build_workflow(graph, registry)
+    workflow, errors, _disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
     assert errors == []
     df = workflow.nodes["df"]
     arg_names = [a.name for a in df._args]
     assert arg_names == ["s2", "s3", "s1"]
 
 
-def test_mixed_graph(registry: ToolRegistryService) -> None:
+def test_mixed_graph(registry: ToolRegistryService, tmp_path: Path) -> None:
     """Graph with valid nodes, a missing tool, and a disabled node."""
     graph = graph_state(
         nodes=[
@@ -376,7 +400,9 @@ def test_mixed_graph(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    workflow, errors, disabled = build_workflow(graph, registry)
+    workflow, errors, disabled = build_workflow(
+        graph, registry, storage_path=tmp_path
+    )
     assert "good" in workflow.nodes
     assert "disabled" in disabled
     assert any(e.type == "missing_tool" and e.node == "missing" for e in errors)

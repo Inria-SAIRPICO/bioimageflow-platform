@@ -275,7 +275,15 @@ def test_clear_removes_current_cache_selection(
     )
     workflow, _errors, _disabled = build_workflow(graph, registry, storage_path=tmp_path)
     plan = workflow.plan(dev_mode=True)["a"]
-    dataframe_publish(tmp_path, "a", plan.logical_signature, pd.DataFrame({"x": [1]}))
+    dataframe_publish(
+        tmp_path,
+        "a",
+        plan.logical_signature,
+        pd.DataFrame({"x": [1]}),
+        run_id="run_0123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:DFTool",
+    )
 
     storage = Storage(tmp_path)
     assert storage.load_current(plan.final_result_key) is not None
@@ -328,6 +336,9 @@ def test_invalid_graph_does_not_clear_existing_cache(
         "a",
         plan.logical_signature,
         pd.DataFrame({"x": [1]}),
+        run_id="run_0123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:DFTool",
     )
     storage = Storage(tmp_path)
     assert storage.load_current(plan.final_result_key) is not None
@@ -395,6 +406,9 @@ def test_semantically_invalid_graph_does_not_clear_existing_cache(
         "a",
         plan.logical_signature,
         pd.DataFrame({"x": [1]}),
+        run_id="run_0123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:DFTool",
     )
     storage = Storage(tmp_path)
     assert storage.load_current(plan.final_result_key) is not None

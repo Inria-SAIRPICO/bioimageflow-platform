@@ -254,7 +254,6 @@ class _FakeWetlandsManager:
 def _settings(dev_mode: bool = True) -> Settings:
     return Settings(
         deployment_mode="desktop",
-        output_data_folder="/tmp/bif",
         dev_mode=dev_mode,
     )
 

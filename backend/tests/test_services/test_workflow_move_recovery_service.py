@@ -61,11 +61,11 @@ def test_recovery_moves_retained_snapshot_tree_before_clearing_journal(
     assert pending is not None
     move = pending.moves[0]
 
-    def fail_after_generation_commit(_path: Path) -> None:
+    def fail_after_generation_commit(*_args: object, **_kwargs: object) -> None:
         raise OSError("injected interruption after generation commit")
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(store, "_ensure_directory_durable", fail_after_generation_commit)
+        scoped.setattr(store, "_write_raw", fail_after_generation_commit)
         with pytest.raises(OSError, match="generation commit"):
             store.patch_workflow(
                 "old",
@@ -115,11 +115,11 @@ def test_unreadable_snapshot_fails_before_forward_recovery_and_keeps_journal(
     operation_id = store.prepare_workflow_patch_move("old", patch)
     assert operation_id is not None
 
-    def fail_after_generation_commit(_path: Path) -> None:
+    def fail_after_generation_commit(*_args: object, **_kwargs: object) -> None:
         raise OSError("injected interruption after generation commit")
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(store, "_ensure_directory_durable", fail_after_generation_commit)
+        scoped.setattr(store, "_write_raw", fail_after_generation_commit)
         with pytest.raises(OSError, match="generation commit"):
             store.patch_workflow(
                 "old",
@@ -143,8 +143,8 @@ def test_unreadable_snapshot_fails_before_forward_recovery_and_keeps_journal(
         recovery.recover_pending_move()
 
     assert restarted.pending_workflow_move() is not None
-    assert restarted.workflow_dir("old").exists()
-    assert not restarted.workflow_dir("new").exists()
+    assert not restarted.workflow_dir("old").exists()
+    assert restarted.workflow_dir("new").exists()
 
 
 @pytest.mark.parametrize("snapshot_phase_recorded", [False, True])

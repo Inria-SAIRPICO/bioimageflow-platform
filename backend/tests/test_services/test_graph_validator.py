@@ -153,7 +153,7 @@ def _clear_active_workflow() -> Any:
 # ---- validate_graph -------------------------------------------------------
 
 
-def test_valid_graph(registry: ToolRegistryService) -> None:
+def test_valid_graph(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool",
@@ -166,7 +166,7 @@ def test_valid_graph(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     assert result.valid is True
     assert "n1" in result.node_statuses
     assert result.node_statuses["n1"].status == "unexecuted"
@@ -174,7 +174,7 @@ def test_valid_graph(registry: ToolRegistryService) -> None:
 
 
 def test_request_local_validation_isolates_graphs_with_repeated_node_ids(
-    registry: ToolRegistryService,
+    registry: ToolRegistryService, tmp_path: Path
 ) -> None:
     valid_graph = graph_state(
         nodes=[
@@ -201,9 +201,9 @@ def test_request_local_validation_isolates_graphs_with_repeated_node_ids(
         edges=[],
     )
 
-    first = validate_graph(valid_graph, registry)
-    second = validate_graph(invalid_graph, registry)
-    first_again = validate_graph(valid_graph, registry)
+    first = validate_graph(valid_graph, registry, storage_path=tmp_path)
+    second = validate_graph(invalid_graph, registry, storage_path=tmp_path)
+    first_again = validate_graph(valid_graph, registry, storage_path=tmp_path)
 
     assert first.valid is True
     assert second.valid is False
@@ -211,7 +211,7 @@ def test_request_local_validation_isolates_graphs_with_repeated_node_ids(
     assert first_again == first
 
 
-def test_cycle_detected(registry: ToolRegistryService) -> None:
+def test_cycle_detected(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool", id="a", name="a", tool_name="MockProcessingTool",
@@ -226,12 +226,12 @@ def test_cycle_detected(registry: ToolRegistryService) -> None:
                           source_output="result", target_input="input_image"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     cycle_errors = [e for e in result.errors if e.type == "cycle_detected"]
     assert len(cycle_errors) >= 1
 
 
-def test_self_loop_detected(registry: ToolRegistryService) -> None:
+def test_self_loop_detected(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool", id="a", name="a", tool_name="MockProcessingTool",
@@ -242,12 +242,12 @@ def test_self_loop_detected(registry: ToolRegistryService) -> None:
                           source_output="mask", target_input="input_image"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     cycle_errors = [e for e in result.errors if e.type == "cycle_detected"]
     assert len(cycle_errors) >= 1
 
 
-def test_type_incompatible(registry: ToolRegistryService) -> None:
+def test_type_incompatible(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool", id="src", name="src", tool_name="MockProcessingTool",
@@ -260,13 +260,13 @@ def test_type_incompatible(registry: ToolRegistryService) -> None:
                           source_output="mask", target_input="img"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     type_errs = [e for e in result.errors if e.type == "type_incompatible"]
     assert len(type_errs) >= 1
     assert any(e.edge_id == "e1" for e in type_errs)
 
 
-def test_parameter_invalid(registry: ToolRegistryService) -> None:
+def test_parameter_invalid(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool",
@@ -279,13 +279,13 @@ def test_parameter_invalid(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     param_errs = [e for e in result.errors if e.type == "parameter_invalid"]
     assert len(param_errs) >= 1
     assert any(e.field == "n" and e.node == "n1" for e in param_errs)
 
 
-def test_missing_connection(registry: ToolRegistryService) -> None:
+def test_missing_connection(registry: ToolRegistryService, tmp_path: Path) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool", id="n1", name="n1", tool_name="MockProcessingTool",
@@ -293,12 +293,14 @@ def test_missing_connection(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     missing = [e for e in result.errors if e.type == "missing_connection"]
     assert any(e.field == "input_image" and e.node == "n1" for e in missing)
 
 
-def test_connected_input_skips_parameter_validation(registry: ToolRegistryService) -> None:
+def test_connected_input_skips_parameter_validation(
+    registry: ToolRegistryService, tmp_path: Path
+) -> None:
     """A field that has an incoming edge should NOT be validated as a constant."""
     graph = graph_state(
         nodes=[
@@ -312,7 +314,7 @@ def test_connected_input_skips_parameter_validation(registry: ToolRegistryServic
                           source_output="mask", target_input="mask_input"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     param_errs = [
         e for e in result.errors
         if e.type == "parameter_invalid" and e.node == "dst"
@@ -320,7 +322,9 @@ def test_connected_input_skips_parameter_validation(registry: ToolRegistryServic
     assert param_errs == []
 
 
-def test_disabled_node_status(registry: ToolRegistryService) -> None:
+def test_disabled_node_status(
+    registry: ToolRegistryService, tmp_path: Path
+) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool", id="n1", name="n1", tool_name="MockProcessingTool",
@@ -328,7 +332,7 @@ def test_disabled_node_status(registry: ToolRegistryService) -> None:
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     assert result.node_statuses["n1"].status == "disabled"
 
 
@@ -356,7 +360,15 @@ def test_cache_hit_status(registry: ToolRegistryService, tmp_path: Path) -> None
     plans = workflow.plan(dev_mode=True)
     sig = plans["n1"].logical_signature
 
-    dataframe_publish(tmp_path, "n1", sig, pd.DataFrame({"x": [1]}))
+    dataframe_publish(
+        tmp_path,
+        "n1",
+        sig,
+        pd.DataFrame({"x": [1]}),
+        run_id="run_0123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:MockDataFrameTool",
+    )
 
     result = validate_graph(graph, registry, storage_path=tmp_path, dev_mode=True)
     assert result.node_statuses["n1"].status == "executed"
@@ -386,7 +398,15 @@ def test_cache_out_of_date(registry: ToolRegistryService, tmp_path: Path) -> Non
         edges=[],
     )
 
-    dataframe_publish(tmp_path, "n1", "0" * 64, pd.DataFrame({"x": [1]}))
+    dataframe_publish(
+        tmp_path,
+        "n1",
+        "0" * 64,
+        pd.DataFrame({"x": [1]}),
+        run_id="run_0123456789abcdef0123456789abcdef",
+        engine="direct:parallel",
+        tool_identity="tests:MockDataFrameTool",
+    )
 
     result = validate_graph(graph, registry, storage_path=tmp_path)
     assert result.node_statuses["n1"].status == "out_of_date"
@@ -405,7 +425,7 @@ def test_cache_unexecuted(registry: ToolRegistryService, tmp_path: Path) -> None
     assert result.node_statuses["n1"].status == "unexecuted"
 
 
-def test_missing_package_surfaced() -> None:
+def test_missing_package_surfaced(tmp_path: Path) -> None:
     reg = ToolRegistryService()
     reg.register_tool(
         "Missing",
@@ -422,11 +442,13 @@ def test_missing_package_surfaced() -> None:
                          position=(0, 0), parameters={})],
         edges=[],
     )
-    result = validate_graph(graph, reg)
+    result = validate_graph(graph, reg, storage_path=tmp_path)
     assert any(e.type == "missing_package" for e in result.errors)
 
 
-def test_multiple_errors_not_short_circuited(registry: ToolRegistryService) -> None:
+def test_multiple_errors_not_short_circuited(
+    registry: ToolRegistryService, tmp_path: Path
+) -> None:
     graph = graph_state(
         nodes=[
             ToolNodeState(type="tool", id="n1", name="n1", tool_name="IntParamTool",
@@ -437,14 +459,14 @@ def test_multiple_errors_not_short_circuited(registry: ToolRegistryService) -> N
         ],
         edges=[],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     types = {e.type for e in result.errors}
     assert "parameter_invalid" in types
     assert "missing_connection" in types
 
 
 def test_dataframe_producer_without_outputs_skips_type_check(
-    registry: ToolRegistryService,
+    registry: ToolRegistryService, tmp_path: Path
 ) -> None:
     """DataFrameTool with no Outputs should not trigger type_incompatible."""
     graph = graph_state(
@@ -459,12 +481,12 @@ def test_dataframe_producer_without_outputs_skips_type_check(
                           source_output="anything", target_input="mask_input"),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     assert not any(e.type == "type_incompatible" for e in result.errors)
 
 
 def test_positional_edge_into_source_tool_produces_source_tool_upstream_error(
-    registry: ToolRegistryService,
+    registry: ToolRegistryService, tmp_path: Path
 ) -> None:
     """Wiring a positional edge into a source DataFrameTool yields source_tool_upstream."""
     graph = graph_state(
@@ -479,14 +501,14 @@ def test_positional_edge_into_source_tool_produces_source_tool_upstream_error(
                            target_position=0),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     source_errs = [e for e in result.errors if e.type == "source_tool_upstream"]
     assert len(source_errs) >= 1, result
     assert source_errs[0].node == "source"
 
 
 def test_positional_edge_into_processing_tool_is_rejected(
-    registry: ToolRegistryService,
+    registry: ToolRegistryService, tmp_path: Path
 ) -> None:
     """Forged header edges cannot target ProcessingTool nodes."""
     graph = graph_state(
@@ -501,7 +523,7 @@ def test_positional_edge_into_processing_tool_is_rejected(
                            target_position=0),
         ],
     )
-    result = validate_graph(graph, registry)
+    result = validate_graph(graph, registry, storage_path=tmp_path)
     positional_errs = [
         e for e in result.errors
         if e.type == "parameter_invalid" and e.node == "dst"

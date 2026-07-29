@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from bioimageflow import deserialize_constant, serialize_constant
@@ -34,11 +33,6 @@ class TranslationResult:
 
     lib_dict: dict[str, Any]
     errors: list[GraphValidationError] = field(default_factory=list)
-
-
-def _absolute_runtime_path(path: Path | str) -> Path:
-    candidate = Path(path).expanduser()
-    return candidate if candidate.is_absolute() else Path.cwd() / candidate
 
 
 def _scoped(scope: tuple[str, ...], node_id: str) -> str:
@@ -100,7 +94,6 @@ def _graph_to_library(
     errors: list[GraphValidationError],
     *,
     scope: tuple[str, ...] = (),
-    root_storage_path: Path | None = None,
     root_engine: str | None = None,
     root_execution: str | None = None,
 ) -> dict[str, Any]:
@@ -158,8 +151,6 @@ def _graph_to_library(
         nodes.append(item)
 
     config = graph.config.model_dump(mode="json", by_alias=True, exclude_none=True)
-    if root_storage_path is not None:
-        config["storage_path"] = str(_absolute_runtime_path(root_storage_path))
     if root_engine is not None:
         config["engine"] = root_engine
     if root_execution is not None:
@@ -204,7 +195,6 @@ def graph_state_to_lib_dict(
     graph: GraphState,
     registry: ToolRegistryService,
     *,
-    storage_path: Path | None = None,
     engine: str | None = None,
     settings: Settings | None = None,
 ) -> TranslationResult:
@@ -220,7 +210,6 @@ def graph_state_to_lib_dict(
             graph,
             registry,
             errors,
-            root_storage_path=storage_path,
             root_engine=resolved_engine,
             root_execution=execution,
         ),

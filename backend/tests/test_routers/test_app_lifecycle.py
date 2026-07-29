@@ -190,11 +190,11 @@ async def test_lifespan_completes_real_pending_move_before_serving(
     operation_id = seed.prepare_workflow_patch_move("old", patch)
     assert operation_id is not None
 
-    def fail_after_generation_commit(_path: Path) -> None:
+    def fail_after_workflow_move(*_args: object, **_kwargs: object) -> None:
         raise OSError("injected startup recovery boundary")
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(seed, "_ensure_directory_durable", fail_after_generation_commit)
+        scoped.setattr(seed, "_write_raw", fail_after_workflow_move)
         with pytest.raises(OSError, match="startup recovery boundary"):
             seed.patch_workflow(
                 "old",

@@ -328,6 +328,7 @@ async def test_create_tool_webapp_forbidden(workflow_root: Path):
     config = AppConfig(
         tool_registry=ToolRegistryService(),
         workflow_root=workflow_root,
+        storage_path=workflow_root / ".bioimageflow" / "runtime",
         deployment_mode="webapp",
     )
     async for client in _client(config):
@@ -344,6 +345,7 @@ async def test_create_tool_webapp_allowed_by_unsafe_debug_flag(workflow_root: Pa
     config = AppConfig(
         tool_registry=ToolRegistryService(),
         workflow_root=workflow_root,
+        storage_path=workflow_root / ".bioimageflow" / "runtime",
         deployment_mode="webapp",
         settings=Settings(
             deployment_mode="webapp",
@@ -651,12 +653,14 @@ class _KnownPackages:
         return list(self._names)
 
 
-async def test_install_package_webapp_rejects_unknown_package():
+async def test_install_package_webapp_rejects_unknown_package(tmp_path: Path):
     installer = AsyncMock(spec=PackageInstallerService)
     config = AppConfig(
         tool_registry=ToolRegistryService(),
         package_installer=installer,
         known_packages=_KnownPackages(["approved_tools"]),
+        workspace_path=tmp_path / "workspace",
+        storage_path=tmp_path / "runtime",
         deployment_mode="webapp",
     )
     async for client in _client(config):
@@ -665,12 +669,14 @@ async def test_install_package_webapp_rejects_unknown_package():
     installer.install.assert_not_called()
 
 
-async def test_install_package_webapp_allows_known_package():
+async def test_install_package_webapp_allows_known_package(tmp_path: Path):
     installer = AsyncMock(spec=PackageInstallerService)
     config = AppConfig(
         tool_registry=ToolRegistryService(),
         package_installer=installer,
         known_packages=_KnownPackages(["approved_tools"]),
+        workspace_path=tmp_path / "workspace",
+        storage_path=tmp_path / "runtime",
         deployment_mode="webapp",
     )
     async for client in _client(config):
@@ -768,11 +774,13 @@ async def test_import_package_url_invalid_returns_400():
     assert resp.status_code == 400
 
 
-async def test_import_package_from_url_webapp_forbidden():
+async def test_import_package_from_url_webapp_forbidden(tmp_path: Path):
     installer = AsyncMock(spec=PackageInstallerService)
     config = AppConfig(
         tool_registry=ToolRegistryService(),
         package_installer=installer,
+        workspace_path=tmp_path / "workspace",
+        storage_path=tmp_path / "runtime",
         deployment_mode="webapp",
     )
     async for client in _client(config):

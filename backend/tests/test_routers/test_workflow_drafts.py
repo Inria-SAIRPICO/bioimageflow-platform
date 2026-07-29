@@ -569,7 +569,6 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
         registry,
         Settings(
             deployment_mode="desktop",
-            output_data_folder=str(tmp_path / "outputs"),
         ),
     )
     validation_entered = threading.Event()
@@ -656,7 +655,6 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
         registry,
         Settings(
             deployment_mode="desktop",
-            output_data_folder=str(tmp_path / "outputs"),
         ),
     )
     validation_entered = threading.Event()
@@ -731,7 +729,6 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
         registry,
         Settings(
             deployment_mode="desktop",
-            output_data_folder=str(tmp_path / "outputs"),
         ),
     )
     original_reserve_start = manager.reserve_start

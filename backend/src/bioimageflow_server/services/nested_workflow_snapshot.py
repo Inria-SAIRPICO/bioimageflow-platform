@@ -103,7 +103,14 @@ class NestedWorkflowSnapshotService:
         settings_provider: Callable[[], Settings | None] | None = None,
     ) -> None:
         self._workflow_store_provider = workflow_store_provider
-        self._fallback_storage_path_provider = fallback_storage_path_provider or (lambda: None)
+        self._fallback_storage_path_provider = (
+            fallback_storage_path_provider
+            or (
+                lambda: self._workflow_store_provider().workspace_dir
+                / ".bioimageflow"
+                / "runtime"
+            )
+        )
         self._dev_mode_provider = dev_mode_provider or (lambda: True)
         self._settings_provider = settings_provider or (lambda: None)
         self._lock = threading.RLock()

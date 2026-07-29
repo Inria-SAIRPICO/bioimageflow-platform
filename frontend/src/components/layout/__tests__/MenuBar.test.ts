@@ -365,6 +365,7 @@ describe('MenuBar', () => {
         folder: '',
         display_name: 'Workflow A',
         path: '/tmp/workflows/wf_a.json',
+        results_path: '/tmp/workflows/wf_a/results',
         last_modified: '2026-01-01T00:00:00Z',
       identity_generation: 0,
       }
@@ -1594,6 +1595,7 @@ describe('MenuBar', () => {
         folder: 'Analysis',
         display_name: 'Beta',
         path: '/tmp/Analysis/beta/workflow.json',
+        results_path: '/tmp/Analysis/beta/results',
         last_modified: '2026-05-22T08:00:00Z',
       identity_generation: 0,
       }]

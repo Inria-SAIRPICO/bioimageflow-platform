@@ -1,6 +1,7 @@
 """Tests for custom exception handlers."""
 
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -76,8 +77,14 @@ async def test_service_http_exception_is_logged(
 
 async def test_expected_forbidden_http_exception_is_not_warning_logged(
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
-    app = create_app(AppConfig(tool_registry=ToolRegistryService()))
+    app = create_app(
+        AppConfig(
+            tool_registry=ToolRegistryService(),
+            workspace_path=tmp_path / "workspace",
+        )
+    )
 
     @app.get("/api/v1/test-feature-gate")
     async def _test_feature_gate() -> None:

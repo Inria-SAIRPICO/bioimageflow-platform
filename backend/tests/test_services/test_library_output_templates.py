@@ -54,7 +54,6 @@ def _workflow_dict(template: str) -> dict[str, Any]:
         ],
         "edges": [],
         "config": {
-            "storage_path": "./bif_data",
             "engine": "direct",
             "execution": "parallel",
         },
@@ -64,7 +63,7 @@ def _workflow_dict(template: str) -> dict[str, Any]:
 def test_workflow_from_dict_uses_node_output_template(tmp_path: Path) -> None:
     workflow = Workflow.from_dict(
         _workflow_dict("custom_{row_index}.txt"),
-        storage_path_override=tmp_path,
+        storage_path=tmp_path,
     )
 
     df = workflow.compute(engine=DefaultEngine())
@@ -81,13 +80,13 @@ def test_workflow_from_dict_uses_node_output_template(tmp_path: Path) -> None:
 def test_output_template_changes_execution_signature(tmp_path: Path) -> None:
     workflow_a = Workflow.from_dict(
         _workflow_dict("first_{row_index}.txt"),
-        storage_path_override=tmp_path,
+        storage_path=tmp_path,
     )
     df_a = workflow_a.compute(engine=DefaultEngine())
 
     workflow_b = Workflow.from_dict(
         _workflow_dict("second_{row_index}.txt"),
-        storage_path_override=tmp_path,
+        storage_path=tmp_path,
     )
     df_b = workflow_b.compute(engine=DefaultEngine())
 

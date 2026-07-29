@@ -15,7 +15,6 @@ from bioimageflow_server.models.validation import NodeStatus, ValidationResult
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
     WorkflowSaveBody,
-    WorkflowUpdate,
 )
 from bioimageflow_server.services.graph_validator import GraphValidationService
 from bioimageflow_server.services.nested_workflow_snapshot import (
@@ -90,6 +89,7 @@ async def _wait_for_thread_event(event: threading.Event) -> None:
 
 async def test_graph_validation_worker_keeps_the_event_loop_responsive(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     service = GraphValidationService(ToolRegistryService())
     entered = threading.Event()
@@ -107,7 +107,9 @@ async def test_graph_validation_worker_keeps_the_event_loop_responsive(
 
     monkeypatch.setattr(service, "validate", blocking_validate)
 
-    validation = asyncio.create_task(service.validate_async(_graph()))
+    validation = asyncio.create_task(
+        service.validate_async(_graph(), storage_path=tmp_path)
+    )
     try:
         await _wait_for_thread_event(entered)
         await asyncio.wait_for(asyncio.sleep(0), timeout=0.1)
