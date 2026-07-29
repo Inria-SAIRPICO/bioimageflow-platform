@@ -117,9 +117,13 @@ function onPreferencesShortcut(event: KeyboardEvent) {
   useSettingsPanel().open()
 }
 
-const shortcutEnabled = isMac() || isPywebview()
+const desktopRuntime = isPywebview()
+const shortcutEnabled = isMac() || desktopRuntime
 
 const uiStore = useUIStore()
+if (desktopRuntime) {
+  uiStore.panels.datasets = false
+}
 const datasetsStore = useDatasetsStore()
 const napariStore = useNapariStore()
 const websocket = useWebSocket()
@@ -235,7 +239,8 @@ onBeforeUnmount(() => {
   }
 })
 
-// Window-level regular-file drops become managed datasets, including on desktop.
+// Browser drops become managed datasets. Desktop canvas drops are consumed as
+// local paths by CanvasView; the window listener still prevents navigation.
 useFileDrop()
 
 // Sync document.title with uiStore.tabTitle
@@ -253,6 +258,10 @@ const dockviewApi = shallowRef<DockviewApi | null>(null)
 watch(
   () => datasetsStore.activationRequest,
   () => {
+    if (desktopRuntime) {
+      uiStore.panels.datasets = false
+      return
+    }
     uiStore.panels.datasets = true
     nextTick(() => dockviewApi.value?.getPanel('datasets')?.api.setActive())
   },
@@ -506,12 +515,14 @@ function onDockviewReady(event: DockviewReadyEvent) {
     position: { referencePanel: 'tools', direction: 'within' },
   })
 
-  api.addPanel({
-    id: 'datasets',
-    component: 'datasets',
-    title: 'Datasets',
-    position: { referencePanel: 'tools', direction: 'within' },
-  })
+  if (!desktopRuntime) {
+    api.addPanel({
+      id: 'datasets',
+      component: 'datasets',
+      title: 'Datasets',
+      position: { referencePanel: 'tools', direction: 'within' },
+    })
+  }
 
   api.addPanel({
     id: 'nodePanel',
@@ -1420,6 +1431,11 @@ watch(
       if (isVisible === wasVisible) continue
 
       const panel = api.getPanel(key)
+      if (desktopRuntime && key === 'datasets') {
+        if (panel) api.removePanel(panel)
+        if (uiStore.panels.datasets) uiStore.panels.datasets = false
+        continue
+      }
       if (isVisible && !panel) {
         api.addPanel(getPanelAddOptions(key))
       } else if (!isVisible && panel) {

@@ -1,11 +1,12 @@
 # Manage Data and Tools
 
-BioImageFlow separates managed input data from analysis tools.
-The **Datasets** panel organizes files that workflows can consume, while the **Tools** panel manages the executable steps available to workflows.
+BioImageFlow separates input data from analysis tools.
+The desktop application references local files directly, while the web application uses the **Datasets** panel to organize managed files that workflows can consume.
+The **Tools** panel manages the executable steps available to workflows in both versions.
 
-## Upload and organize datasets
+## Upload and organize web datasets
 
-Click **Upload files** in the Datasets panel and choose one or more files.
+In the web application, click **Upload files** in the Datasets panel and choose one or more files.
 Each upload shows progress and can be cancelled while active, retried after failure, or dismissed after completion.
 Use **Clear completed** to remove finished upload notifications without deleting uploaded files.
 
@@ -15,9 +16,9 @@ Selecting a folder includes its descendants; clearing one child leaves the paren
 
 Before deletion, BioImageFlow previews the managed items that will be removed and identifies changed data if the dataset tree was updated elsewhere.
 
-## Put datasets into a workflow
+## Put data into a workflow
 
-After selecting data, use one of these actions:
+After selecting managed data in the web application, use one of these actions:
 
 - **Create Files node** adds a Files node to the active canvas with the selected files resolved in tree order.
 - **Set files on “node name”** replaces the files on the selected compatible Files node.
@@ -25,10 +26,13 @@ After selecting data, use one of these actions:
 
 For a Files node in the desktop application, **Select files** fills its explicit Files list and **Select folder** fills its singular Directory source.
 Choosing either source clears the other because they are mutually exclusive.
+The Datasets panel is hidden in the desktop application.
+Dropping local files or folders on the desktop canvas creates a Files node without uploading or copying anything.
+A single folder fills Directory; a drop containing several folders or a mix of files and folders expands each folder's immediate files into the explicit Files list.
 In the web application, **Select in Datasets panel** reveals this panel instead; select any combination of managed files and folders, then use **Set files on “node name”**.
 Managed folders are expanded into an explicit ordered file list and do not become a Directory value.
 
-Dropping local files anywhere on the application uploads them into managed dataset storage and selects them in the Datasets panel.
+In the web application, dropping local files anywhere on the application uploads them into managed dataset storage and selects them in the Datasets panel.
 After the upload completes, click **Create Files node** or drag the new dataset entry onto the canvas.
 
 ## Browse and add tools

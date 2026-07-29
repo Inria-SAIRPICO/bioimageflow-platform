@@ -673,6 +673,63 @@ class TestDesktopApiSelectFolder:
         assert api.select_folder() is None
 
 
+class TestDesktopApiResolveDroppedPaths:
+    """Tests for local desktop drop resolution."""
+
+    def test_single_directory_uses_directory_source(self, tmp_path):
+        from bioimageflow_server.desktop import DesktopApi
+
+        folder = tmp_path / "images"
+        folder.mkdir()
+        (folder / "cells.tif").write_bytes(b"cells")
+
+        assert DesktopApi.resolve_dropped_paths([str(folder)]) == {
+            "path": str(folder),
+            "files": None,
+        }
+
+    def test_compound_drop_expands_direct_files_in_drop_order(self, tmp_path):
+        from bioimageflow_server.desktop import DesktopApi
+
+        first_file = tmp_path / "first.tif"
+        first_file.write_bytes(b"first")
+        folder = tmp_path / "images"
+        folder.mkdir()
+        alpha = folder / "alpha.tif"
+        alpha.write_bytes(b"alpha")
+        zulu = folder / "zulu.tif"
+        zulu.write_bytes(b"zulu")
+        nested = folder / "nested"
+        nested.mkdir()
+        (nested / "ignored.tif").write_bytes(b"nested")
+
+        assert DesktopApi.resolve_dropped_paths(
+            [str(first_file), str(folder), str(first_file)]
+        ) == {
+            "path": None,
+            "files": [str(first_file), str(alpha), str(zulu)],
+        }
+
+    def test_rejects_missing_paths(self, tmp_path):
+        from bioimageflow_server.desktop import DesktopApi
+
+        missing = tmp_path / "missing"
+
+        with pytest.raises(ValueError, match="no longer exist"):
+            DesktopApi.resolve_dropped_paths([str(missing)])
+
+    def test_rejects_compound_drop_without_files(self, tmp_path):
+        from bioimageflow_server.desktop import DesktopApi
+
+        first = tmp_path / "first"
+        first.mkdir()
+        second = tmp_path / "second"
+        second.mkdir()
+
+        with pytest.raises(ValueError, match="do not contain any files"):
+            DesktopApi.resolve_dropped_paths([str(first), str(second)])
+
+
 class TestDesktopApiSaveFile:
     """Tests for DesktopApi.save_file."""
 

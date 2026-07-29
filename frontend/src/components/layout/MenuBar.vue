@@ -60,6 +60,7 @@ import {
   canvasSessionRegistry,
   type CanvasId,
 } from '@/sessions/canvasSessionRegistry'
+import { isDesktop } from '@/utils/nativeDialogs'
 
 const uiStore = useUIStore()
 const executionStore = useExecutionStore()
@@ -1060,7 +1061,7 @@ const menuItems = computed<MenuItem[]>(() => [
     items: [
       panelToggle('Tools Panel', 'tools'),
       panelToggle('Workflows Panel', 'workflows'),
-      panelToggle('Datasets Panel', 'datasets'),
+      ...(!isDesktop() ? [panelToggle('Datasets Panel', 'datasets')] : []),
       panelToggle('Nodes', 'nodePanel'),
       panelToggle('Node Data', 'dataTable'),
       panelToggle('Logger', 'logger'),

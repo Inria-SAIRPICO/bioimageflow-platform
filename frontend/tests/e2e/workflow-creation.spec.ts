@@ -48,6 +48,7 @@ test.describe('workflow creation', () => {
             select_file: async () => null,
             select_files: async () => [],
             select_folder: async () => null,
+            resolve_dropped_paths: async () => ({ path: null, files: [] }),
             save_file: async () => null,
             set_title: async () => undefined,
             reveal_path: async () => undefined,
@@ -69,6 +70,7 @@ test.describe('workflow creation', () => {
 
     await expect(page.locator('[data-testid="tool-search"]')).toBeVisible()
     await expect(page.locator('[data-testid="create-tool-btn"]')).toBeVisible()
+    await expect(page.locator('.dv-tab').filter({ hasText: 'Datasets' })).toHaveCount(0)
   })
 
   test('Canvas panel has dot grid background and no minimap', async ({ page }) => {

@@ -42,6 +42,8 @@ import {
   DATASET_TREE_DRAG_MIME,
   decodeDatasetTreeDrag,
 } from '@/utils/datasetDrag'
+import { readDesktopFileDrop } from '@/utils/desktopFileDrop'
+import { resolveDroppedPaths } from '@/utils/nativeDialogs'
 import {
   useFieldFocusTracker,
   type FieldFocusTarget,
@@ -2247,10 +2249,37 @@ function hasPath(from: string, to: string): boolean {
 
 // --- Drop handling ---
 
-function onDrop(event: DragEvent) {
+async function onDrop(event: DragEvent) {
   event.preventDefault()
   if (isLocked.value) return
   const position = canvasDropPosition(event)
+  const desktopDrop = readDesktopFileDrop(event.dataTransfer)
+  if (desktopDrop) {
+    if (desktopDrop.unresolvedNames.length > 0 || desktopDrop.paths.length === 0) {
+      const names = desktopDrop.unresolvedNames.join(', ')
+      reportError({
+        kind: 'file_drop_rejected',
+        detail: names
+          ? `Could not read the local path for: ${names}.`
+          : 'Could not read any local paths from the drop.',
+        alwaysToast: true,
+      })
+      return
+    }
+    try {
+      const parameters = await resolveDroppedPaths(desktopDrop.paths)
+      onAddNode({ toolName: 'Files', position, parameters })
+    } catch (error) {
+      reportError({
+        kind: 'file_drop_rejected',
+        detail: error instanceof Error
+          ? error.message
+          : 'Could not resolve the dropped files and folders.',
+        alwaysToast: true,
+      })
+    }
+    return
+  }
   const datasetPaths = decodeDatasetTreeDrag(
     event.dataTransfer?.getData(DATASET_TREE_DRAG_MIME) ?? '',
   )
@@ -3477,6 +3506,7 @@ function emitGraphChanged(options: GraphChangeOptions = {}) {
 
 // Expose for testing
 defineExpose({
+  onDrop,
   onAddNode,
   onAddWorkflowNode,
   wouldCreateWorkflowContainmentCycle,

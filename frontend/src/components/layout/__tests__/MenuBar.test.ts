@@ -254,6 +254,7 @@ describe('MenuBar', () => {
   afterEach(() => {
     for (const wrapper of mountedWrappers) wrapper.unmount()
     mountedWrappers = []
+    delete window.pywebview
     document.body.innerHTML = ''
   })
 
@@ -280,6 +281,26 @@ describe('MenuBar', () => {
       'Tools Panel',
       'Workflows Panel',
       'Datasets Panel',
+      'Nodes',
+      'Node Data',
+      'Logger',
+      'Code Editor',
+    ])
+  })
+
+  it('removes the Datasets panel toggle in the desktop shell', () => {
+    window.pywebview = {
+      api: {
+        resolve_dropped_paths: vi.fn(),
+      } as any,
+    }
+    const wrapper = mountMenuBar()
+    const vm = wrapper.vm as any
+    const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
+
+    expect(viewMenu.items.map((item: any) => item.label)).toEqual([
+      'Tools Panel',
+      'Workflows Panel',
       'Nodes',
       'Node Data',
       'Logger',

@@ -4,6 +4,7 @@ import {
   selectFile,
   selectFiles,
   selectFolder,
+  resolveDroppedPaths,
   saveFile,
   setTitle,
   updateWindowTitle,
@@ -18,6 +19,7 @@ function mockPywebviewApi() {
     select_file: vi.fn(),
     select_files: vi.fn(),
     select_folder: vi.fn(),
+    resolve_dropped_paths: vi.fn(),
     save_file: vi.fn(),
     set_title: vi.fn(),
     reveal_path: vi.fn(),
@@ -121,6 +123,36 @@ describe('selectFolder', () => {
     const result = await selectFolder()
 
     expect(result).toBe('/typed/folder')
+  })
+})
+
+describe('resolveDroppedPaths', () => {
+  afterEach(() => {
+    delete window.pywebview
+  })
+
+  it('forwards local paths to the desktop bridge', async () => {
+    const api = mockPywebviewApi()
+    api.resolve_dropped_paths.mockResolvedValue({
+      path: null,
+      files: ['/data/a.tif', '/data/b.tif'],
+    })
+    window.pywebview = { api: api as any }
+
+    await expect(resolveDroppedPaths(['/data/a.tif', '/data/folder'])).resolves.toEqual({
+      path: null,
+      files: ['/data/a.tif', '/data/b.tif'],
+    })
+    expect(api.resolve_dropped_paths).toHaveBeenCalledWith([
+      '/data/a.tif',
+      '/data/folder',
+    ])
+  })
+
+  it('rejects outside desktop mode', async () => {
+    await expect(resolveDroppedPaths(['/data/a.tif'])).rejects.toThrow(
+      'only available in desktop mode',
+    )
   })
 })
 

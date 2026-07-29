@@ -53,7 +53,8 @@ Drag a saved workflow onto the canvas to embed a reusable snapshot.
 
 ### Datasets
 
-Upload, organize, select, and delete managed input files.
+This panel is available in the web application and hidden in the desktop application.
+Upload, organize, select, and delete managed input files for web workflows.
 Selected files can create a **Files** node or populate an existing selected Files node.
 
 ### Nodes

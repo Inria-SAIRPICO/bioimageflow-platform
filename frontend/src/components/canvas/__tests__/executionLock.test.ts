@@ -211,6 +211,7 @@ function projectedStatusesOf(wrapper: ReturnType<typeof mountCanvas>) {
 
 describe('CanvasView execution lock', () => {
   beforeEach(() => {
+    delete window.pywebview
     canvasSessionRegistry.dispose()
     _resetCanvasStatusProjectionForTest()
     setActivePinia(createPinia())
@@ -485,6 +486,67 @@ describe('CanvasView execution lock', () => {
       data: {
         nodeType: 'tool',
         toolName: 'CrossJoin',
+      },
+    })
+    w.unmount()
+  })
+
+  it('creates a Files node from a desktop folder drop without uploading it', async () => {
+    useToolRegistryStore().tools = [{
+      name: 'Files',
+      display_name: 'Files',
+      package: 'bioimageflow-common-tools',
+      package_version: '1.0.0',
+      tool_type: 'DataFrameTool',
+      accepts_upstream: false,
+      dynamic_outputs: false,
+      dataframe_output: true,
+      documentation: '',
+      tags: [],
+      categories: [],
+      inputs: {
+        path: { type: 'path', default: null },
+        files: { type: 'list', default: null },
+      },
+      outputs: {},
+      environment: null,
+      source_kind: 'package',
+      editable: false,
+    } as any]
+    const resolveDroppedPaths = vi.fn().mockResolvedValue({
+      path: '/data/images',
+      files: null,
+    })
+    window.pywebview = {
+      api: {
+        resolve_dropped_paths: resolveDroppedPaths,
+      } as any,
+    }
+    const folder = new File([], 'images')
+    ;(folder as File & { path?: string }).path = '/data/images'
+    const w = mountCanvas()
+
+    await (w.vm as any).onDrop({
+      preventDefault: vi.fn(),
+      clientX: 20,
+      clientY: 30,
+      dataTransfer: {
+        files: [folder],
+        items: [],
+        types: ['Files'],
+        getData: vi.fn(() => ''),
+      },
+    })
+
+    expect(resolveDroppedPaths).toHaveBeenCalledWith(['/data/images'])
+    expect(mockNodes).toHaveLength(1)
+    expect(mockNodes[0]).toMatchObject({
+      data: {
+        toolName: 'Files',
+        parameters: {
+          path: '/data/images',
+          files: null,
+        },
       },
     })
     w.unmount()

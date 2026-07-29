@@ -34,7 +34,9 @@ The **Parameters** section uses controls that match each tool input, including t
 - **Expose as workflow input** makes the value part of the containing workflow's public interface.
 
 For file or folder parameters, use the picker button instead of typing a path when possible.
-Managed datasets can also populate compatible Files nodes from the **Datasets** panel.
+In the desktop application, dropping local files or folders on the canvas creates a Files node that references them in place.
+No desktop drop is uploaded or copied.
+Managed datasets can populate compatible Files nodes from the **Datasets** panel in the web application.
 In the web application, **Select in Datasets panel** on a Files node reveals that panel so its selected managed files or folders can be applied as the node's explicit Files list.
 
 ## Connect nodes

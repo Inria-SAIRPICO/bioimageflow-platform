@@ -13,6 +13,7 @@ declare global {
         select_file: (title: string, fileTypes: string[]) => Promise<string | null>
         select_files: (title: string, fileTypes: string[]) => Promise<string[]>
         select_folder: (title: string) => Promise<string | null>
+        resolve_dropped_paths: (paths: string[]) => Promise<FilesNodeDropParameters>
         save_file: (
           title: string,
           fileTypes: string[],
@@ -25,6 +26,11 @@ declare global {
       }
     }
   }
+}
+
+export interface FilesNodeDropParameters extends Record<string, unknown> {
+  path: string | null
+  files: string[] | null
 }
 
 /** True when running inside a pywebview window. */
@@ -77,6 +83,18 @@ export async function selectFolder(title = 'Select Folder'): Promise<string | nu
     return window.pywebview!.api.select_folder(title)
   }
   return prompt(title) ?? null
+}
+
+/**
+ * Resolve local desktop drop paths to the mutually exclusive Files-tool source
+ * parameters. A single folder remains a directory scan; compound drops expand
+ * folders to their immediate files so the explicit list contains only files.
+ */
+export async function resolveDroppedPaths(paths: string[]): Promise<FilesNodeDropParameters> {
+  if (!isDesktop()) {
+    throw new Error('Local filesystem drops are only available in desktop mode')
+  }
+  return window.pywebview!.api.resolve_dropped_paths(paths)
 }
 
 /**

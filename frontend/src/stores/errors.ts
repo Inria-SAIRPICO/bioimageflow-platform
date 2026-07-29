@@ -10,6 +10,7 @@ export type ErrorKind =
   | 'network_unreachable'
   | 'edge_rejected'
   | 'dataset_upload_rejected'
+  | 'file_drop_rejected'
   | 'unknown'
 
 export const ERROR_KIND_LABELS: Record<ErrorKind, string> = {
@@ -20,6 +21,7 @@ export const ERROR_KIND_LABELS: Record<ErrorKind, string> = {
   network_unreachable: 'Network unreachable',
   edge_rejected: 'Edge rejected',
   dataset_upload_rejected: 'Dataset upload rejected',
+  file_drop_rejected: 'File drop rejected',
   unknown: 'Error',
 }
 

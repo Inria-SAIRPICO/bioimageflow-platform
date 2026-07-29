@@ -40,7 +40,10 @@ describe('useFileDrop', () => {
     vi.clearAllMocks()
   })
 
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    delete window.pywebview
+    vi.restoreAllMocks()
+  })
 
   it('ignores palette tool drops', () => {
     const wrapper = mountHost()
@@ -66,16 +69,51 @@ describe('useFileDrop', () => {
     wrapper.unmount()
   })
 
-  it('uses the managed upload flow even when desktop File.path is present', () => {
+  it('does not upload or copy desktop files with local paths', () => {
     const wrapper = mountHost()
     const store = useDatasetsStore()
     const queue = vi.spyOn(store, 'queueUploads').mockImplementation(() => undefined)
     const file = new File(['x'], 'cells.tif')
     ;(file as File & { path?: string }).path = '/desktop/cells.tif'
+    window.pywebview = {
+      api: {
+        resolve_dropped_paths: vi.fn(),
+      } as any,
+    }
 
-    window.dispatchEvent(makeDragEvent({ files: [file] }))
+    const drop = makeDragEvent({ files: [file] })
+    window.dispatchEvent(drop)
 
-    expect(queue).toHaveBeenCalledWith([file])
+    expect(drop.defaultPrevented).toBe(true)
+    expect(queue).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('leaves desktop folder drops for the canvas without reporting an upload error', () => {
+    const wrapper = mountHost()
+    const datasets = useDatasetsStore()
+    const errors = useErrorStore()
+    const queue = vi.spyOn(datasets, 'queueUploads')
+    window.pywebview = {
+      api: {
+        resolve_dropped_paths: vi.fn(),
+      } as any,
+    }
+    const folder = new File([], 'images')
+    ;(folder as File & { path?: string }).path = '/desktop/images'
+    const drop = makeDragEvent({
+      files: [folder],
+      items: [{
+        kind: 'file',
+        webkitGetAsEntry: () => ({ isDirectory: true, name: 'images' }),
+      } as Partial<DataTransferItem>],
+    })
+
+    window.dispatchEvent(drop)
+
+    expect(drop.defaultPrevented).toBe(true)
+    expect(queue).not.toHaveBeenCalled()
+    expect(errors.errors).toHaveLength(0)
     wrapper.unmount()
   })
 

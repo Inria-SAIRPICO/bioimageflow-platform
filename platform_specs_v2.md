@@ -285,6 +285,10 @@ The two source parameters are mutually exclusive.
 In desktop mode, Directory provides **Select folder** and Files provides **Select files**.
 Selecting one source replaces its value and clears the other source in one graph edit.
 Cancelling a native dialog changes nothing.
+The Datasets panel is absent from the desktop dock and View menu because desktop inputs remain ordinary local filesystem references.
+Dropped desktop files are neither uploaded nor copied.
+Dropping local files or folders on the canvas creates a Files node at the drop position.
+A single dropped folder populates Directory; a compound drop expands each folder's immediate files into the explicit ordered Files list so that list never contains invalid directory paths.
 
 In webapp mode, the Files source controls provide one shared **Select in Datasets panel** action instead of native filesystem actions.
 The action reveals and activates the Datasets panel without changing parameters or entering the single-file parameter picker.

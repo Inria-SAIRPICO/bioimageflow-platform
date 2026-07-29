@@ -1,8 +1,9 @@
 import { onMounted, onBeforeUnmount } from 'vue'
 import { useDatasetsStore } from '@/stores/datasets'
 import { useErrorReporting } from '@/composables/useErrorReporting'
+import { isDesktop } from '@/utils/nativeDialogs'
 
-/** Window-level file-drop handler for managed dataset uploads. */
+/** Window-level file-drop handler for navigation safety and web dataset uploads. */
 
 const TOOL_MIME = 'application/bioimageflow-tool'
 
@@ -67,6 +68,10 @@ export function useFileDrop() {
     if (!hasFiles(event)) return
 
     event.preventDefault()
+    // CanvasView consumes desktop drops as local paths. Drops elsewhere in the
+    // native window are ignored instead of being copied into managed storage.
+    if (isDesktop()) return
+
     const directoryNames = droppedDirectoryNames(event)
     if (directoryNames.length > 0) {
       reportDirectoryDrop(directoryNames)

@@ -194,6 +194,51 @@ class DesktopApi:
             return str(result[0])
         return None
 
+    @staticmethod
+    def resolve_dropped_paths(
+        paths: list[str],
+    ) -> dict[str, str | list[str] | None]:
+        """Resolve local drop paths to valid Files-tool source parameters.
+
+        A single directory uses the tool's singular directory input. Compound
+        drops use its explicit files input, expanding each directory one level
+        to match the Files tool's default non-recursive directory scan.
+        """
+        candidates = [Path(value).expanduser() for value in paths]
+        if not candidates:
+            raise ValueError("The drop did not contain any local paths.")
+
+        missing = [path for path in candidates if not path.exists()]
+        if missing:
+            missing_paths = ", ".join(str(path) for path in missing)
+            raise ValueError(f"Dropped paths no longer exist: {missing_paths}")
+
+        if len(candidates) == 1 and candidates[0].is_dir():
+            return {"path": str(candidates[0]), "files": None}
+
+        files: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate.is_file():
+                expanded = [candidate]
+            elif candidate.is_dir():
+                expanded = sorted(
+                    child for child in candidate.iterdir() if child.is_file()
+                )
+            else:
+                raise ValueError(
+                    f"Dropped path is neither a file nor a directory: {candidate}"
+                )
+            for file_path in expanded:
+                value = str(file_path)
+                if value not in seen:
+                    seen.add(value)
+                    files.append(value)
+
+        if not files:
+            raise ValueError("The dropped folders do not contain any files.")
+        return {"path": None, "files": files}
+
     def save_file(
         self,
         title: str = "Save File",
