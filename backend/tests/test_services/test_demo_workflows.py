@@ -20,7 +20,6 @@ def _service(tmp_path: Path) -> tuple[DemoWorkflowService, WorkflowStoreService]
     store = WorkflowStoreService(
         tmp_path / "workflows",
         registry,
-        storage_base_dir=tmp_path / "outputs",
     )
     return DemoWorkflowService(store, registry), store
 
@@ -40,8 +39,8 @@ def test_install_publishes_exact_self_contained_demo_identities(tmp_path: Path) 
         document = store.read_workflow_document(item.workflow_id)
         assert document.metadata.bundled_template is not None
         assert document.metadata.bundled_template.id == item.id
-        assert document.metadata.storage_path == str(
-            tmp_path / "outputs" / Path(item.workflow_id)
+        assert store.get_storage_path(item.workflow_id) == (
+            store.workflow_dir(item.workflow_id) / "results"
         )
         assert list(store.workflow_tools_dir(item.workflow_id).glob("*.py"))
         assert all(node.source_module is None for node in document.graph.nodes if node.type == "tool")

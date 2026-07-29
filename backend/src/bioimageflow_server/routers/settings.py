@@ -30,6 +30,11 @@ def get_settings_store() -> SettingsStore:  # pragma: no cover
     raise HTTPException(status_code=500, detail="settings store not configured")
 
 
+def get_output_view_probe_path() -> Path:
+    """Return a workspace-local path used to probe output-view capabilities."""
+    return Path.cwd()
+
+
 class OutputViewCapabilityResponse(BaseModel):
     """Filesystem support for one latest-output materialization mode."""
 
@@ -42,23 +47,19 @@ class OutputViewCapabilityResponse(BaseModel):
 class SettingsResponse(Settings):
     """``GET``/``PATCH`` /settings response wrapper.
 
-    Adds two **server-resolved** convenience fields so the frontend can show
-    where tools and outputs *actually* live (env-var overrides applied,
-    ``~`` expanded). The raw ``Settings`` fields remain so PATCH bodies
-    stay symmetrical with what GET returns.
+    Adds the resolved tool-store path and output-view filesystem capabilities.
     """
 
     model_config = ConfigDict(extra="allow")
 
     omero_instances: list[OMEROInstanceResponse] = []  # pyright: ignore[reportIncompatibleVariableOverride]
     resolved_tool_store_path: str
-    resolved_output_data_folder: str
     latest_output_effective_mode: str
     latest_output_warning: str | None = None
     latest_output_capabilities: dict[str, OutputViewCapabilityResponse]
 
 
-def _wrap(store: SettingsStore) -> SettingsResponse:
+def _wrap(store: SettingsStore, output_view_probe_path: Path) -> SettingsResponse:
     settings = store.get()
     omero_instances = [
         OMEROInstanceResponse(
@@ -69,11 +70,10 @@ def _wrap(store: SettingsStore) -> SettingsResponse:
     ]
     payload = settings.model_dump()
     payload["omero_instances"] = omero_instances
-    output_root = Path(store.resolved_output_data_folder())
-    capabilities = probe_latest_output_modes(output_root)
+    capabilities = probe_latest_output_modes(output_view_probe_path)
     try:
         resolved_mode = resolve_latest_output_mode(
-            output_root,
+            output_view_probe_path,
             settings.latest_output_mode,
             capabilities=capabilities,
         )
@@ -85,7 +85,6 @@ def _wrap(store: SettingsStore) -> SettingsResponse:
     return SettingsResponse(
         **payload,
         resolved_tool_store_path=str(_resolved_tool_store_path(store)),
-        resolved_output_data_folder=str(store.resolved_output_data_folder()),
         latest_output_effective_mode=effective_mode,
         latest_output_warning=output_warning,
         latest_output_capabilities={
@@ -120,9 +119,10 @@ def _keyring_http_error(exc: OmeroCredentialError) -> HTTPException:
 @router.get("", response_model=SettingsResponse)
 async def get_settings(
     store: SettingsStore = Depends(get_settings_store),
+    output_view_probe_path: Path = Depends(get_output_view_probe_path),
 ) -> SettingsResponse:
     try:
-        return _wrap(store)
+        return _wrap(store, output_view_probe_path)
     except OmeroCredentialError as exc:
         raise _keyring_http_error(exc) from exc
 
@@ -131,6 +131,7 @@ async def get_settings(
 async def patch_settings(
     body: dict[str, Any],
     store: SettingsStore = Depends(get_settings_store),
+    output_view_probe_path: Path = Depends(get_output_view_probe_path),
 ) -> SettingsResponse:
     if "enable_unsafe_webapp_features" in body:
         raise HTTPException(
@@ -151,6 +152,6 @@ async def patch_settings(
     except OmeroCredentialError as exc:
         raise _keyring_http_error(exc) from exc
     try:
-        return _wrap(store)
+        return _wrap(store, output_view_probe_path)
     except OmeroCredentialError as exc:
         raise _keyring_http_error(exc) from exc

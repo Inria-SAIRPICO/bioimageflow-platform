@@ -41,7 +41,6 @@ from bioimageflow_server.models.workflow import (
 from bioimageflow_server.models.workflow_draft import WorkflowDraftResponse
 from bioimageflow_server.models.workflow_move_recovery import (
     WorkflowArtifactMove,
-    WorkflowManagedStorageMove,
     WorkflowMoveJournal,
     WorkflowMoveKind,
     WorkflowMovePhase,
@@ -154,13 +153,20 @@ _WORKFLOW_COORDINATIONS_GUARD = threading.Lock()
 class WorkflowArchiveAdapter(Protocol):
     """Small boundary around BioImageFlow archive APIs."""
 
-    def export_archive(self, workflow_data: dict[str, Any], archive_path: Path) -> None: ...
+    def export_archive(
+        self,
+        workflow_data: dict[str, Any],
+        archive_path: Path,
+        *,
+        storage_path: Path,
+    ) -> None: ...
 
     def read_archive(
         self,
         archive_path: Path,
         *,
         extract_to: Path | None = None,
+        storage_path: Path,
     ) -> dict[str, Any]: ...
 
 
@@ -255,7 +261,6 @@ class WorkflowStoreService:
         root_dir: Path,
         tool_registry: ToolRegistryService,
         *,
-        storage_base_dir: Path | None = None,
         archive_adapter: WorkflowArchiveAdapter | None = None,
     ) -> None:
         self.root_dir = self._normalize_storage_path(root_dir)
@@ -263,9 +268,6 @@ class WorkflowStoreService:
             self.root_dir.parent if self.root_dir.name == "workflows" else self.root_dir
         )
         self.tool_registry = tool_registry
-        self.storage_base_dir = self._normalize_storage_path(
-            storage_base_dir or self.root_dir / "outputs"
-        )
         self.archive_adapter = archive_adapter or BioImageFlowWorkflowArchiveAdapter()
         self._workflow_format_notices: list[WorkflowFormatNotice] = []
         self._workflow_generation_ledger_path = (
@@ -625,7 +627,6 @@ class WorkflowStoreService:
                     return None
                 self._preflight_workflow_move_recovery(current)
                 self._recover_workflow_move_generations(current)
-                self._recover_workflow_move_storage(current)
                 self._recover_workflow_move_paths(current)
                 self._recover_workflow_move_documents(current)
             except WorkflowMoveRecoveryError:
@@ -711,7 +712,6 @@ class WorkflowStoreService:
     def _ensure_directory_durable(self, path: Path) -> None:
         anchors = (
             self.root_dir,
-            self.storage_base_dir,
             self.workspace_dir,
         )
         anchor = next(
@@ -743,19 +743,6 @@ class WorkflowStoreService:
                 if move.destination_workflow_id != f"{destination_prefix}{suffix}":
                     raise ValueError("Promoted workflow does not preserve its relative id")
 
-        for move in journal.moves:
-            managed = move.managed_storage
-            if managed is None:
-                continue
-            if managed.source_path != str(
-                self._managed_storage_path(move.source_workflow_id)
-            ) or managed.destination_path != str(
-                self._managed_storage_path(move.destination_workflow_id)
-            ):
-                raise ValueError("Managed storage move is outside configured workflow storage")
-            if move.target_metadata.get("storage_path") != managed.destination_path:
-                raise ValueError("Managed storage destination must match target metadata")
-
     def _workflow_move_is_unstarted(self, journal: WorkflowMoveJournal) -> bool:
         before, _ = self._workflow_move_generation_states(journal)
         try:
@@ -784,17 +771,6 @@ class WorkflowStoreService:
             if not source.exists() or destination.exists():
                 return False
 
-        for move in journal.moves:
-            managed = move.managed_storage
-            if managed is None:
-                continue
-            source_exists = Path(managed.source_path).exists()
-            destination_exists = Path(managed.destination_path).exists()
-            if managed.source_existed:
-                if not source_exists or destination_exists:
-                    return False
-            elif source_exists or destination_exists:
-                return False
         return True
 
     def _preflight_workflow_move_recovery(self, journal: WorkflowMoveJournal) -> None:
@@ -810,24 +786,6 @@ class WorkflowStoreService:
             if not before_matches and not after_matches:
                 raise WorkflowMoveRecoveryError(
                     "Workflow move generations are mixed or outside the recorded transition"
-                )
-
-        for move in journal.moves:
-            managed = move.managed_storage
-            if managed is None:
-                continue
-            source_exists = Path(managed.source_path).exists()
-            destination_exists = Path(managed.destination_path).exists()
-            if managed.source_existed:
-                if source_exists == destination_exists:
-                    raise WorkflowMoveRecoveryError(
-                        "Managed storage recovery requires exactly one recorded path: "
-                        f"{managed.source_path} -> {managed.destination_path}"
-                    )
-            elif source_exists or destination_exists:
-                raise WorkflowMoveRecoveryError(
-                    "Managed storage appeared after preparation recorded it as absent: "
-                    f"{managed.source_path} -> {managed.destination_path}"
                 )
 
         if journal.operation_kind == "folder_promotion":
@@ -976,37 +934,6 @@ class WorkflowStoreService:
             for name, generation in after.items():
                 self._workflow_generations[name] = generation
 
-    def _recover_workflow_move_storage(self, journal: WorkflowMoveJournal) -> None:
-        for move in journal.moves:
-            managed = move.managed_storage
-            if managed is None:
-                continue
-            source = Path(managed.source_path)
-            destination = Path(managed.destination_path)
-            source_exists = source.exists()
-            destination_exists = destination.exists()
-            if not managed.source_existed:
-                if source_exists or destination_exists:
-                    raise WorkflowMoveRecoveryError(
-                        "Managed storage appeared after a move recorded it as absent: "
-                        f"{source} -> {destination}"
-                    )
-                continue
-            if source_exists and destination_exists:
-                raise WorkflowMoveRecoveryError(
-                    f"Both managed storage paths exist: {source} and {destination}"
-                )
-            if not source_exists and not destination_exists:
-                raise WorkflowMoveRecoveryError(
-                    f"Both managed storage paths are missing: {source} and {destination}"
-                )
-            if source_exists:
-                self._ensure_directory_durable(destination.parent)
-                source.rename(destination)
-            if source.parent.exists():
-                self._fsync_directory(source.parent)
-            self._fsync_directory(destination.parent)
-
     def _recover_workflow_move_paths(self, journal: WorkflowMoveJournal) -> None:
         if journal.operation_kind == "folder_promotion":
             for child in journal.promotion_children:
@@ -1067,9 +994,6 @@ class WorkflowStoreService:
                 update={"display_name": move.target_display_name}
             )
             recovered["graph"] = recovered_graph.model_dump(mode="json", by_alias=True)
-            storage_path = move.target_metadata.get("storage_path")
-            if isinstance(storage_path, str) and storage_path:
-                self._set_workflow_storage_path(recovered, storage_path)
             if recovered != raw:
                 self._write_raw(move.destination_workflow_id, recovered)
             workflow_path = self._path_for(move.destination_workflow_id)
@@ -1122,7 +1046,7 @@ class WorkflowStoreService:
         return self._workflow_tools_dir(name)
 
     def has_workflow_collision(self, name: str) -> bool:
-        """Return whether an identity or its managed storage blocks creation."""
+        """Return whether a workflow identity blocks creation."""
 
         return self._has_name_collision(name)
 
@@ -1142,58 +1066,8 @@ class WorkflowStoreService:
             return path
         raise FileNotFoundError(name)
 
-    def _managed_storage_path(self, name: str) -> Path:
-        return self.storage_base_dir.joinpath(*self._validate_name(name).split("/"))
-
-    def _storage_path_string(self, path: str | Path) -> str:
-        return str(self._normalize_storage_path(path))
-
     def _has_name_collision(self, name: str) -> bool:
-        return (
-            self._path_for(name).exists()
-            or self._workflow_dir(name).exists()
-            or self._managed_storage_path(name).exists()
-        )
-
-    def _is_managed_storage_path(self, name: str, storage_path: str | None) -> bool:
-        if not storage_path:
-            return True
-        return Path(storage_path) == self._managed_storage_path(name)
-
-    def _move_managed_storage(self, old_name: str, new_name: str) -> str:
-        old_storage = self._managed_storage_path(old_name)
-        new_storage = self._managed_storage_path(new_name)
-        if old_storage == new_storage:
-            return str(new_storage)
-        if new_storage.exists():
-            raise FileExistsError(new_name)
-        if old_storage.exists():
-            self._ensure_directory_durable(new_storage.parent)
-            old_storage.rename(new_storage)
-            if old_storage.parent.exists():
-                self._fsync_directory(old_storage.parent)
-            self._fsync_directory(new_storage.parent)
-        return str(new_storage)
-
-    def _delete_managed_storage_best_effort(self, name: str) -> None:
-        managed_path = self._managed_storage_path(name)
-        if not managed_path.exists() or not managed_path.is_relative_to(self.storage_base_dir):
-            return
-        try:
-            shutil.rmtree(managed_path)
-        except Exception:
-            logger.exception(
-                "Workflow '%s' was deleted but managed output cleanup failed at %s",
-                name,
-                managed_path,
-            )
-
-    def _set_workflow_storage_path(self, raw: dict[str, Any], storage_path: str) -> None:
-        metadata = raw.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-            raw["metadata"] = metadata
-        metadata["storage_path"] = storage_path
+        return self._path_for(name).exists() or self._workflow_dir(name).exists()
 
     def _workflow_names_under_folder(self, folder: Path) -> list[str]:
         if not folder.exists():
@@ -1226,40 +1100,13 @@ class WorkflowStoreService:
         path = self._path_for(new_name)
         normalize_workflow_draft_identity(path.parent, new_name)
         raw = json.loads(path.read_text(encoding="utf-8"))
-        metadata = raw.get("metadata", {})
-        if not isinstance(metadata, dict):
-            metadata = {}
-        if self._is_managed_storage_path(
-            old_name,
-            cast(str | None, metadata.get("storage_path")),
-        ):
-            metadata["storage_path"] = self._move_managed_storage(old_name, new_name)
-        raw["metadata"] = metadata
-        storage_path = metadata.get("storage_path")
-        if isinstance(storage_path, str) and storage_path:
-            self._set_workflow_storage_path(raw, storage_path)
         self._write_raw(new_name, raw)
 
-    def _ensure_moved_workflow_storage_available(
+    def _validate_moved_workflows(
         self,
         moves: list[tuple[str, str]],
     ) -> None:
         self._validate_moved_workflow_drafts(moves)
-        for old_name, new_name in moves:
-            if old_name == new_name:
-                continue
-            raw = self._read_raw(old_name)
-            metadata = raw.get("metadata", {})
-            if not isinstance(metadata, dict):
-                metadata = {}
-            if not self._is_managed_storage_path(
-                old_name,
-                cast(str | None, metadata.get("storage_path")),
-            ):
-                continue
-            new_storage = self._managed_storage_path(new_name)
-            if new_storage.exists() and new_storage != self._managed_storage_path(old_name):
-                raise FileExistsError(new_name)
 
     def _validate_moved_workflow_drafts(
         self,
@@ -1383,7 +1230,7 @@ class WorkflowStoreService:
                 if self._has_name_collision(new_name):
                     raise FileExistsError(new_name)
                 moves = [(safe_name, new_name)]
-                self._ensure_moved_workflow_storage_available(moves)
+                self._validate_moved_workflows(moves)
                 return self._persist_prepared_workflow_move(
                     operation_kind="direct_workflow_move",
                     source_path=safe_name,
@@ -1424,7 +1271,7 @@ class WorkflowStoreService:
             moves = self._renamed_workflow_moves(old_folder, safe_old, safe_new)
             identities = [identity for move in moves for identity in move]
             with self.workflow_mutations(identities):
-                self._ensure_moved_workflow_storage_available(moves)
+                self._validate_moved_workflows(moves)
                 return self._persist_prepared_workflow_move(
                     operation_kind="folder_rename",
                     source_path=safe_old,
@@ -1467,7 +1314,7 @@ class WorkflowStoreService:
                 for child in children
             ]
             with self.workflow_mutations(identities):
-                self._ensure_moved_workflow_storage_available(moves)
+                self._validate_moved_workflows(moves)
                 return self._persist_prepared_workflow_move(
                     operation_kind="folder_promotion",
                     source_path=safe_path,
@@ -1547,24 +1394,8 @@ class WorkflowStoreService:
             else {}
         )
         metadata = {key: value for key, value in metadata.items() if value is not None}
-        managed_storage: WorkflowManagedStorageMove | None = None
-
         if patch is not None and patch.description is not None:
             metadata["description"] = patch.description
-        if patch is not None and patch.storage_path is not None:
-            metadata["storage_path"] = self._storage_path_string(patch.storage_path)
-        elif self._is_managed_storage_path(
-            old_name,
-            cast(str | None, metadata.get("storage_path")),
-        ):
-            old_storage = self._managed_storage_path(old_name)
-            new_storage = self._managed_storage_path(new_name)
-            metadata["storage_path"] = str(new_storage)
-            managed_storage = WorkflowManagedStorageMove(
-                source_path=str(old_storage),
-                destination_path=str(new_storage),
-                source_existed=old_storage.exists(),
-            )
 
         source_generation = generations[old_name]
         destination_generation = generations[new_name]
@@ -1581,7 +1412,6 @@ class WorkflowStoreService:
                 if patch is not None and patch.display_name is not None
                 else document.graph.display_name
             ),
-            managed_storage=managed_storage,
         )
 
     def _metadata_from_raw(
@@ -1602,9 +1432,8 @@ class WorkflowStoreService:
             folder=self._folder_name(name),
             display_name=document.graph.display_name,
             description=metadata.description,
-            storage_path=metadata.storage_path,
-            output_path=metadata.storage_path,
             workspace_path=str(self.workspace_dir),
+            results_path=str(self.get_storage_path(name)),
             path=str(path),
             last_modified=last_modified,
             identity_generation=self.workflow_generation(name),
@@ -1621,10 +1450,9 @@ class WorkflowStoreService:
         )
 
     def get_storage_path(self, name: str) -> Path:
-        """Return the storage root recorded for a workflow."""
-        raw = self._read_raw(name)
-        document = WorkflowDocument.model_validate(raw)
-        return self._normalize_storage_path(document.metadata.storage_path)
+        """Return the workflow-local runtime results directory."""
+        self._existing_path_for(name)
+        return self._workflow_dir(name) / "results"
 
     def _write_raw(self, name: str, raw: dict[str, Any]) -> None:
         raw = WorkflowDocument.model_validate(raw).model_dump(
@@ -1663,14 +1491,10 @@ class WorkflowStoreService:
             interface={"inputs": [], "outputs": []},
             config={},
         )
-        storage_path = self._storage_path_string(
-            data.storage_path or self._managed_storage_path(data.name)
-        )
         return WorkflowDocument(
             graph=graph,
             metadata=WorkspaceWorkflowMetadata(
                 description=data.description,
-                storage_path=storage_path,
             ),
             artifact_hash=artifact_hash(graph, []),
         ).model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -1697,7 +1521,6 @@ class WorkflowStoreService:
         translation = graph_state_to_lib_dict(
             document.graph,
             self.tool_registry,
-            storage_path=Path(document.metadata.storage_path),
         )
         if translation.errors:
             raise WorkflowArchiveError(
@@ -1719,7 +1542,11 @@ class WorkflowStoreService:
         with tempfile.TemporaryDirectory() as tmp_dir:
             archive_path = Path(tmp_dir) / filename
             try:
-                self.archive_adapter.export_archive(payload, archive_path)
+                self.archive_adapter.export_archive(
+                    payload,
+                    archive_path,
+                    storage_path=self.get_storage_path(name),
+                )
                 return filename, archive_path.read_bytes()
             except Exception as exc:
                 raise WorkflowArchiveError(str(exc)) from exc
@@ -1767,6 +1594,7 @@ class WorkflowStoreService:
             try:
                 library = self.archive_adapter.read_archive(
                     archive_path,
+                    storage_path=self._workflow_dir(imported_name) / "results",
                 )
             except Exception as exc:
                 workflow_dir = self._workflow_dir(imported_name)
@@ -1793,7 +1621,6 @@ class WorkflowStoreService:
                 graph=graph,
                 metadata=WorkspaceWorkflowMetadata(
                     description=None,
-                    storage_path=str(self._managed_storage_path(imported_name)),
                 ),
                 owned_source_ids=sorted(referenced_source_ids(graph)),
                 artifact_hash=artifact_hash(
@@ -2044,15 +1871,13 @@ class WorkflowStoreService:
             with self.workflow_mutations(workflow_names):
                 self._reserve_workflow_generations(workflow_names)
                 shutil.rmtree(folder)
-                for workflow_name in workflow_names:
-                    self._delete_managed_storage_best_effort(workflow_name)
             return
         if children and policy_name == "move_children_up":
             moves = self._promoted_workflow_moves(path, folder)
             identities = [identity for move in moves for identity in move]
             with self.workflow_mutations(identities):
                 children = list(folder.iterdir())
-                self._ensure_moved_workflow_storage_available(moves)
+                self._validate_moved_workflows(moves)
                 for child in children:
                     destination = folder.parent / child.name
                     if destination.exists():
@@ -2163,7 +1988,7 @@ class WorkflowStoreService:
         moves = self._renamed_workflow_moves(old_folder, safe_old, safe_new)
         identities = [identity for move in moves for identity in move]
         with self.workflow_mutations(identities):
-            self._ensure_moved_workflow_storage_available(moves)
+            self._validate_moved_workflows(moves)
             self._reserve_workflow_generations(identities)
             self._ensure_directory_durable(new_folder.parent)
             old_folder.rename(new_folder)
@@ -2178,8 +2003,6 @@ class WorkflowStoreService:
             self.ensure_workflow_mutations_available()
             path = self._path_for(data.name)
             if path.exists() or self._workflow_dir(data.name).exists():
-                raise FileExistsError(data.name)
-            if data.storage_path is None and self._managed_storage_path(data.name).exists():
                 raise FileExistsError(data.name)
             raw = self._empty_raw(data)
             self._reserve_workflow_generations([data.name])
@@ -2211,12 +2034,8 @@ class WorkflowStoreService:
             try:
                 for name, template in zip(names, templates, strict=True):
                     self.validate_containment(name, template.document.graph)
-                    metadata = template.document.metadata.model_copy(
-                        update={"storage_path": str(self._managed_storage_path(name))}
-                    )
                     document = template.document.model_copy(
                         update={
-                            "metadata": metadata,
                             "artifact_hash": artifact_hash(template.document.graph, []),
                         }
                     )
@@ -2301,7 +2120,6 @@ class WorkflowStoreService:
         translation = graph_state_to_lib_dict(
             document.graph,
             self.tool_registry,
-            storage_path=Path(document.metadata.storage_path),
         )
         return WorkflowFile(
             info=self._metadata_from_raw(
@@ -2368,7 +2186,6 @@ class WorkflowStoreService:
                     name,
                     path.parent,
                 )
-            self._delete_managed_storage_best_effort(name)
             return generation
 
     def patch_workflow(
@@ -2457,20 +2274,11 @@ class WorkflowStoreService:
             new_path = self._path_for(new_name)
             if new_path.exists() or self._workflow_dir(new_name).exists():
                 raise FileExistsError(new_name)
-            if patch.storage_path is None and self._managed_storage_path(new_name).exists():
-                raise FileExistsError(new_name)
             duplicate = cast(dict[str, Any], json.loads(json.dumps(raw)))
             duplicate_metadata = duplicate.setdefault("metadata", {})
             if isinstance(duplicate_metadata, dict):
                 if patch.description is not None:
                     duplicate_metadata["description"] = patch.description
-                duplicate_metadata["storage_path"] = self._storage_path_string(
-                    patch.storage_path or self._managed_storage_path(new_name)
-                )
-                self._set_workflow_storage_path(
-                    duplicate,
-                    duplicate_metadata["storage_path"],
-                )
             duplicate_graph = GraphState.model_validate(duplicate["graph"])
             duplicate_graph = duplicate_graph.model_copy(
                 update={
@@ -2518,17 +2326,7 @@ class WorkflowStoreService:
             raw["artifact_hash"] = artifact_hash(graph, source_records)
         if patch.description is not None:
             metadata["description"] = patch.description
-        if patch.storage_path is not None:
-            metadata["storage_path"] = self._storage_path_string(patch.storage_path)
-        elif new_name != name and self._is_managed_storage_path(
-            name,
-            cast(str | None, metadata.get("storage_path")),
-        ):
-            metadata["storage_path"] = self._move_managed_storage(name, new_name)
         raw["metadata"] = metadata
-        storage_path = metadata.get("storage_path")
-        if isinstance(storage_path, str) and storage_path:
-            self._set_workflow_storage_path(raw, storage_path)
         if new_name != name:
             destination = self._workflow_dir(new_name)
             self._ensure_directory_durable(destination.parent)

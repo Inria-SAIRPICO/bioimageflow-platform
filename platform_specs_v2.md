@@ -26,7 +26,6 @@ The platform does not use a sentinel tool, a second child graph language, duplic
   "edges": [],
   "interface": {"inputs": [], "outputs": []},
   "config": {
-    "storage_path": "./bif_data",
     "engine": "wetlands",
     "execution": "parallel"
   }
@@ -62,7 +61,6 @@ A workflow node has `type: "workflow"`, an embedded canonical `GraphState`, pare
     "edges": [],
     "interface": {"inputs": [], "outputs": []},
     "config": {
-      "storage_path": "./bif_data",
       "engine": "wetlands",
       "execution": "parallel"
     }
@@ -217,6 +215,11 @@ Remote draft changes are resolved explicitly before destructive or execution ope
 Workflow identities are path-derived and carry durable identity generations.
 Move, rename, delete, duplicate, and save operations bind to captured identities so delayed responses cannot mutate a recreated same-ID workflow.
 Moves update drafts, retained snapshots, and provenance references atomically.
+
+Every named workflow derives its BioImageFlow runtime storage as `<workflow-directory>/results`.
+This path is not configurable or persisted in `GraphState` or workspace metadata.
+Moving and deleting a workflow naturally carry or remove its results, while duplication copies only the reusable workflow definition and workflow-local tools.
+Stateless graph services use the private workspace fallback `<workspace>/.bioimageflow/runtime`.
 
 Portable export/import uses the BioImageFlow library recursive archive format.
 A workspace-document backup, when provided, is a separate platform artifact and is not accepted as a library workflow archive.

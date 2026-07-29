@@ -18,7 +18,7 @@ type GraphState = {
   nodes: GraphNode[]
   edges: Array<Record<string, unknown>>
   interface: { inputs: []; outputs: [] }
-  config: { storage_path: string; engine: string; execution: string }
+  config: { engine: string; execution: string }
 }
 
 type WorkflowDraft = {
@@ -72,7 +72,7 @@ function gaussianGraph(nodeId: string, sigma: number): GraphState {
     ],
     edges: [],
     interface: { inputs: [], outputs: [] },
-    config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+    config: { engine: 'direct', execution: 'parallel' },
   }
 }
 

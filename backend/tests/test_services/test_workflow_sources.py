@@ -31,7 +31,6 @@ def _graph(name: str, display_name: str | None = None) -> GraphState:
             "edges": [],
             "interface": {"inputs": [], "outputs": []},
             "config": {
-                "storage_path": "./bif_data",
                 "engine": "direct",
                 "execution": "parallel",
             },
@@ -136,8 +135,13 @@ def test_python_materialization_uses_workflow_local_factory_and_fresh_helpers(
     (workflow_dir / "workflow.py").write_text(
         "from bioimageflow import Workflow\n"
         "from helper import LABEL\n\n"
-        "def build_workflow():\n"
-        "    return Workflow(name='python_definition', display_name=LABEL, engine='direct')\n",
+            "def build_workflow(*, storage_path):\n"
+            "    return Workflow(\n"
+            "        name='python_definition',\n"
+            "        display_name=LABEL,\n"
+            "        engine='direct',\n"
+            "        storage_path=storage_path,\n"
+            "    )\n",
         encoding="utf-8",
     )
     service = WorkflowSourceService(lambda: store)

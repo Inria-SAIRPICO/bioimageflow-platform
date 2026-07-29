@@ -27,7 +27,6 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
     return WorkflowStoreService(
         root_dir=workspace / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=workspace / "outputs",
     )
 
 
@@ -70,7 +69,7 @@ def _complete_without_snapshots(store: WorkflowStoreService, operation_id: UUID)
     store.complete_workflow_move(operation_id)
 
 
-def test_post_directory_rename_failure_recovers_metadata_draft_storage_and_generations(
+def test_post_directory_rename_failure_recovers_metadata_draft_results_and_generations(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -82,9 +81,9 @@ def test_post_directory_rename_failure_recovers_metadata_draft_storage_and_gener
             description="old description",
         )
     )
-    source_storage = Path(created.storage_path or "")
-    source_storage.mkdir(parents=True)
-    (source_storage / "result.txt").write_text("preserved", encoding="utf-8")
+    source_results = store.get_storage_path(created.id or created.name)
+    source_results.mkdir(parents=True)
+    (source_results / "result.txt").write_text("preserved", encoding="utf-8")
     original_draft = _write_draft(store, "project/source")
     patch = WorkflowUpdate(
         action="update",
@@ -131,16 +130,16 @@ def test_post_directory_rename_failure_recovers_metadata_draft_storage_and_gener
     move = recovered.moves[0]
     assert restarted.workflow_generation("project/source") == move.source_generation_after
     assert restarted.workflow_generation("archive/destination") == move.destination_generation_after
-    destination_storage = Path(move.managed_storage.destination_path)  # type: ignore[union-attr]
-    assert not source_storage.exists()
-    assert (destination_storage / "result.txt").read_text(encoding="utf-8") == "preserved"
+    destination_results = restarted.get_storage_path("archive/destination")
+    assert not source_results.exists()
+    assert (destination_results / "result.txt").read_text(encoding="utf-8") == "preserved"
 
     raw = json.loads(_workflow_json(restarted, "archive/destination").read_text())
     assert raw["metadata"] == move.target_metadata
     assert raw["graph"]["display_name"] == "After"
     assert move.target_display_name == "After"
     assert raw["metadata"]["description"] == "new description"
-    assert raw["graph"]["config"]["storage_path"] == "./bif_data"
+    assert "storage_path" not in raw["graph"]["config"]
     recovered_draft = json.loads(
         _draft_json(restarted, "archive/destination").read_text(encoding="utf-8")
     )
@@ -166,9 +165,9 @@ def test_generation_only_failure_rolls_forward_without_incrementing_twice(
 ) -> None:
     store = _store(tmp_path)
     created = store.create_workflow(WorkflowCreate(name="old"))
-    storage = Path(created.storage_path or "")
-    storage.mkdir(parents=True)
-    (storage / "marker").write_text("kept", encoding="utf-8")
+    results = store.get_storage_path(created.id or created.name)
+    results.mkdir(parents=True)
+    (results / "marker").write_text("kept", encoding="utf-8")
     patch = WorkflowUpdate(action="update", new_id="new")
     operation_id = store.prepare_workflow_patch_move("old", patch)
     assert operation_id is not None
@@ -176,11 +175,11 @@ def test_generation_only_failure_rolls_forward_without_incrementing_twice(
     assert prepared is not None
     move = prepared.moves[0]
 
-    def fail_before_storage(_old_name: str, _new_name: str) -> str:
+    def fail_before_move(_source: Path, _destination: Path) -> None:
         raise OSError("injected generation-only failure")
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(store, "_move_managed_storage", fail_before_storage)
+        scoped.setattr(Path, "rename", fail_before_move)
         with pytest.raises(OSError, match="generation-only"):
             store.patch_workflow(
                 "old",
@@ -201,7 +200,7 @@ def test_generation_only_failure_rolls_forward_without_incrementing_twice(
     assert restarted.workflow_generation("new") == move.destination_generation_after
     assert not restarted.workflow_dir("old").exists()
     assert restarted.workflow_dir("new").exists()
-    assert (Path(move.managed_storage.destination_path) / "marker").read_text() == "kept"  # type: ignore[union-attr]
+    assert (restarted.get_storage_path("new") / "marker").read_text() == "kept"
 
 
 def test_recovery_reaffirms_existing_destination_parent_chain_before_rename(
@@ -449,9 +448,9 @@ def test_zero_workflow_promotion_uses_child_topology_as_commit_signal(
 def test_recovery_fails_closed_when_both_workflow_paths_exist(tmp_path: Path) -> None:
     store = _store(tmp_path)
     created = store.create_workflow(WorkflowCreate(name="old"))
-    source_storage = Path(created.storage_path or "")
-    source_storage.mkdir(parents=True)
-    (source_storage / "marker").write_text("source", encoding="utf-8")
+    source_results = store.get_storage_path(created.id or created.name)
+    source_results.mkdir(parents=True)
+    (source_results / "marker").write_text("source", encoding="utf-8")
     operation_id = store.prepare_workflow_patch_move(
         "old",
         WorkflowUpdate(action="update", new_id="new"),
@@ -469,7 +468,7 @@ def test_recovery_fails_closed_when_both_workflow_paths_exist(tmp_path: Path) ->
 
     assert store.workflow_dir("old").exists()
     assert (destination / "collision.txt").read_text(encoding="utf-8") == "do not overwrite"
-    assert (source_storage / "marker").read_text(encoding="utf-8") == "source"
+    assert (source_results / "marker").read_text(encoding="utf-8") == "source"
     assert store.pending_workflow_move() == journal
 
 

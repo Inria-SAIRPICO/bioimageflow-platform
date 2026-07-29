@@ -222,7 +222,6 @@ class BioImageFlowMCPGateway:
         workflow_id: str,
         display_name: str | None = None,
         description: str | None = None,
-        storage_path: str | None = None,
         set_active: bool = False,
     ) -> dict[str, Any]:
         result = await self._request(
@@ -233,7 +232,6 @@ class BioImageFlowMCPGateway:
                     "name": workflow_id,
                     "display_name": display_name,
                     "description": description,
-                    "storage_path": storage_path,
                 }
             ),
         )
@@ -252,7 +250,6 @@ class BioImageFlowMCPGateway:
         new_workflow_id: str,
         display_name: str | None = None,
         description: str | None = None,
-        storage_path: str | None = None,
         set_active: bool = False,
     ) -> dict[str, Any]:
         result = await self._request(
@@ -264,7 +261,6 @@ class BioImageFlowMCPGateway:
                     "new_name": new_workflow_id,
                     "display_name": display_name,
                     "description": description,
-                    "storage_path": storage_path,
                 }
             ),
         )
@@ -878,7 +874,6 @@ def create_mcp_server(
         workflow_id: str,
         display_name: str | None = None,
         description: str | None = None,
-        storage_path: str | None = None,
         set_active: bool = False,
     ) -> dict[str, Any]:
         """Create an empty workflow in the workspace."""
@@ -886,7 +881,6 @@ def create_mcp_server(
             workflow_id=workflow_id,
             display_name=display_name,
             description=description,
-            storage_path=storage_path,
             set_active=set_active,
         )
 
@@ -896,7 +890,6 @@ def create_mcp_server(
         new_workflow_id: str,
         display_name: str | None = None,
         description: str | None = None,
-        storage_path: str | None = None,
         set_active: bool = False,
     ) -> dict[str, Any]:
         """Duplicate one workflow to a new workflow id."""
@@ -905,7 +898,6 @@ def create_mcp_server(
             new_workflow_id=new_workflow_id,
             display_name=display_name,
             description=description,
-            storage_path=storage_path,
             set_active=set_active,
         )
 
@@ -1407,8 +1399,7 @@ def _compact_workflow_info(workflow: dict[str, Any]) -> dict[str, Any]:
             "folder",
             "display_name",
             "description",
-            "storage_path",
-            "output_path",
+            "results_path",
             "workspace_path",
             "last_modified",
         )

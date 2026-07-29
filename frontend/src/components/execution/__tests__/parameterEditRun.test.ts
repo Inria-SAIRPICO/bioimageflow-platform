@@ -123,7 +123,7 @@ describe('parameter edit followed immediately by Run', () => {
       folder: '',
       display_name: 'Parameter edit',
       description: null,
-      storage_path: '/tmp/workflows/parameter_edit',
+      results_path: '/tmp/workflows/parameter_edit/results',
       path: '/tmp/workflows/parameter_edit.json',
       last_modified: '2026-01-01T00:00:00Z',
       identity_generation: 0,

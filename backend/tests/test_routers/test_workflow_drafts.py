@@ -70,7 +70,6 @@ async def _client(
     store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     app = create_app(
         AppConfig(
@@ -554,7 +553,6 @@ async def test_admitted_draft_validation_blocks_run_until_commit(
     store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
@@ -650,7 +648,6 @@ async def test_revision_zero_authority_validation_is_reserved_as_starting(
     store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     store.create_workflow(WorkflowCreate(name="wf"))
     drafts = workflow_draft_service.WorkflowDraftService(lambda: store)
@@ -726,7 +723,6 @@ async def test_revisionless_run_rechecks_move_fence_after_reservation(
     store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     store.create_workflow(WorkflowCreate(name="run-wf"))
     store.create_workflow(WorkflowCreate(name="move-source"))

@@ -65,13 +65,11 @@ const visible = computed({
 
 const fallback: WorkspaceSettings & {
   resolved_tool_store_path?: string
-  resolved_output_data_folder?: string
 } = {
   deployment_mode: 'desktop',
   external_editor: null,
   napari_env_path: null,
   omero_instances: [],
-  output_data_folder: '~/bioimageflow_data/',
   latest_output_mode: 'auto',
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto',
@@ -85,7 +83,6 @@ const fallback: WorkspaceSettings & {
   workspace_path: null,
   workspaces_root: null,
   resolved_tool_store_path: '',
-  resolved_output_data_folder: '',
   latest_output_effective_mode: 'pointer',
   latest_output_warning: null,
   latest_output_capabilities: {},

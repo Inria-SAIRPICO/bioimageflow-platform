@@ -14,8 +14,6 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
-from bioimageflow.paths import get_home
-
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.settings import Settings, _DEFAULT_MAX_UPLOAD_SIZE
 from bioimageflow_server.models.tools import AppConfig
@@ -264,9 +262,10 @@ async def test_lifespan_swallows_network_error_from_refresh(
 # ---------------------------------------------------------------------------
 
 
-def test_dataset_deps_fall_back_to_defaults():
-    app = create_app()
-    assert app.dependency_overrides[get_datasets_root]() == get_home() / "datasets"
+def test_dataset_deps_fall_back_to_workspace(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    app = create_app(AppConfig(workspace_path=workspace))
+    assert app.dependency_overrides[get_datasets_root]() == workspace / "datasets"
     assert app.dependency_overrides[get_max_upload_size]() == _DEFAULT_MAX_UPLOAD_SIZE
 
 
@@ -311,44 +310,46 @@ def test_default_node_services_use_storage_path(tmp_path: Path):
     assert thumbnail_manager.cache_dir == tmp_path / ".thumbnails"
 
 
-def test_default_node_services_fall_back_to_bif_data():
-    app = create_app()
+def test_default_node_services_use_private_workspace_runtime(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    app = create_app(AppConfig(workspace_path=workspace))
     result_store = app.dependency_overrides[get_result_store]()
-    assert result_store.storage_path == Path("~/bioimageflow_data/").expanduser()
+    assert result_store.storage_path == workspace / ".bioimageflow" / "runtime"
 
 
-def test_default_node_services_use_settings_output_data_folder(tmp_path: Path):
-    settings = Settings(
-        deployment_mode="desktop",
-        output_data_folder=str(tmp_path / "outputs"),
-    )
+def test_default_node_services_use_settings_workspace(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    settings = Settings(deployment_mode="desktop", workspace_path=str(workspace))
     app = create_app(AppConfig(settings=settings))
     result_store = app.dependency_overrides[get_result_store]()
     graph_storage = app.dependency_overrides[graph_get_storage_path]()
     execution_storage = app.dependency_overrides[execution_get_storage_path]()
 
-    assert result_store.storage_path == tmp_path / "outputs"
-    assert graph_storage == tmp_path / "outputs"
-    assert execution_storage == tmp_path / "outputs"
+    expected = workspace / ".bioimageflow" / "runtime"
+    assert result_store.storage_path == expected
+    assert graph_storage == expected
+    assert execution_storage == expected
 
 
-async def test_default_node_services_prefer_loaded_settings_store(
+async def test_default_node_services_prefer_loaded_workspace_setting(
     tmp_path: Path,
 ):
     from bioimageflow_server.services.settings_store import SettingsStore
 
     store = SettingsStore(path=tmp_path / "settings.json")
     await store.load()
-    await store.patch({"output_data_folder": str(tmp_path / "store-outputs")})
+    workspace = tmp_path / "store-workspace"
+    await store.patch({"workspace_path": str(workspace)})
 
     app = create_app(AppConfig(settings_store=store))
     result_store = app.dependency_overrides[get_result_store]()
     graph_storage = app.dependency_overrides[graph_get_storage_path]()
     execution_storage = app.dependency_overrides[execution_get_storage_path]()
 
-    assert result_store.storage_path == tmp_path / "store-outputs"
-    assert graph_storage == tmp_path / "store-outputs"
-    assert execution_storage == tmp_path / "store-outputs"
+    expected = workspace / ".bioimageflow" / "runtime"
+    assert result_store.storage_path == expected
+    assert graph_storage == expected
+    assert execution_storage == expected
 
 
 # ---------------------------------------------------------------------------

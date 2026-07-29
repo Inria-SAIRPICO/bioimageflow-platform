@@ -85,7 +85,6 @@ def _graph(name: str, nodes: list[dict[str, Any]] | None = None) -> dict[str, An
         "edges": [],
         "interface": {"inputs": [], "outputs": []},
         "config": {
-            "storage_path": "./definition-data",
             "engine": "direct",
             "execution": "parallel",
         },

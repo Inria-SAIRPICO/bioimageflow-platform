@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import posixpath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _DEFAULT_MAX_UPLOAD_SIZE = 2 * 1024**3  # 2 GB (v1 §2.4.10)
-_DEFAULT_OUTPUT_DATA_FOLDER = "~/bioimageflow_data/"
 
 
 class OMEROInstance(BaseModel):
@@ -78,7 +76,6 @@ class Settings(BaseModel):
     napari_env_path: str | None = None
     thumbnail_env_path: str | None = None
     omero_instances: list[OMEROInstance] = []
-    output_data_folder: str = Field(default_factory=lambda: _DEFAULT_OUTPUT_DATA_FOLDER)
     latest_output_mode: Literal["auto", "pointer", "symlink", "copy"] = "auto"
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -108,9 +105,3 @@ class Settings(BaseModel):
                 raise ValueError("OMERO instance names must be unique")
             seen.add(effective_name)
         return self
-
-    def resolved_datasets_root(self) -> str:
-        """Return `datasets_root` if set, else `<output_data_folder>/datasets`."""
-        if self.datasets_root:
-            return self.datasets_root
-        return posixpath.join(self.output_data_folder, "datasets")

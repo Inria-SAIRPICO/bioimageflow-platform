@@ -166,7 +166,10 @@ def _render_definition(
     bioimageflow_source: Path,
 ) -> dict[str, bytes]:
     source_path = bioimageflow_source / definition.source
-    workflow = Workflow.from_python(source_path)
+    workflow = Workflow.from_python(
+        source_path,
+        storage_path=Path(tempfile.gettempdir()) / "bioimageflow-platform-demo-results",
+    )
     exported = workflow.to_dict(include_custom_tools=True)
     if set(exported) != {"archive_version", "workflow", "custom_sources"}:
         raise ValueError(f"Expected a portable workflow envelope from {source_path}")
@@ -175,16 +178,10 @@ def _render_definition(
     tool_files = _materialize_custom_tools(library_graph, exported["custom_sources"])
     _annotate_package_requirements(library_graph, bioimageflow_source)
     graph = lib_dict_to_graph_state(library_graph)
-    graph = graph.model_copy(
-        update={
-            "config": graph.config.model_copy(update={"storage_path": "./bif_data"}),
-        }
-    )
     document = WorkflowDocument(
         graph=graph,
         metadata=WorkspaceWorkflowMetadata(
             description=definition.description,
-            storage_path="./bif_data",
             bundled_template=BundledTemplateProvenance(
                 id=definition.template_id,
                 version=BUNDLE_VERSION,

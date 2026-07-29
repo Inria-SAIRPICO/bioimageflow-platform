@@ -40,7 +40,6 @@ async def _client(
     store = WorkflowStoreService(
         tmp_path / "workflows",
         registry,
-        storage_base_dir=tmp_path / "outputs",
     )
     app = create_app(
         AppConfig(

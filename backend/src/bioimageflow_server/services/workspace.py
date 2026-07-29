@@ -61,16 +61,12 @@ class WorkspaceService:
     def tools_root(self) -> Path:
         return self.workspace_path() / "tools"
 
-    def outputs_root(self) -> Path:
-        return self.workspace_path() / "outputs"
-
     def info(self) -> WorkspaceInfo:
         workspace = self.workspace_path()
         return WorkspaceInfo(
             workspace_path=str(workspace),
             workflows_root=str(workspace / "workflows"),
             tools_root=str(workspace / "tools"),
-            outputs_root=str(workspace / "outputs"),
             deployment_mode=self.deployment_mode,
             user_editable=self.deployment_mode == "desktop",
         )

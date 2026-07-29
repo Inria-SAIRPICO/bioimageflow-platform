@@ -330,9 +330,10 @@ workspace/
     <workflow-id>/
       workflow.json
       tools/                           # custom tools owned by this workflow
+      results/                         # BioImageFlow runtime storage
 ```
 
-`GET /workspace` also reports reserved `tools_root` and `outputs_root` paths for compatibility, but current custom tools do not use `<workspace>/tools` and current execution outputs do not use `<workspace>/outputs` as their authority. Execution outputs default under `Settings.output_data_folder` (`~/bioimageflow_data/`) and are scoped below `workflows/<workflow-id>/`. Dataset uploads use the configured dataset root or the BioImageFlow home `datasets/` directory.
+`GET /workspace` reports the workspace, workflow, and reserved tool roots. Each named workflow owns its runtime data under `<workflow-directory>/results`, so moving or deleting the workflow naturally carries or removes its results. Dataset uploads use the configured dataset root or `<workspace>/datasets`.
 
 Saved workflows are organized under `workspace/workflows/` as folders. Each workflow is a directory that contains `workflow.json` and optional workflow-local files such as `tools/`.
 
@@ -342,18 +343,18 @@ Renaming or moving a workflow or containing folder changes every affected path-d
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/workspace` | Return current workspace path, workflows root, tools root, outputs root, deployment mode, and whether the workspace path is admin-managed/read-only. |
+| `GET` | `/workspace` | Return current workspace path, workflows root, tools root, deployment mode, and whether the workspace path is admin-managed/read-only. |
 | `PATCH` | `/workspace` | Desktop-only in-memory workspace path change. Body: `{workspace_path: str}`. The current endpoint does not create or migrate directories. |
 | `GET` | `/workflows/tree` | Return the folder/workflow tree rooted at `workspace/workflows/`. |
 | `POST` | `/workflows/folders` | Create a folder under `workspace/workflows/` (body: `{path: str}`). |
 | `PATCH` | `/workflows/folders/{path}` | Rename or move a workflow folder (body: `{new_path: str}`). |
 | `DELETE` | `/workflows/folders/{path}` | Delete a folder. Body: `{policy: "empty" \| "delete_children" \| "move_children_up"}`. `empty` rejects non-empty folders with **409 Conflict**. |
 | `GET` | `/workflows` | Compatibility flat list of saved workflows. New callers should use `/workflows/tree`. |
-| `POST` | `/workflows` | Create a new workflow (body: `{name: str, display_name?: str, description?: str, storage_path?: str}`). Returns **409 Conflict** if a workflow with the same path-derived name already exists, with a suggested alternative. |
+| `POST` | `/workflows` | Create a new workflow (body: `{name: str, display_name?: str, description?: str}`). Returns **409 Conflict** if a workflow with the same path-derived name already exists, with a suggested alternative. |
 | `GET` | `/workflows/{id}` | Load a workflow (returns full graph JSON including GUI state). |
 | `PUT` | `/workflows/{id}` | Save workflow from the current graph/draft path. UI save flows flush/promote the backend draft first. Always succeeds even if graph validation errors exist. |
-| `DELETE` | `/workflows/{id}` | Delete a workflow directory, its retained nested snapshots, and its configured workflow output/cache directory. An optional `expected_identity_generation` query parameter atomically rejects a stale same-ID confirmation with **409 Conflict** before mutation. Returns `{deleted: true, identity_generation}` for the removed incarnation. Failure to remove post-commit cache or retained-snapshot artifacts is logged as cleanup failure without falsely reporting that the workflow deletion itself failed. |
-| `PATCH` | `/workflows/{id}` | Update or duplicate a workflow (body: `{action: "update" \| "duplicate", display_name?: str, description?: str, new_name?: str, folder?: str, new_id?: str, storage_path?: str}`). Rename and move are update operations. |
+| `DELETE` | `/workflows/{id}` | Delete a workflow directory, including its workflow-local results, and its retained nested snapshots. An optional `expected_identity_generation` query parameter atomically rejects a stale same-ID confirmation with **409 Conflict** before mutation. Returns `{deleted: true, identity_generation}` for the removed incarnation. |
+| `PATCH` | `/workflows/{id}` | Update or duplicate a workflow (body: `{action: "update" \| "duplicate", display_name?: str, description?: str, new_name?: str, folder?: str, new_id?: str}`). Rename and move are update operations. Duplication starts without runtime results. |
 | `POST` | `/workflows/{id}/rebind-versions` | Rebind package references to currently active installed versions and return the refreshed workflow plus remaining dependency issues. |
 | `POST` | `/workflows/{id}/activate` | Publish the external active-workflow context and return the workflow; this does not select graph meaning for validation or execution. |
 
@@ -368,7 +369,7 @@ Draft endpoints keep unsaved workflow state available to the frontend and termin
 
 **Workflow loading — missing dependencies:** When loading a workflow that references unavailable package versions or tool classes, the server returns `missing_packages` and `missing_tools` arrays. The frontend dialog lists required versions, installed alternatives, affected nodes, and missing tools. When at least one alternative package version is installed, **Use installed versions** calls the workflow rebind endpoint; the current dialog does not install missing packages.
 
-**Workflow storage path normalization:** The backend resolves each workflow's runtime storage root below the configured output-data base, by default `~/bioimageflow_data/workflows/<workflow_id>/`, before handing a graph to the BioImageFlow library. Workflow ID separators are sanitized where needed for filesystem safety. Relative paths must not reach tool execution as CWD-sensitive paths. This is required because ProcessingTool wrappers may run subprocesses with `cwd=context.work_dir` while passing framework-provided input/output paths directly to the subprocess. Explicit per-workflow `storage_path` metadata is preserved for export compatibility, but it is not the primary organization control in the platform UI.
+**Workflow results storage:** The backend derives every named workflow's BioImageFlow storage root as `<workflow-directory>/results` and passes that absolute path explicitly at runtime. The path is not persisted in graph configuration or workflow metadata. Stateless graph services use the private workspace-local fallback `<workspace>/.bioimageflow/runtime`.
 
 #### 2.4.3 Graph Schema and Validation
 
@@ -738,7 +739,6 @@ class Settings(BaseModel):
     napari_env_path: str | None = None              # Custom Napari Conda env path
     thumbnail_env_path: str | None = None
     omero_instances: list[OMEROInstance] = []
-    output_data_folder: str = "~/bioimageflow_data/"
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
     execution_engine: Literal["sequential", "parallel"] = "sequential"
@@ -752,7 +752,7 @@ class Settings(BaseModel):
     workspaces_root: str | None = None
 ```
 
-`GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path` and `resolved_output_data_folder`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
+`GET /settings` returns the same fields, replaces each OMERO entry with an `OMEROInstanceResponse` carrying `password_stored: bool`, and adds `resolved_tool_store_path`. An OMERO entry submitted to `PATCH /settings` may include a transient `password`; the password is stored in the operating-system keyring and never returned or written to the settings JSON file.
 
 `enable_unsafe_webapp_features` is a file-only debug switch for local testing of webapp mode. It is ignored in desktop mode. In webapp mode, the default `false` value keeps local source-editing features disabled; setting it to `true` re-enables actions that can modify or open server-side code, such as creating, renaming, deleting, and opening custom tool scripts. The Settings API must expose the value in `GET /settings` but reject attempts to change it through `PATCH /settings`.
 

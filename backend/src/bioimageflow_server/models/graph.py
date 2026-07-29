@@ -142,7 +142,6 @@ class OutputViewConfig(WireModel):
 
 
 class WorkflowConfig(WireModel):
-    storage_path: str = "./bif_data"
     engine: Literal["direct", "wetlands"] = "wetlands"
     execution: Literal["parallel", "sequential"] = "parallel"
     output_view: OutputViewConfig | None = None

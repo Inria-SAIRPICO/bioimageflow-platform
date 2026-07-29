@@ -289,6 +289,16 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
             }
         )
 
+    raw_config = graph_data.get("config")
+    config = (
+        {
+            key: value
+            for key, value in raw_config.items()
+            if key in {"engine", "execution", "output_view"}
+        }
+        if isinstance(raw_config, dict)
+        else raw_config
+    )
     return GraphState.model_validate(
         {
             "schema_version": graph_data.get("schema_version"),
@@ -297,7 +307,7 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
             "nodes": nodes,
             "edges": graph_data.get("edges"),
             "interface": graph_data.get("interface"),
-            "config": graph_data.get("config"),
+            "config": config,
         }
     )
 

@@ -10,7 +10,7 @@ type GraphState = {
   nodes: Array<Record<string, unknown>>
   edges: Array<Record<string, unknown>>
   interface: { inputs: []; outputs: [] }
-  config: { storage_path: string; engine: string; execution: string }
+  config: { engine: string; execution: string }
 }
 
 function emptyGraph(name: string): GraphState {
@@ -21,7 +21,7 @@ function emptyGraph(name: string): GraphState {
     nodes: [],
     edges: [],
     interface: { inputs: [], outputs: [] },
-    config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+    config: { engine: 'direct', execution: 'parallel' },
   }
 }
 

@@ -162,7 +162,7 @@ function registerActiveRootWorkflow(options: {
     name,
     display_name: displayName,
     description: options.description ?? null,
-    storage_path: `/tmp/workflows/${name}`,
+    results_path: `/tmp/workflows/${name}/results`,
     path: `/tmp/workflows/${name}.json`,
     last_modified: '2026-01-01T00:00:00Z',
       identity_generation: 0,

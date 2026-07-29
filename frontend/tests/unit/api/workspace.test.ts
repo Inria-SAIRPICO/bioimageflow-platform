@@ -18,7 +18,6 @@ describe('workspace API', () => {
       workspace_path: '/Users/me/BioImageFlow/workspace',
       workflows_root: '/Users/me/BioImageFlow/workspace/workflows',
       tools_root: '/Users/me/BioImageFlow/workspace/tools',
-      outputs_root: '/Users/me/BioImageFlow/workspace/outputs',
       deployment_mode: 'desktop' as const,
       user_editable: true,
     }

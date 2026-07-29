@@ -55,7 +55,6 @@ class WorkflowCreate(BaseModel):
     name: str
     display_name: str | None = None
     description: str | None = None
-    storage_path: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -73,9 +72,8 @@ class WorkflowInfo(BaseModel):
     path: str
     last_modified: str
     description: str | None = None
-    storage_path: str | None = None
     workspace_path: str | None = None
-    output_path: str | None = None
+    results_path: str
     identity_generation: int = Field(default=0, ge=0)
 
 
@@ -111,7 +109,6 @@ class WorkflowUpdate(BaseModel):
     new_name: str | None = None
     folder: str | None = None
     new_id: str | None = None
-    storage_path: str | None = None
 
 
 class WorkflowFolderCreate(BaseModel):
@@ -198,7 +195,6 @@ class WorkspaceWorkflowMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     description: str | None = None
-    storage_path: str
     bundled_template: BundledTemplateProvenance | None = None
 
 

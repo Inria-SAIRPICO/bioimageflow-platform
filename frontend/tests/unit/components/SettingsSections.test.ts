@@ -28,7 +28,6 @@ vi.mock('@/api/workspace', () => ({
     workspace_path: '/Users/me/bif-workspace',
     workflows_root: '/Users/me/bif-workspace/workflows',
     tools_root: '/Users/me/bif-workspace/tools',
-    outputs_root: '/Users/me/bif-workspace/outputs',
     deployment_mode: 'desktop',
     user_editable: true,
   }),
@@ -63,7 +62,6 @@ const baseSettings = {
   external_editor: null,
   napari_env_path: null,
   omero_instances: [],
-  output_data_folder: '~/bioimageflow_data/',
   latest_output_mode: 'auto' as const,
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
@@ -76,7 +74,6 @@ const baseSettings = {
   workspace_path: '/Users/me/bif-workspace',
   workspaces_root: null,
   resolved_tool_store_path: '/Users/me/.bioimageflow/tool_packages',
-  resolved_output_data_folder: '/Users/me/bioimageflow_data',
   latest_output_effective_mode: 'symlink',
   latest_output_warning: null,
   latest_output_capabilities: {},
@@ -213,7 +210,6 @@ describe('StorageSection', () => {
       workspace_path: '/Users/me/BioImageFlow/workspace',
       workflows_root: '/Users/me/BioImageFlow/workspace/workflows',
       tools_root: '/Users/me/BioImageFlow/workspace/tools',
-      outputs_root: '/Users/me/BioImageFlow/workspace/outputs',
       deployment_mode: 'desktop',
       user_editable: true,
     })
@@ -234,17 +230,6 @@ describe('StorageSection', () => {
       .toBe('/Users/me/BioImageFlow/workspace')
   })
 
-  it('renders the resolved output folder, not the raw value', () => {
-    const wrapper = mount(StorageSection, {
-      ...globalOpts,
-      props: { modelValue: baseSettings },
-    })
-    const input = wrapper.find('[data-testid="output-data-folder-input"]')
-    expect((input.element as HTMLInputElement).value).toBe(
-      '/Users/me/bioimageflow_data',
-    )
-  })
-
   it('renders the resolved tool store path', () => {
     const wrapper = mount(StorageSection, {
       ...globalOpts,
@@ -253,19 +238,6 @@ describe('StorageSection', () => {
     const input = wrapper.find('[data-testid="tool-store-path-input"]')
     expect((input.element as HTMLInputElement).value).toBe(
       '/Users/me/.bioimageflow/tool_packages',
-    )
-  })
-
-  it('reveals the output folder through the backend', async () => {
-    const wrapper = mount(StorageSection, {
-      ...globalOpts,
-      props: { modelValue: baseSettings },
-    })
-    await wrapper.find('[data-testid="output-reveal-button"]').trigger('click')
-    await flushPromises()
-
-    expect(workspaceApi.revealFilesystemPath).toHaveBeenCalledWith(
-      '/Users/me/bioimageflow_data',
     )
   })
 

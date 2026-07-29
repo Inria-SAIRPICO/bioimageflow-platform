@@ -525,7 +525,6 @@ async def test_run_cannot_accept_same_id_replacement(
     workflow_store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
     accepted = _accepted_draft(revision=7)
@@ -652,7 +651,6 @@ async def test_run_accepts_revision_zero_synthesized_baseline(tmp_path: Path) ->
     workflow_store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
     saved_graph = workflow_store.get_workflow("wf").graph.model_dump(
@@ -690,7 +688,6 @@ async def test_run_rejects_revision_zero_graph_mismatch_without_materializing_dr
     workflow_store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
     draft_path = workflow_store.workflow_dir("wf") / ".bioimageflow" / "draft.json"
@@ -726,7 +723,6 @@ async def test_run_returns_not_found_when_workflow_disappears_before_start(
     workflow_store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
     client = await _make_client(
@@ -1300,7 +1296,6 @@ async def test_clear_cannot_commit_against_same_id_replacement(
     workflow_store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     workflow_store.create_workflow(WorkflowCreate(name="wf"))
     prepare_entered = threading.Event()
@@ -1361,98 +1356,6 @@ async def test_clear_cannot_commit_against_same_id_replacement(
     assert workflow_store.get_workflow("wf").info.display_name == "Replacement"
 
 
-async def test_clear_retries_validation_failure_after_storage_change(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workflow_store = WorkflowStoreService(
-        root_dir=tmp_path / "workspace" / "workflows",
-        tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
-    )
-    workflow_store.create_workflow(WorkflowCreate(name="wf"))
-    first_prepare_entered = threading.Event()
-    release_first_prepare = threading.Event()
-    storage_paths: list[Path | None] = []
-    commit_calls = 0
-
-    def controlled_prepare(
-        _nodes: list[str],
-        _graph: GraphState,
-        _registry: ToolRegistryService,
-        storage_path: Path | None,
-        **_kwargs: Any,
-    ) -> object:
-        storage_paths.append(storage_path)
-        if len(storage_paths) == 1:
-            first_prepare_entered.set()
-            assert release_first_prepare.wait(timeout=2)
-            raise WorkflowBuildError(
-                [
-                    GraphValidationError(
-                        type="parameter_invalid",
-                        detail="stale validation failure",
-                    )
-                ]
-            )
-        return object()
-
-    def commit(_plan: object) -> dict[str, NodeStatus]:
-        nonlocal commit_calls
-        commit_calls += 1
-        return {
-            "n1": NodeStatus(node_id="n1", status="unexecuted", cached=False),
-        }
-
-    monkeypatch.setattr(
-        "bioimageflow_server.routers.execution.prepare_node_cache_clear",
-        controlled_prepare,
-    )
-    monkeypatch.setattr(
-        "bioimageflow_server.routers.execution.commit_node_cache_clear",
-        commit,
-    )
-    client = await _make_client(
-        tmp_path,
-        execution_manager=_FakeExecutionManager(running=False),
-        tool_registry=_make_registry(),
-        workflow_store=workflow_store,
-    )
-    replacement_storage = tmp_path / "replacement-storage"
-
-    async with client:
-        clear = asyncio.create_task(
-            client.post(
-                "/api/v1/execution/clear",
-                json={
-                    "graph": _minimal_graph(),
-                    "nodes": ["n1"],
-                    "workflow_name": "wf",
-                },
-            )
-        )
-        try:
-            async with asyncio.timeout(2):
-                while not first_prepare_entered.is_set():
-                    await asyncio.sleep(0)
-            await asyncio.to_thread(
-                workflow_store.patch_workflow,
-                "wf",
-                WorkflowUpdate(
-                    action="update",
-                    storage_path=str(replacement_storage),
-                ),
-            )
-        finally:
-            release_first_prepare.set()
-        response = await clear
-
-    assert response.status_code == 200
-    assert storage_paths == [
-        workflow_store.storage_base_dir / "wf",
-        replacement_storage,
-    ]
-    assert commit_calls == 1
 
 
 # ---- GET /execution/status --------------------------------------------------

@@ -24,7 +24,6 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
     return WorkflowStoreService(
         tmp_path / "workflows",
         ToolRegistryService(),
-        storage_base_dir=tmp_path / "outputs",
     )
 
 
@@ -38,7 +37,6 @@ def _graph(name: str, display_name: str | None = None) -> GraphState:
             "edges": [],
             "interface": {"inputs": [], "outputs": []},
             "config": {
-                "storage_path": "./definition-data",
                 "engine": "direct",
                 "execution": "parallel",
             },
@@ -78,9 +76,11 @@ def test_create_persists_one_canonical_document(tmp_path: Path) -> None:
     assert raw["graph"]["display_name"] == "Demo"
     assert raw["metadata"] == {
         "description": "A workflow",
-        "storage_path": str(tmp_path / "outputs" / "folder" / "demo"),
     }
     assert info.display_name == "Demo"
+    assert info.results_path == str(
+        tmp_path / "workflows" / "folder" / "demo" / "results"
+    )
 
 
 def test_save_and_get_use_the_graph_as_display_authority(tmp_path: Path) -> None:
@@ -113,6 +113,9 @@ def test_duplicate_assigns_new_definition_identity_atomically(tmp_path: Path) ->
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="source", display_name="Source"))
     store.save_workflow("source", WorkflowSaveBody(graph=_graph("source-definition")))
+    source_results = store.get_storage_path("source")
+    source_results.mkdir()
+    (source_results / "result.txt").write_text("source", encoding="utf-8")
 
     duplicated = store.patch_workflow(
         "source",
@@ -129,6 +132,8 @@ def test_duplicate_assigns_new_definition_identity_atomically(tmp_path: Path) ->
     assert copy.graph.name == "copy"
     assert copy.graph.display_name == "Copy"
     assert duplicated.id == "copy"
+    assert not store.get_storage_path("copy").exists()
+    assert (store.get_storage_path("source") / "result.txt").read_text() == "source"
 
 
 def test_duplicate_copies_destination_owned_runtime_sources(tmp_path: Path) -> None:
@@ -168,6 +173,9 @@ def test_move_changes_workspace_identity_not_definition_name_or_hash(tmp_path: P
     store = _store(tmp_path)
     store.create_workflow(WorkflowCreate(name="source"))
     store.save_workflow("source", WorkflowSaveBody(graph=_graph("definition")))
+    results = store.get_storage_path("source")
+    results.mkdir()
+    (results / "result.txt").write_text("result", encoding="utf-8")
     before = store.get_workflow("source")
 
     moved = _move_workflow(
@@ -180,6 +188,7 @@ def test_move_changes_workspace_identity_not_definition_name_or_hash(tmp_path: P
     assert moved.id == "folder/moved"
     assert after.graph.name == "definition"
     assert after.artifact_hash == before.artifact_hash
+    assert (store.get_storage_path("folder/moved") / "result.txt").read_text() == "result"
 
 
 def test_move_rewrites_saved_workspace_provenance_without_changing_hash(
@@ -282,13 +291,25 @@ class _ArchiveAdapter:
         self.imported = imported
         self.exported: dict[str, Any] | None = None
 
-    def export_archive(self, workflow_data: dict[str, Any], archive_path: Path) -> None:
+    def export_archive(
+        self,
+        workflow_data: dict[str, Any],
+        archive_path: Path,
+        *,
+        storage_path: Path,
+    ) -> None:
+        assert storage_path.name == "results"
         self.exported = workflow_data
         archive_path.write_bytes(b"archive")
 
     def read_archive(
-        self, archive_path: Path, *, extract_to: Path | None = None
+        self,
+        archive_path: Path,
+        *,
+        extract_to: Path | None = None,
+        storage_path: Path,
     ) -> dict[str, Any]:
+        assert storage_path.name == "results"
         del archive_path, extract_to
         assert self.imported is not None
         return self.imported

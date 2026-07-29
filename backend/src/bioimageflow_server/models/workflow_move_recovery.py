@@ -35,22 +35,6 @@ def _validate_relative_path(value: str, *, allow_empty: bool = False) -> str:
     return value
 
 
-class WorkflowManagedStorageMove(BaseModel):
-    """Managed output directory transition captured before mutation."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    source_path: str = Field(min_length=1)
-    destination_path: str = Field(min_length=1)
-    source_existed: bool
-
-    @model_validator(mode="after")
-    def validate_distinct_paths(self) -> WorkflowManagedStorageMove:
-        if self.source_path == self.destination_path:
-            raise ValueError("Managed storage move requires distinct paths")
-        return self
-
-
 class WorkflowArtifactMove(BaseModel):
     """One workflow identity and its exact intended durable metadata."""
 
@@ -64,7 +48,6 @@ class WorkflowArtifactMove(BaseModel):
     destination_generation_after: int = Field(ge=1)
     target_metadata: dict[str, Any]
     target_display_name: str
-    managed_storage: WorkflowManagedStorageMove | None = None
 
     @model_validator(mode="after")
     def validate_identity_transition(self) -> WorkflowArtifactMove:

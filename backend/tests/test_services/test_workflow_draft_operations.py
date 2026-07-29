@@ -32,7 +32,6 @@ def _graph(name: str = "root") -> GraphState:
             "edges": [],
             "interface": {"inputs": [], "outputs": []},
             "config": {
-                "storage_path": "./bif_data",
                 "engine": "direct",
                 "execution": "parallel",
             },

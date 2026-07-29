@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, cast
 
 from bioimageflow.env_manager import configure_wetlands
-from bioimageflow.paths import get_home, get_wetlands_path
+from bioimageflow.paths import get_wetlands_path
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,6 +81,7 @@ from bioimageflow_server.routers.nodes import (
     router as nodes_router,
 )
 from bioimageflow_server.routers.settings import (
+    get_output_view_probe_path as settings_get_output_view_probe_path,
     get_settings_store as settings_get_store,
     router as settings_router,
 )
@@ -261,23 +262,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         user_id=config.user_id,
     )
     workspace_path = workspace_service.workspace_path()
-    configured_storage_path = config.storage_path or Path(resolved_settings.output_data_folder)
-    resolved_storage_path = normalize_workflow_storage_path(configured_storage_path)
-    assert resolved_storage_path is not None
+    stateless_storage_path = normalize_workflow_storage_path(
+        config.storage_path or workspace_path / ".bioimageflow" / "runtime"
+    )
+    assert stateless_storage_path is not None
 
     result_store = config.result_store or ResultStoreService(
-        storage_path=resolved_storage_path,
+        storage_path=stateless_storage_path,
         tool_registry=registry,
     )
     workflow_root = config.workflow_root or workspace_path / "workflows"
-    workflow_storage_base = resolved_storage_path / "workflows"
     workflow_store = config.workflow_store or WorkflowStoreService(
         root_dir=workflow_root,
         tool_registry=registry,
-        storage_base_dir=workflow_storage_base,
     )
-    workflow_store_cache: dict[tuple[str, str], WorkflowStoreService] = {
-        (str(workflow_root), str(workflow_storage_base)): workflow_store
+    workflow_store_cache: dict[str, WorkflowStoreService] = {
+        str(workflow_root): workflow_store
     }
     workflow_store_initializer: Callable[[WorkflowStoreService], None] | None = None
 
@@ -295,25 +295,26 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         current_workspace = _current_workspace_service().workspace_path()
         return config.workflow_root or current_workspace / "workflows"
 
-    def _current_workflow_storage_base() -> Path:
+    def _current_stateless_storage_path() -> Path:
         live_storage_path = normalize_workflow_storage_path(
-            config.storage_path or Path(_live_settings().output_data_folder)
+            config.storage_path
+            or _current_workspace_service().workspace_path()
+            / ".bioimageflow"
+            / "runtime"
         )
         assert live_storage_path is not None
-        return live_storage_path / "workflows"
+        return live_storage_path
 
     def _current_workflow_store() -> WorkflowStoreService:
         if config.workflow_store is not None:
             return workflow_store
         current_root = _current_workflow_root()
-        current_storage_base = _current_workflow_storage_base()
-        cache_key = (str(current_root), str(current_storage_base))
+        cache_key = str(current_root)
         cached = workflow_store_cache.get(cache_key)
         if cached is None:
             cached = WorkflowStoreService(
                 root_dir=current_root,
                 tool_registry=registry,
-                storage_base_dir=current_storage_base,
             )
             workflow_store_cache[cache_key] = cached
             try:
@@ -338,7 +339,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     )
     nested_workflow_snapshot_service = NestedWorkflowSnapshotService(
         _current_workflow_store,
-        fallback_storage_path_provider=lambda: resolved_storage_path,
+        fallback_storage_path_provider=_current_stateless_storage_path,
         dev_mode_provider=_live_dev_mode,
         settings_provider=_live_settings,
     )
@@ -354,10 +355,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _current_workflow_store,
         nested_workflow_snapshot_service,
     )
-    initialized_workflow_stores: set[tuple[str, str]] = set()
+    initialized_workflow_stores: set[str] = set()
 
     def _initialize_workflow_store(store: WorkflowStoreService) -> None:
-        key = (str(store.root_dir), str(store.storage_base_dir))
+        key = str(store.root_dir)
         if key in initialized_workflow_stores:
             return
         is_new_workspace = not store.root_dir.exists()
@@ -385,7 +386,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         _register_workflow_custom_tools(workflow_store)
 
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
-        cache_dir=resolved_storage_path / ".thumbnails",
+        cache_dir=stateless_storage_path / ".thumbnails",
         env_path=resolved_settings.thumbnail_env_path,
         connection_manager=ws_manager,
     )
@@ -433,7 +434,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             event_bus=event_bus,
             tool_registry=registry,
             settings=resolved_settings,
-            storage_path=resolved_storage_path,
+            storage_path=stateless_storage_path,
             settings_provider=settings_provider,
             environment_manager_provider=_tool_environment_manager,
         )
@@ -680,17 +681,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     if config.settings_store is not None:
         app.include_router(settings_router, prefix="/api/v1")
         app.dependency_overrides[settings_get_store] = lambda: config.settings_store
+        app.dependency_overrides[
+            settings_get_output_view_probe_path
+        ] = _current_stateless_storage_path
 
     # ---- Wire dependency overrides from config ----
     app.dependency_overrides[get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_tool_registry] = lambda: registry
     app.dependency_overrides[dev_get_result_store] = lambda: result_store
     app.dependency_overrides[graph_get_tool_registry] = lambda: registry
-    app.dependency_overrides[graph_get_storage_path] = lambda: resolved_storage_path
+    app.dependency_overrides[graph_get_storage_path] = _current_stateless_storage_path
     app.dependency_overrides[graph_get_execution_manager] = lambda: execution_manager
     app.dependency_overrides[graph_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[execution_get_manager] = lambda: execution_manager
-    app.dependency_overrides[execution_get_storage_path] = lambda: resolved_storage_path
+    app.dependency_overrides[execution_get_storage_path] = _current_stateless_storage_path
     app.dependency_overrides[execution_get_tool_registry] = lambda: registry
     app.dependency_overrides[execution_get_workflow_store] = _current_workflow_store
     app.dependency_overrides[execution_get_workflow_draft_service] = lambda: workflow_draft_service
@@ -745,16 +749,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.dependency_overrides[get_package_catalog] = lambda: catalog
     app.dependency_overrides[get_tool_environment_service] = lambda: tool_environment_service
 
-    # Datasets router needs both values present; fall back to Settings-derived
-    # defaults when AppConfig leaves them unset so bare `create_app()` (e.g.
-    # `uvicorn ... --factory`) produces a working server.
-    datasets_root = (
-        config.datasets_root if config.datasets_root is not None else get_home() / "datasets"
-    )
+    # Keep user datasets with the active workspace unless deployment wiring
+    # explicitly selects another location.
+    def _current_datasets_root() -> Path:
+        return (
+            config.datasets_root
+            if config.datasets_root is not None
+            else _current_workspace_service().workspace_path() / "datasets"
+        )
+
     max_upload_size = (
         config.max_upload_size if config.max_upload_size is not None else _DEFAULT_MAX_UPLOAD_SIZE
     )
-    app.dependency_overrides[get_datasets_root] = lambda: datasets_root
+    app.dependency_overrides[get_datasets_root] = _current_datasets_root
     app.dependency_overrides[get_max_upload_size] = lambda: max_upload_size
 
     # ---- Static file serving (production desktop mode) ----

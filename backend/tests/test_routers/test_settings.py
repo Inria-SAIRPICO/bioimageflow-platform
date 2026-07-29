@@ -99,10 +99,8 @@ class TestGetSettings:
         assert "cache_max_age" not in body
         assert body["external_editor"] is None
         assert "resolved_tool_store_path" in body
-        assert "resolved_output_data_folder" in body
         # Resolved paths should be absolute.
         assert body["resolved_tool_store_path"].startswith("/")
-        assert body["resolved_output_data_folder"].startswith("/")
 
     async def test_get_omero_instances_include_password_state_not_password(
         self,
@@ -190,7 +188,6 @@ class TestPatchSettings:
         store = WorkflowStoreService(
             root_dir=workflows_root,
             tool_registry=ToolRegistryService(),
-            storage_base_dir=workspace / "outputs",
         )
         store.create_workflow(
             WorkflowCreate(name="retargeted", display_name="Retargeted")

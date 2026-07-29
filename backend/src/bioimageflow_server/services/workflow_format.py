@@ -111,7 +111,7 @@ def _document_tool_metadata(document: WorkflowDocument) -> dict[str, dict[str, A
     }
 
 
-def _legacy_config(raw: dict[str, Any], storage_path: str) -> dict[str, Any]:
+def _legacy_config(raw: dict[str, Any]) -> dict[str, Any]:
     workflow = raw.get("workflow")
     config = workflow.get("config", {}) if isinstance(workflow, dict) else {}
     if not isinstance(config, dict):
@@ -126,7 +126,6 @@ def _legacy_config(raw: dict[str, Any], storage_path: str) -> dict[str, Any]:
     if execution not in {"parallel", "sequential"}:
         execution = "parallel"
     return {
-        "storage_path": str(config.get("storage_path") or storage_path),
         "engine": engine,
         "execution": execution,
     }
@@ -238,18 +237,17 @@ def _legacy_document(raw: dict[str, Any], workflow_id: str) -> WorkflowDocument:
     if not isinstance(graph, dict) or not isinstance(metadata, dict) or "workflow" not in raw:
         raise LegacyWorkflowMigrationError("the file is not a recognized legacy workflow document")
     display_name = str(metadata.get("display_name") or workflow_id.rsplit("/", 1)[-1])
-    storage_path = str(metadata.get("storage_path") or "./bif_data")
     converted = convert_legacy_graph(
         graph,
         workflow_id=workflow_id,
         display_name=display_name,
-        config=_legacy_config(raw, storage_path),
+        config=_legacy_config(raw),
         tool_metadata=_legacy_tool_metadata(raw),
     )
     return WorkflowDocument(
         graph=converted,
         metadata=WorkspaceWorkflowMetadata(
-            description=metadata.get("description"), storage_path=storage_path
+            description=metadata.get("description")
         ),
         artifact_hash=artifact_hash(converted, []),
     )

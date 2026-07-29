@@ -33,10 +33,19 @@ def _workflow_import_scope(root: Path):
 class BioImageFlowWorkflowArchiveAdapter:
     """Delegate workflow archive reads/writes to the BioImageFlow library."""
 
-    def export_archive(self, workflow_data: dict[str, Any], archive_path: Path) -> None:
+    def export_archive(
+        self,
+        workflow_data: dict[str, Any],
+        archive_path: Path,
+        *,
+        storage_path: Path,
+    ) -> None:
         """Export one accepted graph-plus-source snapshot through the library."""
 
-        result = BioImageFlowWorkflow.from_dict(workflow_data)
+        result = BioImageFlowWorkflow.from_dict(
+            workflow_data,
+            storage_path=storage_path,
+        )
         workflow = cast(Any, result)
         workflow.export(archive_path)
 
@@ -45,9 +54,17 @@ class BioImageFlowWorkflowArchiveAdapter:
         archive_path: Path,
         *,
         extract_to: Path | None = None,
+        storage_path: Path,
     ) -> dict[str, Any]:
         if extract_to is None:
-            workflow = BioImageFlowWorkflow.load(archive_path)
+            workflow = BioImageFlowWorkflow.load(
+                archive_path,
+                storage_path=storage_path,
+            )
         else:
-            workflow = BioImageFlowWorkflow.import_archive(archive_path, extract_to)
+            workflow = BioImageFlowWorkflow.import_archive(
+                archive_path,
+                extract_to,
+                storage_path=storage_path,
+            )
         return workflow.to_dict(include_custom_tools=True)

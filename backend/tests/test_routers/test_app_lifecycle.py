@@ -184,18 +184,17 @@ async def test_lifespan_completes_real_pending_move_before_serving(
     seed = WorkflowStoreService(
         root_dir=workspace / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=storage / "workflows",
     )
     seed.create_workflow(WorkflowCreate(name="old"))
     patch = WorkflowUpdate(action="update", new_id="new")
     operation_id = seed.prepare_workflow_patch_move("old", patch)
     assert operation_id is not None
 
-    def fail_after_generation_commit(_old_name: str, _new_name: str) -> str:
+    def fail_after_generation_commit(_path: Path) -> None:
         raise OSError("injected startup recovery boundary")
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(seed, "_move_managed_storage", fail_after_generation_commit)
+        scoped.setattr(seed, "_ensure_directory_durable", fail_after_generation_commit)
         with pytest.raises(OSError, match="startup recovery boundary"):
             seed.patch_workflow(
                 "old",
@@ -224,7 +223,6 @@ async def test_lifespan_completes_real_pending_move_before_serving(
     restarted = WorkflowStoreService(
         root_dir=workspace / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=storage / "workflows",
     )
     assert restarted.pending_workflow_move() is None
     assert not restarted.workflow_dir("old").exists()

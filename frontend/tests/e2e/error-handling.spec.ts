@@ -23,7 +23,7 @@ async function createAndOpenWorkflow(page: Page): Promise<string> {
       nodes: [],
       edges: [],
       interface: { inputs: [], outputs: [] },
-      config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+      config: { engine: 'direct', execution: 'parallel' },
     } },
   })
   expect(saved.ok()).toBeTruthy()
@@ -211,7 +211,7 @@ test.describe('error handling', () => {
           },
         ],
         interface: { inputs: [], outputs: [] },
-        config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+        config: { engine: 'direct', execution: 'parallel' },
       },
     })
     expect(response.ok()).toBeTruthy()

@@ -135,7 +135,6 @@ async def test_get_tools_discovers_existing_custom_tools(workflow_root: Path):
     store = WorkflowStoreService(
         root_dir=workflow_root,
         tool_registry=registry,
-        storage_base_dir=workflow_root.parent / "outputs",
     )
     store.create_workflow(WorkflowCreate(name="existing", display_name="Existing"))
     workflow_dir = workflow_root / "existing"

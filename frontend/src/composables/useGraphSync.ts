@@ -167,7 +167,6 @@ export function serializeGraph(raw: {
     edges: raw.edges.map(serializeEdge),
     interface: deepCloneJson(raw.interface ?? { inputs: [], outputs: [] }),
     config: deepCloneJson(raw.config ?? {
-      storage_path: './bif_data',
       engine: 'wetlands',
       execution: 'parallel',
     }),

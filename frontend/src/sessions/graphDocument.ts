@@ -9,7 +9,6 @@ export function emptyGraph(name = 'workflow', displayName = 'Workflow'): GraphSt
     edges: [],
     interface: { inputs: [], outputs: [] },
     config: {
-      storage_path: './bif_data',
       engine: 'wetlands',
       execution: 'parallel',
     },

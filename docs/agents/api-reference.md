@@ -132,7 +132,7 @@ Set `include_graph: true` only when the saved graph is required.
 ```
 
 Creates an empty workflow.
-Optional arguments are `display_name`, `description`, `storage_path`, and `set_active`.
+Optional arguments are `display_name`, `description`, and `set_active`.
 
 `duplicate_workflow`
 
@@ -149,7 +149,7 @@ Optional arguments are `display_name`, `description`, `storage_path`, and `set_a
 ```
 
 Copies an existing workflow to a new workflow id.
-Optional arguments are `display_name`, `description`, `storage_path`, and `set_active`.
+Optional arguments are `display_name`, `description`, and `set_active`.
 This copies the saved workflow and workflow-local tools, not unsaved active draft edits.
 
 `rename_workflow`

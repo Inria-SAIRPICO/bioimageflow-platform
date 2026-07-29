@@ -128,7 +128,10 @@ class WorkflowSourceService:
             raise WorkflowSourceConflict("Workflow artifact changed")
         root = store.workflow_dir(workflow_id)
         manifest = _capture_python_manifest(root)
-        graph, sources = _materialize_python_manifest(manifest)
+        graph, sources = _materialize_python_manifest(
+            manifest,
+            storage_path=store.get_storage_path(workflow_id),
+        )
         preview = WorkflowSourcePreview(
             token=uuid4(),
             operation="python_rebuild",
@@ -458,6 +461,8 @@ def _manifest_hash(manifest: list[tuple[str, bytes]]) -> str:
 
 def _materialize_python_manifest(
     manifest: list[tuple[str, bytes]],
+    *,
+    storage_path: Path,
 ) -> tuple[GraphState, list[dict[str, Any]]]:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
@@ -465,7 +470,7 @@ def _materialize_python_manifest(
             destination = root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(content)
-        workflow = Workflow.from_python(root / "workflow.py")
+        workflow = Workflow.from_python(root / "workflow.py", storage_path=storage_path)
         exported = workflow.to_dict(include_custom_tools=True)
     graph = lib_dict_to_graph_state(exported)
     sources = (

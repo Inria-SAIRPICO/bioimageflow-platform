@@ -2431,10 +2431,7 @@ export interface components {
          * SettingsResponse
          * @description ``GET``/``PATCH`` /settings response wrapper.
          *
-         *     Adds two **server-resolved** convenience fields so the frontend can show
-         *     where tools and outputs *actually* live (env-var overrides applied,
-         *     ``~`` expanded). The raw ``Settings`` fields remain so PATCH bodies
-         *     stay symmetrical with what GET returns.
+         *     Adds the resolved tool-store path and output-view filesystem capabilities.
          */
         SettingsResponse: {
             /**
@@ -2453,8 +2450,6 @@ export interface components {
              * @default []
              */
             omero_instances: components["schemas"]["OMEROInstanceResponse"][];
-            /** Output Data Folder */
-            output_data_folder?: string;
             /**
              * Latest Output Mode
              * @default auto
@@ -2513,8 +2508,6 @@ export interface components {
             workspaces_root?: string | null;
             /** Resolved Tool Store Path */
             resolved_tool_store_path: string;
-            /** Resolved Output Data Folder */
-            resolved_output_data_folder: string;
             /** Latest Output Effective Mode */
             latest_output_effective_mode: string;
             /** Latest Output Warning */
@@ -2854,11 +2847,6 @@ export interface components {
         /** WorkflowConfig */
         WorkflowConfig: {
             /**
-             * Storage Path
-             * @default ./bif_data
-             */
-            storage_path: string;
-            /**
              * Engine
              * @default wetlands
              * @enum {string}
@@ -2883,8 +2871,6 @@ export interface components {
             display_name?: string | null;
             /** Description */
             description?: string | null;
-            /** Storage Path */
-            storage_path?: string | null;
         };
         /**
          * WorkflowDeleteResponse
@@ -3148,12 +3134,10 @@ export interface components {
             last_modified: string;
             /** Description */
             description?: string | null;
-            /** Storage Path */
-            storage_path?: string | null;
             /** Workspace Path */
             workspace_path?: string | null;
-            /** Output Path */
-            output_path?: string | null;
+            /** Results Path */
+            results_path: string;
             /**
              * Identity Generation
              * @default 0
@@ -3340,8 +3324,6 @@ export interface components {
             folder?: string | null;
             /** New Id */
             new_id?: string | null;
-            /** Storage Path */
-            storage_path?: string | null;
         };
         /** WorkspaceInfo */
         WorkspaceInfo: {
@@ -3351,8 +3333,6 @@ export interface components {
             workflows_root: string;
             /** Tools Root */
             tools_root: string;
-            /** Outputs Root */
-            outputs_root: string;
             /**
              * Deployment Mode
              * @enum {string}

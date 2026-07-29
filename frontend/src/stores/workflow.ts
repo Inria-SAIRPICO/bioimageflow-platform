@@ -25,7 +25,7 @@ type WorkflowInfoWithTreeFields = WorkflowInfo & {
   id?: string | null
   folder?: string
   workspace_path?: string | null
-  output_path?: string | null
+  results_path: string
   identity_generation?: number
 }
 

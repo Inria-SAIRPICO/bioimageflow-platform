@@ -2586,7 +2586,6 @@ function vueFlowNodeFromClipboardNode(n: ClipboardPayload['nodes'][number]) {
     edges: [],
     interface: { inputs: [], outputs: [] },
     config: previous?.config ?? {
-      storage_path: './bif_data',
       engine: 'wetlands',
       execution: 'parallel',
     },

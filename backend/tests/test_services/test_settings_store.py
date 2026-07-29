@@ -59,7 +59,6 @@ class TestLoad:
         result = await store.load()
         assert isinstance(result, Settings)
         assert result.deployment_mode == "desktop"
-        assert result.output_data_folder == "~/bioimageflow_data/"
         # File should now exist with the version envelope.
         assert path.exists()
         on_disk = _read_disk(path)
@@ -311,15 +310,6 @@ class TestPatch:
         await store.patch({"tool_store_path": "~/foo"})
         assert store.get().tool_store_path == "~/foo"
         resolved = store.resolved_tool_store_path()
-        assert resolved.is_absolute()
-        assert "~" not in str(resolved)
-
-    async def test_tilde_expansion_for_output_data_folder(self, tmp_path: Path) -> None:
-        store = SettingsStore(path=tmp_path / "s.json")
-        await store.load()
-        await store.patch({"output_data_folder": "~/custom"})
-        assert store.get().output_data_folder == "~/custom"
-        resolved = store.resolved_output_data_folder()
         assert resolved.is_absolute()
         assert "~" not in str(resolved)
 

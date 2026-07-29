@@ -28,7 +28,6 @@ describe('settings store', () => {
   it('fetchSettings loads from server', async () => {
     const settings = {
       deployment_mode: 'desktop' as const,
-      output_data_folder: '/out',
     }
     let resolveRequest!: (value: { data: typeof settings }) => void
     mockedApi.get.mockReturnValueOnce(new Promise((resolve) => {
@@ -51,7 +50,6 @@ describe('settings store', () => {
   it('coalesces concurrent settings fetches into one state publication', async () => {
     const settings = {
       deployment_mode: 'desktop' as const,
-      output_data_folder: '/out',
     }
     let resolveRequest!: (value: { data: typeof settings }) => void
     mockedApi.get.mockReturnValueOnce(new Promise((resolve) => {
@@ -74,7 +72,7 @@ describe('settings store', () => {
 
   it('isDesktop returns true for desktop mode', async () => {
     mockedApi.get.mockResolvedValueOnce({
-      data: { deployment_mode: 'desktop', output_data_folder: '/out' },
+      data: { deployment_mode: 'desktop' },
     })
 
     const store = useSettingsStore()
@@ -86,7 +84,7 @@ describe('settings store', () => {
 
   it('isWebapp returns true for webapp mode', async () => {
     mockedApi.get.mockResolvedValueOnce({
-      data: { deployment_mode: 'webapp', output_data_folder: '/out' },
+      data: { deployment_mode: 'webapp' },
     })
 
     const store = useSettingsStore()
@@ -100,7 +98,6 @@ describe('settings store', () => {
     mockedApi.get.mockResolvedValueOnce({
       data: {
         deployment_mode: 'webapp',
-        output_data_folder: '/out',
         enable_unsafe_webapp_features: true,
       },
     })
@@ -113,12 +110,11 @@ describe('settings store', () => {
 
   it('updateSettings sends PATCH and updates local state', async () => {
     mockedApi.get.mockResolvedValueOnce({
-      data: { deployment_mode: 'desktop', output_data_folder: '/out' },
+      data: { deployment_mode: 'desktop' },
     })
     mockedApi.patch.mockResolvedValueOnce({
       data: {
         deployment_mode: 'desktop',
-        output_data_folder: '/out',
         external_editor: 'code {file_path}',
       },
     })
@@ -137,14 +133,12 @@ describe('settings store', () => {
     mockedApi.get.mockResolvedValueOnce({
       data: {
         deployment_mode: 'desktop',
-        output_data_folder: '/out',
         workspace_path: '/old/workspace',
       },
     })
     mockedApi.patch.mockResolvedValueOnce({
       data: {
         deployment_mode: 'desktop',
-        output_data_folder: '/out',
         workspace_path: '/new/workspace',
       },
     })
@@ -163,7 +157,6 @@ describe('settings store', () => {
     mockedApi.get.mockResolvedValueOnce({
       data: {
         deployment_mode: 'webapp',
-        output_data_folder: '/out',
         workspace_path: '/srv/workspaces/current',
       },
     })
@@ -195,7 +188,7 @@ describe('settings store', () => {
 
   it('updateSettings handles API errors gracefully', async () => {
     mockedApi.get.mockResolvedValueOnce({
-      data: { deployment_mode: 'desktop', output_data_folder: '/out' },
+      data: { deployment_mode: 'desktop' },
     })
     mockedApi.patch.mockRejectedValueOnce(new Error('Server error'))
 
@@ -212,7 +205,6 @@ describe('settings store', () => {
   it('updateSettings sends OMERO password without storing it optimistically', async () => {
     const settings = {
       deployment_mode: 'desktop' as const,
-      output_data_folder: '/out',
       omero_instances: [
         {
           name: null,
@@ -274,7 +266,6 @@ describe('settings store', () => {
   it('failed OMERO password save restores previous settings without raw password', async () => {
     const settings = {
       deployment_mode: 'desktop' as const,
-      output_data_folder: '/out',
       omero_instances: [
         {
           name: null,
@@ -309,7 +300,7 @@ describe('settings store', () => {
 
   it('updateSettings 422 surfaces server detail', async () => {
     mockedApi.get.mockResolvedValueOnce({
-      data: { deployment_mode: 'desktop', output_data_folder: '/out' },
+      data: { deployment_mode: 'desktop' },
     })
     const axiosError = Object.assign(new Error('Request failed'), {
       isAxiosError: true,
@@ -330,7 +321,7 @@ describe('settings store', () => {
 
   it('updateSettings serializes rapid concurrent calls', async () => {
     mockedApi.get.mockResolvedValueOnce({
-      data: { deployment_mode: 'desktop', output_data_folder: '/out' },
+      data: { deployment_mode: 'desktop' },
     })
     let firstResolve: (value: { data: unknown }) => void = () => undefined
     let secondResolve: (value: { data: unknown }) => void = () => undefined
@@ -368,7 +359,6 @@ describe('settings store', () => {
     firstResolve({
       data: {
         deployment_mode: 'desktop',
-        output_data_folder: '/out',
         external_editor: 'vim',
       },
     })
@@ -377,7 +367,6 @@ describe('settings store', () => {
     secondResolve({
       data: {
         deployment_mode: 'desktop',
-        output_data_folder: '/out',
         external_editor: 'vim',
         napari_env_path: '/n',
       },

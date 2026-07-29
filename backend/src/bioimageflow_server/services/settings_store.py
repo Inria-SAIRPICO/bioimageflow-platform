@@ -185,10 +185,6 @@ class SettingsStore:
         """Return ``tool_store_path`` with ``~`` expanded and made absolute."""
         return Path(self.get().tool_store_path).expanduser().resolve()
 
-    def resolved_output_data_folder(self) -> Path:
-        """Return ``output_data_folder`` with ``~`` expanded and made absolute."""
-        return Path(self.get().output_data_folder).expanduser().resolve()
-
     # --- Internals -------------------------------------------------------
 
     def _default_settings(self) -> Settings:

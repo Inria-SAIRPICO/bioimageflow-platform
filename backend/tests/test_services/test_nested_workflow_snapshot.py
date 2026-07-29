@@ -58,7 +58,6 @@ def store(tmp_path: Path) -> WorkflowStoreService:
     result = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     result.create_workflow(WorkflowCreate(name="root-a", display_name="Root A"))
     result.create_workflow(WorkflowCreate(name="root-b", display_name="Root B"))

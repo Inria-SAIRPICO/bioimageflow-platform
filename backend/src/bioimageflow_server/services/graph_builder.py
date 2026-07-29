@@ -56,9 +56,9 @@ def build_workflow(
 
     result = Workflow.from_dict(
         translation.lib_dict,
+        storage_path=storage_path,
         validate_only=True,
         partial=True,
-        storage_path_override=storage_path,
         on_progress=on_progress,
         engine="wetlands" if graph_requires_wetlands(graph, registry) else "direct",
         execution=translation.lib_dict["config"]["execution"],

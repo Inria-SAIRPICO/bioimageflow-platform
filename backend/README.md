@@ -127,9 +127,10 @@ The backend resolves platform-owned workflow files through one active workspace 
 workspace/
   workflows/                          folders and workflow directories
     <workflow-id>/tools/              custom tools owned by one workflow
+    <workflow-id>/results/            BioImageFlow runtime storage
 ```
 
-Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Runtime execution paths passed to the BioImageFlow library are resolved below the configured output-data folder, by default `~/bioimageflow_data/workflows/<workflow-id>/`. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`. `WorkspaceInfo` also reports reserved `tools_root` and `outputs_root` values, but those paths are not the current custom-tool or execution-output authorities.
+Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Each named workflow derives its BioImageFlow runtime storage as `<workflow-directory>/results`; moves and deletes therefore carry its results, while duplicates start without results. Stateless graph services use `<workspace>/.bioimageflow/runtime`. Dataset uploads use the configured dataset root or `<workspace>/datasets`.
 
 A workflow root that does not exist when it is first initialized receives the versioned bundled templates at `Demo/Fish Analysis` and `Demo/Parameters Space Exploration`. An existing root is never seeded merely because it is empty. Installation state is derived from canonical workflow paths plus `metadata.bundled_template`; no home-directory flag or launcher post-install hook is used. Reinstall skips recognized templates, reports unrelated occupants as conflicts, and materializes bundled custom tools into each workflow's `tools/` directory.
 

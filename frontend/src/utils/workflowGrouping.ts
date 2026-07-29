@@ -229,7 +229,7 @@ export function groupIntoWorkflow(
     nodes: selectedNodes.map(serializeNode),
     edges: internalEdges.map(serializeEdge),
     interface: { inputs, outputs },
-    config: { storage_path: './bif_data', engine: 'wetlands', execution: 'parallel' },
+    config: { engine: 'wetlands', execution: 'parallel' },
   }
   const centroid = selectedNodes.reduce(
     (point, node) => ({

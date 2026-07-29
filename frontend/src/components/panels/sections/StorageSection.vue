@@ -249,28 +249,6 @@ function revealWorkspace() {
   return reveal(effectiveWorkspacePath.value, 'workspace folder')
 }
 
-function revealOutputFolder() {
-  return reveal(props.modelValue.resolved_output_data_folder, 'output data folder')
-}
-
-async function changeFolder() {
-  const picked = await selectFolder('Select output data folder')
-  if (!picked) return
-  const apply = () =>
-    emit('update:field', { field: 'output_data_folder', value: picked })
-  if (confirm) {
-    confirm.require({
-      message:
-        'Change output data folder? Existing data will not be moved to the new location.',
-      header: 'Confirm change',
-      icon: 'pi pi-exclamation-triangle',
-      accept: apply,
-    })
-  } else {
-    apply()
-  }
-}
-
 async function changeWorkspacePath() {
   const picked = await selectFolder('Select workspace folder')
   if (!picked) return
@@ -360,36 +338,6 @@ async function changeWorkspacePath() {
       </p>
       <p v-if="modelValue.latest_output_mode === 'copy'" class="output-warning">
         Copies open everywhere but can use roughly twice the asset storage space.
-      </p>
-    </div>
-
-    <div class="field">
-      <label class="field-label" for="output-data-folder-input">Output data folder</label>
-      <div class="field-row">
-        <InputText
-          id="output-data-folder-input"
-          :model-value="modelValue.resolved_output_data_folder"
-          readonly
-          data-testid="output-data-folder-input"
-          class="grow"
-        />
-        <Button
-          label="Reveal"
-          severity="secondary"
-          data-testid="output-reveal-button"
-          @click="revealOutputFolder"
-        />
-        <Button
-          v-if="isDesktop()"
-          label="Browse..."
-          severity="secondary"
-          data-testid="output-change-button"
-          @click="changeFolder"
-        />
-      </div>
-      <p class="help-text">
-        Workflow outputs are written here. Stored value:
-        <code>{{ modelValue.output_data_folder }}</code>
       </p>
     </div>
 

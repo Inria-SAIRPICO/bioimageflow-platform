@@ -73,7 +73,6 @@ async def client_and_manager(
     store = WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=registry,
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
     manager = _ExecutionManager()
     app = create_app(

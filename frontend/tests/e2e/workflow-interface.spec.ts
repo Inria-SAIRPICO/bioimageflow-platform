@@ -23,7 +23,7 @@ function graph(name: string, displayName: string): GraphState {
     }],
     edges: [],
     interface: { inputs: [], outputs: [] },
-    config: { storage_path: './bif_data', engine: 'direct', execution: 'parallel' },
+    config: { engine: 'direct', execution: 'parallel' },
   }
 }
 

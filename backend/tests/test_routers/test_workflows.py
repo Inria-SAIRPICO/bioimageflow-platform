@@ -13,7 +13,6 @@ from unittest.mock import MagicMock
 
 from bioimageflow_server.app import create_app
 from bioimageflow_server.models.tools import AppConfig
-from bioimageflow_server.services import workflow_store as workflow_store_module
 from bioimageflow_server.services.nested_workflow_snapshot import (
     NestedWorkflowSnapshotService,
     RootWorkflowSnapshotMove,
@@ -42,11 +41,25 @@ class _FakeArchiveAdapter:
         self.import_payload: bytes | None = None
         self.extract_to: Path | None = None
 
-    def export_archive(self, workflow: dict[str, Any], archive_path: Path) -> None:
+    def export_archive(
+        self,
+        workflow: dict[str, Any],
+        archive_path: Path,
+        *,
+        storage_path: Path,
+    ) -> None:
+        assert storage_path.name == "results"
         self.export_calls.append((workflow, archive_path))
         archive_path.write_bytes(b"fake zip")
 
-    def read_archive(self, archive_path: Path, *, extract_to: Path | None = None) -> dict:
+    def read_archive(
+        self,
+        archive_path: Path,
+        *,
+        extract_to: Path | None = None,
+        storage_path: Path,
+    ) -> dict:
+        assert storage_path.name == "results"
         self.import_payload = archive_path.read_bytes()
         self.extract_to = extract_to
         if extract_to is not None:
@@ -106,7 +119,6 @@ async def _client(
     store = WorkflowStoreService(
         root_dir=tmp_path / "workflows",
         tool_registry=registry,
-        storage_base_dir=tmp_path / "outputs",
         archive_adapter=archive_adapter,
     )
     app = create_app(
@@ -142,7 +154,7 @@ async def test_create_list_get_save_delete(client: httpx.AsyncClient) -> None:
     )
     assert create.status_code == 201
     assert create.json()["name"] == "wf"
-    assert create.json()["storage_path"] is not None
+    assert create.json()["results_path"].endswith("/workflows/wf/results")
     assert create.json()["identity_generation"] == 1
 
     listing = await client.get("/api/v1/workflows")
@@ -200,7 +212,15 @@ async def test_reveal_latest_outputs_opens_the_workflow_projection(
     )
 
     assert response.status_code == 200, response.text
-    expected = tmp_path / "outputs" / "folder" / "wf" / "outputs" / "latest"
+    expected = (
+        tmp_path
+        / "workflows"
+        / "folder"
+        / "wf"
+        / "results"
+        / "outputs"
+        / "latest"
+    )
     assert response.json()["path"] == str(expected)
     assert expected.is_dir()
     reveal.assert_called_once_with(str(expected))
@@ -763,41 +783,28 @@ async def test_delete_rejects_stale_expected_identity_generation_without_event(
         assert deleted.json()["identity_generation"] > generation
 
 
-async def test_committed_delete_ignores_managed_output_cleanup_failure(
+async def test_delete_removes_workflow_local_results(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     connection_manager = _ConnectionManager()
-    original_rmtree = workflow_store_module.shutil.rmtree
     async for client in _client(tmp_path, connection_manager=connection_manager):
         create = await client.post("/api/v1/workflows", json={"name": "wf"})
         assert create.status_code == 201
-        managed_path = Path(create.json()["storage_path"])
-        managed_path.mkdir(parents=True)
+        results_path = Path(create.json()["results_path"])
+        results_path.mkdir(parents=True)
+        (results_path / "result.txt").write_text("result", encoding="utf-8")
 
-        def fail_managed_cleanup(path: str | Path, *args: Any, **kwargs: Any) -> None:
-            if Path(path) == managed_path:
-                raise OSError("managed cleanup failed")
-            original_rmtree(path, *args, **kwargs)
-
-        monkeypatch.setattr(workflow_store_module.shutil, "rmtree", fail_managed_cleanup)
-        with caplog.at_level(
-            "ERROR",
-            logger="bioimageflow_server.services.workflow_store",
-        ):
-            deleted = await client.delete("/api/v1/workflows/wf")
+        deleted = await client.delete("/api/v1/workflows/wf")
 
         assert deleted.status_code == 200
         assert (await client.get("/api/v1/workflows/wf")).status_code == 404
-        assert managed_path.exists()
+        assert not results_path.exists()
 
     assert connection_manager.workflow_tree_events[-1] == {
         "action": "workflow_deleted",
         "workflow_id": "wf",
         "identity_generation": 2,
     }
-    assert "managed output cleanup failed" in caplog.text
 
 
 async def test_committed_delete_ignores_nested_snapshot_cleanup_failure(

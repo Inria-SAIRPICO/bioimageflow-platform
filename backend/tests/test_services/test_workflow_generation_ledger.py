@@ -33,7 +33,6 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
     return WorkflowStoreService(
         root_dir=workspace / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=workspace / "outputs",
     )
 
 

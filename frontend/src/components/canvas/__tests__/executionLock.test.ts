@@ -114,7 +114,6 @@ vi.mock('@/composables/useGraphSync', () => ({
     edges: [],
     interface: (raw as any).interface ?? { inputs: [], outputs: [] },
     config: {
-      storage_path: './bif_data',
       engine: 'wetlands',
       execution: 'parallel',
     },
@@ -225,7 +224,7 @@ describe('CanvasView execution lock', () => {
         last_modified: '2026-01-01T00:00:00Z',
       identity_generation: 0,
         description: null,
-        storage_path: '/tmp/workflows/untitled',
+        results_path: '/tmp/workflows/untitled/results',
       },
     })
     mockNodes = []

@@ -42,7 +42,6 @@ const baseSettings = {
   external_editor: null,
   napari_env_path: null,
   omero_instances: [],
-  output_data_folder: '~/bioimageflow_data/',
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
@@ -52,7 +51,6 @@ const baseSettings = {
   datasets_root: null,
   max_upload_size: 2147483648,
   resolved_tool_store_path: '/tools',
-  resolved_output_data_folder: '/out',
 }
 
 function mountSection(instances = baseSettings.omero_instances) {

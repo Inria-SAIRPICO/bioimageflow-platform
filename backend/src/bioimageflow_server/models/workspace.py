@@ -11,7 +11,6 @@ class WorkspaceInfo(BaseModel):
     workspace_path: str
     workflows_root: str
     tools_root: str
-    outputs_root: str
     deployment_mode: Literal["desktop", "webapp"]
     user_editable: bool
 

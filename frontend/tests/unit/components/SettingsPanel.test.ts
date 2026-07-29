@@ -23,7 +23,6 @@ vi.mock('@/api/workspace', () => ({
     workspace_path: '/Users/me/BioImageFlow/workspace',
     workflows_root: '/Users/me/BioImageFlow/workspace/workflows',
     tools_root: '/Users/me/BioImageFlow/workspace/tools',
-    outputs_root: '/Users/me/BioImageFlow/workspace/outputs',
     deployment_mode: 'desktop',
     user_editable: true,
   }),
@@ -66,7 +65,6 @@ const baseSettings = {
   external_editor: null,
   napari_env_path: null,
   omero_instances: [],
-  output_data_folder: '~/bioimageflow_data/',
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
@@ -78,7 +76,6 @@ const baseSettings = {
   workspace_path: null,
   workspaces_root: null,
   resolved_tool_store_path: '/Users/me/.bioimageflow/tool_packages',
-  resolved_output_data_folder: '/Users/me/bioimageflow_data',
 }
 
 const mountOpts = {

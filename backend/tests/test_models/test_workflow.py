@@ -30,7 +30,6 @@ def _graph() -> GraphState:
             "edges": [],
             "interface": {"inputs": [], "outputs": []},
             "config": {
-                "storage_path": "./bif_data",
                 "engine": "direct",
                 "execution": "parallel",
             },
@@ -60,7 +59,7 @@ def test_canonical_document_round_trip() -> None:
     document = WorkflowDocument(
         graph=_graph(),
         metadata=WorkspaceWorkflowMetadata(
-            description="Description", storage_path="/tmp/output"
+            description="Description"
         ),
         authoring_source=PythonAuthoringProvenance(
             source_id="workflow.py",
@@ -79,7 +78,7 @@ def test_canonical_document_round_trip() -> None:
 def test_canonical_document_rejects_competing_sections() -> None:
     payload = WorkflowDocument(
         graph=_graph(),
-        metadata=WorkspaceWorkflowMetadata(storage_path="/tmp/output"),
+        metadata=WorkspaceWorkflowMetadata(),
         artifact_hash="sha256:" + "b" * 64,
     ).model_dump(mode="json")
     payload["secondary_graph"] = {}
@@ -93,6 +92,7 @@ def test_workflow_file_projects_graph_and_artifact_identity() -> None:
         name="workflow",
         display_name="Workflow",
         path="/workflows/workflow/workflow.json",
+        results_path="/workflows/workflow/results",
         last_modified="2026-04-01T12:00:00Z",
     )
     data = WorkflowFile(

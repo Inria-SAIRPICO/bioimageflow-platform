@@ -30,7 +30,6 @@ def _graph(name: str = "workflow") -> dict[str, object]:
         "edges": [],
         "interface": {"inputs": [], "outputs": []},
         "config": {
-            "storage_path": "./bif_data",
             "engine": "direct",
             "execution": "parallel",
         },

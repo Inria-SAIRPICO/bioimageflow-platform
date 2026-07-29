@@ -45,7 +45,6 @@ def store(tmp_path: Path) -> WorkflowStoreService:
     return WorkflowStoreService(
         root_dir=tmp_path / "workspace" / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "workspace" / "outputs",
     )
 
 
@@ -377,67 +376,3 @@ async def test_nested_validation_cannot_commit_into_replaced_root_identity(
     assert current.snapshot_revision == 0
     assert current.graph == _graph()
     assert store.get_workflow("wf").info.display_name == "Replacement"
-
-
-async def test_nested_validation_retries_after_root_storage_change(
-    store: WorkflowStoreService,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    store.create_workflow(WorkflowCreate(name="wf"))
-    snapshots = NestedWorkflowSnapshotService(lambda: store)
-    monkeypatch.setattr(
-        snapshots,
-        "_validate",
-        lambda _store, _workflow_id, graph: _default_validation(graph),
-    )
-    opened = snapshots.open_snapshot(
-        NestedSnapshotOwner(
-            kind="root",
-            canvas_id="workflow:wf",
-            workflow_id="wf",
-        ),
-        "nested-node",
-        _graph(),
-    )
-    first_validation_entered = threading.Event()
-    release_first_validation = threading.Event()
-    validation_storage_paths: list[Path] = []
-    replacement_storage = tmp_path / "replacement-storage"
-
-    def controlled_validate(
-        current_store: WorkflowStoreService,
-        workflow_id: str | None,
-        graph: GraphState,
-    ) -> ValidationResult:
-        assert workflow_id is not None
-        validation_storage_paths.append(current_store.get_storage_path(workflow_id))
-        if len(validation_storage_paths) == 1:
-            first_validation_entered.set()
-            assert release_first_validation.wait(timeout=2)
-        return _default_validation(graph)
-
-    monkeypatch.setattr(snapshots, "_validate", controlled_validate)
-    put = asyncio.create_task(
-        snapshots.put_snapshot_async(
-            opened.session_id,
-            expected_revision=0,
-            graph=_graph("updated"),
-        )
-    )
-    try:
-        await _wait_for_thread_event(first_validation_entered)
-        await asyncio.to_thread(
-            store.patch_workflow,
-            "wf",
-            WorkflowUpdate(action="update", storage_path=str(replacement_storage)),
-        )
-    finally:
-        release_first_validation.set()
-
-    accepted = await put
-    assert accepted.snapshot_revision == 1
-    assert validation_storage_paths == [
-        store.storage_base_dir / "wf",
-        replacement_storage,
-    ]

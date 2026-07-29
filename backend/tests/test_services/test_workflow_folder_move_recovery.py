@@ -21,7 +21,6 @@ def _store(tmp_path: Path) -> WorkflowStoreService:
     return WorkflowStoreService(
         root_dir=tmp_path / "workflows",
         tool_registry=ToolRegistryService(),
-        storage_base_dir=tmp_path / "outputs",
     )
 
 
@@ -54,10 +53,10 @@ def _seed_workflow(
     revision: int,
 ) -> tuple[int, bytes]:
     created = store.create_workflow(WorkflowCreate(name=workflow_id))
-    storage_path = Path(created.storage_path or "")
-    storage_path.mkdir(parents=True)
+    results_path = store.get_storage_path(created.id or created.name)
+    results_path.mkdir(parents=True)
     payload = f"result for {workflow_id}".encode()
-    (storage_path / "result.bin").write_bytes(payload)
+    (results_path / "result.bin").write_bytes(payload)
     draft_path = _draft_json(store, workflow_id)
     draft_path.parent.mkdir(parents=True, exist_ok=True)
     draft_path.write_text(
@@ -84,19 +83,18 @@ def _assert_recovered_workflow(
 ) -> None:
     assert not store.workflow_dir(old_id).exists()
     workflow = store.get_workflow(new_id)
-    expected_storage = store.storage_base_dir.joinpath(*new_id.split("/"))
+    expected_results = store.get_storage_path(new_id)
     assert workflow.info.id == new_id
-    assert Path(workflow.info.storage_path or "") == expected_storage
-    assert (expected_storage / "result.bin").read_bytes() == payload
-    assert not store.storage_base_dir.joinpath(*old_id.split("/")).exists()
+    assert Path(workflow.info.results_path) == expected_results
+    assert (expected_results / "result.bin").read_bytes() == payload
 
     draft = json.loads(_draft_json(store, new_id).read_text(encoding="utf-8"))
     assert draft == _draft_payload(new_id, revision)
     assert not _draft_json(store, old_id).exists()
 
     raw = json.loads(_workflow_json(store, new_id).read_text(encoding="utf-8"))
-    assert raw["metadata"]["storage_path"] == str(expected_storage)
-    assert raw["graph"]["config"]["storage_path"] == "./bif_data"
+    assert "storage_path" not in raw["metadata"]
+    assert "storage_path" not in raw["graph"]["config"]
 
 
 def _finish_recovery_twice(
@@ -188,7 +186,7 @@ def test_folder_rename_recovers_after_whole_tree_rename_before_artifact_rewrite(
     )
 
 
-def test_folder_rename_recovers_second_workflow_after_storage_moved(
+def test_folder_rename_recovers_second_workflow_after_first_document_rewrite(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -201,17 +199,16 @@ def test_folder_rename_recovers_second_workflow_after_storage_moved(
     generations_before = _generation_snapshot(store, all_ids)
     operation_id = store.prepare_folder_rename_move("project", "archive")
     assert operation_id is not None
-    original_move_storage = store._move_managed_storage
+    original_rewrite = store._rewrite_moved_workflow_metadata
 
-    def fail_after_second_storage(old_id: str, new_id: str) -> str:
-        moved_path = original_move_storage(old_id, new_id)
+    def fail_after_first_rewrite(old_id: str, new_id: str) -> None:
+        original_rewrite(old_id, new_id)
         if old_id == "project/b":
-            raise OSError("injected failure after second managed-storage rename")
-        return moved_path
+            raise OSError("injected failure after first document rewrite")
 
     with monkeypatch.context() as patch:
-        patch.setattr(store, "_move_managed_storage", fail_after_second_storage)
-        with pytest.raises(OSError, match="second managed-storage rename"):
+        patch.setattr(store, "_rewrite_moved_workflow_metadata", fail_after_first_rewrite)
+        with pytest.raises(OSError, match="first document rewrite"):
             store.rename_folder(
                 "project",
                 "archive",
@@ -222,9 +219,7 @@ def test_folder_rename_recovers_second_workflow_after_storage_moved(
         json.loads(_draft_json(store, "archive/b").read_text(encoding="utf-8"))["workflow_id"]
         == "archive/b"
     )
-    assert (store.storage_base_dir / "archive" / "b" / "result.bin").exists()
-    second_raw = json.loads(_workflow_json(store, "archive/b").read_text(encoding="utf-8"))
-    assert second_raw["metadata"]["storage_path"] == str(store.storage_base_dir / "project" / "b")
+    assert (store.get_storage_path("archive/b") / "result.bin").exists()
     generations_after_failure = _generation_snapshot(store, all_ids)
     assert generations_after_failure == {
         "project/a": first_generation + 1,
