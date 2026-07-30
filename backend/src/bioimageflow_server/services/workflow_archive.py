@@ -17,7 +17,11 @@ def safe_workflow_export_stem(workflow_id: str) -> str:
     if "/" not in workflow_id:
         return workflow_id
     digest = hashlib.sha256(workflow_id.encode("utf-8")).hexdigest()[:8]
-    return f"{workflow_id.replace('/', '--')}-{digest}"
+    readable = workflow_id.replace("/", "--")
+    readable_bytes = readable.encode("utf-8")
+    if len(readable_bytes) > 120:
+        readable = readable_bytes[:120].decode("utf-8", errors="ignore").rstrip(" -_")
+    return f"{readable}-{digest}"
 
 
 @contextmanager

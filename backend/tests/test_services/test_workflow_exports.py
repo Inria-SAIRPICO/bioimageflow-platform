@@ -186,6 +186,21 @@ def test_safe_export_stem_preserves_flat_and_disambiguates_nested_ids() -> None:
     assert safe_workflow_export_stem("a/b") != safe_workflow_export_stem("a--b/c")
 
 
+def test_safe_export_stem_caps_long_nested_ids_without_losing_identity() -> None:
+    first = "/".join(f"segment-{index:02d}-alpha" for index in range(30))
+    second = f"{first}-different"
+
+    first_stem = safe_workflow_export_stem(first)
+    second_stem = safe_workflow_export_stem(second)
+
+    assert len(first_stem.encode("utf-8")) <= 129
+    assert len(f"{first_stem}.bioimageflow.zip".encode("utf-8")) < 255
+    assert first_stem != second_stem
+    assert first_stem.endswith(
+        hashlib.sha256(first.encode("utf-8")).hexdigest()[:8]
+    )
+
+
 def test_latest_results_zip_contains_copies_and_provenance(
     store: _Store,
     monkeypatch: pytest.MonkeyPatch,
