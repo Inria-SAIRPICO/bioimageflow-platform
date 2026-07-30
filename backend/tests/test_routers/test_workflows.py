@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
+import json
 from pathlib import Path
 from typing import Any
+import zipfile
 
 import httpx
 import pytest
@@ -19,6 +21,11 @@ from bioimageflow_server.services.nested_workflow_snapshot import (
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_exports import (
+    FolderExport,
+    PreparedDownload,
+    WorkflowExportError,
+)
 from tests.graph_factory import graph_document
 
 pytestmark = pytest.mark.anyio
@@ -114,6 +121,7 @@ async def _client(
     is_running: bool = False,
     archive_adapter: _FakeArchiveAdapter | None = None,
     connection_manager: _ConnectionManager | None = None,
+    deployment_mode: str = "desktop",
 ) -> AsyncIterator[httpx.AsyncClient]:
     registry = ToolRegistryService()
     store = WorkflowStoreService(
@@ -128,6 +136,7 @@ async def _client(
             execution_manager=_ExecutionManager(is_running=is_running),
             storage_path=tmp_path / "bif_data",
             connection_manager=connection_manager,  # type: ignore[arg-type]
+            deployment_mode=deployment_mode,
         )
     )
     transport = httpx.ASGITransport(app=app)
@@ -937,6 +946,175 @@ async def test_export_unknown_workflow_returns_404(
     assert response.status_code == 404
 
 
+async def test_export_nested_workflow_uses_safe_flat_filename(tmp_path: Path) -> None:
+    archive_adapter = _FakeArchiveAdapter()
+    async for client in _client(tmp_path, archive_adapter=archive_adapter):
+        assert (
+            await client.post(
+                "/api/v1/workflows",
+                json={"name": "folder/wf", "display_name": "Workflow"},
+            )
+        ).status_code == 201
+
+        response = await client.post("/api/v1/workflows/folder/wf/export")
+
+    assert response.status_code == 200
+    disposition = response.headers["content-disposition"]
+    assert disposition.startswith('attachment; filename="folder--wf-')
+    assert disposition.endswith('.bioimageflow.zip"')
+    assert archive_adapter.export_calls[0][1].parent.name
+    assert "/" not in archive_adapter.export_calls[0][1].name
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "service_method", "filename"),
+    [
+        (
+            "latest-results",
+            "prepare_latest_results",
+            "wf-latest-results.zip",
+        ),
+        (
+            "workflow-run-bundle",
+            "prepare_workflow_run_bundle",
+            "wf-workflow-and-results.zip",
+        ),
+    ],
+)
+async def test_results_download_streams_and_cleans_temporary_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+    service_method: str,
+    filename: str,
+) -> None:
+    cleanup_root = tmp_path / f"temporary-{endpoint}"
+    cleanup_root.mkdir()
+    archive_path = cleanup_root / filename
+    archive_path.write_bytes(b"download")
+
+    def prepare(service: Any, workflow_id: str) -> PreparedDownload:
+        del service
+        assert workflow_id == "wf"
+        return PreparedDownload(
+            path=archive_path,
+            filename=filename,
+            cleanup_root=cleanup_root,
+        )
+
+    monkeypatch.setattr(
+        f"bioimageflow_server.routers.workflows.WorkflowExportService.{service_method}",
+        prepare,
+    )
+    async for client in _client(tmp_path):
+        response = await client.post(f"/api/v1/workflows/wf/exports/{endpoint}")
+
+    assert response.status_code == 200
+    assert response.content == b"download"
+    assert response.headers["content-type"].startswith("application/zip")
+    assert filename in response.headers["content-disposition"]
+    assert not cleanup_root.exists()
+
+
+async def test_results_download_unknown_workflow_returns_stable_404(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post(
+        "/api/v1/workflows/missing/exports/latest-results"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"] == "workflow_not_found"
+
+
+async def test_results_download_maps_stable_export_conflict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable(service: Any, workflow_id: str) -> PreparedDownload:
+        del service, workflow_id
+        raise WorkflowExportError(
+            "results_not_available",
+            "No results",
+            status_code=409,
+        )
+
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.workflows.WorkflowExportService.prepare_latest_results",
+        unavailable,
+    )
+    async for client in _client(tmp_path):
+        response = await client.post(
+            "/api/v1/workflows/wf/exports/latest-results"
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "results_not_available",
+        "detail": "No results",
+        "field": None,
+    }
+
+
+async def test_desktop_results_folder_export_response(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "chosen" / "wf-latest-results"
+
+    def export(
+        service: Any,
+        workflow_id: str,
+        *,
+        destination_parent: str,
+        replace: bool,
+    ) -> FolderExport:
+        del service
+        assert workflow_id == "wf"
+        assert destination_parent == str(destination.parent)
+        assert replace is True
+        return FolderExport(destination=destination, exported_items=5)
+
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.workflows.WorkflowExportService.export_latest_results_folder",
+        export,
+    )
+    async for client in _client(tmp_path):
+        response = await client.post(
+            "/api/v1/workflows/wf/exports/latest-results-folder",
+            json={
+                "destination_parent": str(destination.parent),
+                "replace": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "destination": str(destination),
+        "exported_items": 5,
+    }
+
+
+async def test_results_folder_export_is_always_forbidden_in_webapp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export = MagicMock()
+    monkeypatch.setattr(
+        "bioimageflow_server.routers.workflows.WorkflowExportService.export_latest_results_folder",
+        export,
+    )
+    async for client in _client(tmp_path, deployment_mode="webapp"):
+        response = await client.post(
+            "/api/v1/workflows/wf/exports/latest-results-folder",
+            json={"destination_parent": str(tmp_path), "replace": False},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"] == "desktop_export_required"
+    export.assert_not_called()
+
+
 async def test_import_workflow_zip_upload_success(tmp_path: Path) -> None:
     archive_adapter = _FakeArchiveAdapter(
         library=_library_graph(
@@ -980,6 +1158,35 @@ async def test_import_workflow_rejects_json_upload(client: httpx.AsyncClient) ->
 
     assert response.status_code == 415
     assert response.json()["detail"] == "Workflow imports must be .bioimageflow.zip archives"
+
+
+async def test_import_rejects_renamed_results_bundle_before_archive_adapter(
+    tmp_path: Path,
+) -> None:
+    bundle_path = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(bundle_path, "w") as archive:
+        archive.writestr(
+            "bioimageflow-results-bundle.json",
+            json.dumps({"schema": "bioimageflow-results-bundle/v1"}),
+        )
+        archive.writestr("workflow/wf.bioimageflow.zip", b"nested")
+    archive_adapter = _FakeArchiveAdapter()
+    async for client in _client(tmp_path, archive_adapter=archive_adapter):
+        response = await client.post(
+            "/api/v1/workflows/import",
+            files={
+                "file": (
+                    "renamed.bioimageflow.zip",
+                    bundle_path.read_bytes(),
+                    "application/zip",
+                )
+            },
+        )
+
+    assert response.status_code == 415
+    assert response.json()["error"] == "results_bundle_not_importable"
+    assert "export artifacts" in response.json()["detail"]
+    assert archive_adapter.import_payload is None
 
 
 async def test_import_workflow_archive_conflict_and_name_override(

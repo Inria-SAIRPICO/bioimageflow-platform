@@ -8,6 +8,8 @@ import os
 import shutil
 import tempfile
 import threading
+import zipfile
+from io import BytesIO
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -71,11 +73,18 @@ from bioimageflow_server.services.workflow_format import (
     workflow_format_error,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
-from bioimageflow_server.services.workflow_archive import BioImageFlowWorkflowArchiveAdapter
+from bioimageflow_server.services.workflow_archive import (
+    BioImageFlowWorkflowArchiveAdapter,
+    safe_workflow_export_stem,
+)
 
 
 class WorkflowArchiveError(ValueError):
     """Raised when a workflow archive cannot be imported or exported."""
+
+
+class WorkflowResultsBundleImportError(WorkflowArchiveError):
+    """Raised when a results bundle is passed to the portable workflow importer."""
 
 
 class WorkflowGenerationChangedError(FileNotFoundError):
@@ -1515,6 +1524,7 @@ class WorkflowStoreService:
             suffix += 1
         return candidate
 
+    @_identity_locked
     def export_workflow_archive(self, name: str) -> tuple[str, bytes]:
         self._existing_path_for(name)
         document = WorkflowDocument.model_validate(self._read_raw(name))
@@ -1538,7 +1548,7 @@ class WorkflowStoreService:
             if sources
             else translation.lib_dict
         )
-        filename = f"{self._validate_name(name)}.bioimageflow.zip"
+        filename = f"{safe_workflow_export_stem(self._validate_name(name))}.bioimageflow.zip"
         with tempfile.TemporaryDirectory() as tmp_dir:
             archive_path = Path(tmp_dir) / filename
             try:
@@ -1567,6 +1577,18 @@ class WorkflowStoreService:
         filename: str | None = None,
         name_override: str | None = None,
     ) -> WorkflowImportResponse:
+        try:
+            with zipfile.ZipFile(BytesIO(raw_archive)) as archive:
+                is_results_bundle = (
+                    "bioimageflow-results-bundle.json" in archive.namelist()
+                )
+        except zipfile.BadZipFile:
+            is_results_bundle = False
+        if is_results_bundle:
+            raise WorkflowResultsBundleImportError(
+                "Workflow-and-results bundles are export artifacts and cannot be imported "
+                "as portable workflow archives. Export the workflow-only archive instead."
+            )
         imported_name = self._validate_name(
             name_override or self._archive_name_from_filename(filename)
         )

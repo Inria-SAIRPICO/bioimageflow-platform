@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import zipfile
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,10 @@ from bioimageflow_server.models.workflow import (
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
 from bioimageflow_server.services.workflow_artifacts import OwnedWorkflowSources
-from bioimageflow_server.services.workflow_store import WorkflowStoreService
+from bioimageflow_server.services.workflow_store import (
+    WorkflowResultsBundleImportError,
+    WorkflowStoreService,
+)
 
 
 def _store(tmp_path: Path) -> WorkflowStoreService:
@@ -331,6 +336,44 @@ def test_portable_export_is_generated_from_the_accepted_graph(tmp_path: Path) ->
     assert adapter.exported is not None
     assert adapter.exported["schema_version"] == 1
     assert "platform_document_version" not in adapter.exported
+
+
+def test_nested_portable_export_uses_one_safe_archive_filename(tmp_path: Path) -> None:
+    adapter = _ArchiveAdapter()
+    store = WorkflowStoreService(
+        tmp_path / "workflows",
+        ToolRegistryService(),
+        archive_adapter=adapter,
+    )
+    store.create_workflow(WorkflowCreate(name="folder/demo"))
+
+    filename, content = store.export_workflow_archive("folder/demo")
+
+    assert filename.startswith("folder--demo-")
+    assert filename.endswith(".bioimageflow.zip")
+    assert "/" not in filename
+    assert content == b"archive"
+
+
+def test_results_bundle_is_rejected_before_archive_adapter_read(tmp_path: Path) -> None:
+    adapter = _ArchiveAdapter(imported=None)
+    store = WorkflowStoreService(
+        tmp_path / "workflows",
+        ToolRegistryService(),
+        archive_adapter=adapter,
+    )
+    payload = BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr("bioimageflow-results-bundle.json", "{}")
+        archive.writestr("workflow/demo.bioimageflow.zip", b"nested")
+
+    with pytest.raises(WorkflowResultsBundleImportError, match="export artifacts"):
+        store.import_workflow_archive(
+            payload.getvalue(),
+            filename="renamed.bioimageflow.zip",
+        )
+
+    assert not (tmp_path / "workflows" / "renamed").exists()
 
 
 def test_archive_import_persists_canonical_graph_only(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Never
@@ -11,6 +12,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse, Response
+from starlette.background import BackgroundTask
+from starlette.responses import FileResponse
 
 from bioimageflow_server.models.workflow import (
     WorkflowCreate,
@@ -25,6 +28,10 @@ from bioimageflow_server.models.workflow import (
     WorkflowImportResponse,
     WorkflowSaveBody,
     WorkflowUpdate,
+)
+from bioimageflow_server.models.workflow_export import (
+    WorkflowResultsFolderExportRequest,
+    WorkflowResultsFolderExportResponse,
 )
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.routers.filesystem import reveal_in_file_browser
@@ -46,6 +53,12 @@ from bioimageflow_server.services.workflow_store import (
     WorkflowIdentityMovePlan,
     WorkflowMoveRecoveryError,
     WorkflowStoreService,
+    WorkflowResultsBundleImportError,
+)
+from bioimageflow_server.services.workflow_exports import (
+    PreparedDownload,
+    WorkflowExportError,
+    WorkflowExportService,
 )
 from bioimageflow_server.services.workflow_sources import (
     WorkflowSourceConflict,
@@ -230,6 +243,33 @@ def _raise_move_recovery_required(exc: WorkflowMoveRecoveryError) -> Never:
             "detail": str(exc),
         },
     ) from exc
+
+
+def _raise_export_error(exc: WorkflowExportError) -> Never:
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail={"error": exc.code, "detail": exc.detail},
+    ) from exc
+
+
+def _export_not_found(exc: FileNotFoundError) -> Never:
+    raise HTTPException(
+        status_code=404,
+        detail={"error": "workflow_not_found", "detail": "Workflow not found"},
+    ) from exc
+
+
+def _download_response(prepared: PreparedDownload) -> FileResponse:
+    return FileResponse(
+        prepared.path,
+        media_type="application/zip",
+        filename=prepared.filename,
+        background=BackgroundTask(
+            shutil.rmtree,
+            prepared.cleanup_root,
+            ignore_errors=True,
+        ),
+    )
 
 
 @router.get("", response_model=list[WorkflowInfo])
@@ -506,6 +546,95 @@ async def export_workflow(
     )
 
 
+@router.post("/{name:path}/exports/latest-results")
+async def export_latest_workflow_results(
+    name: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> FileResponse:
+    try:
+        prepared = await asyncio.to_thread(
+            WorkflowExportService(store).prepare_latest_results,
+            name,
+        )
+    except FileNotFoundError as exc:
+        _export_not_found(exc)
+    except WorkflowExportError as exc:
+        _raise_export_error(exc)
+    except OSError as exc:
+        logger.error("Could not export latest results for %s", name, exc_info=exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "results_export_failed", "detail": str(exc)},
+        ) from exc
+    return _download_response(prepared)
+
+
+@router.post(
+    "/{name:path}/exports/latest-results-folder",
+    response_model=WorkflowResultsFolderExportResponse,
+)
+async def export_latest_workflow_results_folder(
+    name: str,
+    body: WorkflowResultsFolderExportRequest,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+    settings: Settings | None = Depends(get_settings),
+) -> WorkflowResultsFolderExportResponse:
+    if settings is not None and settings.deployment_mode != "desktop":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "desktop_export_required",
+                "detail": "Folder export is available only in desktop mode",
+            },
+        )
+    try:
+        exported = await asyncio.to_thread(
+            WorkflowExportService(store).export_latest_results_folder,
+            name,
+            destination_parent=body.destination_parent,
+            replace=body.replace,
+        )
+    except FileNotFoundError as exc:
+        _export_not_found(exc)
+    except WorkflowExportError as exc:
+        _raise_export_error(exc)
+    except OSError as exc:
+        logger.error("Could not export latest results folder for %s", name, exc_info=exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "results_export_failed", "detail": str(exc)},
+        ) from exc
+    return WorkflowResultsFolderExportResponse(
+        destination=str(exported.destination),
+        exported_items=exported.exported_items,
+    )
+
+
+@router.post("/{name:path}/exports/workflow-run-bundle")
+async def export_workflow_run_bundle(
+    name: str,
+    store: WorkflowStoreService = Depends(get_workflow_store),
+) -> FileResponse:
+    try:
+        prepared = await asyncio.to_thread(
+            WorkflowExportService(store).prepare_workflow_run_bundle,
+            name,
+        )
+    except FileNotFoundError as exc:
+        _export_not_found(exc)
+    except WorkflowExportError as exc:
+        _raise_export_error(exc)
+    except WorkflowArchiveError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        logger.error("Could not export workflow results bundle for %s", name, exc_info=exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "results_export_failed", "detail": str(exc)},
+        ) from exc
+    return _download_response(prepared)
+
+
 @router.post(
     "/{name:path}/source-update/preview",
     response_model=WorkflowSourcePreview,
@@ -607,6 +736,14 @@ async def import_workflow(
             identity_generation=response.info.identity_generation,
         )
         return response
+    except WorkflowResultsBundleImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={
+                "error": "results_bundle_not_importable",
+                "detail": str(exc),
+            },
+        ) from exc
     except WorkflowArchiveError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except FileExistsError as exc:

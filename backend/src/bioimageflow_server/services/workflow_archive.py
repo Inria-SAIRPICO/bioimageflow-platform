@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
 from bioimageflow.workflow import Workflow as BioImageFlowWorkflow
+
+
+def safe_workflow_export_stem(workflow_id: str) -> str:
+    """Return a readable collision-resistant filename stem for one workflow ID."""
+
+    if "/" not in workflow_id:
+        return workflow_id
+    digest = hashlib.sha256(workflow_id.encode("utf-8")).hexdigest()[:8]
+    return f"{workflow_id.replace('/', '--')}-{digest}"
 
 
 @contextmanager
