@@ -75,6 +75,10 @@ class TestSettings:
         with pytest.raises(ValidationError):
             Settings(deployment_mode="desktop", output_data_folder="/tmp/x")
 
+    def test_latest_output_materialization_is_not_user_configurable(self):
+        with pytest.raises(ValidationError):
+            Settings(deployment_mode="desktop", latest_output_mode="copy")
+
     def test_invalid_deployment_mode(self):
         with pytest.raises(ValidationError):
             Settings.model_validate({"deployment_mode": "cloud"})

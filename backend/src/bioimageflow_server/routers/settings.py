@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.exceptions import RequestValidationError
 from pydantic import ConfigDict, ValidationError
-from pydantic import BaseModel
 
 from bioimageflow_server.models.errors import mark_exception_logged
 from bioimageflow_server.models.settings import OMEROInstanceResponse, Settings
@@ -35,28 +34,18 @@ def get_output_view_probe_path() -> Path:
     return Path.cwd()
 
 
-class OutputViewCapabilityResponse(BaseModel):
-    """Filesystem support for one latest-output materialization mode."""
-
-    mode: str
-    supported: bool
-    code: str
-    detail: str | None = None
-
-
 class SettingsResponse(Settings):
     """``GET``/``PATCH`` /settings response wrapper.
 
-    Adds the resolved tool-store path and output-view filesystem capabilities.
+    Adds the resolved tool-store path and effective latest-output view.
     """
 
     model_config = ConfigDict(extra="allow")
 
     omero_instances: list[OMEROInstanceResponse] = []  # pyright: ignore[reportIncompatibleVariableOverride]
     resolved_tool_store_path: str
-    latest_output_effective_mode: str
+    latest_output_effective_mode: Literal["symlink", "pointer", "unavailable"]
     latest_output_warning: str | None = None
-    latest_output_capabilities: dict[str, OutputViewCapabilityResponse]
 
 
 def _wrap(store: SettingsStore, output_view_probe_path: Path) -> SettingsResponse:
@@ -74,23 +63,18 @@ def _wrap(store: SettingsStore, output_view_probe_path: Path) -> SettingsRespons
     try:
         resolved_mode = resolve_latest_output_mode(
             output_view_probe_path,
-            settings.latest_output_mode,
             capabilities=capabilities,
         )
         effective_mode = resolved_mode.effective
         output_warning = resolved_mode.warning
     except OSError as exc:
-        effective_mode = settings.latest_output_mode
+        effective_mode = "unavailable"
         output_warning = str(exc)
     return SettingsResponse(
         **payload,
         resolved_tool_store_path=str(_resolved_tool_store_path(store)),
         latest_output_effective_mode=effective_mode,
         latest_output_warning=output_warning,
-        latest_output_capabilities={
-            mode: OutputViewCapabilityResponse(**capability.__dict__)
-            for mode, capability in capabilities.items()
-        },
     )
 
 

@@ -864,6 +864,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/{name}/exports/latest-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Latest Workflow Results */
+        post: operations["export_latest_workflow_results_api_v1_workflows__name__exports_latest_results_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/exports/latest-results-folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Latest Workflow Results Folder */
+        post: operations["export_latest_workflow_results_folder_api_v1_workflows__name__exports_latest_results_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workflows/{name}/exports/workflow-run-bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Workflow Run Bundle */
+        post: operations["export_workflow_run_bundle_api_v1_workflows__name__exports_workflow_run_bundle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workflows/{name}/source-update/preview": {
         parameters: {
             query?: never;
@@ -2260,20 +2311,6 @@ export interface components {
             /** Password Stored */
             password_stored: boolean;
         };
-        /**
-         * OutputViewCapabilityResponse
-         * @description Filesystem support for one latest-output materialization mode.
-         */
-        OutputViewCapabilityResponse: {
-            /** Mode */
-            mode: string;
-            /** Supported */
-            supported: boolean;
-            /** Code */
-            code: string;
-            /** Detail */
-            detail?: string | null;
-        };
         /** OutputViewConfig */
         OutputViewConfig: {
             /**
@@ -2431,7 +2468,7 @@ export interface components {
          * SettingsResponse
          * @description ``GET``/``PATCH`` /settings response wrapper.
          *
-         *     Adds the resolved tool-store path and output-view filesystem capabilities.
+         *     Adds the resolved tool-store path and effective latest-output view.
          */
         SettingsResponse: {
             /**
@@ -2450,12 +2487,6 @@ export interface components {
              * @default []
              */
             omero_instances: components["schemas"]["OMEROInstanceResponse"][];
-            /**
-             * Latest Output Mode
-             * @default auto
-             * @enum {string}
-             */
-            latest_output_mode: "auto" | "pointer" | "symlink" | "copy";
             /**
              * Tool Store Path
              * @default ~/.bioimageflow/tool_packages/
@@ -2508,14 +2539,13 @@ export interface components {
             workspaces_root?: string | null;
             /** Resolved Tool Store Path */
             resolved_tool_store_path: string;
-            /** Latest Output Effective Mode */
-            latest_output_effective_mode: string;
+            /**
+             * Latest Output Effective Mode
+             * @enum {string}
+             */
+            latest_output_effective_mode: "symlink" | "pointer" | "unavailable";
             /** Latest Output Warning */
             latest_output_warning?: string | null;
-            /** Latest Output Capabilities */
-            latest_output_capabilities: {
-                [key: string]: components["schemas"]["OutputViewCapabilityResponse"];
-            };
         } & {
             [key: string]: unknown;
         };
@@ -3247,6 +3277,29 @@ export interface components {
             column: string;
         };
         /**
+         * WorkflowResultsFolderExportRequest
+         * @description Destination selected for a desktop results-folder export.
+         */
+        WorkflowResultsFolderExportRequest: {
+            /** Destination Parent */
+            destination_parent: string;
+            /**
+             * Replace
+             * @default false
+             */
+            replace: boolean;
+        };
+        /**
+         * WorkflowResultsFolderExportResponse
+         * @description Materialized desktop results-folder export.
+         */
+        WorkflowResultsFolderExportResponse: {
+            /** Destination */
+            destination: string;
+            /** Exported Items */
+            exported_items: number;
+        };
+        /**
          * WorkflowSaveBody
          * @description Request body for PUT /workflows/{name}.
          */
@@ -3435,7 +3488,6 @@ export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
 export type NodeStatus = components['schemas']['NodeStatus'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
-export type OutputViewCapabilityResponse = components['schemas']['OutputViewCapabilityResponse'];
 export type OutputViewConfig = components['schemas']['OutputViewConfig'];
 export type PackageImportResponse = components['schemas']['PackageImportResponse'];
 export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
@@ -3491,6 +3543,8 @@ export type WorkflowInterface = components['schemas']['WorkflowInterface'];
 export type WorkflowNodeState = components['schemas']['WorkflowNodeState'];
 export type WorkflowOutput = components['schemas']['WorkflowOutput'];
 export type WorkflowOutputSource = components['schemas']['WorkflowOutputSource'];
+export type WorkflowResultsFolderExportRequest = components['schemas']['WorkflowResultsFolderExportRequest'];
+export type WorkflowResultsFolderExportResponse = components['schemas']['WorkflowResultsFolderExportResponse'];
 export type WorkflowSaveBody = components['schemas']['WorkflowSaveBody'];
 export type WorkflowSourceApplyRequest = components['schemas']['WorkflowSourceApplyRequest'];
 export type WorkflowSourceApplyResponse = components['schemas']['WorkflowSourceApplyResponse'];
@@ -5484,6 +5538,103 @@ export interface operations {
         };
     };
     export_workflow_api_v1_workflows__name__export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_latest_workflow_results_api_v1_workflows__name__exports_latest_results_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_latest_workflow_results_folder_api_v1_workflows__name__exports_latest_results_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowResultsFolderExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowResultsFolderExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_workflow_run_bundle_api_v1_workflows__name__exports_workflow_run_bundle_post: {
         parameters: {
             query?: never;
             header?: never;

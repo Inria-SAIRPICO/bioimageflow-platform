@@ -62,7 +62,6 @@ const baseSettings = {
   external_editor: null,
   napari_env_path: null,
   omero_instances: [],
-  latest_output_mode: 'auto' as const,
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
@@ -76,7 +75,6 @@ const baseSettings = {
   resolved_tool_store_path: '/Users/me/.bioimageflow/tool_packages',
   latest_output_effective_mode: 'symlink',
   latest_output_warning: null,
-  latest_output_capabilities: {},
 }
 
 const pinia = createPinia()

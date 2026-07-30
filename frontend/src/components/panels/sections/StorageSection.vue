@@ -2,7 +2,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
-import Select from 'primevue/select'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import type { SettingsResponse, WorkspaceInfo } from '@/api/types'
@@ -30,20 +29,8 @@ const props = defineProps<{ modelValue: StorageSettings }>()
 const workflowStore = useWorkflowStore()
 const emit = defineEmits<{
   (e: 'update:field', payload: { field: keyof StorageSettings; value: unknown }): void
-  (e: 'refresh-output-capabilities'): void
+  (e: 'refresh-output-view'): void
 }>()
-
-const outputModeOptions = [
-  { label: 'Automatic (symlink, then pointer)', value: 'auto' },
-  { label: 'Portable pointer files', value: 'pointer' },
-  { label: 'Symbolic links', value: 'symlink' },
-  { label: 'Copy files', value: 'copy' },
-]
-const selectedOutputCapability = computed(() => {
-  const selected = props.modelValue.latest_output_mode
-  if (selected === 'auto') return props.modelValue.latest_output_capabilities?.symlink
-  return props.modelValue.latest_output_capabilities?.[selected]
-})
 
 let toast: ReturnType<typeof useToast> | null = null
 try {
@@ -294,28 +281,26 @@ async function changeWorkspacePath() {
     </div>
 
     <div class="field latest-output-field">
-      <label class="field-label" for="latest-output-mode">Latest output view</label>
+      <div class="field-label">Latest output view</div>
       <div class="field-row">
-        <Select
-          id="latest-output-mode"
-          :model-value="modelValue.latest_output_mode"
-          :options="outputModeOptions"
-          option-label="label"
-          option-value="value"
-          data-testid="latest-output-mode"
-          class="grow"
-          @update:model-value="emit('update:field', { field: 'latest_output_mode', value: $event })"
-        />
+        <span data-testid="latest-output-effective-mode">
+          {{ modelValue.latest_output_effective_mode === 'symlink'
+            ? 'Symbolic links'
+            : modelValue.latest_output_effective_mode === 'pointer'
+              ? 'Portable pointer files'
+              : 'Unavailable' }}
+        </span>
         <Button
           label="Retest"
           severity="secondary"
           data-testid="latest-output-retest"
-          @click="emit('refresh-output-capabilities')"
+          @click="emit('refresh-output-view')"
         />
       </div>
-      <p class="help-text" data-testid="latest-output-effective-mode">
-        Effective mode: <code>{{ modelValue.latest_output_effective_mode }}</code>.
+      <p class="help-text">
+        The platform uses lightweight links when possible and portable pointers otherwise.
         Latest means the latest successful result for each node, not necessarily one workflow execution snapshot.
+        Use Export when you need independent file copies.
       </p>
       <p
         v-if="modelValue.latest_output_warning"
@@ -323,21 +308,6 @@ async function changeWorkspacePath() {
         data-testid="latest-output-warning"
       >
         {{ modelValue.latest_output_warning }}
-      </p>
-      <p
-        v-else-if="selectedOutputCapability && !selectedOutputCapability.supported"
-        class="output-warning"
-      >
-        This mode is unavailable: {{ selectedOutputCapability.code }}.
-      </p>
-      <p v-if="modelValue.latest_output_mode === 'pointer'" class="help-text">
-        Pointer files use little space and work without link permissions, but image applications cannot open them directly.
-      </p>
-      <p v-if="modelValue.latest_output_mode === 'symlink'" class="help-text">
-        Windows may require Developer Mode or symbolic-link privileges for this mode.
-      </p>
-      <p v-if="modelValue.latest_output_mode === 'copy'" class="output-warning">
-        Copies open everywhere but can use roughly twice the asset storage space.
       </p>
     </div>
 

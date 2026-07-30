@@ -34,7 +34,6 @@ const settings = {
   external_editor: null,
   napari_env_path: null,
   omero_instances: [],
-  latest_output_mode: 'auto' as const,
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
   execution_engine: 'sequential' as const,
@@ -45,9 +44,8 @@ const settings = {
   datasets_root: null,
   max_upload_size: 2147483648,
   resolved_tool_store_path: '/tmp/tools',
-  latest_output_effective_mode: 'symlink',
+  latest_output_effective_mode: 'symlink' as const,
   latest_output_warning: null,
-  latest_output_capabilities: {},
   workspace_path: '/tmp/workspace',
 }
 
@@ -93,6 +91,10 @@ describe('StorageSection demo workflows', () => {
 
     await flushPromises()
 
+    expect(wrapper.find('[data-testid="latest-output-mode"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="latest-output-effective-mode"]').text())
+      .toContain('Symbolic links')
+    expect(wrapper.text()).toContain('Use Export when you need independent file copies')
     expect(wrapper.get('[data-testid="demo-workflows-status"]').text()).toContain(
       'Partially installed',
     )

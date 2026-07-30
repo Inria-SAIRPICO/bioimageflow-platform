@@ -436,7 +436,7 @@ class ExecutionManager:
                 )
 
         workflow = validation_output.compilation.workflow
-        # The host setting is authoritative for disposable latest outputs.
+        # The platform owns the disposable latest-output projection.
         workflow.output_view = None
         self._workflow = workflow
         targets: tuple[Any, ...] = ()
@@ -471,7 +471,6 @@ class ExecutionManager:
                 finally:
                     self._materialize_latest_outputs(
                         workflow,
-                        live_settings,
                         run_storage_path,
                         context,
                     )
@@ -490,7 +489,6 @@ class ExecutionManager:
     def _materialize_latest_outputs(
         self,
         workflow: Any,
-        settings: Settings,
         storage_path: Path | None,
         context: ExecutionContext,
     ) -> None:
@@ -502,7 +500,6 @@ class ExecutionManager:
         try:
             resolved = materialize_latest_outputs(
                 workflow,
-                settings,
                 storage_path=storage_path,
             )
             if resolved.warning:

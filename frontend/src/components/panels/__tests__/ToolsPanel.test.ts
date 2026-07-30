@@ -143,7 +143,6 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     external_editor: null,
     napari_env_path: null,
     omero_instances: [],
-    latest_output_mode: 'auto',
     tool_store_path: '~/.bioimageflow/tool_packages/',
     update_mode: 'auto',
     execution_engine: 'sequential',
@@ -156,7 +155,6 @@ function makeSettings(overrides: Partial<SettingsResponse> = {}): SettingsRespon
     resolved_tool_store_path: '~/.bioimageflow/tool_packages/',
     latest_output_effective_mode: 'symlink',
     latest_output_warning: null,
-    latest_output_capabilities: {},
     ...overrides,
   }
 }
