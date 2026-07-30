@@ -132,6 +132,11 @@ workspace/
 
 Workflow IDs are slash-separated paths relative to `workspace/workflows/`. Each named workflow derives its BioImageFlow runtime storage as `<workflow-directory>/results`; moves and deletes therefore carry its results, while duplicates start without results. Stateless graph services use `<workspace>/.bioimageflow/runtime`. Dataset uploads use the configured dataset root or `<workspace>/datasets`.
 
+The human-facing `results/outputs/latest` projection uses symbolic links when supported and portable pointer files otherwise.
+Copies are explicit exports rather than a publication setting.
+The workflow API provides a portable workflow-only archive, a copied latest-results ZIP, a desktop copied-folder export, and a workflow bundle containing copied outputs and provenance from one pinned successful run.
+Only workflow-only archives are accepted by workflow import.
+
 A workflow root that does not exist when it is first initialized receives the versioned bundled templates at `Demo/Fish Analysis` and `Demo/Parameters Space Exploration`. An existing root is never seeded merely because it is empty. Installation state is derived from canonical workflow paths plus `metadata.bundled_template`; no home-directory flag or launcher post-install hook is used. Reinstall skips recognized templates, reports unrelated occupants as conflicts, and materializes bundled custom tools into each workflow's `tools/` directory.
 
 ## Launcher packaging

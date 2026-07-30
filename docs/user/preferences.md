@@ -42,24 +42,18 @@ In desktop mode, **Browse…** switches to another workspace.
 
 Changing the workspace does not move workflows from the previous location.
 If the selected workflow root already exists, BioImageFlow does not add examples merely because the root is empty.
+Each saved workflow owns its execution storage in `<workflow-directory>/results`.
+That location is derived from the workspace layout and is not a separate preference.
 
 ### Latest output view
 
-Choose how the disposable `outputs/latest` projection is published:
-
-- **Automatic** uses symbolic links when the filesystem supports them and falls back to pointer files with a warning.
-- **Symbolic links** are directly openable but can require Developer Mode or link privileges on Windows.
-- **Pointer files** use little extra space and need no link privilege, but image applications cannot open the JSON pointer files directly.
-- **Copies** work with ordinary file applications but can use roughly twice the asset space.
-
-The displayed effective mode tells you what BioImageFlow is currently using.
+BioImageFlow automatically publishes the disposable `outputs/latest` projection with symbolic links when the filesystem supports them.
+It falls back to portable pointer files when symbolic links are unavailable.
+The displayed effective mode and warning explain what the current workflow filesystem supports.
 Click **Retest** after changing filesystem permissions or mount configuration.
 
-### Output data folder
-
-This folder contains workflow execution storage, caches, and published output views.
-Use **Reveal** to inspect it or **Browse…** to choose a different folder.
-Existing data is not moved when you change the setting.
+The projection is intentionally lightweight and is not configurable as copied files.
+Use the workflow export dialog to create ordinary independent file copies in a ZIP or desktop destination folder.
 
 ### Tool store
 

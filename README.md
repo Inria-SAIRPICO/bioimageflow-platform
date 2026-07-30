@@ -28,18 +28,23 @@ Each user has one active BioImageFlow workspace. Desktop mode defaults to `~/Bio
 workspace/
   workflows/                          Saved workflow tree and folders
     <workflow-id>/tools/              Custom tools owned by one workflow
+    <workflow-id>/results/            BioImageFlow runtime storage
 ```
 
-Execution outputs use the configured output-data folder, which defaults to `~/bioimageflow_data/`, and are scoped by workflow ID. Dataset uploads use the configured dataset root or `<BIOIMAGEFLOW_HOME>/datasets/`; neither is owned by `workspace/data` or `workspace/outputs` in the current implementation.
+Each named workflow derives its runtime storage as `<workflow-directory>/results`.
+The path is not configurable or persisted in the workflow document.
+Moving or deleting a workflow carries or removes its results, while duplicating it copies only the reusable workflow and workflow-local tools.
+Stateless graph services use `<workspace>/.bioimageflow/runtime`, and dataset uploads use the configured dataset root or `<workspace>/datasets`.
 
 For each workflow, the file-browser-friendly output projection is `outputs/latest/<node>/<asset-relative-path>` beneath that workflow's storage directory.
 The `latest` projection means the latest successful result independently for each node, so it can contain results from different executions after selected, failed, cancelled, or overlapping runs; it is not a single workflow-run snapshot.
 The canonical cache and run views remain unchanged.
 
-Preferences → Storage controls how this disposable projection is published.
-Automatic mode uses symbolic links when the output filesystem permits them and otherwise uses portable `*.bioimageflow-link.json` pointer files with a warning.
-Pointer files require no link permission but are not directly openable as images, symbolic links may require Windows Developer Mode or link privileges, and copying is an explicit option that can use roughly twice the asset space.
+The platform automatically publishes this disposable projection with symbolic links when possible and otherwise uses portable `*.bioimageflow-link.json` pointer files with a warning.
+Preferences → Storage reports the effective mode but does not offer copied publication, because `latest` is a lightweight view rather than an independent backup.
 The workflow panel's Open latest outputs action opens this per-workflow directory directly in desktop mode.
+The export dialog can instead download the reusable workflow alone, materialize copied latest results, create a workflow bundle with copied outputs and provenance from one pinned successful run, or write copied latest results to a desktop destination folder.
+Workflow-and-results bundles are export artifacts rather than directly importable workflow archives.
 
 The Run Workflow split button offers Run Selected, Retry Failed Execution, Invalidate Failed Nodes and Retry, and Recompute Workflow.
 Retry reuses successful cached work and the original execution target set.

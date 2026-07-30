@@ -61,19 +61,34 @@ Export an important workflow first if you need a portable backup.
 
 ## Import and export
 
-Choose **Workflow → Export** or click **Export workflow** in the panel to create a portable `.bioimageflow.zip` archive.
-If the active workflow has unsaved changes, BioImageFlow asks to save before creating the archive.
-The archive includes the recursive workflow and the workflow-local tool sources it owns.
+Choose **Workflow → Export** or click **Export workflow** in the panel to open the export dialog.
+
+| Choice | What it contains | Best for |
+|---|---|---|
+| **Workflow only** | The reusable recursive workflow and its workflow-local tool sources, without results | Sharing, moving, or backing up a workflow |
+| **Latest results** | Ordinary copied files from the latest successful result of each node | Sending the current human-facing outputs to someone else |
+| **Workflow with results** | The workflow plus copied outputs and provenance from one latest successful run | Preserving a reproducible workflow/run snapshot |
+| **Export latest results to folder** | The per-node latest results as ordinary files in a new child folder | Opening or transferring results from the desktop application |
+
+Workflow-containing exports save unsaved changes before creating the download.
+Results-only exports do not save or alter the workflow.
+The latest-results choices may combine nodes from different executions; use **Workflow with results** when every output must belong to one successful run.
+
+The folder choice is available only in the desktop application.
+Choose a parent directory and BioImageFlow creates a named child directory inside it.
+If that child already exists, replacement is offered only when it is a previous marked export of the same workflow; BioImageFlow never replaces the selected parent or an unrelated directory.
 
 Choose **Workflow → Import** to add a library workflow archive to the workspace.
 If its suggested ID already exists, enter another name.
 After import, BioImageFlow reports missing tool packages and offers to rebind dependencies that are available locally.
 
-A platform workspace backup is not interchangeable with a portable workflow archive.
-Use the export command when you want to move or share an individual workflow.
+A **Workflow with results** bundle is an export artifact and cannot itself be imported as a workflow.
+To import from that bundle, extract and import the `.bioimageflow.zip` archive inside its `workflow/` directory.
+A platform workspace backup is likewise not interchangeable with a portable workflow archive.
 
 ## Open workflow files and outputs
 
 The selected workflow's detail area shows its ID and output storage path.
 Use its folder action to reveal the workflow directory in the system file browser.
 Use **Open latest outputs** to reveal the disposable per-node latest-output view for that workflow.
+Use the export dialog when you need files that remain valid after they are moved away from workflow storage.

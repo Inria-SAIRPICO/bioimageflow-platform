@@ -79,6 +79,8 @@ A selected, failed, cancelled, or cached run can therefore leave files from diff
 Check the active execution, selected nodes, node statuses, and Node Data before assuming that all files were produced together.
 Under **Preferences → Storage**, inspect the effective latest-output mode and warning.
 Pointer files are metadata and cannot be opened directly as images.
+Choose **Workflow → Export**, then **Latest results**, to materialize independent copies with the same mixed per-node semantics.
+Choose **Workflow → Export**, then **Workflow with results**, when the workflow, provenance, and every copied output must describe one successful run.
 
 ## A viewer action is unavailable
 

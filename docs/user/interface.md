@@ -9,7 +9,7 @@ Panels can be resized, rearranged, placed in tab groups, or reopened from the **
 
 The menu bar contains five menus:
 
-- **Workflow** creates, opens, saves, imports, exports, builds, and deletes workflows.
+- **Workflow** creates, opens, saves, imports, opens the workflow-and-results export dialog, builds, and deletes workflows.
 - **Edit** provides undo, redo, clipboard actions, selection, and Preferences.
 - **Execution** provides full, selected, retry, invalidation, recompute, and stop commands.
 - **View** shows or hides the main panels.
@@ -48,7 +48,7 @@ Use **Manage Tools** for package versions, environment state, and custom tool ma
 ### Workflows
 
 Browse saved workflows and folders.
-The toolbar creates, saves, duplicates, imports, exports, edits, and deletes items.
+The toolbar creates, saves, duplicates, imports, opens the export dialog, edits, and deletes items.
 Drag a saved workflow onto the canvas to embed a reusable snapshot.
 
 ### Datasets

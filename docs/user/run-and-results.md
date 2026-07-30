@@ -78,5 +78,10 @@ BioImageFlow publishes a file-browser-friendly view under that workflow's output
 After selected, failed, cancelled, or overlapping runs, the directory can contain results produced by different executions.
 Use the in-application execution and cache information when you need to reason about one exact run.
 
-The publication method is configured under **Preferences → Storage** and may use symbolic links, pointer files, or copies.
-See [Storage](preferences.md#storage) for the portability and disk-space tradeoffs.
+BioImageFlow keeps this disposable view lightweight.
+It uses symbolic links when available and portable pointer files otherwise; **Preferences → Storage** reports the effective mode.
+Do not treat the view itself as a portable backup.
+
+Choose **Workflow → Export**, then **Latest results**, when you need independent copied files with the same per-node latest semantics.
+Choose **Workflow → Export**, then **Workflow with results**, when you need one pinned successful run together with the workflow and provenance.
+See [Import and export](manage-workflows.md#import-and-export) for all export choices.

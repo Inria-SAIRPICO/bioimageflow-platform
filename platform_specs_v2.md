@@ -221,8 +221,34 @@ This path is not configurable or persisted in `GraphState` or workspace metadata
 Moving and deleting a workflow naturally carry or remove its results, while duplication copies only the reusable workflow definition and workflow-local tools.
 Stateless graph services use the private workspace fallback `<workspace>/.bioimageflow/runtime`.
 
-Portable export/import uses the BioImageFlow library recursive archive format.
-A workspace-document backup, when provided, is a separate platform artifact and is not accepted as a library workflow archive.
+The platform publishes a disposable, human-facing view at `<workflow-directory>/results/outputs/latest`.
+This view resolves the latest successful result independently for each node and may therefore combine outputs from different workflow runs.
+It uses symbolic links when the workflow filesystem supports them and otherwise falls back to portable BioImageFlow pointer files.
+Copying is not a publication preference because `latest` is a lightweight projection rather than an independent backup.
+Preferences reports the effective publication mode and warning, if any, but does not expose a mode selector.
+
+Workflow export uses one dialog with these platform-owned choices:
+
+- **Workflow only** saves an unsaved addressed root workflow when necessary and downloads the BioImageFlow recursive workflow archive, including owned workflow-local sources but no results.
+- **Latest results** downloads materialized copies of the current per-node latest projection; its files may come from different runs.
+- **Workflow with results** saves when necessary and downloads a platform results bundle containing the workflow archive plus copied outputs and provenance from exactly one pinned latest successful run.
+- **Export latest results to folder** is desktop-only and materializes the current per-node latest projection as ordinary files in a generated child directory of the selected parent.
+
+Results-only exports do not save or mutate the workflow definition and remain available while graph mutation is locked.
+Workflow-containing exports use the normal save and mutation barriers.
+An empty latest projection or absent successful run is reported as unavailable rather than producing an empty archive.
+
+The desktop folder export writes `.bioimageflow-output-export.json` with schema `bioimageflow.platform.output-export.v1`.
+Replacement is allowed only for a directory carrying a valid marker for the same workflow.
+Materialization and marker creation complete in a sibling staging directory before an atomic install, and a failed replacement restores the previous marked export.
+The selected parent directory and unrelated existing directories are never replaced.
+
+The workflow-and-results bundle writes the top-level manifest `bioimageflow-results-bundle.json` with schema `bioimageflow-results-bundle/v1`.
+The manifest identifies the workflow, nested workflow archive and its SHA-256 digest, pinned successful run ID, and copied run-results path.
+It is a self-contained export artifact, not a portable workflow archive, and workflow import rejects it with an explicit unsupported-media response.
+Only the nested workflow archive inside the bundle is importable.
+
+A workspace-document backup, when provided, remains a separate platform artifact and is not accepted as a BioImageFlow workflow archive.
 
 ### Bundled demo workflows
 
@@ -257,7 +283,18 @@ Thumbnail requests are initiated only when their rendered row enters the visible
 
 ## 14. API Surface
 
-The v2 API includes canonical workflow lifecycle routes; root workflow-draft routes; nested workflow-snapshot routes; recursive validation, execution, output-schema, cache, package, and tool routes; source-update preview and apply routes; and trusted Python-source preview using the same apply route.
+The v2 API includes canonical workflow lifecycle routes; root workflow-draft routes; nested workflow-snapshot routes; recursive validation, execution, output-schema, cache, package, and tool routes; source-update preview and apply routes; trusted Python-source preview using the same apply route; and explicit workflow and result exports.
+
+The export routes are:
+
+- `POST /api/v1/workflows/{name}/export` for the portable workflow-only archive;
+- `POST /api/v1/workflows/{name}/exports/latest-results` for the copied latest-results ZIP;
+- `POST /api/v1/workflows/{name}/exports/latest-results-folder` for the desktop copied-folder export;
+- `POST /api/v1/workflows/{name}/exports/workflow-run-bundle` for the workflow and pinned successful-run bundle.
+
+Download routes complete their temporary materialization before returning a streamed file response and remove temporary state after the response.
+The desktop folder route accepts an absolute existing parent directory and a replacement flag, derives the export child name itself, and is forbidden outside desktop mode.
+Expected export failures use stable status categories for missing workflows, forbidden or unsafe destinations, existing destinations, unavailable results, invalid requests, and internal materialization failures.
 
 OpenAPI is the sole frontend API type source.
 Generated discriminated graph, interface, edge, provenance, and source-operation types are consumed directly without handwritten compatibility aliases.

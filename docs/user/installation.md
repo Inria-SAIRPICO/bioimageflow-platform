@@ -42,7 +42,8 @@ You do not need to download a new launcher unless the release notes specifically
 The application keeps workflows, datasets, settings, tool packages, environments, caches, and outputs outside the downloaded application sources.
 Updating the application does not intentionally replace this user-owned data.
 
-The default desktop workspace is `~/BioImageFlow/workspace/`, and the default output-data folder is `~/bioimageflow_data/`.
-You can inspect or change these locations under **Edit → Preferences… → Storage**.
+The default desktop workspace is `~/BioImageFlow/workspace/`.
+Each saved workflow keeps its execution results in the `results/` directory inside its own workflow directory.
+You can inspect or change the workspace under **Edit → Preferences… → Storage**; result locations follow the workflow layout automatically.
 
 If the launcher cannot start the application, see [Launcher or startup problems](troubleshooting.md#launcher-or-startup-problems).
