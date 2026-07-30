@@ -53,6 +53,19 @@ class FakeOmeroCredentials:
 
 
 class TestLoad:
+    async def test_default_uses_standard_user_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+        store = SettingsStore.default()
+        await store.load()
+
+        assert store.path == tmp_path / ".bioimageflow" / "settings.json"
+        assert store.get().deployment_mode == "desktop"
+
     async def test_missing_file_seeds_defaults(self, tmp_path: Path) -> None:
         path = tmp_path / "settings.json"
         store = SettingsStore(path=path)

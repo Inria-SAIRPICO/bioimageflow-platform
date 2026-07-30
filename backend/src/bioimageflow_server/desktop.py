@@ -394,8 +394,9 @@ def start_desktop(
 
     from bioimageflow_server.app import create_app
     from bioimageflow_server.models.tools import AppConfig
+    from bioimageflow_server.services.settings_store import SettingsStore
 
-    app_config = AppConfig()
+    app_config = AppConfig(settings_store=SettingsStore.default())
     if not dev:
         # In production mode, serve the pre-built frontend from frontend/dist/
         project_root = Path(__file__).resolve().parent.parent.parent.parent

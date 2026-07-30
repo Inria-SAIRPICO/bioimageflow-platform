@@ -27,6 +27,7 @@ from bioimageflow_server.routers.nodes import (
     get_result_store,
     get_thumbnail_manager,
 )
+from bioimageflow_server.routers.settings import get_settings_store
 from bioimageflow_server.services.known_packages import KnownPackagesService
 from bioimageflow_server.services.package_installer import (
     PackageInstallerService,
@@ -287,6 +288,25 @@ async def test_nodes_router_is_mounted():
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/v1/nodes/test/data")
     assert resp.status_code == 404
+
+
+async def test_default_factory_serves_settings_from_the_standard_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    app = create_app()
+    store = app.dependency_overrides[get_settings_store]()
+
+    assert store.path == tmp_path / ".bioimageflow" / "settings.json"
+    await store.load()
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/v1/settings")
+
+    assert response.status_code == 200
+    assert response.json()["deployment_mode"] == "desktop"
 
 
 def test_app_config_wires_node_services():

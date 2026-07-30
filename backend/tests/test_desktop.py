@@ -210,6 +210,8 @@ def test_uvicorn_config_and_server_created(
 
     start_desktop(host="0.0.0.0", port=9000)
 
+    app_config = mock_create_app.call_args.kwargs["config"]
+    assert app_config.settings_store is not None
     mock_uvicorn.Config.assert_called_once()
     _, kwargs = mock_uvicorn.Config.call_args
     assert mock_uvicorn.Config.call_args.args[0] is mock_app

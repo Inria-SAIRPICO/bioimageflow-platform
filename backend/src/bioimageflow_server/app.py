@@ -141,6 +141,7 @@ from bioimageflow_server.services.package_installer import (
 )
 from bioimageflow_server.services.pypi_versions import PyPIVersionService
 from bioimageflow_server.services.result_store import ResultStoreService
+from bioimageflow_server.services.settings_store import SettingsStore
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 from bioimageflow_server.services.tool_environments import ToolEnvironmentService
 from bioimageflow_server.services.tool_hot_reload import ToolHotReloadService
@@ -210,7 +211,7 @@ def _log_http_exception(request: Request, exc: HTTPException, body: ErrorRespons
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
     if config is None:
-        config = AppConfig()
+        config = AppConfig(settings_store=SettingsStore.default())
 
     from bioimageflow.paths import get_tool_store_path
 

@@ -33,6 +33,20 @@ CURRENT_SETTINGS_VERSION = 1
 class SettingsStore:
     """Async, filesystem-backed Settings holder with atomic writes."""
 
+    @classmethod
+    def default(
+        cls,
+        *,
+        deployment_mode: Literal["desktop", "webapp"] = "desktop",
+    ) -> "SettingsStore":
+        """Return the standard per-user store, ready with startup defaults."""
+        store = cls(
+            path=Path.home() / ".bioimageflow" / "settings.json",
+            deployment_mode=deployment_mode,
+        )
+        store._current = store._default_settings()
+        return store
+
     def __init__(
         self,
         path: Path,
