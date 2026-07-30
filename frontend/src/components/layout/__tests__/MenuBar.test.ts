@@ -414,7 +414,7 @@ describe('MenuBar', () => {
         detail: { action: 'export', name: 'a' },
       }))
       await flushPromises()
-      expect(vm.exportSaveDialogVisible).toBe(true)
+      expect(vm.exportDialogVisible).toBe(true)
       expect(exportWorkflow).not.toHaveBeenCalled()
 
       workflow.items.find((item: any) => item.label === 'Delete').command()
@@ -818,34 +818,28 @@ describe('MenuBar', () => {
       expect(workflow.items.find((item: any) => item.label === 'Export').disabled).toBe(true)
     })
 
-    it('calls the workflow export action for the current workflow', async () => {
+    it('opens the export dialog for the current workflow identity', async () => {
       registerActiveRootWorkflow({
         name: 'cell_segmentation',
         displayName: 'Cell segmentation',
       })
-      const workflow = useWorkflowStore()
-      const exportWorkflow = vi
-        .spyOn(workflow, 'exportWorkflow')
-        .mockResolvedValue(undefined)
-      apiMocks.put.mockResolvedValueOnce({ data: workflow.current })
 
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
       await workflowMenu.items.find((item: any) => item.label === 'Export').command()
       await flushPromises()
-      expect(vm.exportSaveDialogVisible).toBe(true)
-      await vm.confirmExportCurrentWorkflow()
-      await flushPromises()
 
-      expect(exportWorkflow).toHaveBeenCalledWith('cell_segmentation')
+      expect(vm.exportDialogVisible).toBe(true)
+      expect(vm.exportDialogTarget.workflowName).toBe('cell_segmentation')
     })
 
-    it('confirms that export saves the current workflow before downloading', async () => {
-      registerActiveRootWorkflow({
+    it('prepares a dirty current workflow before the dialog exports it', async () => {
+      const { canvasId } = registerActiveRootWorkflow({
         name: 'cell_segmentation',
         displayName: 'Cell segmentation',
       })
+      useUIStore().markCanvasDirty(canvasId)
       apiMocks.put.mockResolvedValueOnce({
         data: {
           name: 'cell_segmentation',
@@ -856,59 +850,61 @@ describe('MenuBar', () => {
       identity_generation: 0,
         },
       })
-      apiMocks.post.mockResolvedValueOnce({
-        data: new Blob(['zip']),
-        headers: {},
-      })
-
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
       await workflowMenu.items.find((item: any) => item.label === 'Export').command()
       await flushPromises()
 
-      expect(vm.exportSaveDialogVisible).toBe(true)
+      expect(vm.exportDialogVisible).toBe(true)
       expect(apiMocks.put).not.toHaveBeenCalled()
-      expect(apiMocks.post).not.toHaveBeenCalledWith(
-        '/api/v1/workflows/cell_segmentation/export',
-        undefined,
-        expect.anything(),
-      )
 
-      await vm.confirmExportCurrentWorkflow()
+      const preparedName = await vm.prepareWorkflowExport('cell_segmentation')
       await flushPromises()
 
+      expect(preparedName).toBe('cell_segmentation')
       expect(apiMocks.put).toHaveBeenCalledWith(
         '/api/v1/workflows/cell_segmentation',
         { graph: makeGraph() },
       )
-      expect(apiMocks.post).toHaveBeenCalledWith(
-        '/api/v1/workflows/cell_segmentation/export',
-        undefined,
-        { responseType: 'blob' },
-      )
+      expect(apiMocks.post).not.toHaveBeenCalled()
     })
 
-    it('releases the captured export target when the dialog is cancelled', async () => {
-      const { workflow } = registerActiveRootWorkflow({
+    it('does not save a clean workflow before export', async () => {
+      registerActiveRootWorkflow({
         name: 'cell_segmentation',
         displayName: 'Cell segmentation',
       })
-      apiMocks.put.mockResolvedValueOnce({ data: workflow })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
 
       workflowMenu.items.find((item: any) => item.label === 'Export').command()
-      vm.exportSaveDialogVisible = false
-      await vm.confirmExportCurrentWorkflow()
 
+      expect(await vm.prepareWorkflowExport('cell_segmentation')).toBe('cell_segmentation')
+      expect(apiMocks.put).not.toHaveBeenCalled()
+      expect(apiMocks.post).not.toHaveBeenCalled()
+    })
+
+    it('releases the captured export target when the dialog is cancelled', async () => {
+      registerActiveRootWorkflow({
+        name: 'cell_segmentation',
+        displayName: 'Cell segmentation',
+      })
+      const wrapper = mountMenuBar()
+      const vm = wrapper.vm as any
+      const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
+
+      workflowMenu.items.find((item: any) => item.label === 'Export').command()
+      vm.exportDialogVisible = false
+
+      expect(vm.exportDialogTarget).toBeNull()
       expect(apiMocks.put).not.toHaveBeenCalled()
       expect(apiMocks.post).not.toHaveBeenCalled()
       wrapper.unmount()
     })
 
-    it('keeps confirmed export bound to the root canvas that opened the dialog', async () => {
+    it('keeps export preparation bound to the root canvas that opened the dialog', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
       const canvasB = canvasIdFromPanelId('workflow:b')
       const initialGraphA: GraphState = makeGraph()
@@ -976,10 +972,10 @@ describe('MenuBar', () => {
       store.current = workflowA
       ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
       ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      ui.markCanvasDirty(canvasA)
       canvasSessionRegistry.activate(canvasA)
       persistenceMocks.canvasId = canvasA
       apiMocks.put.mockResolvedValueOnce({ data: workflowA })
-      apiMocks.post.mockResolvedValueOnce({ data: new Blob(['zip']), headers: {} })
       const wrapper = mountMenuBar()
       const vm = wrapper.vm as any
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
@@ -989,16 +985,13 @@ describe('MenuBar', () => {
       canvasSessionRegistry.activate(canvasB)
       persistenceMocks.canvasId = canvasB
       store.current = workflowB
-      await vm.confirmExportCurrentWorkflow()
+      const preparedName = await vm.prepareWorkflowExport('a')
 
+      expect(preparedName).toBe('a')
       expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
         graph: latestGraphA,
       })
-      expect(apiMocks.post).toHaveBeenCalledWith(
-        '/api/v1/workflows/a/export',
-        undefined,
-        { responseType: 'blob' },
-      )
+      expect(apiMocks.post).not.toHaveBeenCalled()
       expect(ensureFreshA).toHaveBeenCalledOnce()
       expect(queueDraftA).toHaveBeenCalledWith(latestGraphA)
       expect(flushA).toHaveBeenCalledOnce()
@@ -1010,7 +1003,7 @@ describe('MenuBar', () => {
     })
 
     it.each(['save', 'flush'] as const)(
-      'aborts fixed export and preserves a newer A edit arriving during %s',
+      'aborts export preparation and preserves a newer A edit arriving during %s',
       async (phase) => {
         const canvasA = canvasIdFromPanelId('workflow:a')
         const canvasB = canvasIdFromPanelId('workflow:b')
@@ -1069,6 +1062,7 @@ describe('MenuBar', () => {
         store.current = workflowA
         ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
         ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+        ui.markCanvasDirty(canvasA)
         canvasSessionRegistry.activate(canvasA)
         persistenceMocks.canvasId = canvasA
         if (phase === 'save') {
@@ -1084,7 +1078,7 @@ describe('MenuBar', () => {
         canvasSessionRegistry.activate(canvasB)
         persistenceMocks.canvasId = canvasB
         store.current = workflowB
-        const confirmation = vm.confirmExportCurrentWorkflow()
+        const confirmation = vm.prepareWorkflowExport('a')
         if (phase === 'save') {
           await vi.waitFor(() => expect(apiMocks.put).toHaveBeenCalledOnce())
         } else {
@@ -1097,7 +1091,7 @@ describe('MenuBar', () => {
         } else {
           pendingFlush.resolve()
         }
-        await confirmation
+        expect(await confirmation).toBeNull()
 
         expect(apiMocks.put).toHaveBeenCalledWith('/api/v1/workflows/a', {
           graph: capturedGraphA,
@@ -1120,7 +1114,7 @@ describe('MenuBar', () => {
       },
     )
 
-    it('aborts confirmed export when its root canvas was disposed', async () => {
+    it('aborts export preparation when its root canvas was disposed', async () => {
       const canvasA = canvasIdFromPanelId('workflow:a')
       const canvasB = canvasIdFromPanelId('workflow:b')
       useGraphSync({
@@ -1145,6 +1139,7 @@ describe('MenuBar', () => {
       store.current = workflowA
       ui.setCanvasWorkflow(canvasA, 'a', 'Workflow A')
       ui.setCanvasWorkflow(canvasB, 'b', 'Workflow B')
+      ui.markCanvasDirty(canvasA)
       canvasSessionRegistry.activate(canvasA)
       persistenceMocks.canvasId = canvasA
       const wrapper = mountMenuBar()
@@ -1156,7 +1151,7 @@ describe('MenuBar', () => {
       canvasSessionRegistry.activate(canvasB)
       persistenceMocks.canvasId = canvasB
       store.current = workflowB
-      await vm.confirmExportCurrentWorkflow()
+      expect(await vm.prepareWorkflowExport('a')).toBeNull()
 
       expect(apiMocks.put).not.toHaveBeenCalled()
       expect(apiMocks.post).not.toHaveBeenCalled()
@@ -1186,11 +1181,12 @@ describe('MenuBar', () => {
       }))
     })
 
-    it('blocks confirmed export when unresolved remote draft changes need resolution', async () => {
-      const { persistence } = registerActiveRootWorkflow({
+    it('blocks export preparation when unresolved remote draft changes need resolution', async () => {
+      const { canvasId, persistence } = registerActiveRootWorkflow({
         name: 'cell_segmentation',
         displayName: 'Cell segmentation',
       })
+      useUIStore().markCanvasDirty(canvasId)
       vi.mocked(persistence.ensureFreshForCriticalOperation).mockResolvedValueOnce(false)
 
       const wrapper = mountMenuBar()
@@ -1198,8 +1194,8 @@ describe('MenuBar', () => {
       const workflowMenu = vm.menuItems.find((item: any) => item.label === 'Workflow')
       await workflowMenu.items.find((item: any) => item.label === 'Export').command()
       await flushPromises()
-      expect(vm.exportSaveDialogVisible).toBe(true)
-      await vm.confirmExportCurrentWorkflow()
+      expect(vm.exportDialogVisible).toBe(true)
+      expect(await vm.prepareWorkflowExport('cell_segmentation')).toBeNull()
       await flushPromises()
 
       expect(apiMocks.put).not.toHaveBeenCalled()
@@ -2315,7 +2311,7 @@ describe('MenuBar', () => {
     })
 
     it.each(['starting', 'stopping'] as const)(
-      'locks workflow and edit actions while execution is %s',
+      'locks workflow mutations but leaves results export reachable while execution is %s',
       async (phase) => {
         registerActiveRootWorkflow()
         useUIStore().setSelectedNodes(['n1'])
@@ -2326,7 +2322,9 @@ describe('MenuBar', () => {
         const edit = vm.menuItems.find((item: any) => item.label === 'Edit')
         const execution = vm.menuItems.find((item: any) => item.label === 'Execution')
 
-        expect(workflow.items.every((item: any) => item.disabled)).toBe(true)
+        expect(workflow.items.filter((item: any) => item.label !== 'Export')
+          .every((item: any) => item.disabled)).toBe(true)
+        expect(workflow.items.find((item: any) => item.label === 'Export').disabled).toBe(false)
         expect(edit.items.filter((item: any) => !item.separator && item.label !== 'Preferences...')
           .every((item: any) => item.disabled)).toBe(true)
         expect(execution.items.find((item: any) => item.label === 'Run Workflow').disabled)

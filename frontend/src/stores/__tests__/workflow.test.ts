@@ -851,6 +851,80 @@ describe('workflow store', () => {
     expect(click).toHaveBeenCalled()
   })
 
+  it('downloads latest results without saving the workflow', async () => {
+    const blob = new Blob(['results'], { type: 'application/zip' })
+    vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:results')
+    vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+    const controller = new AbortController()
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: blob,
+      headers: { 'content-disposition': 'attachment; filename="wf-results.zip"' },
+    })
+    const store = useWorkflowStore()
+
+    await store.exportLatestResults('folder/wf', controller.signal)
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/workflows/folder/wf/exports/latest-results',
+      undefined,
+      { responseType: 'blob', signal: controller.signal },
+    )
+    expect(api.put).not.toHaveBeenCalled()
+    expect(click).toHaveBeenCalled()
+  })
+
+  it('downloads one successful workflow run bundle with a portable fallback filename', async () => {
+    const blob = new Blob(['bundle'], { type: 'application/zip' })
+    vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:bundle')
+    vi.spyOn(window.URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+    vi.mocked(api.post).mockResolvedValueOnce({ data: blob, headers: {} })
+    const store = useWorkflowStore()
+
+    await store.exportWorkflowRunBundle('wf')
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/workflows/wf/exports/workflow-run-bundle',
+      undefined,
+      { responseType: 'blob' },
+    )
+    expect(click).toHaveBeenCalled()
+  })
+
+  it('exports latest result copies under a selected parent folder', async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({
+      data: {
+        destination: '/exports/wf-latest-results',
+        exported_items: 7,
+      },
+    })
+    const store = useWorkflowStore()
+
+    const result = await store.exportLatestResultsToFolder(
+      'folder/wf',
+      '/exports',
+      true,
+    )
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v1/workflows/folder/wf/exports/latest-results-folder',
+      {
+        destination_parent: '/exports',
+        replace: true,
+      },
+      { signal: undefined },
+    )
+    expect(result).toEqual({
+      destination: '/exports/wf-latest-results',
+      exported_items: 7,
+    })
+  })
+
   it('uploads import files as FormData and stores missing dependency data', async () => {
     vi.mocked(api.post).mockResolvedValueOnce({
       data: {

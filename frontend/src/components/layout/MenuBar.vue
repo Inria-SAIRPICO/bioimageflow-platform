@@ -41,6 +41,7 @@ import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue
 import MissingPackageDialog from '@/components/workflow/MissingPackageDialog.vue'
 import OpenWorkflowDialog from '@/components/workflow/OpenWorkflowDialog.vue'
 import WorkflowDialog from '@/components/workflow/WorkflowDialog.vue'
+import WorkflowExportDialog from '@/components/workflow/WorkflowExportDialog.vue'
 import type { GraphState, MissingTool, WorkflowInfo } from '@/api/types'
 import { emptyGraph } from '@/sessions/graphDocument'
 import {
@@ -130,9 +131,14 @@ const deleteDialogWorkflow = computed(() => {
     workflowStore.currentName === name ? workflowStore.current : null
   )
 })
-const exportSaveDialogVisible = ref(false)
+const exportDialogVisible = ref(false)
 const exportDialogTarget = shallowRef<WorkflowExportTarget | null>(null)
-watch(exportSaveDialogVisible, (visible) => {
+const exportDialogWorkflow = computed(() => {
+  const name = exportDialogTarget.value?.workflowName
+  if (!name) return null
+  return workflowStore.workflows.find((workflow) => workflowId(workflow) === name) ?? null
+})
+watch(exportDialogVisible, (visible) => {
   if (!visible) exportDialogTarget.value = null
 }, { flush: 'sync' })
 const aboutDialogVisible = ref(false)
@@ -457,31 +463,42 @@ async function saveWorkflow(): Promise<void> {
 }
 
 function exportCurrentWorkflow(): void {
-  if (executionStore.isMutationLocked) return
-  const target = currentSaveTarget()
-  if (!target.workflowName) return
-  exportDialogTarget.value = {
-    ...target,
-    workflowName: target.workflowName,
-  }
-  exportSaveDialogVisible.value = true
+  if (!activeWorkflowId.value) return
+  openWorkflowExport(activeWorkflowId.value)
 }
 
-async function confirmExportCurrentWorkflow(): Promise<void> {
-  if (executionStore.isMutationLocked) return
+function openWorkflowExport(name: string): void {
+  const canvasId = canvasIdFromPanelId(workflowPanelId(name))
+  const session = canvasSessionRegistry.get(canvasId)
+  exportDialogTarget.value = {
+    canvasId: session?.descriptor.kind === 'root'
+      && session.descriptor.workflowId === name
+      ? canvasId
+      : null,
+    workflowName: name,
+  }
+  exportDialogVisible.value = true
+}
+
+async function prepareWorkflowExport(name: string): Promise<string | null> {
+  if (executionStore.isMutationLocked) return null
   const target = exportDialogTarget.value
-  exportDialogTarget.value = null
-  exportSaveDialogVisible.value = false
-  if (!target) return
+  if (!target || target.workflowName !== name) return null
+  if (
+    target.canvasId === null
+    || !uiStore.canvasHasUnsavedChanges(target.canvasId)
+  ) {
+    return name
+  }
   try {
     const info = await saveCurrentWorkflowGraph({
       showSuccessToast: false,
       conflictAction: 'exporting',
     }, target)
-    if (!info) return
-    await workflowStore.exportWorkflow(workflowId(info))
+    return info ? workflowId(info) : null
   } catch (err: unknown) {
-    showError('Export workflow failed', err)
+    showError('Save before export failed', err)
+    return null
   }
 }
 
@@ -760,17 +777,8 @@ async function duplicateWorkflowByName(name: string): Promise<void> {
   }
 }
 
-async function exportWorkflowByName(name: string): Promise<void> {
-  if (executionStore.isMutationLocked) return
-  try {
-    if (activeWorkflowId.value === name) {
-      exportCurrentWorkflow()
-      return
-    }
-    await workflowStore.exportWorkflow(name)
-  } catch (err: unknown) {
-    showError('Export workflow failed', err)
-  }
+function exportWorkflowByName(name: string): void {
+  openWorkflowExport(name)
 }
 
 function deleteWorkflowByName(name: string): void {
@@ -937,10 +945,14 @@ async function submitRename(): Promise<void> {
 }
 
 function onWorkflowPanelCommand(event: Event): void {
-  if (executionStore.isMutationLocked) return
   const detail = (event as CustomEvent<WorkflowPanelCommand>).detail
   const action = detail?.action
   if (!action) return
+  if (action === 'export' && detail.name) {
+    exportWorkflowByName(detail.name)
+    return
+  }
+  if (executionStore.isMutationLocked) return
   if (action === 'new') {
     createNewWorkflow(detail.folderId ?? null)
   } else if (action === 'save') {
@@ -955,8 +967,6 @@ function onWorkflowPanelCommand(event: Event): void {
     }
   } else if (action === 'duplicate' && detail.name) {
     void duplicateWorkflowByName(detail.name)
-  } else if (action === 'export' && detail.name) {
-    void exportWorkflowByName(detail.name)
   } else if (action === 'delete' && detail.name) {
     void deleteWorkflowByName(detail.name)
   }
@@ -981,7 +991,7 @@ const menuItems = computed<MenuItem[]>(() => [
       { label: 'Save', icon: 'pi pi-save', disabled: executionStore.isMutationLocked, command: saveWorkflow },
       { label: 'Save As', icon: 'pi pi-copy', disabled: executionStore.isMutationLocked, command: saveWorkflowAs },
       { label: 'Import', icon: 'pi pi-upload', disabled: executionStore.isMutationLocked, command: chooseImportFile },
-      { label: 'Export', icon: 'pi pi-download', disabled: executionStore.isMutationLocked || !activeWorkflowId.value, command: exportCurrentWorkflow },
+      { label: 'Export', icon: 'pi pi-download', disabled: !activeWorkflowId.value, command: exportCurrentWorkflow },
       {
         label: 'Build from Python source',
         icon: 'pi pi-code',
@@ -1107,8 +1117,9 @@ defineExpose({
   menuItems,
   historyPanelOpen,
   aboutDialogVisible,
-  exportSaveDialogVisible,
-  confirmExportCurrentWorkflow,
+  exportDialogVisible,
+  exportDialogTarget,
+  prepareWorkflowExport,
   renameDialogVisible,
   importRenameDialogVisible,
   dependencyDialogVisible,
@@ -1220,26 +1231,14 @@ defineExpose({
     @rebind="requestDependencyRebind"
   />
 
-  <Dialog
-    v-model:visible="exportSaveDialogVisible"
-    modal
-    header="Save before export?"
-    :style="{ width: '420px' }"
-    data-testid="export-save-confirm"
-  >
-    <p>
-      The current workflow will be saved before the export file is created.
-    </p>
-    <template #footer>
-      <Button label="Cancel" text @click="exportSaveDialogVisible = false" />
-      <Button
-        label="Save and export"
-        icon="pi pi-download"
-        data-testid="export-save-confirm-submit"
-        @click="confirmExportCurrentWorkflow"
-      />
-    </template>
-  </Dialog>
+  <WorkflowExportDialog
+    v-model:visible="exportDialogVisible"
+    :workflow-name="exportDialogTarget?.workflowName ?? null"
+    :workflow-display-name="exportDialogWorkflow?.display_name ?? exportDialogTarget?.workflowName"
+    :desktop="settingsStore.isDesktop"
+    :workflow-exports-disabled="executionStore.isMutationLocked"
+    :prepare-workflow-export="prepareWorkflowExport"
+  />
 
   <Dialog
     v-model:visible="renameDialogVisible"

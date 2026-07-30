@@ -18,6 +18,8 @@ import type {
   WorkflowFile,
   WorkflowInfo,
   WorkflowImportResponse,
+  WorkflowResultsFolderExportRequest,
+  WorkflowResultsFolderExportResponse,
   WorkflowUpdate,
 } from '@/api/types'
 
@@ -138,6 +140,12 @@ function folderLeafName(path: string): string {
 
 function workflowUrl(id: string): string {
   return id.split('/').map(encodeURIComponent).join('/')
+}
+
+function workflowExportFilename(name: string, suffix: string): string {
+  const separator = name.lastIndexOf('/')
+  const leaf = separator === -1 ? name : name.slice(separator + 1)
+  return `${leaf || 'workflow'}${suffix}`
 }
 
 export const useWorkflowStore = defineStore('workflow', () => {
@@ -845,17 +853,67 @@ export const useWorkflowStore = defineStore('workflow', () => {
     return cleanup
   }
 
-  async function exportWorkflow(name: string): Promise<void> {
-    const response = await api.post<Blob>(
+  async function exportWorkflow(name: string, signal?: AbortSignal): Promise<void> {
+    await downloadWorkflowExport(
+      name,
       `/api/v1/workflows/${workflowUrl(name)}/export`,
+      workflowExportFilename(name, '.bioimageflow.zip'),
+      signal,
+    )
+  }
+
+  async function downloadWorkflowExport(
+    name: string,
+    url: string,
+    fallbackFilename: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await api.post<Blob>(
+      url,
       undefined,
-      { responseType: 'blob' },
+      signal ? { responseType: 'blob', signal } : { responseType: 'blob' },
     )
     const filename = filenameFromDisposition(
       response.headers?.['content-disposition'],
-      `${name}.bioimageflow.zip`,
+      fallbackFilename,
     )
     downloadBlob(response.data, filename)
+  }
+
+  async function exportLatestResults(name: string, signal?: AbortSignal): Promise<void> {
+    await downloadWorkflowExport(
+      name,
+      `/api/v1/workflows/${workflowUrl(name)}/exports/latest-results`,
+      workflowExportFilename(name, '.latest-results.zip'),
+      signal,
+    )
+  }
+
+  async function exportWorkflowRunBundle(name: string, signal?: AbortSignal): Promise<void> {
+    await downloadWorkflowExport(
+      name,
+      `/api/v1/workflows/${workflowUrl(name)}/exports/workflow-run-bundle`,
+      workflowExportFilename(name, '.workflow-run.zip'),
+      signal,
+    )
+  }
+
+  async function exportLatestResultsToFolder(
+    name: string,
+    destinationParent: string,
+    replace = false,
+    signal?: AbortSignal,
+  ): Promise<WorkflowResultsFolderExportResponse> {
+    const request: WorkflowResultsFolderExportRequest = {
+      destination_parent: destinationParent,
+      replace,
+    }
+    const { data } = await api.post<WorkflowResultsFolderExportResponse>(
+      `/api/v1/workflows/${workflowUrl(name)}/exports/latest-results-folder`,
+      request,
+      { signal },
+    )
+    return data
   }
 
   async function importWorkflow(
@@ -1261,6 +1319,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     forgetDeletedWorkflow,
     resetWorkflowPresentationGeneration,
     exportWorkflow,
+    exportLatestResults,
+    exportWorkflowRunBundle,
+    exportLatestResultsToFolder,
     importWorkflow,
     patchWorkflow,
     rebindVersions,
