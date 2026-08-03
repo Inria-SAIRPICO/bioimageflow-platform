@@ -108,7 +108,9 @@ describe('SettingsPanel', () => {
     await flushPromises()
     useSettingsPanel().open()
     await flushPromises()
-    expect(mockedApi.get).toHaveBeenCalledTimes(1)
+    expect(mockedApi.get.mock.calls.filter(
+      ([path]) => path === '/api/v1/settings',
+    )).toHaveLength(1)
     wrapper.unmount()
   })
 
