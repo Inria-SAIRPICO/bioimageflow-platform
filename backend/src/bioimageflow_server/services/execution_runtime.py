@@ -215,7 +215,11 @@ class ExecutionCoordinator:
         snapshot: ExecutionSnapshot,
         adapter: ExecutionRunAdapter,
     ) -> ExecutionSnapshot:
-        persisted = await asyncio.to_thread(self.registry.save, snapshot)
+        persisted = await asyncio.to_thread(
+            self.registry.save,
+            snapshot,
+            expected_revision=-1,
+        )
         if isinstance(adapter, AttachedRunAdapter):
             adapter.start()
         await self.attach(persisted.execution_id, adapter, publish_initial=True)
