@@ -61,6 +61,11 @@ from bioimageflow_server.routers.execution import (
     get_workflow_store as execution_get_workflow_store,
     router as execution_router,
 )
+from bioimageflow_server.routers.execution_profiles import (
+    get_execution_profile_store,
+    get_settings as execution_profiles_get_settings,
+    router as execution_profiles_router,
+)
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.data_table import router as data_table_router
 from bioimageflow_server.routers.napari import (
@@ -126,6 +131,7 @@ from bioimageflow_server.routers.workspace import (
 from bioimageflow_server.services.execution import (
     ExecutionManager,
 )
+from bioimageflow_server.services.execution_profiles import ExecutionProfileStore
 from bioimageflow_server.services.agent_workspace_context import ensure_agent_workspace_context
 from bioimageflow_server.services.editor import EditorService
 from bioimageflow_server.services.demo_workflows import DemoWorkflowService
@@ -222,7 +228,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # service can initialize it through a direct get_shared_environment_manager()
     # call. Plain Wetlands defaults to cwd-relative ./wetlands; BioImageFlow
     # state must instead follow bioimageflow.paths.
-    configure_wetlands(wetlands_instance_path=get_wetlands_path())
+    configure_wetlands(root=get_wetlands_path())
 
     # Build the package services graph up front so the lifespan hook can
     # close owned resources (e.g. the PyPI httpx client).
@@ -244,6 +250,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     resolved_settings: Settings = (
         store_settings or config.settings or Settings(deployment_mode=_deployment_mode)
     )
+    execution_profile_store = config.execution_profile_store
+    if execution_profile_store is None and settings_store is not None:
+        execution_profile_store = ExecutionProfileStore(
+            settings_store.path.parent / "execution_profiles.json",
+            editable=_deployment_mode == "desktop",
+        )
 
     def _live_settings() -> Settings:
         if config.settings_store is not None:
@@ -459,6 +471,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # catalog might consult (tool_store_path, etc.) are in place.
         if config.settings_store is not None:
             await config.settings_store.load()
+        if execution_profile_store is not None:
+            await execution_profile_store.load()
         current_workflow_store = _current_workflow_store()
         await asyncio.to_thread(_initialize_workflow_store, current_workflow_store)
         try:
@@ -537,6 +551,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 ws_manager._loop = None
             if config.settings_store is not None:
                 await config.settings_store.flush()
+            if execution_profile_store is not None:
+                await execution_profile_store.flush()
             if _owns_pypi:
                 await pypi.aclose()
 
@@ -669,6 +685,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(demo_workflows_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    if execution_profile_store is not None:
+        app.include_router(execution_profiles_router, prefix="/api/v1")
+        app.dependency_overrides[get_execution_profile_store] = lambda: execution_profile_store
+        app.dependency_overrides[execution_profiles_get_settings] = _live_settings
     app.include_router(nested_workflow_snapshots_router, prefix="/api/v1")
     app.include_router(workspace_router, prefix="/api/v1")
     app.include_router(workflow_draft_operations_router, prefix="/api/v1")

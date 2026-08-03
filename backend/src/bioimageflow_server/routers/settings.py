@@ -117,6 +117,11 @@ async def patch_settings(
     store: SettingsStore = Depends(get_settings_store),
     output_view_probe_path: Path = Depends(get_output_view_probe_path),
 ) -> SettingsResponse:
+    if store.deployment_mode == "webapp" and "trusted_parsl_factories" in body:
+        raise HTTPException(
+            status_code=403,
+            detail="trusted_parsl_factories is administrator-managed in webapp mode",
+        )
     if "enable_unsafe_webapp_features" in body:
         raise HTTPException(
             status_code=422,

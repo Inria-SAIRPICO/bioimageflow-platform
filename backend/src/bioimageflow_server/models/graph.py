@@ -147,6 +147,61 @@ class WorkflowConfig(WireModel):
     output_view: OutputViewConfig | None = None
 
 
+class NodeResourceOverrides(WireModel):
+    """Portable worker-resource overrides for one processing node."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        populate_by_name=True,
+        serialize_by_alias=True,
+        json_schema_mode_override="validation",
+    )
+
+    cpu: int | None = Field(default=None, ge=1)
+    gpu: int | None = Field(default=None, ge=0)
+    memory: str | None = None
+    gpu_memory: str | None = None
+    max_concurrent: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_with_library(self) -> NodeResourceOverrides:
+        import importlib
+
+        # The library owns capacity grammar and portable value semantics.
+        importlib.import_module("bioimageflow").NodeResourceOverrides(**self.model_dump())
+        return self
+
+    def to_library_dict(self) -> dict[str, Any]:
+        """Encode through BioImageFlow's public cross-process contract."""
+        import importlib
+
+        return (
+            importlib.import_module("bioimageflow")
+            .NodeResourceOverrides(**self.model_dump())
+            .to_dict()
+        )
+
+    @classmethod
+    def from_library_dict(cls, value: Any) -> NodeResourceOverrides:
+        """Decode through BioImageFlow's public cross-process contract."""
+        import importlib
+
+        library_value = importlib.import_module("bioimageflow").NodeResourceOverrides.from_dict(
+            value
+        )
+        return cls(
+            cpu=library_value.cpu,
+            gpu=library_value.gpu,
+            memory=library_value.memory,
+            gpu_memory=library_value.gpu_memory,
+            max_concurrent=library_value.max_concurrent,
+        )
+
+    def has_overrides(self) -> bool:
+        return any(value is not None for value in self.model_dump().values())
+
+
 class WorkspaceWorkflowSource(WireModel):
     kind: Literal["workspace"]
     workflow_id: str = Field(min_length=1)
@@ -162,7 +217,7 @@ class ToolNodeState(WireModel):
     tool_name: str = Field(min_length=1)
     position: tuple[float, float]
     parameters: dict[str, Any]
-    resources: dict[str, Any] = Field(default_factory=dict)
+    resources: NodeResourceOverrides = Field(default_factory=NodeResourceOverrides)
     output_templates: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
     collapsed: bool = False
@@ -189,6 +244,10 @@ class WorkflowNodeState(WireModel):
 
     @model_validator(mode="after")
     def validate_bindings(self) -> WorkflowNodeState:
+        if self.resources:
+            raise ValueError(
+                "Workflow nodes cannot have worker resource overrides; edit their internal tools"
+            )
         inputs = {port.id: port for port in self.workflow.interface.inputs}
         unknown = sorted(set(self.bindings) - set(inputs))
         if unknown:

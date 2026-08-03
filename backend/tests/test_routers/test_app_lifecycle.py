@@ -292,7 +292,7 @@ async def test_lifespan_seeds_missing_settings_file(tmp_path: Path) -> None:
         pass
     assert path.exists()
     on_disk = json.loads(path.read_text())
-    assert on_disk["settings_version"] == 1
+    assert on_disk["settings_version"] == 2
 
 
 async def test_dev_mode_dependency_resolves_through_store(tmp_path: Path) -> None:

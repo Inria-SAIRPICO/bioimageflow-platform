@@ -190,7 +190,7 @@ def test_create_app_configures_bioimageflow_wetlands_path(
         )
     )
 
-    assert calls == [{"wetlands_instance_path": wetlands_path}]
+    assert calls == [{"root": wetlands_path}]
 
 
 # ---------------------------------------------------------------------------

@@ -220,6 +220,35 @@ class TestPatchSettings:
         assert response.status_code == 422
         assert "settings file" in response.json()["detail"]
 
+    async def test_webapp_trusted_factories_are_administrator_managed(
+        self, tmp_path: Path
+    ) -> None:
+        store = SettingsStore(
+            path=tmp_path / "settings.json",
+            deployment_mode="webapp",
+        )
+        app = create_app(
+            AppConfig(
+                settings_store=store,
+                deployment_mode="webapp",
+                workspace_path=tmp_path / "workspace",
+                workspaces_root=tmp_path / "users",
+                user_id="test-user",
+                disable_hot_reload=True,
+            )
+        )
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.patch(
+                    "/api/v1/settings",
+                    json={"trusted_parsl_factories": ["site.parsl:make_config"]},
+                )
+
+        assert response.status_code == 403
+        assert "administrator-managed" in response.json()["detail"]
+
     async def test_patch_empty_body(self, settings_client: httpx.AsyncClient) -> None:
         response = await settings_client.patch("/api/v1/settings", json={})
         assert response.status_code == 200

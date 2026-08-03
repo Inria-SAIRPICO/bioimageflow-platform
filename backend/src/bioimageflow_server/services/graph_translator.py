@@ -11,6 +11,7 @@ from bioimageflow import deserialize_constant, serialize_constant
 from bioimageflow_server.models.graph import (
     ColumnEdge,
     GraphState,
+    NodeResourceOverrides,
     ToolNodeState,
     WorkflowNodeState,
 )
@@ -146,6 +147,41 @@ def _graph_to_library(
                 item["source_module"] = node.source_module
             if node.output_templates:
                 item["output_templates"] = dict(node.output_templates)
+            if node.resources.has_overrides():
+                from bioimageflow_core.tool import ProcessingTool
+
+                tool_class = registry.get_tool_class(node.tool_name)
+                if tool_class is not None and not issubclass(tool_class, ProcessingTool):
+                    errors.append(
+                        GraphValidationError(
+                            type="parameter_invalid",
+                            detail="Worker resource overrides apply only to ProcessingTool nodes",
+                            node=_scoped(scope, node.id),
+                            field="resources",
+                        )
+                    )
+                else:
+                    resource_overrides = node.resources.to_library_dict()
+                    if tool_class is not None:
+                        import importlib
+
+                        library_value = importlib.import_module(
+                            "bioimageflow"
+                        ).NodeResourceOverrides.from_dict(resource_overrides)
+                        try:
+                            library_value.effective(getattr(tool_class, "resources", None))
+                        except (TypeError, ValueError) as exc:
+                            errors.append(
+                                GraphValidationError(
+                                    type="parameter_invalid",
+                                    detail=str(exc),
+                                    node=_scoped(scope, node.id),
+                                    field="resources",
+                                )
+                            )
+                            resource_overrides = None
+                    if resource_overrides is not None:
+                        item["resource_overrides"] = resource_overrides
         if not node.enabled:
             item["enabled"] = False
         nodes.append(item)
@@ -275,6 +311,13 @@ def lib_dict_to_graph_state(workflow_data: dict[str, Any]) -> GraphState:
                 "tool_package": raw.get("tool_package"),
                 "tool_package_version": raw.get("tool_package_version"),
                 "source_module": raw.get("source_module"),
+                "resources": (
+                    NodeResourceOverrides.from_library_dict(raw["resource_overrides"]).model_dump(
+                        mode="json", exclude_none=True
+                    )
+                    if "resource_overrides" in raw
+                    else {}
+                ),
             }
         )
 
