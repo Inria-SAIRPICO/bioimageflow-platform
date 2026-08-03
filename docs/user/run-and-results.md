@@ -33,6 +33,10 @@ Even a detached failing branch makes its containing workflow fail and prevents d
 Use **Stop** when you need to cancel.
 Cancellation can take a short time while the current tool responds and environments settle.
 
+Open **View → Execution** for retained run history and independent progress for every node job.
+Direct, Wetlands, and Parsl runs use the same hierarchical view.
+See [Distributed execution](distributed-execution.md) for target selection, remote input preparation, cluster reconnection, and result downloads.
+
 ## Read logs and errors
 
 The **Logger** panel receives application, workflow, and tool messages.

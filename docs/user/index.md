@@ -18,6 +18,7 @@ It assumes that you understand your images and analysis methods, but it does not
 - [Organize, import, export, and duplicate workflows](manage-workflows.md)
 - [Group and reuse workflows inside other workflows](nested-workflows.md)
 - [Run workflows and inspect tables, images, logs, and output files](run-and-results.md)
+- [Configure Parsl targets, cluster uploads, and submitted execution](distributed-execution.md)
 - [Upload datasets and manage analysis tools](data-and-tools.md)
 - [Configure storage, viewers, editors, examples, and OMERO](preferences.md)
 - [Build a saved workflow from trusted Python source](advanced-authoring.md)
@@ -34,6 +35,7 @@ build-workflows
 manage-workflows
 nested-workflows
 run-and-results
+distributed-execution
 data-and-tools
 preferences
 advanced-authoring
