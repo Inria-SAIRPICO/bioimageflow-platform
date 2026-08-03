@@ -2,10 +2,11 @@
 import { computed } from 'vue'
 import Button from 'primevue/button'
 import InputNumber from 'primevue/inputnumber'
+import InputText from 'primevue/inputtext'
 import type { ToolMetadata } from '@/api/types'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 
-type ResourceKey = 'cpu' | 'gpu' | 'memory_gb' | 'gpu_memory_gb' | 'max_concurrent'
+type ResourceKey = 'cpu' | 'gpu' | 'memory' | 'gpu_memory' | 'max_concurrent'
 
 const props = defineProps<{
   resources: Record<string, unknown>
@@ -14,22 +15,21 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  change: [resources: Record<string, number>]
+  change: [resources: Record<string, number | string>]
 }>()
 
 const registry = useExecutionRegistryStore()
 const fields: Array<{
   key: ResourceKey
   label: string
-  min: number
-  integer?: boolean
-  suffix?: string
+  kind: 'count' | 'capacity'
+  min?: number
 }> = [
-  { key: 'cpu', label: 'CPU cores', min: 0.001 },
-  { key: 'gpu', label: 'GPUs', min: 0, integer: true },
-  { key: 'memory_gb', label: 'Memory', min: 0.001, suffix: ' GB' },
-  { key: 'gpu_memory_gb', label: 'GPU memory', min: 0, suffix: ' GB' },
-  { key: 'max_concurrent', label: 'Maximum concurrent jobs', min: 1, integer: true },
+  { key: 'cpu', label: 'CPU cores', kind: 'count', min: 1 },
+  { key: 'gpu', label: 'GPUs', kind: 'count', min: 0 },
+  { key: 'memory', label: 'Memory', kind: 'capacity' },
+  { key: 'gpu_memory', label: 'GPU memory', kind: 'capacity' },
+  { key: 'max_concurrent', label: 'Maximum concurrent jobs', kind: 'count', min: 0 },
 ]
 
 const declared = computed<Record<string, unknown>>(() => {
@@ -40,35 +40,45 @@ const declared = computed<Record<string, unknown>>(() => {
     : {}
 })
 
-function declaredValue(key: ResourceKey): number | null {
+function declaredValue(key: ResourceKey): number | string | null {
   const aliases: Record<ResourceKey, string[]> = {
     cpu: ['cpu', 'cpus'],
     gpu: ['gpu', 'gpus'],
-    memory_gb: ['memory_gb', 'memory'],
-    gpu_memory_gb: ['gpu_memory_gb', 'gpu_memory'],
+    memory: ['memory'],
+    gpu_memory: ['gpu_memory'],
     max_concurrent: ['max_concurrent'],
   }
   for (const alias of aliases[key]) {
     const value = declared.value[alias]
-    if (typeof value === 'number') return value
+    if (typeof value === 'number' || typeof value === 'string') return value
   }
   return null
 }
 
-function overrideValue(key: ResourceKey): number | null {
+function numericOverride(key: ResourceKey): number | null {
   const value = props.resources[key]
   return typeof value === 'number' ? value : null
 }
 
-function effectiveValue(key: ResourceKey): number | null {
-  return overrideValue(key) ?? declaredValue(key)
+function capacityOverride(key: ResourceKey): string {
+  const value = props.resources[key]
+  return typeof value === 'string' ? value : ''
 }
 
-function setOverride(key: ResourceKey, value: number | null): void {
+function effectiveValue(key: ResourceKey): number | string | null {
+  const override = props.resources[key]
+  return typeof override === 'number' || typeof override === 'string'
+    ? override
+    : declaredValue(key)
+}
+
+function setOverride(key: ResourceKey, value: number | string | null): void {
   const next = Object.fromEntries(
-    Object.entries(props.resources).filter(([, entry]) => typeof entry === 'number'),
-  ) as Record<string, number>
-  if (value === null) delete next[key]
+    Object.entries(props.resources).filter(([, entry]) => (
+      typeof entry === 'number' || typeof entry === 'string'
+    )),
+  ) as Record<string, number | string>
+  if (value === null || value === '') delete next[key]
   else next[key] = value
   emit('change', next)
 }
@@ -113,16 +123,26 @@ const targetMessage = computed(() => {
       <label :for="`resource-${field.key}`">{{ field.label }}</label>
       <span class="resource-readonly">{{ declaredValue(field.key) ?? '—' }}</span>
       <InputNumber
+        v-if="field.kind === 'count'"
         :input-id="`resource-${field.key}`"
-        :model-value="overrideValue(field.key)"
+        :model-value="numericOverride(field.key)"
         :min="field.min"
-        :max-fraction-digits="field.integer ? 0 : 3"
-        :suffix="field.suffix"
+        :max-fraction-digits="0"
         :disabled="disabled"
         placeholder="Inherit"
         size="small"
         :data-testid="`resource-override-${field.key}`"
         @update:model-value="setOverride(field.key, $event)"
+      />
+      <InputText
+        v-else
+        :id="`resource-${field.key}`"
+        :model-value="capacityOverride(field.key)"
+        :disabled="disabled"
+        placeholder="Inherit (for example 32GB)"
+        size="small"
+        :data-testid="`resource-override-${field.key}`"
+        @update:model-value="setOverride(field.key, ($event ?? '').trim())"
       />
       <strong>{{ effectiveValue(field.key) ?? '—' }}</strong>
     </div>

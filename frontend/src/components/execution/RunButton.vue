@@ -99,8 +99,10 @@ const primaryButtonProps = computed(() => ({
 const runSelectedDisabled = computed(
   () => runDisabled.value || ui.selectedNodeIds.length === 0,
 )
+const selectedTargetIsLocal = computed(() => executionRegistry.selectedTarget?.mode === 'local')
 const retryAvailable = computed(() => (
   !runDisabled.value
+  && selectedTargetIsLocal.value
   && exec.canRetry
   && exec.executionWorkflowId === activeWorkflowId.value
   && exec.executionId !== null
@@ -135,7 +137,7 @@ const runMenuItems = computed<MenuItem[]>(() => [
   {
     label: 'Recompute Workflow…',
     icon: 'pi pi-sync',
-    disabled: runDisabled.value,
+    disabled: runDisabled.value || !selectedTargetIsLocal.value,
     command: () => requestAdvancedCommand({ kind: 'recompute' }),
   },
 ])
@@ -257,11 +259,19 @@ async function runDistributed(
   workflowId: string,
   draftRevision: number | null,
 ): Promise<boolean> {
+  if (command.kind !== 'workflow' && command.kind !== 'selected') {
+    throw new Error('Retry and recompute are not available for distributed targets yet')
+  }
+  const profileRevision = executionRegistry.selectedTarget?.profile_revision
+  if (profileRevision == null) {
+    throw new Error('Refresh execution targets before starting a distributed run')
+  }
   const baseRequest = {
     workflow_id: workflowId,
     draft_revision: draftRevision,
     graph,
     target_id: executionRegistry.selectedTargetId,
+    profile_revision: profileRevision,
     command: preflightCommand(command),
   }
   let response = await preflightExecution(baseRequest)
@@ -501,7 +511,9 @@ defineExpose({
       requestAdvancedCommand({ kind: 'invalidate_failed', retryOf: exec.executionId })
     }
   },
-  onRecompute: () => requestAdvancedCommand({ kind: 'recompute' }),
+  onRecompute: () => {
+    if (selectedTargetIsLocal.value) requestAdvancedCommand({ kind: 'recompute' })
+  },
   onStop,
   confirmOpen,
   pendingOutOfDateNodes,

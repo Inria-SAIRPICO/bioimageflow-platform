@@ -17,6 +17,7 @@ from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.execution_profiles import DistributedExecutionProfile
 from bioimageflow_server.models.execution_runtime import ExecutionSnapshot, JobSnapshot
 from bioimageflow_server.services.execution_preflight import DistributedPreflightService
+from bioimageflow_server.services.execution_preflight import PreparedRunAcceptance
 from bioimageflow_server.services.execution import ExecutionManager
 from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileNotFoundError,
@@ -137,12 +138,18 @@ class ResolvedExecutionProfile:
         def submit_local() -> Any:
             import bioimageflow
 
-            return bioimageflow.submit_workflow(
+            handle = bioimageflow.submit_workflow(
                 workflow,
                 inputs=request.root_inputs,
                 targets=request.requested_nodes,
                 node_routes=request.node_routes or None,
                 **self.submission_arguments(),
+            )
+            return PreparedRunAcceptance(
+                handle=handle,
+                profile=self,
+                request=request.model_copy(deep=True),
+                distributed_plan=dict(distributed_plan),
             )
 
         return _DeferredPreparedRun(submit_local)
@@ -160,13 +167,22 @@ class PlatformExecutionProfileResolver:
         self._trusted_factories = trusted_factories
         self._local_storage_path = local_storage_path
 
-    def resolve_target(self, target_id: str, workflow_id: str) -> ResolvedExecutionProfile:
+    def resolve_target(
+        self,
+        target_id: str,
+        workflow_id: str,
+        profile_revision: int,
+    ) -> ResolvedExecutionProfile:
         if target_id == "local":
             raise ValueError("Local execution does not use distributed preflight")
         try:
             profile = self._store.get(target_id)
         except ExecutionProfileNotFoundError as exc:
             raise ValueError("Execution target does not exist") from exc
+        if profile.revision != profile_revision:
+            raise ValueError(
+                "The visible execution profile revision changed; refresh targets and confirm again"
+            )
         return self._resolve(profile, workflow_id)
 
     def resolve_revision(
@@ -276,6 +292,17 @@ def _plan_jobs(plan: Mapping[str, Any]) -> dict[str, JobSnapshot]:
     return jobs
 
 
+def _target_snapshot(profile: ResolvedExecutionProfile) -> dict[str, Any]:
+    # Pre-launch bytes and local source paths are not needed for reconnect and
+    # must not be exposed through retained execution API responses.
+    sanitized = profile.record.model_copy(update={"pre_launch": None})
+    return {
+        "name": profile.record.name,
+        "mode": profile.mode,
+        "profile": sanitized.model_dump(mode="json"),
+    }
+
+
 class PlatformPreparedRunRegistrar:
     def __init__(
         self,
@@ -322,10 +349,16 @@ class PlatformPreparedRunRegistrar:
         request: ApplyPreparedExecutionRequest,
         run_handle: object,
     ) -> ExecutionSnapshot:
-        profile = self._profiles.resolve_target(request.target_id, request.workflow_id)
         if isinstance(run_handle, AttachedPreparedRun):
             return await self._register_attached(request, run_handle)
-        run_id = str(getattr(run_handle, "id"))
+        if not isinstance(run_handle, PreparedRunAcceptance):
+            raise TypeError("Prepared run is missing its accepted profile binding")
+        accepted = run_handle
+        profile = accepted.profile
+        if not isinstance(profile, ResolvedExecutionProfile):
+            raise TypeError("Prepared run has an invalid profile binding")
+        handle = accepted.handle
+        run_id = str(getattr(handle, "id"))
         storage_path = str(profile.workflow_storage_path)
         snapshot = ExecutionSnapshot(
             execution_id=run_id,
@@ -337,11 +370,11 @@ class PlatformPreparedRunRegistrar:
             target_id=profile.id,
             profile_id=profile.id,
             profile_revision=profile.revision,
-            target_snapshot={"name": profile.record.name, "mode": profile.mode},
-            state=str(getattr(run_handle, "status")),
+            target_snapshot=_target_snapshot(profile),
+            state=str(getattr(handle, "status")),
             reconnect={"storage_path": storage_path, "run_id": run_id},
         )
-        return await self._coordinator.register(snapshot, SubmittedRunAdapter(run_handle))
+        return await self._coordinator.register(snapshot, SubmittedRunAdapter(handle))
 
     async def _register_attached(
         self,
@@ -392,7 +425,7 @@ class PlatformPreparedRunRegistrar:
             target_id=profile.id,
             profile_id=profile.id,
             profile_revision=profile.revision,
-            target_snapshot={"name": profile.record.name, "mode": profile.mode},
+            target_snapshot=_target_snapshot(profile),
             state="starting",
             jobs=_plan_jobs(prepared.distributed_plan),
         )

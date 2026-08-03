@@ -2132,6 +2132,8 @@ export interface components {
             draft_revision: number;
             /** Target Id */
             target_id: string;
+            /** Profile Revision */
+            profile_revision: number;
             /** Requested Nodes */
             requested_nodes?: string[] | null;
             /** Root Inputs */

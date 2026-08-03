@@ -16,6 +16,7 @@ const request: ExecutionPreflightRequest = {
   draft_revision: 3,
   graph: {},
   target_id: 'profile_1',
+  profile_revision: 2,
   command: { kind: 'workflow' },
 }
 
@@ -90,6 +91,7 @@ describe('distributed execution API adapter', () => {
     const snapshot = await applyPreparedExecution(prepared.token, choiceRequest)
 
     expect(vi.mocked(api.post).mock.calls[0]?.[1]).toMatchObject({
+      profile_revision: 2,
       node_path_choices: {
         files: {
           path: { source: 'upload', value: '/local/images' },

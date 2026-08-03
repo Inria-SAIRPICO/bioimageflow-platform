@@ -28,6 +28,7 @@ class ExecutionPreflightRequest(BaseModel):
     workflow_id: str = Field(min_length=1)
     draft_revision: int = Field(ge=0)
     target_id: str = Field(min_length=1)
+    profile_revision: int = Field(ge=1)
     requested_nodes: list[str] | None = None
     root_inputs: dict[str, Any] = Field(default_factory=dict)
     node_path_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)

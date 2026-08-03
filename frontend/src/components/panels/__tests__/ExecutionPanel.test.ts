@@ -49,7 +49,18 @@ describe('ExecutionPanel', () => {
 
     expect(wrapper.text()).toContain('GPU cluster')
     expect(wrapper.text()).toContain('Segment')
+    expect(wrapper.get('[data-testid="execution-cancel"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="execution-retry"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="execution-results"]').attributes('disabled')).toBeDefined()
     await wrapper.get('button.job-row').trigger('click')
     expect(wrapper.get('[data-testid="execution-job-details"]').text()).toContain('CUDA failed')
+
+    registry.applySnapshot({
+      ...registry.selectedRun!,
+      revision: 3,
+      state: 'succeeded',
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="execution-results"]').attributes('disabled')).toBeUndefined()
   })
 })

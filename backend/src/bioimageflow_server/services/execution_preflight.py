@@ -52,7 +52,12 @@ class DistributedProfile(Protocol):
 
 
 class ExecutionProfileResolver(Protocol):
-    def resolve_target(self, target_id: str, workflow_id: str) -> DistributedProfile: ...
+    def resolve_target(
+        self,
+        target_id: str,
+        workflow_id: str,
+        profile_revision: int,
+    ) -> DistributedProfile: ...
 
 
 class PreflightWorkflowResolver(Protocol):
@@ -76,6 +81,53 @@ class _PreparedEntry:
     transport: Any
     binding: str
     expires_at: float
+
+
+@dataclass(frozen=True)
+class PreparedRunAcceptance:
+    """Run handle plus the exact immutable intent accepted at preflight."""
+
+    handle: Any
+    profile: DistributedProfile
+    request: ExecutionPreflightRequest
+    distributed_plan: Mapping[str, Any]
+
+
+class _BoundPreparedSubmission:
+    """Keep platform intent metadata bound to one library preparation."""
+
+    def __init__(
+        self,
+        prepared: Any,
+        *,
+        profile: DistributedProfile,
+        request: ExecutionPreflightRequest,
+        distributed_plan: Mapping[str, Any],
+    ) -> None:
+        self._prepared = prepared
+        self._profile = profile
+        self._request = request.model_copy(deep=True)
+        self._distributed_plan = dict(distributed_plan)
+
+    @property
+    def expired(self) -> bool:
+        return bool(getattr(self._prepared, "expired", False))
+
+    @property
+    def manifest(self) -> Any:
+        return self._prepared.manifest
+
+    def submit(self, transport: Any) -> PreparedRunAcceptance:
+        handle = self._prepared.submit(transport)
+        return PreparedRunAcceptance(
+            handle=handle,
+            profile=self._profile,
+            request=self._request,
+            distributed_plan=self._distributed_plan,
+        )
+
+    def close(self) -> None:
+        self._prepared.close()
 
 
 class PreparedSubmissionTokenManager:
@@ -189,6 +241,7 @@ class DistributedPreflightService:
             self._profiles.resolve_target,
             request.target_id,
             request.workflow_id,
+            request.profile_revision,
         )
         workflow = await asyncio.to_thread(
             self._workflows.resolve_workflow,
@@ -260,8 +313,14 @@ class DistributedPreflightService:
             lifetime=self._preparation_lifetime,
             **dict(profile.submission_arguments()),
         )
-        token, expires_at = await self.tokens.issue(
+        bound_prepared = _BoundPreparedSubmission(
             prepared,
+            profile=profile,
+            request=request,
+            distributed_plan=plan_payload,
+        )
+        token, expires_at = await self.tokens.issue(
+            bound_prepared,
             transport=profile.transport,
             binding=preflight_binding(request),
             lifetime=self._preparation_lifetime,
@@ -270,7 +329,7 @@ class DistributedPreflightService:
             token=token,
             expires_at=expires_at,
             distributed_plan=plan_payload,
-            manifest=prepared.manifest.to_dict(),
+            manifest=bound_prepared.manifest.to_dict(),
         )
 
     def _decode_overrides(self, path_plan: Any, choices: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:

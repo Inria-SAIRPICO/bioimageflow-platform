@@ -60,7 +60,12 @@ function resourceSummary(job: ExecutionJobSnapshot): string {
 }
 
 function canCancel(state: string): boolean {
-  return !['succeeded', 'failed', 'cancelled', 'lost'].includes(state)
+  return ['prepared', 'queued', 'starting', 'running'].includes(state)
+}
+
+function canDownloadResults(): boolean {
+  const run = registry.selectedRun
+  return run?.state === 'succeeded' && run.target_mode === 'submitted_remote'
 }
 
 function selectOnCanvas(job: ExecutionJobSnapshot): void {
@@ -137,10 +142,28 @@ async function downloadResults(id: string): Promise<void> {
               text
               size="small"
               :disabled="!canCancel(registry.selectedRun.state)"
+              data-testid="execution-cancel"
               @click="registry.cancel(registry.selectedRun.id)"
             />
-            <Button label="Retry" icon="pi pi-refresh" text size="small" @click="registry.retry(registry.selectedRun.id)" />
-            <Button label="Results" icon="pi pi-download" text size="small" @click="downloadResults(registry.selectedRun.id)" />
+            <Button
+              label="Retry"
+              icon="pi pi-refresh"
+              text
+              size="small"
+              disabled
+              title="Retained execution retry is not available yet"
+              data-testid="execution-retry"
+            />
+            <Button
+              label="Results"
+              icon="pi pi-download"
+              text
+              size="small"
+              :disabled="!canDownloadResults()"
+              title="Result download is available for succeeded remote submissions"
+              data-testid="execution-results"
+              @click="downloadResults(registry.selectedRun.id)"
+            />
           </div>
         </div>
 

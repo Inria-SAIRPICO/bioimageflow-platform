@@ -417,13 +417,29 @@ def open_public_submitted_run(snapshot: ExecutionSnapshot, profile_resolver: Any
     if not isinstance(storage_path, str) or not isinstance(run_id, str):
         raise ValueError("Submitted execution reconnect metadata is incomplete")
     if snapshot.backend == "submitted_remote":
-        profile = profile_resolver.resolve_revision(
-            snapshot.profile_id,
-            snapshot.profile_revision,
-            snapshot.workflow_id,
-        )
+        profile_payload = snapshot.target_snapshot.get("profile")
+        if isinstance(profile_payload, dict):
+            from bioimageflow_server.models.execution_profiles import (
+                DistributedExecutionProfile,
+            )
+
+            record = DistributedExecutionProfile.model_validate(profile_payload)
+            if record.id != snapshot.profile_id or record.revision != snapshot.profile_revision:
+                raise ValueError("Retained execution profile binding is inconsistent")
+            if record.transport is None:
+                raise ValueError("Retained remote execution transport is missing")
+            transport = record.transport.to_library()
+        else:
+            # Compatibility for snapshots retained before profile snapshots
+            # were embedded in each accepted run.
+            profile = profile_resolver.resolve_revision(
+                snapshot.profile_id,
+                snapshot.profile_revision,
+                snapshot.workflow_id,
+            )
+            transport = profile.transport
         return SubmittedRunAdapter(
-            remote_workflow_run.open(profile.transport, storage_path, run_id)
+            remote_workflow_run.open(transport, storage_path, run_id)
         )
     if snapshot.backend == "submitted_local":
         return SubmittedRunAdapter(workflow_run.open(storage_path, run_id))

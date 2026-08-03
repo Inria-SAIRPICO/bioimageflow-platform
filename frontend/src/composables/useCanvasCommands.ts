@@ -32,7 +32,7 @@ export interface CanvasScopedCommandsOptions {
   addToolNode?: (toolName: string, parameters?: Record<string, unknown>) => string | null
   renameNode: (nodeId: string, name: string) => boolean
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
-  setNodeResources?: (nodeId: string, resources: Record<string, number>) => boolean
+  setNodeResources?: (nodeId: string, resources: Record<string, number | string>) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
   toggleWorkflowInput: (
@@ -65,7 +65,7 @@ export interface CanvasCommandsApi {
   addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
-  setNodeResources(nodeId: string, resources: Record<string, number>): boolean
+  setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
   toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult
@@ -90,7 +90,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
-  setNodeResources(nodeId: string, resources: Record<string, number>): boolean
+  setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
   toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult

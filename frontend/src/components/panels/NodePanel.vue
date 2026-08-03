@@ -263,7 +263,7 @@ watch(() => selectedNode.value?.id, () => {
   activeTab.value = 'parameters'
 })
 
-function updateResources(resources: Record<string, number>): void {
+function updateResources(resources: Record<string, number | string>): void {
   const nodeId = selectedNode.value?.id
   if (!nodeId || nodeData.value?.nodeType !== 'tool') return
   canvasCommands.setNodeResources(nodeId, resources)

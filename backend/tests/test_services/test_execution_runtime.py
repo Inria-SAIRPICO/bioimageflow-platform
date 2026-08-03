@@ -8,6 +8,7 @@ import pytest
 import bioimageflow
 
 from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
+from bioimageflow_server.models.execution_profiles import DistributedExecutionProfile
 from bioimageflow_server.services.execution_progress import reduce_progress_events
 from bioimageflow_server.services.execution_registry import (
     ExecutionRegistry,
@@ -16,7 +17,9 @@ from bioimageflow_server.services.execution_registry import (
 from bioimageflow_server.services.execution_runtime import (
     ExecutionCoordinator,
     SubmittedRunAdapter,
+    open_public_submitted_run,
 )
+from tests.test_services.test_execution_profiles import profile_fields
 
 
 def _snapshot(**updates: Any) -> ExecutionSnapshot:
@@ -124,6 +127,72 @@ def test_reducer_accepts_public_bioimageflow_diagnostic_value() -> None:
         [{"sequence": 1, "kind": "diagnostic", "payload": diagnostic.to_dict()}],
     )
     assert reduced.jobs["nested/tool"].diagnostic.attempt_id == "attempt-1"
+
+
+def test_remote_reconnect_uses_retained_profile_revision_after_profile_edit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fields = profile_fields(
+        mode="submitted_remote",
+        launch={
+            "backend": "psij",
+            "executor": "slurm",
+            "walltime_seconds": 3600,
+            "cpu_cores": 1,
+        },
+        transport={
+            "host": "confirmed-cluster",
+            "staging_root": "/cluster/staging",
+            "remote_executable": "/usr/bin/bioimageflow-cluster-agent",
+            "connect_timeout": 15.0,
+        },
+        remote_workflow_root="/cluster/workflows",
+    )
+    record = DistributedExecutionProfile(
+        **fields.model_dump(mode="python"),
+        id="profile_" + "1" * 32,
+        revision=4,
+    )
+    opened: dict[str, Any] = {}
+
+    class _RemoteRun:
+        @staticmethod
+        def open(transport: Any, storage_path: str, run_id: str) -> _FakeHandle:
+            opened.update(
+                transport=transport,
+                storage_path=storage_path,
+                run_id=run_id,
+            )
+            return _FakeHandle()
+
+    monkeypatch.setattr(bioimageflow, "RemoteWorkflowRun", _RemoteRun)
+    snapshot = _snapshot(
+        profile_id=record.id,
+        profile_revision=record.revision,
+        target_snapshot={
+            "name": record.name,
+            "mode": record.mode,
+            "profile": record.model_copy(update={"pre_launch": None}).model_dump(mode="json"),
+        },
+    )
+    resolver = type(
+        "ChangedProfileStore",
+        (),
+        {
+            "resolve_revision": staticmethod(
+                lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("reconnect must not read the edited profile")
+                )
+            )
+        },
+    )()
+
+    adapter = open_public_submitted_run(snapshot, resolver)
+
+    assert isinstance(adapter, SubmittedRunAdapter)
+    assert opened["storage_path"] == "/cluster/workflow"
+    assert opened["run_id"] == "run_remote"
+    assert opened["transport"].host == "confirmed-cluster"
 
 
 class _FakeHandle:

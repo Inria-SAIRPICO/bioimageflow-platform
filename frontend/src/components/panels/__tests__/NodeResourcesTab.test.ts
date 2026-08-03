@@ -24,4 +24,17 @@ describe('NodeResourcesTab', () => {
     await wrapper.get('[data-testid="resource-reset-all"]').trigger('click')
     expect(wrapper.emitted('change')).toEqual([[{}]])
   })
+
+  it('emits the strict graph resource field names and capacity grammar', async () => {
+    const wrapper = mount(NodeResourcesTab, {
+      props: { resources: {}, tool },
+      global: { plugins: [createPinia(), PrimeVue] },
+    })
+
+    await wrapper.get('[data-testid="resource-override-memory"]').setValue('32GB')
+
+    const changes = wrapper.emitted('change') ?? []
+    expect(changes[changes.length - 1]).toEqual([{ memory: '32GB' }])
+    expect(wrapper.get('[data-testid="resource-override-cpu"] input').attributes('inputmode')).toBe('numeric')
+  })
 })

@@ -137,6 +137,7 @@ export interface ExecutionPreflightRequest {
   draft_revision: number | null
   graph: unknown
   target_id: string
+  profile_revision: number
   command: { kind: string; nodes?: string[]; retry_of?: string }
   node_path_resolutions?: RemoteNodePathResolution[]
 }
@@ -263,6 +264,7 @@ export async function preflightExecution(
       workflow_id: request.workflow_id,
       draft_revision: request.draft_revision,
       target_id: request.target_id,
+      profile_revision: request.profile_revision,
       requested_nodes: request.command.nodes ?? null,
       node_path_choices: choices,
     },

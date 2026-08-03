@@ -10,6 +10,7 @@ import pytest
 from bioimageflow_server.models.execution_preflight import ExecutionPreflightRequest
 from bioimageflow_server.services.execution_preflight import (
     DistributedPreflightService,
+    PreparedRunAcceptance,
     PreparedSubmissionTokenManager,
     PreparedTokenConflict,
     preflight_binding,
@@ -111,7 +112,7 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
             resolve_workflow=lambda workflow_id, revision, storage_path: object()
         ),
         profiles=SimpleNamespace(
-            resolve_target=lambda target_id, workflow_id: profile
+            resolve_target=lambda target_id, workflow_id, profile_revision: profile
         ),
         uploads=SimpleNamespace(resolve_upload=lambda value: Path("/authorized") / value),
         tokens=PreparedSubmissionTokenManager(),
@@ -120,6 +121,7 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
         workflow_id="demo",
         draft_revision=3,
         target_id="cluster",
+        profile_revision=1,
     )
     unresolved = await service.preflight(unresolved_request)
     assert unresolved.kind == "resolution_required"
@@ -139,6 +141,9 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
     override = captured["node_input_overrides"]["preprocessing/files"]["path"]
     assert override.path == Path("/authorized/dataset")
 
-    handle = await service.tokens.consume(ready.token, binding=preflight_binding(ready_request))
-    assert handle.id == "run_remote"
+    accepted = await service.tokens.consume(ready.token, binding=preflight_binding(ready_request))
+    assert isinstance(accepted, PreparedRunAcceptance)
+    assert accepted.handle.id == "run_remote"
+    assert accepted.profile is profile
+    assert accepted.request == ready_request
     assert prepared.submit_calls == ["ssh"]

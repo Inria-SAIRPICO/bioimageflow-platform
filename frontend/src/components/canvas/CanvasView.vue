@@ -3230,7 +3230,7 @@ function setNodeEnabled(nodeId: string, enabled: boolean): boolean {
 
 function setNodeResources(
   nodeId: string,
-  resources: Record<string, number>,
+  resources: Record<string, number | string>,
 ): boolean {
   if (isLocked.value) return false
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
