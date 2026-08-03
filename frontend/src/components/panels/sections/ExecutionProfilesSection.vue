@@ -13,6 +13,7 @@ import type {
   ExecutionProfileMode,
   PreLaunchSource,
 } from '@/api/executionProfiles'
+import { selectFile } from '@/utils/nativeDialogs'
 
 const props = defineProps<{
   trustedFactories: string[]
@@ -232,6 +233,11 @@ async function testProfile(profile: ExecutionProfile): Promise<void> {
     : result.diagnostics.map(item => item.message).join('\n')
 }
 
+async function chooseLocalPreLaunch(): Promise<void> {
+  const selected = await selectFile('Select PSI/J pre-launch script', ['*.sh'])
+  if (selected !== null) form.preLaunchPath = selected
+}
+
 onMounted(() => void profiles.refresh())
 </script>
 
@@ -294,7 +300,13 @@ onMounted(() => void profiles.refresh())
           <label>Cluster work directory<InputText v-model="form.clusterWorkDir" /></label>
           <label class="wide">Pre-launch setup<Select v-model="form.preLaunchKind" :options="preLaunchKinds" option-label="label" option-value="value" /></label>
           <label v-if="form.preLaunchKind === 'inline'" class="wide">Inline UTF-8 shell source<Textarea v-model="form.preLaunchText" rows="8" /></label>
-          <label v-if="form.preLaunchKind === 'local_file'" class="wide">Local script path<InputText v-model="form.preLaunchPath" /></label>
+          <label v-if="form.preLaunchKind === 'local_file'" class="wide">
+            Local script path
+            <span class="path-row">
+              <InputText v-model="form.preLaunchPath" />
+              <Button label="Browse…" severity="secondary" @click="chooseLocalPreLaunch" />
+            </span>
+          </label>
           <template v-if="form.preLaunchKind === 'cluster_file'">
             <label class="wide">Cluster script path<InputText v-model="form.preLaunchPath" /></label>
             <label class="wide">Expected SHA-256 digest (recommended)<InputText v-model="form.preLaunchDigest" placeholder="sha256:…" /></label>
@@ -329,5 +341,6 @@ header p, .profile-card span, .empty { color: var(--p-text-muted-color, #666); }
 .warning { padding: .7rem; background: color-mix(in srgb, var(--p-yellow-500, #eab308) 14%, transparent); border-radius: 4px; }
 .error { color: var(--p-red-600, #c00); white-space: pre-wrap; }
 .notice { white-space: pre-wrap; }
+.path-row { display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
 @media (max-width: 680px) { .form-grid { grid-template-columns: 1fr; } .form-grid .wide { grid-column: auto; } }
 </style>
