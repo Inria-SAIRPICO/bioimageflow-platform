@@ -6,6 +6,7 @@ import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useWorkflowDraftStore } from '@/stores/workflowDraft'
 import { useExecutionStore } from '@/stores/execution'
+import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useNapariStore } from '@/stores/napari'
 import { api } from '@/api/client'
 
@@ -152,6 +153,31 @@ describe('useWebSocket workflow draft dispatch', () => {
     expect(execution.state).toBe('idle')
     expect(execution.lastResult?.success).toBe(true)
     expect(execution.nodeStatuses['node-1']?.status).toBe('executed')
+  })
+
+  it('reduces revisioned distributed execution snapshots independently', () => {
+    const registry = useExecutionRegistryStore()
+    const ws = useWebSocket()
+    ws.connect('ws://example.test/ws')
+    const receive = (revision: number, state: string) => {
+      FakeWebSocket.instances[0]!.onmessage?.({
+        data: JSON.stringify({
+          type: revision === 1 ? 'execution_snapshot' : 'execution_update',
+          snapshot: {
+            id: 'run-remote', revision, workflow_id: 'workflow', target_id: 'cluster',
+            target_mode: 'submitted_remote', state, created_at: '2026-08-03T10:00:00Z',
+            jobs: [],
+          },
+        }),
+      } as MessageEvent)
+    }
+
+    receive(2, 'running')
+    receive(1, 'failed')
+
+    expect(registry.runs[0]).toMatchObject({
+      id: 'run-remote', revision: 2, state: 'running',
+    })
   })
 
   it('rejects contextless execution events while a contextual run is active', () => {

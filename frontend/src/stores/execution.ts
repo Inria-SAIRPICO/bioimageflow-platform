@@ -88,6 +88,7 @@ export interface RunExecutionOptions {
   draftRevision: number | null
   mode?: ExecutionMode
   retryOfExecutionId?: string | null
+  targetId?: string
 }
 
 export type ExecutionMode = 'normal' | 'retry' | 'invalidate_failed' | 'recompute'
@@ -618,6 +619,7 @@ export const useExecutionStore = defineStore('execution', () => {
         ...(options?.draftRevision !== undefined
           ? { draft_revision: options.draftRevision }
           : {}),
+        ...(options?.targetId ? { target_id: options.targetId } : {}),
       }
       const { data } = await api.post<ExecutionContextFields & { status: string }>(
         '/api/v1/execution/run',

@@ -22,6 +22,7 @@ export interface LockForExecutionOptions {
   acceptedDraftRevision?: number | null
   mode?: ExecutionMode
   retryOfExecutionId?: string | null
+  targetId?: string
   isTargetActive?: () => boolean
 }
 
@@ -78,6 +79,7 @@ export function useExecutionLock() {
         ...(options.retryOfExecutionId
           ? { retryOfExecutionId: options.retryOfExecutionId }
           : {}),
+        ...(options.targetId ? { targetId: options.targetId } : {}),
       })
     } else {
       await exec.run(graph, nodes, workflowName)

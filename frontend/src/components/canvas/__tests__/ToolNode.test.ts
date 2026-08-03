@@ -5,6 +5,22 @@ import { decodeEndpointHandle } from '@/utils/endpointHandles'
 import ToolNode from '../ToolNode.vue'
 
 describe('ToolNode', () => {
+  it('shows a GPU badge for a node-specific effective override', () => {
+    const wrapper = mount(ToolNode, {
+      props: {
+        id: 'gpu-tool',
+        data: {
+          nodeType: 'tool', name: 'GPU tool', toolName: 'tool', tool: null,
+          status: 'unexecuted', parameters: {}, resources: { gpu: 1 }, collapsed: false,
+          enabled: true, connectedInputs: {}, pinnedInputs: {}, output_templates: {},
+        },
+      },
+      global: { stubs: { InputPin: true, OutputPin: true } },
+    })
+
+    expect(wrapper.get('.gpu-badge').text()).toBe('GPU')
+  })
+
   it('renders a workflow node solely from its discriminator and child interface', () => {
     const workflow = emptyGraph('child', 'Child')
     workflow.interface.inputs.push({

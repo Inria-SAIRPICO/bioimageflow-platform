@@ -30,6 +30,7 @@ import {
 } from '@/sessions/canvasSessionRegistry'
 import ParameterFieldError from '@/components/panels/shared/ParameterFieldError.vue'
 import NodeOutputErrorBlock from '@/components/panels/shared/NodeOutputErrorBlock.vue'
+import NodeResourcesTab from '@/components/panels/NodeResourcesTab.vue'
 import type {
   GraphValidationError,
   InputFieldSchema,
@@ -109,6 +110,7 @@ const interfaceNameError = ref<string | null>(null)
 const listInputErrors = ref<Record<string, string>>({})
 
 const editingName = ref(false)
+const activeTab = ref<'parameters' | 'resources' | 'execution'>('parameters')
 const nameInput = ref('')
 
 /** Track which optional fields have been set to null by the user */
@@ -258,7 +260,14 @@ function updateListParameter(key: string, event: Event) {
 
 watch(() => selectedNode.value?.id, () => {
   listInputErrors.value = {}
+  activeTab.value = 'parameters'
 })
+
+function updateResources(resources: Record<string, number>): void {
+  const nodeId = selectedNode.value?.id
+  if (!nodeId || nodeData.value?.nodeType !== 'tool') return
+  canvasCommands.setNodeResources(nodeId, resources)
+}
 
 function trackParameterFocus(fieldName: string, event: FocusEvent): void {
   const canvasId = canvasSessionRegistry.activeCanvasId.value
@@ -579,6 +588,22 @@ async function pickFiles(key: string) {
         </div>
       </div>
 
+      <div class="node-tabs" role="tablist" aria-label="Node details">
+        <button
+          v-for="tab in ['parameters', 'resources', 'execution'] as const"
+          :key="tab"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === tab"
+          :class="['node-tab', { 'node-tab--active': activeTab === tab }]"
+          :data-testid="`node-tab-${tab}`"
+          @click="activeTab = tab"
+        >
+          {{ tab[0]!.toUpperCase() + tab.slice(1) }}
+        </button>
+      </div>
+
+      <div v-show="activeTab === 'parameters'" class="node-tab-panel" data-testid="node-parameters-tab">
       <!-- Documentation section, open by default. The chevron is rendered
            before the label and toggles the section. -->
       <section v-if="nodeData.tool?.documentation" class="doc-panel" data-testid="doc-panel">
@@ -819,12 +844,6 @@ async function pickFiles(key: string) {
         </div>
       </div>
 
-      <!-- Execution error display: above Outputs section, only when failed -->
-      <NodeOutputErrorBlock
-        v-if="uiStore.selectedNodeIds[0]"
-        :node-id="uiStore.selectedNodeIds[0]"
-      />
-
       <!-- Outputs section (Fix 19: output template editing) -->
       <div v-if="nodeData.tool?.outputs" class="outputs-section">
         <h4>Outputs</h4>
@@ -868,7 +887,31 @@ async function pickFiles(key: string) {
           />
         </div>
       </div>
+      </div>
 
+      <NodeResourcesTab
+        v-show="activeTab === 'resources'"
+        v-if="nodeData.nodeType === 'tool' && nodeData.tool?.tool_type !== 'DataFrameTool'"
+        :resources="nodeData.resources ?? {}"
+        :tool="nodeData.tool"
+        :disabled="isNodeEditingDisabled"
+        class="node-tab-panel"
+        @change="updateResources"
+      />
+      <div
+        v-show="activeTab === 'resources'"
+        v-else
+        class="node-tab-panel empty-tab"
+        data-testid="node-resources-unavailable"
+      >
+        Worker resource overrides apply only to processing tools.
+      </div>
+
+      <div v-show="activeTab === 'execution'" class="node-tab-panel">
+      <NodeOutputErrorBlock
+        v-if="uiStore.selectedNodeIds[0]"
+        :node-id="uiStore.selectedNodeIds[0]"
+      />
       <!-- Execution output section: failed-node details and selected-node logs. -->
       <section class="execution-output-panel" data-testid="node-execution-output">
         <button
@@ -929,6 +972,7 @@ async function pickFiles(key: string) {
           </div>
         </div>
       </section>
+      </div>
 
     </div>
   </div>
@@ -978,6 +1022,31 @@ async function pickFiles(key: string) {
   padding-bottom: 8px;
   margin-bottom: 12px;
 }
+
+.node-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--p-content-border-color);
+  margin-bottom: 0.75rem;
+}
+
+.node-tab {
+  flex: 1;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--p-text-muted-color);
+  padding: 0.55rem 0.35rem;
+  cursor: pointer;
+}
+
+.node-tab--active {
+  border-bottom-color: var(--p-primary-color);
+  color: var(--p-primary-color);
+  font-weight: 600;
+}
+
+.node-tab-panel { min-width: 0; }
+.empty-tab { color: var(--p-text-muted-color); padding: 1rem 0; }
 
 .node-name-row {
   display: flex;

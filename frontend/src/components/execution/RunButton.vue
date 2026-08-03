@@ -12,6 +12,7 @@ import {
 } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
+import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useCanvasPersistence } from '@/composables/useCanvasPersistence'
 import {
   outOfDateNodeIdsForExecution,
@@ -20,6 +21,14 @@ import {
 import type { GraphState, ValidationResult } from '@/api/types'
 import { canvasSessionRegistry } from '@/sessions/canvasSessionRegistry'
 import { graphDocumentsEqual } from '@/sessions/graphDocument'
+import RemoteExecutionDialog from '@/components/execution/RemoteExecutionDialog.vue'
+import {
+  applyPreparedExecution,
+  preflightExecution,
+  type ExecutionPreflightResponse,
+  type RemoteNodePathInput,
+  type RemoteNodePathResolution,
+} from '@/api/executions'
 
 const props = defineProps<{
   graph: GraphState
@@ -38,6 +47,7 @@ const exec = useExecutionStore()
 const ui = useUIStore()
 const canvasPersistence = useCanvasPersistence()
 const canvasLifecycleStore = useCanvasLifecycleStore()
+const executionRegistry = useExecutionRegistryStore()
 const { lockForExecution } = useExecutionLock()
 
 const confirmOpen = ref(false)
@@ -55,6 +65,12 @@ const isNestedCanvasActive = computed(() => {
   return canvasId !== null
     && canvasSessionRegistry.get(canvasId)?.descriptor.kind === 'nested'
 })
+const remoteDialogVisible = ref(false)
+const remoteDialogBusy = ref(false)
+const remoteUnresolved = ref<RemoteNodePathInput[]>([])
+const remotePrepared = ref<Extract<ExecutionPreflightResponse, { status: 'ready' }> | null>(null)
+let resolutionResolve: ((value: RemoteNodePathResolution[] | null) => void) | null = null
+let confirmationResolve: ((value: boolean) => void) | null = null
 
 const runDisabled = computed(
   () => exec.isMutationLocked
@@ -183,6 +199,97 @@ function validationNodes(command: ExecutionCommand): string[] | undefined {
   return undefined
 }
 
+function preflightCommand(command: ExecutionCommand): {
+  kind: string
+  nodes?: string[]
+  retry_of?: string
+} {
+  if (command.kind === 'selected') return { kind: command.kind, nodes: command.nodes }
+  if (command.kind === 'retry' || command.kind === 'invalidate_failed') {
+    return { kind: command.kind, retry_of: command.retryOf }
+  }
+  return { kind: command.kind }
+}
+
+function requestRemoteResolution(
+  unresolved: RemoteNodePathInput[],
+): Promise<RemoteNodePathResolution[] | null> {
+  remoteUnresolved.value = unresolved
+  remotePrepared.value = null
+  remoteDialogVisible.value = true
+  return new Promise(resolve => { resolutionResolve = resolve })
+}
+
+function requestPreparedConfirmation(
+  prepared: Extract<ExecutionPreflightResponse, { status: 'ready' }>,
+): Promise<boolean> {
+  remotePrepared.value = prepared
+  remoteDialogVisible.value = true
+  return new Promise(resolve => { confirmationResolve = resolve })
+}
+
+function onRemoteResolved(resolutions: RemoteNodePathResolution[]): void {
+  remoteDialogVisible.value = false
+  const resolve = resolutionResolve
+  resolutionResolve = null
+  resolve?.(resolutions)
+}
+
+function onRemoteConfirmed(): void {
+  const resolve = confirmationResolve
+  confirmationResolve = null
+  resolve?.(true)
+}
+
+function cancelRemoteDialog(): void {
+  remoteDialogVisible.value = false
+  remotePrepared.value = null
+  remoteUnresolved.value = []
+  resolutionResolve?.(null)
+  confirmationResolve?.(false)
+  resolutionResolve = null
+  confirmationResolve = null
+}
+
+async function runDistributed(
+  command: ExecutionCommand,
+  graph: GraphState,
+  workflowId: string,
+  draftRevision: number | null,
+): Promise<boolean> {
+  const baseRequest = {
+    workflow_id: workflowId,
+    draft_revision: draftRevision,
+    graph,
+    target_id: executionRegistry.selectedTargetId,
+    command: preflightCommand(command),
+  }
+  let response = await preflightExecution(baseRequest)
+  if (response.status === 'resolution_required') {
+    const resolutions = await requestRemoteResolution(response.unresolved_paths)
+    if (resolutions === null) return false
+    response = await preflightExecution({
+      ...baseRequest,
+      node_path_resolutions: resolutions,
+    })
+  }
+  if (response.status !== 'ready') {
+    throw new Error('Remote data resolution is incomplete')
+  }
+  const confirmed = await requestPreparedConfirmation(response)
+  if (!confirmed) return false
+  remoteDialogBusy.value = true
+  try {
+    const snapshot = await applyPreparedExecution(response.token)
+    executionRegistry.applySnapshot(snapshot)
+    remoteDialogVisible.value = false
+    remotePrepared.value = null
+    return true
+  } finally {
+    remoteDialogBusy.value = false
+  }
+}
+
 async function runCore(command: ExecutionCommand) {
   if (isNestedCanvasActive.value) return
   if (exec.isMutationLocked || activeCanvasLifecycleBusy.value) return
@@ -233,6 +340,16 @@ async function runCore(command: ExecutionCommand) {
       }
 
       graph = preparedGraph
+      if (executionRegistry.selectedTarget?.mode !== 'local') {
+        const started = await runDistributed(
+          command,
+          preparedGraph,
+          workflowName,
+          preparedDraftRevision,
+        )
+        if (started && isTargetActive()) emit('run-started')
+        return
+      }
       const started = await lockForExecution({
         graph: preparedGraph,
         ...(command.kind === 'selected' ? { nodes: command.nodes } : {}),
@@ -449,6 +566,16 @@ defineExpose({
         />
       </template>
     </Dialog>
+
+    <RemoteExecutionDialog
+      :visible="remoteDialogVisible"
+      :unresolved="remoteUnresolved"
+      :prepared="remotePrepared"
+      :busy="remoteDialogBusy"
+      @resolve="onRemoteResolved"
+      @confirm="onRemoteConfirmed"
+      @cancel="cancelRemoteDialog"
+    />
 
     <Dialog
       v-model:visible="advancedConfirmOpen"
