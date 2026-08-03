@@ -90,14 +90,15 @@ The Resources UI must explain these target-specific effects and must not call me
 - Durable reconnection after the GUI or platform process restarts.
 - Multiple concurrent submitted runs while retaining at most one attached run in the platform process.
 - Backend-job status, connection-loss handling, durable cancellation, and explicit result download.
-- Remote-path and explicit-upload input behavior.
+- Recursive discovery and explicit upload-or-cluster resolution for path-shaped node inputs.
+- Immutable PSI/J orchestrator pre-launch scripts sourced from inline text, a local file, or a cluster file.
 
 ### 2.3 Not in scope
 
 - Creating or provisioning clusters, queues, Parsl providers, or worker environments.
 - Accepting raw Parsl `Config`, DFK, executor, provider, callable, pickle, scheduler directive, shell fragment, SSH option, or literal secret values from workflow documents.
 - Inferring uploads from strings or ordinary `Path` values.
-- Automatically installing software on a remote cluster.
+- Installing the cluster agent, configuring OpenSSH authentication, or provisioning software and worker environments on a remote cluster.
 - Cost estimation.
 - Live visualization of provider blocks or scheduler worker nodes.
 - Per-task retry controls.
@@ -268,6 +269,7 @@ class DistributedExecutionProfile(BaseModel):
     launch: OrchestratorLaunchConfig | PSIJLaunchConfig | None = None
     transport: SSHSubmissionTransport | None = None
     remote_workflow_root: str | None = None
+    pre_launch: InlinePreLaunch | LocalFilePreLaunch | ClusterFilePreLaunch | None = None
 ```
 
 The profile is a platform persistence model, but its nested values encode and decode through the library's public `to_dict()` and `from_dict()` contracts for `ParslConfigRef`, `ExecutorBinding`, `ExecutorCapabilities`, `WorkerSlotCapacity`, `WorkerEnvironmentAttestation`, `ParslTaskPolicy`, `OrchestratorLaunchConfig`, `PSIJLaunchConfig`, and `SSHSubmissionTransport`.
@@ -282,6 +284,11 @@ The platform captures the profile ID, revision, complete sanitized profile snaps
 A sanitized snapshot contains secret-reference environment-variable names but never their resolved values.
 A profile edit increments its revision.
 A profile used by a non-terminal submitted run cannot be removed because reconnect and cancellation still depend on it.
+
+The pre-launch value is a platform persistence model converted at preflight through `PreLaunchScript.from_text()`, `from_local_file()`, or `from_cluster_file()`.
+It is valid only for a submitted-remote profile with an explicit `PSIJLaunchConfig`.
+Inline and local-file bytes are snapshotted into the prepared bundle; a cluster file is identified by an absolute POSIX path and optional expected SHA-256 digest.
+The platform never exposes a generic SSH command or scheduler fragment.
 
 ### 6.3 Configuration factory and secrets
 
@@ -318,14 +325,14 @@ The Execution preference tab contains:
 - a read-only Local target capability summary;
 - distributed profile cards with Add, Edit, Duplicate, Test, Enable/Disable, and Remove actions.
 
-The distributed profile editor uses sections for General, Parsl configuration, Executors, Task policy, and Launch/Transport.
+The distributed profile editor uses sections for General, Parsl configuration, Executors, Task policy, Launch/Transport, and Pre-launch.
 It expands responsively beyond the current narrow settings dialog and never requires horizontal scrolling to reach fields or actions.
 
 For attached and submitted-local profiles, **Test profile** validates the stored schema, imports and calls the trusted factory on the local execution host, verifies `retries=0`, compares configured executor labels to bindings, checks secret-reference availability, and closes all test-created resources.
 For a submitted-remote profile, local testing validates only the platform schema and the public `ParslConfigRef`, binding, launch, and transport values.
 Remote factory import, secret-reference availability, `retries`, and executor-label validation require a public non-submitting BioImageFlow cluster-validation operation executed on the cluster; the platform must not emulate that operation by invoking private cluster-agent commands or storage.
-Until that operation exists, **Test connection** and a successful remote **Test profile** are unavailable with an explanatory capability message, and submitted-remote execution remains gated.
 Testing does not submit a workflow or scheduler job.
+Profile testing validates the pre-launch constructor but does not execute the script and explicitly states that service-node visibility and module, Spack, or Conda commands remain runtime checks.
 
 ## 7. Run Preflight
 
@@ -343,16 +350,19 @@ Preflight:
 6. resolves each node route by explicit run choice, environment route, or one unique compatible binding;
 7. validates slot capacity and task-policy bounds;
 8. validates static shared-storage and tool-origin requirements;
-9. validates submitted launch, transport, and path semantics;
-10. prepares an immutable local-upload manifest and content digest when explicit `LocalUpload` values are present;
-11. returns an immutable preflight token and a presentation summary.
+9. validates submitted launch and transport semantics;
+10. calls `inspect_remote_node_paths()` and requires an explicit upload-or-cluster choice for every unresolved path-shaped node input;
+11. builds invocation-only `node_input_overrides` without mutating the workflow;
+12. constructs the profile's typed `PreLaunchScript` when configured;
+13. calls `prepare_remote_submission()` and retains its live single-use object;
+14. returns an immutable preflight token, prepared manifest, and presentation summary.
 
 Static Parsl planning in steps 3 and 5–8 must use a public, non-allocating BioImageFlow planning operation that returns the library's effective worker requirements, resolved routes, and incompatibility evidence.
 The platform must not reproduce private requirement, routing, or startup logic.
 This command-time plan does not replace BioImageFlow's executor probe, which may acquire Parsl workers after the run is accepted but must still complete before any `ProcessingTool` work is submitted.
 An executor-probe failure is retained as a failed run with its execution ID rather than being reported as a command-time validation failure.
 
-The short-lived, single-use token captures the graph digest, draft revision, workflow identity generation, profile revision and digest, selected targets, resolved routes, normalized invocation path interpretations, local-upload manifest and content digest, and destructive invalidation effects.
+The short-lived, single-use token captures the graph digest, draft revision, workflow identity generation, profile revision and digest, selected targets, resolved routes, normalized invocation path interpretations, prepared manifest and content digest, pre-launch provenance, and destructive invalidation effects.
 Run apply rechecks every captured value.
 For an upload, apply consumes the exact staged bytes represented by the token and never rereads a mutable original path after confirmation.
 Expired, conflicted, and abandoned tokens clean their staged upload data.
@@ -586,14 +596,27 @@ For a remote target, every ordinary `Path` is a cluster path.
 The platform does not probe the laptop filesystem, rewrite the path, or upload its contents.
 A string remains a string even when it resembles a path.
 
-Only an explicitly selected root workflow input may become `LocalUpload(Path(...))`.
-The run confirmation must label each local upload and cluster path distinctly.
-Relative typed paths are rejected.
+The platform calls `inspect_remote_node_paths()` on the exact compiled workflow to discover every unconnected path-shaped tool input recursively.
+Files nodes are not special-cased.
+For every unresolved scalar, list, or tuple leaf, the user explicitly chooses **Upload from this computer** or **Already on the cluster**.
+The former becomes `LocalUpload(Path(...))`; the latter becomes an ordinary normalized absolute POSIX `Path`.
 
-The first remote increment may require all graph-embedded paths to already address cluster-visible shared storage.
-Automatic upload of node-parameter constants is out of scope.
+The platform passes the resulting scoped mapping to `prepare_remote_submission(..., node_input_overrides=...)`.
+It must not mutate nodes, patch serialized graphs, infer upload intent from local existence, or persist `LocalUpload` in workflow JSON.
+Connected fields, workflow boundaries, non-path fields, and relative unmarked paths are rejected.
+The prepared manifest binds every uploaded byte, uses collision-safe slots, and redacts original local paths from the transported graph.
 
-### 12.2 Results
+### 12.2 Pre-launch setup
+
+A submitted-remote profile may attach one typed PSI/J pre-launch script.
+Inline text and local files enter the immutable prepared bundle as digest-bound bytes.
+A cluster-file source appears as an external source with an optional expected digest; an unpinned source requires a warning because confirmation binds only its path until the cluster agent observes and snapshots it.
+
+BioImageFlow installs every source as a read-only run-owned artifact and gives PSI/J only that verified path.
+The script is sourced once on the scheduler job's service node before the orchestrator starts.
+It does not initialize Parsl workers, install the cluster agent, or replace OpenSSH configuration, and literal credentials are prohibited by guidance because script bytes and output are durable plaintext.
+
+### 12.3 Results
 
 Remote result download always requires an explicit local destination.
 The platform delegates to `RemoteWorkflowRun.result(destination=...)`, which stages privately, verifies the immutable bundle, and atomically installs it.
@@ -625,6 +648,7 @@ Profile lifecycle uses dedicated endpoints so profile revision conflicts and non
 
 The run endpoint does not accept raw profile bodies.
 It resolves the captured server-side profile revision from the preflight token.
+Preflight returns a discriminated `resolution_required` response with serialized `RemoteNodePathPlan` inputs before it may return `ready` with the prepared manifest and token.
 
 ### 13.3 Run inspection
 
@@ -746,6 +770,8 @@ Once all clients use execution snapshots, the compatibility status can be deprec
 - A late cancellation cannot displace finalizing or a terminal state.
 - Result download verifies and atomically installs the selected destination.
 - A confirmed local upload is byte-identical to the token-bound staged content even if its original path changes before run apply.
+- Recursive Files and non-Files node path inputs resolve through invocation-only overrides without changing workflow JSON.
+- Inline and local-file pre-launch bytes match the confirmed manifest, while a pinned cluster-file digest mismatch fails before launcher allocation.
 
 ### 16.5 Locking
 
@@ -754,48 +780,32 @@ Once all clients use execution snapshots, the compatibility status can be deprec
 - Statuses never project onto a different workflow revision.
 - Multiple submitted runs do not make ID-specific cancellation or status projection ambiguous.
 
-## 17. Library Prerequisites and Implementation Sequencing
+## 17. BioImageFlow 0.4 Integration Boundary
 
-BioImageFlow should be updated before the platform enables execution-effective node overrides or any Parsl target.
-The whole platform update does not need to wait: engine-neutral UI, registry, snapshot, and Local-target work can proceed in parallel behind capability gates.
+BioImageFlow 0.4.0 satisfies the library prerequisites for this platform implementation.
+The platform must depend on that public release and must not retain compatibility fallbacks that inspect private launcher, node, or cluster-agent state.
 
 ### 17.1 Confirmed public contracts
 
-The current public library already provides the following foundations:
+The public library provides the following foundations:
 
 1. Attached runs accept a caller-supplied `WorkflowExecutionContext` run ID.
 2. `ParslEngine`, `submit_workflow`, `ParslConfigRef`, the executor and task-policy values, launch values, and SSH transport values are public.
 3. Submitted reconnection, progress cursors, cancellation, logs, and results are available through `WorkflowRun` and `RemoteWorkflowRun`.
 4. The submitted launcher allocates UUID4 run IDs and preserves the same ID in canonical run storage.
+5. `NodeResourceOverrides`, trusted configuration validation, non-allocating distributed planning, remote profile validation, and structured node diagnostics are public.
+6. `inspect_remote_node_paths()`, `RemoteNodePathPlan`, `RemoteNodePathInput`, and invocation-only `node_input_overrides` provide recursive remote data resolution.
+7. `prepare_remote_submission()` binds uploads, node overrides, and optional `PreLaunchScript` sources to one immutable single-use manifest.
+8. `get_execution_capabilities()` reports every integration feature without eagerly importing optional runtimes.
 
 The platform must use these contracts and must not read launcher storage or private cluster-agent operations.
 
-### 17.2 Library-first blockers
+### 17.2 Capability gating
 
-Before the corresponding platform execution path is enabled, BioImageFlow must expose:
+The backend advertises Local, Parsl, PSI/J, remote validation, portable resources, remote node-path overrides, pre-launch upload, structured failures, and immutable preparation from the public capability report.
+A missing optional runtime disables only its affected targets and never prevents an ordinary Local installation from starting.
 
-1. a public, portable per-node resource-override contract that round-trips the value, validates and resolves it against the tool declaration, exposes the effective requirement through public planning, and makes Wetlands and Parsl dispatch consume it, required before the Resources editor is described as portable or execution-effective;
-2. a public trusted `ParslConfigRef` resolve-and-validate operation, required before attached Parsl construction, submitted-local profile testing, or local factory preflight;
-3. a public non-allocating distributed planning operation that uses the library's own requirement, tool-origin, capacity, and route logic and returns effective requirements, resolved routes, and structured incompatibilities, required before command-time Parsl preflight;
-4. a public non-submitting cluster-validation operation that verifies the remote factory, secret references, `retries`, and executor labels without allocating a run or scheduler job, required before submitted-remote profile testing or execution;
-5. a public, secret-redacted per-node failure diagnostic available through attached progress callbacks and submitted-run inspection, required before the Execution panel promises structured error and traceback details for every failed job;
-6. either a public prepare-and-submit boundary for an immutable cluster input bundle or confirmation that the platform may pass its own immutable staged `LocalUpload` copies without changing invocation meaning, required before remote confirmation claims that exact bytes are bound to a preflight token.
-
-Task drill-down is not a blocker.
-If it is later implemented, BioImageFlow must first expose a public task-diagnostics listing API; otherwise task detail remains summarized or unavailable.
-
-### 17.3 Parallel platform work
-
-The following work may proceed while the library-first blockers are implemented:
-
-1. the typed platform graph schema, Nodes-panel Resources UI, validation messages, undo/redo, and migrations may be built behind a capability gate, but execution and portable export remain disabled until the complete resource-override contract exists;
-2. the engine-neutral execution registry, state and progress reduction, history, Direct/Wetlands panel integration, and ID-specific cancellation may be implemented against current public events, while structured per-job error detail remains capability-gated until the public failure diagnostic exists;
-3. the Local target, selector, profile persistence and editor, profile revisioning, API shapes, and frontend capability messages may be implemented without executing a profile;
-4. attached and submitted-local Parsl wiring may start after the public config and static-plan boundaries land;
-5. submitted-remote wiring starts only after remote validation and token-bound upload preparation are available.
-
-The backend advertises Local, Parsl, PSI/J, remote-validation, and immutable-upload capabilities without making ordinary Local installation import optional Parsl or PSI/J dependencies.
-A compact public BioImageFlow capability report would simplify this detection and reduce duplicated optional-import logic, but it is desirable rather than a blocker.
+Task drill-down remains optional and unavailable until BioImageFlow exposes a public task-diagnostics listing API.
 
 ## 18. Promotion into `platform_specs_v2.md`
 
