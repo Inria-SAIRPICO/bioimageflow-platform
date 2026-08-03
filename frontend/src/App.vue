@@ -8,6 +8,7 @@ import NodePanel from './components/panels/NodePanel.vue'
 import SettingsPanel from './components/panels/SettingsPanel.vue'
 import LoggerPanel from './components/panels/LoggerPanel.vue'
 import DataTablePanel from './components/panels/DataTablePanel.vue'
+import ExecutionPanel from './components/panels/ExecutionPanel.vue'
 import CodeEditorPanel from './components/panels/CodeEditorPanel.vue'
 import CodeEditorTab from './components/layout/CodeEditorTab.vue'
 import AvivatorPanel from './components/panels/AvivatorPanel.vue'
@@ -25,6 +26,7 @@ export default defineComponent({
     nodePanel: NodePanel,
     logger: LoggerPanel,
     dataTable: DataTablePanel,
+    execution: ExecutionPanel,
     codeEditor: CodeEditorPanel,
     codeEditorTab: CodeEditorTab,
     avivator: AvivatorPanel,
@@ -279,6 +281,12 @@ watch(
     nextTick(() => dockviewApi.value?.getPanel('logger')?.api.setActive())
   },
 )
+watch(
+  () => uiStore.executionActivationRequest,
+  () => {
+    nextTick(() => dockviewApi.value?.getPanel('execution')?.api.setActive())
+  },
+)
 const dockviewDisposables: DockviewIDisposable[] = []
 const confirmedNestedWorkflowPanelCloses = new Set<string>()
 const removedWorkflowNestedWorkflowCloses = new Set<string>()
@@ -304,7 +312,7 @@ const dockviewTheme = computed(() => uiStore.isDarkTheme ? themeDark : themeLigh
 
 // --- Dockview setup ---
 
-const panelKeys = ['tools', 'workflows', 'datasets', 'nodePanel', 'dataTable', 'logger', 'codeEditor'] as const
+const panelKeys = ['tools', 'workflows', 'datasets', 'nodePanel', 'dataTable', 'execution', 'logger', 'codeEditor'] as const
 type DockPanelKey = typeof panelKeys[number]
 
 function isDockPanelKey(id: string): id is DockPanelKey {
@@ -538,6 +546,16 @@ function onDockviewReady(event: DockviewReadyEvent) {
     title: 'Node Data',
     initialHeight: 250,
     position: { referencePanel: CANVAS_LOADING_PANEL_ID, direction: 'below' },
+  })
+
+  api.addPanel({
+    id: 'execution',
+    component: 'execution',
+    title: 'Execution',
+    position: {
+      referencePanel: 'dataTable',
+      direction: 'within',
+    },
   })
 
   api.addPanel({
@@ -1467,6 +1485,13 @@ function getPanelAddOptions(key: string) {
       return { id: 'nodePanel', component: 'nodePanel', title: 'Nodes', initialWidth: 320, position: { direction: 'right' as const } }
     case 'dataTable':
       return { id: 'dataTable', component: 'dataTable', title: 'Node Data', initialHeight: 250, position: { direction: 'below' as const } }
+    case 'execution': {
+      const reference = dockviewApi.value?.getPanel('dataTable') ?? dockviewApi.value?.getPanel('logger')
+      if (reference) {
+        return { id: 'execution', component: 'execution', title: 'Execution', position: { referencePanel: reference.id, direction: 'within' as const } }
+      }
+      return { id: 'execution', component: 'execution', title: 'Execution', initialHeight: 250, position: { direction: 'below' as const } }
+    }
     case 'logger': {
       const dataTablePanel = dockviewApi.value?.getPanel('dataTable')
       if (dataTablePanel) {

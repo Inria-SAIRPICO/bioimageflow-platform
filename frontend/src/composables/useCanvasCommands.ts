@@ -32,6 +32,7 @@ export interface CanvasScopedCommandsOptions {
   addToolNode?: (toolName: string, parameters?: Record<string, unknown>) => string | null
   renameNode: (nodeId: string, name: string) => boolean
   setNodeEnabled: (nodeId: string, enabled: boolean) => boolean
+  setNodeResources?: (nodeId: string, resources: Record<string, number | string>) => boolean
   setInputPinned: (nodeId: string, input: string, pinned: boolean) => boolean
   setOutputTemplate: (nodeId: string, output: string, value: string) => boolean
   toggleWorkflowInput: (
@@ -64,6 +65,7 @@ export interface CanvasCommandsApi {
   addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
+  setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
   toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult
@@ -88,6 +90,7 @@ interface CanvasCommandResource extends DisposableCanvasResource {
   addToolNode(toolName: string, parameters?: Record<string, unknown>): string | null
   renameNode(nodeId: string, name: string): boolean
   setNodeEnabled(nodeId: string, enabled: boolean): boolean
+  setNodeResources(nodeId: string, resources: Record<string, number | string>): boolean
   setInputPinned(nodeId: string, input: string, pinned: boolean): boolean
   setOutputTemplate(nodeId: string, output: string, value: string): boolean
   toggleWorkflowInput(nodeId: string, input: string): CanvasInterfaceCommandResult
@@ -140,6 +143,9 @@ export function useCanvasCommands(
     renameNode: (nodeId, name) => resource.renameNode(nodeId, name),
     setNodeEnabled: (nodeId, enabled) => (
       resource.setNodeEnabled(nodeId, enabled)
+    ),
+    setNodeResources: (nodeId, resources) => (
+      resource.setNodeResources(nodeId, resources)
     ),
     setInputPinned: (nodeId, input, pinned) => (
       resource.setInputPinned(nodeId, input, pinned)
@@ -198,6 +204,10 @@ function createCommandResource(
     setNodeEnabled: (nodeId, enabled) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
       return options.setNodeEnabled(nodeId, enabled)
+    },
+    setNodeResources: (nodeId, resources) => {
+      if (disposed) throw new Error('Canvas commands have been disposed')
+      return options.setNodeResources?.(nodeId, resources) ?? false
     },
     setInputPinned: (nodeId, input, pinned) => {
       if (disposed) throw new Error('Canvas commands have been disposed')
@@ -264,6 +274,9 @@ function createActiveFacade(): CanvasCommandsApi {
     ),
     setNodeEnabled: (nodeId, enabled) => (
       activeCommandResource()?.setNodeEnabled(nodeId, enabled) ?? false
+    ),
+    setNodeResources: (nodeId, resources) => (
+      activeCommandResource()?.setNodeResources(nodeId, resources) ?? false
     ),
     setInputPinned: (nodeId, input, pinned) => (
       activeCommandResource()?.setInputPinned(nodeId, input, pinned) ?? false

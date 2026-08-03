@@ -61,6 +61,19 @@ from bioimageflow_server.routers.execution import (
     get_workflow_store as execution_get_workflow_store,
     router as execution_router,
 )
+from bioimageflow_server.routers.execution_profiles import (
+    get_execution_profile_store,
+    get_settings as execution_profiles_get_settings,
+    router as execution_profiles_router,
+)
+from bioimageflow_server.routers.executions import (
+    get_download_destination_resolver,
+    get_execution_coordinator,
+    get_preflight_service,
+    get_prepared_run_registrar,
+    preflight_router as execution_preflight_router,
+    router as executions_router,
+)
 from bioimageflow_server.routers.health import router as health_router
 from bioimageflow_server.routers.data_table import router as data_table_router
 from bioimageflow_server.routers.napari import (
@@ -125,6 +138,21 @@ from bioimageflow_server.routers.workspace import (
 )
 from bioimageflow_server.services.execution import (
     ExecutionManager,
+)
+from bioimageflow_server.services.execution_profiles import ExecutionProfileStore
+from bioimageflow_server.services.distributed_execution_integration import (
+    AuthorizedUploadResolver,
+    DraftWorkflowResolver,
+    ExecutionDownloadDestinationResolver,
+    PlatformExecutionProfileResolver,
+    PlatformPreparedRunRegistrar,
+    create_preflight_service,
+)
+from bioimageflow_server.services.execution_preflight import PreparedSubmissionTokenManager
+from bioimageflow_server.services.execution_registry import ExecutionRegistry
+from bioimageflow_server.services.execution_runtime import (
+    ExecutionCoordinator,
+    open_public_submitted_run,
 )
 from bioimageflow_server.services.agent_workspace_context import ensure_agent_workspace_context
 from bioimageflow_server.services.editor import EditorService
@@ -222,7 +250,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # service can initialize it through a direct get_shared_environment_manager()
     # call. Plain Wetlands defaults to cwd-relative ./wetlands; BioImageFlow
     # state must instead follow bioimageflow.paths.
-    configure_wetlands(wetlands_instance_path=get_wetlands_path())
+    configure_wetlands(root=get_wetlands_path())
 
     # Build the package services graph up front so the lifespan hook can
     # close owned resources (e.g. the PyPI httpx client).
@@ -244,6 +272,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     resolved_settings: Settings = (
         store_settings or config.settings or Settings(deployment_mode=_deployment_mode)
     )
+    execution_profile_store = config.execution_profile_store
+    if execution_profile_store is None and settings_store is not None:
+        execution_profile_store = ExecutionProfileStore(
+            settings_store.path.parent / "execution_profiles.json",
+            editable=_deployment_mode == "desktop",
+        )
 
     def _live_settings() -> Settings:
         if config.settings_store is not None:
@@ -344,6 +378,55 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         dev_mode_provider=_live_dev_mode,
         settings_provider=_live_settings,
     )
+    distributed_tokens: PreparedSubmissionTokenManager | None = None
+    distributed_coordinator: ExecutionCoordinator | None = None
+    distributed_preflight: Any | None = None
+    distributed_registrar: PlatformPreparedRunRegistrar | None = None
+    distributed_downloads: ExecutionDownloadDestinationResolver | None = None
+    if execution_profile_store is not None:
+        profile_resolver = PlatformExecutionProfileResolver(
+            execution_profile_store,
+            trusted_factories=lambda: list(_live_settings().trusted_parsl_factories),
+            local_storage_path=lambda workflow_id: _current_workflow_store().get_storage_path(
+                workflow_id
+            ),
+        )
+        distributed_tokens = PreparedSubmissionTokenManager()
+        distributed_registry = ExecutionRegistry(workspace_path)
+        execution_profile_store.set_reference_checker(
+            lambda profile_id: any(
+                snapshot.profile_id == profile_id
+                for snapshot in distributed_registry.non_terminal()
+            )
+        )
+        distributed_coordinator = ExecutionCoordinator(
+            distributed_registry,
+            reconnector=lambda snapshot: open_public_submitted_run(
+                snapshot,
+                profile_resolver,
+            ),
+            publisher=ws_manager,
+        )
+        distributed_preflight = create_preflight_service(
+            workflows=DraftWorkflowResolver(
+                workflow_draft_service,
+                registry,
+                _live_settings,
+            ),
+            profiles=profile_resolver,
+            uploads=AuthorizedUploadResolver(
+                deployment_mode=_deployment_mode,
+                datasets_root=config.datasets_root or workspace_path / "datasets",
+            ),
+            tokens=distributed_tokens,
+        )
+        distributed_registrar = PlatformPreparedRunRegistrar(
+            distributed_coordinator,
+            profile_resolver,
+        )
+        distributed_downloads = ExecutionDownloadDestinationResolver(
+            workspace_path / ".bioimageflow" / "execution_exports"
+        )
     workflow_source_service = WorkflowSourceService(
         _current_workflow_store,
         deployment_mode_provider=lambda: config.deployment_mode,
@@ -428,6 +511,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     else:
         settings_provider = (lambda: settings_store.get()) if settings_store is not None else None
 
+        async def _retain_local_execution(context: Any) -> None:
+            if distributed_registrar is not None:
+                await distributed_registrar.register_local(context, execution_manager)
+
         def _tool_environment_manager() -> Any | None:
             return getattr(tool_environment_service, "manager", None)
 
@@ -438,6 +525,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             storage_path=stateless_storage_path,
             settings_provider=settings_provider,
             environment_manager_provider=_tool_environment_manager,
+            retained_execution_started=_retain_local_execution,
         )
 
     # Always instantiate a launcher (cheap config + state). The expensive
@@ -459,6 +547,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # catalog might consult (tool_store_path, etc.) are in place.
         if config.settings_store is not None:
             await config.settings_store.load()
+        if execution_profile_store is not None:
+            await execution_profile_store.load()
+        if distributed_coordinator is not None:
+            await distributed_coordinator.start()
         current_workflow_store = _current_workflow_store()
         await asyncio.to_thread(_initialize_workflow_store, current_workflow_store)
         try:
@@ -505,6 +597,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if distributed_coordinator is not None:
+                await distributed_coordinator.close()
+            if distributed_tokens is not None:
+                await distributed_tokens.close()
             # Napari shutdown FIRST: it may take up to 5s (kill timeout)
             # and must run before the WS log handler is detached so the
             # final environment_status: stopped event reaches clients.
@@ -537,6 +633,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 ws_manager._loop = None
             if config.settings_store is not None:
                 await config.settings_store.flush()
+            if execution_profile_store is not None:
+                await execution_profile_store.flush()
             if _owns_pypi:
                 await pypi.aclose()
 
@@ -669,6 +767,22 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(datasets_router, prefix="/api/v1")
     app.include_router(demo_workflows_router, prefix="/api/v1")
     app.include_router(execution_router, prefix="/api/v1")
+    if execution_profile_store is not None:
+        app.include_router(execution_profiles_router, prefix="/api/v1")
+        app.dependency_overrides[get_execution_profile_store] = lambda: execution_profile_store
+        app.dependency_overrides[execution_profiles_get_settings] = _live_settings
+    if (
+        distributed_coordinator is not None
+        and distributed_preflight is not None
+        and distributed_registrar is not None
+        and distributed_downloads is not None
+    ):
+        app.include_router(execution_preflight_router, prefix="/api/v1")
+        app.include_router(executions_router, prefix="/api/v1")
+        app.dependency_overrides[get_execution_coordinator] = lambda: distributed_coordinator
+        app.dependency_overrides[get_preflight_service] = lambda: distributed_preflight
+        app.dependency_overrides[get_prepared_run_registrar] = lambda: distributed_registrar
+        app.dependency_overrides[get_download_destination_resolver] = lambda: distributed_downloads
     app.include_router(nested_workflow_snapshots_router, prefix="/api/v1")
     app.include_router(workspace_router, prefix="/api/v1")
     app.include_router(workflow_draft_operations_router, prefix="/api/v1")

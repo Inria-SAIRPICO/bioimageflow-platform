@@ -1,11 +1,31 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import Button from 'primevue/button'
+import Select from 'primevue/select'
+import Textarea from 'primevue/textarea'
 import type { Settings } from '@/stores/settings'
+import { useExecutionRegistryStore } from '@/stores/executionRegistry'
+import ExecutionProfilesSection from './ExecutionProfilesSection.vue'
 
 const props = defineProps<{ modelValue: Settings }>()
-defineEmits<{
+const emit = defineEmits<{
   (e: 'update:field', payload: { field: keyof Settings; value: unknown }): void
 }>()
+const executionRegistry = useExecutionRegistryStore()
+
+const distributedSettings = computed(() => props.modelValue as Settings & {
+  new_workflow_execution?: 'sequential' | 'parallel'
+  default_execution_target_id?: string
+})
+const schedulingOptions = [
+  { label: 'Sequential', value: 'sequential' },
+  { label: 'Parallel', value: 'parallel' },
+]
+const targetOptions = computed(() => executionRegistry.targets.map(target => ({
+  label: target.enabled ? target.label : `${target.label} — unavailable`,
+  value: target.id,
+  disabled: !target.enabled,
+})))
 
 const backendLabel = computed(() => {
   const engine = props.modelValue.engine
@@ -23,6 +43,39 @@ const schedulingLabel = computed(() => {
     ? 'Parallel'
     : 'Sequential'
 })
+
+const trustedFactories = computed(() => {
+  const value = (props.modelValue as Settings & {
+    trusted_parsl_factories?: string[]
+  }).trusted_parsl_factories
+  return Array.isArray(value) ? value : []
+})
+
+const profilesEditable = computed(() => props.modelValue.deployment_mode === 'desktop')
+const trustedFactoriesText = ref('')
+
+watch(trustedFactories, value => {
+  trustedFactoriesText.value = value.join('\n')
+}, { immediate: true })
+
+function saveTrustedFactories(): void {
+  const values = [...new Set(
+    trustedFactoriesText.value
+      .split(/\r?\n/)
+      .map(value => value.trim())
+      .filter(Boolean),
+  )]
+  emit('update:field', {
+    field: 'trusted_parsl_factories' as keyof Settings,
+    value: values,
+  })
+}
+
+function updateExecutionPreference(field: string, value: unknown): void {
+  emit('update:field', { field: field as keyof Settings, value })
+}
+
+onMounted(() => void executionRegistry.loadTargets())
 </script>
 
 <template>
@@ -38,6 +91,56 @@ const schedulingLabel = computed(() => {
         {{ schedulingLabel }}
       </span>
     </div>
+
+    <div class="field">
+      <label class="field-label" for="new-workflow-execution">New workflow scheduling</label>
+      <Select
+        id="new-workflow-execution"
+        :model-value="distributedSettings.new_workflow_execution ?? 'sequential'"
+        :options="schedulingOptions"
+        option-label="label"
+        option-value="value"
+        @update:model-value="updateExecutionPreference('new_workflow_execution', $event)"
+      />
+      <small>Controls whether newly created workflows start with sequential or parallel scheduling.</small>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="default-execution-target">Default execution target</label>
+      <Select
+        id="default-execution-target"
+        :model-value="distributedSettings.default_execution_target_id ?? 'local'"
+        :options="targetOptions"
+        option-label="label"
+        option-value="value"
+        option-disabled="disabled"
+        @update:model-value="updateExecutionPreference('default_execution_target_id', $event)"
+      />
+      <small>Local remains available even when optional distributed runtimes are unavailable.</small>
+    </div>
+
+    <div class="field" data-testid="trusted-parsl-factories">
+      <span class="field-label">Trusted Parsl configuration factories</span>
+      <Textarea
+        v-model="trustedFactoriesText"
+        rows="4"
+        :readonly="!profilesEditable"
+        placeholder="package.module:build_config"
+      />
+      <small>One importable module:callable reference per line. Secrets remain environment-variable references.</small>
+      <Button
+        v-if="profilesEditable"
+        label="Save trusted factories"
+        severity="secondary"
+        size="small"
+        @click="saveTrustedFactories"
+      />
+    </div>
+
+    <ExecutionProfilesSection
+      :trusted-factories="trustedFactories"
+      :editable="profilesEditable"
+    />
   </div>
 </template>
 

@@ -35,6 +35,7 @@ import {
 import { resetWorkflowDraftToSaved } from '@/api/workflowDrafts'
 import { useSettingsPanel } from '@/composables/useSettingsPanel'
 import RunButton from '@/components/execution/RunButton.vue'
+import ExecutionTargetSelector from '@/components/execution/ExecutionTargetSelector.vue'
 import ErrorIndicator from '@/components/layout/ErrorIndicator.vue'
 import ErrorHistoryPanel from '@/components/layout/ErrorHistoryPanel.vue'
 import DeleteWorkflowDialog from '@/components/workflow/DeleteWorkflowDialog.vue'
@@ -1074,6 +1075,7 @@ const menuItems = computed<MenuItem[]>(() => [
       ...(!isDesktop() ? [panelToggle('Datasets Panel', 'datasets')] : []),
       panelToggle('Nodes', 'nodePanel'),
       panelToggle('Node Data', 'dataTable'),
+      panelToggle('Execution', 'execution'),
       panelToggle('Logger', 'logger'),
       panelToggle('Code Editor', 'codeEditor'),
     ],
@@ -1178,6 +1180,7 @@ defineExpose({
           data-testid="theme-menu-button"
           @click="toggleThemeMenu"
         />
+        <ExecutionTargetSelector />
         <RunButton
           ref="runButtonRef"
           :graph="currentGraph"

@@ -258,6 +258,7 @@ const canvasCommands = useCanvasCommands({
   }),
   renameNode,
   setNodeEnabled,
+  setNodeResources,
   setInputPinned,
   setOutputTemplate,
   toggleWorkflowInput,
@@ -3223,6 +3224,21 @@ function setNodeEnabled(nodeId: string, enabled: boolean): boolean {
   const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
   if (!node?.data || node.data.enabled === enabled) return false
   node.data.enabled = enabled
+  emitGraphChanged()
+  return true
+}
+
+function setNodeResources(
+  nodeId: string,
+  resources: Record<string, number | string>,
+): boolean {
+  if (isLocked.value) return false
+  const node = getNodes.value.find((candidate: any) => candidate.id === nodeId)
+  if (!node?.data || node.data.nodeType !== 'tool') return false
+  const current = JSON.stringify(node.data.resources ?? {})
+  const next = JSON.stringify(resources)
+  if (current === next) return false
+  node.data.resources = { ...resources }
   emitGraphChanged()
   return true
 }

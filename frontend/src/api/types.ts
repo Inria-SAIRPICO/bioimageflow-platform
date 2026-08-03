@@ -614,6 +614,213 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/execution/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Execution Capabilities */
+        get: operations["execution_capabilities_api_v1_execution_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/execution/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Execution Targets */
+        get: operations["execution_targets_api_v1_execution_targets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/execution/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Execution Profiles */
+        get: operations["list_execution_profiles_api_v1_execution_profiles_get"];
+        put?: never;
+        /** Create Execution Profile */
+        post: operations["create_execution_profile_api_v1_execution_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/execution/profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Execution Profile */
+        delete: operations["delete_execution_profile_api_v1_execution_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Execution Profile */
+        patch: operations["update_execution_profile_api_v1_execution_profiles__profile_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/execution/profiles/{profile_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Execution Profile */
+        post: operations["test_execution_profile_api_v1_execution_profiles__profile_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/execution/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preflight Execution */
+        post: operations["preflight_execution_api_v1_execution_preflight_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Executions */
+        get: operations["list_executions_api_v1_executions_get"];
+        put?: never;
+        /** Apply Prepared Execution */
+        post: operations["apply_prepared_execution_api_v1_executions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{execution_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Execution */
+        get: operations["get_execution_api_v1_executions__execution_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{execution_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Execution */
+        post: operations["cancel_execution_api_v1_executions__execution_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{execution_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Execution */
+        post: operations["retry_execution_api_v1_executions__execution_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{execution_id}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Execution Logs */
+        get: operations["execution_logs_api_v1_executions__execution_id__logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/executions/{execution_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download Execution Result */
+        post: operations["download_execution_result_api_v1_executions__execution_id__result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nested-workflow-snapshots/open": {
         parameters: {
             query?: never;
@@ -1244,6 +1451,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ApplyPreparedExecutionRequest */
+        ApplyPreparedExecutionRequest: {
+            /** Token */
+            token: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Draft Revision */
+            draft_revision: number;
+            /** Target Id */
+            target_id: string;
+            /** Requested Nodes */
+            requested_nodes?: string[] | null;
+        };
         /** Body_import_package_from_archive_api_v1_tools_packages_import_archive_post */
         Body_import_package_from_archive_api_v1_tools_packages_import_archive_post: {
             /** Archive */
@@ -1263,6 +1483,13 @@ export interface components {
             /** Folder Id */
             folder_id?: string | null;
         };
+        /** CapabilityStatusValue */
+        CapabilityStatusValue: {
+            /** Supported */
+            supported: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
         /** ClearRequest */
         ClearRequest: {
             graph: components["schemas"]["GraphState"];
@@ -1270,6 +1497,18 @@ export interface components {
             nodes: string[];
             /** Workflow Name */
             workflow_name: string;
+        };
+        /** ClusterFilePreLaunchValue */
+        ClusterFilePreLaunchValue: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "cluster_file";
+            /** Path */
+            path: string;
+            /** Expected Digest */
+            expected_digest?: string | null;
         };
         /** ColumnEdge */
         ColumnEdge: {
@@ -1714,6 +1953,50 @@ export interface components {
             /** Node Id */
             node_id: string;
         };
+        /** DistributedExecutionProfile */
+        DistributedExecutionProfile: {
+            /** Name */
+            name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "attached" | "submitted_local" | "submitted_remote";
+            parsl_config: components["schemas"]["ParslConfigRefValue"];
+            /** Executor Bindings */
+            executor_bindings: {
+                [key: string]: components["schemas"]["ExecutorBindingValue-Output"];
+            };
+            /** Environment Routes */
+            environment_routes?: {
+                [key: string]: string;
+            };
+            /** Shared Runtime Root */
+            shared_runtime_root?: string | null;
+            task_policy?: components["schemas"]["ParslTaskPolicyValue"];
+            /** Launch */
+            launch?: (components["schemas"]["LocalLaunchValue"] | components["schemas"]["PSIJLaunchValue"]) | null;
+            transport?: components["schemas"]["SSHSubmissionTransportValue"] | null;
+            /** Remote Workflow Root */
+            remote_workflow_root?: string | null;
+            /** Pre Launch */
+            pre_launch?: (components["schemas"]["InlinePreLaunchValue"] | components["schemas"]["LocalFilePreLaunchValue"] | components["schemas"]["ClusterFilePreLaunchValue"]) | null;
+            /**
+             * Schema
+             * @default bioimageflow.platform.execution-profile.v1
+             * @constant
+             */
+            schema: "bioimageflow.platform.execution-profile.v1";
+            /** Id */
+            id: string;
+            /** Revision */
+            revision: number;
+        };
         /**
          * DraftGraphMismatchResponse
          * @description Conflict returned when a revision is paired with a different graph.
@@ -1803,6 +2086,134 @@ export interface components {
             /** Requested Hash */
             requested_hash?: string | null;
         };
+        /** ExecutionActionResponse */
+        ExecutionActionResponse: {
+            /** Execution Id */
+            execution_id: string;
+            /**
+             * Accepted
+             * @default true
+             */
+            accepted: boolean;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "preparing" | "prepared" | "queued" | "starting" | "running" | "cancel_requested" | "finalizing" | "succeeded" | "failed" | "cancelled" | "lost";
+        };
+        /** ExecutionCapabilitiesValue */
+        ExecutionCapabilitiesValue: {
+            /**
+             * Schema
+             * @constant
+             */
+            schema: "bioimageflow.execution_capabilities.v1";
+            /** Capabilities */
+            capabilities: {
+                [key: string]: components["schemas"]["CapabilityStatusValue"];
+            };
+        };
+        /** ExecutionPage */
+        ExecutionPage: {
+            /** Items */
+            items: components["schemas"]["ExecutionSnapshot"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
+        };
+        /** ExecutionPreflightRequest */
+        ExecutionPreflightRequest: {
+            /** Workflow Id */
+            workflow_id: string;
+            /** Draft Revision */
+            draft_revision: number;
+            /** Target Id */
+            target_id: string;
+            /** Profile Revision */
+            profile_revision: number;
+            /** Requested Nodes */
+            requested_nodes?: string[] | null;
+            /** Root Inputs */
+            root_inputs?: {
+                [key: string]: unknown;
+            };
+            /** Node Path Choices */
+            node_path_choices?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Node Routes */
+            node_routes?: {
+                [key: string]: string;
+            };
+        };
+        /** ExecutionProfileCreate */
+        ExecutionProfileCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "attached" | "submitted_local" | "submitted_remote";
+            parsl_config: components["schemas"]["ParslConfigRefValue"];
+            /** Executor Bindings */
+            executor_bindings: {
+                [key: string]: components["schemas"]["ExecutorBindingValue-Input"];
+            };
+            /** Environment Routes */
+            environment_routes?: {
+                [key: string]: string;
+            };
+            /** Shared Runtime Root */
+            shared_runtime_root?: string | null;
+            task_policy?: components["schemas"]["ParslTaskPolicyValue"];
+            /** Launch */
+            launch?: (components["schemas"]["LocalLaunchValue"] | components["schemas"]["PSIJLaunchValue"]) | null;
+            transport?: components["schemas"]["SSHSubmissionTransportValue"] | null;
+            /** Remote Workflow Root */
+            remote_workflow_root?: string | null;
+            /** Pre Launch */
+            pre_launch?: (components["schemas"]["InlinePreLaunchValue"] | components["schemas"]["LocalFilePreLaunchValue"] | components["schemas"]["ClusterFilePreLaunchValue"]) | null;
+        };
+        /** ExecutionProfileList */
+        ExecutionProfileList: {
+            /** Editable */
+            editable: boolean;
+            /** Profiles */
+            profiles: components["schemas"]["DistributedExecutionProfile"][];
+        };
+        /** ExecutionProfilePatch */
+        ExecutionProfilePatch: {
+            /** Expected Revision */
+            expected_revision: number;
+            profile: components["schemas"]["ExecutionProfileCreate"];
+        };
+        /** ExecutionProfileTestResult */
+        ExecutionProfileTestResult: {
+            /** Profile Id */
+            profile_id: string;
+            /** Profile Revision */
+            profile_revision: number;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "attached" | "submitted_local" | "submitted_remote";
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
+        };
         /**
          * ExecutionRequest
          * @description Execute an inline graph or verify it against an accepted draft revision.
@@ -1830,6 +2241,162 @@ export interface components {
             /** Retry Of Execution Id */
             retry_of_execution_id?: string | null;
         };
+        /**
+         * ExecutionSnapshot
+         * @description Durable, revisioned presentation state for one execution.
+         */
+        ExecutionSnapshot: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            /** Execution Id */
+            execution_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Draft Revision */
+            draft_revision?: number | null;
+            /** Graph Fingerprint */
+            graph_fingerprint?: string | null;
+            /**
+             * Command
+             * @default run
+             * @enum {string}
+             */
+            command: "run" | "run_selected" | "retry" | "invalidate_retry" | "recompute";
+            /** Requested Nodes */
+            requested_nodes?: string[] | null;
+            /** Retry Of Execution Id */
+            retry_of_execution_id?: string | null;
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "direct" | "wetlands" | "attached_parsl" | "submitted_local" | "submitted_remote";
+            /** Target Id */
+            target_id: string;
+            /** Profile Id */
+            profile_id?: string | null;
+            /** Profile Revision */
+            profile_revision?: number | null;
+            /** Target Snapshot */
+            target_snapshot?: {
+                [key: string]: unknown;
+            };
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "preparing" | "prepared" | "queued" | "starting" | "running" | "cancel_requested" | "finalizing" | "succeeded" | "failed" | "cancelled" | "lost";
+            /** Jobs */
+            jobs?: {
+                [key: string]: components["schemas"]["JobSnapshot"];
+            };
+            /**
+             * Progress Cursor
+             * @default 0
+             */
+            progress_cursor: number;
+            /** Reconnect */
+            reconnect?: {
+                [key: string]: unknown;
+            } | null;
+            /** Backend Metadata */
+            backend_metadata?: {
+                [key: string]: unknown;
+            };
+            observation?: components["schemas"]["ObservationSnapshot"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /** ExecutionTargetValue */
+        ExecutionTargetValue: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "local" | "profile";
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "local" | "attached" | "submitted_local" | "submitted_remote";
+            /** Available */
+            available: boolean;
+            /** Disabled Reason */
+            disabled_reason?: string | null;
+            /** Profile Revision */
+            profile_revision?: number | null;
+        };
+        /** ExecutionTargetsValue */
+        ExecutionTargetsValue: {
+            capabilities: components["schemas"]["ExecutionCapabilitiesValue"];
+            /** Targets */
+            targets: components["schemas"]["ExecutionTargetValue"][];
+        };
+        /** ExecutorBindingValue */
+        "ExecutorBindingValue-Input": {
+            /**
+             * Schema
+             * @default bioimageflow.parsl.executor_binding.v1
+             * @constant
+             */
+            schema: "bioimageflow.parsl.executor_binding.v1";
+            /** Label */
+            label: string;
+            /** Environments */
+            environments: components["schemas"]["WorkerEnvironmentAttestationValue"][];
+            capabilities: components["schemas"]["ExecutorCapabilitiesValue"];
+        };
+        /** ExecutorBindingValue */
+        "ExecutorBindingValue-Output": {
+            /**
+             * Schema
+             * @default bioimageflow.parsl.executor_binding.v1
+             * @constant
+             */
+            schema: "bioimageflow.parsl.executor_binding.v1";
+            /** Label */
+            label: string;
+            /** Environments */
+            environments: components["schemas"]["WorkerEnvironmentAttestationValue"][];
+            capabilities: components["schemas"]["ExecutorCapabilitiesValue"];
+        };
+        /** ExecutorCapabilitiesValue */
+        ExecutorCapabilitiesValue: {
+            /**
+             * Schema
+             * @default bioimageflow.parsl.executor_capabilities.v1
+             * @constant
+             */
+            schema: "bioimageflow.parsl.executor_capabilities.v1";
+            /** Storage Modes */
+            storage_modes: ("shared_fs" | "staged")[];
+            /** Tool Origin Modes */
+            tool_origin_modes: ("installed_module" | "versioned_module" | "shared_module" | "source_file" | "archive_module")[];
+            slot: components["schemas"]["WorkerSlotCapacityValue"];
+        };
         /** ExposeWorkflowInputOperation */
         ExposeWorkflowInputOperation: {
             scope?: components["schemas"]["WorkflowDraftOperationScope"];
@@ -1849,6 +2416,34 @@ export interface components {
              */
             type: "expose_workflow_output";
             output: components["schemas"]["WorkflowOutput"];
+        };
+        /**
+         * FailureDiagnosticSnapshot
+         * @description Secret-redacted failure associated with one scoped node attempt.
+         */
+        FailureDiagnosticSnapshot: {
+            /** Scoped Node Path */
+            scoped_node_path: string;
+            /** Category */
+            category: string;
+            /** Exception Type */
+            exception_type: string;
+            /** Message */
+            message: string;
+            /** Traceback */
+            traceback?: string | null;
+            /** Attempt Id */
+            attempt_id?: string | null;
+            /**
+             * Retry Status
+             * @default terminal
+             */
+            retry_status: string;
+            /**
+             * Terminal
+             * @default true
+             */
+            terminal: boolean;
         };
         /** FieldInputPort */
         FieldInputPort: {
@@ -1928,6 +2523,16 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InlinePreLaunchValue */
+        InlinePreLaunchValue: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "inline";
+            /** Text */
+            text: string;
+        };
         /** InputFieldSchema */
         InputFieldSchema: {
             /** Type */
@@ -1966,6 +2571,80 @@ export interface components {
             image_spec?: {
                 [key: string]: string[];
             } | null;
+        };
+        /**
+         * JobSnapshot
+         * @description Latest reduced state for one scoped workflow node.
+         */
+        JobSnapshot: {
+            /** Scoped Node Path */
+            scoped_node_path: string;
+            /**
+             * State
+             * @default waiting
+             * @enum {string}
+             */
+            state: "waiting" | "running" | "cached" | "succeeded" | "failed" | "cancelled" | "skipped" | "blocked";
+            /**
+             * Row
+             * @default 0
+             */
+            row: number;
+            /**
+             * Total Rows
+             * @default 0
+             */
+            total_rows: number;
+            /** Current */
+            current?: number | null;
+            /** Maximum */
+            maximum?: number | null;
+            /** Message */
+            message?: string | null;
+            /** Result Key */
+            result_key?: string | null;
+            /** Record Id */
+            record_id?: string | null;
+            /** Executor Label */
+            executor_label?: string | null;
+            /** Route Reason */
+            route_reason?: string | null;
+            /** Effective Resources */
+            effective_resources?: {
+                [key: string]: unknown;
+            } | null;
+            diagnostic?: components["schemas"]["FailureDiagnosticSnapshot"] | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** LocalFilePreLaunchValue */
+        LocalFilePreLaunchValue: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "local_file";
+            /** Path */
+            path: string;
+        };
+        /** LocalLaunchValue */
+        LocalLaunchValue: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            backend: "local";
+            /** Work Dir */
+            work_dir?: string | null;
+            /** Hard Cancel After */
+            hard_cancel_after?: number | null;
         };
         /**
          * MissingPackage
@@ -2270,6 +2949,22 @@ export interface components {
             };
         };
         /**
+         * NodeResourceOverrides
+         * @description Portable worker-resource overrides for one processing node.
+         */
+        NodeResourceOverrides: {
+            /** Cpu */
+            cpu?: number | null;
+            /** Gpu */
+            gpu?: number | null;
+            /** Memory */
+            memory?: string | null;
+            /** Gpu Memory */
+            gpu_memory?: string | null;
+            /** Max Concurrent */
+            max_concurrent?: number | null;
+        };
+        /**
          * NodeStatus
          * @description Status of a single node after validation or execution.
          */
@@ -2311,6 +3006,24 @@ export interface components {
             /** Password Stored */
             password_stored: boolean;
         };
+        /**
+         * ObservationSnapshot
+         * @description Health of the platform's latest observation, separate from run state.
+         */
+        ObservationSnapshot: {
+            /**
+             * Reachable
+             * @default true
+             */
+            reachable: boolean;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at?: string;
+            /** Error */
+            error?: string | null;
+        };
         /** OutputViewConfig */
         OutputViewConfig: {
             /**
@@ -2325,6 +3038,34 @@ export interface components {
              * @enum {string}
              */
             scope: "latest" | "runs" | "both";
+        };
+        /** PSIJLaunchValue */
+        PSIJLaunchValue: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            backend: "psij";
+            /**
+             * Executor
+             * @enum {string}
+             */
+            executor: "slurm" | "pbs" | "lsf";
+            /** Walltime Seconds */
+            walltime_seconds: number;
+            /** Queue */
+            queue?: string | null;
+            /** Project */
+            project?: string | null;
+            /**
+             * Cpu Cores
+             * @default 1
+             */
+            cpu_cores: number;
+            /** Work Dir */
+            work_dir?: string | null;
+            /** Hard Cancel After */
+            hard_cancel_after?: number | null;
         };
         /** PackageImportResponse */
         PackageImportResponse: {
@@ -2380,6 +3121,38 @@ export interface components {
              */
             environment_status: string;
         };
+        /** ParslConfigRefValue */
+        ParslConfigRefValue: {
+            /** Factory */
+            factory: string;
+            /** Kwargs */
+            kwargs?: {
+                [key: string]: unknown;
+            };
+            /** Secret Refs */
+            secret_refs?: {
+                [key: string]: string;
+            } | null;
+        };
+        /** ParslTaskPolicyValue */
+        ParslTaskPolicyValue: {
+            /**
+             * Schema
+             * @default bioimageflow.parsl.task_policy.v1
+             * @constant
+             */
+            schema: "bioimageflow.parsl.task_policy.v1";
+            /**
+             * Row Chunk Size
+             * @default 1
+             */
+            row_chunk_size: number;
+            /**
+             * Max In Flight
+             * @default 32
+             */
+            max_in_flight: number;
+        };
         /** PositionalInputPort */
         PositionalInputPort: {
             /**
@@ -2417,6 +3190,27 @@ export interface components {
             /** Expected Artifact Hash */
             expected_artifact_hash: string;
         };
+        /** ReadyPreflight */
+        ReadyPreflight: {
+            /**
+             * Kind
+             * @default ready
+             * @constant
+             */
+            kind: "ready";
+            /** Token */
+            token?: string | null;
+            /** Expires At */
+            expires_at?: number | null;
+            /** Distributed Plan */
+            distributed_plan: {
+                [key: string]: unknown;
+            };
+            /** Manifest */
+            manifest?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** RenameNodeOperation */
         RenameNodeOperation: {
             scope?: components["schemas"]["WorkflowDraftOperationScope"];
@@ -2430,6 +3224,37 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ResolutionRequiredPreflight */
+        ResolutionRequiredPreflight: {
+            /**
+             * Kind
+             * @default resolution_required
+             * @constant
+             */
+            kind: "resolution_required";
+            /** Distributed Plan */
+            distributed_plan: {
+                [key: string]: unknown;
+            };
+            /** Remote Node Paths */
+            remote_node_paths: {
+                [key: string]: unknown;
+            };
+            /** Unresolved */
+            unresolved: {
+                [key: string]: string;
+            }[];
+        };
+        /** ResultDownloadRequest */
+        ResultDownloadRequest: {
+            /** Destination */
+            destination: string;
+        };
+        /** RetryExecutionRequest */
+        RetryExecutionRequest: {
+            /** Target Id */
+            target_id?: string | null;
+        };
         /**
          * RevealRequest
          * @description Request body for the reveal endpoint.
@@ -2437,6 +3262,20 @@ export interface components {
         RevealRequest: {
             /** Path */
             path: string;
+        };
+        /** SSHSubmissionTransportValue */
+        SSHSubmissionTransportValue: {
+            /** Host */
+            host: string;
+            /** Staging Root */
+            staging_root: string;
+            /** Remote Executable */
+            remote_executable: string;
+            /**
+             * Connect Timeout
+             * @default 15
+             */
+            connect_timeout: number;
         };
         /**
          * SerializedConstant
@@ -2503,6 +3342,22 @@ export interface components {
              * @enum {string}
              */
             execution_engine: "sequential" | "parallel";
+            /**
+             * New Workflow Execution
+             * @default sequential
+             * @enum {string}
+             */
+            new_workflow_execution: "sequential" | "parallel";
+            /**
+             * Default Execution Target Id
+             * @default local
+             */
+            default_execution_target_id: string;
+            /**
+             * Trusted Parsl Factories
+             * @default []
+             */
+            trusted_parsl_factories: string[];
             /**
              * Node Data Page Size
              * @default 250
@@ -2713,10 +3568,7 @@ export interface components {
             parameters: {
                 [key: string]: unknown;
             };
-            /** Resources */
-            resources?: {
-                [key: string]: unknown;
-            };
+            resources?: components["schemas"]["NodeResourceOverrides"];
             /** Output Templates */
             output_templates?: {
                 [key: string]: string;
@@ -2873,6 +3725,43 @@ export interface components {
              * @default []
              */
             errors: components["schemas"]["GraphValidationError"][];
+        };
+        /** WorkerEnvironmentAttestationValue */
+        WorkerEnvironmentAttestationValue: {
+            /**
+             * Schema
+             * @default bioimageflow.parsl.worker_environment_attestation.v1
+             * @constant
+             */
+            schema: "bioimageflow.parsl.worker_environment_attestation.v1";
+            /** Name */
+            name: string;
+            /** Dependency Hash */
+            dependency_hash: string;
+            /** Allow Flexible Versions */
+            allow_flexible_versions: boolean;
+            /** Core Requirement */
+            core_requirement: string;
+        };
+        /** WorkerSlotCapacityValue */
+        WorkerSlotCapacityValue: {
+            /**
+             * Schema
+             * @default bioimageflow.parsl.worker_slot_capacity.v1
+             * @constant
+             */
+            schema: "bioimageflow.parsl.worker_slot_capacity.v1";
+            /** Cpu */
+            cpu: number;
+            /**
+             * Gpu
+             * @default 0
+             */
+            gpu: number;
+            /** Memory Bytes */
+            memory_bytes?: number | null;
+            /** Gpu Memory Bytes */
+            gpu_memory_bytes?: number | null;
         };
         /** WorkflowConfig */
         WorkflowConfig: {
@@ -3418,10 +4307,13 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type ApplyPreparedExecutionRequest = components['schemas']['ApplyPreparedExecutionRequest'];
 export type BodyImportPackageFromArchiveApiV1ToolsPackagesImportArchivePost = components['schemas']['Body_import_package_from_archive_api_v1_tools_packages_import_archive_post'];
 export type BodyImportWorkflowApiV1WorkflowsImportPost = components['schemas']['Body_import_workflow_api_v1_workflows_import_post'];
 export type BodyUploadDatasetsApiV1DatasetsUploadPost = components['schemas']['Body_upload_datasets_api_v1_datasets_upload_post'];
+export type CapabilityStatusValue = components['schemas']['CapabilityStatusValue'];
 export type ClearRequest = components['schemas']['ClearRequest'];
+export type ClusterFilePreLaunchValue = components['schemas']['ClusterFilePreLaunchValue'];
 export type ColumnEdge = components['schemas']['ColumnEdge'];
 export type ConnectColumnEdgeOperation = components['schemas']['ConnectColumnEdgeOperation'];
 export type ConnectDataFrameEdgeOperation = components['schemas']['ConnectDataFrameEdgeOperation'];
@@ -3450,6 +4342,7 @@ export type DeleteWorkflowOutputOperation = components['schemas']['DeleteWorkflo
 export type DemoWorkflowStatus = components['schemas']['DemoWorkflowStatus'];
 export type DemoWorkflowsStatus = components['schemas']['DemoWorkflowsStatus'];
 export type DetachWorkflowSourceOperation = components['schemas']['DetachWorkflowSourceOperation'];
+export type DistributedExecutionProfile = components['schemas']['DistributedExecutionProfile'];
 export type DraftGraphMismatchResponse = components['schemas']['DraftGraphMismatchResponse'];
 export type EditorOpenMethod = components['schemas']['EditorOpenMethod'];
 export type EditorOpenRequest = components['schemas']['EditorOpenRequest'];
@@ -3457,9 +4350,24 @@ export type EditorOpenResponse = components['schemas']['EditorOpenResponse'];
 export type EditorOpenToolRequest = components['schemas']['EditorOpenToolRequest'];
 export type EditorStatus = components['schemas']['EditorStatus'];
 export type EnvironmentDeleteRequest = components['schemas']['EnvironmentDeleteRequest'];
+export type ExecutionActionResponse = components['schemas']['ExecutionActionResponse'];
+export type ExecutionCapabilitiesValue = components['schemas']['ExecutionCapabilitiesValue'];
+export type ExecutionPage = components['schemas']['ExecutionPage'];
+export type ExecutionPreflightRequest = components['schemas']['ExecutionPreflightRequest'];
+export type ExecutionProfileCreate = components['schemas']['ExecutionProfileCreate'];
+export type ExecutionProfileList = components['schemas']['ExecutionProfileList'];
+export type ExecutionProfilePatch = components['schemas']['ExecutionProfilePatch'];
+export type ExecutionProfileTestResult = components['schemas']['ExecutionProfileTestResult'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
+export type ExecutionSnapshot = components['schemas']['ExecutionSnapshot'];
+export type ExecutionTargetValue = components['schemas']['ExecutionTargetValue'];
+export type ExecutionTargetsValue = components['schemas']['ExecutionTargetsValue'];
+export type ExecutorBindingValueInput = components['schemas']['ExecutorBindingValue-Input'];
+export type ExecutorBindingValueOutput = components['schemas']['ExecutorBindingValue-Output'];
+export type ExecutorCapabilitiesValue = components['schemas']['ExecutorCapabilitiesValue'];
 export type ExposeWorkflowInputOperation = components['schemas']['ExposeWorkflowInputOperation'];
 export type ExposeWorkflowOutputOperation = components['schemas']['ExposeWorkflowOutputOperation'];
+export type FailureDiagnosticSnapshot = components['schemas']['FailureDiagnosticSnapshot'];
 export type FieldInputPort = components['schemas']['FieldInputPort'];
 export type FolderCreate = components['schemas']['FolderCreate'];
 export type FolderUpdate = components['schemas']['FolderUpdate'];
@@ -3467,7 +4375,11 @@ export type GraphState = components['schemas']['GraphState'];
 export type GraphValidationError = components['schemas']['GraphValidationError'];
 export type GraphValidationRequest = components['schemas']['GraphValidationRequest'];
 export type HttpValidationError = components['schemas']['HTTPValidationError'];
+export type InlinePreLaunchValue = components['schemas']['InlinePreLaunchValue'];
 export type InputFieldSchema = components['schemas']['InputFieldSchema'];
+export type JobSnapshot = components['schemas']['JobSnapshot'];
+export type LocalFilePreLaunchValue = components['schemas']['LocalFilePreLaunchValue'];
+export type LocalLaunchValue = components['schemas']['LocalLaunchValue'];
 export type MissingPackage = components['schemas']['MissingPackage'];
 export type MissingTool = components['schemas']['MissingTool'];
 export type MoveNodeItem = components['schemas']['MoveNodeItem'];
@@ -3486,17 +4398,27 @@ export type NodeDataCsvRequest = components['schemas']['NodeDataCsvRequest'];
 export type NodeDataQueryRequest = components['schemas']['NodeDataQueryRequest'];
 export type NodeDataResponse = components['schemas']['NodeDataResponse'];
 export type NodeOutputSchemaResponse = components['schemas']['NodeOutputSchemaResponse'];
+export type NodeResourceOverrides = components['schemas']['NodeResourceOverrides'];
 export type NodeStatus = components['schemas']['NodeStatus'];
 export type OmeroInstanceResponse = components['schemas']['OMEROInstanceResponse'];
+export type ObservationSnapshot = components['schemas']['ObservationSnapshot'];
 export type OutputViewConfig = components['schemas']['OutputViewConfig'];
+export type PsijLaunchValue = components['schemas']['PSIJLaunchValue'];
 export type PackageImportResponse = components['schemas']['PackageImportResponse'];
 export type PackageImportUrlRequest = components['schemas']['PackageImportUrlRequest'];
 export type PackageInfo = components['schemas']['PackageInfo'];
+export type ParslConfigRefValue = components['schemas']['ParslConfigRefValue'];
+export type ParslTaskPolicyValue = components['schemas']['ParslTaskPolicyValue'];
 export type PositionalInputPort = components['schemas']['PositionalInputPort'];
 export type PythonAuthoringProvenance = components['schemas']['PythonAuthoringProvenance'];
 export type PythonSourcePreviewRequest = components['schemas']['PythonSourcePreviewRequest'];
+export type ReadyPreflight = components['schemas']['ReadyPreflight'];
 export type RenameNodeOperation = components['schemas']['RenameNodeOperation'];
+export type ResolutionRequiredPreflight = components['schemas']['ResolutionRequiredPreflight'];
+export type ResultDownloadRequest = components['schemas']['ResultDownloadRequest'];
+export type RetryExecutionRequest = components['schemas']['RetryExecutionRequest'];
 export type RevealRequest = components['schemas']['RevealRequest'];
+export type SshSubmissionTransportValue = components['schemas']['SSHSubmissionTransportValue'];
 export type SerializedConstant = components['schemas']['SerializedConstant'];
 export type SetNodeEnabledOperation = components['schemas']['SetNodeEnabledOperation'];
 export type SettingsResponse = components['schemas']['SettingsResponse'];
@@ -3516,6 +4438,8 @@ export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadedFile = components['schemas']['UploadedFile'];
 export type ValidationError = components['schemas']['ValidationError'];
 export type ValidationResult = components['schemas']['ValidationResult'];
+export type WorkerEnvironmentAttestationValue = components['schemas']['WorkerEnvironmentAttestationValue'];
+export type WorkerSlotCapacityValue = components['schemas']['WorkerSlotCapacityValue'];
 export type WorkflowConfig = components['schemas']['WorkflowConfig'];
 export type WorkflowCreate = components['schemas']['WorkflowCreate'];
 export type WorkflowDeleteResponse = components['schemas']['WorkflowDeleteResponse'];
@@ -4752,6 +5676,456 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    execution_capabilities_api_v1_execution_capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionCapabilitiesValue"];
+                };
+            };
+        };
+    };
+    execution_targets_api_v1_execution_targets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionTargetsValue"];
+                };
+            };
+        };
+    };
+    list_execution_profiles_api_v1_execution_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionProfileList"];
+                };
+            };
+        };
+    };
+    create_execution_profile_api_v1_execution_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionProfileCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributedExecutionProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_execution_profile_api_v1_execution_profiles__profile_id__delete: {
+        parameters: {
+            query: {
+                expected_revision: number;
+            };
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_execution_profile_api_v1_execution_profiles__profile_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionProfilePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributedExecutionProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_execution_profile_api_v1_execution_profiles__profile_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionProfileTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preflight_execution_api_v1_execution_preflight_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutionPreflightRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResolutionRequiredPreflight"] | components["schemas"]["ReadyPreflight"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_executions_api_v1_executions_get: {
+        parameters: {
+            query?: {
+                workflow_id?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_prepared_execution_api_v1_executions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyPreparedExecutionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_execution_api_v1_executions__execution_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_execution_api_v1_executions__execution_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionActionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_execution_api_v1_executions__execution_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetryExecutionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    execution_logs_api_v1_executions__execution_id__logs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_execution_result_api_v1_executions__execution_id__result_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResultDownloadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

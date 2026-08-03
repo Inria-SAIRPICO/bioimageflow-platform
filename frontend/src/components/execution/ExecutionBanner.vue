@@ -3,11 +3,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import ProgressBar from 'primevue/progressbar'
 import { useExecutionStore } from '@/stores/execution'
 import { useUIStore } from '@/stores/ui'
+import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 
 type BannerMode = 'starting' | 'running' | 'stopping' | 'stopped' | 'success' | 'failure' | 'hidden'
 
 const exec = useExecutionStore()
 const ui = useUIStore()
+const registry = useExecutionRegistryStore()
 
 const DISMISS_SUCCESS_MS = 5000
 const DISMISS_FAILURE_MS = 5000
@@ -83,6 +85,7 @@ const mode = computed<BannerMode>(() => {
 })
 
 const isVisible = computed(() => mode.value !== 'hidden')
+const isDistributedVisible = computed(() => registry.activeRuns.length > 0)
 
 const headline = computed(() => {
   switch (mode.value) {
@@ -105,7 +108,9 @@ const headline = computed(() => {
       return `Execution failed: ${summary}`
     }
     default:
-      return ''
+      return registry.activeRuns.length === 1
+        ? `${registry.activeRuns[0]!.target_label ?? registry.activeRuns[0]!.target_id}: ${registry.activeRuns[0]!.state}`
+        : `${registry.activeRuns.length} executions active`
   }
 })
 
@@ -149,6 +154,10 @@ function onBannerClick() {
   terminalMode.value = null
 }
 
+function openExecutionPanel() {
+  ui.openExecutionPanel()
+}
+
 onBeforeUnmount(() => {
   clearTimer()
 })
@@ -159,7 +168,7 @@ defineExpose({ mode, isVisible })
 <template>
   <Transition name="execution-banner">
     <div
-      v-if="isVisible"
+      v-if="isVisible || isDistributedVisible"
       :class="['execution-banner', modeClass]"
       data-testid="execution-banner"
       @click="onBannerClick"
@@ -175,6 +184,14 @@ defineExpose({ mode, isVisible })
         >
           {{ currentNodeId }}
         </span>
+        <button
+          type="button"
+          class="execution-banner__open"
+          data-testid="open-execution-panel"
+          @click.stop="openExecutionPanel"
+        >
+          Open Execution
+        </button>
       </div>
       <div v-if="mode === 'running'" class="execution-banner__progress">
         <ProgressBar
@@ -206,6 +223,16 @@ defineExpose({ mode, isVisible })
 .execution-banner--running {
   background: var(--p-primary-color, #3b82f6);
   cursor: default;
+}
+
+.execution-banner__open {
+  margin-left: auto;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
 }
 
 .execution-banner--success {

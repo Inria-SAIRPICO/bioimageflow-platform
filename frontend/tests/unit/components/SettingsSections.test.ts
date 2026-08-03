@@ -153,7 +153,7 @@ describe('NapariSection', () => {
 })
 
 describe('ExecutionSection', () => {
-  it('summarizes direct/sequential execution without stale cache pruning controls', () => {
+  it('summarizes direct/sequential execution and exposes distributed controls', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: {
@@ -173,18 +173,19 @@ describe('ExecutionSection', () => {
     expect(
       wrapper.find('[data-testid="cache-max-age-input"]').exists(),
     ).toBe(false)
-    expect(wrapper.text()).not.toContain('Parsl')
+    expect(wrapper.text()).toContain('Trusted Parsl configuration factories')
+    expect(wrapper.text()).toContain('Distributed profiles')
     expect(wrapper.emitted('update:field')).toBeUndefined()
   })
 
-  it('maps legacy parsl settings to parallel wording without advertising Parsl', () => {
+  it('maps legacy parsl settings to parallel wording', () => {
     const wrapper = mount(ExecutionSection, {
       ...globalOpts,
       props: { modelValue: { ...baseSettings, execution_engine: 'parsl' as 'parallel' } },
     })
 
     expect(wrapper.find('[data-testid="execution-scheduling-value"]').text()).toBe('Parallel')
-    expect(wrapper.text()).not.toContain('Parsl')
+    expect(wrapper.text()).toContain('Distributed profiles')
   })
 
   it('maps current parallel scheduling setting to parallel wording', () => {

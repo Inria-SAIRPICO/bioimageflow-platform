@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -30,28 +29,45 @@ class _FakeEnvironment:
 class _FakeWetlandsManager:
     def __init__(self, env: _FakeEnvironment, env_path: Path) -> None:
         self.env = env
-        self.settings_manager = SimpleNamespace(
-            use_pixi=True,
-            get_environment_path_from_name=lambda _name: env_path,
+        self.info = SimpleNamespace(
+            name="cellpose-env",
+            path=env_path,
+            ready=True,
+            recipe_hash="sha256:old",
         )
-        self.loaded: list[tuple[str, object | None]] = []
+        self.removed: list[str] = []
 
-    def load(self, name: str, environment_path: object | None = None) -> _FakeEnvironment:
-        self.loaded.append((name, environment_path))
-        return self.env
+    def managed_environments(self) -> tuple[object, ...]:
+        return (self.info,)
+
+    def remove(self, name: str) -> object:
+        self.removed.append(name)
+        env = self.env
+
+        class _Removal:
+            def wait_for(self) -> object:
+                env.delete()
+                return SimpleNamespace(name=name)
+
+        return _Removal()
 
 
 class _FakeWetlandsWrapper:
     def __init__(self, manager: _FakeWetlandsManager) -> None:
         self._manager = manager
         self._envs: dict[str, _FakeEnvironment] = {}
-        self._env_hashes = {"cellpose-env": "old"}
-        self._launch_configs = {"cellpose-env": (1, None, None)}
 
     def get_or_create(self, env_spec: object) -> _FakeEnvironment:
         env_name = str(getattr(env_spec, "name"))
         self._envs[env_name] = self._manager.env
         return self._manager.env
+
+    def stop(self, env_name: str) -> bool:
+        env = self._envs.pop(env_name, None)
+        if env is None:
+            return False
+        env.exit()
+        return True
 
 
 def _registry() -> MagicMock:
@@ -65,24 +81,6 @@ def _registry() -> MagicMock:
     registry.list_tools.return_value = [tool]
     registry.get_package.return_value = package
     return registry
-
-
-def _write_metadata(env_path: Path, recipe_hash: str = "sha256:old") -> None:
-    metadata_path = env_path.parent / ".wetlands" / "environment.json"
-    metadata_path.parent.mkdir(parents=True)
-    metadata_path.write_text(
-        json.dumps({
-            "schema_version": 1,
-            "status": "managed",
-            "name": "cellpose-env",
-            "manager": "pixi",
-            "recipe_hash": recipe_hash,
-            "recipe": {},
-        }),
-        encoding="utf-8",
-    )
-    env_path.parent.mkdir(exist_ok=True)
-    env_path.write_text("[workspace]\n", encoding="utf-8")
 
 
 async def test_start_and_stop_control_the_shared_environment(tmp_path: Path) -> None:
@@ -107,7 +105,6 @@ async def test_start_and_stop_control_the_shared_environment(tmp_path: Path) -> 
 async def test_delete_environment_deletes_cached_environment(tmp_path: Path) -> None:
     env = _FakeEnvironment()
     env_path = tmp_path / "workspaces" / "cellpose-env" / "pixi.toml"
-    _write_metadata(env_path)
     manager = _FakeWetlandsManager(env, env_path)
     wetlands = _FakeWetlandsWrapper(manager)
     wetlands._envs["cellpose-env"] = env
@@ -124,18 +121,15 @@ async def test_delete_environment_deletes_cached_environment(tmp_path: Path) -> 
 
     assert status == "deleted"
     assert env.deleted is True
-    assert manager.loaded == []
+    assert manager.removed == ["cellpose-env"]
     assert wetlands._envs == {}
-    assert wetlands._env_hashes == {}
-    assert wetlands._launch_configs == {}
 
 
-async def test_delete_environment_loads_default_environment_when_not_cached(
+async def test_delete_environment_removes_managed_environment_when_not_cached(
     tmp_path: Path,
 ) -> None:
     env = _FakeEnvironment()
     env_path = tmp_path / "workspaces" / "cellpose-env" / "pixi.toml"
-    _write_metadata(env_path)
     manager = _FakeWetlandsManager(env, env_path)
     wetlands = _FakeWetlandsWrapper(manager)
     service = ToolEnvironmentService(
@@ -150,15 +144,15 @@ async def test_delete_environment_loads_default_environment_when_not_cached(
     )
 
     assert status == "deleted"
-    assert manager.loaded == [("cellpose-env", None)]
+    assert manager.removed == ["cellpose-env"]
     assert env.deleted is True
 
 
 async def test_delete_environment_refuses_stale_recovery_hash(tmp_path: Path) -> None:
     env = _FakeEnvironment()
     env_path = tmp_path / "workspaces" / "cellpose-env" / "pixi.toml"
-    _write_metadata(env_path, recipe_hash="sha256:newer")
     manager = _FakeWetlandsManager(env, env_path)
+    manager.info.recipe_hash = "sha256:newer"
     wetlands = _FakeWetlandsWrapper(manager)
     service = ToolEnvironmentService(
         registry=_registry(),
@@ -175,13 +169,12 @@ async def test_delete_environment_refuses_stale_recovery_hash(tmp_path: Path) ->
     assert env.deleted is False
 
 
-async def test_delete_environment_preserves_cache_when_delete_fails(
+async def test_delete_environment_stays_stopped_when_remove_fails(
     tmp_path: Path,
 ) -> None:
     env = _FakeEnvironment()
     env.raise_on_delete = RuntimeError("trash unavailable")
     env_path = tmp_path / "workspaces" / "cellpose-env" / "pixi.toml"
-    _write_metadata(env_path)
     manager = _FakeWetlandsManager(env, env_path)
     wetlands = _FakeWetlandsWrapper(manager)
     wetlands._envs["cellpose-env"] = env
@@ -197,6 +190,6 @@ async def test_delete_environment_preserves_cache_when_delete_fails(
             expected_existing_hash="sha256:old",
         )
 
-    assert wetlands._envs == {"cellpose-env": env}
-    assert wetlands._env_hashes == {"cellpose-env": "old"}
-    assert wetlands._launch_configs == {"cellpose-env": (1, None, None)}
+    assert wetlands._envs == {}
+    assert env.exited is True
+    assert manager.removed == ["cellpose-env"]

@@ -24,8 +24,12 @@ Closing BioImageFlow also shuts down the Napari process it manages.
 
 ## Execution
 
-This tab summarizes the active execution backend and whether scheduling is sequential or parallel.
-These values are derived from the current platform and workflow configuration and are read-only in Preferences.
+This tab configures the default execution target, new-workflow scheduling, trusted Parsl configuration factories, and named distributed profiles.
+Desktop users can add and revise profiles.
+Web deployments expose administrator-provisioned profiles read-only.
+
+Remote profiles can attach an inline, local-file, or cluster-file pre-launch script for repeatable orchestrator initialization.
+See [Distributed execution](distributed-execution.md) for profile fields, upload semantics, and security boundaries.
 
 ## Display
 

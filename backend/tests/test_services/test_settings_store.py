@@ -75,7 +75,7 @@ class TestLoad:
         # File should now exist with the version envelope.
         assert path.exists()
         on_disk = _read_disk(path)
-        assert on_disk["settings_version"] == 1
+        assert on_disk["settings_version"] == 2
         assert on_disk["deployment_mode"] == "desktop"
 
     async def test_missing_parent_directory_is_created(self, tmp_path: Path) -> None:
@@ -118,6 +118,27 @@ class TestLoad:
         store = SettingsStore(path=path)
         result = await store.load()
         assert result.execution_engine == "parallel"
+        assert result.new_workflow_execution == "parallel"
+
+    async def test_v1_execution_engine_migrates_to_v2_new_workflow_default(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "settings.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "settings_version": 1,
+                    "deployment_mode": "desktop",
+                    "execution_engine": "parallel",
+                }
+            )
+        )
+        store = SettingsStore(path=path)
+
+        result = await store.load()
+
+        assert result.new_workflow_execution == "parallel"
+        assert result.default_execution_target_id == "local"
 
     async def test_legacy_cache_pruning_keys_are_ignored_on_load(
         self, tmp_path: Path
@@ -164,7 +185,7 @@ class TestLoad:
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         path = tmp_path / "settings.json"
-        original = {"settings_version": 2, "external_editor": "x", "future_field": "y"}
+        original = {"settings_version": 3, "external_editor": "x", "future_field": "y"}
         path.write_text(json.dumps(original))
         store = SettingsStore(path=path)
         with caplog.at_level("WARNING"):
@@ -262,7 +283,7 @@ class TestPatch:
         result = await store.patch({"execution_engine": "parallel"})
         assert result.execution_engine == "parallel"
         on_disk = _read_disk(path)
-        assert on_disk["settings_version"] == 1
+        assert on_disk["settings_version"] == 2
         assert on_disk["execution_engine"] == "parallel"
         assert store.get().execution_engine == "parallel"
 

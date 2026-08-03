@@ -12,6 +12,7 @@ from pydantic import BaseModel, field_validator
 
 if TYPE_CHECKING:
     from bioimageflow_server.models.settings import Settings
+    from bioimageflow_server.services.execution_profiles import ExecutionProfileStore
     from bioimageflow_server.services.known_packages import KnownPackagesService
     from bioimageflow_server.services.napari_launcher import NapariLauncher
     from bioimageflow_server.services.package_catalog import PackageCatalogService
@@ -214,6 +215,7 @@ class AppConfig:
     result_store: ResultStoreService | None = None
     thumbnail_manager: ThumbnailManager | None = None
     execution_manager: Any | None = None
+    execution_profile_store: ExecutionProfileStore | None = None
     settings: Settings | None = None
     # Authoritative live source when set; ``settings`` becomes a snapshot
     # fallback used only when ``settings_store`` is None (CLI / tests).

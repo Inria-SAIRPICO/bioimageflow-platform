@@ -17,6 +17,7 @@ user/index
 :caption: Developer documentation
 
 testing
+distributed_execution_runtime_wiring
 agents/README
 agents/api-reference
 agents/workflow-editing

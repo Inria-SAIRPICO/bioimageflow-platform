@@ -17,7 +17,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from tests.graph_factory import graph_state
-from wetlands.exceptions import EnvironmentReuseError
 
 from bioimageflow_server.models.execution import (
     ExecutionContext,
@@ -35,6 +34,10 @@ from bioimageflow_server.services.execution import (
     WorkflowBuildError,
     ExecutionRetryError,
 )
+
+
+class EnvironmentReuseError(RuntimeError):
+    """Compatibility-shaped error used to test sanitized recovery guidance."""
 
 pytestmark = pytest.mark.anyio
 

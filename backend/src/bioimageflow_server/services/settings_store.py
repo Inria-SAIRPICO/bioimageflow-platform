@@ -27,7 +27,7 @@ from bioimageflow_server.services.omero_credentials import (
 
 logger = logging.getLogger(__name__)
 
-CURRENT_SETTINGS_VERSION = 1
+CURRENT_SETTINGS_VERSION = 2
 
 
 class SettingsStore:
@@ -131,6 +131,11 @@ class SettingsStore:
         payload = {
             k: v for k, v in data.items() if k != "settings_version" and k in Settings.model_fields
         }
+        if version <= 1:
+            legacy_execution = payload.get("execution_engine", "sequential")
+            if legacy_execution == "parsl":
+                legacy_execution = "parallel"
+            payload.setdefault("new_workflow_execution", legacy_execution)
         # Ensure deployment_mode is present (it's required on the model).
         payload.setdefault("deployment_mode", self._deployment_mode)
 
@@ -151,6 +156,11 @@ class SettingsStore:
             raise RuntimeError("SettingsStore.load() must be awaited before get()")
         return self._current
 
+    @property
+    def deployment_mode(self) -> Literal["desktop", "webapp"]:
+        """Return the process-configured deployment policy authority."""
+        return self._deployment_mode
+
     async def patch(self, changes: dict[str, Any]) -> Settings:
         """Validate ``changes`` against current state, persist, and return."""
         async with self._lock:
@@ -159,9 +169,26 @@ class SettingsStore:
             # NOTE: ``model_copy(update=changes)`` does NOT run validators in
             # Pydantic v2. Use ``model_validate`` over the merged dict so
             # extra="forbid" and custom validators apply.
+            normalized_changes = dict(changes)
+            if normalized_changes.get("execution_engine") == "parsl":
+                normalized_changes["execution_engine"] = "parallel"
+            if (
+                "execution_engine" in normalized_changes
+                and "new_workflow_execution" not in normalized_changes
+            ):
+                normalized_changes["new_workflow_execution"] = normalized_changes[
+                    "execution_engine"
+                ]
+            if (
+                "new_workflow_execution" in normalized_changes
+                and "execution_engine" not in normalized_changes
+            ):
+                normalized_changes["execution_engine"] = normalized_changes[
+                    "new_workflow_execution"
+                ]
             merged = {
                 **self._current.model_dump(),
-                **self._strip_omero_passwords(changes),
+                **self._strip_omero_passwords(normalized_changes),
             }
             candidate = Settings.model_validate(merged)
             written_password_keys = self._write_omero_passwords(changes, candidate)

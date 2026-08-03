@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ContextManager, cast
+from typing import Any
 
 import anyio.to_thread as anyio_to_thread
 from bioimageflow_core.environment import EnvironmentSpec
@@ -118,18 +118,10 @@ class ToolEnvironmentService:
             publish(env_name, status)
 
     def _stop_wetlands_environment(self, env_name: str) -> None:
-        wetlands = self._manager
-        envs = getattr(wetlands, "_envs", None)
-        if isinstance(envs, dict):
-            env = envs.pop(env_name, None)
-            if env is not None and hasattr(env, "exit"):
-                env.exit()
-        hashes = getattr(wetlands, "_env_hashes", None)
-        if isinstance(hashes, dict):
-            hashes.pop(env_name, None)
-        configs = getattr(wetlands, "_launch_configs", None)
-        if isinstance(configs, dict):
-            configs.pop(env_name, None)
+        stop = getattr(self._manager, "stop", None)
+        if not callable(stop):
+            raise RuntimeError("Wetlands environment manager does not support stop()")
+        stop(env_name)
 
     def _delete_wetlands_environment(
         self,
@@ -138,91 +130,36 @@ class ToolEnvironmentService:
         expected_existing_hash: str,
     ) -> None:
         wetlands = self._manager
-        lock = getattr(wetlands, "_lock", None)
-        if lock is not None and hasattr(lock, "__enter__") and hasattr(lock, "__exit__"):
-            context_lock = cast(ContextManager[None], lock)
-            with context_lock:
-                self._delete_wetlands_environment_locked(
-                    wetlands, env_name, expected_path, expected_existing_hash
-                )
-            return
-        self._delete_wetlands_environment_locked(
-            wetlands, env_name, expected_path, expected_existing_hash
-        )
-
-    def _delete_wetlands_environment_locked(
-        self,
-        wetlands: Any,
-        env_name: str,
-        expected_path: str,
-        expected_existing_hash: str,
-    ) -> None:
-        self._validate_recovery_context(
-            wetlands,
-            env_name,
-            expected_path=expected_path,
-            expected_existing_hash=expected_existing_hash,
-        )
-        envs = getattr(wetlands, "_envs", None)
-        env = envs.get(env_name) if isinstance(envs, dict) else None
-        if env is None:
-            manager = getattr(wetlands, "_manager", None)
-            load = getattr(manager, "load", None)
-            if not callable(load):
-                raise RuntimeError("Wetlands environment manager does not support load()")
-            env = load(env_name)
-
-        delete = getattr(env, "delete", None)
-        if not callable(delete):
-            raise RuntimeError(f"Environment '{env_name}' does not support deletion")
-        delete()
-
-        if isinstance(envs, dict):
-            envs.pop(env_name, None)
-        hashes = getattr(wetlands, "_env_hashes", None)
-        if isinstance(hashes, dict):
-            hashes.pop(env_name, None)
-        configs = getattr(wetlands, "_launch_configs", None)
-        if isinstance(configs, dict):
-            configs.pop(env_name, None)
-
-    def _validate_recovery_context(
-        self,
-        wetlands: Any,
-        env_name: str,
-        *,
-        expected_path: str,
-        expected_existing_hash: str,
-    ) -> None:
         manager = getattr(wetlands, "_manager", None)
-        settings_manager = getattr(manager, "settings_manager", None)
-        default_path_for_name = getattr(settings_manager, "get_environment_path_from_name", None)
-        if not callable(default_path_for_name):
-            raise RuntimeError("Wetlands environment manager cannot resolve environment paths")
+        managed_environments = getattr(manager, "managed_environments", None)
+        remove = getattr(manager, "remove", None)
+        if not callable(managed_environments) or not callable(remove):
+            raise RuntimeError("Wetlands environment manager does not support managed removal")
 
-        default_path_value = default_path_for_name(env_name)
-        if not isinstance(default_path_value, (str, Path)):
-            raise RuntimeError("Wetlands environment manager returned an invalid path")
-        default_path = Path(default_path_value)
-        if Path(expected_path).expanduser().resolve() != default_path.expanduser().resolve():
+        info = next(
+            (candidate for candidate in managed_environments() if candidate.name == env_name),
+            None,
+        )
+        if info is None:
+            raise FileNotFoundError(f"Managed environment '{env_name}' does not exist")
+        if Path(expected_path).expanduser().resolve() != Path(info.path).expanduser().resolve():
             raise PermissionError(
                 "Environment deletion was refused because the recovery path no longer "
                 "matches the default managed environment path."
             )
-
-        from wetlands._internal.environment_metadata import read_environment_metadata
-
-        metadata, reason = read_environment_metadata(
-            default_path,
-            use_pixi=bool(getattr(settings_manager, "use_pixi", True)),
-        )
-        if metadata is None:
+        if not info.ready:
             raise PermissionError(
-                "Environment deletion was refused because Wetlands metadata is "
-                f"{reason or 'unavailable'}."
+                "Environment deletion was refused because Wetlands metadata is unavailable."
             )
-        if metadata.get("recipe_hash") != expected_existing_hash:
+        if info.recipe_hash != expected_existing_hash:
             raise PermissionError(
                 "Environment deletion was refused because the environment recipe changed. "
                 "Retry the run to refresh the recovery details."
             )
+
+        self._stop_wetlands_environment(env_name)
+        operation = remove(env_name)
+        wait_for = getattr(operation, "wait_for", None)
+        if not callable(wait_for):
+            raise RuntimeError("Wetlands removal operation does not support wait_for()")
+        wait_for()

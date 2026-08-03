@@ -1,5 +1,7 @@
 import { ref, type Ref } from 'vue'
 import { useExecutionStore } from '@/stores/execution'
+import { useExecutionRegistryStore } from '@/stores/executionRegistry'
+import { normalizeExecution, type ExecutionSnapshot } from '@/api/executions'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useNapariStore } from '@/stores/napari'
 import { useLoggerStore, type LogEntry } from '@/stores/logger'
@@ -227,6 +229,27 @@ function dispatch(raw: unknown) {
     case 'status_snapshot':
       useExecutionStore().applyStatusSnapshot(msg as never)
       break
+    case 'execution_snapshot':
+    case 'execution_update': {
+      const candidate = typeof msg.snapshot === 'object' && msg.snapshot !== null
+        ? msg.snapshot as Record<string, unknown>
+        : msg
+      if (
+        typeof candidate.id === 'string'
+        && typeof candidate.revision === 'number'
+        && Array.isArray(candidate.jobs)
+      ) {
+        useExecutionRegistryStore().applySnapshot(candidate as unknown as ExecutionSnapshot)
+      } else if (
+        typeof candidate.execution_id === 'string'
+        && typeof candidate.revision === 'number'
+        && typeof candidate.jobs === 'object'
+        && candidate.jobs !== null
+      ) {
+        useExecutionRegistryStore().applySnapshot(normalizeExecution(candidate as never))
+      }
+      break
+    }
     case 'tool_reload':
       callIfExists(
         useToolRegistryStore() as unknown as Record<string, unknown>,
