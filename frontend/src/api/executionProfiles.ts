@@ -41,32 +41,47 @@ export interface ProfileValidationResult {
   pre_launch_executed?: boolean
 }
 
+interface ExecutionProfileListResponse {
+  editable: boolean
+  profiles: Array<Omit<ExecutionProfile, 'editable'> & { editable?: boolean }>
+}
+
+function withEditable(
+  profile: Omit<ExecutionProfile, 'editable'> & { editable?: boolean },
+  fallback = true,
+): ExecutionProfile {
+  return { ...profile, editable: profile.editable ?? fallback }
+}
+
 export async function listExecutionProfiles(): Promise<ExecutionProfile[]> {
-  const { data } = await api.get<ExecutionProfile[]>('/api/v1/execution/profiles')
-  return data
+  const { data } = await api.get<ExecutionProfileListResponse>('/api/v1/execution/profiles')
+  return data.profiles.map(profile => withEditable(profile, data.editable))
 }
 
 export async function createExecutionProfile(
   profile: ExecutionProfileDraft,
 ): Promise<ExecutionProfile> {
-  const { data } = await api.post<ExecutionProfile>('/api/v1/execution/profiles', profile)
-  return data
+  const { data } = await api.post<Omit<ExecutionProfile, 'editable'>>(
+    '/api/v1/execution/profiles',
+    profile,
+  )
+  return withEditable(data)
 }
 
 export async function updateExecutionProfile(
   profile: ExecutionProfile,
   changes: Partial<ExecutionProfileDraft>,
 ): Promise<ExecutionProfile> {
-  const { data } = await api.patch<ExecutionProfile>(
+  const { data } = await api.patch<Omit<ExecutionProfile, 'editable'>>(
     `/api/v1/execution/profiles/${encodeURIComponent(profile.id)}`,
-    { expected_revision: profile.revision, ...changes },
+    { expected_revision: profile.revision, profile: changes },
   )
-  return data
+  return withEditable(data, profile.editable)
 }
 
 export async function deleteExecutionProfile(profile: ExecutionProfile): Promise<void> {
   await api.delete(`/api/v1/execution/profiles/${encodeURIComponent(profile.id)}`, {
-    data: { expected_revision: profile.revision },
+    params: { expected_revision: profile.revision },
   })
 }
 
