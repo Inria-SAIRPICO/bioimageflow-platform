@@ -8,7 +8,10 @@ from types import SimpleNamespace
 from typing import Any
 
 from bioimageflow.dataframe_tool import DataFrameTool
-from bioimageflow_core.tool import IOModel
+from bioimageflow_core import ResourceSpec
+from bioimageflow_core.tool import IOModel, ProcessingTool
+from pydantic import ValidationError
+import pytest
 
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.tools import PackageInfo, ToolMetadata
@@ -38,6 +41,16 @@ class ExampleTool(DataFrameTool):
     Outputs = Outputs
 
 
+class ProcessingExample(ProcessingTool):
+    Inputs = Inputs
+    Outputs = Outputs
+    environment = None
+    resources = ResourceSpec(cpu=2, max_concurrent=2)
+
+    def process_row(self, arguments: Any, *, context: Any = None) -> Any:
+        return arguments
+
+
 def _registry() -> ToolRegistryService:
     registry = ToolRegistryService()
     registry.register_tool(
@@ -60,6 +73,17 @@ def _registry() -> ToolRegistryService:
             tools={"1.0.0": ["ExampleTool"], "2.0.0": ["ExampleTool"]},
         ),
     )
+    registry.register_tool(
+        "ProcessingExample",
+        ToolMetadata(
+            name="ProcessingExample",
+            display_name="Processing example",
+            package="example-tools",
+            package_version="1.0.0",
+            tool_type="ProcessingTool",
+        ),
+        tool_class=ProcessingExample,
+    )
     return registry
 
 
@@ -71,7 +95,7 @@ def _tool(node_id: str) -> dict[str, Any]:
         "tool_name": "ExampleTool",
         "position": [20, 40],
         "parameters": {"value": 4},
-        "resources": {"cpu": 2},
+        "resources": {},
         "collapsed": True,
     }
 
@@ -145,6 +169,92 @@ def test_recursive_translation_uses_one_library_grammar() -> None:
     assert "position" not in node
     assert "resources" not in node["workflow"]["nodes"][0]
     assert "collapsed" not in node["workflow"]["nodes"][0]
+
+
+def test_processing_resource_overrides_round_trip_recursively() -> None:
+    child = _graph(
+        "child",
+        [
+            {
+                **_tool("worker"),
+                "tool_name": "ProcessingExample",
+                "resources": {
+                    "cpu": 4,
+                    "gpu": 1,
+                    "memory": "16GB",
+                    "gpu_memory": "8GiB",
+                    "max_concurrent": 2,
+                },
+            }
+        ],
+    )
+    parent = _graph(
+        "parent",
+        [
+            {
+                "type": "workflow",
+                "id": "nested",
+                "name": "Nested",
+                "workflow": child,
+                "bindings": {},
+                "position": [0, 0],
+            }
+        ],
+    )
+
+    graph = GraphState.model_validate(parent)
+    translated = graph_state_to_lib_dict(graph, _registry())
+
+    assert translated.errors == []
+    library_node = translated.lib_dict["nodes"][0]["workflow"]["nodes"][0]
+    assert library_node["resource_overrides"] == {
+        "schema": "bioimageflow.node_resource_overrides.v1",
+        "cpu": 4,
+        "gpu": 1,
+        "memory": "16GB",
+        "gpu_memory": "8GiB",
+        "max_concurrent": 2,
+    }
+    restored = lib_dict_to_graph_state(translated.lib_dict)
+    restored_worker = restored.nodes[0].workflow.nodes[0]  # type: ignore[union-attr]
+    assert restored_worker.resources == graph.nodes[0].workflow.nodes[0].resources  # type: ignore[union-attr]
+
+
+def test_dataframe_resource_overrides_are_reported_and_not_translated() -> None:
+    graph = GraphState.model_validate(
+        _graph("invalid", [{**_tool("frame"), "resources": {"cpu": 2}}])
+    )
+
+    translated = graph_state_to_lib_dict(graph, _registry())
+
+    assert translated.errors[0].type == "parameter_invalid"
+    assert translated.errors[0].field == "resources"
+    assert "resource_overrides" not in translated.lib_dict["nodes"][0]
+
+
+def test_resource_values_are_strict_and_declaration_constraints_are_scoped() -> None:
+    with pytest.raises(ValidationError):
+        GraphState.model_validate(
+            _graph("coerced", [{**_tool("worker"), "resources": {"cpu": "2"}}])
+        )
+    graph = GraphState.model_validate(
+        _graph(
+            "below-floor",
+            [
+                {
+                    **_tool("worker"),
+                    "tool_name": "ProcessingExample",
+                    "resources": {"cpu": 1, "max_concurrent": 3},
+                }
+            ],
+        )
+    )
+
+    translated = graph_state_to_lib_dict(graph, _registry())
+
+    assert translated.errors[0].node == "worker"
+    assert translated.errors[0].field == "resources"
+    assert "resource_overrides" not in translated.lib_dict["nodes"][0]
 
 
 def test_column_and_dataframe_edges_round_trip_at_workflow_boundary() -> None:
