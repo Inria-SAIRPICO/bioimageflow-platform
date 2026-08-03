@@ -11,6 +11,7 @@ import pytest
 from bioimageflow_server.models.execution_profiles import ExecutionProfileCreate
 from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileConflictError,
+    ExecutionProfileInUseError,
     ExecutionProfileStore,
 )
 
@@ -103,6 +104,20 @@ async def test_failed_atomic_replace_rolls_back_in_memory(
     monkeypatch.setattr(os, "replace", fail_replace)
     with pytest.raises(OSError, match="replace failed"):
         await store.update(created.id, 1, profile_fields(name="Not persisted"))
+
+    assert store.get(created.id) == created
+
+
+async def test_delete_refuses_profile_referenced_by_non_terminal_run(
+    tmp_path: Path,
+) -> None:
+    store = ExecutionProfileStore(tmp_path / "profiles.json")
+    await store.load()
+    created = await store.create(profile_fields())
+    store.set_reference_checker(lambda profile_id: profile_id == created.id)
+
+    with pytest.raises(ExecutionProfileInUseError, match="non-terminal execution"):
+        await store.delete(created.id, expected_revision=1)
 
     assert store.get(created.id) == created
 

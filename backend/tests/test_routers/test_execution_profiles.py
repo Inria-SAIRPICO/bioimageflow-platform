@@ -31,16 +31,23 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-async def profile_client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def profile_store(tmp_path: Path) -> ExecutionProfileStore:
     store = ExecutionProfileStore(tmp_path / "profiles.json")
     await store.load()
+    return store
+
+
+@pytest.fixture
+async def profile_client(
+    profile_store: ExecutionProfileStore,
+) -> AsyncIterator[httpx.AsyncClient]:
     settings = Settings(
         deployment_mode="desktop",
         trusted_parsl_factories=["site.parsl:make_config"],
     )
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
-    app.dependency_overrides[get_execution_profile_store] = lambda: store
+    app.dependency_overrides[get_execution_profile_store] = lambda: profile_store
     app.dependency_overrides[get_settings] = lambda: settings
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -88,6 +95,26 @@ async def test_profile_crud_and_targets(profile_client: httpx.AsyncClient) -> No
         f"/api/v1/execution/profiles/{created['id']}?expected_revision=2"
     )
     assert deleted.status_code == 204
+
+
+async def test_profile_delete_reports_active_execution_conflict(
+    profile_client: httpx.AsyncClient,
+    profile_store: ExecutionProfileStore,
+) -> None:
+    created = (
+        await profile_client.post(
+            "/api/v1/execution/profiles",
+            json=profile_fields().model_dump(mode="json"),
+        )
+    ).json()
+    profile_store.set_reference_checker(lambda profile_id: profile_id == created["id"])
+
+    response = await profile_client.delete(
+        f"/api/v1/execution/profiles/{created['id']}?expected_revision=1"
+    )
+
+    assert response.status_code == 409
+    assert "non-terminal execution" in response.json()["detail"]
 
 
 async def test_profile_test_uses_public_validation(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -25,6 +26,10 @@ class ExecutionProfileConflictError(RuntimeError):
     pass
 
 
+class ExecutionProfileInUseError(RuntimeError):
+    pass
+
+
 class _ProfileEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -40,6 +45,11 @@ class ExecutionProfileStore:
         self.editable = editable
         self._profiles: dict[str, DistributedExecutionProfile] | None = None
         self._lock = asyncio.Lock()
+        self._reference_checker: Callable[[str], bool] = lambda _profile_id: False
+
+    def set_reference_checker(self, checker: Callable[[str], bool]) -> None:
+        """Prevent removal while a retained non-terminal run needs a profile."""
+        self._reference_checker = checker
 
     async def load(self) -> list[DistributedExecutionProfile]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,6 +113,10 @@ class ExecutionProfileStore:
             if current.revision != expected_revision:
                 raise ExecutionProfileConflictError(
                     f"Profile revision {current.revision} does not match {expected_revision}"
+                )
+            if self._reference_checker(profile_id):
+                raise ExecutionProfileInUseError(
+                    "Execution profile is referenced by a non-terminal execution"
                 )
             profiles = dict(self._require_loaded())
             del profiles[profile_id]

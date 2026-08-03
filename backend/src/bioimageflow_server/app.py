@@ -393,6 +393,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
         distributed_tokens = PreparedSubmissionTokenManager()
         distributed_registry = ExecutionRegistry(workspace_path)
+        execution_profile_store.set_reference_checker(
+            lambda profile_id: any(
+                snapshot.profile_id == profile_id
+                for snapshot in distributed_registry.non_terminal()
+            )
+        )
         distributed_coordinator = ExecutionCoordinator(
             distributed_registry,
             reconnector=lambda snapshot: open_public_submitted_run(

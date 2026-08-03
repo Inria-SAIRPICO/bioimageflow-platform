@@ -20,6 +20,7 @@ from bioimageflow_server.models.execution_profiles import (
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services.execution_profiles import (
     ExecutionProfileConflictError,
+    ExecutionProfileInUseError,
     ExecutionProfileNotFoundError,
     ExecutionProfileStore,
 )
@@ -169,6 +170,8 @@ async def delete_execution_profile(
     except ExecutionProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Execution profile not found") from exc
     except ExecutionProfileConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ExecutionProfileInUseError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
