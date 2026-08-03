@@ -37,18 +37,31 @@ class DistributedProfile(Protocol):
     revision: int
     mode: str
     transport: Any | None
+    workflow_storage_path: str | Path | None
 
     def planning_arguments(self) -> Mapping[str, Any]: ...
 
     def submission_arguments(self) -> Mapping[str, Any]: ...
 
+    def prepare_non_remote(
+        self,
+        workflow: Any,
+        request: ExecutionPreflightRequest,
+        distributed_plan: Mapping[str, Any],
+    ) -> Any: ...
+
 
 class ExecutionProfileResolver(Protocol):
-    def resolve_target(self, target_id: str) -> DistributedProfile: ...
+    def resolve_target(self, target_id: str, workflow_id: str) -> DistributedProfile: ...
 
 
 class PreflightWorkflowResolver(Protocol):
-    def resolve_workflow(self, workflow_id: str, draft_revision: int) -> Any: ...
+    def resolve_workflow(
+        self,
+        workflow_id: str,
+        draft_revision: int,
+        storage_path: str | Path | None = None,
+    ) -> Any: ...
 
 
 class UploadPathResolver(Protocol):
@@ -172,12 +185,17 @@ class DistributedPreflightService:
         self,
         request: ExecutionPreflightRequest,
     ) -> ResolutionRequiredPreflight | ReadyPreflight:
+        profile = await asyncio.to_thread(
+            self._profiles.resolve_target,
+            request.target_id,
+            request.workflow_id,
+        )
         workflow = await asyncio.to_thread(
             self._workflows.resolve_workflow,
             request.workflow_id,
             request.draft_revision,
+            profile.workflow_storage_path,
         )
-        profile = await asyncio.to_thread(self._profiles.resolve_target, request.target_id)
         import bioimageflow
 
         inspect_remote_node_paths = getattr(bioimageflow, "inspect_remote_node_paths")
@@ -193,10 +211,23 @@ class DistributedPreflightService:
         )
         plan_payload = plan.to_dict()
         if profile.mode != "submitted_remote":
-            # Attached/submitted-local acceptance is performed by the runtime/profile layer.
+            prepared = await asyncio.to_thread(
+                profile.prepare_non_remote,
+                workflow,
+                request,
+                plan_payload,
+            )
+            token, expires_at = await self.tokens.issue(
+                prepared,
+                transport=None,
+                binding=preflight_binding(request),
+                lifetime=self._preparation_lifetime,
+            )
             return ReadyPreflight(
+                token=token,
+                expires_at=expires_at,
                 distributed_plan=plan_payload,
-                manifest=None,
+                manifest=prepared.manifest.to_dict(),
             )
 
         path_plan = await asyncio.to_thread(inspect_remote_node_paths, workflow)
@@ -225,6 +256,7 @@ class DistributedPreflightService:
             inputs=request.root_inputs,
             targets=request.requested_nodes,
             node_input_overrides=overrides,
+            node_routes=request.node_routes or None,
             lifetime=self._preparation_lifetime,
             **dict(profile.submission_arguments()),
         )

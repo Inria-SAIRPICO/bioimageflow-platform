@@ -2,8 +2,10 @@
 import { computed, ref } from 'vue'
 import Select from 'primevue/select'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
+import { useSettingsStore } from '@/stores/settings'
 
 const registry = useExecutionRegistryStore()
+const settings = useSettingsStore()
 
 const options = computed(() => registry.targets.map(target => ({
   ...target,
@@ -17,7 +19,18 @@ const loaded = ref(false)
 function ensureTargets(): void {
   if (loaded.value) return
   loaded.value = true
-  void registry.loadTargets()
+  void Promise.all([registry.loadTargets(), settings.fetchSettings()]).then(() => {
+    const preferred = (settings.settings as typeof settings.settings & {
+      default_execution_target_id?: string
+    } | null)?.default_execution_target_id
+    if (
+      registry.selectedTargetId === 'local'
+      && preferred
+      && registry.targets.some(target => target.id === preferred && target.enabled)
+    ) {
+      registry.selectedTargetId = preferred
+    }
+  })
 }
 </script>
 

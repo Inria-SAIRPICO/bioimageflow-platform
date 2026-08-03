@@ -18,6 +18,7 @@ import asyncio
 import ast
 import logging
 import re
+import threading
 import time
 import traceback
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -207,6 +208,7 @@ class ExecutionManager:
         storage_path: Path | None = None,
         settings_provider: Callable[[], Settings] | None = None,
         environment_manager_provider: Callable[[], Any | None] | None = None,
+        retained_execution_started: Callable[[ExecutionContext], Awaitable[None]] | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
@@ -216,6 +218,7 @@ class ExecutionManager:
         # effect on the next run without restarting the app.
         self._settings_provider = settings_provider
         self._environment_manager_provider = environment_manager_provider
+        self._retained_execution_started = retained_execution_started
         self.storage_path = storage_path
 
         self.state: Literal["running", "idle"] = "idle"
@@ -233,6 +236,9 @@ class ExecutionManager:
         # mark the "currently running" node as unexecuted on cancel if
         # no explicit "cancelled" progress event was received.
         self._current_node_id: str | None = None
+        self._retained_progress_events: list[dict[str, Any]] = []
+        self._retained_progress_sequence = 0
+        self._retained_progress_lock = threading.Lock()
 
     # ---- Public properties -------------------------------------------------
 
@@ -427,6 +433,9 @@ class ExecutionManager:
         self.last_result = None
         self._node_statuses = {}
         self._current_node_id = None
+        with self._retained_progress_lock:
+            self._retained_progress_events = []
+            self._retained_progress_sequence = 0
         for node in build_graph.nodes:
             if not node.enabled:
                 self._node_statuses[node.id] = NodeStatus(
@@ -484,7 +493,21 @@ class ExecutionManager:
                 run_context,
             )
         )
+        if self._retained_execution_started is not None:
+            try:
+                await self._retained_execution_started(context)
+            except Exception:
+                logger.exception("Could not retain accepted local execution %s", context.execution_id)
         return context
+
+    def retained_progress(self, *, after_sequence: int = 0) -> list[dict[str, Any]]:
+        """Return the engine-neutral public progress retained for the current run."""
+        with self._retained_progress_lock:
+            return [
+                event
+                for event in self._retained_progress_events
+                if event["sequence"] > after_sequence
+            ]
 
     def _materialize_latest_outputs(
         self,
@@ -585,6 +608,18 @@ class ExecutionManager:
                     node_id,
                 )
                 return
+
+            from bioimageflow_server.services.execution_progress import (
+                progress_event_from_attached,
+            )
+
+            with self._retained_progress_lock:
+                converted = progress_event_from_attached(
+                    event,
+                    self._retained_progress_sequence + 1,
+                )
+                self._retained_progress_events.extend(converted)
+                self._retained_progress_sequence = converted[-1]["sequence"]
 
             timestamp = float(getattr(event, "timestamp", 0.0) or 0.0)
             result_key = getattr(event, "result_key", None)

@@ -280,7 +280,7 @@ async function runDistributed(
   if (!confirmed) return false
   remoteDialogBusy.value = true
   try {
-    const snapshot = await applyPreparedExecution(response.token)
+    const snapshot = await applyPreparedExecution(response.token, baseRequest)
     executionRegistry.applySnapshot(snapshot)
     remoteDialogVisible.value = false
     remotePrepared.value = null

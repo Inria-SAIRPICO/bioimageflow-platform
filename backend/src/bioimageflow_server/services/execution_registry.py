@@ -35,7 +35,6 @@ class ExecutionRegistry:
 
     def __init__(self, workspace_root: Path) -> None:
         self.root = workspace_root / ".bioimageflow" / "executions"
-        self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
 
     def _path(self, execution_id: str) -> Path:
@@ -88,6 +87,8 @@ class ExecutionRegistry:
             raise ValueError("offset must be non-negative and limit must be in [1, 200]")
         with self._lock:
             snapshots: list[ExecutionSnapshot] = []
+            if not self.root.exists():
+                return ExecutionPage(items=[], total=0, offset=offset, limit=limit)
             for path in self.root.glob("*.json"):
                 if path.is_symlink() or not path.is_file():
                     continue
@@ -104,6 +105,8 @@ class ExecutionRegistry:
 
     def non_terminal(self) -> list[ExecutionSnapshot]:
         with self._lock:
+            if not self.root.exists():
+                return []
             snapshots = [
                 ExecutionSnapshot.model_validate_json(path.read_text("utf-8"))
                 for path in self.root.glob("*.json")
@@ -112,6 +115,7 @@ class ExecutionRegistry:
         return [item for item in snapshots if not item.terminal]
 
     def _atomic_write(self, destination: Path, payload: dict[str, object]) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{destination.stem}.",
             suffix=".tmp",

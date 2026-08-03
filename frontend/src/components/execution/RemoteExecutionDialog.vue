@@ -30,7 +30,7 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-const { pickFile } = usePathPicker()
+const { pickFile, pickFolder, isDesktop } = usePathPicker()
 const drafts = ref<Record<string, LeafDraft[]>>({})
 
 function key(input: RemoteNodePathInput): string {
@@ -61,7 +61,9 @@ function choices(input: RemoteNodePathInput) {
 }
 
 async function chooseUpload(input: RemoteNodePathInput, index: number): Promise<void> {
-  const selected = await pickFile({ parameterName: input.input_name })
+  const selected = isDesktop() && input.path_picker === 'folder'
+    ? await pickFolder({ parameterName: input.input_name })
+    : await pickFile({ parameterName: input.input_name })
   if (selected !== null) draftFor(input, index).path = selected
 }
 

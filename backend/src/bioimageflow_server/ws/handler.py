@@ -260,6 +260,15 @@ class ConnectionManager:
         }
         self._enqueue_all(payload)
 
+    async def publish_execution_snapshot(self, snapshot: Any, *, initial: bool) -> None:
+        """Publish a complete revisioned retained-execution replacement."""
+        self._enqueue_all(
+            {
+                "type": "execution_snapshot" if initial else "execution_update",
+                "snapshot": snapshot.model_dump(mode="json"),
+            }
+        )
+
     async def send_status_snapshot(self, websocket: Any, status: Any) -> None:
         state = self._states.get(websocket)
         if state is None:

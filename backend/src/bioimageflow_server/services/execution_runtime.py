@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import shutil
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -82,7 +83,8 @@ class SubmittedRunAdapter:
         signature = inspect.signature(self.handle.result)
         if "destination" in signature.parameters:
             self.handle.result(destination=destination)
-            return destination
+            archive = Path(shutil.make_archive(str(destination), "zip", destination))
+            return archive
         value = self.handle.result()
         if self._result_exporter is None:
             raise RuntimeError("A result exporter is required for attached or submitted-local results")
@@ -192,6 +194,20 @@ class ExecutionCoordinator:
         """Reconnect all retained non-terminal submitted runs without resubmission."""
 
         for snapshot in await asyncio.to_thread(self.registry.non_terminal):
+            if snapshot.backend in {"direct", "wetlands", "attached_parsl"}:
+                lost = snapshot.model_copy(
+                    update={"state": "lost", "finished_at": utc_now()}
+                )
+                persisted = await asyncio.to_thread(
+                    self.registry.save,
+                    lost,
+                    expected_revision=snapshot.revision,
+                )
+                await self._publisher.publish_execution_snapshot(
+                    persisted,
+                    initial=False,
+                )
+                continue
             try:
                 adapter = await asyncio.to_thread(self._reconnector, snapshot)
             except Exception as exc:
@@ -401,7 +417,11 @@ def open_public_submitted_run(snapshot: ExecutionSnapshot, profile_resolver: Any
     if not isinstance(storage_path, str) or not isinstance(run_id, str):
         raise ValueError("Submitted execution reconnect metadata is incomplete")
     if snapshot.backend == "submitted_remote":
-        profile = profile_resolver.resolve_revision(snapshot.profile_id, snapshot.profile_revision)
+        profile = profile_resolver.resolve_revision(
+            snapshot.profile_id,
+            snapshot.profile_revision,
+            snapshot.workflow_id,
+        )
         return SubmittedRunAdapter(
             remote_workflow_run.open(profile.transport, storage_path, run_id)
         )

@@ -4,7 +4,7 @@ import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import SelectButton from 'primevue/selectbutton'
 import Tag from 'primevue/tag'
-import { executionResultsUrl, type ExecutionJobSnapshot } from '@/api/executions'
+import { downloadExecutionResults, type ExecutionJobSnapshot } from '@/api/executions'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useUIStore } from '@/stores/ui'
 
@@ -74,8 +74,14 @@ function openLogs(job: ExecutionJobSnapshot): void {
   ui.openLoggerPanel()
 }
 
-function downloadResults(id: string): void {
-  window.location.assign(executionResultsUrl(id))
+async function downloadResults(id: string): Promise<void> {
+  const blob = await downloadExecutionResults(id)
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${id}-results.zip`
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 </script>
 

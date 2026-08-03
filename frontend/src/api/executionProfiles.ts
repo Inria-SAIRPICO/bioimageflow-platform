@@ -61,9 +61,10 @@ export async function listExecutionProfiles(): Promise<ExecutionProfile[]> {
 export async function createExecutionProfile(
   profile: ExecutionProfileDraft,
 ): Promise<ExecutionProfile> {
+  const { schema: _schema, ...fields } = profile
   const { data } = await api.post<Omit<ExecutionProfile, 'editable'>>(
     '/api/v1/execution/profiles',
-    profile,
+    fields,
   )
   return withEditable(data)
 }
@@ -72,9 +73,16 @@ export async function updateExecutionProfile(
   profile: ExecutionProfile,
   changes: Partial<ExecutionProfileDraft>,
 ): Promise<ExecutionProfile> {
+  const {
+    schema: _schema,
+    id: _id,
+    revision: _revision,
+    editable: _editable,
+    ...fields
+  } = { ...profile, ...changes }
   const { data } = await api.patch<Omit<ExecutionProfile, 'editable'>>(
     `/api/v1/execution/profiles/${encodeURIComponent(profile.id)}`,
-    { expected_revision: profile.revision, profile: changes },
+    { expected_revision: profile.revision, profile: fields },
   )
   return withEditable(data, profile.editable)
 }
@@ -88,9 +96,10 @@ export async function deleteExecutionProfile(profile: ExecutionProfile): Promise
 export async function testExecutionProfile(
   profile: ExecutionProfile,
 ): Promise<ProfileValidationResult> {
-  const { data } = await api.post<ProfileValidationResult>(
+  const { data } = await api.post<{
+    report: ProfileValidationResult
+  }>(
     `/api/v1/execution/profiles/${encodeURIComponent(profile.id)}/test`,
-    { expected_revision: profile.revision },
   )
-  return data
+  return data.report
 }

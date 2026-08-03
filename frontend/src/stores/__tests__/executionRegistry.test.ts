@@ -17,6 +17,19 @@ function snapshot(revision: number, state: ExecutionSnapshot['state']): Executio
   }
 }
 
+function snapshotWire(revision: number, state: ExecutionSnapshot['state'], id = 'run-1') {
+  return {
+    revision,
+    execution_id: id,
+    workflow_id: 'workflow',
+    backend: 'submitted_remote',
+    target_id: 'cluster',
+    state,
+    jobs: {},
+    created_at: '2026-08-03T10:00:00Z',
+  }
+}
+
 describe('execution registry store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -50,9 +63,12 @@ describe('execution registry store', () => {
   })
 
   it('keeps cancel and retry actions scoped to the selected run ID', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      data: snapshotWire(2, 'cancel_requested'),
+    })
     vi.mocked(api.post)
-      .mockResolvedValueOnce({ data: snapshot(2, 'cancel_requested') })
-      .mockResolvedValueOnce({ data: { ...snapshot(1, 'queued'), id: 'run-2' } })
+      .mockResolvedValueOnce({ data: { execution_id: 'run-1', state: 'cancel_requested' } })
+      .mockResolvedValueOnce({ data: snapshotWire(1, 'queued', 'run-2') })
     const store = useExecutionRegistryStore()
     store.applySnapshot(snapshot(1, 'running'))
 

@@ -98,6 +98,7 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
         revision=1,
         mode="submitted_remote",
         transport="ssh",
+        workflow_storage_path="/cluster/demo/results",
         planning_arguments=lambda: {"executor_bindings": {}},
         submission_arguments=lambda: {
             "parsl_config": "config",
@@ -106,8 +107,12 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
         },
     )
     service = DistributedPreflightService(
-        workflows=SimpleNamespace(resolve_workflow=lambda workflow_id, revision: object()),
-        profiles=SimpleNamespace(resolve_target=lambda target_id: profile),
+        workflows=SimpleNamespace(
+            resolve_workflow=lambda workflow_id, revision, storage_path: object()
+        ),
+        profiles=SimpleNamespace(
+            resolve_target=lambda target_id, workflow_id: profile
+        ),
         uploads=SimpleNamespace(resolve_upload=lambda value: Path("/authorized") / value),
         tokens=PreparedSubmissionTokenManager(),
     )
