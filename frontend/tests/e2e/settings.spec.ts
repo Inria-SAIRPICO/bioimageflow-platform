@@ -50,7 +50,7 @@ test.describe('Settings Panel', () => {
     await expect(dialog.locator('[data-testid="node-data-page-size-setting"]')).toContainText('250')
   })
 
-  test('execution settings show current runtime summary without stale controls', async ({
+  test('execution settings show runtime summary and distributed controls', async ({
     page,
   }) => {
     await page.goto('/')
@@ -62,7 +62,8 @@ test.describe('Settings Panel', () => {
 
     await expect(dialog.locator('[data-testid="execution-backend-value"]')).toBeVisible()
     await expect(dialog.locator('[data-testid="execution-scheduling-value"]')).toBeVisible()
-    await expect(dialog).not.toContainText('Parsl')
+    await expect(dialog).toContainText('Trusted Parsl configuration factories')
+    await expect(dialog).toContainText('Distributed profiles')
     await expect(dialog.locator('[data-testid="cache-unlimited-checkbox"]')).toHaveCount(0)
     await expect(
       dialog.locator('[data-testid="cache-max-executions-input"]'),
