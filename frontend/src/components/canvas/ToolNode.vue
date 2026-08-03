@@ -20,6 +20,7 @@ export interface NodeData {
   missingTool?: MissingTool | null
   status: string
   parameters: Record<string, unknown>
+  resources?: Record<string, number>
   collapsed: boolean
   enabled: boolean
   connectedInputs: Record<string, string>
@@ -211,6 +212,8 @@ const statusClass = computed(
 )
 
 const hasGpu = computed(() => {
+  const override = props.data.resources?.gpu
+  if (typeof override === 'number') return override > 0
   if (!props.data.tool) return false
   const env = props.data.tool.environment
   if (!env) return false

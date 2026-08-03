@@ -271,11 +271,11 @@ describe('MenuBar', () => {
     expect(labels).toEqual(['Workflow', 'Edit', 'Execution', 'View', 'Help'])
   })
 
-  it('View menu has 7 panel toggle items', () => {
+  it('View menu has 8 panel toggle items', () => {
     const wrapper = mountMenuBar()
     const vm = wrapper.vm as any
     const viewMenu = vm.menuItems.find((item: any) => item.label === 'View')
-    expect(viewMenu.items).toHaveLength(7)
+    expect(viewMenu.items).toHaveLength(8)
     const toggleLabels = viewMenu.items.map((item: any) => item.label)
     expect(toggleLabels).toEqual([
       'Tools Panel',
@@ -283,6 +283,7 @@ describe('MenuBar', () => {
       'Datasets Panel',
       'Nodes',
       'Node Data',
+      'Execution',
       'Logger',
       'Code Editor',
     ])
@@ -303,6 +304,7 @@ describe('MenuBar', () => {
       'Workflows Panel',
       'Nodes',
       'Node Data',
+      'Execution',
       'Logger',
       'Code Editor',
     ])
