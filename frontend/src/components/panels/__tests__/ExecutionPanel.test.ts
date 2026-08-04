@@ -141,7 +141,10 @@ describe('ExecutionPanel', () => {
     expect(registry.selectedRunId).toBe('run-child')
   })
 
-  it('requires an explicit new preview when the confirmed plan is stale', async () => {
+  it.each([
+    'retry-plan-integrity-error',
+    'retry-child-conflict',
+  ])('requires an explicit new preview for %s', async (errorCode) => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -168,7 +171,7 @@ describe('ExecutionPanel', () => {
       .mockRejectedValueOnce(Object.assign(new Error('Conflict'), {
         response: {
           status: 409,
-          data: { error: 'retry-plan-integrity-error', detail: 'Plan is stale' },
+          data: { error: errorCode, detail: 'Plan is stale' },
         },
       }))
       .mockResolvedValueOnce({ data: plan('sha256:refreshed') })

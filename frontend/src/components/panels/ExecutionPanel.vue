@@ -195,6 +195,7 @@ const UNCERTAIN_RETRY_CODES = new Set([
 const REPLAN_REQUIRED_CODES = new Set([
   'retry-plan-not-found',
   'retry-plan-integrity-error',
+  'retry-child-conflict',
   'remote-retry-conflict',
   'workflow-run-retry-error',
 ])
