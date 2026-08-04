@@ -770,6 +770,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/executions/{execution_id}/retry/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Plan Retry Execution */
+        post: operations["plan_retry_execution_api_v1_executions__execution_id__retry_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/executions/{execution_id}/retry": {
         parameters: {
             query?: never;
@@ -779,8 +796,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry Execution */
-        post: operations["retry_execution_api_v1_executions__execution_id__retry_post"];
+        /** Confirm Retry Execution */
+        post: operations["confirm_retry_execution_api_v1_executions__execution_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1528,6 +1545,11 @@ export interface components {
             /** Target Input */
             target_input: string;
         };
+        /** ConfirmRetryRequest */
+        ConfirmRetryRequest: {
+            /** Plan Digest */
+            plan_digest: string;
+        };
         /** ConnectColumnEdgeOperation */
         ConnectColumnEdgeOperation: {
             scope?: components["schemas"]["WorkflowDraftOperationScope"];
@@ -2086,6 +2108,16 @@ export interface components {
             /** Requested Hash */
             requested_hash?: string | null;
         };
+        /**
+         * ExecutionActionAvailability
+         * @description Capability- and state-derived availability for one execution action.
+         */
+        ExecutionActionAvailability: {
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
         /** ExecutionActionResponse */
         ExecutionActionResponse: {
             /** Execution Id */
@@ -2100,6 +2132,16 @@ export interface components {
              * @enum {string}
              */
             state: "preparing" | "prepared" | "queued" | "starting" | "running" | "cancel_requested" | "finalizing" | "succeeded" | "failed" | "cancelled" | "lost";
+        };
+        /**
+         * ExecutionActions
+         * @description The complete action surface presented for a retained execution.
+         */
+        ExecutionActions: {
+            cancel: components["schemas"]["ExecutionActionAvailability"];
+            retry: components["schemas"]["ExecutionActionAvailability"];
+            recompute: components["schemas"]["ExecutionActionAvailability"];
+            download_results: components["schemas"]["ExecutionActionAvailability"];
         };
         /** ExecutionCapabilitiesValue */
         ExecutionCapabilitiesValue: {
@@ -2275,6 +2317,8 @@ export interface components {
             requested_nodes?: string[] | null;
             /** Retry Of Execution Id */
             retry_of_execution_id?: string | null;
+            /** Child Execution Ids */
+            child_execution_ids?: string[];
             /**
              * Backend
              * @enum {string}
@@ -2312,6 +2356,8 @@ export interface components {
             backend_metadata?: {
                 [key: string]: unknown;
             };
+            actions?: components["schemas"]["ExecutionActions"];
+            result_export?: components["schemas"]["ResultExportSnapshot"];
             observation?: components["schemas"]["ObservationSnapshot"];
             /**
              * Created At
@@ -3211,6 +3257,16 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** RecomputeSelection */
+        RecomputeSelection: {
+            /** Node Paths */
+            node_paths: string[];
+            /**
+             * Cascade
+             * @default true
+             */
+            cascade: boolean;
+        };
         /** RenameNodeOperation */
         RenameNodeOperation: {
             scope?: components["schemas"]["WorkflowDraftOperationScope"];
@@ -3245,15 +3301,80 @@ export interface components {
                 [key: string]: string;
             }[];
         };
-        /** ResultDownloadRequest */
-        ResultDownloadRequest: {
-            /** Destination */
-            destination: string;
+        /**
+         * ResultExportSnapshot
+         * @description Durable availability of the managed immutable result bundle.
+         */
+        ResultExportSnapshot: {
+            /**
+             * State
+             * @default pending
+             * @enum {string}
+             */
+            state: "pending" | "available" | "unavailable";
+            /** Error Code */
+            error_code?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Archive Digest */
+            archive_digest?: string | null;
         };
-        /** RetryExecutionRequest */
-        RetryExecutionRequest: {
-            /** Target Id */
-            target_id?: string | null;
+        /** RetryInvalidationPresentation */
+        RetryInvalidationPresentation: {
+            /** Node Path */
+            node_path: string;
+            /** Result Key */
+            result_key: string;
+            /** Record Id */
+            record_id: string | null;
+            /**
+             * Selection Status
+             * @enum {string}
+             */
+            selection_status: "selected" | "corrupt";
+        };
+        /**
+         * RetryPlanPresentation
+         * @description Presentation-safe view of a persisted immutable BioImageFlow retry plan.
+         */
+        RetryPlanPresentation: {
+            /** Plan Digest */
+            plan_digest: string;
+            /** Parent Execution Id */
+            parent_execution_id: string;
+            /** Child Execution Id */
+            child_execution_id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "retry" | "recompute";
+            target: components["schemas"]["RetryTargetPresentation"];
+            recompute: components["schemas"]["RecomputeSelection"] | null;
+            /** Invalidations */
+            invalidations: components["schemas"]["RetryInvalidationPresentation"][];
+            /** Conflicting Run Ids */
+            conflicting_run_ids: string[];
+            /** Confirmable */
+            confirmable: boolean;
+            /** Disabled Reason */
+            disabled_reason?: string | null;
+        };
+        /** RetryPlanRequest */
+        RetryPlanRequest: {
+            recompute: components["schemas"]["RecomputeSelection"] | null;
+        };
+        /** RetryTargetPresentation */
+        RetryTargetPresentation: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "local" | "attached" | "submitted_local" | "submitted_remote";
         };
         /**
          * RevealRequest
@@ -4315,6 +4436,7 @@ export type CapabilityStatusValue = components['schemas']['CapabilityStatusValue
 export type ClearRequest = components['schemas']['ClearRequest'];
 export type ClusterFilePreLaunchValue = components['schemas']['ClusterFilePreLaunchValue'];
 export type ColumnEdge = components['schemas']['ColumnEdge'];
+export type ConfirmRetryRequest = components['schemas']['ConfirmRetryRequest'];
 export type ConnectColumnEdgeOperation = components['schemas']['ConnectColumnEdgeOperation'];
 export type ConnectDataFrameEdgeOperation = components['schemas']['ConnectDataFrameEdgeOperation'];
 export type CreateToolNodeOperation = components['schemas']['CreateToolNodeOperation'];
@@ -4350,7 +4472,9 @@ export type EditorOpenResponse = components['schemas']['EditorOpenResponse'];
 export type EditorOpenToolRequest = components['schemas']['EditorOpenToolRequest'];
 export type EditorStatus = components['schemas']['EditorStatus'];
 export type EnvironmentDeleteRequest = components['schemas']['EnvironmentDeleteRequest'];
+export type ExecutionActionAvailability = components['schemas']['ExecutionActionAvailability'];
 export type ExecutionActionResponse = components['schemas']['ExecutionActionResponse'];
+export type ExecutionActions = components['schemas']['ExecutionActions'];
 export type ExecutionCapabilitiesValue = components['schemas']['ExecutionCapabilitiesValue'];
 export type ExecutionPage = components['schemas']['ExecutionPage'];
 export type ExecutionPreflightRequest = components['schemas']['ExecutionPreflightRequest'];
@@ -4413,10 +4537,14 @@ export type PositionalInputPort = components['schemas']['PositionalInputPort'];
 export type PythonAuthoringProvenance = components['schemas']['PythonAuthoringProvenance'];
 export type PythonSourcePreviewRequest = components['schemas']['PythonSourcePreviewRequest'];
 export type ReadyPreflight = components['schemas']['ReadyPreflight'];
+export type RecomputeSelection = components['schemas']['RecomputeSelection'];
 export type RenameNodeOperation = components['schemas']['RenameNodeOperation'];
 export type ResolutionRequiredPreflight = components['schemas']['ResolutionRequiredPreflight'];
-export type ResultDownloadRequest = components['schemas']['ResultDownloadRequest'];
-export type RetryExecutionRequest = components['schemas']['RetryExecutionRequest'];
+export type ResultExportSnapshot = components['schemas']['ResultExportSnapshot'];
+export type RetryInvalidationPresentation = components['schemas']['RetryInvalidationPresentation'];
+export type RetryPlanPresentation = components['schemas']['RetryPlanPresentation'];
+export type RetryPlanRequest = components['schemas']['RetryPlanRequest'];
+export type RetryTargetPresentation = components['schemas']['RetryTargetPresentation'];
 export type RevealRequest = components['schemas']['RevealRequest'];
 export type SshSubmissionTransportValue = components['schemas']['SSHSubmissionTransportValue'];
 export type SerializedConstant = components['schemas']['SerializedConstant'];
@@ -6031,7 +6159,7 @@ export interface operations {
             };
         };
     };
-    retry_execution_api_v1_executions__execution_id__retry_post: {
+    plan_retry_execution_api_v1_executions__execution_id__retry_plan_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -6042,7 +6170,42 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RetryExecutionRequest"];
+                "application/json": components["schemas"]["RetryPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryPlanPresentation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_retry_execution_api_v1_executions__execution_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmRetryRequest"];
             };
         };
         responses: {
@@ -6106,11 +6269,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ResultDownloadRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
