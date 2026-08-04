@@ -391,6 +391,60 @@ async def test_retry_plan_is_durable_and_confirmation_recovers_exact_child(
 
 
 @pytest.mark.anyio
+async def test_retry_confirmation_refreshes_parent_after_waiting_for_run_lock(
+    tmp_path: Path,
+) -> None:
+    parent_id = f"run_{uuid4().hex}"
+    child_id = f"run_{uuid4().hex}"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=parent_id,
+            backend="submitted_local",
+            state="failed",
+            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+        )
+    )
+    plan = _retry_plan(parent_id, child_id, tmp_path)
+    handle = _RetryHandle(plan)
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        poll_interval=60,
+    )
+    presentation = await coordinator.plan_retry(parent_id)
+    original_get = coordinator.get
+    first_read = asyncio.Event()
+    reads = 0
+
+    async def observed_get(execution_id: str) -> ExecutionSnapshot:
+        nonlocal reads
+        snapshot = await original_get(execution_id)
+        reads += 1
+        if reads == 1:
+            first_read.set()
+        return snapshot
+
+    coordinator.get = observed_get  # type: ignore[method-assign]
+    lock = coordinator._locks.setdefault(parent_id, asyncio.Lock())
+    await lock.acquire()
+    confirmation = asyncio.create_task(
+        coordinator.confirm_retry(parent_id, plan_digest=presentation.plan_digest)
+    )
+    await first_read.wait()
+    before_export = registry.get(parent_id)
+    registry.save(before_export, expected_revision=before_export.revision)
+    lock.release()
+
+    child = await confirmation
+    await coordinator.close()
+
+    assert child.execution_id == child_id
+    assert len(handle.started) == 1
+    assert registry.get(parent_id).child_execution_ids == [child_id]
+
+
+@pytest.mark.anyio
 async def test_startup_resumes_confirmed_plan_before_reconnect(tmp_path: Path) -> None:
     parent_id = f"run_{uuid4().hex}"
     child_id = f"run_{uuid4().hex}"
@@ -687,6 +741,70 @@ async def test_attached_completion_recovery_detects_archive_tampering(
     assert recovered.result_export.state == "unavailable"
     assert recovered.result_export.error_code == "workflow-result-integrity-error"
     assert not recovered.actions.download_results.available
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("terminal_state", "backend"),
+    [("failed", "direct"), ("cancelled", "wetlands")],
+)
+async def test_regular_terminal_sidecar_recovers_failure_and_cancellation(
+    tmp_path: Path,
+    terminal_state: str,
+    backend: str,
+) -> None:
+    from bioimageflow.engine import WorkflowCancelledError
+
+    execution_id = f"run_{uuid4().hex}"
+    context = ExecutionContext(execution_id=execution_id, workflow_id="demo")
+    manager = ExecutionManager(
+        event_bus=NullEventBus(),
+        tool_registry=ToolRegistryService(),
+        settings=Settings(deployment_mode="desktop"),
+        managed_result_root=tmp_path / "results",
+    )
+    manager.context = context
+    manager.state = "running"
+    manager._workflow = object()
+    manager._workflow_run_contexts[execution_id] = object()
+
+    async def terminate() -> None:
+        if terminal_state == "cancelled":
+            raise WorkflowCancelledError("cancelled")
+        raise RuntimeError("failed")
+
+    task = asyncio.create_task(terminate())
+    await asyncio.gather(task, return_exceptions=True)
+    manager._on_run_done(task, context)
+
+    assert manager.retained_status(context) == terminal_state
+    assert manager.retained_result_export(context).state == "unavailable"
+    assert execution_id not in manager._workflow_run_contexts
+    bundle = tmp_path / "results" / execution_id
+    assert bundle.with_suffix(".completion.json").is_file()
+
+    registry = ExecutionRegistry(tmp_path / "registry")
+    registry.save(
+        _snapshot(
+            execution_id=execution_id,
+            backend=backend,
+            state="running",
+            reconnect={"result_bundle": str(bundle)},
+        )
+    )
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: (_ for _ in ()).throw(
+            AssertionError("terminal regular run must recover from its sidecar")
+        ),
+    )
+    await coordinator.start()
+    recovered = await coordinator.get(execution_id)
+    await coordinator.close()
+
+    assert recovered.state == terminal_state
+    assert recovered.result_export.state == "unavailable"
+    assert recovered.finished_at is not None
 
 
 @pytest.mark.anyio

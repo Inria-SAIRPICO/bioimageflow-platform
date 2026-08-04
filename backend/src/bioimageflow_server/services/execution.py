@@ -660,7 +660,17 @@ class ExecutionManager:
             )
 
     async def stop(self) -> None:
+        await self._stop_expected(None)
+
+    async def stop_retained(self, context: ExecutionContext) -> None:
+        """Stop only when ``context`` is still the manager's current run."""
+
+        await self._stop_expected(context)
+
+    async def _stop_expected(self, expected: ExecutionContext | None) -> None:
         async with self._preparation_lock:
+            if expected is not None and self.context != expected:
+                return
             if self._workflow is None or self.state != "running":
                 return
             self.event_bus.publish_log(
@@ -1113,13 +1123,38 @@ class ExecutionManager:
             errors=errors,
             node_statuses=dict(self._node_statuses),
         )
-        self._retained_statuses[context.execution_id] = (
+        terminal_status = (
             "succeeded"
             if success
             else "cancelled"
             if any(error.get("type") == "cancelled" for error in errors)
             else "failed"
         )
+        if not success:
+            result_export = ResultExportSnapshot(
+                state="unavailable",
+                error_code="workflow-run-result-unavailable",
+                detail=f"The attached execution {terminal_status} before producing a result.",
+            )
+            self._retained_result_exports[context.execution_id] = result_export
+            self._workflow_run_contexts.pop(context.execution_id, None)
+            if self._managed_result_root is not None:
+                try:
+                    from bioimageflow_server.services.execution_runtime import (
+                        _persist_attached_completion,
+                    )
+
+                    _persist_attached_completion(
+                        self._managed_result_root / context.execution_id,
+                        state=terminal_status,
+                        result_export=result_export,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not retain terminal attached execution %s",
+                        context.execution_id,
+                    )
+        self._retained_statuses[context.execution_id] = terminal_status
         self.event_bus.publish_execution_complete(
             success,
             errors,

@@ -22,6 +22,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import TypeAdapter, ValidationError
 
 from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.models.execution_runtime import present_execution
 from bioimageflow_server.models.ws import ClientMessage, SubscribeLogsMessage
 
 
@@ -262,10 +263,11 @@ class ConnectionManager:
 
     async def publish_execution_snapshot(self, snapshot: Any, *, initial: bool) -> None:
         """Publish a complete revisioned retained-execution replacement."""
+        public_snapshot = present_execution(snapshot)
         self._enqueue_all(
             {
                 "type": "execution_snapshot" if initial else "execution_update",
-                "snapshot": snapshot.model_dump(mode="json"),
+                "snapshot": public_snapshot.model_dump(mode="json"),
             }
         )
 

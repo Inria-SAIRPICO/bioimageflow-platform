@@ -17,9 +17,12 @@ from bioimageflow_server.models.execution_runtime import (
     ConfirmRetryRequest,
     ExecutionActionResponse,
     ExecutionPage,
+    ExecutionPresentation,
+    ExecutionPresentationPage,
     ExecutionSnapshot,
     RetryPlanPresentation,
     RetryPlanRequest,
+    present_execution,
 )
 from bioimageflow_server.services.execution_preflight import (
     DistributedPreflightService,
@@ -77,12 +80,12 @@ async def preflight_execution(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("", response_model=ExecutionSnapshot, status_code=202)
+@router.post("", response_model=ExecutionPresentation, status_code=202)
 async def apply_prepared_execution(
     request: ApplyPreparedExecutionRequest,
     service: DistributedPreflightService = Depends(get_preflight_service),
     registrar: PreparedRunRegistrar = Depends(get_prepared_run_registrar),
-) -> ExecutionSnapshot:
+) -> ExecutionPresentation:
     binding = invocation_binding(
         workflow_id=request.workflow_id,
         draft_revision=request.draft_revision,
@@ -97,30 +100,36 @@ async def apply_prepared_execution(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PreparedTokenError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return await registrar.register_prepared_run(request, handle)
+    return present_execution(await registrar.register_prepared_run(request, handle))
 
 
-@router.get("", response_model=ExecutionPage)
+@router.get("", response_model=ExecutionPresentationPage)
 async def list_executions(
     workflow_id: str | None = None,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
-) -> ExecutionPage:
-    return await coordinator.list(
+) -> ExecutionPresentationPage:
+    page: ExecutionPage = await coordinator.list(
         workflow_id=workflow_id,
         offset=offset,
         limit=limit,
     )
+    return ExecutionPresentationPage(
+        items=[present_execution(item) for item in page.items],
+        total=page.total,
+        offset=page.offset,
+        limit=page.limit,
+    )
 
 
-@router.get("/{execution_id}", response_model=ExecutionSnapshot)
+@router.get("/{execution_id}", response_model=ExecutionPresentation)
 async def get_execution(
     execution_id: str,
     coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
-) -> ExecutionSnapshot:
+) -> ExecutionPresentation:
     try:
-        return await coordinator.get(execution_id)
+        return present_execution(await coordinator.get(execution_id))
     except (ExecutionNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=404, detail="Execution not found") from exc
 
@@ -158,16 +167,18 @@ async def plan_retry_execution(
         raise _execution_http_error(exc) from exc
 
 
-@router.post("/{execution_id}/retry", response_model=ExecutionSnapshot, status_code=202)
+@router.post("/{execution_id}/retry", response_model=ExecutionPresentation, status_code=202)
 async def confirm_retry_execution(
     execution_id: str,
     request: ConfirmRetryRequest,
     coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
-) -> ExecutionSnapshot:
+) -> ExecutionPresentation:
     try:
-        return await coordinator.confirm_retry(
-            execution_id,
-            plan_digest=request.plan_digest,
+        return present_execution(
+            await coordinator.confirm_retry(
+                execution_id,
+                plan_digest=request.plan_digest,
+            )
         )
     except ExecutionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Execution not found") from exc

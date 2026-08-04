@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
 
 pytestmark = pytest.mark.anyio
 
@@ -93,6 +94,49 @@ async def _drain(mgr: Any) -> None:
     # Yield to the event loop repeatedly so sender tasks get a chance to run.
     for _ in range(10):
         await asyncio.sleep(0)
+
+
+async def test_execution_snapshot_websocket_redacts_durable_reconnect_data() -> None:
+    from bioimageflow_server.ws.handler import ConnectionManager
+
+    mgr = ConnectionManager(loop=asyncio.get_running_loop())
+    ws = MockWebSocket()
+    await mgr.connect(ws)
+    snapshot = ExecutionSnapshot(
+        execution_id="run-public",
+        workflow_id="workflow",
+        backend="submitted_remote",
+        target_id="cluster",
+        target_snapshot={
+            "name": "GPU cluster",
+            "profile": {"transport": {"host": "secret.example"}},
+        },
+        reconnect={"storage_path": "/secret/storage", "run_id": "private-run"},
+        backend_metadata={
+            "scheduler_job_id": "slurm-123",
+            "private_submission": "secret",
+        },
+        state="running",
+    )
+
+    await mgr.publish_execution_snapshot(snapshot, initial=True)
+    await _drain(mgr)
+    await mgr.disconnect(ws)
+
+    payload = ws.sent[0]
+    assert payload["type"] == "execution_snapshot"
+    assert payload["snapshot"]["target_label"] == "GPU cluster"
+    assert payload["snapshot"]["target_mode"] == "submitted_remote"
+    assert payload["snapshot"]["scheduler_job_id"] == "slurm-123"
+    assert {
+        "reconnect",
+        "target_snapshot",
+        "backend_metadata",
+        "profile_id",
+        "profile_revision",
+    }.isdisjoint(payload["snapshot"])
+    assert "secret.example" not in str(payload)
+    assert "/secret/storage" not in str(payload)
 
 
 async def test_broadcast_progress_sends_to_all() -> None:

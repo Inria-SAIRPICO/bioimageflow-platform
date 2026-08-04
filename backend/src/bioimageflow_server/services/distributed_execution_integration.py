@@ -487,7 +487,10 @@ class LegacyExecutionManagerAdapter:
         )
 
     def cancel(self) -> None:
-        future = asyncio.run_coroutine_threadsafe(self._manager.stop(), self._loop)
+        future = asyncio.run_coroutine_threadsafe(
+            self._manager.stop_retained(self._context),
+            self._loop,
+        )
         future.result()
 
     def logs(self) -> str:

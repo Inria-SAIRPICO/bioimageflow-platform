@@ -42,6 +42,20 @@ async def test_plural_execution_listing_and_id_specific_inspection(tmp_path: Pat
                 workflow_id="demo",
                 backend="submitted_local",
                 target_id="local-parsl",
+                profile_id="profile_" + "1" * 32,
+                profile_revision=3,
+                target_snapshot={
+                    "name": "Local Parsl",
+                    "profile": {
+                        "transport": {"host": "secret-cluster"},
+                        "parsl_config": {"factory": "private.factory"},
+                    },
+                },
+                reconnect={"storage_path": "/secret/run", "run_id": "private-run"},
+                backend_metadata={
+                    "scheduler_job_id": "scheduler-42",
+                    "retry_plan_digest": "sha256:" + "f" * 64,
+                },
                 state="succeeded",
             )
         )
@@ -69,9 +83,49 @@ async def test_plural_execution_listing_and_id_specific_inspection(tmp_path: Pat
         "recompute",
         "download_results",
     }
+    assert listing.json()["items"][0]["target_label"] == "Local Parsl"
+    assert listing.json()["items"][0]["target_mode"] == "submitted_local"
+    assert listing.json()["items"][0]["scheduler_job_id"] == "scheduler-42"
     assert detail.status_code == 200
     assert detail.json()["revision"] == 0
+    forbidden = {
+        "reconnect",
+        "target_snapshot",
+        "backend_metadata",
+        "profile_id",
+        "profile_revision",
+        "graph_fingerprint",
+        "result_export",
+    }
+    assert forbidden.isdisjoint(listing.json()["items"][0])
+    assert forbidden.isdisjoint(detail.json())
+    assert "secret-cluster" not in listing.text
+    assert "/secret/run" not in detail.text
     assert missing.status_code == 404
+
+
+def test_execution_openapi_uses_public_presentation_without_durable_fields(
+    tmp_path: Path,
+) -> None:
+    coordinator = ExecutionCoordinator(
+        ExecutionRegistry(tmp_path),
+        reconnector=lambda snapshot: None,  # type: ignore[arg-type,return-value]
+    )
+    schema = _app(coordinator).openapi()
+    properties = schema["components"]["schemas"]["ExecutionPresentation"]["properties"]
+
+    assert {"target_label", "target_mode", "scheduler_job_id"} <= properties.keys()
+    assert {
+        "reconnect",
+        "target_snapshot",
+        "backend_metadata",
+        "profile_id",
+        "profile_revision",
+    }.isdisjoint(properties)
+    listing_schema = schema["paths"]["/api/v1/executions"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert listing_schema["$ref"].endswith("/ExecutionPresentationPage")
 
 
 @pytest.mark.anyio

@@ -692,6 +692,20 @@ class ExecutionCoordinator:
             )
 
         async with self._locks.setdefault(execution_id, asyncio.Lock()):
+            source = await self.get(execution_id)
+            if not source.terminal:
+                raise ExecutionOperationError(
+                    "workflow-run-retry-error",
+                    "Only terminal executions can be retried.",
+                )
+            action = (
+                source.actions.recompute if plan.recompute is not None else source.actions.retry
+            )
+            if not action.available:
+                raise ExecutionOperationError(
+                    "workflow-run-retry-error",
+                    action.reason or "This execution cannot be retried.",
+                )
             plan_state = await asyncio.to_thread(
                 self.registry.retry_plan_state,
                 execution_id,

@@ -8,7 +8,9 @@ from typing import Any
 import pytest
 
 from bioimageflow_server.models.execution import ExecutionContext, ExecutionResult
+from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
 from bioimageflow_server.models.execution_preflight import ExecutionPreflightRequest
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.services.distributed_execution_integration import (
     AuthorizedUploadResolver,
     PlatformExecutionProfileResolver,
@@ -17,6 +19,10 @@ from bioimageflow_server.services.distributed_execution_integration import (
     _plan_jobs,
 )
 from bioimageflow_server.services.execution_preflight import PreparedRunAcceptance
+from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
+from bioimageflow_server.services.execution_registry import ExecutionRegistry
+from bioimageflow_server.services.execution_runtime import ExecutionCoordinator
+from bioimageflow_server.services.tool_registry import ToolRegistryService
 
 
 class _Coordinator:
@@ -245,6 +251,54 @@ def test_legacy_adapter_reads_status_and_progress_for_its_exact_run(tmp_path: Pa
         assert adapter.progress(after_sequence=1) == []
     finally:
         loop.close()
+
+
+@pytest.mark.anyio
+async def test_stale_cancel_for_completed_run_does_not_stop_current_run(
+    tmp_path: Path,
+) -> None:
+    from bioimageflow_server.services.distributed_execution_integration import (
+        LegacyExecutionManagerAdapter,
+    )
+
+    first = ExecutionContext(execution_id="first-run", workflow_id="demo")
+    second = ExecutionContext(execution_id="second-run", workflow_id="demo")
+    cancelled: list[str] = []
+    manager = ExecutionManager(
+        event_bus=NullEventBus(),
+        tool_registry=ToolRegistryService(),
+        settings=Settings(deployment_mode="desktop"),
+    )
+    manager.context = second
+    manager.state = "running"
+    manager._workflow = SimpleNamespace(cancel=lambda: cancelled.append(second.execution_id))
+    manager._retained_statuses[first.execution_id] = "succeeded"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        ExecutionSnapshot(
+            execution_id=first.execution_id,
+            workflow_id=first.workflow_id,
+            backend="direct",
+            target_id="local",
+            state="running",
+        )
+    )
+    coordinator = ExecutionCoordinator(registry, reconnector=lambda _snapshot: adapter)
+    adapter = LegacyExecutionManagerAdapter(
+        manager,
+        first,
+        asyncio.get_running_loop(),
+        tmp_path / first.execution_id,
+    )
+    coordinator._adapters[first.execution_id] = adapter
+    coordinator._locks[first.execution_id] = asyncio.Lock()
+
+    refreshed = await coordinator.cancel(first.execution_id)
+
+    assert refreshed.state == "succeeded"
+    assert cancelled == []
+    assert manager.context == second
+    assert manager.state == "running"
 
 
 def test_distributed_plan_jobs_decode_every_execution_status_strictly() -> None:

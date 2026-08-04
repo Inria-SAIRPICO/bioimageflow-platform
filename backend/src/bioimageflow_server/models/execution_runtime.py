@@ -37,6 +37,7 @@ ExecutionBackend = Literal[
     "submitted_local",
     "submitted_remote",
 ]
+ExecutionTargetMode = Literal["local", "attached", "submitted_local", "submitted_remote"]
 
 
 def utc_now() -> datetime:
@@ -139,7 +140,7 @@ class ResultExportSnapshot(BaseModel):
 
 
 class ExecutionSnapshot(BaseModel):
-    """Durable, revisioned presentation state for one execution."""
+    """Durable internal record for one execution; never serialize directly to clients."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -183,8 +184,80 @@ class ExecutionSnapshot(BaseModel):
         return self.state in {"succeeded", "failed", "cancelled", "lost"}
 
 
+class ExecutionPresentation(BaseModel):
+    """Explicit secret-free execution DTO used by HTTP and WebSocket clients."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    revision: int = Field(ge=0)
+    execution_id: str = Field(min_length=1)
+    workflow_id: str = Field(min_length=1)
+    draft_revision: int | None = Field(default=None, ge=0)
+    command: Literal["run", "run_selected", "retry", "invalidate_retry", "recompute"]
+    retry_of_execution_id: str | None = None
+    child_execution_ids: list[str] = Field(default_factory=list)
+    backend: ExecutionBackend
+    target_id: str
+    target_label: str
+    target_mode: ExecutionTargetMode
+    scheduler_job_id: str | None = None
+    state: RunState
+    jobs: dict[str, JobSnapshot] = Field(default_factory=dict)
+    progress_cursor: int = Field(default=0, ge=0)
+    actions: ExecutionActions
+    observation: ObservationSnapshot
+    created_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None = None
+
+
+def present_execution(snapshot: ExecutionSnapshot) -> ExecutionPresentation:
+    """Project a durable record onto the allowlisted public execution contract."""
+
+    target_label = snapshot.target_snapshot.get("name")
+    scheduler_job_id = snapshot.backend_metadata.get("scheduler_job_id")
+    target_mode: ExecutionTargetMode = {
+        "direct": "local",
+        "wetlands": "local",
+        "attached_parsl": "attached",
+        "submitted_local": "submitted_local",
+        "submitted_remote": "submitted_remote",
+    }[snapshot.backend]
+    return ExecutionPresentation(
+        revision=snapshot.revision,
+        execution_id=snapshot.execution_id,
+        workflow_id=snapshot.workflow_id,
+        draft_revision=snapshot.draft_revision,
+        command=snapshot.command,
+        retry_of_execution_id=snapshot.retry_of_execution_id,
+        child_execution_ids=snapshot.child_execution_ids,
+        backend=snapshot.backend,
+        target_id=snapshot.target_id,
+        target_label=target_label if isinstance(target_label, str) else snapshot.target_id,
+        target_mode=target_mode,
+        scheduler_job_id=scheduler_job_id if isinstance(scheduler_job_id, str) else None,
+        state=snapshot.state,
+        jobs=snapshot.jobs,
+        progress_cursor=snapshot.progress_cursor,
+        actions=snapshot.actions,
+        observation=snapshot.observation,
+        created_at=snapshot.created_at,
+        updated_at=snapshot.updated_at,
+        finished_at=snapshot.finished_at,
+    )
+
+
 class ExecutionPage(BaseModel):
+    """Internal page of durable execution records."""
+
     items: list[ExecutionSnapshot]
+    total: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(gt=0)
+
+
+class ExecutionPresentationPage(BaseModel):
+    items: list[ExecutionPresentation]
     total: int = Field(ge=0)
     offset: int = Field(ge=0)
     limit: int = Field(gt=0)
@@ -194,7 +267,7 @@ class ExecutionUpdate(BaseModel):
     """WebSocket payload used for a complete, revisioned run replacement."""
 
     type: Literal["execution_snapshot", "execution_update"]
-    snapshot: ExecutionSnapshot
+    snapshot: ExecutionPresentation
 
 
 class ExecutionActionResponse(BaseModel):
