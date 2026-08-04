@@ -2155,17 +2155,6 @@ export interface components {
                 [key: string]: components["schemas"]["CapabilityStatusValue"];
             };
         };
-        /** ExecutionPage */
-        ExecutionPage: {
-            /** Items */
-            items: components["schemas"]["ExecutionSnapshot"][];
-            /** Total */
-            total: number;
-            /** Offset */
-            offset: number;
-            /** Limit */
-            limit: number;
-        };
         /** ExecutionPreflightRequest */
         ExecutionPreflightRequest: {
             /** Workflow Id */
@@ -2192,6 +2181,84 @@ export interface components {
             node_routes?: {
                 [key: string]: string;
             };
+        };
+        /**
+         * ExecutionPresentation
+         * @description Explicit secret-free execution DTO used by HTTP and WebSocket clients.
+         */
+        ExecutionPresentation: {
+            /** Revision */
+            revision: number;
+            /** Execution Id */
+            execution_id: string;
+            /** Workflow Id */
+            workflow_id: string;
+            /** Draft Revision */
+            draft_revision?: number | null;
+            /**
+             * Command
+             * @enum {string}
+             */
+            command: "run" | "run_selected" | "retry" | "invalidate_retry" | "recompute";
+            /** Retry Of Execution Id */
+            retry_of_execution_id?: string | null;
+            /** Child Execution Ids */
+            child_execution_ids?: string[];
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "direct" | "wetlands" | "attached_parsl" | "submitted_local" | "submitted_remote";
+            /** Target Id */
+            target_id: string;
+            /** Target Label */
+            target_label: string;
+            /**
+             * Target Mode
+             * @enum {string}
+             */
+            target_mode: "local" | "attached" | "submitted_local" | "submitted_remote";
+            /** Scheduler Job Id */
+            scheduler_job_id?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "preparing" | "prepared" | "queued" | "starting" | "running" | "cancel_requested" | "finalizing" | "succeeded" | "failed" | "cancelled" | "lost";
+            /** Jobs */
+            jobs?: {
+                [key: string]: components["schemas"]["JobSnapshot"];
+            };
+            /**
+             * Progress Cursor
+             * @default 0
+             */
+            progress_cursor: number;
+            actions: components["schemas"]["ExecutionActions"];
+            observation: components["schemas"]["ObservationSnapshot"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+        };
+        /** ExecutionPresentationPage */
+        ExecutionPresentationPage: {
+            /** Items */
+            items: components["schemas"]["ExecutionPresentation"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
         };
         /** ExecutionProfileCreate */
         ExecutionProfileCreate: {
@@ -2282,95 +2349,6 @@ export interface components {
             mode: "normal" | "retry" | "invalidate_failed" | "recompute";
             /** Retry Of Execution Id */
             retry_of_execution_id?: string | null;
-        };
-        /**
-         * ExecutionSnapshot
-         * @description Durable, revisioned presentation state for one execution.
-         */
-        ExecutionSnapshot: {
-            /**
-             * Schema Version
-             * @default 1
-             * @constant
-             */
-            schema_version: 1;
-            /**
-             * Revision
-             * @default 0
-             */
-            revision: number;
-            /** Execution Id */
-            execution_id: string;
-            /** Workflow Id */
-            workflow_id: string;
-            /** Draft Revision */
-            draft_revision?: number | null;
-            /** Graph Fingerprint */
-            graph_fingerprint?: string | null;
-            /**
-             * Command
-             * @default run
-             * @enum {string}
-             */
-            command: "run" | "run_selected" | "retry" | "invalidate_retry" | "recompute";
-            /** Requested Nodes */
-            requested_nodes?: string[] | null;
-            /** Retry Of Execution Id */
-            retry_of_execution_id?: string | null;
-            /** Child Execution Ids */
-            child_execution_ids?: string[];
-            /**
-             * Backend
-             * @enum {string}
-             */
-            backend: "direct" | "wetlands" | "attached_parsl" | "submitted_local" | "submitted_remote";
-            /** Target Id */
-            target_id: string;
-            /** Profile Id */
-            profile_id?: string | null;
-            /** Profile Revision */
-            profile_revision?: number | null;
-            /** Target Snapshot */
-            target_snapshot?: {
-                [key: string]: unknown;
-            };
-            /**
-             * State
-             * @enum {string}
-             */
-            state: "preparing" | "prepared" | "queued" | "starting" | "running" | "cancel_requested" | "finalizing" | "succeeded" | "failed" | "cancelled" | "lost";
-            /** Jobs */
-            jobs?: {
-                [key: string]: components["schemas"]["JobSnapshot"];
-            };
-            /**
-             * Progress Cursor
-             * @default 0
-             */
-            progress_cursor: number;
-            /** Reconnect */
-            reconnect?: {
-                [key: string]: unknown;
-            } | null;
-            /** Backend Metadata */
-            backend_metadata?: {
-                [key: string]: unknown;
-            };
-            actions?: components["schemas"]["ExecutionActions"];
-            result_export?: components["schemas"]["ResultExportSnapshot"];
-            observation?: components["schemas"]["ObservationSnapshot"];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at?: string;
-            /** Finished At */
-            finished_at?: string | null;
         };
         /** ExecutionTargetValue */
         ExecutionTargetValue: {
@@ -3300,24 +3278,6 @@ export interface components {
             unresolved: {
                 [key: string]: string;
             }[];
-        };
-        /**
-         * ResultExportSnapshot
-         * @description Durable availability of the managed immutable result bundle.
-         */
-        ResultExportSnapshot: {
-            /**
-             * State
-             * @default pending
-             * @enum {string}
-             */
-            state: "pending" | "available" | "unavailable";
-            /** Error Code */
-            error_code?: string | null;
-            /** Detail */
-            detail?: string | null;
-            /** Archive Digest */
-            archive_digest?: string | null;
         };
         /** RetryInvalidationPresentation */
         RetryInvalidationPresentation: {
@@ -4476,14 +4436,14 @@ export type ExecutionActionAvailability = components['schemas']['ExecutionAction
 export type ExecutionActionResponse = components['schemas']['ExecutionActionResponse'];
 export type ExecutionActions = components['schemas']['ExecutionActions'];
 export type ExecutionCapabilitiesValue = components['schemas']['ExecutionCapabilitiesValue'];
-export type ExecutionPage = components['schemas']['ExecutionPage'];
 export type ExecutionPreflightRequest = components['schemas']['ExecutionPreflightRequest'];
+export type ExecutionPresentation = components['schemas']['ExecutionPresentation'];
+export type ExecutionPresentationPage = components['schemas']['ExecutionPresentationPage'];
 export type ExecutionProfileCreate = components['schemas']['ExecutionProfileCreate'];
 export type ExecutionProfileList = components['schemas']['ExecutionProfileList'];
 export type ExecutionProfilePatch = components['schemas']['ExecutionProfilePatch'];
 export type ExecutionProfileTestResult = components['schemas']['ExecutionProfileTestResult'];
 export type ExecutionRequest = components['schemas']['ExecutionRequest'];
-export type ExecutionSnapshot = components['schemas']['ExecutionSnapshot'];
 export type ExecutionTargetValue = components['schemas']['ExecutionTargetValue'];
 export type ExecutionTargetsValue = components['schemas']['ExecutionTargetsValue'];
 export type ExecutorBindingValueInput = components['schemas']['ExecutorBindingValue-Input'];
@@ -4540,7 +4500,6 @@ export type ReadyPreflight = components['schemas']['ReadyPreflight'];
 export type RecomputeSelection = components['schemas']['RecomputeSelection'];
 export type RenameNodeOperation = components['schemas']['RenameNodeOperation'];
 export type ResolutionRequiredPreflight = components['schemas']['ResolutionRequiredPreflight'];
-export type ResultExportSnapshot = components['schemas']['ResultExportSnapshot'];
 export type RetryInvalidationPresentation = components['schemas']['RetryInvalidationPresentation'];
 export type RetryPlanPresentation = components['schemas']['RetryPlanPresentation'];
 export type RetryPlanRequest = components['schemas']['RetryPlanRequest'];
@@ -6050,7 +6009,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionPage"];
+                    "application/json": components["schemas"]["ExecutionPresentationPage"];
                 };
             };
             /** @description Validation Error */
@@ -6083,7 +6042,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionSnapshot"];
+                    "application/json": components["schemas"]["ExecutionPresentation"];
                 };
             };
             /** @description Validation Error */
@@ -6114,7 +6073,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionSnapshot"];
+                    "application/json": components["schemas"]["ExecutionPresentation"];
                 };
             };
             /** @description Validation Error */
@@ -6215,7 +6174,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExecutionSnapshot"];
+                    "application/json": components["schemas"]["ExecutionPresentation"];
                 };
             };
             /** @description Validation Error */
