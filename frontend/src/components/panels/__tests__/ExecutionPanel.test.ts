@@ -13,6 +13,7 @@ vi.mock('@/api/client', () => ({
 import { api } from '@/api/client'
 import ExecutionPanel from '../ExecutionPanel.vue'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
+import { useUIStore } from '@/stores/ui'
 
 const retryActions = {
   cancel: { available: false, reason: 'Execution is terminal' },
@@ -305,5 +306,65 @@ describe('ExecutionPanel', () => {
     expect(vi.mocked(api.post)).toHaveBeenCalledTimes(2)
     expect(wrapper.get('[data-testid="retry-plan-error"]').text()).toContain('Unrelated conflict')
     expect(wrapper.find('[data-testid="confirm-execution-retry"]').exists()).toBe(true)
+  })
+
+  it('shows retained submitted logs and keeps attached runs in the live Logger', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const registry = useExecutionRegistryStore()
+    const submitted = {
+      id: 'run-logs', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
+      target_mode: 'submitted_remote' as const, state: 'running' as const,
+      created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
+      child_execution_ids: [], actions: retryActions,
+      jobs: [{
+        id: 'job-logs', scoped_node_path: 'analysis/segment', state: 'running' as const,
+      }],
+    }
+    registry.applySnapshot(submitted)
+    const wrapper = mount(ExecutionPanel, {
+      global: primeVueTestGlobal({ pinia, dialog: true }),
+    })
+    await flushPromises()
+    registry.applySnapshot(submitted)
+    await wrapper.vm.$nextTick()
+    await wrapper.get('button.job-row').trigger('click')
+
+    let resolveLogs!: (response: { data: string }) => void
+    vi.mocked(api.get).mockReturnValueOnce(new Promise(resolve => {
+      resolveLogs = resolve
+    }))
+    await wrapper.get('[data-testid="execution-job-logs"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="retained-logs-loading"]').exists()).toBe(true)
+    resolveLogs({ data: 'scheduler output\nworker output' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="retained-logs-content"]').text()).toContain('worker output')
+    const logGetCalls = vi.mocked(api.get).mock.calls
+    expect(logGetCalls[logGetCalls.length - 1]?.[0]).toBe(
+      '/api/v1/executions/run-logs/logs',
+    )
+
+    vi.mocked(api.get).mockRejectedValueOnce(Object.assign(new Error('Logs unavailable'), {
+      response: { data: { error: 'execution_logs_unavailable', detail: 'Retained logs were pruned' } },
+    }))
+    await wrapper.get('[data-testid="execution-job-logs"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="retained-logs-error"]').text()).toContain(
+      'Retained logs were pruned',
+    )
+
+    const getCallCount = vi.mocked(api.get).mock.calls.length
+    registry.applySnapshot({
+      ...submitted,
+      revision: 2,
+      target_mode: 'attached',
+    })
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="execution-job-logs"]').trigger('click')
+
+    expect(useUIStore().panels.logger).toBe(true)
+    expect(vi.mocked(api.get)).toHaveBeenCalledTimes(getCallCount)
   })
 })

@@ -125,4 +125,72 @@ describe('execution registry store', () => {
     expect(store.totalRuns).toBe(3)
     expect(store.hasMoreRuns).toBe(true)
   })
+
+  it('keeps live snapshots inside the loaded workflow scope', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    } })
+    const store = useExecutionRegistryStore()
+    await store.loadRuns('workflow-a')
+
+    store.applySnapshot({
+      ...snapshot(1, 'running'), id: 'run-b', workflow_id: 'workflow-b',
+    }, true)
+    store.applySnapshot({
+      ...snapshot(2, 'failed'), id: 'run-a', workflow_id: 'workflow-b',
+    })
+
+    expect(store.runs.map(run => run.id)).toEqual(['run-a'])
+    expect(store.runs[0]).toMatchObject({ revision: 1, workflow_id: 'workflow-a' })
+    expect(store.totalRuns).toBe(1)
+    expect(store.selectedRunId).toBe('run-a')
+
+    store.applySnapshot({
+      ...snapshot(1, 'prepared'), id: 'run-a-new', workflow_id: 'workflow-a',
+    }, true)
+
+    expect(store.runs.map(run => run.id)).toEqual(['run-a-new', 'run-a'])
+    expect(store.totalRuns).toBe(2)
+    expect(store.selectedRunId).toBe('run-a')
+  })
+
+  it('accepts live snapshots from every workflow in workspace scope', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    } })
+    const store = useExecutionRegistryStore()
+    await store.loadRuns(null)
+
+    store.applySnapshot({
+      ...snapshot(1, 'prepared'), id: 'run-b', workflow_id: 'workflow-b',
+    }, true)
+    store.applySnapshot({
+      ...snapshot(2, 'succeeded'), id: 'run-a', workflow_id: 'workflow-a',
+    })
+
+    expect(store.runs.map(run => run.id)).toEqual(['run-b', 'run-a'])
+    expect(store.runs.find(run => run.id === 'run-a')).toMatchObject({
+      revision: 2,
+      state: 'succeeded',
+    })
+    expect(store.totalRuns).toBe(2)
+    expect(store.selectedRunId).toBe('run-a')
+  })
+
+  it('loads retained run logs through the store API', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: 'retained log' })
+    const store = useExecutionRegistryStore()
+
+    await expect(store.loadLogs('run-1')).resolves.toBe('retained log')
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/executions/run-1/logs',
+      { responseType: 'text' },
+    )
+  })
 })

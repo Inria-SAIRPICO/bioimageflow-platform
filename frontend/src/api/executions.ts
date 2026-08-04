@@ -535,6 +535,14 @@ export async function startExecutionRetry(
   return normalizeExecution(data)
 }
 
+export async function fetchExecutionLogs(id: string): Promise<string> {
+  const { data } = await api.get<string>(
+    `/api/v1/executions/${encodeURIComponent(id)}/logs`,
+    { responseType: 'text' },
+  )
+  return data
+}
+
 export async function downloadExecutionResults(id: string): Promise<Blob> {
   const response = await api.post<Blob>(
     `/api/v1/executions/${encodeURIComponent(id)}/result`,

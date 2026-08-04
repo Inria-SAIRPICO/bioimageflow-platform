@@ -9,6 +9,7 @@ import {
   applyPreparedExecution,
   downloadExecutionResults,
   executionResultErrorMessage,
+  fetchExecutionLogs,
   fetchExecutionTargets,
   fetchExecutions,
   planExecutionRetry,
@@ -182,6 +183,18 @@ describe('distributed execution API adapter', () => {
     expect(vi.mocked(api.post).mock.calls[2]?.[1]).toBeUndefined()
     expect(started).toMatchObject({ id: 'run-child', retry_of_execution_id: 'run-parent' })
     expect(downloaded).toBe(blob)
+  })
+
+  it('fetches retained execution logs as plain text', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: 'scheduler output\nworker output' })
+
+    await expect(fetchExecutionLogs('run/remote')).resolves.toBe(
+      'scheduler output\nworker output',
+    )
+    expect(vi.mocked(api.get)).toHaveBeenCalledWith(
+      '/api/v1/executions/run%2Fremote/logs',
+      { responseType: 'text' },
+    )
   })
 
   it('decodes structured errors returned through the result download blob channel', async () => {

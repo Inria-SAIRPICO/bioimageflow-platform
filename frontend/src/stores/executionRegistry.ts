@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   cancelExecution,
   fetchExecution,
+  fetchExecutionLogs,
   fetchExecutions,
   fetchExecutionTargets,
   planExecutionRetry,
@@ -53,6 +54,7 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
       runs.value.splice(index, 1, snapshot)
     }
     selectedRunId.value ??= snapshot.id
+    totalRuns.value = Math.max(totalRuns.value, runs.value.length)
   }
 
   async function loadTargets(): Promise<void> {
@@ -147,7 +149,7 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
 
   async function startRetry(id: string, planDigest: string): Promise<ExecutionSnapshot> {
     const retryRun = await startExecutionRetry(id, planDigest)
-    upsertRun(retryRun)
+    applySnapshot(retryRun, true)
     const parent = runs.value.find(run => run.id === id)
     if (parent && !parent.child_execution_ids.includes(retryRun.id)) {
       parent.child_execution_ids = [...parent.child_execution_ids, retryRun.id]
@@ -162,7 +164,17 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     selectedRunId.value = id
   }
 
-  function applySnapshot(snapshot: ExecutionSnapshot): void {
+  async function loadLogs(id: string): Promise<string> {
+    return fetchExecutionLogs(id)
+  }
+
+  function applySnapshot(snapshot: ExecutionSnapshot, initial = false): void {
+    if (
+      loadedWorkflowId.value !== null
+      && snapshot.workflow_id !== loadedWorkflowId.value
+    ) return
+    const known = runs.value.some(run => run.id === snapshot.id)
+    if (initial && !known) totalRuns.value += 1
     upsertRun(snapshot)
   }
 
@@ -189,6 +201,7 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     planRetry,
     startRetry,
     selectExecution,
+    loadLogs,
     applySnapshot,
   }
 })

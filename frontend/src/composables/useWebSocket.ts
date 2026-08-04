@@ -239,14 +239,20 @@ function dispatch(raw: unknown) {
         && typeof candidate.revision === 'number'
         && Array.isArray(candidate.jobs)
       ) {
-        useExecutionRegistryStore().applySnapshot(candidate as unknown as ExecutionSnapshot)
+        useExecutionRegistryStore().applySnapshot(
+          candidate as unknown as ExecutionSnapshot,
+          msg.type === 'execution_snapshot',
+        )
       } else if (
         typeof candidate.execution_id === 'string'
         && typeof candidate.revision === 'number'
         && typeof candidate.jobs === 'object'
         && candidate.jobs !== null
       ) {
-        useExecutionRegistryStore().applySnapshot(normalizeExecution(candidate as never))
+        useExecutionRegistryStore().applySnapshot(
+          normalizeExecution(candidate as never),
+          msg.type === 'execution_snapshot',
+        )
       }
       break
     }

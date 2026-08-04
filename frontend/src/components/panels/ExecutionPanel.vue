@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import ProgressBar from 'primevue/progressbar'
 import SelectButton from 'primevue/selectbutton'
 import Tag from 'primevue/tag'
@@ -34,6 +35,11 @@ const retryStarting = ref(false)
 const retryError = ref<string | null>(null)
 const resultDownloadingId = ref<string | null>(null)
 const resultError = ref<string | null>(null)
+const retainedLogsVisible = ref(false)
+const retainedLogsLoading = ref(false)
+const retainedLogsRunId = ref<string | null>(null)
+const retainedLogs = ref('')
+const retainedLogsError = ref<string | null>(null)
 
 const unavailableAction: ExecutionActionAvailability = {
   available: false,
@@ -119,7 +125,26 @@ function selectOnCanvas(job: ExecutionJobSnapshot): void {
   ui.panels.nodePanel = true
 }
 
-function openLogs(job: ExecutionJobSnapshot): void {
+async function openLogs(job: ExecutionJobSnapshot): Promise<void> {
+  const run = registry.selectedRun
+  if (run?.target_mode === 'submitted_local' || run?.target_mode === 'submitted_remote') {
+    retainedLogsVisible.value = true
+    retainedLogsLoading.value = true
+    retainedLogsRunId.value = run.id
+    retainedLogs.value = ''
+    retainedLogsError.value = null
+    try {
+      retainedLogs.value = await registry.loadLogs(run.id)
+    } catch (cause) {
+      retainedLogsError.value = executionErrorMessage(
+        cause,
+        'The retained execution logs could not be loaded.',
+      )
+    } finally {
+      retainedLogsLoading.value = false
+    }
+    return
+  }
   selectOnCanvas(job)
   ui.openLoggerPanel()
 }
@@ -410,7 +435,7 @@ function closeRetryDialog(): void {
             <strong>{{ selectedJob.scoped_node_path }}</strong>
             <div>
               <Button label="Canvas" icon="pi pi-sitemap" text size="small" @click="selectOnCanvas(selectedJob)" />
-              <Button label="Logs" icon="pi pi-list" text size="small" @click="openLogs(selectedJob)" />
+              <Button label="Logs" icon="pi pi-list" text size="small" data-testid="execution-job-logs" @click="openLogs(selectedJob)" />
             </div>
           </header>
           <p v-if="selectedJob.route_reason"><strong>Route:</strong> {{ selectedJob.route_reason }}</p>
@@ -441,6 +466,22 @@ function closeRetryDialog(): void {
       @preview="previewRetry"
       @confirm="confirmRetry"
     />
+    <Dialog
+      v-model:visible="retainedLogsVisible"
+      modal
+      :header="`Execution logs · ${retainedLogsRunId ?? ''}`"
+      :style="{ width: 'min(60rem, 95vw)' }"
+      data-testid="retained-execution-logs"
+    >
+      <p class="retained-logs-note">These are run-level logs retained by the submitted execution backend.</p>
+      <div v-if="retainedLogsLoading" class="retained-logs-loading" data-testid="retained-logs-loading">
+        <i class="pi pi-spin pi-spinner" /> Loading retained logs…
+      </div>
+      <div v-else-if="retainedLogsError" class="action-error" role="alert" data-testid="retained-logs-error">
+        {{ retainedLogsError }}
+      </div>
+      <pre v-else class="retained-logs-content" data-testid="retained-logs-content">{{ retainedLogs || 'No retained logs are available.' }}</pre>
+    </Dialog>
   </div>
 </template>
 
@@ -463,6 +504,9 @@ function closeRetryDialog(): void {
 .run-provenance button { border: 0; padding: 0; background: transparent; color: var(--p-primary-color); cursor: pointer; font-family: monospace; }
 .observation-warning, .diagnostic-message { color: var(--p-orange-600); }
 .action-error { margin: 0.5rem; padding: 0.6rem; border-radius: 6px; color: var(--p-red-600); background: var(--p-red-50); }
+.retained-logs-note { color: var(--p-text-muted-color); }
+.retained-logs-loading { display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 12rem; }
+.retained-logs-content { min-height: 12rem; max-height: 65vh; overflow: auto; padding: 0.75rem; border-radius: 6px; background: var(--p-surface-100); white-space: pre-wrap; }
 .job-row { display: grid; grid-template-columns: minmax(11rem, 2fr) 6rem minmax(7rem, 1fr) 7rem 9rem 5rem; gap: 0.55rem; align-items: center; width: 100%; min-height: 2.4rem; padding: 0.35rem 0.65rem; border: 0; border-bottom: 1px solid var(--p-content-border-color); background: transparent; color: inherit; text-align: left; }
 button.job-row { cursor: pointer; }
 .job-row--active { background: var(--p-highlight-background); }
