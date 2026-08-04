@@ -186,6 +186,8 @@ def test_legacy_adapter_maps_cancelled_terminal_result(tmp_path: Path) -> None:
         ),
         _workflow=SimpleNamespace(engine_type="direct"),
         retained_progress=lambda **kwargs: [],
+        retained_progress_for=lambda _context, **kwargs: [],
+        retained_status=lambda _context: "cancelled",
         stop=lambda: asyncio.sleep(0),
     )
     loop = asyncio.new_event_loop()
@@ -201,6 +203,46 @@ def test_legacy_adapter_maps_cancelled_terminal_result(tmp_path: Path) -> None:
             tmp_path / "bundle",
         )
         assert adapter.status == "cancelled"
+    finally:
+        loop.close()
+
+
+def test_legacy_adapter_reads_status_and_progress_for_its_exact_run(tmp_path: Path) -> None:
+    first = ExecutionContext(execution_id="first-run", workflow_id="demo")
+    second = ExecutionContext(execution_id="second-run", workflow_id="demo")
+    progress_by_run = {
+        first.execution_id: [{"sequence": 1, "kind": "public", "payload": {}}],
+        second.execution_id: [{"sequence": 2, "kind": "public", "payload": {}}],
+    }
+    statuses = {first.execution_id: "succeeded", second.execution_id: "running"}
+    manager = SimpleNamespace(
+        context=second,
+        state="running",
+        last_result=None,
+        retained_status=lambda context: statuses[context.execution_id],
+        retained_progress_for=lambda context, after_sequence=0: [
+            event
+            for event in progress_by_run[context.execution_id]
+            if event["sequence"] > after_sequence
+        ],
+        stop=lambda: asyncio.sleep(0),
+    )
+    loop = asyncio.new_event_loop()
+    try:
+        from bioimageflow_server.services.distributed_execution_integration import (
+            LegacyExecutionManagerAdapter,
+        )
+
+        adapter = LegacyExecutionManagerAdapter(  # type: ignore[arg-type]
+            manager,
+            first,
+            loop,
+            tmp_path / "first-run",
+        )
+
+        assert adapter.status == "succeeded"
+        assert adapter.progress(after_sequence=0) == progress_by_run[first.execution_id]
+        assert adapter.progress(after_sequence=1) == []
     finally:
         loop.close()
 

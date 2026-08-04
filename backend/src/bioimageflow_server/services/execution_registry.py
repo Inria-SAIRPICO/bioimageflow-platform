@@ -171,6 +171,23 @@ class ExecutionRegistry:
             raise RetryPlanNotFoundError(digest)
         return payload
 
+    def retry_plan_state(self, parent_execution_id: str, digest: str) -> str:
+        path = self._retry_plan_path(digest)
+        with self._lock:
+            try:
+                envelope = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError as exc:
+                raise RetryPlanNotFoundError(digest) from exc
+        plan = envelope.get("plan")
+        state = envelope.get("state")
+        if (
+            not isinstance(plan, dict)
+            or plan.get("parent_run_id") != parent_execution_id
+            or not isinstance(state, str)
+        ):
+            raise RetryPlanConflictError("retained retry plan envelope is invalid")
+        return state
+
     def confirm_retry_plan(self, parent_execution_id: str, digest: str) -> dict[str, object]:
         """Durably record confirmation before any child allocation or submission."""
 

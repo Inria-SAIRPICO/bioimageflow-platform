@@ -23,7 +23,10 @@ from bioimageflow_server.services.execution_registry import (
 from bioimageflow_server.services.execution_runtime import (
     AttachedRunAdapter,
     ExecutionCoordinator,
+    ExecutionOperationError,
+    ManagedResultAdapter,
     SubmittedRunAdapter,
+    _operation_error,
     open_public_submitted_run,
 )
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -183,24 +186,23 @@ def test_remote_reconnect_uses_retained_profile_revision_after_profile_edit(
             "profile": record.model_copy(update={"pre_launch": None}).model_dump(mode="json"),
         },
     )
-    resolver = type(
-        "ChangedProfileStore",
-        (),
-        {
-            "resolve_revision": staticmethod(
-                lambda *_args: (_ for _ in ()).throw(
-                    AssertionError("reconnect must not read the edited profile")
-                )
-            )
-        },
-    )()
-
-    adapter = open_public_submitted_run(snapshot, resolver)
+    adapter = open_public_submitted_run(snapshot)
 
     assert isinstance(adapter, SubmittedRunAdapter)
     assert opened["storage_path"] == "/cluster/workflow"
     assert opened["run_id"] == "run_remote"
     assert opened["transport"].host == "confirmed-cluster"
+
+
+def test_remote_reconnect_requires_embedded_profile_snapshot() -> None:
+    with pytest.raises(ValueError, match="profile snapshot is missing"):
+        open_public_submitted_run(
+            _snapshot(
+                profile_id="profile_" + "1" * 32,
+                profile_revision=4,
+                target_snapshot={"name": "Cluster", "mode": "submitted_remote"},
+            )
+        )
 
 
 class _FakeHandle:
@@ -268,7 +270,13 @@ async def test_observation_failure_does_not_fail_authoritative_run(tmp_path: Pat
     assert observed.observation.error == "offline"
 
 
-def _retry_plan(parent_id: str, child_id: str, storage: Path) -> Any:
+def _retry_plan(
+    parent_id: str,
+    child_id: str,
+    storage: Path,
+    *,
+    recompute: Any | None = None,
+) -> Any:
     return bioimageflow.RunRetryPlan(
         parent_run_id=parent_id,
         retry_run_id=child_id,
@@ -279,7 +287,7 @@ def _retry_plan(parent_id: str, child_id: str, storage: Path) -> Any:
         retained_material_digest="sha256:" + "2" * 64,
         retained_material_entries=3,
         cache_selection_revision="sha256:" + "3" * 64,
-        recompute=None,
+        recompute=recompute,
         invalidations=(),
         conflicting_run_ids=(),
     )
@@ -302,6 +310,36 @@ class _RetryHandle(_FakeHandle):
         child = _FakeHandle()
         child.status = "queued"
         return child
+
+
+class _RetryStartError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+        self.details = {"remote_code": code, "retryable": False}
+
+
+class _FailingRetryHandle(_RetryHandle):
+    def __init__(self, plan: Any, code: str) -> None:
+        super().__init__(plan)
+        self.code = code
+
+    def start_retry(self, plan: Any) -> _FakeHandle:
+        self.started.append(plan)
+        raise _RetryStartError(self.code)
+
+
+class _RecordingPublisher:
+    def __init__(self) -> None:
+        self.snapshots: list[tuple[ExecutionSnapshot, bool]] = []
+
+    async def publish_execution_snapshot(
+        self,
+        snapshot: ExecutionSnapshot,
+        *,
+        initial: bool,
+    ) -> None:
+        self.snapshots.append((snapshot, initial))
 
 
 @pytest.mark.anyio
@@ -383,6 +421,150 @@ async def test_startup_resumes_confirmed_plan_before_reconnect(tmp_path: Path) -
 
 
 @pytest.mark.anyio
+async def test_uncertain_retry_reconnects_exact_child_now_and_never_restarts(
+    tmp_path: Path,
+) -> None:
+    parent_id = f"run_{uuid4().hex}"
+    child_id = f"run_{uuid4().hex}"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=parent_id,
+            backend="submitted_local",
+            state="failed",
+            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+        )
+    )
+    plan = _retry_plan(parent_id, child_id, tmp_path)
+    parent_handle = _FailingRetryHandle(plan, "psij-submission-uncertain")
+    child_handle = _FakeHandle()
+    child_handle.status = "queued"
+    reconnects: list[str] = []
+
+    def reconnect(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        reconnects.append(snapshot.execution_id)
+        return SubmittedRunAdapter(
+            parent_handle if snapshot.execution_id == parent_id else child_handle
+        )
+
+    publisher = _RecordingPublisher()
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=reconnect,
+        publisher=publisher,
+        poll_interval=60,
+    )
+    presentation = await coordinator.plan_retry(parent_id)
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        await coordinator.confirm_retry(parent_id, plan_digest=presentation.plan_digest)
+    repeated = await coordinator.confirm_retry(
+        parent_id,
+        plan_digest=presentation.plan_digest,
+    )
+    await coordinator.close()
+
+    restart_reconnects: list[str] = []
+
+    def reconnect_after_restart(snapshot: ExecutionSnapshot) -> SubmittedRunAdapter:
+        restart_reconnects.append(snapshot.execution_id)
+        return SubmittedRunAdapter(child_handle)
+
+    restarted = ExecutionCoordinator(
+        registry,
+        reconnector=reconnect_after_restart,
+        poll_interval=60,
+    )
+    await restarted.start()
+    await restarted.close()
+
+    assert raised.value.code == "psij-submission-uncertain"
+    assert repeated.execution_id == child_id
+    assert len(parent_handle.started) == 1
+    assert reconnects.count(parent_id) == 2
+    assert reconnects.count(child_id) == 1
+    assert reconnects[-1] == child_id
+    assert restart_reconnects == [child_id]
+    assert registry.retry_plan_state(parent_id, plan.digest) == "uncertain"
+    assert registry.get(parent_id).child_execution_ids == [child_id]
+    assert any(
+        snapshot.execution_id == parent_id
+        and snapshot.child_execution_ids == [child_id]
+        and not initial
+        for snapshot, initial in publisher.snapshots
+    )
+    assert any(
+        snapshot.execution_id == child_id and initial for snapshot, initial in publisher.snapshots
+    )
+
+
+@pytest.mark.anyio
+async def test_definite_retry_start_failure_has_no_ghost_child(tmp_path: Path) -> None:
+    parent_id = f"run_{uuid4().hex}"
+    child_id = f"run_{uuid4().hex}"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=parent_id,
+            backend="submitted_local",
+            state="failed",
+            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+        )
+    )
+    plan = _retry_plan(parent_id, child_id, tmp_path)
+    handle = _FailingRetryHandle(plan, "workflow-run-retry-error")
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        poll_interval=60,
+    )
+    presentation = await coordinator.plan_retry(parent_id)
+
+    with pytest.raises(ExecutionOperationError):
+        await coordinator.confirm_retry(parent_id, plan_digest=presentation.plan_digest)
+    await coordinator.close()
+
+    assert registry.retry_plan_state(parent_id, plan.digest) == "failed"
+    assert registry.get(parent_id).child_execution_ids == []
+    with pytest.raises(ExecutionNotFoundError):
+        registry.get(child_id)
+
+
+@pytest.mark.anyio
+async def test_recompute_presentation_normalizes_library_tuple_to_json_list(
+    tmp_path: Path,
+) -> None:
+    parent_id = f"run_{uuid4().hex}"
+    child_id = f"run_{uuid4().hex}"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=parent_id,
+            backend="submitted_local",
+            state="failed",
+            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+        )
+    )
+    recompute = bioimageflow.RecomputeRequest(("preprocessing/masks",), cascade=False)
+    handle = _RetryHandle(_retry_plan(parent_id, child_id, tmp_path, recompute=recompute))
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+    )
+
+    presentation = await coordinator.plan_retry(
+        parent_id,
+        node_paths=("preprocessing/masks",),
+        cascade=False,
+    )
+
+    assert presentation.recompute is not None
+    assert presentation.recompute.node_paths == ["preprocessing/masks"]
+    assert presentation.recompute.cascade is False
+    assert handle.planned[0].node_paths == ("preprocessing/masks",)
+
+
+@pytest.mark.anyio
 async def test_attached_export_failure_preserves_success_and_disables_download(
     tmp_path: Path,
 ) -> None:
@@ -417,6 +599,177 @@ async def test_attached_export_failure_preserves_success_and_disables_download(
     assert snapshot.result_export.state == "unavailable"
     assert snapshot.result_export.error_code == "workflow-result-export-error"
     assert not snapshot.actions.download_results.available
+
+
+@pytest.mark.anyio
+async def test_attached_completion_sidecar_recovers_before_coordinator_poll(
+    tmp_path: Path,
+) -> None:
+    execution_id = "run_" + "a" * 32
+    bundle = tmp_path / execution_id
+    registry = ExecutionRegistry(tmp_path / "registry")
+    registry.save(
+        _snapshot(
+            execution_id=execution_id,
+            backend="attached_parsl",
+            state="running",
+            reconnect={"result_bundle": str(bundle)},
+        )
+    )
+    adapter = AttachedRunAdapter(
+        compute=lambda _progress: {"value": 1},
+        cancel=lambda: None,
+        result_exporter=lambda _value, destination: (
+            destination.mkdir(parents=True),
+            (destination / "result.txt").write_text("result"),
+        )[-1],
+        managed_destination=bundle,
+    )
+    adapter.start()
+    assert adapter._task is not None
+    await adapter._task
+    assert registry.get(execution_id).state == "running"
+
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: (_ for _ in ()).throw(
+            AssertionError("completed attached run must recover from its sidecar")
+        ),
+    )
+    await coordinator.start()
+    recovered = await coordinator.get(execution_id)
+    await coordinator.close()
+
+    assert recovered.state == "succeeded"
+    assert recovered.result_export.state == "available"
+    assert recovered.result_export.archive_digest == adapter.result_export.archive_digest
+    assert recovered.actions.download_results.available
+
+
+@pytest.mark.anyio
+async def test_attached_completion_recovery_detects_archive_tampering(
+    tmp_path: Path,
+) -> None:
+    execution_id = "run_" + "b" * 32
+    bundle = tmp_path / execution_id
+    registry = ExecutionRegistry(tmp_path / "registry")
+    registry.save(
+        _snapshot(
+            execution_id=execution_id,
+            backend="direct",
+            state="running",
+            reconnect={"result_bundle": str(bundle)},
+        )
+    )
+    adapter = AttachedRunAdapter(
+        compute=lambda _progress: {"value": 1},
+        cancel=lambda: None,
+        result_exporter=lambda _value, destination: (
+            destination.mkdir(parents=True),
+            (destination / "result.txt").write_text("result"),
+        )[-1],
+        managed_destination=bundle,
+    )
+    adapter.start()
+    assert adapter._task is not None
+    await adapter._task
+    bundle.with_suffix(".zip").write_bytes(b"tampered")
+
+    with pytest.raises(ExecutionOperationError) as raised:
+        adapter.export_result(bundle)
+    coordinator = ExecutionCoordinator(registry, reconnector=lambda _snapshot: adapter)
+    await coordinator.start()
+    recovered = await coordinator.get(execution_id)
+    await coordinator.close()
+
+    assert raised.value.code == "workflow-result-integrity-error"
+    assert recovered.state == "succeeded"
+    assert recovered.result_export.state == "unavailable"
+    assert recovered.result_export.error_code == "workflow-result-integrity-error"
+    assert not recovered.actions.download_results.available
+
+
+@pytest.mark.anyio
+async def test_startup_lost_conversion_rederives_and_publishes_actions(tmp_path: Path) -> None:
+    registry = ExecutionRegistry(tmp_path)
+    execution_id = "run_" + "c" * 32
+    registry.save(
+        _snapshot(
+            execution_id=execution_id,
+            backend="attached_parsl",
+            state="running",
+            reconnect={"result_bundle": str(tmp_path / execution_id)},
+        )
+    )
+    publisher = _RecordingPublisher()
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: (_ for _ in ()).throw(AssertionError),
+        publisher=publisher,
+    )
+
+    await coordinator.start()
+    lost = registry.get(execution_id)
+    await coordinator.close()
+
+    assert lost.state == "lost"
+    assert not lost.actions.cancel.available
+    assert publisher.snapshots[-1][0] == lost
+
+
+@pytest.mark.anyio
+async def test_queued_execution_cannot_be_cancelled(tmp_path: Path) -> None:
+    registry = ExecutionRegistry(tmp_path)
+    handle = _FakeHandle()
+    handle.status = "queued"
+    saved = registry.save(_snapshot(backend="submitted_local", state="queued"))
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot be cancelled while queued"):
+        await coordinator.cancel(saved.execution_id)
+
+    assert not handle.cancelled
+
+
+def test_submitted_export_transient_failure_remains_pending(tmp_path: Path) -> None:
+    class _ExportFailureHandle(_FakeHandle):
+        def export_result(self, destination: Path) -> None:
+            raise _RetryStartError("workflow-result-export-error")
+
+    adapter = SubmittedRunAdapter(_ExportFailureHandle())
+
+    with pytest.raises(_RetryStartError):
+        adapter.export_result(tmp_path / "bundle")
+
+    assert adapter.result_export.state == "pending"
+    assert adapter.result_export.error_code == "workflow-result-export-error"
+
+
+def test_submitted_export_unavailable_failure_is_terminal(tmp_path: Path) -> None:
+    class _ExportFailureHandle(_FakeHandle):
+        def export_result(self, destination: Path) -> None:
+            raise _RetryStartError("workflow-run-result-unavailable")
+
+    adapter = SubmittedRunAdapter(_ExportFailureHandle())
+
+    with pytest.raises(_RetryStartError):
+        adapter.export_result(tmp_path / "bundle")
+
+    assert adapter.result_export.state == "unavailable"
+    assert adapter.result_export.error_code == "workflow-run-result-unavailable"
+
+
+def test_operation_error_prefers_public_code_and_retains_remote_detail() -> None:
+    exc = _RetryStartError("workflow-result-integrity-error")
+    exc.details["remote_code"] = "remote-result-integrity-error"
+
+    converted = _operation_error(exc, fallback="workflow-result-export-error")
+
+    assert converted.code == "workflow-result-integrity-error"
+    assert converted.details["remote_code"] == "remote-result-integrity-error"
 
 
 @pytest.mark.anyio
@@ -483,7 +836,21 @@ def test_direct_and_wetlands_managed_export_is_released_and_downloadable(
 
     manager._export_managed_result(context, {"answer": 42})
     archive = manager.export_retained_result(context, tmp_path / context.execution_id)
+    result_export = manager.retained_result_export(context)
 
-    assert manager.retained_result_export(context).state == "available"
+    assert result_export.state == "available"
     assert context.execution_id not in manager._workflow_run_contexts
     assert archive.is_file()
+    assert (tmp_path / context.execution_id).with_suffix(".completion.json").is_file()
+
+    archive.write_bytes(b"tampered")
+    with pytest.raises(ExecutionOperationError) as manager_error:
+        manager.export_retained_result(context, tmp_path / context.execution_id)
+    with pytest.raises(ExecutionOperationError) as adapter_error:
+        ManagedResultAdapter(
+            tmp_path / context.execution_id,
+            result_export,
+        ).export_result(tmp_path / context.execution_id)
+
+    assert manager_error.value.code == "workflow-result-integrity-error"
+    assert adapter_error.value.code == "workflow-result-integrity-error"

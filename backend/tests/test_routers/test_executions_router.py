@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from bioimageflow_server.models.execution_runtime import (
     ExecutionSnapshot,
+    RecomputeSelection,
     RetryPlanPresentation,
 )
 from bioimageflow_server.routers.executions import (
@@ -89,13 +90,18 @@ async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: P
     class _Coordinator:
         async def plan_retry(self, execution_id: str, *, node_paths=None, cascade=True):
             calls.append(("plan", (execution_id, node_paths, cascade)))
+            recompute = (
+                None
+                if node_paths is None
+                else RecomputeSelection(node_paths=list(node_paths), cascade=cascade)
+            )
             return RetryPlanPresentation(
                 plan_digest=digest,
                 parent_execution_id=parent_id,
                 child_execution_id="run_abcdef0123456789abcdef0123456789",
-                mode="retry",
+                mode="recompute" if recompute is not None else "retry",
                 target={"id": "profile", "label": "Cluster", "mode": "submitted_local"},
-                recompute=None,
+                recompute=recompute,
                 invalidations=[],
                 conflicting_run_ids=[],
                 confirmable=True,
@@ -114,6 +120,19 @@ async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: P
             f"/api/v1/executions/{parent_id}/retry/plan",
             json={"recompute": None},
         )
+        recompute_response = await client.post(
+            f"/api/v1/executions/{parent_id}/retry/plan",
+            json={
+                "recompute": {
+                    "node_paths": ["preprocessing/masks"],
+                    "cascade": False,
+                }
+            },
+        )
+        missing_shape_response = await client.post(
+            f"/api/v1/executions/{parent_id}/retry/plan",
+            json={},
+        )
         confirm_response = await client.post(
             f"/api/v1/executions/{parent_id}/retry",
             json={"plan_digest": digest},
@@ -125,10 +144,17 @@ async def test_retry_plan_and_confirmation_use_locked_request_shapes(tmp_path: P
 
     assert plan_response.status_code == 200
     assert set(plan_response.json()["target"]) == {"id", "label", "mode"}
+    assert recompute_response.status_code == 200
+    assert recompute_response.json()["recompute"] == {
+        "node_paths": ["preprocessing/masks"],
+        "cascade": False,
+    }
+    assert missing_shape_response.status_code == 422
     assert confirm_response.status_code == 202
     assert legacy_response.status_code == 422
     assert calls == [
         ("plan", (parent_id, None, True)),
+        ("plan", (parent_id, ("preprocessing/masks",), False)),
         ("confirm", (parent_id, digest)),
     ]
 

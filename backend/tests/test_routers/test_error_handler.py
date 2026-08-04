@@ -75,6 +75,33 @@ async def test_service_http_exception_is_logged(
     assert "service_unavailable" in caplog.text
 
 
+async def test_http_exception_preserves_declared_structured_details() -> None:
+    app = create_app(AppConfig(tool_registry=ToolRegistryService()))
+
+    @app.get("/api/v1/test-structured-error")
+    async def _test_structured_error() -> None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "service_unavailable",
+                "detail": "retry later",
+                "details": {"retryable": True},
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/v1/test-structured-error")
+
+    assert response.json() == {
+        "error": "service_unavailable",
+        "detail": "retry later",
+        "field": None,
+        "details": {"retryable": True},
+    }
+
+
 async def test_expected_forbidden_http_exception_is_not_warning_logged(
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,

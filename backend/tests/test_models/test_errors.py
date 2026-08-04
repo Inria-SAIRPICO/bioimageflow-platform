@@ -30,6 +30,19 @@ class TestErrorResponse:
         data = resp.model_dump()
         assert data == {"error": "validation_error", "detail": "Required", "field": "email"}
 
+    def test_serialization_and_schema_include_structured_details(self) -> None:
+        resp = ErrorResponse(
+            error="service_unavailable",
+            detail="Temporarily unavailable",
+            details={"retryable": True, "run_id": "run_1"},
+        )
+
+        assert resp.model_dump()["details"] == {
+            "retryable": True,
+            "run_id": "run_1",
+        }
+        assert "details" in ErrorResponse.model_json_schema()["properties"]
+
     def test_json_serialization(self) -> None:
         resp = ErrorResponse(error="bad_request", detail="Bad request")
         json_str = resp.model_dump_json()

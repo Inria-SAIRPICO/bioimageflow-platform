@@ -404,10 +404,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         )
         distributed_coordinator = ExecutionCoordinator(
             distributed_registry,
-            reconnector=lambda snapshot: open_public_submitted_run(
-                snapshot,
-                profile_resolver,
-            ),
+            reconnector=open_public_submitted_run,
             publisher=ws_manager,
         )
         distributed_preflight = create_preflight_service(
@@ -696,17 +693,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # Routers may pass `detail` as a dict {"error": "<code>", "detail": "..."}
         # to override the default code mapping (e.g., "path_traversal" on 400).
         detail_obj: object = exc.detail
-        structured_details: dict[str, Any] | None = None
         if isinstance(detail_obj, dict):
             detail_dict = cast(dict[str, Any], detail_obj)
             if "error" in detail_dict:
                 raw_details = detail_dict.get("details")
-                if isinstance(raw_details, dict):
-                    structured_details = raw_details
                 body = ErrorResponse(
                     error=detail_dict["error"],
                     detail=str(detail_dict.get("detail", "")),
                     field=detail_dict.get("field"),
+                    details=raw_details if isinstance(raw_details, dict) else None,
                 )
             else:
                 error_code = _STATUS_TO_ERROR.get(exc.status_code, "error")
@@ -721,10 +716,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 detail=str(exc.detail),
             )
         _log_http_exception(request, exc, body)
-        content = body.model_dump()
-        if structured_details is not None:
-            content["details"] = structured_details
-        return JSONResponse(status_code=exc.status_code, content=content)
+        return JSONResponse(status_code=exc.status_code, content=body.model_dump())
 
     @app.exception_handler(WorkflowMoveRecoveryError)
     async def workflow_move_recovery_exception_handler(

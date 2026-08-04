@@ -1,8 +1,8 @@
 """Error response models."""
 
-from typing import TypeVar
+from typing import Any, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 HTTP_EXCEPTION_LOGGED_ATTR = "_bioimageflow_logged"
 _ExceptionT = TypeVar("_ExceptionT", bound=Exception)
@@ -21,6 +21,10 @@ class ErrorResponse(BaseModel):
     error: str
     detail: str
     field: str | None = None
+    details: dict[str, Any] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 def mark_exception_logged(exc: _ExceptionT) -> _ExceptionT:

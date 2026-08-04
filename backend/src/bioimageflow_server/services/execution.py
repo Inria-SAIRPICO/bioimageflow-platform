@@ -242,6 +242,8 @@ class ExecutionManager:
         self._retained_progress_events: list[dict[str, Any]] = []
         self._retained_progress_sequence = 0
         self._retained_progress_lock = threading.Lock()
+        self._retained_progress_by_execution: dict[str, list[dict[str, Any]]] = {}
+        self._retained_statuses: dict[str, str] = {}
         self._workflow_run_contexts: dict[str, Any] = {}
         self._retained_result_exports: dict[str, ResultExportSnapshot] = {}
 
@@ -437,6 +439,10 @@ class ExecutionManager:
         with self._retained_progress_lock:
             self._retained_progress_events = []
             self._retained_progress_sequence = 0
+            self._retained_progress_by_execution[context.execution_id] = (
+                self._retained_progress_events
+            )
+        self._retained_statuses[context.execution_id] = "running"
         for node in build_graph.nodes:
             if not node.enabled:
                 self._node_statuses[node.id] = NodeStatus(
@@ -489,14 +495,14 @@ class ExecutionManager:
                             engine=engine,
                             run_context=workflow_run_context,
                         )
-                    self._export_managed_result(context, value)
-                    return value
                 finally:
                     self._materialize_latest_outputs(
                         workflow,
                         run_storage_path,
                         context,
                     )
+                self._export_managed_result(context, value)
+                return value
 
         loop = asyncio.get_running_loop()
         task = loop.create_task(asyncio.to_thread(_run_sync))
@@ -529,6 +535,12 @@ class ExecutionManager:
         run_context = self._workflow_run_contexts[context.execution_id]
         try:
             run_context.export_result(value, destination=destination)
+            from bioimageflow_server.services.execution_runtime import (
+                _archive_bundle,
+                _archive_digest,
+            )
+
+            archive = _archive_bundle(destination)
         except Exception as exc:
             code = getattr(exc, "code", "workflow-result-export-error")
             self._retained_result_exports[context.execution_id] = ResultExportSnapshot(
@@ -538,10 +550,29 @@ class ExecutionManager:
             )
         else:
             self._retained_result_exports[context.execution_id] = ResultExportSnapshot(
-                state="available"
+                state="available",
+                archive_digest=_archive_digest(archive),
             )
         finally:
             self._workflow_run_contexts.pop(context.execution_id, None)
+        try:
+            from bioimageflow_server.services.execution_runtime import (
+                _persist_attached_completion,
+            )
+
+            _persist_attached_completion(
+                destination,
+                state="succeeded",
+                result_export=self._retained_result_exports[context.execution_id],
+            )
+        except Exception as exc:
+            current = self._retained_result_exports[context.execution_id]
+            self._retained_result_exports[context.execution_id] = ResultExportSnapshot(
+                state="unavailable",
+                error_code="workflow-result-retention-error",
+                detail=f"Could not retain attached completion state: {exc}",
+                archive_digest=current.archive_digest,
+            )
 
     def retained_result_export(self, context: ExecutionContext) -> ResultExportSnapshot:
         return self._retained_result_exports.get(
@@ -555,11 +586,11 @@ class ExecutionManager:
 
     def export_retained_result(self, context: ExecutionContext, destination: Path) -> Path:
         export = self.retained_result_export(context)
-        if export.state != "available" or not destination.is_dir():
+        if export.state != "available":
             raise RuntimeError(export.detail or "The retained attached result is unavailable.")
-        from bioimageflow_server.services.execution_runtime import _archive_bundle
+        from bioimageflow_server.services.execution_runtime import _verified_archive
 
-        return _archive_bundle(destination)
+        return _verified_archive(destination, export)
 
     def retained_progress(self, *, after_sequence: int = 0) -> list[dict[str, Any]]:
         """Return the engine-neutral public progress retained for the current run."""
@@ -569,6 +600,25 @@ class ExecutionManager:
                 for event in self._retained_progress_events
                 if event["sequence"] > after_sequence
             ]
+
+    def retained_progress_for(
+        self,
+        context: ExecutionContext,
+        *,
+        after_sequence: int = 0,
+    ) -> list[dict[str, Any]]:
+        with self._retained_progress_lock:
+            return [
+                event
+                for event in self._retained_progress_by_execution.get(
+                    context.execution_id,
+                    [],
+                )
+                if event["sequence"] > after_sequence
+            ]
+
+    def retained_status(self, context: ExecutionContext) -> str:
+        return self._retained_statuses.get(context.execution_id, "lost")
 
     def _materialize_latest_outputs(
         self,
@@ -1062,6 +1112,13 @@ class ExecutionManager:
             success=success,
             errors=errors,
             node_statuses=dict(self._node_statuses),
+        )
+        self._retained_statuses[context.execution_id] = (
+            "succeeded"
+            if success
+            else "cancelled"
+            if any(error.get("type") == "cancelled" for error in errors)
+            else "failed"
         )
         self.event_bus.publish_execution_complete(
             success,

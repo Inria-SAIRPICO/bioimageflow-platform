@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
 import shutil
 import threading
@@ -105,6 +107,92 @@ def _archive_bundle(bundle: Path) -> Path:
     return archive
 
 
+def _archive_digest(archive: Path) -> str:
+    digest = hashlib.sha256()
+    with archive.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _verified_archive(bundle: Path, result_export: ResultExportSnapshot) -> Path:
+    archive = bundle.with_suffix(".zip")
+    expected = result_export.archive_digest
+    if expected is None or not archive.is_file() or _archive_digest(archive) != expected:
+        raise ExecutionOperationError(
+            "workflow-result-integrity-error",
+            "The managed result archive failed integrity verification.",
+        )
+    return archive
+
+
+def _attached_completion_path(bundle: Path) -> Path:
+    return bundle.with_suffix(".completion.json")
+
+
+def _persist_attached_completion(
+    bundle: Path,
+    *,
+    state: str,
+    result_export: ResultExportSnapshot,
+) -> None:
+    """Atomically retain attached completion before exposing terminal status."""
+
+    path = _attached_completion_path(bundle)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(
+                {
+                    "schema_version": 1,
+                    "state": state,
+                    "result_export": result_export.model_dump(mode="json"),
+                },
+                stream,
+                sort_keys=True,
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_name, path)
+    finally:
+        temporary = Path(temporary_name)
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _load_attached_completion(
+    bundle: Path,
+) -> tuple[str, ResultExportSnapshot] | None:
+    path = _attached_completion_path(bundle)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        return None
+    state = payload.get("state")
+    if state not in {"succeeded", "failed", "cancelled"}:
+        return None
+    try:
+        result_export = ResultExportSnapshot.model_validate(payload.get("result_export"))
+    except (TypeError, ValueError):
+        return None
+    if state == "succeeded" and result_export.state == "available":
+        try:
+            _verified_archive(bundle, result_export)
+        except ExecutionOperationError as exc:
+            result_export = ResultExportSnapshot(
+                state="unavailable",
+                error_code=exc.code,
+                detail=str(exc),
+                archive_digest=result_export.archive_digest,
+            )
+    return state, result_export
+
+
 class SubmittedRunAdapter:
     """Adapter over public WorkflowRun or RemoteWorkflowRun handles."""
 
@@ -141,7 +229,6 @@ class SubmittedRunAdapter:
             unavailable = error.code in {
                 "workflow-run-result-unavailable",
                 "workflow-result-integrity-error",
-                "workflow-result-export-error",
             }
             self._result_export = ResultExportSnapshot(
                 state="unavailable" if unavailable else "pending",
@@ -149,8 +236,12 @@ class SubmittedRunAdapter:
                 detail=str(error),
             )
             raise
-        self._result_export = ResultExportSnapshot(state="available")
-        return _archive_bundle(destination)
+        archive = _archive_bundle(destination)
+        self._result_export = ResultExportSnapshot(
+            state="available",
+            archive_digest=_archive_digest(archive),
+        )
+        return archive
 
     @property
     def result_export(self) -> ResultExportSnapshot:
@@ -204,19 +295,39 @@ class AttachedRunAdapter:
             self._events.extend(converted)
             self._sequence = converted[-1]["sequence"]
 
+    def _complete(self, state: str) -> None:
+        try:
+            _persist_attached_completion(
+                self._managed_destination,
+                state=state,
+                result_export=self._result_export,
+            )
+        except Exception as exc:
+            if state == "succeeded":
+                self._result_export = ResultExportSnapshot(
+                    state="unavailable",
+                    error_code="workflow-result-retention-error",
+                    detail=f"Could not retain attached completion state: {exc}",
+                    archive_digest=self._result_export.archive_digest,
+                )
+        finally:
+            self._status = state
+
     async def _run(self) -> None:
         self._status = "running"
         try:
             self._result = await asyncio.to_thread(self._compute, self._on_progress)
         except Exception as exc:
             self._error = exc
-            self._status = "cancelled" if self._status == "cancel_requested" else "failed"
+            terminal_state = "cancelled" if self._status == "cancel_requested" else "failed"
+            self._complete(terminal_state)
         else:
             if self._status == "cancel_requested":
-                self._status = "cancelled"
+                self._complete("cancelled")
                 return
             try:
                 self._result_exporter(self._result, self._managed_destination)
+                archive = _archive_bundle(self._managed_destination)
             except Exception as exc:
                 error = _operation_error(exc, fallback="workflow-result-export-error")
                 self._result_export = ResultExportSnapshot(
@@ -224,10 +335,13 @@ class AttachedRunAdapter:
                     error_code=error.code,
                     detail=str(error),
                 )
-                self._status = "succeeded"
+                self._complete("succeeded")
             else:
-                self._result_export = ResultExportSnapshot(state="available")
-                self._status = "succeeded"
+                self._result_export = ResultExportSnapshot(
+                    state="available",
+                    archive_digest=_archive_digest(archive),
+                )
+                self._complete("succeeded")
             finally:
                 self._result = None
 
@@ -252,12 +366,12 @@ class AttachedRunAdapter:
             if self._error is not None:
                 raise RuntimeError("Attached execution did not succeed") from self._error
             raise RuntimeError("Attached execution result is not ready")
-        if destination != self._managed_destination or not destination.is_dir():
+        if destination != self._managed_destination:
             raise ExecutionOperationError(
                 "workflow-run-result-unavailable",
                 self._result_export.detail or "The managed attached result is unavailable.",
             )
-        return _archive_bundle(destination)
+        return _verified_archive(destination, self._result_export)
 
     @property
     def result_export(self) -> ResultExportSnapshot:
@@ -267,8 +381,9 @@ class AttachedRunAdapter:
 class ManagedResultAdapter:
     """Read-only adapter for a process-independent attached result bundle."""
 
-    def __init__(self, bundle: Path) -> None:
+    def __init__(self, bundle: Path, result_export: ResultExportSnapshot) -> None:
         self._bundle = bundle
+        self._result_export = result_export
 
     @property
     def status(self) -> str:
@@ -292,22 +407,20 @@ class ManagedResultAdapter:
                 "workflow-result-destination-conflict",
                 "The retained attached result has a different managed destination.",
             )
-        if not self._bundle.is_dir():
-            raise ExecutionOperationError(
-                "workflow-run-result-unavailable",
-                "The retained attached result bundle is unavailable.",
-            )
-        return _archive_bundle(self._bundle)
+        return _verified_archive(self._bundle, self._result_export)
 
     @property
     def result_export(self) -> ResultExportSnapshot:
-        if self._bundle.is_dir():
-            return ResultExportSnapshot(state="available")
-        return ResultExportSnapshot(
-            state="unavailable",
-            error_code="workflow-run-result-unavailable",
-            detail="The retained attached result bundle is unavailable.",
-        )
+        try:
+            _verified_archive(self._bundle, self._result_export)
+        except ExecutionOperationError as exc:
+            return ResultExportSnapshot(
+                state="unavailable",
+                error_code=exc.code,
+                detail=str(exc),
+                archive_digest=self._result_export.archive_digest,
+            )
+        return self._result_export
 
 
 RunReconnector = Callable[[ExecutionSnapshot], ExecutionRunAdapter]
@@ -354,10 +467,37 @@ class ExecutionCoordinator:
             if snapshot.execution_id in self._adapters:
                 continue
             if snapshot.backend in {"direct", "wetlands", "attached_parsl"}:
+                reconnect = snapshot.reconnect or {}
+                result_bundle = reconnect.get("result_bundle")
+                completion = (
+                    _load_attached_completion(Path(result_bundle))
+                    if isinstance(result_bundle, str)
+                    else None
+                )
+                if completion is not None:
+                    state, result_export = completion
+                    recovered = snapshot.model_copy(
+                        update={
+                            "state": state,
+                            "result_export": result_export,
+                            "finished_at": utc_now(),
+                        }
+                    )
+                    persisted = await asyncio.to_thread(
+                        self.registry.save,
+                        self._with_actions(recovered),
+                        expected_revision=snapshot.revision,
+                    )
+                    await self._publisher.publish_execution_snapshot(
+                        persisted,
+                        initial=False,
+                    )
+                    continue
+            if snapshot.backend in {"direct", "wetlands", "attached_parsl"}:
                 lost = snapshot.model_copy(update={"state": "lost", "finished_at": utc_now()})
                 persisted = await asyncio.to_thread(
                     self.registry.save,
-                    lost,
+                    self._with_actions(lost),
                     expected_revision=snapshot.revision,
                 )
                 await self._publisher.publish_execution_snapshot(
@@ -440,7 +580,7 @@ class ExecutionCoordinator:
         snapshot = await self.get(execution_id)
         if snapshot.terminal or snapshot.state == "cancel_requested":
             return snapshot
-        if snapshot.state not in {"prepared", "queued", "starting", "running"}:
+        if snapshot.state not in {"prepared", "starting", "running"}:
             raise RuntimeError(f"Execution cannot be cancelled while {snapshot.state}")
         adapter = self._adapters.get(execution_id)
         if adapter is None:
@@ -552,15 +692,27 @@ class ExecutionCoordinator:
             )
 
         async with self._locks.setdefault(execution_id, asyncio.Lock()):
+            plan_state = await asyncio.to_thread(
+                self.registry.retry_plan_state,
+                execution_id,
+                plan_digest,
+            )
+            if plan_state in {"uncertain", "started"}:
+                try:
+                    child = await asyncio.to_thread(self.registry.get, plan.retry_run_id)
+                except ExecutionNotFoundError as exc:
+                    raise ExecutionOperationError(
+                        "retry-plan-integrity-error",
+                        "The retained retry state is missing its exact child identity.",
+                    ) from exc
+                if plan_state == "uncertain":
+                    await self._ensure_uncertain_retry_observation(child)
+                return self._with_actions(child)
             await asyncio.to_thread(
                 self.registry.confirm_retry_plan,
                 execution_id,
                 plan_digest,
             )
-            child = await self._ensure_retry_child(source, plan)
-            existing_adapter = self._adapters.get(child.execution_id)
-            if existing_adapter is not None:
-                return self._with_actions(child)
             parent_adapter = self._adapters.get(execution_id)
             if parent_adapter is None:
                 parent_adapter = await asyncio.to_thread(self._reconnector, source)
@@ -578,6 +730,7 @@ class ExecutionCoordinator:
                     "remote-retry-submission-uncertain",
                 }
                 if error.code in uncertain_codes:
+                    child = await self._ensure_retry_child(source, plan)
                     await asyncio.to_thread(
                         self.registry.mark_retry_uncertain,
                         execution_id,
@@ -591,11 +744,13 @@ class ExecutionCoordinator:
                             )
                         }
                     )
-                    await asyncio.to_thread(
+                    child = await asyncio.to_thread(
                         self.registry.save,
                         self._with_actions(child),
                         expected_revision=child.revision,
                     )
+                    await self._publisher.publish_execution_snapshot(child, initial=True)
+                    await self._ensure_uncertain_retry_observation(child)
                 else:
                     await asyncio.to_thread(
                         self.registry.mark_retry_failed,
@@ -607,26 +762,8 @@ class ExecutionCoordinator:
                             "details": error.details,
                         },
                     )
-                    failed_child = child.model_copy(
-                        update={
-                            "state": "failed",
-                            "finished_at": utc_now(),
-                            "backend_metadata": {
-                                **child.backend_metadata,
-                                "retry_start_failed": {
-                                    "code": error.code,
-                                    "message": str(error),
-                                    "details": error.details,
-                                },
-                            },
-                        }
-                    )
-                    await asyncio.to_thread(
-                        self.registry.save,
-                        self._with_actions(failed_child),
-                        expected_revision=child.revision,
-                    )
                 raise error from exc
+            child = await self._ensure_retry_child(source, plan)
             started = child.model_copy(
                 update={
                     "state": child_adapter.status,
@@ -760,12 +897,34 @@ class ExecutionCoordinator:
                     ]
                 }
             )
-            await asyncio.to_thread(
+            linked = await asyncio.to_thread(
                 self.registry.save,
                 self._with_actions(linked),
                 expected_revision=source.revision,
             )
+            await self._publisher.publish_execution_snapshot(linked, initial=False)
         return child
+
+    async def _ensure_uncertain_retry_observation(
+        self,
+        child: ExecutionSnapshot,
+    ) -> None:
+        """Reconnect only the retry plan's exact child without replaying submission."""
+
+        execution_id = child.execution_id
+        if execution_id in self._adapters or execution_id in self._poll_tasks:
+            return
+        try:
+            adapter = await asyncio.to_thread(self._reconnector, child)
+        except Exception as exc:
+            current = await asyncio.to_thread(self.registry.get, execution_id)
+            await self._record_observation_failure(current, exc)
+            self._poll_tasks[execution_id] = asyncio.create_task(
+                self._reconnect_loop(execution_id),
+                name=f"execution-reconnect-{execution_id}",
+            )
+            return
+        await self.attach(execution_id, adapter, publish_initial=False)
 
     def _with_actions(self, snapshot: ExecutionSnapshot) -> ExecutionSnapshot:
         return snapshot.model_copy(
@@ -954,7 +1113,7 @@ def _retry_presentation(source: ExecutionSnapshot, plan: Any) -> RetryPlanPresen
         None
         if plan.recompute is None
         else RecomputeSelection(
-            node_paths=plan.recompute.node_paths,
+            node_paths=list(plan.recompute.node_paths),
             cascade=plan.recompute.cascade,
         )
     )
@@ -988,14 +1147,21 @@ def _operation_error(exc: Exception, *, fallback: str) -> ExecutionOperationErro
         return exc
     details_value = getattr(exc, "details", None)
     details = dict(details_value) if isinstance(details_value, dict) else {}
-    code_value = details.get("remote_code") or getattr(exc, "code", None) or fallback
+    public_code = getattr(exc, "code", None)
+    remote_code = details.get("remote_code")
+    code_value = public_code if isinstance(public_code, str) else fallback
+    if code_value == "workflow-run-retry-error" and remote_code in {
+        "remote-invalid-retry",
+        "remote-retry-conflict",
+        "remote-retry-submission-uncertain",
+    }:
+        code_value = remote_code
     code = code_value if isinstance(code_value, str) else fallback
     return ExecutionOperationError(code, str(exc), details=details)
 
 
 def open_public_submitted_run(
     snapshot: ExecutionSnapshot,
-    profile_resolver: Any,
 ) -> ExecutionRunAdapter:
     """Reconnect using only public BioImageFlow handles and sanitized profile values."""
 
@@ -1008,7 +1174,7 @@ def open_public_submitted_run(
     if snapshot.backend in {"direct", "wetlands", "attached_parsl"}:
         result_bundle = reconnect.get("result_bundle")
         if snapshot.state == "succeeded" and isinstance(result_bundle, str):
-            return ManagedResultAdapter(Path(result_bundle))
+            return ManagedResultAdapter(Path(result_bundle), snapshot.result_export)
         raise ValueError("Attached executions cannot be reconnected before success")
     storage_path = reconnect.get("storage_path")
     run_id = reconnect.get("run_id")
@@ -1016,26 +1182,18 @@ def open_public_submitted_run(
         raise ValueError("Submitted execution reconnect metadata is incomplete")
     if snapshot.backend == "submitted_remote":
         profile_payload = snapshot.target_snapshot.get("profile")
-        if isinstance(profile_payload, dict):
-            from bioimageflow_server.models.execution_profiles import (
-                DistributedExecutionProfile,
-            )
+        if not isinstance(profile_payload, dict):
+            raise ValueError("Retained remote execution profile snapshot is missing")
+        from bioimageflow_server.models.execution_profiles import (
+            DistributedExecutionProfile,
+        )
 
-            record = DistributedExecutionProfile.model_validate(profile_payload)
-            if record.id != snapshot.profile_id or record.revision != snapshot.profile_revision:
-                raise ValueError("Retained execution profile binding is inconsistent")
-            if record.transport is None:
-                raise ValueError("Retained remote execution transport is missing")
-            transport = record.transport.to_library()
-        else:
-            # Compatibility for snapshots retained before profile snapshots
-            # were embedded in each accepted run.
-            profile = profile_resolver.resolve_revision(
-                snapshot.profile_id,
-                snapshot.profile_revision,
-                snapshot.workflow_id,
-            )
-            transport = profile.transport
+        record = DistributedExecutionProfile.model_validate(profile_payload)
+        if record.id != snapshot.profile_id or record.revision != snapshot.profile_revision:
+            raise ValueError("Retained execution profile binding is inconsistent")
+        if record.transport is None:
+            raise ValueError("Retained remote execution transport is missing")
+        transport = record.transport.to_library()
         return SubmittedRunAdapter(
             remote_workflow_run.open(transport, storage_path, run_id),
             result_export=snapshot.result_export,

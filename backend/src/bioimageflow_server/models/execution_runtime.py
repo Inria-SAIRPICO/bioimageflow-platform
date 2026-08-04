@@ -132,6 +132,10 @@ class ResultExportSnapshot(BaseModel):
     state: Literal["pending", "available", "unavailable"] = "pending"
     error_code: str | None = None
     detail: str | None = None
+    archive_digest: str | None = Field(
+        default=None,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
 
 
 class ExecutionSnapshot(BaseModel):
@@ -202,7 +206,7 @@ class ExecutionActionResponse(BaseModel):
 class RecomputeSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    node_paths: tuple[str, ...] = Field(min_length=1)
+    node_paths: list[str] = Field(min_length=1)
     cascade: bool = True
 
 

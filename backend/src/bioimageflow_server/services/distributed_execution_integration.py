@@ -32,7 +32,6 @@ from bioimageflow_server.services.execution_runtime import (
     AttachedRunAdapter,
     ExecutionCoordinator,
     SubmittedRunAdapter,
-    _archive_bundle,
 )
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -476,24 +475,16 @@ class LegacyExecutionManagerAdapter:
 
     @property
     def status(self) -> str:
-        if self._manager.context != self._context:
-            return "lost"
-        if self._manager.state == "running":
-            return "running"
-        result = self._manager.last_result
-        if result is None:
-            return "starting"
-        if result.success:
-            return "succeeded"
-        if any(error.get("type") == "cancelled" for error in result.errors):
-            return "cancelled"
-        return "failed"
+        return self._manager.retained_status(self._context)
 
     def refresh(self) -> None:
         return None
 
     def progress(self, *, after_sequence: int = 0) -> list[dict[str, Any]]:
-        return self._manager.retained_progress(after_sequence=after_sequence)
+        return self._manager.retained_progress_for(
+            self._context,
+            after_sequence=after_sequence,
+        )
 
     def cancel(self) -> None:
         future = asyncio.run_coroutine_threadsafe(self._manager.stop(), self._loop)
@@ -503,20 +494,14 @@ class LegacyExecutionManagerAdapter:
         return ""
 
     def download_result(self, destination: Path) -> Path:
-        if self._managed_destination.is_dir():
-            if destination != self._managed_destination:
-                raise RuntimeError("Managed result destination does not match this execution")
-            return _archive_bundle(destination)
+        if destination != self._managed_destination:
+            raise RuntimeError("Managed result destination does not match this execution")
         return self._manager.export_retained_result(self._context, destination)
 
     export_result = download_result
 
     @property
     def result_export(self):
-        if self._managed_destination.is_dir():
-            from bioimageflow_server.models.execution_runtime import ResultExportSnapshot
-
-            return ResultExportSnapshot(state="available")
         return self._manager.retained_result_export(self._context)
 
 

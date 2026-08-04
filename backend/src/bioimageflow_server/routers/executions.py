@@ -149,7 +149,7 @@ async def plan_retry_execution(
         recompute = request.recompute
         return await coordinator.plan_retry(
             execution_id,
-            node_paths=None if recompute is None else recompute.node_paths,
+            node_paths=None if recompute is None else tuple(recompute.node_paths),
             cascade=True if recompute is None else recompute.cascade,
         )
     except ExecutionNotFoundError as exc:
