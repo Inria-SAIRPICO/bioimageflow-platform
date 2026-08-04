@@ -211,18 +211,18 @@ A compact target selector appears immediately before the Run split button.
 It shows **Local** or the selected distributed profile name.
 If only Local is available, the selector may collapse to a non-interactive **Local** badge.
 
-The Run split menu continues to offer:
+The Run split menu continues to offer commands derived from the current draft:
 
 - Run Workflow;
 - Run Selected;
-- Retry Failed Execution;
-- Invalidate Failed Nodes and Retry;
 - Recompute Workflow;
 - Stop or Cancel when unambiguous.
 
-Commands derived from the current graph—Run Workflow, Run Selected, and Recompute Workflow—use the visible target.
-Retry commands instead capture the failed run's original target profile revision unless the user explicitly chooses **Retry on current target** from the execution details.
-The retry confirmation names the captured target when it differs from the visible selector so the launched target is never implicit.
+Run Workflow and Run Selected use the visible target.
+Recompute Workflow applies to the current draft and is available only for Local execution until BioImageFlow exposes confirmation-bound invalidation for a newly prepared distributed submission.
+Retry and **Recompute this run** belong to the selected retained execution in the Execution panel.
+They always use the submitted run's immutable graph, inputs, resources, uploads, pre-launch script, target, and captured profile revision.
+Their confirmation names the captured target and states that later draft edits are not included.
 The main Run button remains one click for a locally valid workflow.
 
 The selected target is remembered in the current UI session.
@@ -438,7 +438,8 @@ The platform exposes an `ExecutionSnapshot` containing:
 - backend-job metadata when applicable;
 - a map of `JobSnapshot` values keyed by scoped node path;
 - structured run errors;
-- whether cancellation and result download are currently available;
+- server-derived availability and disabled reasons for cancellation, retry, retained recomputation, and result download;
+- retry parent and child execution IDs plus result-export state;
 - a monotonically increasing snapshot revision.
 
 Each `JobSnapshot` contains the scoped node path, display name, node kind, parent workflow path, state, cached flag, executor label, route reason, effective resources, completed and total rows, optional sub-row message/current/maximum, timestamps, cache identities, and structured error detail.
@@ -476,7 +477,12 @@ The selected run summary shows:
 - state and duration;
 - completed/cached/failed job counts;
 - backend job and connection state when applicable;
-- Cancel, Retry, Download Results, and Open Logs actions when applicable.
+- Cancel, Retry, Recompute this run, Download Results, and Open Logs actions when applicable.
+
+Retry and retained recomputation use a two-stage preview and confirmation flow.
+The backend persists the exact immutable BioImageFlow retry plan before showing its presentation-safe summary.
+The summary includes the planned child run ID, captured target, requested recomputation paths, cascade behavior, invalidated cache selections, and conflicting active run IDs.
+Conflicts disable confirmation, stale plans require a fresh preview, and repeated confirmation reconnects to the same child execution.
 
 ### 9.3 Job tree
 
@@ -618,13 +624,16 @@ It does not initialize Parsl workers, install the cluster agent, or replace Open
 
 ### 12.3 Results
 
-Remote result download always requires an explicit local destination.
-The platform delegates to `RemoteWorkflowRun.result(destination=...)`, which stages privately, verifies the immutable bundle, and atomically installs it.
+The browser never supplies a server filesystem destination.
+The platform chooses an explicit managed per-execution destination and delegates submitted-local and submitted-remote export to `run.export_result(destination)`.
+Direct, Wetlands, and attached Parsl executions receive a `WorkflowExecutionContext`; after successful computation the platform calls `context.export_result(value, destination=...)` before releasing the typed result or transient assets.
+The platform stages privately, verifies the immutable bundle, atomically installs it, and serves an atomically created ZIP to the browser.
 Record-owned and return-owned assets become local.
 Declared external cluster paths remain cluster paths and are labelled unavailable locally.
 
 Transport loss does not fail the run.
-Result download is enabled only for succeeded runs with an available verified return.
+Result-export failure does not change a successful workflow state; it is recorded as a separate unavailable-result condition.
+Result download is enabled only for succeeded runs whose engine-specific result-export capability is supported.
 
 ## 13. API and Event Surface
 
@@ -655,15 +664,16 @@ Preflight returns a discriminated `resolution_required` response with serialized
 - `GET /api/v1/executions` lists paginated execution summaries with optional workflow and state filters.
 - `GET /api/v1/executions/{execution_id}` returns one full `ExecutionSnapshot`.
 - `POST /api/v1/executions/{execution_id}/cancel` performs state-specific cancellation.
-- `POST /api/v1/executions/{execution_id}/retry` creates a new preflight intent from the captured command and target.
-- `POST /api/v1/executions/{execution_id}/download` prepares or performs the supported result download flow.
+- `POST /api/v1/executions/{execution_id}/retry/plan` creates and durably stores an immutable retry or retained-recomputation preview and returns a presentation-safe summary plus its digest.
+- `POST /api/v1/executions/{execution_id}/retry` accepts only the stored plan digest, reconstructs the exact `RunRetryPlan`, and idempotently starts or reconnects to its child run.
+- `POST /api/v1/executions/{execution_id}/result` exports to managed storage and returns the verified result ZIP.
 
-`POST /api/v1/execution/stop` remains a compatibility route for the single attached run.
-It returns a conflict when more than one cancellable execution would make the target ambiguous.
-New frontend code uses ID-specific cancellation.
+The client never submits a serialized `RunRetryPlan`, a replacement target, or a server destination path.
+Confirmed retry plans survive process restart; an uncertain scheduler response preserves the planned child ID and reconnects without allocating another plan.
 
-`GET /api/v1/execution/status` remains a compatibility summary for the attached execution manager.
-The Execution panel uses the plural run APIs.
+Current-draft execution admission continues through the singular execution service.
+Once accepted, every run is addressed through the plural execution APIs and all cancellation is ID-specific.
+The Execution panel never infers a run from singleton status.
 
 ### 13.4 Events
 
