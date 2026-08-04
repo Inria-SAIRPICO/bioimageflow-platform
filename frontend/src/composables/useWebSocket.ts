@@ -1,7 +1,10 @@
 import { ref, type Ref } from 'vue'
 import { useExecutionStore } from '@/stores/execution'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
-import { normalizeExecution, type ExecutionSnapshot } from '@/api/executions'
+import {
+  normalizeExecution,
+  type ExecutionPresentationWire,
+} from '@/api/executions'
 import { useToolRegistryStore } from '@/stores/toolRegistry'
 import { useNapariStore } from '@/stores/napari'
 import { useLoggerStore, type LogEntry } from '@/stores/logger'
@@ -235,22 +238,13 @@ function dispatch(raw: unknown) {
         ? msg.snapshot as Record<string, unknown>
         : msg
       if (
-        typeof candidate.id === 'string'
-        && typeof candidate.revision === 'number'
-        && Array.isArray(candidate.jobs)
-      ) {
-        useExecutionRegistryStore().applySnapshot(
-          candidate as unknown as ExecutionSnapshot,
-          msg.type === 'execution_snapshot',
-        )
-      } else if (
         typeof candidate.execution_id === 'string'
         && typeof candidate.revision === 'number'
         && typeof candidate.jobs === 'object'
         && candidate.jobs !== null
       ) {
         useExecutionRegistryStore().applySnapshot(
-          normalizeExecution(candidate as never),
+          normalizeExecution(candidate as unknown as ExecutionPresentationWire),
           msg.type === 'execution_snapshot',
         )
       }

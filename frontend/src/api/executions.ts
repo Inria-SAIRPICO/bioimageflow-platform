@@ -1,4 +1,5 @@
 import { api } from '@/api/client'
+import type { components } from '@/api/types'
 
 export type ExecutionTargetMode =
   | 'local'
@@ -107,7 +108,7 @@ export interface ExecutionSnapshot {
   workflow_name?: string | null
   draft_revision?: number | null
   target_id: string
-  target_label?: string | null
+  target_label: string
   target_mode: ExecutionTargetMode
   state: ExecutionRunState
   command?: string | null
@@ -116,7 +117,6 @@ export interface ExecutionSnapshot {
   created_at: string
   started_at?: string | null
   finished_at?: string | null
-  backend_id?: string | null
   scheduler_job_id?: string | null
   observation_error?: string | null
   actions: ExecutionActions
@@ -233,41 +233,7 @@ interface ExecutionPreflightWireResponse {
   } | null
 }
 
-interface ExecutionSnapshotWire {
-  revision: number
-  execution_id: string
-  workflow_id: string
-  draft_revision?: number | null
-  command?: string
-  retry_of_execution_id?: string | null
-  child_execution_ids: string[]
-  backend: 'direct' | 'wetlands' | 'attached_parsl' | 'submitted_local' | 'submitted_remote'
-  target_id: string
-  target_snapshot?: Record<string, unknown>
-  state: ExecutionRunState
-  jobs: Record<string, {
-    scoped_node_path: string
-    state: ExecutionJobState
-    row?: number
-    total_rows?: number
-    current?: number | null
-    maximum?: number | null
-    message?: string | null
-    result_key?: string | null
-    record_id?: string | null
-    executor_label?: string | null
-    route_reason?: string | null
-    effective_resources?: Record<string, unknown> | null
-    diagnostic?: NodeFailureDiagnostic | null
-    started_at?: string | null
-    finished_at?: string | null
-  }>
-  backend_metadata?: Record<string, unknown>
-  observation?: { error?: string | null }
-  actions: ExecutionActions
-  created_at: string
-  finished_at?: string | null
-}
+export type ExecutionPresentationWire = components['schemas']['ExecutionPresentation']
 
 export type ExecutionPreflightResponse =
   | {
@@ -400,42 +366,30 @@ function encodeRemoteLeaf(leaf: RemoteNodePathLeaf): { source: string; value: st
   }
 }
 
-function targetMode(backend: ExecutionSnapshotWire['backend']): ExecutionTargetMode {
-  if (backend === 'submitted_local' || backend === 'submitted_remote') return backend
-  if (backend === 'attached_parsl') return 'attached'
-  return 'local'
-}
-
 function secondsBetween(start?: string | null, finish?: string | null): number | null {
   if (!start || !finish) return null
   return Math.max(0, (Date.parse(finish) - Date.parse(start)) / 1000)
 }
 
-export function normalizeExecution(data: ExecutionSnapshotWire): ExecutionSnapshot {
-  const targetLabel = typeof data.target_snapshot?.name === 'string'
-    ? data.target_snapshot.name
-    : null
+export function normalizeExecution(data: ExecutionPresentationWire): ExecutionSnapshot {
   return {
     id: data.execution_id,
     revision: data.revision,
     workflow_id: data.workflow_id,
     draft_revision: data.draft_revision,
     target_id: data.target_id,
-    target_label: targetLabel,
-    target_mode: targetMode(data.backend),
+    target_label: data.target_label,
+    target_mode: data.target_mode,
     state: data.state,
     command: data.command,
     retry_of_execution_id: data.retry_of_execution_id,
-    child_execution_ids: data.child_execution_ids,
+    child_execution_ids: data.child_execution_ids ?? [],
     created_at: data.created_at,
     finished_at: data.finished_at,
-    backend_id: data.backend,
-    scheduler_job_id: typeof data.backend_metadata?.scheduler_job_id === 'string'
-      ? data.backend_metadata.scheduler_job_id
-      : null,
-    observation_error: data.observation?.error,
+    scheduler_job_id: data.scheduler_job_id,
+    observation_error: data.observation.error,
     actions: data.actions,
-    jobs: Object.values(data.jobs).map(job => ({
+    jobs: Object.values(data.jobs ?? {}).map(job => ({
       id: job.scoped_node_path,
       scoped_node_path: job.scoped_node_path,
       state: job.state,
@@ -461,7 +415,7 @@ export async function applyPreparedExecution(
   token: string,
   request: ExecutionPreflightRequest,
 ): Promise<ExecutionSnapshot> {
-  const { data } = await api.post<ExecutionSnapshotWire>(
+  const { data } = await api.post<ExecutionPresentationWire>(
     '/api/v1/executions',
     {
       token,
@@ -480,7 +434,7 @@ export async function fetchExecutions(options: {
   limit?: number
 } = {}): Promise<ExecutionPage> {
   const { data } = await api.get<{
-    items: ExecutionSnapshotWire[]
+    items: ExecutionPresentationWire[]
     total: number
     offset: number
     limit: number
@@ -500,7 +454,7 @@ export async function fetchExecutions(options: {
 }
 
 export async function fetchExecution(id: string): Promise<ExecutionSnapshot> {
-  const { data } = await api.get<ExecutionSnapshotWire>(
+  const { data } = await api.get<ExecutionPresentationWire>(
     `/api/v1/executions/${encodeURIComponent(id)}`,
   )
   return normalizeExecution(data)
@@ -528,7 +482,7 @@ export async function startExecutionRetry(
   id: string,
   planDigest: string,
 ): Promise<ExecutionSnapshot> {
-  const { data } = await api.post<ExecutionSnapshotWire>(
+  const { data } = await api.post<ExecutionPresentationWire>(
     `/api/v1/executions/${encodeURIComponent(id)}/retry`,
     { plan_digest: planDigest },
   )

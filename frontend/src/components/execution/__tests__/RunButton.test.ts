@@ -866,7 +866,8 @@ describe('RunButton', () => {
     registry.selectedTargetId = 'cluster'
     registry.applySnapshot({
       id: 'run-retained', revision: 1, workflow_id: 'wf_a', target_id: 'cluster',
-      target_mode: 'submitted_remote', state: 'failed', command: 'workflow',
+      target_label: 'Cluster', target_mode: 'submitted_remote',
+      state: 'failed', command: 'workflow',
       retry_of_execution_id: null, child_execution_ids: [],
       created_at: '2026-08-03T10:00:00Z', jobs: [],
       actions: {

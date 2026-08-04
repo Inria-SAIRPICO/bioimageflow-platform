@@ -164,9 +164,19 @@ describe('useWebSocket workflow draft dispatch', () => {
         data: JSON.stringify({
           type: revision === 1 ? 'execution_snapshot' : 'execution_update',
           snapshot: {
-            id: 'run-remote', revision, workflow_id: 'workflow', target_id: 'cluster',
-            target_mode: 'submitted_remote', state, created_at: '2026-08-03T10:00:00Z',
-            jobs: [],
+            execution_id: 'run-remote', revision, workflow_id: 'workflow',
+            draft_revision: 4, command: 'run', retry_of_execution_id: null,
+            child_execution_ids: [], backend: 'submitted_remote', target_id: 'cluster',
+            target_label: 'Redacted GPU queue', target_mode: 'submitted_remote',
+            scheduler_job_id: 'scheduler-99', state, jobs: {}, progress_cursor: 0,
+            actions: {
+              cancel: { available: true, reason: null },
+              retry: { available: false, reason: 'not terminal' },
+              recompute: { available: false, reason: 'not terminal' },
+              download_results: { available: false, reason: 'not succeeded' },
+            },
+            observation: { reachable: true, error: null },
+            created_at: '2026-08-03T10:00:00Z', updated_at: '2026-08-03T10:00:00Z',
           },
         }),
       } as MessageEvent)
@@ -177,6 +187,8 @@ describe('useWebSocket workflow draft dispatch', () => {
 
     expect(registry.runs[0]).toMatchObject({
       id: 'run-remote', revision: 2, state: 'running',
+      target_label: 'Redacted GPU queue', target_mode: 'submitted_remote',
+      scheduler_job_id: 'scheduler-99',
     })
   })
 

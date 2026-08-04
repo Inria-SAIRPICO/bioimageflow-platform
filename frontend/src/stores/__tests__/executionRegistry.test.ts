@@ -9,6 +9,16 @@ import { api } from '@/api/client'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import type { ExecutionSnapshot } from '@/api/executions'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 const actions = {
   cancel: { available: false, reason: 'terminal' },
   retry: { available: true, reason: null },
@@ -19,7 +29,8 @@ const actions = {
 function snapshot(revision: number, state: ExecutionSnapshot['state']): ExecutionSnapshot {
   return {
     id: 'run-1', revision, workflow_id: 'workflow', target_id: 'cluster',
-    target_mode: 'submitted_remote', state, created_at: '2026-08-03T10:00:00Z',
+    target_label: 'GPU queue', target_mode: 'submitted_remote',
+    state, created_at: '2026-08-03T10:00:00Z',
     child_execution_ids: [], actions, jobs: [],
   }
 }
@@ -31,12 +42,19 @@ function snapshotWire(revision: number, state: ExecutionSnapshot['state'], id = 
     workflow_id: 'workflow',
     backend: 'submitted_remote',
     target_id: 'cluster',
+    target_label: 'GPU queue',
+    target_mode: 'submitted_remote',
+    scheduler_job_id: 'scheduler-1',
+    command: 'run',
     state,
     retry_of_execution_id: null,
     child_execution_ids: [],
     actions,
     jobs: {},
+    progress_cursor: 0,
+    observation: { reachable: true, error: null },
     created_at: '2026-08-03T10:00:00Z',
+    updated_at: '2026-08-03T10:00:00Z',
   }
 }
 
@@ -192,5 +210,115 @@ describe('execution registry store', () => {
       '/api/v1/executions/run-1/logs',
       { responseType: 'text' },
     )
+  })
+
+  it('buffers live snapshots against the destination scope during a scope switch', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
+      total: 1, offset: 0, limit: 50,
+    } })
+    const store = useExecutionRegistryStore()
+    await store.loadRuns('workflow-a')
+
+    const page = deferred<{ data: {
+      items: ReturnType<typeof snapshotWire>[]
+      total: number
+      offset: number
+      limit: number
+    } }>()
+    vi.mocked(api.get).mockReturnValueOnce(page.promise)
+    const switching = store.loadRuns('workflow-b')
+    store.applySnapshot({
+      ...snapshot(2, 'failed'), id: 'run-a', workflow_id: 'workflow-a',
+    })
+    store.applySnapshot({
+      ...snapshot(1, 'prepared'), id: 'run-b-live', workflow_id: 'workflow-b',
+    }, true)
+    page.resolve({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-b-page'), workflow_id: 'workflow-b' }],
+      total: 1, offset: 0, limit: 50,
+    } })
+    await switching
+
+    expect(store.runs.map(run => run.id)).toEqual(['run-b-live', 'run-b-page'])
+    expect(store.totalRuns).toBe(2)
+    expect(store.selectedRunId).toBe('run-b-live')
+  })
+
+  it('reconciles live snapshots received during a same-scope refresh', async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
+      total: 1, offset: 0, limit: 50,
+    } })
+    const store = useExecutionRegistryStore()
+    await store.loadRuns('workflow-a')
+
+    const page = deferred<{ data: {
+      items: ReturnType<typeof snapshotWire>[]
+      total: number
+      offset: number
+      limit: number
+    } }>()
+    vi.mocked(api.get).mockReturnValueOnce(page.promise)
+    const refreshing = store.loadRuns('workflow-a')
+    store.applySnapshot({
+      ...snapshot(2, 'succeeded'), id: 'run-a', workflow_id: 'workflow-a',
+    })
+    store.applySnapshot({
+      ...snapshot(1, 'prepared'), id: 'run-a-new', workflow_id: 'workflow-a',
+    }, true)
+    page.resolve({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
+      total: 1, offset: 0, limit: 50,
+    } })
+    await refreshing
+
+    expect(store.runs.map(run => run.id)).toEqual(['run-a-new', 'run-a'])
+    expect(store.runs.find(run => run.id === 'run-a')).toMatchObject({
+      revision: 2,
+      state: 'succeeded',
+    })
+    expect(store.totalRuns).toBe(2)
+    expect(store.selectedRunId).toBe('run-a')
+  })
+
+  it('ignores an older load that resolves after a newer scope request', async () => {
+    const pageA = deferred<{ data: {
+      items: ReturnType<typeof snapshotWire>[]
+      total: number
+      offset: number
+      limit: number
+    } }>()
+    const pageB = deferred<{ data: {
+      items: ReturnType<typeof snapshotWire>[]
+      total: number
+      offset: number
+      limit: number
+    } }>()
+    vi.mocked(api.get)
+      .mockReturnValueOnce(pageA.promise)
+      .mockReturnValueOnce(pageB.promise)
+    const store = useExecutionRegistryStore()
+
+    const loadingA = store.loadRuns('workflow-a')
+    const loadingB = store.loadRuns('workflow-b')
+    store.applySnapshot({
+      ...snapshot(1, 'prepared'), id: 'run-b-live', workflow_id: 'workflow-b',
+    }, true)
+    pageB.resolve({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-b'), workflow_id: 'workflow-b' }],
+      total: 1, offset: 0, limit: 50,
+    } })
+    await loadingB
+    pageA.resolve({ data: {
+      items: [{ ...snapshotWire(1, 'running', 'run-a'), workflow_id: 'workflow-a' }],
+      total: 8, offset: 0, limit: 50,
+    } })
+    await loadingA
+
+    expect(store.runs.map(run => run.id)).toEqual(['run-b-live', 'run-b'])
+    expect(store.totalRuns).toBe(2)
+    expect(store.selectedRunId).toBe('run-b-live')
+    expect(store.loadingRuns).toBe(false)
   })
 })

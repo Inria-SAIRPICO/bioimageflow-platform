@@ -115,14 +115,16 @@ describe('ExecutionPanel', () => {
       } })
       .mockResolvedValueOnce({ data: {
         revision: 0, execution_id: 'run-child', workflow_id: 'workflow',
-        backend: 'submitted_remote', target_id: 'cluster', target_snapshot: { name: 'GPU cluster' },
-        state: 'prepared', command: 'retry', retry_of_execution_id: 'run-parent',
+        backend: 'submitted_remote', target_id: 'cluster', target_label: 'GPU cluster',
+        target_mode: 'submitted_remote', scheduler_job_id: 'scheduler-child', command: 'retry',
+        state: 'prepared', retry_of_execution_id: 'run-parent',
         child_execution_ids: [], actions: {
           cancel: { available: true, reason: null },
           retry: { available: false, reason: 'not terminal' },
           recompute: { available: false, reason: 'not terminal' },
           download_results: { available: false, reason: 'not succeeded' },
-        }, jobs: {}, created_at: '2026-08-03T10:01:00Z',
+        }, jobs: {}, progress_cursor: 0, observation: { reachable: true, error: null },
+        created_at: '2026-08-03T10:01:00Z', updated_at: '2026-08-03T10:01:00Z',
       } })
     const wrapper = mount(ExecutionPanel, {
       global: primeVueTestGlobal({ pinia, dialog: true }),
@@ -243,14 +245,16 @@ describe('ExecutionPanel', () => {
     await wrapper.vm.$nextTick()
     vi.mocked(api.get).mockResolvedValueOnce({ data: {
       revision: 1, execution_id: 'run-child', workflow_id: 'workflow',
-      backend: 'submitted_remote', target_id: 'cluster', target_snapshot: { name: 'GPU cluster' },
+      backend: 'submitted_remote', target_id: 'cluster', target_label: 'GPU cluster',
+      target_mode: 'submitted_remote', scheduler_job_id: 'scheduler-child',
       state: 'starting', command: 'retry', retry_of_execution_id: 'run-parent',
       child_execution_ids: [], actions: {
         cancel: { available: true, reason: null },
         retry: { available: false, reason: 'not terminal' },
         recompute: { available: false, reason: 'not terminal' },
         download_results: { available: false, reason: 'not succeeded' },
-      }, jobs: {}, created_at: '2026-08-03T10:01:00Z',
+      }, jobs: {}, progress_cursor: 0, observation: { reachable: true, error: null },
+      created_at: '2026-08-03T10:01:00Z', updated_at: '2026-08-03T10:01:00Z',
     } })
 
     await wrapper.get('[data-testid="execution-retry"]').trigger('click')
@@ -273,7 +277,8 @@ describe('ExecutionPanel', () => {
     const registry = useExecutionRegistryStore()
     const parent = {
       id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
-      target_mode: 'submitted_remote' as const, state: 'failed' as const,
+      target_label: 'Cluster', target_mode: 'submitted_remote' as const,
+      state: 'failed' as const,
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
       child_execution_ids: [], actions: retryActions, jobs: [],
     }
@@ -314,7 +319,8 @@ describe('ExecutionPanel', () => {
     const registry = useExecutionRegistryStore()
     const submitted = {
       id: 'run-logs', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
-      target_mode: 'submitted_remote' as const, state: 'running' as const,
+      target_label: 'Cluster', target_mode: 'submitted_remote' as const,
+      state: 'running' as const,
       created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
       child_execution_ids: [], actions: retryActions,
       jobs: [{

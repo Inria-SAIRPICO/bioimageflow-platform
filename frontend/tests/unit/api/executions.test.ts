@@ -77,13 +77,16 @@ describe('distributed execution API adapter', () => {
         data: {
           revision: 0, execution_id: 'run_1', workflow_id: 'demo',
           draft_revision: 3, backend: 'submitted_remote', target_id: 'profile_1',
+          target_label: 'GPU queue', target_mode: 'submitted_remote',
+          scheduler_job_id: 'scheduler-42', command: 'run',
           state: 'prepared', retry_of_execution_id: null, child_execution_ids: [],
           actions: {
             cancel: { available: true, reason: null },
             retry: { available: false, reason: 'not terminal' },
             recompute: { available: false, reason: 'not terminal' },
             download_results: { available: false, reason: 'not succeeded' },
-          }, jobs: {}, created_at: '2026-08-03T12:00:00Z',
+          }, jobs: {}, progress_cursor: 0, observation: { reachable: true, error: null },
+          created_at: '2026-08-03T12:00:00Z', updated_at: '2026-08-03T12:00:00Z',
         },
       })
     const choiceRequest: ExecutionPreflightRequest = {
@@ -119,6 +122,7 @@ describe('distributed execution API adapter', () => {
     })
     expect(snapshot).toMatchObject({
       id: 'run_1', workflow_id: 'demo', target_mode: 'submitted_remote',
+      target_label: 'GPU queue', scheduler_job_id: 'scheduler-42',
       state: 'prepared', jobs: [],
     })
   })
@@ -159,6 +163,8 @@ describe('distributed execution API adapter', () => {
     const child = {
       revision: 0, execution_id: 'run-child', workflow_id: 'demo',
       backend: 'submitted_remote', target_id: 'cluster', state: 'prepared',
+      target_label: 'GPU queue', target_mode: 'submitted_remote',
+      scheduler_job_id: 'scheduler-child', command: 'retry',
       retry_of_execution_id: 'run-parent', child_execution_ids: [],
       actions: {
         cancel: { available: true, reason: null },
@@ -166,7 +172,8 @@ describe('distributed execution API adapter', () => {
         recompute: { available: false, reason: 'not terminal' },
         download_results: { available: false, reason: 'not succeeded' },
       },
-      jobs: {}, created_at: '2026-08-03T12:00:00Z',
+      jobs: {}, progress_cursor: 0, observation: { reachable: true, error: null },
+      created_at: '2026-08-03T12:00:00Z', updated_at: '2026-08-03T12:00:00Z',
     }
     const blob = new Blob(['bundle'])
     vi.mocked(api.post)
@@ -181,7 +188,11 @@ describe('distributed execution API adapter', () => {
     expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({ recompute: plan.recompute })
     expect(vi.mocked(api.post).mock.calls[1]?.[1]).toEqual({ plan_digest: 'sha256:plan' })
     expect(vi.mocked(api.post).mock.calls[2]?.[1]).toBeUndefined()
-    expect(started).toMatchObject({ id: 'run-child', retry_of_execution_id: 'run-parent' })
+    expect(started).toMatchObject({
+      id: 'run-child', retry_of_execution_id: 'run-parent',
+      target_label: 'GPU queue', target_mode: 'submitted_remote',
+      scheduler_job_id: 'scheduler-child',
+    })
     expect(downloaded).toBe(blob)
   })
 
