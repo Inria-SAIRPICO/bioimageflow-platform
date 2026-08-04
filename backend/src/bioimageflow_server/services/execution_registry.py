@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import threading
+import re
 from pathlib import Path
 
 from bioimageflow_server.models.execution_runtime import ExecutionPage, ExecutionSnapshot, utc_now
@@ -20,11 +21,25 @@ class ExecutionRevisionConflict(RuntimeError):
     pass
 
 
+class RetryPlanNotFoundError(LookupError):
+    pass
+
+
+class RetryPlanConflictError(RuntimeError):
+    pass
+
+
+_RETRY_DIGEST = re.compile(r"^sha256:([0-9a-f]{64})$")
+
+
 def _safe_execution_id(value: str) -> str:
     if (
         not value
         or len(value) > 128
-        or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in value)
+        or any(
+            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+            for character in value
+        )
     ):
         raise ValueError("execution_id contains unsafe characters")
     return value
@@ -39,6 +54,12 @@ class ExecutionRegistry:
 
     def _path(self, execution_id: str) -> Path:
         return self.root / f"{_safe_execution_id(execution_id)}.json"
+
+    def _retry_plan_path(self, digest: str) -> Path:
+        match = _RETRY_DIGEST.fullmatch(digest)
+        if match is None:
+            raise ValueError("retry plan digest is invalid")
+        return self.root / "retry_plans" / f"{match.group(1)}.json"
 
     def get(self, execution_id: str) -> ExecutionSnapshot:
         path = self._path(execution_id)
@@ -114,12 +135,136 @@ class ExecutionRegistry:
             ]
         return [item for item in snapshots if not item.terminal]
 
+    def save_retry_plan(self, payload: dict[str, object]) -> None:
+        """Durably retain one exact immutable retry plan before confirmation."""
+
+        digest = payload.get("digest")
+        parent_run_id = payload.get("parent_run_id")
+        if not isinstance(digest, str) or not isinstance(parent_run_id, str):
+            raise ValueError("retry plan payload is incomplete")
+        path = self._retry_plan_path(digest)
+        envelope = {
+            "schema": "bioimageflow.platform.retry-confirmation.v1",
+            "state": "planned",
+            "plan": payload,
+            "error": None,
+        }
+        with self._lock:
+            if path.exists():
+                current = json.loads(path.read_text(encoding="utf-8"))
+                if current.get("plan") != payload:
+                    raise RetryPlanConflictError("retry plan digest is already retained")
+                return
+            self._atomic_write(path, envelope)
+
+    def get_retry_plan(self, parent_execution_id: str, digest: str) -> dict[str, object]:
+        path = self._retry_plan_path(digest)
+        with self._lock:
+            try:
+                envelope = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError as exc:
+                raise RetryPlanNotFoundError(digest) from exc
+        payload = envelope.get("plan")
+        if not isinstance(payload, dict):
+            raise RetryPlanConflictError("retained retry plan envelope is invalid")
+        if payload.get("parent_run_id") != parent_execution_id:
+            raise RetryPlanNotFoundError(digest)
+        return payload
+
+    def confirm_retry_plan(self, parent_execution_id: str, digest: str) -> dict[str, object]:
+        """Durably record confirmation before any child allocation or submission."""
+
+        path = self._retry_plan_path(digest)
+        with self._lock:
+            try:
+                envelope = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError as exc:
+                raise RetryPlanNotFoundError(digest) from exc
+            plan = envelope.get("plan")
+            if not isinstance(plan, dict) or plan.get("parent_run_id") != parent_execution_id:
+                raise RetryPlanNotFoundError(digest)
+            if envelope.get("state") == "planned":
+                envelope["state"] = "confirmed"
+                self._atomic_write(path, envelope)
+            elif envelope.get("state") not in {"confirmed", "started"}:
+                raise RetryPlanConflictError("retry plan confirmation cannot be resumed")
+        return plan
+
+    def mark_retry_started(self, parent_execution_id: str, digest: str) -> None:
+        path = self._retry_plan_path(digest)
+        with self._lock:
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            plan = envelope.get("plan")
+            if not isinstance(plan, dict) or plan.get("parent_run_id") != parent_execution_id:
+                raise RetryPlanNotFoundError(digest)
+            if envelope.get("state") == "started":
+                return
+            if envelope.get("state") != "confirmed":
+                raise RetryPlanConflictError("retry plan was not confirmed")
+            envelope["state"] = "started"
+            self._atomic_write(path, envelope)
+
+    def mark_retry_uncertain(self, parent_execution_id: str, digest: str) -> None:
+        """Stop replaying start while preserving exact-child reconnection."""
+
+        path = self._retry_plan_path(digest)
+        with self._lock:
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            plan = envelope.get("plan")
+            if not isinstance(plan, dict) or plan.get("parent_run_id") != parent_execution_id:
+                raise RetryPlanNotFoundError(digest)
+            if envelope.get("state") == "uncertain":
+                return
+            if envelope.get("state") != "confirmed":
+                raise RetryPlanConflictError("retry plan was not confirmed")
+            envelope["state"] = "uncertain"
+            self._atomic_write(path, envelope)
+
+    def mark_retry_failed(
+        self,
+        parent_execution_id: str,
+        digest: str,
+        *,
+        error: dict[str, object],
+    ) -> None:
+        path = self._retry_plan_path(digest)
+        with self._lock:
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            plan = envelope.get("plan")
+            if not isinstance(plan, dict) or plan.get("parent_run_id") != parent_execution_id:
+                raise RetryPlanNotFoundError(digest)
+            envelope.update(state="failed", error=error)
+            self._atomic_write(path, envelope)
+
+    def confirmed_retry_plans(self) -> list[tuple[str, str]]:
+        directory = self.root / "retry_plans"
+        if not directory.exists():
+            return []
+        confirmed: list[tuple[str, str]] = []
+        with self._lock:
+            for path in sorted(directory.glob("*.json")):
+                envelope = json.loads(path.read_text(encoding="utf-8"))
+                if envelope.get("state") != "confirmed":
+                    continue
+                plan = envelope.get("plan")
+                if not isinstance(plan, dict):
+                    raise RetryPlanConflictError("retained retry plan envelope is invalid")
+                parent = plan.get("parent_run_id")
+                digest = plan.get("digest")
+                if not isinstance(parent, str) or not isinstance(digest, str):
+                    raise RetryPlanConflictError("retained retry plan is incomplete")
+                confirmed.append((parent, digest))
+        return confirmed
+
     def _atomic_write(self, destination: Path, payload: dict[str, object]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
+        parent_existed = destination.parent.exists()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not parent_existed:
+            fsync_directory(destination.parent.parent)
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{destination.stem}.",
             suffix=".tmp",
-            dir=self.root,
+            dir=destination.parent,
         )
         temporary = Path(temporary_name)
         try:
@@ -130,7 +275,7 @@ class ExecutionRegistry:
                 os.fsync(stream.fileno())
             os.replace(temporary, destination)
             fsync_file(destination)
-            fsync_directory(self.root)
+            fsync_directory(destination.parent)
         finally:
             if temporary.exists():
                 temporary.unlink()

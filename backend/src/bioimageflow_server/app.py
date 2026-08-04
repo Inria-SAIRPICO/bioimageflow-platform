@@ -384,6 +384,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     distributed_registrar: PlatformPreparedRunRegistrar | None = None
     distributed_downloads: ExecutionDownloadDestinationResolver | None = None
     if execution_profile_store is not None:
+        managed_execution_results = (
+            workspace_path / ".bioimageflow" / "execution_exports"
+        )
         profile_resolver = PlatformExecutionProfileResolver(
             execution_profile_store,
             trusted_factories=lambda: list(_live_settings().trusted_parsl_factories),
@@ -423,9 +426,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         distributed_registrar = PlatformPreparedRunRegistrar(
             distributed_coordinator,
             profile_resolver,
+            managed_execution_results,
         )
         distributed_downloads = ExecutionDownloadDestinationResolver(
-            workspace_path / ".bioimageflow" / "execution_exports"
+            managed_execution_results
         )
     workflow_source_service = WorkflowSourceService(
         _current_workflow_store,
@@ -526,6 +530,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             settings_provider=settings_provider,
             environment_manager_provider=_tool_environment_manager,
             retained_execution_started=_retain_local_execution,
+            managed_result_root=(
+                workspace_path / ".bioimageflow" / "execution_exports"
+                if distributed_registrar is not None
+                else None
+            ),
         )
 
     # Always instantiate a launcher (cheap config + state). The expensive
@@ -687,9 +696,13 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # Routers may pass `detail` as a dict {"error": "<code>", "detail": "..."}
         # to override the default code mapping (e.g., "path_traversal" on 400).
         detail_obj: object = exc.detail
+        structured_details: dict[str, Any] | None = None
         if isinstance(detail_obj, dict):
             detail_dict = cast(dict[str, Any], detail_obj)
             if "error" in detail_dict:
+                raw_details = detail_dict.get("details")
+                if isinstance(raw_details, dict):
+                    structured_details = raw_details
                 body = ErrorResponse(
                     error=detail_dict["error"],
                     detail=str(detail_dict.get("detail", "")),
@@ -708,7 +721,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 detail=str(exc.detail),
             )
         _log_http_exception(request, exc, body)
-        return JSONResponse(status_code=exc.status_code, content=body.model_dump())
+        content = body.model_dump()
+        if structured_details is not None:
+            content["details"] = structured_details
+        return JSONResponse(status_code=exc.status_code, content=content)
 
     @app.exception_handler(WorkflowMoveRecoveryError)
     async def workflow_move_recovery_exception_handler(

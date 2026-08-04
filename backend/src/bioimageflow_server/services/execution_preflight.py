@@ -33,11 +33,20 @@ class PreparedTokenConflict(PreparedTokenError):
 
 
 class DistributedProfile(Protocol):
-    id: str
-    revision: int
-    mode: str
-    transport: Any | None
-    workflow_storage_path: str | Path | None
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def revision(self) -> int: ...
+
+    @property
+    def mode(self) -> str: ...
+
+    @property
+    def transport(self) -> Any | None: ...
+
+    @property
+    def workflow_storage_path(self) -> str | Path | None: ...
 
     def planning_arguments(self) -> Mapping[str, Any]: ...
 
@@ -255,14 +264,23 @@ class DistributedPreflightService:
         plan_distributed_execution = getattr(bioimageflow, "plan_distributed_execution")
 
         planning_arguments = dict(profile.planning_arguments())
-        planning_arguments["node_routes"] = request.node_routes or planning_arguments.get("node_routes")
+        planning_arguments["node_routes"] = request.node_routes or planning_arguments.get(
+            "node_routes"
+        )
+        planning_targets = _planning_targets(workflow, request.requested_nodes)
         plan = await asyncio.to_thread(
             plan_distributed_execution,
             workflow,
-            targets=request.requested_nodes,
+            targets=planning_targets,
             **planning_arguments,
         )
-        plan_payload = plan.to_dict()
+        decoded_plan = bioimageflow.DistributedExecutionPlan.from_dict(plan.to_dict())
+        if not decoded_plan.valid:
+            diagnostics = [
+                diagnostic.message for node in decoded_plan.nodes for diagnostic in node.diagnostics
+            ]
+            raise ValueError("Distributed execution plan is invalid: " + "; ".join(diagnostics[:5]))
+        plan_payload = decoded_plan.to_dict()
         if profile.mode != "submitted_remote":
             prepared = await asyncio.to_thread(
                 profile.prepare_non_remote,
@@ -332,11 +350,10 @@ class DistributedPreflightService:
             manifest=bound_prepared.manifest.to_dict(),
         )
 
-    def _decode_overrides(self, path_plan: Any, choices: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
-        expected = {
-            (item.scoped_node_path, item.input_name)
-            for item in path_plan.inputs
-        }
+    def _decode_overrides(
+        self, path_plan: Any, choices: Mapping[str, Mapping[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        expected = {(item.scoped_node_path, item.input_name) for item in path_plan.inputs}
         supplied = {
             (scoped_node_path, input_name)
             for scoped_node_path, fields in choices.items()
@@ -365,3 +382,26 @@ class DistributedPreflightService:
 
         local_upload = getattr(bioimageflow, "LocalUpload")
         return local_upload(self._uploads.resolve_upload(leaf.value or ""))
+
+
+def _planning_targets(workflow: Any, requested: list[str] | None) -> list[Any] | None:
+    if requested is None:
+        return None
+    scoped: dict[str, Any] = {}
+
+    def collect(definition: Any, prefix: str = "") -> None:
+        nodes = getattr(definition, "nodes", None)
+        if not isinstance(nodes, dict):
+            raise TypeError("Workflow does not expose a valid node mapping")
+        for local_name, node in nodes.items():
+            path = f"{prefix}/{local_name}" if prefix else local_name
+            scoped[path] = node
+            nested = getattr(node, "workflow", None)
+            if nested is not None:
+                collect(nested, path)
+
+    collect(workflow)
+    unknown = [path for path in requested if path not in scoped]
+    if unknown:
+        raise ValueError(f"Unknown requested workflow nodes: {unknown}")
+    return [scoped[path] for path in requested]

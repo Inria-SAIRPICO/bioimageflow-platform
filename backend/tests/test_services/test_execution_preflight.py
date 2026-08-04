@@ -77,11 +77,26 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
     )
 
     class _Plan:
-        def to_dict(self) -> dict[str, Any]:
-            return {"nodes": []}
+        valid = True
 
-    monkeypatch.setattr(bioimageflow, "plan_distributed_execution", lambda *a, **k: _Plan(), raising=False)
-    monkeypatch.setattr(bioimageflow, "inspect_remote_node_paths", lambda workflow: path_plan, raising=False)
+        def to_dict(self) -> dict[str, Any]:
+            return {
+                "schema": "bioimageflow.distributed_execution_plan.v1",
+                "allocates_resources": False,
+                "task_policy": {
+                    "schema": "bioimageflow.parsl.task_policy.v1",
+                    "row_chunk_size": 1,
+                    "max_in_flight": 32,
+                },
+                "nodes": [],
+            }
+
+    monkeypatch.setattr(
+        bioimageflow, "plan_distributed_execution", lambda *a, **k: _Plan(), raising=False
+    )
+    monkeypatch.setattr(
+        bioimageflow, "inspect_remote_node_paths", lambda workflow: path_plan, raising=False
+    )
 
     def prepare(*args: Any, **kwargs: Any) -> _Prepared:
         captured.update(kwargs)
@@ -129,9 +144,7 @@ async def test_remote_preflight_requires_choices_then_prepares_manifest(monkeypa
     ready_request = unresolved_request.model_copy(
         update={
             "node_path_choices": {
-                "preprocessing/files": {
-                    "path": {"source": "upload", "value": "dataset"}
-                }
+                "preprocessing/files": {"path": {"source": "upload", "value": "dataset"}}
             }
         }
     )

@@ -39,6 +39,7 @@ from bioimageflow_server.services.execution import (
 class EnvironmentReuseError(RuntimeError):
     """Compatibility-shaped error used to test sanitized recovery guidance."""
 
+
 pytestmark = pytest.mark.anyio
 
 _TEST_CONTEXT = ExecutionContext(
@@ -216,7 +217,12 @@ class _FakeWorkflow:
     def plan(self, *, dev_mode: bool = True) -> dict:
         return {}
 
-    def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+    def compute(
+        self,
+        *targets: Any,
+        dev_mode: bool = False,
+        run_context: Any = None,
+    ) -> dict[str, Any]:
         self.compute_calls += 1
         self.targets_received = targets
         self.dev_mode_received = dev_mode
@@ -266,7 +272,8 @@ def _graph_with(nodes: list[tuple[str, bool]] | None = None) -> GraphState:
         nodes = []
     return graph_state(
         nodes=[
-            ToolNodeState(type="tool",
+            ToolNodeState(
+                type="tool",
                 id=node_id,
                 name=node_id,
                 tool_name="tool",
@@ -415,6 +422,7 @@ class TestExecutionManagerLifecycle:
                 *targets: Any,
                 dev_mode: bool = False,
                 engine: Any = None,
+                run_context: Any = None,
             ) -> dict[str, Any]:
                 try:
                     engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
@@ -454,7 +462,12 @@ class TestExecutionManagerLifecycle:
                 self.manager.raise_exc = RuntimeError("solve failed")
                 self._engine = type("Engine", (), {"_env_manager": self.manager})()
 
-            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+            def compute(
+                self,
+                *targets: Any,
+                dev_mode: bool = False,
+                run_context: Any = None,
+            ) -> dict[str, Any]:
                 self._engine._env_manager.get_or_create(_EnvSpecStub("cellpose-env"))
                 return {}
 
@@ -491,7 +504,12 @@ class TestExecutionManagerLifecycle:
                 super().__init__()
                 self.go = threading.Event()
 
-            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+            def compute(
+                self,
+                *targets: Any,
+                dev_mode: bool = False,
+                run_context: Any = None,
+            ) -> dict[str, Any]:
                 self.go.wait(timeout=3.0)
                 return {}
 
@@ -622,7 +640,8 @@ class TestExecutionManagerLifecycle:
         em = ExecutionManager(RecordingEventBus(), MagicMock(), _settings())
         graph = graph_state(
             nodes=[
-                ToolNodeState(type="tool",
+                ToolNodeState(
+                    type="tool",
                     id=node_id,
                     name=node_id,
                     tool_name="tool",
@@ -632,14 +651,16 @@ class TestExecutionManagerLifecycle:
                 for node_id in ["source", "selected", "downstream"]
             ],
             edges=[
-                ColumnEdge(type="column",
+                ColumnEdge(
+                    type="column",
                     id="e1",
                     source_node="source",
                     target_node="selected",
                     source_output="out",
                     target_input="in",
                 ),
-                ColumnEdge(type="column",
+                ColumnEdge(
+                    type="column",
                     id="e2",
                     source_node="selected",
                     target_node="downstream",
@@ -1043,7 +1064,12 @@ class TestExecutionManagerResult:
         class _ProbeWorkflow(_FakeWorkflow):
             stdout_was_original = False
 
-            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+            def compute(
+                self,
+                *targets: Any,
+                dev_mode: bool = False,
+                run_context: Any = None,
+            ) -> dict[str, Any]:
                 self.stdout_was_original = sys.stdout is original_stdout
                 print("stdout line")
                 return {}
@@ -1195,7 +1221,12 @@ class TestExecutionManagerStop:
                 super().__init__()
                 self._go = threading.Event()
 
-            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+            def compute(
+                self,
+                *targets: Any,
+                dev_mode: bool = False,
+                run_context: Any = None,
+            ) -> dict[str, Any]:
                 self._go.wait(timeout=5.0)
                 if self.cancel_called:
                     raise WorkflowCancelledError("cancelled")
@@ -1223,7 +1254,12 @@ class TestExecutionManagerStop:
                 super().__init__()
                 self._go = threading.Event()
 
-            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+            def compute(
+                self,
+                *targets: Any,
+                dev_mode: bool = False,
+                run_context: Any = None,
+            ) -> dict[str, Any]:
                 self._go.wait(timeout=5.0)
                 return {}
 
@@ -1276,7 +1312,12 @@ class TestExecutionManagerIsRunning:
                 super().__init__()
                 self.go = threading.Event()
 
-            def compute(self, *targets: Any, dev_mode: bool = False) -> dict[str, Any]:
+            def compute(
+                self,
+                *targets: Any,
+                dev_mode: bool = False,
+                run_context: Any = None,
+            ) -> dict[str, Any]:
                 self.go.wait(timeout=2.0)
                 return {}
 

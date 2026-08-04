@@ -1,24 +1,32 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-import pytest
 import bioimageflow
+import pytest
 
 from bioimageflow_server.models.execution_runtime import ExecutionSnapshot
+from bioimageflow_server.models.execution import ExecutionContext
+from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.execution_profiles import DistributedExecutionProfile
 from bioimageflow_server.services.execution_progress import reduce_progress_events
+from bioimageflow_server.services.execution import ExecutionManager, NullEventBus
 from bioimageflow_server.services.execution_registry import (
+    ExecutionNotFoundError,
     ExecutionRegistry,
     ExecutionRevisionConflict,
 )
 from bioimageflow_server.services.execution_runtime import (
+    AttachedRunAdapter,
     ExecutionCoordinator,
     SubmittedRunAdapter,
     open_public_submitted_run,
 )
+from bioimageflow_server.services.tool_registry import ToolRegistryService
 from tests.test_services.test_execution_profiles import profile_fields
 
 
@@ -215,8 +223,9 @@ class _FakeHandle:
     def logs(self) -> str:
         return "output"
 
-    def result(self, *, destination: Path) -> None:
-        destination.write_text("result")
+    def export_result(self, destination: Path) -> None:
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "result.txt").write_text("result")
 
 
 @pytest.mark.anyio
@@ -257,3 +266,224 @@ async def test_observation_failure_does_not_fail_authoritative_run(tmp_path: Pat
     assert observed.state == "running"
     assert not observed.observation.reachable
     assert observed.observation.error == "offline"
+
+
+def _retry_plan(parent_id: str, child_id: str, storage: Path) -> Any:
+    return bioimageflow.RunRetryPlan(
+        parent_run_id=parent_id,
+        retry_run_id=child_id,
+        parent_status="failed",
+        parent_status_revision=7,
+        storage_path=storage.as_posix(),
+        retained_submission_digest="sha256:" + "1" * 64,
+        retained_material_digest="sha256:" + "2" * 64,
+        retained_material_entries=3,
+        cache_selection_revision="sha256:" + "3" * 64,
+        recompute=None,
+        invalidations=(),
+        conflicting_run_ids=(),
+    )
+
+
+class _RetryHandle(_FakeHandle):
+    def __init__(self, plan: Any) -> None:
+        super().__init__()
+        self.status = "failed"
+        self.plan = plan
+        self.planned: list[Any] = []
+        self.started: list[Any] = []
+
+    def plan_retry(self, recompute: Any = None) -> Any:
+        self.planned.append(recompute)
+        return self.plan
+
+    def start_retry(self, plan: Any) -> _FakeHandle:
+        self.started.append(plan)
+        child = _FakeHandle()
+        child.status = "queued"
+        return child
+
+
+@pytest.mark.anyio
+async def test_retry_plan_is_durable_and_confirmation_recovers_exact_child(
+    tmp_path: Path,
+) -> None:
+    parent_id = f"run_{uuid4().hex}"
+    child_id = f"run_{uuid4().hex}"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=parent_id,
+            backend="submitted_local",
+            state="failed",
+            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+        )
+    )
+    plan = _retry_plan(parent_id, child_id, tmp_path)
+    handle = _RetryHandle(plan)
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        poll_interval=60,
+    )
+
+    presentation = await coordinator.plan_retry(parent_id)
+
+    assert presentation.child_execution_id == child_id
+    assert presentation.confirmable
+    assert handle.started == []
+    with pytest.raises(ExecutionNotFoundError):
+        registry.get(child_id)
+
+    child = await coordinator.confirm_retry(
+        parent_id,
+        plan_digest=presentation.plan_digest,
+    )
+    repeated = await coordinator.confirm_retry(
+        parent_id,
+        plan_digest=presentation.plan_digest,
+    )
+    await coordinator.close()
+
+    assert child.execution_id == child_id
+    assert repeated.execution_id == child_id
+    assert len(handle.started) == 1
+    assert handle.started[0].to_dict() == plan.to_dict()
+    assert registry.get(parent_id).child_execution_ids == [child_id]
+
+
+@pytest.mark.anyio
+async def test_startup_resumes_confirmed_plan_before_reconnect(tmp_path: Path) -> None:
+    parent_id = f"run_{uuid4().hex}"
+    child_id = f"run_{uuid4().hex}"
+    registry = ExecutionRegistry(tmp_path)
+    registry.save(
+        _snapshot(
+            execution_id=parent_id,
+            backend="submitted_local",
+            state="failed",
+            reconnect={"storage_path": str(tmp_path), "run_id": parent_id},
+        )
+    )
+    plan = _retry_plan(parent_id, child_id, tmp_path)
+    registry.save_retry_plan(plan.to_dict())
+    registry.confirm_retry_plan(parent_id, plan.digest)
+    handle = _RetryHandle(plan)
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(handle),
+        poll_interval=60,
+    )
+
+    await coordinator.start()
+    await coordinator.close()
+
+    assert len(handle.started) == 1
+    assert registry.get(child_id).retry_of_execution_id == parent_id
+
+
+@pytest.mark.anyio
+async def test_attached_export_failure_preserves_success_and_disables_download(
+    tmp_path: Path,
+) -> None:
+    registry = ExecutionRegistry(tmp_path)
+    adapter = AttachedRunAdapter(
+        compute=lambda _progress: {"value": 1},
+        cancel=lambda: None,
+        result_exporter=lambda _value, _destination: (_ for _ in ()).throw(
+            RuntimeError("export failed")
+        ),
+        managed_destination=tmp_path / "bundle",
+    )
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: adapter,
+        poll_interval=0.01,
+    )
+    await coordinator.register(
+        _snapshot(
+            execution_id="run_" + "e" * 32,
+            backend="attached_parsl",
+            state="starting",
+            reconnect={"result_bundle": str(tmp_path / "bundle")},
+        ),
+        adapter,
+    )
+    await asyncio.sleep(0.05)
+    snapshot = await coordinator.get("run_" + "e" * 32)
+    await coordinator.close()
+
+    assert snapshot.state == "succeeded"
+    assert snapshot.result_export.state == "unavailable"
+    assert snapshot.result_export.error_code == "workflow-result-export-error"
+    assert not snapshot.actions.download_results.available
+
+
+@pytest.mark.anyio
+async def test_execution_actions_use_each_exact_capability(tmp_path: Path) -> None:
+    capabilities = {
+        "submitted_local_parsl": {"supported": True, "reason": None},
+        "submitted_run_retry": {"supported": False, "reason": "retry disabled"},
+        "submitted_recompute": {"supported": True, "reason": None},
+        "submitted_result_export": {"supported": True, "reason": None},
+    }
+    registry = ExecutionRegistry(tmp_path)
+    saved = registry.save(
+        _snapshot(
+            backend="submitted_local",
+            state="succeeded",
+        )
+    )
+    coordinator = ExecutionCoordinator(
+        registry,
+        reconnector=lambda _snapshot: SubmittedRunAdapter(_FakeHandle()),
+        capability_provider=lambda: capabilities,
+    )
+
+    snapshot = await coordinator.get(saved.execution_id)
+
+    assert not snapshot.actions.cancel.available
+    assert not snapshot.actions.retry.available
+    assert snapshot.actions.retry.reason == "retry disabled"
+    assert snapshot.actions.recompute.available
+    assert snapshot.actions.download_results.available
+
+
+def test_submitted_adapter_uses_export_result_and_returns_zip(tmp_path: Path) -> None:
+    handle = _FakeHandle()
+    adapter = SubmittedRunAdapter(handle)
+
+    archive = adapter.export_result(tmp_path / "bundle")
+
+    assert archive.is_file()
+    assert adapter.result_export.state == "available"
+
+
+def test_direct_and_wetlands_managed_export_is_released_and_downloadable(
+    tmp_path: Path,
+) -> None:
+    manager = ExecutionManager(
+        event_bus=NullEventBus(),
+        tool_registry=ToolRegistryService(),
+        settings=Settings(deployment_mode="desktop"),
+        managed_result_root=tmp_path,
+    )
+    context = ExecutionContext(
+        execution_id=f"run_{uuid4().hex}",
+        workflow_id="demo",
+    )
+
+    class _Context:
+        def export_result(self, value: Any, *, destination: Path) -> None:
+            assert value == {"answer": 42}
+            destination.mkdir(parents=True)
+            (destination / "result.json").write_text("{}")
+
+    manager._workflow_run_contexts[context.execution_id] = _Context()
+
+    manager._export_managed_result(context, {"answer": 42})
+    archive = manager.export_retained_result(context, tmp_path / context.execution_id)
+
+    assert manager.retained_result_export(context).state == "available"
+    assert context.execution_id not in manager._workflow_run_contexts
+    assert archive.is_file()

@@ -61,11 +61,3 @@ class ApplyPreparedExecutionRequest(BaseModel):
     draft_revision: int = Field(ge=0)
     target_id: str = Field(min_length=1)
     requested_nodes: list[str] | None = None
-
-
-class RetryExecutionRequest(BaseModel):
-    target_id: str | None = None
-
-
-class ResultDownloadRequest(BaseModel):
-    destination: str = Field(min_length=1)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Protocol
 
@@ -13,13 +12,14 @@ from bioimageflow_server.models.execution_preflight import (
     ApplyPreparedExecutionRequest,
     ExecutionPreflightRequest,
     ExecutionPreflightResponse,
-    ResultDownloadRequest,
-    RetryExecutionRequest,
 )
 from bioimageflow_server.models.execution_runtime import (
+    ConfirmRetryRequest,
     ExecutionActionResponse,
     ExecutionPage,
     ExecutionSnapshot,
+    RetryPlanPresentation,
+    RetryPlanRequest,
 )
 from bioimageflow_server.services.execution_preflight import (
     DistributedPreflightService,
@@ -29,7 +29,10 @@ from bioimageflow_server.services.execution_preflight import (
     invocation_binding,
 )
 from bioimageflow_server.services.execution_registry import ExecutionNotFoundError
-from bioimageflow_server.services.execution_runtime import ExecutionCoordinator
+from bioimageflow_server.services.execution_runtime import (
+    ExecutionCoordinator,
+    ExecutionOperationError,
+)
 
 router = APIRouter(prefix="/executions", tags=["executions"])
 preflight_router = APIRouter(prefix="/execution", tags=["execution"])
@@ -44,7 +47,7 @@ class PreparedRunRegistrar(Protocol):
 
 
 class DownloadDestinationResolver(Protocol):
-    def resolve(self, request: ResultDownloadRequest, execution_id: str) -> Path: ...
+    def resolve(self, execution_id: str) -> Path: ...
 
 
 def get_execution_coordinator() -> ExecutionCoordinator:  # pragma: no cover
@@ -104,8 +107,7 @@ async def list_executions(
     limit: int = Query(default=50, ge=1, le=200),
     coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
 ) -> ExecutionPage:
-    return await asyncio.to_thread(
-        coordinator.registry.list,
+    return await coordinator.list(
         workflow_id=workflow_id,
         offset=offset,
         limit=limit,
@@ -137,18 +139,40 @@ async def cancel_execution(
     return ExecutionActionResponse(execution_id=execution_id, state=snapshot.state)
 
 
-@router.post("/{execution_id}/retry", response_model=ExecutionSnapshot, status_code=202)
-async def retry_execution(
+@router.post("/{execution_id}/retry/plan", response_model=RetryPlanPresentation)
+async def plan_retry_execution(
     execution_id: str,
-    request: RetryExecutionRequest,
+    request: RetryPlanRequest,
+    coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
+) -> RetryPlanPresentation:
+    try:
+        recompute = request.recompute
+        return await coordinator.plan_retry(
+            execution_id,
+            node_paths=None if recompute is None else recompute.node_paths,
+            cascade=True if recompute is None else recompute.cascade,
+        )
+    except ExecutionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Execution not found") from exc
+    except ExecutionOperationError as exc:
+        raise _execution_http_error(exc) from exc
+
+
+@router.post("/{execution_id}/retry", response_model=ExecutionSnapshot, status_code=202)
+async def confirm_retry_execution(
+    execution_id: str,
+    request: ConfirmRetryRequest,
     coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
 ) -> ExecutionSnapshot:
     try:
-        return await coordinator.retry(execution_id, target_id=request.target_id)
+        return await coordinator.confirm_retry(
+            execution_id,
+            plan_digest=request.plan_digest,
+        )
     except ExecutionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Execution not found") from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ExecutionOperationError as exc:
+        raise _execution_http_error(exc) from exc
 
 
 @router.get("/{execution_id}/logs", response_class=PlainTextResponse)
@@ -165,15 +189,53 @@ async def execution_logs(
 @router.post("/{execution_id}/result", response_class=FileResponse)
 async def download_execution_result(
     execution_id: str,
-    request: ResultDownloadRequest,
     coordinator: ExecutionCoordinator = Depends(get_execution_coordinator),
     destinations: DownloadDestinationResolver = Depends(get_download_destination_resolver),
 ) -> FileResponse:
     try:
-        destination = destinations.resolve(request, execution_id)
+        destination = destinations.resolve(execution_id)
         path = await coordinator.download_result(execution_id, destination)
     except ExecutionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Execution not found") from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ExecutionOperationError as exc:
+        raise _execution_http_error(exc) from exc
     return FileResponse(path)
+
+
+def _execution_http_error(exc: ExecutionOperationError) -> HTTPException:
+    if exc.code == "retry-plan-not-found":
+        status = 404
+    elif exc.code in {"invalid-recompute-request", "remote-invalid-retry"}:
+        status = 422
+    elif (
+        exc.code.startswith("ssh-") or exc.code.startswith("sftp-") or exc.code == "remote-protocol"
+    ):
+        status = 503
+    elif exc.code in {
+        "workflow-run-retry-error",
+        "remote-retry-conflict",
+        "psij-submission-uncertain",
+        "remote-retry-submission-uncertain",
+        "retry-plan-integrity-error",
+        "retry-child-conflict",
+        "workflow-run-result-unavailable",
+        "workflow-result-destination-conflict",
+        "workflow-result-integrity-error",
+    }:
+        status = 409
+    else:
+        status = 500
+    details = dict(exc.details)
+    details.setdefault(
+        "retryable",
+        exc.code in {"ssh-connection", "ssh-timeout", "ssh-command-failed"}
+        or exc.code.startswith("sftp-"),
+    )
+    return HTTPException(
+        status_code=status,
+        detail={
+            "error": exc.code,
+            "detail": str(exc),
+            "details": details,
+        },
+    )

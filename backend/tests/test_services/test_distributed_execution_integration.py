@@ -14,6 +14,7 @@ from bioimageflow_server.services.distributed_execution_integration import (
     PlatformExecutionProfileResolver,
     PlatformPreparedRunRegistrar,
     ResolvedExecutionProfile,
+    _plan_jobs,
 )
 from bioimageflow_server.services.execution_preflight import PreparedRunAcceptance
 
@@ -27,10 +28,50 @@ class _Coordinator:
         return snapshot
 
 
+def _distributed_plan(*statuses: str) -> dict[str, Any]:
+    return {
+        "schema": "bioimageflow.distributed_execution_plan.v1",
+        "allocates_resources": False,
+        "task_policy": {
+            "schema": "bioimageflow.parsl.task_policy.v1",
+            "row_chunk_size": 1,
+            "max_in_flight": 32,
+        },
+        "nodes": [
+            {
+                "scoped_node_path": f"node-{index}",
+                "execution_status": status,
+                "will_dispatch": status not in {"cached", "skipped"},
+                "resources": {
+                    "cpu": index + 1,
+                    "gpu": index % 2,
+                    "memory_bytes": 1024 * (index + 1),
+                    "gpu_memory_bytes": None,
+                    "max_concurrent": 0,
+                },
+                "compatible_executors": ["workers"],
+                "selected_executor": None if status in {"cached", "skipped"} else "workers",
+                "route_reason": None,
+                "tool_origin": "installed_module",
+                "environment_name": "default",
+                "environment_identity": "env_" + "1" * 64,
+                "storage_mode": "shared_fs",
+                "incompatibilities": {"workers": []},
+                "diagnostics": [],
+            }
+            for index, status in enumerate(statuses)
+        ],
+    }
+
+
 @pytest.mark.anyio
-async def test_regular_execution_is_registered_for_the_shared_panel() -> None:
+async def test_regular_execution_is_registered_for_the_shared_panel(tmp_path: Path) -> None:
     coordinator = _Coordinator()
-    registrar = PlatformPreparedRunRegistrar(coordinator, profiles=SimpleNamespace())  # type: ignore[arg-type]
+    registrar = PlatformPreparedRunRegistrar(
+        coordinator,
+        profiles=SimpleNamespace(),  # type: ignore[arg-type]
+        managed_result_root=tmp_path,
+    )
     context = ExecutionContext(
         execution_id="local-run",
         workflow_id="demo",
@@ -54,7 +95,9 @@ async def test_regular_execution_is_registered_for_the_shared_panel() -> None:
 
 
 @pytest.mark.anyio
-async def test_submission_registration_uses_preflight_bound_profile_revision() -> None:
+async def test_submission_registration_uses_preflight_bound_profile_revision(
+    tmp_path: Path,
+) -> None:
     coordinator = _Coordinator()
     registrar = PlatformPreparedRunRegistrar(
         coordinator,
@@ -63,6 +106,7 @@ async def test_submission_registration_uses_preflight_bound_profile_revision() -
                 AssertionError("apply must not re-resolve a mutable profile")
             )
         ),  # type: ignore[arg-type]
+        managed_result_root=tmp_path,
     )
     record = SimpleNamespace(
         id="profile_" + "1" * 32,
@@ -100,7 +144,7 @@ async def test_submission_registration_uses_preflight_bound_profile_revision() -
         handle=handle,
         profile=profile,
         request=preflight_request,
-        distributed_plan={"nodes": []},
+        distributed_plan=_distributed_plan("cached", "unexecuted"),
     )
 
     snapshot = await registrar.register_prepared_run(
@@ -120,9 +164,18 @@ async def test_submission_registration_uses_preflight_bound_profile_revision() -
         "storage_path": "/cluster/workflows/demo/results",
         "run_id": handle.id,
     }
+    assert snapshot.jobs["node-0"].state == "cached"
+    assert snapshot.jobs["node-1"].state == "waiting"
+    assert snapshot.jobs["node-1"].effective_resources == {
+        "cpu": 2,
+        "gpu": 1,
+        "memory_bytes": 2048,
+        "gpu_memory_bytes": None,
+        "max_concurrent": 0,
+    }
 
 
-def test_legacy_adapter_maps_cancelled_terminal_result() -> None:
+def test_legacy_adapter_maps_cancelled_terminal_result(tmp_path: Path) -> None:
     context = ExecutionContext(execution_id="local-run", workflow_id="demo")
     manager = SimpleNamespace(
         context=context,
@@ -141,10 +194,39 @@ def test_legacy_adapter_maps_cancelled_terminal_result() -> None:
             LegacyExecutionManagerAdapter,
         )
 
-        adapter = LegacyExecutionManagerAdapter(manager, context, loop)  # type: ignore[arg-type]
+        adapter = LegacyExecutionManagerAdapter(  # type: ignore[arg-type]
+            manager,
+            context,
+            loop,
+            tmp_path / "bundle",
+        )
         assert adapter.status == "cancelled"
     finally:
         loop.close()
+
+
+def test_distributed_plan_jobs_decode_every_execution_status_strictly() -> None:
+    jobs = _plan_jobs(
+        _distributed_plan(
+            "cached",
+            "skipped",
+            "prior_selection_miss",
+            "unexecuted",
+            "pending_upstream",
+        )
+    )
+
+    assert [jobs[f"node-{index}"].state for index in range(5)] == [
+        "cached",
+        "skipped",
+        "waiting",
+        "waiting",
+        "waiting",
+    ]
+    malformed = _distributed_plan("cached")
+    malformed["nodes"][0]["status"] = malformed["nodes"][0].pop("execution_status")
+    with pytest.raises(ValueError, match="Invalid DistributedNodePlan payload"):
+        _plan_jobs(malformed)
 
 
 def test_web_uploads_are_confined_to_managed_datasets(tmp_path: Path) -> None:

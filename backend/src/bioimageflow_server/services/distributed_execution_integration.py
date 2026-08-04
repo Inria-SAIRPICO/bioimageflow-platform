@@ -5,17 +5,22 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping, cast
 from uuid import uuid4
 
 from bioimageflow_server.models.execution_preflight import (
     ApplyPreparedExecutionRequest,
     ExecutionPreflightRequest,
-    ResultDownloadRequest,
 )
 from bioimageflow_server.models.execution import ExecutionContext
 from bioimageflow_server.models.execution_profiles import DistributedExecutionProfile
-from bioimageflow_server.models.execution_runtime import ExecutionSnapshot, JobSnapshot
+from bioimageflow_server.models.execution_runtime import (
+    ExecutionBackend,
+    ExecutionSnapshot,
+    JobSnapshot,
+    JobState,
+    RunState,
+)
 from bioimageflow_server.services.execution_preflight import DistributedPreflightService
 from bioimageflow_server.services.execution_preflight import PreparedRunAcceptance
 from bioimageflow_server.services.execution import ExecutionManager
@@ -27,6 +32,7 @@ from bioimageflow_server.services.execution_runtime import (
     AttachedRunAdapter,
     ExecutionCoordinator,
     SubmittedRunAdapter,
+    _archive_bundle,
 )
 from bioimageflow_server.services.graph_builder import build_workflow
 from bioimageflow_server.services.tool_registry import ToolRegistryService
@@ -266,28 +272,27 @@ class AuthorizedUploadResolver:
 
 
 def _plan_jobs(plan: Mapping[str, Any]) -> dict[str, JobSnapshot]:
+    import bioimageflow
+
+    decoded = bioimageflow.DistributedExecutionPlan.from_dict(dict(plan))
     jobs: dict[str, JobSnapshot] = {}
-    raw_nodes = plan.get("nodes", [])
-    if not isinstance(raw_nodes, list):
-        return jobs
-    for raw in raw_nodes:
-        if not isinstance(raw, Mapping):
-            continue
-        path = raw.get("scoped_node_path")
-        if not isinstance(path, str) or not path:
-            continue
-        jobs[path] = JobSnapshot(
-            scoped_node_path=path,
-            state="cached" if raw.get("status") == "cached" else "waiting",
-            executor_label=raw.get("selected_executor")
-            if isinstance(raw.get("selected_executor"), str)
-            else None,
-            route_reason=raw.get("route_reason")
-            if isinstance(raw.get("route_reason"), str)
-            else None,
-            effective_resources=raw.get("effective_resources")
-            if isinstance(raw.get("effective_resources"), dict)
-            else None,
+    for node in decoded.nodes:
+        state = cast(
+            JobState,
+            {
+                "cached": "cached",
+                "skipped": "skipped",
+                "prior_selection_miss": "waiting",
+                "unexecuted": "waiting",
+                "pending_upstream": "waiting",
+            }[node.execution_status],
+        )
+        jobs[node.scoped_node_path] = JobSnapshot(
+            scoped_node_path=node.scoped_node_path,
+            state=state,
+            executor_label=node.selected_executor,
+            route_reason=node.route_reason,
+            effective_resources=node.resources.to_dict(),
         )
     return jobs
 
@@ -308,9 +313,11 @@ class PlatformPreparedRunRegistrar:
         self,
         coordinator: ExecutionCoordinator,
         profiles: PlatformExecutionProfileResolver,
+        managed_result_root: Path,
     ) -> None:
         self._coordinator = coordinator
         self._profiles = profiles
+        self._managed_result_root = managed_result_root
 
     async def register_local(
         self,
@@ -321,12 +328,15 @@ class PlatformPreparedRunRegistrar:
         workflow = getattr(manager, "_workflow", None)
         engine_type = getattr(workflow, "engine_type", "direct")
         backend = "wetlands" if engine_type == "wetlands" else "direct"
-        command = {
-            "normal": "run_selected" if context.requested_nodes else "run",
-            "retry": "retry",
-            "invalidate_failed": "invalidate_retry",
-            "recompute": "recompute",
-        }[context.mode]
+        command = cast(
+            Literal["run", "run_selected", "retry", "invalidate_retry", "recompute"],
+            {
+                "normal": "run_selected" if context.requested_nodes else "run",
+                "retry": "retry",
+                "invalidate_failed": "invalidate_retry",
+                "recompute": "recompute",
+            }[context.mode],
+        )
         snapshot = ExecutionSnapshot(
             execution_id=context.execution_id,
             workflow_id=context.workflow_id,
@@ -334,14 +344,20 @@ class PlatformPreparedRunRegistrar:
             command=command,
             requested_nodes=context.requested_nodes,
             retry_of_execution_id=context.retry_of_execution_id,
-            backend=backend,
+            backend=cast(ExecutionBackend, backend),
             target_id="local",
             target_snapshot={"name": "Local", "mode": "local"},
             state="running",
+            reconnect={"result_bundle": str(self._managed_result_root / context.execution_id)},
         )
         return await self._coordinator.register(
             snapshot,
-            LegacyExecutionManagerAdapter(manager, context, loop),
+            LegacyExecutionManagerAdapter(
+                manager,
+                context,
+                loop,
+                self._managed_result_root / context.execution_id,
+            ),
         )
 
     async def register_prepared_run(
@@ -366,12 +382,13 @@ class PlatformPreparedRunRegistrar:
             draft_revision=request.draft_revision,
             command="run_selected" if request.requested_nodes else "run",
             requested_nodes=request.requested_nodes,
-            backend=profile.mode,
+            backend=cast(ExecutionBackend, profile.mode),
             target_id=profile.id,
             profile_id=profile.id,
             profile_revision=profile.revision,
             target_snapshot=_target_snapshot(profile),
-            state=str(getattr(handle, "status")),
+            state=cast(RunState, str(getattr(handle, "status"))),
+            jobs=_plan_jobs(accepted.distributed_plan),
             reconnect={"storage_path": storage_path, "run_id": run_id},
         )
         return await self._coordinator.register(snapshot, SubmittedRunAdapter(handle))
@@ -386,13 +403,11 @@ class PlatformPreparedRunRegistrar:
         run_id = f"run_{uuid4().hex}"
         context = bioimageflow.WorkflowExecutionContext(run_id=run_id)
         profile = prepared.profile
+        managed_destination = self._managed_result_root / run_id
 
         def compute(progress: Callable[[Any], None]) -> Any:
             prepared.workflow.on_progress = progress
-            targets = tuple(
-                prepared.workflow.nodes[node]
-                for node in request.requested_nodes or []
-            )
+            targets = tuple(prepared.workflow.nodes[node] for node in request.requested_nodes or [])
             with bioimageflow.ParslEngine.from_config_ref(
                 profile.record.parsl_config.to_library(),
                 executor_bindings=profile.record.library_bindings(),
@@ -407,13 +422,15 @@ class PlatformPreparedRunRegistrar:
                     run_context=context,
                 )
 
-        def result_unavailable(_value: Any, _destination: Path) -> Path:
-            raise RuntimeError("Attached result bundle export is unavailable")
+        def export_result(value: Any, destination: Path) -> Path:
+            context.export_result(value, destination=destination)
+            return destination
 
         adapter = AttachedRunAdapter(
             compute=compute,
             cancel=context.request_cancel,
-            result_exporter=result_unavailable,
+            result_exporter=export_result,
+            managed_destination=managed_destination,
         )
         snapshot = ExecutionSnapshot(
             execution_id=run_id,
@@ -428,6 +445,7 @@ class PlatformPreparedRunRegistrar:
             target_snapshot=_target_snapshot(profile),
             state="starting",
             jobs=_plan_jobs(prepared.distributed_plan),
+            reconnect={"result_bundle": str(managed_destination)},
         )
         return await self._coordinator.register(snapshot, adapter)
 
@@ -436,7 +454,7 @@ class ExecutionDownloadDestinationResolver:
     def __init__(self, root: Path) -> None:
         self._root = root
 
-    def resolve(self, _request: ResultDownloadRequest, execution_id: str) -> Path:
+    def resolve(self, execution_id: str) -> Path:
         self._root.mkdir(parents=True, exist_ok=True)
         return self._root / execution_id
 
@@ -449,10 +467,12 @@ class LegacyExecutionManagerAdapter:
         manager: ExecutionManager,
         context: ExecutionContext,
         loop: asyncio.AbstractEventLoop,
+        managed_destination: Path,
     ) -> None:
         self._manager = manager
         self._context = context
         self._loop = loop
+        self._managed_destination = managed_destination
 
     @property
     def status(self) -> str:
@@ -483,7 +503,21 @@ class LegacyExecutionManagerAdapter:
         return ""
 
     def download_result(self, destination: Path) -> Path:
-        raise RuntimeError("Local execution results use the workflow result export")
+        if self._managed_destination.is_dir():
+            if destination != self._managed_destination:
+                raise RuntimeError("Managed result destination does not match this execution")
+            return _archive_bundle(destination)
+        return self._manager.export_retained_result(self._context, destination)
+
+    export_result = download_result
+
+    @property
+    def result_export(self):
+        if self._managed_destination.is_dir():
+            from bioimageflow_server.models.execution_runtime import ResultExportSnapshot
+
+            return ResultExportSnapshot(state="available")
+        return self._manager.retained_result_export(self._context)
 
 
 def create_preflight_service(

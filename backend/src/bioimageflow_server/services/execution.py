@@ -34,6 +34,7 @@ from bioimageflow_server.models.execution import (
     ExecutionStatus,
     ProgressInfo,
 )
+from bioimageflow_server.models.execution_runtime import ResultExportSnapshot
 from bioimageflow_server.models.graph import GraphState
 from bioimageflow_server.models.settings import Settings
 from bioimageflow_server.models.validation import GraphValidationError, NodeStatus
@@ -209,6 +210,7 @@ class ExecutionManager:
         settings_provider: Callable[[], Settings] | None = None,
         environment_manager_provider: Callable[[], Any | None] | None = None,
         retained_execution_started: Callable[[ExecutionContext], Awaitable[None]] | None = None,
+        managed_result_root: Path | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.tool_registry = tool_registry
@@ -219,6 +221,7 @@ class ExecutionManager:
         self._settings_provider = settings_provider
         self._environment_manager_provider = environment_manager_provider
         self._retained_execution_started = retained_execution_started
+        self._managed_result_root = managed_result_root
         self.storage_path = storage_path
 
         self.state: Literal["running", "idle"] = "idle"
@@ -239,6 +242,8 @@ class ExecutionManager:
         self._retained_progress_events: list[dict[str, Any]] = []
         self._retained_progress_sequence = 0
         self._retained_progress_lock = threading.Lock()
+        self._workflow_run_contexts: dict[str, Any] = {}
+        self._retained_result_exports: dict[str, ResultExportSnapshot] = {}
 
     # ---- Public properties -------------------------------------------------
 
@@ -344,7 +349,7 @@ class ExecutionManager:
                 retry_of_execution_id=retry_of_execution_id,
             )
             context = ExecutionContext(
-                execution_id=str(uuid4()),
+                execution_id=f"run_{uuid4().hex}",
                 workflow_id=workflow_id,
                 draft_revision=draft_revision,
                 mode=mode,
@@ -381,11 +386,7 @@ class ExecutionManager:
             raise ExecutionRetryError(
                 "Retry must reference the latest failed execution for this workflow"
             )
-        return (
-            list(previous.requested_nodes)
-            if previous.requested_nodes is not None
-            else None
-        )
+        return list(previous.requested_nodes) if previous.requested_nodes is not None else None
 
     async def _start_reserved(
         self,
@@ -454,6 +455,11 @@ class ExecutionManager:
             targets = tuple(node_map[nid] for nid in nodes if nid in node_map)
 
         dev_mode = bool(live_settings.dev_mode)
+        import bioimageflow
+
+        workflow_run_context = bioimageflow.WorkflowExecutionContext(run_id=context.execution_id)
+        self._workflow_run_contexts[context.execution_id] = workflow_run_context
+        self._retained_result_exports[context.execution_id] = ResultExportSnapshot()
         target_label = ", ".join(nodes) if nodes else "workflow terminals"
         logger.info("Starting workflow execution for %s", target_label)
         self.event_bus.publish_log(
@@ -471,12 +477,20 @@ class ExecutionManager:
                 self._attach_environment_status_hook(engine)
                 try:
                     if engine is None or not use_explicit_engine:
-                        return workflow.compute(*targets, dev_mode=dev_mode)
-                    return workflow.compute(
-                        *targets,
-                        dev_mode=dev_mode,
-                        engine=engine,
-                    )
+                        value = workflow.compute(
+                            *targets,
+                            dev_mode=dev_mode,
+                            run_context=workflow_run_context,
+                        )
+                    else:
+                        value = workflow.compute(
+                            *targets,
+                            dev_mode=dev_mode,
+                            engine=engine,
+                            run_context=workflow_run_context,
+                        )
+                    self._export_managed_result(context, value)
+                    return value
                 finally:
                     self._materialize_latest_outputs(
                         workflow,
@@ -497,8 +511,55 @@ class ExecutionManager:
             try:
                 await self._retained_execution_started(context)
             except Exception:
-                logger.exception("Could not retain accepted local execution %s", context.execution_id)
+                logger.exception(
+                    "Could not retain accepted local execution %s", context.execution_id
+                )
         return context
+
+    def _export_managed_result(self, context: ExecutionContext, value: Any) -> None:
+        if self._managed_result_root is None:
+            self._retained_result_exports[context.execution_id] = ResultExportSnapshot(
+                state="unavailable",
+                error_code="workflow-result-export-error",
+                detail="Managed result storage is not configured.",
+            )
+            self._workflow_run_contexts.pop(context.execution_id, None)
+            return
+        destination = self._managed_result_root / context.execution_id
+        run_context = self._workflow_run_contexts[context.execution_id]
+        try:
+            run_context.export_result(value, destination=destination)
+        except Exception as exc:
+            code = getattr(exc, "code", "workflow-result-export-error")
+            self._retained_result_exports[context.execution_id] = ResultExportSnapshot(
+                state="unavailable",
+                error_code=code if isinstance(code, str) else "workflow-result-export-error",
+                detail=str(exc),
+            )
+        else:
+            self._retained_result_exports[context.execution_id] = ResultExportSnapshot(
+                state="available"
+            )
+        finally:
+            self._workflow_run_contexts.pop(context.execution_id, None)
+
+    def retained_result_export(self, context: ExecutionContext) -> ResultExportSnapshot:
+        return self._retained_result_exports.get(
+            context.execution_id,
+            ResultExportSnapshot(
+                state="unavailable",
+                error_code="workflow-run-result-unavailable",
+                detail="The retained attached result is unavailable.",
+            ),
+        )
+
+    def export_retained_result(self, context: ExecutionContext, destination: Path) -> Path:
+        export = self.retained_result_export(context)
+        if export.state != "available" or not destination.is_dir():
+            raise RuntimeError(export.detail or "The retained attached result is unavailable.")
+        from bioimageflow_server.services.execution_runtime import _archive_bundle
+
+        return _archive_bundle(destination)
 
     def retained_progress(self, *, after_sequence: int = 0) -> list[dict[str, Any]]:
         """Return the engine-neutral public progress retained for the current run."""
