@@ -1055,7 +1055,7 @@ const menuItems = computed<MenuItem[]>(() => [
       {
         label: 'Recompute Workflow…',
         icon: 'pi pi-sync',
-        disabled: runDisabledReason() !== null,
+        disabled: !runButtonRef.value?.recomputeAvailable,
         command: () => runButtonRef.value?.onRecompute(),
       },
       { separator: true },

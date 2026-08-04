@@ -24,6 +24,10 @@ const retryActions = {
 describe('ExecutionPanel', () => {
   beforeEach(() => {
     vi.mocked(api.post).mockReset()
+    vi.mocked(api.get).mockReset()
+    vi.mocked(api.get).mockResolvedValue({
+      data: { items: [], total: 0, offset: 0, limit: 50 },
+    })
   })
 
   it('renders hierarchical jobs and structured diagnostics from a normalized snapshot', async () => {
@@ -34,7 +38,8 @@ describe('ExecutionPanel', () => {
       id: 'run-1', revision: 1, workflow_id: 'workflow', workflow_name: 'Workflow',
       target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'submitted_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
-      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
+      command: 'recompute', retry_of_execution_id: 'run-parent',
+      child_execution_ids: [], actions: retryActions,
       jobs: [{
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
         parent_path: 'preprocessing', state: 'failed', executor_label: 'gpu',
@@ -52,7 +57,8 @@ describe('ExecutionPanel', () => {
       id: 'run-1', revision: 2, workflow_id: 'workflow', workflow_name: 'Workflow',
       target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'submitted_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
-      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
+      command: 'recompute', retry_of_execution_id: 'run-parent',
+      child_execution_ids: [], actions: retryActions,
       jobs: [{
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
         state: 'failed', executor_label: 'gpu',
@@ -65,6 +71,9 @@ describe('ExecutionPanel', () => {
     expect(wrapper.text()).toContain('GPU cluster')
     expect(wrapper.text()).toContain('Segment')
     expect(wrapper.text()).toContain('16 GiB')
+    expect(wrapper.get('[data-testid="execution-history-provenance"]').text()).toContain(
+      'Recompute of run-parent',
+    )
     expect(wrapper.get('[data-testid="execution-cancel"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="execution-retry"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="execution-results"]').attributes('disabled')).toBeDefined()
@@ -132,7 +141,7 @@ describe('ExecutionPanel', () => {
     expect(registry.selectedRunId).toBe('run-child')
   })
 
-  it('refreshes a stale recompute plan with the exact previous request', async () => {
+  it('requires an explicit new preview when the confirmed plan is stale', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const registry = useExecutionRegistryStore()
@@ -157,7 +166,10 @@ describe('ExecutionPanel', () => {
     vi.mocked(api.post)
       .mockResolvedValueOnce({ data: plan('sha256:old') })
       .mockRejectedValueOnce(Object.assign(new Error('Conflict'), {
-        response: { status: 409 },
+        response: {
+          status: 409,
+          data: { error: 'retry-plan-integrity-error', detail: 'Plan is stale' },
+        },
       }))
       .mockResolvedValueOnce({ data: plan('sha256:refreshed') })
     const wrapper = mount(ExecutionPanel, {
@@ -177,13 +189,118 @@ describe('ExecutionPanel', () => {
     const recompute = { node_paths: ['analysis/segment'], cascade: true }
     expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({ recompute })
     expect(vi.mocked(api.post).mock.calls[1]?.[1]).toEqual({ plan_digest: 'sha256:old' })
+    expect(vi.mocked(api.post)).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="retry-plan-error"]').text()).toContain(
+      'Select Preview',
+    )
+    expect(wrapper.find('[data-testid="preview-execution-retry"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="preview-execution-retry"]').trigger('click')
+    await flushPromises()
     expect(vi.mocked(api.post).mock.calls[2]?.[1]).toEqual({ recompute })
     expect(wrapper.get('[data-testid="execution-retry-dialog"]').text()).toContain(
       'sha256:refreshed',
     )
-    expect(wrapper.get('[data-testid="retry-plan-error"]').text()).toContain(
-      'Review the refreshed plan',
-    )
     expect(registry.selectedRunId).toBe('run-parent')
+  })
+
+  it('observes the exact confirmed child after an uncertain submission', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const registry = useExecutionRegistryStore()
+    const parent = {
+      id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
+      target_label: 'GPU cluster', target_mode: 'submitted_remote' as const,
+      state: 'failed' as const, created_at: '2026-08-03T10:00:00Z', command: 'workflow',
+      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions, jobs: [],
+    }
+    registry.applySnapshot(parent)
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: {
+        plan_digest: 'sha256:uncertain', parent_execution_id: 'run-parent',
+        child_execution_id: 'run-child', mode: 'retry',
+        target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' },
+        recompute: null, invalidations: [], conflicting_run_ids: [], confirmable: true,
+      } })
+      .mockRejectedValueOnce(Object.assign(new Error('Submission uncertain'), {
+        response: {
+          status: 409,
+          data: {
+            error: 'psij-submission-uncertain',
+            detail: 'Scheduler acknowledgement was lost',
+            details: { retry_run_id: 'run-child' },
+          },
+        },
+      }))
+    const wrapper = mount(ExecutionPanel, {
+      global: primeVueTestGlobal({ pinia, dialog: true }),
+    })
+    await flushPromises()
+    registry.applySnapshot(parent)
+    await wrapper.vm.$nextTick()
+    vi.mocked(api.get).mockResolvedValueOnce({ data: {
+      revision: 1, execution_id: 'run-child', workflow_id: 'workflow',
+      backend: 'submitted_remote', target_id: 'cluster', target_snapshot: { name: 'GPU cluster' },
+      state: 'starting', command: 'retry', retry_of_execution_id: 'run-parent',
+      child_execution_ids: [], actions: {
+        cancel: { available: true, reason: null },
+        retry: { available: false, reason: 'not terminal' },
+        recompute: { available: false, reason: 'not terminal' },
+        download_results: { available: false, reason: 'not succeeded' },
+      }, jobs: {}, created_at: '2026-08-03T10:01:00Z',
+    } })
+
+    await wrapper.get('[data-testid="execution-retry"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="confirm-execution-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(registry.selectedRunId).toBe('run-child')
+    const getCalls = vi.mocked(api.get).mock.calls
+    expect(getCalls[getCalls.length - 1]?.[0]).toBe('/api/v1/executions/run-child')
+    expect(wrapper.find('[data-testid="execution-retry-dialog"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="execution-history-provenance"]').text()).toContain(
+      'Retry of run-parent',
+    )
+  })
+
+  it('does not replan an unrelated conflict response', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const registry = useExecutionRegistryStore()
+    const parent = {
+      id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
+      target_mode: 'submitted_remote' as const, state: 'failed' as const,
+      created_at: '2026-08-03T10:00:00Z', retry_of_execution_id: null,
+      child_execution_ids: [], actions: retryActions, jobs: [],
+    }
+    registry.applySnapshot(parent)
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: {
+        plan_digest: 'sha256:confirmed', parent_execution_id: 'run-parent',
+        child_execution_id: 'run-child', mode: 'retry',
+        target: { id: 'cluster', label: 'Cluster', mode: 'submitted_remote' },
+        recompute: null, invalidations: [], conflicting_run_ids: [], confirmable: true,
+      } })
+      .mockRejectedValueOnce(Object.assign(new Error('Conflict'), {
+        response: {
+          status: 409,
+          data: { error: 'workflow-result-integrity-error', detail: 'Unrelated conflict' },
+        },
+      }))
+    const wrapper = mount(ExecutionPanel, {
+      global: primeVueTestGlobal({ pinia, dialog: true }),
+    })
+    await flushPromises()
+    registry.applySnapshot(parent)
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[data-testid="execution-retry"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="confirm-execution-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(vi.mocked(api.post)).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="retry-plan-error"]').text()).toContain('Unrelated conflict')
+    expect(wrapper.find('[data-testid="confirm-execution-retry"]').exists()).toBe(true)
   })
 })

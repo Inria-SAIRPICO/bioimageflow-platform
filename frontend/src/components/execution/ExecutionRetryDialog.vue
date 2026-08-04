@@ -5,6 +5,7 @@ import Dialog from 'primevue/dialog'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
 import type {
+  ExecutionActionAvailability,
   ExecutionJobSnapshot,
   ExecutionRetryPlan,
   RecomputeRequest,
@@ -15,6 +16,8 @@ const props = defineProps<{
   jobs: ExecutionJobSnapshot[]
   initialMode: 'retry' | 'recompute'
   initialNodePath?: string | null
+  retryAction: ExecutionActionAvailability
+  recomputeAction: ExecutionActionAvailability
   plan: ExecutionRetryPlan | null
   planning?: boolean
   starting?: boolean
@@ -36,7 +39,16 @@ watch(
   () => props.visible,
   (visible) => {
     if (!visible) return
-    mode.value = props.initialMode
+    const desiredAvailable = props.initialMode === 'retry'
+      ? props.retryAction.available
+      : props.recomputeAction.available
+    mode.value = desiredAvailable
+      ? props.initialMode
+      : props.retryAction.available
+        ? 'retry'
+        : props.recomputeAction.available
+          ? 'recompute'
+          : props.initialMode
     selectedNodePaths.value = props.initialNodePath ? [props.initialNodePath] : []
     cascade.value = true
     editing.value = props.initialMode === 'recompute'
@@ -51,11 +63,47 @@ watch(
   },
 )
 
+watch(
+  [() => props.retryAction.available, () => props.recomputeAction.available],
+  () => {
+    if (!props.visible || selectedAction.value.available) return
+    if (props.retryAction.available) mode.value = 'retry'
+    else if (props.recomputeAction.available) mode.value = 'recompute'
+  },
+)
+
 const sortedJobs = computed(() => [...props.jobs].sort((left, right) => (
   left.scoped_node_path.localeCompare(right.scoped_node_path)
 )))
+const modeOptions = computed(() => [
+  {
+    label: 'Retry cached work',
+    value: 'retry' as const,
+    disabled: !props.retryAction.available,
+  },
+  {
+    label: 'Recompute nodes',
+    value: 'recompute' as const,
+    disabled: !props.recomputeAction.available,
+  },
+])
+const selectedAction = computed(() => (
+  mode.value === 'retry' ? props.retryAction : props.recomputeAction
+))
+const planAction = computed(() => (
+  props.plan?.mode === 'recompute' ? props.recomputeAction : props.retryAction
+))
+const unavailableModeReasons = computed(() => modeOptions.value
+  .filter(option => option.disabled)
+  .map(option => ({
+    label: option.label,
+    reason: option.value === 'retry'
+      ? props.retryAction.reason
+      : props.recomputeAction.reason,
+  })))
 const canPreview = computed(() => (
-  mode.value === 'retry' || selectedNodePaths.value.length > 0
+  selectedAction.value.available
+  && (mode.value === 'retry' || selectedNodePaths.value.length > 0)
 ))
 const showEditor = computed(() => editing.value || (!props.plan && !props.planning))
 
@@ -96,15 +144,22 @@ function preview(): void {
       <p>Choose an ordinary retry or explicitly invalidate selected node results before retrying.</p>
       <SelectButton
         v-model="mode"
-        :options="[
-          { label: 'Retry cached work', value: 'retry' },
-          { label: 'Recompute nodes', value: 'recompute' },
-        ]"
+        :options="modeOptions"
         option-label="label"
         option-value="value"
+        option-disabled="disabled"
         :allow-empty="false"
         data-testid="retry-mode"
       />
+      <ul
+        v-if="unavailableModeReasons.length > 0"
+        class="mode-unavailable"
+        data-testid="retry-mode-unavailable"
+      >
+        <li v-for="item in unavailableModeReasons" :key="item.label">
+          {{ item.label }}: {{ item.reason ?? 'Unavailable for this retained execution.' }}
+        </li>
+      </ul>
 
       <section v-if="mode === 'recompute'" class="recompute-options">
         <strong>Scoped nodes</strong>
@@ -159,7 +214,15 @@ function preview(): void {
       </section>
 
       <div
-        v-if="plan.conflicting_run_ids.length > 0"
+        v-if="!planAction.available"
+        class="retry-alert"
+        role="alert"
+        data-testid="retry-action-unavailable"
+      >
+        {{ planAction.reason ?? 'This operation is no longer available for the retained execution.' }}
+      </div>
+      <div
+        v-else-if="plan.conflicting_run_ids.length > 0"
         class="retry-alert"
         role="alert"
         data-testid="retry-conflicts"
@@ -193,7 +256,7 @@ function preview(): void {
         label="Confirm and start"
         icon="pi pi-play"
         :loading="starting"
-        :disabled="!plan.confirmable || plan.conflicting_run_ids.length > 0"
+        :disabled="!planAction.available || !plan.confirmable || plan.conflicting_run_ids.length > 0"
         data-testid="confirm-execution-retry"
         @click="emit('confirm', plan.plan_digest)"
       />
@@ -205,6 +268,7 @@ function preview(): void {
 .retry-alert { margin-bottom: 0.75rem; padding: 0.65rem; border-radius: 6px; color: var(--p-red-600); background: var(--p-red-50); }
 .immutable-warning { margin-bottom: 0.75rem; padding: 0.65rem; border-radius: 6px; color: var(--p-orange-700); background: var(--p-orange-50); }
 .retry-loading { display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 8rem; }
+.mode-unavailable { margin: 0; padding-left: 1.25rem; color: var(--p-text-muted-color); }
 .recompute-options { margin-top: 1rem; display: grid; gap: 0.65rem; }
 .node-choices { max-height: 13rem; overflow: auto; border: 1px solid var(--p-content-border-color); border-radius: 6px; }
 .node-choices label { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--p-content-border-color); }

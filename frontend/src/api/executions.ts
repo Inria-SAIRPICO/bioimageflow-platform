@@ -544,18 +544,41 @@ export async function downloadExecutionResults(id: string): Promise<Blob> {
   return response.data
 }
 
+interface ExecutionErrorPayload {
+  error?: unknown
+  detail?: unknown
+  details?: unknown
+}
+
+function executionErrorPayload(cause: unknown): ExecutionErrorPayload | null {
+  if (!(cause instanceof Error)) return null
+  const data = (cause as Error & { response?: { data?: unknown } }).response?.data
+  if (typeof data !== 'object' || data === null || data instanceof Blob) return null
+  return data as ExecutionErrorPayload
+}
+
+export function executionErrorCode(cause: unknown): string | null {
+  const code = executionErrorPayload(cause)?.error
+  return typeof code === 'string' && code.length > 0 ? code : null
+}
+
+export function executionErrorDetails(cause: unknown): Record<string, unknown> {
+  const details = executionErrorPayload(cause)?.details
+  return typeof details === 'object' && details !== null
+    ? details as Record<string, unknown>
+    : {}
+}
+
 export function executionErrorMessage(cause: unknown, fallback: string): string {
   if (cause instanceof Error && cause.message) {
-    const response = (cause as Error & {
-      response?: { data?: { detail?: unknown; error?: unknown } }
-    }).response
-    const detail = response?.data?.detail
+    const payload = executionErrorPayload(cause)
+    const detail = payload?.detail
     if (typeof detail === 'string' && detail) return detail
     if (typeof detail === 'object' && detail !== null) {
       const message = (detail as { message?: unknown }).message
       if (typeof message === 'string' && message) return message
     }
-    const code = response?.data?.error
+    const code = payload?.error
     if (typeof code === 'string' && code) return code.replace(/_/g, ' ')
     return cause.message
   }

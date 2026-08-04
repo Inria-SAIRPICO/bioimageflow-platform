@@ -110,6 +110,11 @@ const retryAvailable = computed(() => (
 const invalidateFailedAvailable = computed(() => (
   retryAvailable.value && exec.canInvalidateFailed
 ))
+const recomputeAvailable = computed(() => (
+  !isNestedCanvasActive.value
+  && activeWorkflowId.value !== null
+  && (selectedTargetIsLocal.value ? !runDisabled.value : true)
+))
 const runMenuItems = computed<MenuItem[]>(() => [
   {
     label: 'Run Selected',
@@ -137,8 +142,8 @@ const runMenuItems = computed<MenuItem[]>(() => [
   {
     label: 'Recompute Workflow…',
     icon: 'pi pi-sync',
-    disabled: runDisabled.value || !selectedTargetIsLocal.value,
-    command: () => requestAdvancedCommand({ kind: 'recompute' }),
+    disabled: !recomputeAvailable.value,
+    command: () => onRecompute(),
   },
 ])
 
@@ -502,6 +507,25 @@ async function onStop() {
   await exec.stop()
 }
 
+function onRecompute(): void {
+  if (!recomputeAvailable.value) return
+  if (selectedTargetIsLocal.value) {
+    requestAdvancedCommand({ kind: 'recompute' })
+    return
+  }
+  const workflowId = activeWorkflowId.value
+  const retainedRun = executionRegistry.selectedRun?.workflow_id === workflowId
+    ? executionRegistry.selectedRun
+    : executionRegistry.runs.find(run => run.workflow_id === workflowId)
+  if (retainedRun) executionRegistry.selectedRunId = retainedRun.id
+  ui.openExecutionPanel()
+  emit('toast', {
+    severity: 'warn',
+    summary: 'Recompute from a retained execution',
+    detail: 'Choose a completed execution and a job in the Execution panel. Distributed recomputation uses that run’s immutable workflow and inputs; edits in the current draft require a new execution.',
+  })
+}
+
 defineExpose({
   onRun,
   onRunSelected,
@@ -511,9 +535,7 @@ defineExpose({
       requestAdvancedCommand({ kind: 'invalidate_failed', retryOf: exec.executionId })
     }
   },
-  onRecompute: () => {
-    if (selectedTargetIsLocal.value) requestAdvancedCommand({ kind: 'recompute' })
-  },
+  onRecompute,
   onStop,
   confirmOpen,
   pendingOutOfDateNodes,
@@ -523,6 +545,7 @@ defineExpose({
   runSelectedDisabled,
   retryAvailable,
   invalidateFailedAvailable,
+  recomputeAvailable,
 })
 </script>
 

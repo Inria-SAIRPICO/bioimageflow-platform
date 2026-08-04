@@ -7,6 +7,8 @@ import Tag from 'primevue/tag'
 import ExecutionRetryDialog from '@/components/execution/ExecutionRetryDialog.vue'
 import {
   downloadExecutionResults,
+  executionErrorCode,
+  executionErrorDetails,
   executionErrorMessage,
   executionResultErrorMessage,
   type ExecutionActionAvailability,
@@ -30,9 +32,17 @@ const retryPlan = ref<ExecutionRetryPlan | null>(null)
 const retryPlanning = ref(false)
 const retryStarting = ref(false)
 const retryError = ref<string | null>(null)
-const lastRecomputeRequest = ref<RecomputeRequest | null>(null)
 const resultDownloadingId = ref<string | null>(null)
 const resultError = ref<string | null>(null)
+
+const unavailableAction: ExecutionActionAvailability = {
+  available: false,
+  reason: 'The retained execution is unavailable.',
+}
+
+const retryParentRun = computed(() => (
+  registry.runs.find(run => run.id === retryParentId.value) ?? null
+))
 
 const selectedJob = computed(() => (
   registry.selectedRun?.jobs.find(job => job.id === selectedJobId.value) ?? null
@@ -167,7 +177,6 @@ async function previewRetry(
   if (!parentId) return
   retryPlanning.value = true
   if (!preserveError) retryError.value = null
-  lastRecomputeRequest.value = recompute
   try {
     retryPlan.value = await registry.planRetry(parentId, recompute)
   } catch (cause) {
@@ -178,10 +187,17 @@ async function previewRetry(
   }
 }
 
-function responseStatus(cause: unknown): number | null {
-  if (!(cause instanceof Error)) return null
-  return (cause as Error & { response?: { status?: number } }).response?.status ?? null
-}
+const UNCERTAIN_RETRY_CODES = new Set([
+  'psij-submission-uncertain',
+  'remote-retry-submission-uncertain',
+])
+
+const REPLAN_REQUIRED_CODES = new Set([
+  'retry-plan-not-found',
+  'retry-plan-integrity-error',
+  'remote-retry-conflict',
+  'workflow-run-retry-error',
+])
 
 async function confirmRetry(planDigest: string): Promise<void> {
   const parentId = retryParentId.value
@@ -193,15 +209,40 @@ async function confirmRetry(planDigest: string): Promise<void> {
     retryDialogVisible.value = false
     retryPlan.value = null
   } catch (cause) {
-    if (responseStatus(cause) === 409) {
-      retryError.value = 'The execution or cache changed. Review the refreshed plan before confirming again.'
-      await previewRetry(lastRecomputeRequest.value, true)
-    } else {
-      retryError.value = executionErrorMessage(cause, 'The retry could not be started.')
+    const code = executionErrorCode(cause)
+    if (code && UNCERTAIN_RETRY_CODES.has(code)) {
+      const retryRunId = executionErrorDetails(cause).retry_run_id
+      const plannedRunId = retryPlan.value?.child_execution_id
+      if (typeof retryRunId !== 'string' || retryRunId !== plannedRunId) {
+        retryError.value = 'The uncertain submission did not identify the confirmed child execution. Do not submit another retry.'
+        return
+      }
+      try {
+        await registry.selectExecution(retryRunId)
+        retryDialogVisible.value = false
+      } catch {
+        retryError.value = `Submission of ${retryRunId} is uncertain. Keep this confirmed plan and refresh that exact execution; do not submit another retry.`
+      }
+      return
     }
+    if (code && REPLAN_REQUIRED_CODES.has(code)) {
+      retryPlan.value = null
+      retryError.value = 'The retained execution or cache selection changed. Select Preview to create and review a new plan.'
+      return
+    }
+    retryError.value = executionErrorMessage(cause, 'The retry could not be started.')
   } finally {
     retryStarting.value = false
   }
+}
+
+function retryKind(command: string | null | undefined): 'Retry' | 'Recompute' {
+  return command === 'recompute' ? 'Recompute' : 'Retry'
+}
+
+function childKind(childId: string): string {
+  const child = registry.runs.find(run => run.id === childId)
+  return child ? retryKind(child.command) : 'Child'
 }
 
 function closeRetryDialog(): void {
@@ -243,7 +284,9 @@ function closeRetryDialog(): void {
           <span class="run-card__title">{{ run.workflow_name ?? run.workflow_id }}</span>
           <Tag :value="run.state" :severity="stateSeverity(run.state)" />
           <small>{{ run.target_label ?? run.target_id }} · {{ new Date(run.created_at).toLocaleString() }}</small>
-          <small v-if="run.retry_of_execution_id">Retry of {{ run.retry_of_execution_id }}</small>
+          <small v-if="run.retry_of_execution_id" data-testid="execution-history-provenance">
+            {{ retryKind(run.command) }} of {{ run.retry_of_execution_id }}
+          </small>
         </button>
         <Button
           v-if="registry.hasMoreRuns"
@@ -269,7 +312,7 @@ function closeRetryDialog(): void {
             <i class="pi pi-wifi" /> {{ registry.selectedRun.observation_error }}
           </span>
           <div v-if="registry.selectedRun.retry_of_execution_id" class="run-provenance">
-            Retry of
+            {{ retryKind(registry.selectedRun.command) }} of
             <button type="button" @click="registry.selectExecution(registry.selectedRun.retry_of_execution_id!)">
               {{ registry.selectedRun.retry_of_execution_id }}
             </button>
@@ -281,7 +324,7 @@ function closeRetryDialog(): void {
               :key="childId"
               type="button"
               @click="registry.selectExecution(childId)"
-            >{{ childId }}</button>
+            >{{ childKind(childId) }} {{ childId }}</button>
           </div>
           <div class="run-actions">
             <Button
@@ -384,9 +427,11 @@ function closeRetryDialog(): void {
     </div>
     <ExecutionRetryDialog
       :visible="retryDialogVisible"
-      :jobs="registry.selectedRun?.jobs ?? []"
+      :jobs="retryParentRun?.jobs ?? []"
       :initial-mode="retryInitialMode"
       :initial-node-path="retryInitialNodePath"
+      :retry-action="retryParentRun?.actions.retry ?? unavailableAction"
+      :recompute-action="retryParentRun?.actions.recompute ?? unavailableAction"
       :plan="retryPlan"
       :planning="retryPlanning"
       :starting="retryStarting"

@@ -27,6 +27,7 @@ vi.mock('@/composables/useCanvasPersistence', () => ({
 
 import RunButton from '../RunButton.vue'
 import { useExecutionStore } from '@/stores/execution'
+import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useUIStore } from '@/stores/ui'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useCanvasLifecycleStore } from '@/stores/canvasLifecycle'
@@ -853,5 +854,45 @@ describe('RunButton', () => {
       draftRevision: 1,
       mode: 'recompute',
     })
+  })
+
+  it('routes distributed recompute to the retained execution panel', async () => {
+    const { wrapper } = mountButton()
+    const ui = useUIStore()
+    const registry = useExecutionRegistryStore()
+    registry.targets = [{
+      id: 'cluster', label: 'Cluster', mode: 'submitted_remote', enabled: true,
+    }]
+    registry.selectedTargetId = 'cluster'
+    registry.applySnapshot({
+      id: 'run-retained', revision: 1, workflow_id: 'wf_a', target_id: 'cluster',
+      target_mode: 'submitted_remote', state: 'failed', command: 'workflow',
+      retry_of_execution_id: null, child_execution_ids: [],
+      created_at: '2026-08-03T10:00:00Z', jobs: [],
+      actions: {
+        cancel: { available: false, reason: 'Terminal' },
+        retry: { available: true, reason: null },
+        recompute: { available: true, reason: null },
+        download_results: { available: false, reason: 'Failed' },
+      },
+    })
+
+    ;(wrapper.vm as unknown as { onRecompute(): void }).onRecompute()
+    await nextTick()
+
+    expect(ui.panels.execution).toBe(true)
+    expect(registry.selectedRunId).toBe('run-retained')
+    const toastEvents = wrapper.emitted('toast') ?? []
+    const toastPayload = toastEvents[toastEvents.length - 1]?.[0] as {
+      severity: string
+      summary: string
+      detail: string
+    }
+    expect(toastPayload).toMatchObject({
+      severity: 'warn',
+      summary: 'Recompute from a retained execution',
+    })
+    expect(toastPayload.detail).toContain('immutable workflow')
+    expect(wrapper.find('[data-testid="advanced-run-confirm"]').exists()).toBe(false)
   })
 })

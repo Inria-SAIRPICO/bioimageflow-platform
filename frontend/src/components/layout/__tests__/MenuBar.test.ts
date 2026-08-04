@@ -78,6 +78,7 @@ import { useUIStore } from '@/stores/ui'
 import { useErrorStore } from '@/stores/errors'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useExecutionStore } from '@/stores/execution'
+import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import {
   canvasIdFromPanelId,
   canvasSessionRegistry,
@@ -2282,6 +2283,32 @@ describe('MenuBar', () => {
         (i: any) => i.label === 'Run Selected',
       )
       expect(runSelected.disabled).toBe(false)
+    })
+
+    it('routes distributed recompute to retained execution from the menu', async () => {
+      registerActiveRootWorkflow()
+      const registry = useExecutionRegistryStore()
+      registry.targets = [{
+        id: 'cluster', label: 'Cluster', mode: 'submitted_remote', enabled: true,
+      }]
+      registry.selectedTargetId = 'cluster'
+      const wrapper = mountMenuBar()
+      await flushPromises()
+      const vm = wrapper.vm as any
+      const execution = vm.menuItems.find((item: any) => item.label === 'Execution')
+      const recompute = execution.items.find(
+        (item: any) => item.label === 'Recompute Workflow…',
+      )
+
+      expect(recompute.disabled).toBe(false)
+      recompute.command()
+
+      expect(useUIStore().panels.execution).toBe(true)
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'warn',
+        summary: 'Recompute from a retained execution',
+        detail: expect.stringContaining('immutable workflow'),
+      }))
     })
 
     it('disables Run commands for an active nested canvas', () => {
