@@ -4,7 +4,17 @@ import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import SelectButton from 'primevue/selectbutton'
 import Tag from 'primevue/tag'
-import { downloadExecutionResults, type ExecutionJobSnapshot } from '@/api/executions'
+import ExecutionRetryDialog from '@/components/execution/ExecutionRetryDialog.vue'
+import {
+  downloadExecutionResults,
+  executionErrorMessage,
+  executionResultErrorMessage,
+  type ExecutionActionAvailability,
+  type ExecutionActions,
+  type ExecutionJobSnapshot,
+  type ExecutionRetryPlan,
+  type RecomputeRequest,
+} from '@/api/executions'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 import { useUIStore } from '@/stores/ui'
 
@@ -12,12 +22,26 @@ const registry = useExecutionRegistryStore()
 const ui = useUIStore()
 const scope = ref<'workflow' | 'workspace'>('workflow')
 const selectedJobId = ref<string | null>(null)
+const retryDialogVisible = ref(false)
+const retryInitialMode = ref<'retry' | 'recompute'>('retry')
+const retryInitialNodePath = ref<string | null>(null)
+const retryParentId = ref<string | null>(null)
+const retryPlan = ref<ExecutionRetryPlan | null>(null)
+const retryPlanning = ref(false)
+const retryStarting = ref(false)
+const retryError = ref<string | null>(null)
+const lastRecomputeRequest = ref<RecomputeRequest | null>(null)
+const resultDownloadingId = ref<string | null>(null)
+const resultError = ref<string | null>(null)
 
 const selectedJob = computed(() => (
   registry.selectedRun?.jobs.find(job => job.id === selectedJobId.value) ?? null
 ))
 
-watch(() => registry.selectedRunId, () => { selectedJobId.value = null })
+watch(() => registry.selectedRunId, () => {
+  selectedJobId.value = null
+  resultError.value = null
+})
 watch([scope, () => ui.activeWorkflowId], () => void loadRuns())
 onMounted(() => void loadRuns())
 
@@ -55,17 +79,28 @@ function resourceSummary(job: ExecutionJobSnapshot): string {
   return [
     value.cpu != null ? `${value.cpu} CPU` : null,
     value.gpu != null && value.gpu > 0 ? `${value.gpu} GPU` : null,
-    value.memory_gb != null ? `${value.memory_gb} GB` : null,
+    value.memory_bytes != null ? formatBytes(value.memory_bytes) : null,
+    value.gpu_memory_bytes != null ? `${formatBytes(value.gpu_memory_bytes)} GPU` : null,
+    value.max_concurrent != null && value.max_concurrent > 0
+      ? `max ${value.max_concurrent}`
+      : null,
   ].filter(Boolean).join(' · ') || '—'
 }
 
-function canCancel(state: string): boolean {
-  return ['prepared', 'queued', 'starting', 'running'].includes(state)
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB']
+  let normalized = value / 1024
+  let index = 0
+  while (normalized >= 1024 && index < units.length - 1) {
+    normalized /= 1024
+    index += 1
+  }
+  return `${normalized.toFixed(normalized >= 10 ? 0 : 1)} ${units[index]}`
 }
 
-function canDownloadResults(): boolean {
-  const run = registry.selectedRun
-  return run?.state === 'succeeded' && run.target_mode === 'submitted_remote'
+function action(name: keyof ExecutionActions): ExecutionActionAvailability {
+  return registry.selectedRun!.actions[name]
 }
 
 function selectOnCanvas(job: ExecutionJobSnapshot): void {
@@ -80,13 +115,100 @@ function openLogs(job: ExecutionJobSnapshot): void {
 }
 
 async function downloadResults(id: string): Promise<void> {
-  const blob = await downloadExecutionResults(id)
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `${id}-results.zip`
-  anchor.click()
-  URL.revokeObjectURL(url)
+  resultDownloadingId.value = id
+  resultError.value = null
+  try {
+    const blob = await downloadExecutionResults(id)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${id}-results.zip`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (cause) {
+    const message = await executionResultErrorMessage(
+      cause,
+      'The execution results could not be downloaded.',
+    )
+    if (registry.selectedRunId === id) resultError.value = message
+  } finally {
+    resultDownloadingId.value = null
+  }
+}
+
+function openRetry(): void {
+  const run = registry.selectedRun
+  if (!run || !run.actions.retry.available) return
+  retryParentId.value = run.id
+  retryInitialMode.value = 'retry'
+  retryInitialNodePath.value = null
+  retryPlan.value = null
+  retryError.value = null
+  retryDialogVisible.value = true
+  void previewRetry(null)
+}
+
+function openRecompute(): void {
+  const run = registry.selectedRun
+  if (!run || !run.actions.recompute.available || !selectedJob.value) return
+  retryParentId.value = run.id
+  retryInitialMode.value = 'recompute'
+  retryInitialNodePath.value = selectedJob.value.scoped_node_path
+  retryPlan.value = null
+  retryError.value = null
+  retryDialogVisible.value = true
+}
+
+async function previewRetry(
+  recompute: RecomputeRequest | null,
+  preserveError = false,
+): Promise<void> {
+  const parentId = retryParentId.value
+  if (!parentId) return
+  retryPlanning.value = true
+  if (!preserveError) retryError.value = null
+  lastRecomputeRequest.value = recompute
+  try {
+    retryPlan.value = await registry.planRetry(parentId, recompute)
+  } catch (cause) {
+    retryPlan.value = null
+    retryError.value = executionErrorMessage(cause, 'The retry preview could not be created.')
+  } finally {
+    retryPlanning.value = false
+  }
+}
+
+function responseStatus(cause: unknown): number | null {
+  if (!(cause instanceof Error)) return null
+  return (cause as Error & { response?: { status?: number } }).response?.status ?? null
+}
+
+async function confirmRetry(planDigest: string): Promise<void> {
+  const parentId = retryParentId.value
+  if (!parentId) return
+  retryStarting.value = true
+  retryError.value = null
+  try {
+    await registry.startRetry(parentId, planDigest)
+    retryDialogVisible.value = false
+    retryPlan.value = null
+  } catch (cause) {
+    if (responseStatus(cause) === 409) {
+      retryError.value = 'The execution or cache changed. Review the refreshed plan before confirming again.'
+      await previewRetry(lastRecomputeRequest.value, true)
+    } else {
+      retryError.value = executionErrorMessage(cause, 'The retry could not be started.')
+    }
+  } finally {
+    retryStarting.value = false
+  }
+}
+
+function closeRetryDialog(): void {
+  if (retryPlanning.value || retryStarting.value) return
+  retryDialogVisible.value = false
+  retryPlan.value = null
+  retryError.value = null
 }
 </script>
 
@@ -121,7 +243,18 @@ async function downloadResults(id: string): Promise<void> {
           <span class="run-card__title">{{ run.workflow_name ?? run.workflow_id }}</span>
           <Tag :value="run.state" :severity="stateSeverity(run.state)" />
           <small>{{ run.target_label ?? run.target_id }} · {{ new Date(run.created_at).toLocaleString() }}</small>
+          <small v-if="run.retry_of_execution_id">Retry of {{ run.retry_of_execution_id }}</small>
         </button>
+        <Button
+          v-if="registry.hasMoreRuns"
+          label="Load more"
+          text
+          size="small"
+          class="load-more"
+          :loading="registry.loadingRuns"
+          data-testid="execution-load-more"
+          @click="registry.loadMoreRuns()"
+        />
       </aside>
 
       <main v-if="registry.selectedRun" class="run-detail">
@@ -135,13 +268,29 @@ async function downloadResults(id: string): Promise<void> {
           <span v-if="registry.selectedRun.observation_error" class="observation-warning">
             <i class="pi pi-wifi" /> {{ registry.selectedRun.observation_error }}
           </span>
+          <div v-if="registry.selectedRun.retry_of_execution_id" class="run-provenance">
+            Retry of
+            <button type="button" @click="registry.selectExecution(registry.selectedRun.retry_of_execution_id!)">
+              {{ registry.selectedRun.retry_of_execution_id }}
+            </button>
+          </div>
+          <div v-if="registry.selectedRun.child_execution_ids.length" class="run-provenance">
+            Child runs
+            <button
+              v-for="childId in registry.selectedRun.child_execution_ids"
+              :key="childId"
+              type="button"
+              @click="registry.selectExecution(childId)"
+            >{{ childId }}</button>
+          </div>
           <div class="run-actions">
             <Button
               label="Cancel"
               icon="pi pi-stop"
               text
               size="small"
-              :disabled="!canCancel(registry.selectedRun.state)"
+              :disabled="!action('cancel').available"
+              :title="action('cancel').reason ?? 'Cancel this execution'"
               data-testid="execution-cancel"
               @click="registry.cancel(registry.selectedRun.id)"
             />
@@ -150,21 +299,40 @@ async function downloadResults(id: string): Promise<void> {
               icon="pi pi-refresh"
               text
               size="small"
-              disabled
-              title="Retained execution retry is not available yet"
+              :disabled="!action('retry').available"
+              :title="action('retry').reason ?? 'Retry using retained immutable inputs'"
               data-testid="execution-retry"
+              @click="openRetry"
+            />
+            <Button
+              label="Recompute"
+              icon="pi pi-replay"
+              text
+              size="small"
+              :disabled="!action('recompute').available || selectedJob === null"
+              :title="!action('recompute').available
+                ? action('recompute').reason ?? 'Recompute is unavailable'
+                : selectedJob === null
+                  ? 'Select a job to recompute'
+                  : 'Recompute the selected job'"
+              data-testid="execution-recompute"
+              @click="openRecompute"
             />
             <Button
               label="Results"
               icon="pi pi-download"
               text
               size="small"
-              :disabled="!canDownloadResults()"
-              title="Result download is available for succeeded remote submissions"
+              :disabled="!action('download_results').available"
+              :title="action('download_results').reason ?? 'Download verified execution results'"
+              :loading="resultDownloadingId === registry.selectedRun.id"
               data-testid="execution-results"
               @click="downloadResults(registry.selectedRun.id)"
             />
           </div>
+        </div>
+        <div v-if="resultError" class="action-error" role="alert" data-testid="execution-result-error">
+          {{ resultError }}
         </div>
 
         <div class="jobs-table" role="table" aria-label="Execution jobs">
@@ -214,6 +382,19 @@ async function downloadResults(id: string): Promise<void> {
         </aside>
       </main>
     </div>
+    <ExecutionRetryDialog
+      :visible="retryDialogVisible"
+      :jobs="registry.selectedRun?.jobs ?? []"
+      :initial-mode="retryInitialMode"
+      :initial-node-path="retryInitialNodePath"
+      :plan="retryPlan"
+      :planning="retryPlanning"
+      :starting="retryStarting"
+      :error="retryError"
+      @cancel="closeRetryDialog"
+      @preview="previewRetry"
+      @confirm="confirmRetry"
+    />
   </div>
 </template>
 
@@ -226,12 +407,16 @@ async function downloadResults(id: string): Promise<void> {
 .run-card { width: 100%; border: 0; border-bottom: 1px solid var(--p-content-border-color); background: transparent; color: inherit; text-align: left; padding: 0.65rem; display: grid; grid-template-columns: 1fr auto; gap: 0.35rem; cursor: pointer; }
 .run-card--active { background: var(--p-highlight-background); }
 .run-card small { grid-column: 1 / -1; color: var(--p-text-muted-color); }
+.load-more { width: 100%; }
 .run-detail { min-width: 0; overflow: auto; }
 .run-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 0.65rem; padding: 0.6rem; border-bottom: 1px solid var(--p-content-border-color); }
 .run-summary > div:first-child { display: flex; flex-direction: column; }
 .run-summary small { color: var(--p-text-muted-color); }
 .run-actions { margin-left: auto; }
+.run-provenance { display: flex; align-items: center; gap: 0.35rem; color: var(--p-text-muted-color); }
+.run-provenance button { border: 0; padding: 0; background: transparent; color: var(--p-primary-color); cursor: pointer; font-family: monospace; }
 .observation-warning, .diagnostic-message { color: var(--p-orange-600); }
+.action-error { margin: 0.5rem; padding: 0.6rem; border-radius: 6px; color: var(--p-red-600); background: var(--p-red-50); }
 .job-row { display: grid; grid-template-columns: minmax(11rem, 2fr) 6rem minmax(7rem, 1fr) 7rem 9rem 5rem; gap: 0.55rem; align-items: center; width: 100%; min-height: 2.4rem; padding: 0.35rem 0.65rem; border: 0; border-bottom: 1px solid var(--p-content-border-color); background: transparent; color: inherit; text-align: left; }
 button.job-row { cursor: pointer; }
 .job-row--active { background: var(--p-highlight-background); }

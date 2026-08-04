@@ -7,7 +7,13 @@ vi.mock('@/api/client', () => ({
 import { api } from '@/api/client'
 import {
   applyPreparedExecution,
+  downloadExecutionResults,
+  executionResultErrorMessage,
+  fetchExecutionTargets,
+  fetchExecutions,
+  planExecutionRetry,
   preflightExecution,
+  startExecutionRetry,
   type ExecutionPreflightRequest,
 } from '@/api/executions'
 
@@ -22,6 +28,7 @@ const request: ExecutionPreflightRequest = {
 
 describe('distributed execution API adapter', () => {
   beforeEach(() => {
+    vi.mocked(api.get).mockReset()
     vi.mocked(api.post).mockReset()
   })
 
@@ -69,7 +76,13 @@ describe('distributed execution API adapter', () => {
         data: {
           revision: 0, execution_id: 'run_1', workflow_id: 'demo',
           draft_revision: 3, backend: 'submitted_remote', target_id: 'profile_1',
-          state: 'prepared', jobs: {}, created_at: '2026-08-03T12:00:00Z',
+          state: 'prepared', retry_of_execution_id: null, child_execution_ids: [],
+          actions: {
+            cancel: { available: true, reason: null },
+            retry: { available: false, reason: 'not terminal' },
+            recompute: { available: false, reason: 'not terminal' },
+            download_results: { available: false, reason: 'not succeeded' },
+          }, jobs: {}, created_at: '2026-08-03T12:00:00Z',
         },
       })
     const choiceRequest: ExecutionPreflightRequest = {
@@ -107,5 +120,86 @@ describe('distributed execution API adapter', () => {
       id: 'run_1', workflow_id: 'demo', target_mode: 'submitted_remote',
       state: 'prepared', jobs: [],
     })
+  })
+
+  it('retains execution capabilities and uses offset pagination', async () => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: {
+        capabilities: {
+          schema: 'bioimageflow.execution_capabilities.v1',
+          capabilities: { submitted_run_retry: { supported: true, reason: null } },
+        },
+        targets: [{
+          id: 'local', name: 'Local', mode: 'local', available: true,
+          disabled_reason: null, profile_revision: null,
+        }],
+      } })
+      .mockResolvedValueOnce({ data: { items: [], total: 75, offset: 50, limit: 25 } })
+
+    const targets = await fetchExecutionTargets()
+    const page = await fetchExecutions({ workflowId: 'demo', offset: 50, limit: 25 })
+
+    expect(targets.capabilities.capabilities.submitted_run_retry?.supported).toBe(true)
+    expect(targets.targets[0]?.label).toBe('Local')
+    expect(vi.mocked(api.get).mock.calls[1]?.[1]?.params).toEqual({
+      workflow_id: 'demo', offset: 50, limit: 25,
+    })
+    expect(page).toEqual({ items: [], total: 75, offset: 50, limit: 25 })
+  })
+
+  it('plans and starts the exact server-persisted digest and downloads with no request body', async () => {
+    const plan = {
+      plan_digest: 'sha256:plan', parent_execution_id: 'run-parent',
+      child_execution_id: 'run-child', mode: 'recompute' as const,
+      target: { id: 'cluster', label: 'Cluster', mode: 'submitted_remote' as const },
+      recompute: { node_paths: ['analysis/segment'], cascade: true },
+      invalidations: [], conflicting_run_ids: [], confirmable: true,
+    }
+    const child = {
+      revision: 0, execution_id: 'run-child', workflow_id: 'demo',
+      backend: 'submitted_remote', target_id: 'cluster', state: 'prepared',
+      retry_of_execution_id: 'run-parent', child_execution_ids: [],
+      actions: {
+        cancel: { available: true, reason: null },
+        retry: { available: false, reason: 'not terminal' },
+        recompute: { available: false, reason: 'not terminal' },
+        download_results: { available: false, reason: 'not succeeded' },
+      },
+      jobs: {}, created_at: '2026-08-03T12:00:00Z',
+    }
+    const blob = new Blob(['bundle'])
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: plan })
+      .mockResolvedValueOnce({ data: child })
+      .mockResolvedValueOnce({ data: blob })
+
+    const preview = await planExecutionRetry('run-parent', plan.recompute)
+    const started = await startExecutionRetry('run-parent', preview.plan_digest)
+    const downloaded = await downloadExecutionResults('run-child')
+
+    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({ recompute: plan.recompute })
+    expect(vi.mocked(api.post).mock.calls[1]?.[1]).toEqual({ plan_digest: 'sha256:plan' })
+    expect(vi.mocked(api.post).mock.calls[2]?.[1]).toBeUndefined()
+    expect(started).toMatchObject({ id: 'run-child', retry_of_execution_id: 'run-parent' })
+    expect(downloaded).toBe(blob)
+  })
+
+  it('decodes structured errors returned through the result download blob channel', async () => {
+    const cause = Object.assign(new Error('Request failed'), {
+      response: {
+        data: new Blob([JSON.stringify({
+          detail: {
+            code: 'result_unavailable',
+            message: 'The retained result is no longer available.',
+            details: {},
+            retryable: false,
+          },
+        })], { type: 'application/json' }),
+      },
+    })
+
+    await expect(executionResultErrorMessage(cause, 'Download failed.')).resolves.toBe(
+      'The retained result is no longer available.',
+    )
   })
 })

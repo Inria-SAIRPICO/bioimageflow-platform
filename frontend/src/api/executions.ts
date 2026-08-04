@@ -15,6 +15,21 @@ export interface ExecutionTarget {
   profile_revision?: number | null
 }
 
+export interface ExecutionCapabilityStatus {
+  supported: boolean
+  reason?: string | null
+}
+
+export interface ExecutionCapabilities {
+  schema: string
+  capabilities: Record<string, ExecutionCapabilityStatus>
+}
+
+export interface ExecutionTargets {
+  targets: ExecutionTarget[]
+  capabilities: ExecutionCapabilities
+}
+
 export type ExecutionRunState =
   | 'preparing'
   | 'prepared'
@@ -41,9 +56,21 @@ export type ExecutionJobState =
 export interface ExecutionResources {
   cpu?: number | null
   gpu?: number | null
-  memory_gb?: number | null
-  gpu_memory_gb?: number | null
+  memory_bytes?: number | null
+  gpu_memory_bytes?: number | null
   max_concurrent?: number | null
+}
+
+export interface ExecutionActionAvailability {
+  available: boolean
+  reason?: string | null
+}
+
+export interface ExecutionActions {
+  cancel: ExecutionActionAvailability
+  retry: ExecutionActionAvailability
+  recompute: ExecutionActionAvailability
+  download_results: ExecutionActionAvailability
 }
 
 export interface NodeFailureDiagnostic {
@@ -84,13 +111,47 @@ export interface ExecutionSnapshot {
   target_mode: ExecutionTargetMode
   state: ExecutionRunState
   command?: string | null
+  retry_of_execution_id?: string | null
+  child_execution_ids: string[]
   created_at: string
   started_at?: string | null
   finished_at?: string | null
   backend_id?: string | null
   scheduler_job_id?: string | null
   observation_error?: string | null
+  actions: ExecutionActions
   jobs: ExecutionJobSnapshot[]
+}
+
+export interface RecomputeRequest {
+  node_paths: string[]
+  cascade: boolean
+}
+
+export interface RetryInvalidation {
+  node_path: string
+  result_key: string
+  record_id?: string | null
+  selection_status: string
+}
+
+export interface RetryPlanTarget {
+  id: string
+  label: string
+  mode: ExecutionTargetMode
+}
+
+export interface ExecutionRetryPlan {
+  plan_digest: string
+  parent_execution_id: string
+  child_execution_id: string
+  mode: 'retry' | 'recompute'
+  target: RetryPlanTarget
+  recompute: RecomputeRequest | null
+  invalidations: RetryInvalidation[]
+  conflicting_run_ids: string[]
+  confirmable: boolean
+  disabled_reason?: string | null
 }
 
 export interface RemoteNodePathInput {
@@ -178,6 +239,8 @@ interface ExecutionSnapshotWire {
   workflow_id: string
   draft_revision?: number | null
   command?: string
+  retry_of_execution_id?: string | null
+  child_execution_ids: string[]
   backend: 'direct' | 'wetlands' | 'attached_parsl' | 'submitted_local' | 'submitted_remote'
   target_id: string
   target_snapshot?: Record<string, unknown>
@@ -201,6 +264,7 @@ interface ExecutionSnapshotWire {
   }>
   backend_metadata?: Record<string, unknown>
   observation?: { error?: string | null }
+  actions: ExecutionActions
   created_at: string
   finished_at?: string | null
 }
@@ -222,11 +286,14 @@ export type ExecutionPreflightResponse =
 
 export interface ExecutionPage {
   items: ExecutionSnapshot[]
-  next_cursor?: string | null
+  total: number
+  offset: number
+  limit: number
 }
 
-export async function fetchExecutionTargets(): Promise<ExecutionTarget[]> {
+export async function fetchExecutionTargets(): Promise<ExecutionTargets> {
   const { data } = await api.get<{
+    capabilities: ExecutionCapabilities
     targets: Array<{
       id: string
       name: string
@@ -238,14 +305,17 @@ export async function fetchExecutionTargets(): Promise<ExecutionTarget[]> {
   }>(
     '/api/v1/execution/targets',
   )
-  return data.targets.map(target => ({
-    id: target.id,
-    label: target.name,
-    mode: target.mode,
-    enabled: target.available,
-    disabled_reason: target.disabled_reason,
-    profile_revision: target.profile_revision,
-  }))
+  return {
+    capabilities: data.capabilities,
+    targets: data.targets.map(target => ({
+      id: target.id,
+      label: target.name,
+      mode: target.mode,
+      enabled: target.available,
+      disabled_reason: target.disabled_reason,
+      profile_revision: target.profile_revision,
+    })),
+  }
 }
 
 export async function preflightExecution(
@@ -355,6 +425,8 @@ export function normalizeExecution(data: ExecutionSnapshotWire): ExecutionSnapsh
     target_mode: targetMode(data.backend),
     state: data.state,
     command: data.command,
+    retry_of_execution_id: data.retry_of_execution_id,
+    child_execution_ids: data.child_execution_ids,
     created_at: data.created_at,
     finished_at: data.finished_at,
     backend_id: data.backend,
@@ -362,6 +434,7 @@ export function normalizeExecution(data: ExecutionSnapshotWire): ExecutionSnapsh
       ? data.backend_metadata.scheduler_job_id
       : null,
     observation_error: data.observation?.error,
+    actions: data.actions,
     jobs: Object.values(data.jobs).map(job => ({
       id: job.scoped_node_path,
       scoped_node_path: job.scoped_node_path,
@@ -403,15 +476,27 @@ export async function applyPreparedExecution(
 
 export async function fetchExecutions(options: {
   workflowId?: string | null
-  cursor?: string | null
+  offset?: number
+  limit?: number
 } = {}): Promise<ExecutionPage> {
-  const { data } = await api.get<{ items: ExecutionSnapshotWire[] }>('/api/v1/executions', {
+  const { data } = await api.get<{
+    items: ExecutionSnapshotWire[]
+    total: number
+    offset: number
+    limit: number
+  }>('/api/v1/executions', {
     params: {
       ...(options.workflowId ? { workflow_id: options.workflowId } : {}),
-      ...(options.cursor ? { cursor: options.cursor } : {}),
+      offset: options.offset ?? 0,
+      limit: options.limit ?? 50,
     },
   })
-  return { items: data.items.map(normalizeExecution) }
+  return {
+    items: data.items.map(normalizeExecution),
+    total: data.total,
+    offset: data.offset,
+    limit: data.limit,
+  }
 }
 
 export async function fetchExecution(id: string): Promise<ExecutionSnapshot> {
@@ -428,19 +513,78 @@ export async function cancelExecution(id: string): Promise<ExecutionSnapshot> {
   return fetchExecution(id)
 }
 
-export async function retryExecution(id: string): Promise<ExecutionSnapshot> {
+export async function planExecutionRetry(
+  id: string,
+  recompute: RecomputeRequest | null,
+): Promise<ExecutionRetryPlan> {
+  const { data } = await api.post<ExecutionRetryPlan>(
+    `/api/v1/executions/${encodeURIComponent(id)}/retry/plan`,
+    { recompute },
+  )
+  return data
+}
+
+export async function startExecutionRetry(
+  id: string,
+  planDigest: string,
+): Promise<ExecutionSnapshot> {
   const { data } = await api.post<ExecutionSnapshotWire>(
     `/api/v1/executions/${encodeURIComponent(id)}/retry`,
-    {},
+    { plan_digest: planDigest },
   )
   return normalizeExecution(data)
 }
 
 export async function downloadExecutionResults(id: string): Promise<Blob> {
-  const response = await api.post(
+  const response = await api.post<Blob>(
     `/api/v1/executions/${encodeURIComponent(id)}/result`,
-    { destination: 'download' },
+    undefined,
     { responseType: 'blob' },
   )
-  return response.data as Blob
+  return response.data
+}
+
+export function executionErrorMessage(cause: unknown, fallback: string): string {
+  if (cause instanceof Error && cause.message) {
+    const response = (cause as Error & {
+      response?: { data?: { detail?: unknown; error?: unknown } }
+    }).response
+    const detail = response?.data?.detail
+    if (typeof detail === 'string' && detail) return detail
+    if (typeof detail === 'object' && detail !== null) {
+      const message = (detail as { message?: unknown }).message
+      if (typeof message === 'string' && message) return message
+    }
+    const code = response?.data?.error
+    if (typeof code === 'string' && code) return code.replace(/_/g, ' ')
+    return cause.message
+  }
+  return fallback
+}
+
+export async function executionResultErrorMessage(
+  cause: unknown,
+  fallback: string,
+): Promise<string> {
+  if (!(cause instanceof Error)) return fallback
+  const response = (cause as Error & { response?: { data?: unknown } }).response
+  const data = response?.data
+  if (!(data instanceof Blob)) return executionErrorMessage(cause, fallback)
+  try {
+    const payload = JSON.parse(await data.text()) as {
+      detail?: string | { message?: string }
+      error?: string
+    }
+    if (typeof payload.detail === 'string' && payload.detail) return payload.detail
+    if (typeof payload.detail === 'object' && payload.detail !== null) {
+      const message = payload.detail.message
+      if (typeof message === 'string' && message) return message
+    }
+    if (typeof payload.error === 'string' && payload.error) {
+      return payload.error.replace(/_/g, ' ')
+    }
+  } catch {
+    // A non-JSON blob has no structured server detail to expose.
+  }
+  return fallback
 }

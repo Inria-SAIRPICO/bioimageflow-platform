@@ -1,19 +1,31 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import PrimeVue from 'primevue/config'
+import { primeVueTestGlobal } from '@/test-utils/mountFixtures'
 
 vi.mock('@/api/client', () => ({
   api: {
-    get: vi.fn().mockResolvedValue({ data: { items: [] } }),
+    get: vi.fn().mockResolvedValue({ data: { items: [], total: 0, offset: 0, limit: 50 } }),
     post: vi.fn(),
   },
 }))
 
+import { api } from '@/api/client'
 import ExecutionPanel from '../ExecutionPanel.vue'
 import { useExecutionRegistryStore } from '@/stores/executionRegistry'
 
+const retryActions = {
+  cancel: { available: false, reason: 'Execution is terminal' },
+  retry: { available: true, reason: null },
+  recompute: { available: true, reason: null },
+  download_results: { available: false, reason: 'Results require success' },
+}
+
 describe('ExecutionPanel', () => {
+  beforeEach(() => {
+    vi.mocked(api.post).mockReset()
+  })
+
   it('renders hierarchical jobs and structured diagnostics from a normalized snapshot', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -22,16 +34,17 @@ describe('ExecutionPanel', () => {
       id: 'run-1', revision: 1, workflow_id: 'workflow', workflow_name: 'Workflow',
       target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'submitted_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
+      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
       jobs: [{
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
         parent_path: 'preprocessing', state: 'failed', executor_label: 'gpu',
-        resources: { cpu: 4, gpu: 1, memory_gb: 16 }, duration_seconds: 2.5,
+        resources: { cpu: 4, gpu: 1, memory_bytes: 16 * 1024 ** 3 }, duration_seconds: 2.5,
         diagnostic: { exception_type: 'RuntimeError', message: 'CUDA failed', traceback: 'trace' },
       }],
     })
 
     const wrapper = mount(ExecutionPanel, {
-      global: { plugins: [pinia, PrimeVue] },
+      global: primeVueTestGlobal({ pinia, dialog: true }),
     })
     await flushPromises()
     // The mount refresh can replace history; restore a live snapshot exactly as a websocket does.
@@ -39,9 +52,11 @@ describe('ExecutionPanel', () => {
       id: 'run-1', revision: 2, workflow_id: 'workflow', workflow_name: 'Workflow',
       target_id: 'cluster', target_label: 'GPU cluster', target_mode: 'submitted_remote',
       state: 'failed', created_at: '2026-08-03T10:00:00Z',
+      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
       jobs: [{
         id: 'job-1', scoped_node_path: 'preprocessing/segment', display_name: 'Segment',
-        state: 'failed', executor_label: 'gpu', resources: { cpu: 4, gpu: 1 },
+        state: 'failed', executor_label: 'gpu',
+        resources: { cpu: 4, gpu: 1, memory_bytes: 16 * 1024 ** 3 },
         diagnostic: { exception_type: 'RuntimeError', message: 'CUDA failed', traceback: 'trace' },
       }],
     })
@@ -49,18 +64,126 @@ describe('ExecutionPanel', () => {
 
     expect(wrapper.text()).toContain('GPU cluster')
     expect(wrapper.text()).toContain('Segment')
+    expect(wrapper.text()).toContain('16 GiB')
     expect(wrapper.get('[data-testid="execution-cancel"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="execution-retry"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="execution-retry"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="execution-results"]').attributes('disabled')).toBeDefined()
     await wrapper.get('button.job-row').trigger('click')
     expect(wrapper.get('[data-testid="execution-job-details"]').text()).toContain('CUDA failed')
+    expect(wrapper.get('[data-testid="execution-recompute"]').attributes('disabled')).toBeUndefined()
 
     registry.applySnapshot({
       ...registry.selectedRun!,
       revision: 3,
       state: 'succeeded',
+      actions: {
+        ...retryActions,
+        download_results: { available: true, reason: null },
+      },
     })
     await wrapper.vm.$nextTick()
     expect(wrapper.get('[data-testid="execution-results"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('previews and confirms the server-persisted retry plan digest', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const registry = useExecutionRegistryStore()
+    const parent = {
+      id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
+      target_label: 'GPU cluster', target_mode: 'submitted_remote' as const,
+      state: 'failed' as const, created_at: '2026-08-03T10:00:00Z',
+      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions, jobs: [],
+    }
+    registry.applySnapshot(parent)
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: {
+        plan_digest: 'sha256:confirmed', parent_execution_id: 'run-parent',
+        child_execution_id: 'run-child', mode: 'retry',
+        target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' },
+        recompute: null, invalidations: [], conflicting_run_ids: [], confirmable: true,
+      } })
+      .mockResolvedValueOnce({ data: {
+        revision: 0, execution_id: 'run-child', workflow_id: 'workflow',
+        backend: 'submitted_remote', target_id: 'cluster', target_snapshot: { name: 'GPU cluster' },
+        state: 'prepared', command: 'retry', retry_of_execution_id: 'run-parent',
+        child_execution_ids: [], actions: {
+          cancel: { available: true, reason: null },
+          retry: { available: false, reason: 'not terminal' },
+          recompute: { available: false, reason: 'not terminal' },
+          download_results: { available: false, reason: 'not succeeded' },
+        }, jobs: {}, created_at: '2026-08-03T10:01:00Z',
+      } })
+    const wrapper = mount(ExecutionPanel, {
+      global: primeVueTestGlobal({ pinia, dialog: true }),
+    })
+    await flushPromises()
+    registry.applySnapshot(parent)
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[data-testid="execution-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="execution-retry-dialog"]').text()).toContain('run-child')
+    await wrapper.get('[data-testid="confirm-execution-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(vi.mocked(api.post).mock.calls[1]?.[1]).toEqual({ plan_digest: 'sha256:confirmed' })
+    expect(registry.selectedRunId).toBe('run-child')
+  })
+
+  it('refreshes a stale recompute plan with the exact previous request', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const registry = useExecutionRegistryStore()
+    const parent = {
+      id: 'run-parent', revision: 1, workflow_id: 'workflow', target_id: 'cluster',
+      target_label: 'GPU cluster', target_mode: 'submitted_remote' as const,
+      state: 'failed' as const, created_at: '2026-08-03T10:00:00Z',
+      retry_of_execution_id: null, child_execution_ids: [], actions: retryActions,
+      jobs: [{
+        id: 'segment', scoped_node_path: 'analysis/segment', display_name: 'Segment',
+        state: 'failed' as const,
+      }],
+    }
+    const plan = (digest: string) => ({
+      plan_digest: digest, parent_execution_id: 'run-parent',
+      child_execution_id: 'run-child', mode: 'recompute' as const,
+      target: { id: 'cluster', label: 'GPU cluster', mode: 'submitted_remote' as const },
+      recompute: { node_paths: ['analysis/segment'], cascade: true },
+      invalidations: [], conflicting_run_ids: [], confirmable: true,
+    })
+    registry.applySnapshot(parent)
+    vi.mocked(api.post)
+      .mockResolvedValueOnce({ data: plan('sha256:old') })
+      .mockRejectedValueOnce(Object.assign(new Error('Conflict'), {
+        response: { status: 409 },
+      }))
+      .mockResolvedValueOnce({ data: plan('sha256:refreshed') })
+    const wrapper = mount(ExecutionPanel, {
+      global: primeVueTestGlobal({ pinia, dialog: true }),
+    })
+    await flushPromises()
+    registry.applySnapshot(parent)
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('button.job-row').trigger('click')
+    await wrapper.get('[data-testid="execution-recompute"]').trigger('click')
+    await wrapper.get('[data-testid="preview-execution-retry"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="confirm-execution-retry"]').trigger('click')
+    await flushPromises()
+
+    const recompute = { node_paths: ['analysis/segment'], cascade: true }
+    expect(vi.mocked(api.post).mock.calls[0]?.[1]).toEqual({ recompute })
+    expect(vi.mocked(api.post).mock.calls[1]?.[1]).toEqual({ plan_digest: 'sha256:old' })
+    expect(vi.mocked(api.post).mock.calls[2]?.[1]).toEqual({ recompute })
+    expect(wrapper.get('[data-testid="execution-retry-dialog"]').text()).toContain(
+      'sha256:refreshed',
+    )
+    expect(wrapper.get('[data-testid="retry-plan-error"]').text()).toContain(
+      'Review the refreshed plan',
+    )
+    expect(registry.selectedRunId).toBe('run-parent')
   })
 })

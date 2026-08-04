@@ -5,7 +5,11 @@ import {
   fetchExecution,
   fetchExecutions,
   fetchExecutionTargets,
-  retryExecution,
+  planExecutionRetry,
+  startExecutionRetry,
+  type ExecutionCapabilities,
+  type ExecutionRetryPlan,
+  type RecomputeRequest,
   type ExecutionSnapshot,
   type ExecutionTarget,
 } from '@/api/executions'
@@ -17,10 +21,15 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     { id: 'local', label: 'Local', mode: 'local', enabled: true },
   ])
   const selectedTargetId = ref('local')
+  const capabilities = ref<ExecutionCapabilities | null>(null)
   const runs = ref<ExecutionSnapshot[]>([])
   const selectedRunId = ref<string | null>(null)
   const loadingTargets = ref(false)
   const loadingRuns = ref(false)
+  const totalRuns = ref(0)
+  const pageLimit = ref(50)
+  const nextOffset = ref(0)
+  const loadedWorkflowId = ref<string | null>(null)
   const error = ref<string | null>(null)
 
   const selectedTarget = computed(() => (
@@ -34,6 +43,7 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
   const activeRuns = computed(() => runs.value.filter(
     run => !TERMINAL_STATES.has(run.state),
   ))
+  const hasMoreRuns = computed(() => nextOffset.value < totalRuns.value)
 
   function upsertRun(snapshot: ExecutionSnapshot): void {
     const index = runs.value.findIndex(run => run.id === snapshot.id)
@@ -50,8 +60,9 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     error.value = null
     try {
       const loaded = await fetchExecutionTargets()
-      targets.value = loaded.length > 0
-        ? loaded
+      capabilities.value = loaded.capabilities
+      targets.value = loaded.targets.length > 0
+        ? loaded.targets
         : [{ id: 'local', label: 'Local', mode: 'local', enabled: true }]
       if (!targets.value.some(target => (
         target.id === selectedTargetId.value && target.enabled
@@ -59,9 +70,8 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
         selectedTargetId.value = targets.value.find(target => target.enabled)?.id ?? 'local'
       }
     } catch (cause) {
-      // Local execution remains available while an older backend is starting.
-      targets.value = [{ id: 'local', label: 'Local', mode: 'local', enabled: true }]
-      selectedTargetId.value = 'local'
+      targets.value = []
+      capabilities.value = null
       error.value = cause instanceof Error ? cause.message : String(cause)
     } finally {
       loadingTargets.value = false
@@ -72,11 +82,47 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     loadingRuns.value = true
     error.value = null
     try {
-      const page = await fetchExecutions({ workflowId })
+      const normalizedWorkflowId = workflowId ?? null
+      const page = await fetchExecutions({
+        workflowId: normalizedWorkflowId,
+        offset: 0,
+        limit: pageLimit.value,
+      })
       runs.value = page.items
+      totalRuns.value = page.total
+      pageLimit.value = page.limit
+      nextOffset.value = page.offset + page.items.length
+      loadedWorkflowId.value = normalizedWorkflowId
       if (!runs.value.some(run => run.id === selectedRunId.value)) {
         selectedRunId.value = runs.value[0]?.id ?? null
       }
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : String(cause)
+    } finally {
+      loadingRuns.value = false
+    }
+  }
+
+  async function loadMoreRuns(): Promise<void> {
+    if (loadingRuns.value || !hasMoreRuns.value) return
+    loadingRuns.value = true
+    error.value = null
+    try {
+      const page = await fetchExecutions({
+        workflowId: loadedWorkflowId.value,
+        offset: nextOffset.value,
+        limit: pageLimit.value,
+      })
+      for (const snapshot of page.items) {
+        const index = runs.value.findIndex(run => run.id === snapshot.id)
+        if (index < 0) runs.value.push(snapshot)
+        else if (snapshot.revision >= runs.value[index]!.revision) {
+          runs.value.splice(index, 1, snapshot)
+        }
+      }
+      totalRuns.value = page.total
+      pageLimit.value = page.limit
+      nextOffset.value = Math.max(nextOffset.value, page.offset + page.items.length)
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)
     } finally {
@@ -92,10 +138,28 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
     upsertRun(await cancelExecution(id))
   }
 
-  async function retry(id: string): Promise<void> {
-    const retryRun = await retryExecution(id)
+  async function planRetry(
+    id: string,
+    recompute: RecomputeRequest | null,
+  ): Promise<ExecutionRetryPlan> {
+    return planExecutionRetry(id, recompute)
+  }
+
+  async function startRetry(id: string, planDigest: string): Promise<ExecutionSnapshot> {
+    const retryRun = await startExecutionRetry(id, planDigest)
     upsertRun(retryRun)
+    const parent = runs.value.find(run => run.id === id)
+    if (parent && !parent.child_execution_ids.includes(retryRun.id)) {
+      parent.child_execution_ids = [...parent.child_execution_ids, retryRun.id]
+    }
     selectedRunId.value = retryRun.id
+    totalRuns.value = Math.max(totalRuns.value, runs.value.length)
+    return retryRun
+  }
+
+  async function selectExecution(id: string): Promise<void> {
+    if (!runs.value.some(run => run.id === id)) upsertRun(await fetchExecution(id))
+    selectedRunId.value = id
   }
 
   function applySnapshot(snapshot: ExecutionSnapshot): void {
@@ -104,20 +168,27 @@ export const useExecutionRegistryStore = defineStore('execution-registry', () =>
 
   return {
     targets,
+    capabilities,
     selectedTargetId,
     selectedTarget,
     runs,
     selectedRunId,
     selectedRun,
     activeRuns,
+    hasMoreRuns,
     loadingTargets,
     loadingRuns,
+    totalRuns,
+    pageLimit,
     error,
     loadTargets,
     loadRuns,
+    loadMoreRuns,
     refreshRun,
     cancel,
-    retry,
+    planRetry,
+    startRetry,
+    selectExecution,
     applySnapshot,
   }
 })
