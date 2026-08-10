@@ -1,16 +1,15 @@
 """Tests for PypiPackageInstaller (spec v3 §2.5, specs.md §Tool Store).
 
-The real installer delegates to :func:`bioimageflow.tool_loader.ensure_installed`,
-which runs ``pip install --target`` through Wetlands' pixi-backed
-:class:`EnvironmentManager`. Tests monkeypatch that function on the
-:mod:`bioimageflow_server.services.package_installer` module so we don't
-spawn pixi subprocesses in unit tests.
+The real installer delegates versioned installs to
+:func:`bioimageflow.tool_loader.ensure_installed`. Tests monkeypatch that
+function so they do not invoke pip.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+import sys
 import anyio
 
 import pytest
@@ -440,6 +439,32 @@ async def test_install_source_failure_resumes_hot_reload_false(
     assert ("suppress", None) in hot_reload.calls
     assert ("resume", False) in hot_reload.calls
     assert ("resume", True) not in hot_reload.calls
+
+
+async def test_source_install_uses_orchestrator_python_and_argv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = MagicMock()
+    monkeypatch.setattr(installer_module.subprocess, "run", run)
+    target = tmp_path / "site"
+
+    installer_module._pip_install_source("git+https://example.test/tools.git", target)
+
+    run.assert_called_once_with(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--target",
+            str(target),
+            "git+https://example.test/tools.git",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 # ---------------------------------------------------------------------------

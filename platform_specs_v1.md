@@ -85,7 +85,7 @@ Tools are indexed by **class name** (the unique tool identifier; `BaseTool.displ
 | `BIOIMAGEFLOW_TOOL_STORE` | Overrides only the tool store path. |
 | `BIOIMAGEFLOW_WETLANDS` | Overrides only the Wetlands instance path. |
 
-The platform must not rely on Wetlands' own `EnvironmentManager()` default for BioImageFlow-managed environments. Plain Wetlands defaults `wetlands_instance_path` to cwd-relative `./wetlands`; this can happen if a service calls Wetlands directly (or calls `bioimageflow.env_manager.get_shared_environment_manager()` before BioImageFlow has configured it) instead of going through `bioimageflow.paths.get_wetlands_path()` / `WetlandsEnvManager`. Because Wetlands uses a process-wide shared manager, the first initialization in the process fixes the Wetlands path for later callers. Tool execution, manual tool environment controls, Napari, thumbnails, and embedded code-server must therefore all use the same BioImageFlow-resolved Wetlands path, unless the user explicitly configured a custom environment path for that feature.
+The platform must not rely on Wetlands' own `EnvironmentManager()` default for BioImageFlow-managed environments. Plain Wetlands defaults its root to cwd-relative `./wetlands`; this can happen if a service calls Wetlands directly or calls `bioimageflow.env_manager.get_shared_environment_manager()` before BioImageFlow has configured it. Because Wetlands uses a process-wide shared manager, the first initialization in the process fixes the Wetlands path for later callers. Tool execution, manual tool environment controls, Napari, thumbnails, and embedded code-server must therefore all use the same BioImageFlow-resolved Wetlands root.
 
 **Agent source context for Wetlands:** The platform and library dependencies should resolve Wetlands from the published `wetlands` package for reproducible installs and CI. It is possible to inspect Wetlands implementation code: use the source-browsing symlink `external/wetlands-src` when it exists. This symlink is context-only: it points to the local Wetlands source checkout and must not be used as a package source in `pyproject.toml`, `uv.lock`, or runtime import configuration. If the symlink is absent, inspect the installed package source with `python -c "import inspect, wetlands; print(inspect.getfile(wetlands))"`.
 
@@ -736,8 +736,6 @@ class OMEROInstance(BaseModel):
 class Settings(BaseModel):
     deployment_mode: Literal["desktop", "webapp"]
     external_editor: str | None = None              # e.g., "code {workspace_path} --goto {file_path}"
-    napari_env_path: str | None = None              # Custom Napari Conda env path
-    thumbnail_env_path: str | None = None
     omero_instances: list[OMEROInstance] = []
     tool_store_path: str = "~/.bioimageflow/tool_packages/"
     update_mode: Literal["auto", "manual"] | str = "auto"
@@ -1408,8 +1406,8 @@ Image-valued Node Data cells expose both the managed desktop viewer and a browse
 
 **Napari:** Napari is managed by the backend via Wetlands (isolated Conda environment). The backend uses a `NapariLauncher` that:
 
-1. Creates or reuses a Conda environment with `napari` and `pyqt` via Wetlands
-2. Launches a `napari_manager.py` script in that environment
+1. Provisions an immutable environment recipe with `napari` and `pyqt` via Wetlands
+2. Launches and supervises `napari_manager.py` with Wetlands managed processes
 3. Communicates via `multiprocessing.connection` (Client/Listener on localhost)
 4. Auto-reconnects if Napari crashes or is closed by the user
 
@@ -1439,26 +1437,22 @@ A dedicated panel or modal for application configuration. Settings are persisted
   with the current workspace folder and `{file_path}` with the focused file. If
   empty, "Open in editor" copies the relevant path to clipboard with a toast.
 
-#### 3.12.2 Napari Settings
-
-- **Napari environment path:** Path to an existing Napari Conda environment. If set, BioImageFlow uses this instead of creating one via Wetlands.
-
-#### 3.12.3 Execution
+#### 3.12.2 Execution
 
 - **Execution backend:** Read-only summary of the effective backend (`Automatic`, `Wetlands`, or `Direct`) when supplied by the runtime settings contract.
 - **Scheduling:** Read-only summary of `Sequential` or `Parallel`, derived from the effective execution settings and the compatibility `execution_engine` field.
 
-#### 3.12.4 Display
+#### 3.12.3 Display
 
 - **Node Data rows per page:** Select 25, 50, 100, 250, or 500 as the default for newly inspected tables. The initial default is 250, and a table-local page-size change does not rewrite this preference.
 
-#### 3.12.5 Storage
+#### 3.12.4 Storage
 
 - **Workspace path:** read-only display with a native Change action in desktop pywebview mode. The current workspace endpoint changes the active path in memory but does not migrate or create directories.
 - **Output data folder:** resolved path display with Reveal and, in desktop mode, Change actions. Changing it does not move existing data.
 - **Tool store path:** read-only resolved path display (default: `~/.bioimageflow/tool_packages/`, with environment overrides applied).
 
-#### 3.12.6 OMERO
+#### 3.12.5 OMERO
 
 OMERO data access is supplied by dedicated tool packages; the platform UI manages credentials but does not browse or broker OMERO data itself.
 

@@ -84,7 +84,8 @@ Choose **Workflow → Export**, then **Workflow with results**, when the workflo
 
 ## A viewer action is unavailable
 
-For Napari, configure a Python environment containing Napari under **Preferences → Napari** and retry after any launch failure.
+For Napari, retry the launch and inspect the backend logs for Wetlands provisioning or managed-process errors.
+The Napari environment is provisioned automatically and has no configurable environment path.
 For Avivator, confirm that the image format is supported and that the application can reach the external viewer service.
 Use **Reveal in file browser** as a local fallback.
 

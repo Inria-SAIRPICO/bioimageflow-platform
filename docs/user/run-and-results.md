@@ -67,7 +67,7 @@ If a selected node is disabled or has no result, the panel explains why it canno
 Path cells provide actions to reveal the file in the system file browser and copy its full path.
 Image paths also show lazy thumbnails when the format can be rendered.
 
-Use **Open in Napari** when a Napari environment is configured.
+Use **Open in Napari** to let the platform provision and launch its managed Napari environment on first use.
 Ctrl/Cmd-clicking that action clears the existing Napari layers before adding the selected image; an ordinary click adds the image to the current viewer session.
 
 Use **Open in Avivator** to inspect a supported image in an embedded web viewer.

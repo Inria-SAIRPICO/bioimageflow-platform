@@ -35,7 +35,7 @@ test.describe('Settings Panel', () => {
     await expect(dialog.locator('[data-testid="settings-loading"]')).toBeVisible()
     releaseSettings()
     await expect(dialog.locator('[data-testid="settings-tabs"]')).toBeVisible()
-    for (const label of ['External Editor', 'Napari', 'Execution', 'Display', 'Storage', 'OMERO']) {
+    for (const label of ['External Editor', 'Execution', 'Display', 'Storage', 'OMERO']) {
       await expect(dialog.getByText(label, { exact: true })).toBeVisible()
     }
   })

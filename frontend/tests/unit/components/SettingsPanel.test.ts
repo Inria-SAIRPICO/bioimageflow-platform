@@ -63,7 +63,6 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
 const baseSettings = {
   deployment_mode: 'desktop' as const,
   external_editor: null,
-  napari_env_path: null,
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,

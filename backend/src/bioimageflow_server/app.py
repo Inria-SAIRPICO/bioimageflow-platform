@@ -472,7 +472,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     thumbnail_manager = config.thumbnail_manager or ThumbnailManager(
         cache_dir=stateless_storage_path / ".thumbnails",
-        env_path=resolved_settings.thumbnail_env_path,
         connection_manager=ws_manager,
     )
 
@@ -537,7 +536,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     # Always instantiate a launcher (cheap config + state). The expensive
     # Conda solve is deferred to the first /napari/open call.
     napari_launcher = config.napari_launcher or NapariLauncher(
-        napari_env_path=resolved_settings.napari_env_path,
         connection_manager=ws_manager,
     )
 
@@ -622,6 +620,15 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             except Exception as exc:  # noqa: BLE001
                 logging.getLogger(__name__).exception(
                     "thumbnail_manager.shutdown() raised during lifespan: %r",
+                    exc,
+                )
+            try:
+                shutdown_editor = getattr(editor_service, "shutdown", None)
+                if callable(shutdown_editor):
+                    await shutdown_editor()
+            except Exception as exc:  # noqa: BLE001
+                logging.getLogger(__name__).exception(
+                    "editor_service.shutdown() raised during lifespan: %r",
                     exc,
                 )
             if hot_reload is not None and hot_reload_started:

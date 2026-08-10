@@ -201,6 +201,8 @@ class TestLoad:
                 {
                     "settings_version": 1,
                     "deployment_mode": "desktop",
+                    "napari_env_path": "/legacy/napari",
+                    "thumbnail_env_path": "/legacy/thumbnail",
                     "future_field": "abc",
                 }
             )
@@ -210,6 +212,8 @@ class TestLoad:
         assert result.deployment_mode == "desktop"
         # Original file is preserved (until next patch overwrites it).
         on_disk = _read_disk(path)
+        assert on_disk["napari_env_path"] == "/legacy/napari"
+        assert on_disk["thumbnail_env_path"] == "/legacy/thumbnail"
         assert on_disk["future_field"] == "abc"
 
     async def test_malformed_json_returns_defaults_without_overwrite(
@@ -394,11 +398,11 @@ class TestPatch:
         await store.load()
         await asyncio.gather(
             store.patch({"external_editor": "vim"}),
-            store.patch({"napari_env_path": "/envs/napari"}),
+            store.patch({"update_mode": "manual"}),
         )
         s = store.get()
         assert s.external_editor == "vim"
-        assert s.napari_env_path == "/envs/napari"
+        assert s.update_mode == "manual"
 
     async def test_omero_patch_accepts_transient_password_without_persisting_it(
         self, tmp_path: Path

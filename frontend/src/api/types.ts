@@ -3398,10 +3398,6 @@ export interface components {
             deployment_mode: "desktop" | "webapp";
             /** External Editor */
             external_editor?: string | null;
-            /** Napari Env Path */
-            napari_env_path?: string | null;
-            /** Thumbnail Env Path */
-            thumbnail_env_path?: string | null;
             /**
              * Omero Instances
              * @default []

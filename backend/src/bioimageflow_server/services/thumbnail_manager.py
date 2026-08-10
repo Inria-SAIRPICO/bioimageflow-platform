@@ -26,6 +26,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from wetlands import EnvironmentSpec, ExecutionTask, ManagedEnvironment, WorkerPool
+
 if TYPE_CHECKING:
     from bioimageflow_server.ws.handler import ConnectionManager
 
@@ -71,16 +73,17 @@ class ThumbnailManager:
     def __init__(
         self,
         cache_dir: Path,
-        env_path: str | None = None,
         connection_manager: ConnectionManager | None = None,
     ) -> None:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self._env_path = env_path
         self._connection_manager = connection_manager
-        self._env: Any | None = None
+        self._env: ManagedEnvironment | None = None
+        self._pool: WorkerPool | None = None
         self._lock = asyncio.Lock()
-        self._pending_generations: dict[Path, asyncio.Task[None]] = {}
+        self._pending_generations: dict[
+            Path, tuple[ExecutionTask[Any], asyncio.Task[None]]
+        ] = {}
         self._placeholder_cache: dict[int, bytes] = {}
 
     # ------------------------------------------------------------------
@@ -201,63 +204,73 @@ class ThumbnailManager:
                 self._publish_log("INFO", "Launching thumbnail environment")
                 await asyncio.to_thread(self._launch)
 
-        env = self._env
-        if env is None:
+        pool = self._pool
+        if pool is None:
             # Launch failed — _launch already logged. Don't raise; the
             # endpoint returns a placeholder which the frontend retries.
             return
 
         extension = path.suffix.lstrip(".")
-        owns_task = False
         async with self._lock:
-            task = self._pending_generations.get(cache_file)
-            if task is None or task.done():
+            pending = self._pending_generations.get(cache_file)
+            if pending is None or pending[1].done():
                 self._publish_log(
                     "INFO",
                     f"Queued thumbnail generation for {path}",
                 )
-                task = asyncio.create_task(
-                    asyncio.to_thread(
-                        env.execute,
-                        _GENERATOR_MODULE_NAME,
-                        "queue_generate_thumbnail",
-                        (str(path), extension, str(cache_file), (size, size)),
-                    )
+                execution = await asyncio.to_thread(
+                    pool.submit_path,
+                    _GENERATOR_MODULE_NAME,
+                    "create_thumbnail",
+                    args=(str(path), extension, str(cache_file), (size, size)),
                 )
-                self._pending_generations[cache_file] = task
-                owns_task = True
+                waiter = asyncio.create_task(
+                    self._wait_for_generation(execution, path, cache_file)
+                )
+                self._pending_generations[cache_file] = (execution, waiter)
 
+    async def _wait_for_generation(
+        self,
+        execution: ExecutionTask[Any],
+        source: Path,
+        cache_file: Path,
+    ) -> None:
         try:
-            await task
-        except Exception as exc:
-            if owns_task:
-                self._publish_log(
-                    "ERROR",
-                    f"Thumbnail generation failed for {path}: {exc}",
-                )
+            await execution
+        except asyncio.CancelledError:
+            execution.cancel()
             raise
+        except Exception as exc:  # noqa: BLE001
+            self._publish_log("ERROR", f"Thumbnail generation failed for {source}: {exc}")
         else:
-            if owns_task:
-                self._publish_log(
-                    "INFO",
-                    f"Thumbnail generation completed for {path}",
-                )
+            self._publish_log("INFO", f"Thumbnail generation completed for {source}")
         finally:
-            if owns_task and task.done():
+            current = asyncio.current_task()
+            pending = self._pending_generations.get(cache_file)
+            if pending is not None and pending[1] is current:
                 self._pending_generations.pop(cache_file, None)
 
     async def shutdown(self) -> None:
-        """Best-effort env shutdown. Idempotent."""
-        env = self._env
-        if env is None:
+        """Cancel pending renders and close the managed worker pool."""
+        pending = tuple(self._pending_generations.values())
+        for execution, waiter in pending:
+            execution.cancel()
+            waiter.cancel()
+        if pending:
+            await asyncio.gather(
+                *(waiter for _, waiter in pending),
+                return_exceptions=True,
+            )
+        self._pending_generations.clear()
+        pool = self._pool
+        self._pool = None
+        self._env = None
+        if pool is None:
             return
         try:
-            close = getattr(env, "close", None)
-            if callable(close):
-                await asyncio.to_thread(close)
+            await asyncio.to_thread(pool.close)
         except Exception as exc:  # noqa: BLE001
-            _logger.warning("thumbnail env close raised: %r", exc)
-        self._env = None
+            _logger.warning("thumbnail worker pool close raised: %r", exc)
 
     # ------------------------------------------------------------------
     # Hooks
@@ -277,22 +290,15 @@ class ThumbnailManager:
             from bioimageflow.env_manager import get_shared_environment_manager
 
             em = get_shared_environment_manager()
-            if self._env_path:
-                self._publish_log(
-                    "INFO",
-                    f"Loading thumbnail environment from {self._env_path}",
-                )
-                env = em.load("thumbnail", Path(self._env_path))
-            else:
-                self._publish_log("INFO", "Creating thumbnail environment")
-                env = em.create(
-                    "thumbnail",
-                    dependencies={
-                        "pip": list(_THUMBNAIL_ENV_PIP),
-                    }
-                )
-            env.launch()
+            self._publish_log("INFO", "Provisioning thumbnail environment")
+            env = em.provision(
+                "thumbnail",
+                EnvironmentSpec(python="3.12.*", pypi=_THUMBNAIL_ENV_PIP),
+                replace_existing=True,
+            ).wait_for()
+            pool = env.start(workers=8)
             self._env = env
+            self._pool = pool
             self._publish_log("INFO", "Thumbnail environment running")
         except Exception:  # noqa: BLE001
             _logger.exception("thumbnail Wetlands env failed to launch")
@@ -301,6 +307,7 @@ class ThumbnailManager:
                 "thumbnail Wetlands env failed to launch",
             )
             self._env = None
+            self._pool = None
             raise
 
     def _publish_log(self, level: str, message: str) -> None:

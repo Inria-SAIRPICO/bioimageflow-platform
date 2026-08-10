@@ -6,7 +6,6 @@ import ConfirmationService from 'primevue/confirmationservice'
 import ToastService from 'primevue/toastservice'
 
 import ExternalEditorSection from '@/components/panels/sections/ExternalEditorSection.vue'
-import NapariSection from '@/components/panels/sections/NapariSection.vue'
 import ExecutionSection from '@/components/panels/sections/ExecutionSection.vue'
 import StorageSection from '@/components/panels/sections/StorageSection.vue'
 import * as nativeDialogs from '@/utils/nativeDialogs'
@@ -60,7 +59,6 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
 const baseSettings = {
   deployment_mode: 'desktop' as const,
   external_editor: null,
-  napari_env_path: null,
   omero_instances: [],
   tool_store_path: '~/.bioimageflow/tool_packages/',
   update_mode: 'auto' as const,
@@ -118,36 +116,6 @@ describe('ExternalEditorSection', () => {
     await input.trigger('blur')
     expect(wrapper.emitted('update:field')).toEqual([
       [{ field: 'external_editor', value: null }],
-    ])
-  })
-})
-
-describe('NapariSection', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('shows Browse button only in desktop mode', () => {
-    vi.spyOn(nativeDialogs, 'isDesktop').mockReturnValue(false)
-    const wrapper = mount(NapariSection, {
-      ...globalOpts,
-      props: { modelValue: baseSettings },
-    })
-    expect(
-      wrapper.find('[data-testid="napari-browse-button"]').exists(),
-    ).toBe(false)
-  })
-
-  it('emits null when path is cleared', async () => {
-    const wrapper = mount(NapariSection, {
-      ...globalOpts,
-      props: { modelValue: { ...baseSettings, napari_env_path: '/x' } },
-    })
-    const input = wrapper.find('[data-testid="napari-env-input"]')
-    await input.setValue('')
-    await input.trigger('blur')
-    expect(wrapper.emitted('update:field')?.[0]).toEqual([
-      { field: 'napari_env_path', value: null },
     ])
   })
 })

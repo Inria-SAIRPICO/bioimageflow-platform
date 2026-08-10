@@ -57,7 +57,6 @@ class TestSettings:
     def test_defaults(self):
         s = Settings(deployment_mode="webapp")
         assert s.external_editor is None
-        assert s.napari_env_path is None
         assert s.omero_instances == []
         assert s.tool_store_path == "~/.bioimageflow/tool_packages/"
         assert s.update_mode == "auto"

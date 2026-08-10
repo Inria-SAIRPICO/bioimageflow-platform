@@ -17,6 +17,7 @@ from unittest import mock
 import asyncio
 
 import pytest
+from wetlands import EnvironmentSpec
 
 from bioimageflow_server.services.thumbnail_manager import ThumbnailManager
 
@@ -169,11 +170,29 @@ async def test_get_or_queue_returns_cached_immediately(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _stub_env() -> mock.MagicMock:
-    """Mock object that quacks like a launched Wetlands environment."""
-    env = mock.MagicMock()
-    env.execute = mock.MagicMock(return_value=None)
-    return env
+class _StubExecution:
+    def __init__(self, *, gate: asyncio.Event | None = None) -> None:
+        self.gate = gate
+        self.cancelled = False
+
+    def __await__(self):
+        async def wait() -> None:
+            if self.gate is not None:
+                await self.gate.wait()
+
+        return wait().__await__()
+
+    def cancel(self) -> bool:
+        self.cancelled = True
+        if self.gate is not None:
+            self.gate.set()
+        return True
+
+
+def _stub_pool(*, execution: _StubExecution | None = None) -> mock.MagicMock:
+    pool = mock.MagicMock()
+    pool.submit_path.return_value = execution or _StubExecution()
+    return pool
 
 
 @pytest.mark.anyio
@@ -182,17 +201,18 @@ async def test_queue_generate_lazily_calls_launch(tmp_path: Path) -> None:
     src.write_bytes(b"x")
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
 
-    env = _stub_env()
+    pool = _stub_pool()
     launched: list[bool] = []
 
     def fake_launch() -> None:
         launched.append(True)
-        mgr._env = env
+        mgr._env = mock.MagicMock()
+        mgr._pool = pool
 
     mgr._launch = fake_launch  # type: ignore[method-assign]
     await mgr.queue_generate(src, 128)
     assert launched == [True]
-    env.execute.assert_called_once()
+    pool.submit_path.assert_called_once()
 
 
 @pytest.mark.anyio
@@ -202,13 +222,15 @@ async def test_queue_generate_publishes_backend_lifecycle_logs(tmp_path: Path) -
     cm = mock.MagicMock()
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache", connection_manager=cm)
 
-    env = _stub_env()
+    pool = _stub_pool()
 
     def fake_launch() -> None:
-        mgr._env = env
+        mgr._env = mock.MagicMock()
+        mgr._pool = pool
 
     mgr._launch = fake_launch  # type: ignore[method-assign]
     await mgr.queue_generate(src, 128)
+    await asyncio.sleep(0)
 
     messages = [call.args[1] for call in cm.publish_log.call_args_list]
     assert any("Launching thumbnail environment" in message for message in messages)
@@ -221,18 +243,16 @@ async def test_queue_generate_passes_correct_args(tmp_path: Path) -> None:
     src.write_bytes(b"fake-tiff")
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
 
-    env = _stub_env()
-    mgr._env = env  # bypass launch
+    pool = _stub_pool()
+    mgr._env = mock.MagicMock()
+    mgr._pool = pool
 
     await mgr.queue_generate(src, 128)
 
-    args, kwargs = env.execute.call_args
-    # function name must be queue_generate_thumbnail
-    assert "thumbnail_generator" in str(args[0]) or "thumbnail_generator" in str(
-        kwargs.get("module_path", "")
-    )
-    assert args[1] == "queue_generate_thumbnail"
-    submitted = args[2]
+    args, kwargs = pool.submit_path.call_args
+    assert "thumbnail_generator" in str(args[0])
+    assert args[1] == "create_thumbnail"
+    submitted = kwargs["args"]
     assert submitted[0] == str(src)
     assert submitted[1] == "tif"  # extension without dot
     assert submitted[2] == str(mgr.cache_path(src, 128))
@@ -246,19 +266,21 @@ async def test_queue_generate_skips_when_cached(tmp_path: Path) -> None:
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
     mgr.cache_path(src, 128).write_bytes(b"already-cached")
 
-    env = _stub_env()
-    mgr._env = env
+    pool = _stub_pool()
+    mgr._env = mock.MagicMock()
+    mgr._pool = pool
 
     await mgr.queue_generate(src, 128)
-    env.execute.assert_not_called()
+    pool.submit_path.assert_not_called()
 
 
 @pytest.mark.anyio
 async def test_queue_generate_skips_when_source_missing(tmp_path: Path) -> None:
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
 
-    env = _stub_env()
-    mgr._env = env
+    pool = _stub_pool()
+    mgr._env = mock.MagicMock()
+    mgr._pool = pool
 
     def _explode() -> None:  # pragma: no cover
         raise AssertionError("_launch must not run for a missing source")
@@ -266,7 +288,7 @@ async def test_queue_generate_skips_when_source_missing(tmp_path: Path) -> None:
     mgr._launch = _explode  # type: ignore[method-assign]
 
     await mgr.queue_generate(tmp_path / "missing.tif", 128)
-    env.execute.assert_not_called()
+    pool.submit_path.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -277,12 +299,13 @@ async def test_queue_generate_reuses_env_across_calls(tmp_path: Path) -> None:
     src2.write_bytes(b"y")
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
 
-    env = _stub_env()
+    pool = _stub_pool()
     launches: list[bool] = []
 
     def fake_launch() -> None:
         launches.append(True)
-        mgr._env = env
+        mgr._env = mock.MagicMock()
+        mgr._pool = pool
 
     mgr._launch = fake_launch  # type: ignore[method-assign]
 
@@ -290,7 +313,7 @@ async def test_queue_generate_reuses_env_across_calls(tmp_path: Path) -> None:
     await mgr.queue_generate(src2, 128)
 
     assert len(launches) == 1
-    assert env.execute.call_count == 2
+    assert pool.submit_path.call_count == 2
 
 
 @pytest.mark.anyio
@@ -302,28 +325,20 @@ async def test_concurrent_queue_generate_same_cache_uses_one_render(
     cm = mock.MagicMock()
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache", connection_manager=cm)
 
-    env = _stub_env()
     release = asyncio.Event()
-    execute_calls = 0
+    execution = _StubExecution(gate=release)
+    pool = _stub_pool(execution=execution)
+    mgr._env = mock.MagicMock()
+    mgr._pool = pool
 
-    def slow_execute(*_args: object, **_kwargs: object) -> None:
-        nonlocal execute_calls
-        execute_calls += 1
-        while not release.is_set():
-            import time
-
-            time.sleep(0.01)
-
-    env.execute.side_effect = slow_execute
-    mgr._env = env
-
-    t1 = asyncio.create_task(mgr.queue_generate(src, 128))
-    await asyncio.sleep(0.05)
-    t2 = asyncio.create_task(mgr.queue_generate(src, 128))
+    await asyncio.gather(
+        mgr.queue_generate(src, 128),
+        mgr.queue_generate(src, 128),
+    )
     release.set()
-    await asyncio.wait_for(asyncio.gather(t1, t2), timeout=1.0)
+    await asyncio.sleep(0)
 
-    assert execute_calls == 1
+    assert pool.submit_path.call_count == 1
     completion_logs = [
         call.args[1]
         for call in cm.publish_log.call_args_list
@@ -340,11 +355,13 @@ async def test_queue_generate_handles_extension_with_no_dot(tmp_path: Path) -> N
     src = tmp_path / "datafile_no_extension"
     src.write_bytes(b"x")
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
-    mgr._env = _stub_env()
+    pool = _stub_pool()
+    mgr._env = mock.MagicMock()
+    mgr._pool = pool
 
     await mgr.queue_generate(src, 128)
-    args, _ = mgr._env.execute.call_args
-    assert args[2][1] == ""
+    _, kwargs = pool.submit_path.call_args
+    assert kwargs["args"][1] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -362,14 +379,16 @@ async def test_get_or_queue_bounded_wait_returns_real_when_ready(tmp_path: Path)
     cache_file = mgr.cache_path(src, 128)
     real_png = b"\x89PNG\r\n\x1a\nrendered"
 
-    env = _stub_env()
+    pool = _stub_pool()
 
-    def write_cache(*_a: object, **_kw: object) -> None:
+    def write_cache(*_a: object, **_kw: object) -> _StubExecution:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_bytes(real_png)
+        return _StubExecution()
 
-    env.execute.side_effect = write_cache
-    mgr._env = env
+    pool.submit_path.side_effect = write_cache
+    mgr._env = mock.MagicMock()
+    mgr._pool = pool
 
     result = await mgr.get_or_queue(src, 128, wait_timeout=1.0)
     assert result == real_png
@@ -381,12 +400,64 @@ async def test_get_or_queue_returns_placeholder_on_timeout(tmp_path: Path) -> No
     src.write_bytes(b"x")
     mgr = ThumbnailManager(cache_dir=tmp_path / "cache")
 
-    env = _stub_env()  # never writes the cache file
-    mgr._env = env
+    pool = _stub_pool()  # never writes the cache file
+    mgr._env = mock.MagicMock()
+    mgr._pool = pool
 
     result = await mgr.get_or_queue(src, 128, wait_timeout=0.1)
     assert result == mgr.placeholder_png(128)
-    env.execute.assert_called_once()
+    pool.submit_path.assert_called_once()
+
+
+def test_launch_provisions_environment_and_starts_worker_pool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bioimageflow_server.services import thumbnail_manager as module
+
+    pool = mock.MagicMock()
+    environment = mock.MagicMock()
+    environment.start.return_value = pool
+    operation = mock.MagicMock()
+    operation.wait_for.return_value = environment
+    manager = mock.MagicMock()
+    manager.provision.return_value = operation
+    monkeypatch.setattr(
+        "bioimageflow.env_manager.get_shared_environment_manager",
+        lambda: manager,
+    )
+    thumbnails = ThumbnailManager(cache_dir=tmp_path / "cache")
+
+    thumbnails._launch()
+
+    manager.provision.assert_called_once_with(
+        "thumbnail",
+        EnvironmentSpec(python="3.12.*", pypi=module._THUMBNAIL_ENV_PIP),
+        replace_existing=True,
+    )
+    operation.wait_for.assert_called_once_with()
+    environment.start.assert_called_once_with(workers=8)
+    assert thumbnails._pool is pool
+
+
+@pytest.mark.anyio
+async def test_shutdown_cancels_pending_generation_and_closes_pool(tmp_path: Path) -> None:
+    source = tmp_path / "image.tif"
+    source.write_bytes(b"x")
+    gate = asyncio.Event()
+    execution = _StubExecution(gate=gate)
+    pool = _stub_pool(execution=execution)
+    thumbnails = ThumbnailManager(cache_dir=tmp_path / "cache")
+    thumbnails._env = mock.MagicMock()
+    thumbnails._pool = pool
+    await thumbnails.queue_generate(source, 128)
+
+    await thumbnails.shutdown()
+
+    assert execution.cancelled is True
+    pool.close.assert_called_once_with()
+    assert thumbnails._pending_generations == {}
+    assert thumbnails._pool is None
 
 
 @pytest.fixture

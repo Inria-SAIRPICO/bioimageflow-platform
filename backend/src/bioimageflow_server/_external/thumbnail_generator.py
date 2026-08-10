@@ -1,10 +1,6 @@
 # Self-contained script — do NOT add imports from bioimageflow_server.
-# Executed inside the thumbnail Wetlands env (which provides bioio +
-# pillow + numpy + the bioio readers). The manager (services/
-# thumbnail_manager.py) calls this module's ``queue_generate_thumbnail``
-# via ``env.execute(...)``; it returns immediately after submitting to
-# an in-env multiprocessing.Pool, so each manager call is fire-and-
-# forget.
+# Executed by a Wetlands worker pool in the thumbnail environment, which
+# provides bioio, Pillow, NumPy, and the bioio readers.
 """Thumbnail generator helper (subprocess-side).
 
 Pattern lifted from Galaxy's ``galaxy/thumbnail_generator.py``: a
@@ -14,15 +10,7 @@ can return its IPC response immediately and accept the next request.
 
 from __future__ import annotations
 
-import multiprocessing
-import traceback
 from pathlib import Path
-from typing import Any
-
-_pool: Any = None
-
-if __name__ == "__main__":  # pragma: no cover
-    multiprocessing.set_start_method("spawn")
 
 
 def create_thumbnail(
@@ -34,7 +22,7 @@ def create_thumbnail(
     """Render a thumbnail for ``image_path`` and write a PNG to
     ``thumbnail_path``.
 
-    Runs in a pool worker — heavy imports (bioio, numpy, PIL) are kept
+    Runs in a Wetlands worker — heavy imports (bioio, numpy, PIL) are kept
     lazy here so the manager-side test loader doesn't need them.
     """
     import numpy as np
@@ -94,34 +82,3 @@ def create_thumbnail(
     img.thumbnail(size)
     Path(thumbnail_path).parent.mkdir(parents=True, exist_ok=True)
     img.save(thumbnail_path)
-
-
-def _on_error(exc: BaseException) -> None:
-    """Pool error_callback — logs and never raises (would kill the pool)."""
-    try:
-        print("[ERROR] thumbnail_generator worker failed:")
-        traceback.print_exception(type(exc), exc, exc.__traceback__)
-    except Exception:  # pragma: no cover - defensive
-        pass
-
-
-def queue_generate_thumbnail(
-    image_path: str,
-    extension: str,
-    thumbnail_path: str,
-    size: tuple[int, int] = (128, 128),
-) -> None:
-    """Submit one render task to the in-env pool. Returns immediately.
-
-    The pool is created lazily on first call and reused — Galaxy's
-    convention. Eight workers is a generous upper bound; the bioio +
-    bioformats stack is I/O bound so over-subscribing helps.
-    """
-    global _pool
-    if _pool is None:
-        _pool = multiprocessing.Pool(8)
-    _pool.apply_async(
-        create_thumbnail,
-        (image_path, extension, thumbnail_path, size),
-        error_callback=_on_error,
-    )

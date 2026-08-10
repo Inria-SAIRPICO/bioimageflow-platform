@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import httpx
+from wetlands import EnvironmentSpec, ManagedProcess
 
 from bioimageflow_server.models.editor import (
     EditorOpenMethod,
@@ -120,7 +121,6 @@ class EmbeddedCodeServerManager:
     def __init__(
         self,
         *,
-        env_path: Path | None = None,
         editor_url: str = DEFAULT_EDITOR_URL,
         control_url: str = DEFAULT_CONTROL_URL,
         vsix_path: Path | None = None,
@@ -129,13 +129,12 @@ class EmbeddedCodeServerManager:
             _default_environment_manager_provider
         ),
     ) -> None:
-        self.env_path = env_path
         self.editor_url = editor_url.rstrip("/")
         self.control_url = control_url.rstrip("/")
         self.vsix_path = vsix_path or default_opener_vsix_path()
         self.code_server_binary = code_server_binary
         self._environment_manager_provider = environment_manager_provider
-        self._process: object | None = None
+        self._process: ManagedProcess | object | None = None
 
     def status(self, *, url_probe: UrlProbe = _default_url_probe) -> EditorStatus:
         editor_available = url_probe(self.editor_url)
@@ -187,10 +186,9 @@ class EmbeddedCodeServerManager:
         process_launcher: ProcessLauncher | None = None,
     ) -> None:
         logger.info(
-            "Launching embedded code-server: editor_url=%s control_url=%s env_path=%s",
+            "Launching embedded code-server: editor_url=%s control_url=%s",
             self.editor_url,
             self.control_url,
-            self.env_path,
         )
         if not self.vsix_path.exists():
             raise FileNotFoundError(f"opener extension not found: {self.vsix_path}")
@@ -216,43 +214,40 @@ class EmbeddedCodeServerManager:
 
     def _launch_in_environment(self) -> object:
         env_manager = self._environment_manager_provider()
-        if self.env_path is not None:
-            logger.info("Loading configured code-server environment: %s", self.env_path)
-            environment = env_manager.load("codeserver", self.env_path)
-        else:
-            environment = self._create_or_load_default_environment(env_manager)
-        commands = [f"{shlex.join(self.legacy_uninstall_command())} || true"]
-        commands.extend(shlex.join(command) for command in self.install_commands())
-        commands.append(shlex.join(self.launch_command()))
         logger.info(
-            "Executing embedded code-server startup in environment: commands=%s",
-            commands,
+            "Provisioning managed code-server environment: version=%s",
+            CODE_SERVER_VERSION,
         )
-        return env_manager.execute_commands(environment, commands)
-
-    def _create_or_load_default_environment(self, env_manager: Any) -> object:
-        try:
+        environment = env_manager.provision(
+            "codeserver",
+            EnvironmentSpec(
+                python="3.10.*",
+                conda=(f"code-server=={CODE_SERVER_VERSION}",),
+            ),
+            replace_existing=True,
+        ).wait_for()
+        legacy_result = environment.run(self.legacy_uninstall_command(), check=False)
+        if legacy_result.returncode != 0:
             logger.info(
-                "Creating or reusing default code-server environment: version=%s",
-                CODE_SERVER_VERSION,
+                "Legacy code-server opener removal skipped or failed: %s",
+                legacy_result.stderr.strip(),
             )
-            return env_manager.create(
-                "codeserver",
-                dependencies={
-                    "python": "3.10",
-                    "conda": [f"code-server=={CODE_SERVER_VERSION}"],
-                    "pip": [],
-                },
-                replace_existing=False,
-            )
-        except Exception as exc:
-            if not _is_missing_metadata_environment_reuse_error(exc):
-                raise
-            logger.warning(
-                "Loading existing codeserver environment with missing Wetlands metadata: %s",
-                exc,
-            )
-            return env_manager.load("codeserver")
+        for command in self.install_commands():
+            logger.info("Installing code-server extension: %s", shlex.join(command))
+            environment.run(command)
+        command = self.launch_command()
+        logger.info("Starting managed code-server process: %s", shlex.join(command))
+        return environment.spawn(command, output_limit=16 * 1024 * 1024)
+
+    def shutdown(self) -> None:
+        """Close the managed code-server process, if one was launched."""
+        process = self._process
+        self._process = None
+        if process is None:
+            return
+        close = getattr(process, "close", None)
+        if callable(close):
+            close()
 
     def open_path(
         self,
@@ -304,6 +299,14 @@ class EditorService:
         self._embedded_startup_timeout = embedded_startup_timeout
         self._embedded_poll_interval = embedded_poll_interval
         self._embedded_lock = threading.RLock()
+
+    async def shutdown(self) -> None:
+        """Stop the embedded editor without blocking the application event loop."""
+        shutdown = getattr(self._embedded, "shutdown", None)
+        if callable(shutdown):
+            import asyncio
+
+            await asyncio.to_thread(shutdown)
 
     def get_status(self, *, launch: bool = False) -> EditorStatus:
         status = self._embedded.status()
@@ -622,7 +625,3 @@ def _url_probe_diagnostic(url: str) -> str:
     if len(text) > 200:
         text = text[:200] + "..."
     return f"HTTP {response.status_code}: {text}"
-
-
-def _is_missing_metadata_environment_reuse_error(exc: Exception) -> bool:
-    return type(exc).__name__ == "EnvironmentReuseError" and "metadata is missing" in str(exc)

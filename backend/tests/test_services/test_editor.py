@@ -5,8 +5,11 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+from wetlands import EnvironmentSpec
 
 from bioimageflow_server.models.editor import EditorOpenMethod, EditorOpenResponse, EditorStatus
 from bioimageflow_server.models.settings import Settings
@@ -125,49 +128,24 @@ class _BlockingLaunchEmbedded(_LaunchableEmbedded):
 
 class _EnvironmentManager:
     def __init__(self) -> None:
-        self.created: list[tuple[str, dict[str, object], bool]] = []
-        self.loaded: list[tuple[str, Path | None]] = []
-        self.executed: list[tuple[object, list[str]]] = []
-        self.environment = object()
+        self.provisioned: list[tuple[str, object, bool]] = []
+        self.environment = MagicMock()
+        self.environment.run.side_effect = [
+            SimpleNamespace(returncode=0, stderr=""),
+            *[SimpleNamespace(returncode=0, stderr="") for _ in range(5)],
+        ]
         self.process = object()
+        self.environment.spawn.return_value = self.process
 
-    def create(
+    def provision(
         self,
         name: str,
-        dependencies: dict[str, object],
+        spec: object,
         *,
         replace_existing: bool = False,
     ) -> object:
-        self.created.append((name, dependencies, replace_existing))
-        return self.environment
-
-    def load(self, name: str, path: Path | None = None) -> object:
-        self.loaded.append((name, path))
-        return self.environment
-
-    def execute_commands(self, environment: object, commands: list[str]) -> object:
-        self.executed.append((environment, commands))
-        return self.process
-
-
-class EnvironmentReuseError(Exception):
-    pass
-
-
-class _ReuseErrorEnvironmentManager(_EnvironmentManager):
-    def __init__(self, message: str = "metadata is missing") -> None:
-        super().__init__()
-        self.message = message
-
-    def create(
-        self,
-        name: str,
-        dependencies: dict[str, object],
-        *,
-        replace_existing: bool = False,
-    ) -> object:
-        self.created.append((name, dependencies, replace_existing))
-        raise EnvironmentReuseError(self.message)
+        self.provisioned.append((name, spec, replace_existing))
+        return SimpleNamespace(wait_for=lambda: self.environment)
 
 
 def _settings(command: str | None = None) -> Settings:
@@ -778,7 +756,7 @@ def test_embedded_manager_default_ports_and_command_order(tmp_path: Path) -> Non
         calls.append(args)
         return object()
 
-    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver", vsix_path=vsix)
+    manager = EmbeddedCodeServerManager(vsix_path=vsix)
     manager.launch(install_runner=runner, process_launcher=runner)
 
     assert manager.editor_url == "http://127.0.0.1:32344"
@@ -809,7 +787,7 @@ def test_embedded_manager_ignores_missing_legacy_opener_uninstall(
             raise RuntimeError("Extension 'sairpico.opener' is not installed")
         return object()
 
-    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver", vsix_path=vsix)
+    manager = EmbeddedCodeServerManager(vsix_path=vsix)
     manager.launch(install_runner=runner, process_launcher=runner)
 
     assert calls[0] == ["code-server", "--uninstall-extension", "sairpico.opener"]
@@ -823,92 +801,36 @@ def test_embedded_manager_default_launch_uses_codeserver_environment(tmp_path: P
     env_manager = _EnvironmentManager()
 
     manager = EmbeddedCodeServerManager(
-        env_path=None,
         vsix_path=vsix,
         environment_manager_provider=lambda: env_manager,
     )
     manager.launch()
 
-    assert env_manager.created == [
+    assert env_manager.provisioned == [
         (
             "codeserver",
-            {"python": "3.10", "conda": ["code-server==4.106.2"], "pip": []},
-            False,
+            EnvironmentSpec(
+                python="3.10.*",
+                conda=("code-server==4.106.2",),
+            ),
+            True,
         )
     ]
-    assert env_manager.executed
-    commands = env_manager.executed[0][1]
-    assert commands[0] == "code-server --uninstall-extension sairpico.opener || true"
-    assert commands[1].startswith("code-server --install-extension ")
-    assert str(vsix) in commands[1]
-    assert commands[-1].endswith("--bind-addr 127.0.0.1:32344")
-
-
-def test_embedded_manager_loads_legacy_default_environment_on_reuse_error(
-    tmp_path: Path,
-) -> None:
-    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
-    vsix.write_bytes(b"vsix")
-    env_manager = _ReuseErrorEnvironmentManager()
-
-    manager = EmbeddedCodeServerManager(
-        env_path=None,
-        vsix_path=vsix,
-        environment_manager_provider=lambda: env_manager,
-    )
-    manager.launch()
-
-    assert env_manager.created == [
-        (
-            "codeserver",
-            {"python": "3.10", "conda": ["code-server==4.106.2"], "pip": []},
-            False,
-        )
+    run_calls = env_manager.environment.run.call_args_list
+    assert run_calls[0].args[0] == [
+        "code-server",
+        "--uninstall-extension",
+        "sairpico.opener",
     ]
-    assert env_manager.loaded == [("codeserver", None)]
-    assert env_manager.executed
-
-
-def test_embedded_manager_does_not_load_default_environment_on_recipe_mismatch(
-    tmp_path: Path,
-) -> None:
-    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
-    vsix.write_bytes(b"vsix")
-    env_manager = _ReuseErrorEnvironmentManager("it was created with a different recipe")
-
-    manager = EmbeddedCodeServerManager(
-        env_path=None,
-        vsix_path=vsix,
-        environment_manager_provider=lambda: env_manager,
-    )
-
-    with pytest.raises(EnvironmentReuseError, match="different recipe"):
-        manager.launch()
-
-    assert env_manager.loaded == []
-    assert env_manager.executed == []
-
-
-def test_embedded_manager_loads_configured_environment_path(tmp_path: Path) -> None:
-    vsix = tmp_path / "bioimageflow-opener-0.1.0.vsix"
-    vsix.write_bytes(b"vsix")
-    env_path = tmp_path / "codeserver"
-    env_manager = _EnvironmentManager()
-
-    manager = EmbeddedCodeServerManager(
-        env_path=env_path,
-        vsix_path=vsix,
-        environment_manager_provider=lambda: env_manager,
-    )
-    manager.launch()
-
-    assert env_manager.loaded == [("codeserver", env_path)]
-    assert env_manager.created == []
+    assert run_calls[0].kwargs == {"check": False}
+    assert run_calls[1].args[0] == ["code-server", "--install-extension", str(vsix)]
+    launch_call = env_manager.environment.spawn.call_args
+    assert launch_call.args[0][-2:] == ["--bind-addr", "127.0.0.1:32344"]
+    assert launch_call.kwargs == {"output_limit": 16 * 1024 * 1024}
 
 
 def test_embedded_manager_launch_command_uses_configured_editor_url(tmp_path: Path) -> None:
     manager = EmbeddedCodeServerManager(
-        env_path=tmp_path / "codeserver",
         editor_url="http://127.0.0.1:42344/",
     )
 
@@ -947,7 +869,7 @@ def test_default_opener_extension_matches_source_package() -> None:
 
 
 def test_embedded_manager_missing_opener_extension_is_unavailable(tmp_path: Path) -> None:
-    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver", vsix_path=tmp_path / "missing.vsix")
+    manager = EmbeddedCodeServerManager(vsix_path=tmp_path / "missing.vsix")
 
     status = manager.status(url_probe=lambda url: True)
 
@@ -957,7 +879,6 @@ def test_embedded_manager_missing_opener_extension_is_unavailable(tmp_path: Path
 
 def test_embedded_manager_diagnostics_report_probe_results(tmp_path: Path) -> None:
     manager = EmbeddedCodeServerManager(
-        env_path=tmp_path / "codeserver",
         vsix_path=tmp_path / "missing.vsix",
     )
 
@@ -973,7 +894,7 @@ def test_embedded_manager_diagnostics_report_probe_results(tmp_path: Path) -> No
 
 def test_embedded_manager_open_path_calls_opener_with_file_type(tmp_path: Path) -> None:
     opened: list[tuple[str, dict[str, str]]] = []
-    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver")
+    manager = EmbeddedCodeServerManager()
     tool = tmp_path / "tool.py"
     tool.write_text("print('x')")
 
@@ -994,7 +915,7 @@ def test_embedded_manager_open_path_calls_opener_with_file_type(tmp_path: Path) 
 
 def test_embedded_manager_open_path_calls_opener_with_folder_type(tmp_path: Path) -> None:
     opened: list[tuple[str, dict[str, str]]] = []
-    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver")
+    manager = EmbeddedCodeServerManager()
     tool_dir = tmp_path / "tool_package"
     tool_dir.mkdir()
 
@@ -1010,7 +931,7 @@ def test_embedded_manager_open_path_calls_opener_with_folder_type(tmp_path: Path
 
 
 def test_embedded_manager_open_path_can_focus_file_inside_folder(tmp_path: Path) -> None:
-    manager = EmbeddedCodeServerManager(env_path=tmp_path / "codeserver")
+    manager = EmbeddedCodeServerManager()
     workspace = tmp_path / "workspace"
     tool = workspace / "tools" / "tool.py"
     tool.parent.mkdir(parents=True)

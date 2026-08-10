@@ -15,13 +15,20 @@ import asyncio
 import logging
 import multiprocessing
 import os
-import subprocess
 import time
 from multiprocessing.connection import Client
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from bioimageflow.env_manager import get_shared_environment_manager
+from wetlands import (
+    EnvironmentNotReadyError,
+    EnvironmentSpec,
+    ManagedProcess,
+    OutputStream,
+    ProcessLineTimeoutError,
+    ProcessTimeoutError,
+)
 
 from bioimageflow_server.models.napari import NapariStatus
 
@@ -57,13 +64,11 @@ class NapariLauncher:
 
     def __init__(
         self,
-        napari_env_path: str | None = None,
         connection_manager: ConnectionManager | None = None,
     ) -> None:
-        self._napari_env_path = napari_env_path
         self._connection_manager = connection_manager
         self._connection: Connection | None = None
-        self._process: subprocess.Popen[Any] | None = None
+        self._process: ManagedProcess | None = None
         self._env_path: str | None = None
         self._pid: int | None = None
         self._lock = asyncio.Lock()
@@ -76,7 +81,7 @@ class NapariLauncher:
         proc = self._process
         if proc is None or self._connection is None:
             return False
-        return proc.poll() is None
+        return proc.running
 
     def status(self) -> NapariStatus:
         """Return current status. **Lock-free** — safe to call concurrently
@@ -112,7 +117,6 @@ class NapariLauncher:
             return conn.recv()
         except (ConnectionResetError, EOFError, BrokenPipeError) as exc:
             self._connection = None
-            self._process = None
             raise NapariConnectionError(str(exc)) from exc
 
     # ------------------------------------------------------------------
@@ -160,11 +164,17 @@ class NapariLauncher:
         """Terminate the manager process. Idempotent."""
         async with self._lock:
             if not self._is_alive():
-                # Already stopped — emit nothing (broadcasting "stopped" on
-                # every shutdown call would be noisy on app teardown).
+                stale_process = self._process
                 self._connection = None
                 self._process = None
                 self._pid = None
+                if stale_process is not None:
+                    try:
+                        await asyncio.to_thread(stale_process.close)
+                    except Exception as exc:  # noqa: BLE001
+                        _logger.warning("stale napari process cleanup raised: %r", exc)
+                # Already stopped — emit nothing (broadcasting "stopped" on
+                # every shutdown call would be noisy on app teardown).
                 return
 
             proc = self._process
@@ -176,14 +186,19 @@ class NapariLauncher:
                 _logger.debug("napari shutdown command failed: %r", exc)
 
             try:
-                await asyncio.to_thread(proc.wait, _SHUTDOWN_WAIT_SECONDS)
-            except subprocess.TimeoutExpired:
+                await proc.wait_async(_SHUTDOWN_WAIT_SECONDS, check=False)
+            except ProcessTimeoutError:
                 _logger.warning(
-                    "napari did not exit within %.1fs; killing", _SHUTDOWN_WAIT_SECONDS
+                    "napari did not exit within %.1fs; Wetlands terminated its process tree",
+                    _SHUTDOWN_WAIT_SECONDS,
                 )
-                proc.kill()
             except Exception as exc:  # noqa: BLE001
                 _logger.warning("napari wait raised: %r", exc)
+            finally:
+                try:
+                    await asyncio.to_thread(proc.close)
+                except Exception as exc:  # noqa: BLE001
+                    _logger.warning("napari process cleanup raised: %r", exc)
 
             self._connection = None
             self._process = None
@@ -208,40 +223,33 @@ class NapariLauncher:
         if self._is_alive():
             return
 
+        stale_process = self._process
+        self._process = None
+        if stale_process is not None:
+            stale_process.close()
+
+        process: ManagedProcess | None = None
         try:
-            # Steps 3–5: get/create the Wetlands environment.
             env_manager = get_shared_environment_manager()
-            if self._napari_env_path:
+            try:
+                env_manager.environment("napari")
                 launch_status = "opening"
-            else:
-                environment_path = (
-                    env_manager.settings_manager.get_environment_path_from_name(
-                        "napari"
-                    )
-                )
-                launch_status = (
-                    "opening"
-                    if env_manager.environment_exists(environment_path)
-                    else "creating"
-                )
+            except EnvironmentNotReadyError:
+                launch_status = "creating"
 
             # Announce whether Wetlands must install the environment or can
             # immediately launch Napari from an existing one.
             self._broadcast_status(launch_status)
 
-            if self._napari_env_path:
-                environment = env_manager.load(
-                    "napari", Path(self._napari_env_path)
-                )
-            else:
-                environment = env_manager.create(
-                    "napari",
-                    dependencies={
-                        "python": "3.12",
-                        "conda": ["conda-forge::napari", "conda-forge::pyqt"],
-                        "pip": [],
-                    }
-                )
+            environment = env_manager.provision(
+                "napari",
+                EnvironmentSpec(
+                    python="3.12.*",
+                    conda=("napari", "pyqt"),
+                    channels=("conda-forge",),
+                ),
+                replace_existing=True,
+            ).wait_for()
 
             # Step 6: per-launch authkey (32 random bytes, hex-encoded for
             # safe transit through the env var).
@@ -253,40 +261,30 @@ class NapariLauncher:
                 Path(__file__).parent.parent / "_external" / "napari_manager.py"
             ).resolve()
 
-            # Step 8: build child env, strip QT_API leak, inject authkey.
-            child_env = os.environ.copy()
-            child_env.pop("QT_API", None)
-            child_env["NAPARI_AUTHKEY"] = authkey.hex()
-            child_env["NAPARI_PORT_PREFIX"] = _PORT_LINE_PREFIX
-
-            # Step 9: launch the helper. List-of-strings form (Galaxy
-            # convention).
-            commands = [f'python -u "{napari_manager_path}"']
-            process = env_manager.execute_commands(
-                environment,
-                commands,
-                popen_kwargs={"env": child_env},
+            process = environment.spawn(
+                ["python", "-u", str(napari_manager_path)],
+                env={
+                    "QT_API": None,
+                    "NAPARI_AUTHKEY": authkey.hex(),
+                    "NAPARI_PORT_PREFIX": _PORT_LINE_PREFIX,
+                },
+                output_limit=16 * 1024 * 1024,
             )
-
-            # Step 10: get the process logger (default log=True keeps
-            # stdout buffered for wait_for_line).
-            process_logger = env_manager.get_process_logger(process)
-
-            # Step 11: read the port from stdout via a startswith
-            # predicate (matches Wetlands' own port_predicate
-            # convention).
-            line = process_logger.wait_for_line(
-                lambda output_line: output_line.startswith(_PORT_LINE_PREFIX),
-                timeout=_PORT_LINE_TIMEOUT_SECONDS,
-            )
-            if line is None:
-                raise NapariLaunchError(
-                    f"napari manager did not announce a port within "
-                    f"{_PORT_LINE_TIMEOUT_SECONDS:.0f}s"
+            assert process is not None
+            try:
+                event = process.wait_for_line(
+                    lambda output: output.stream is OutputStream.STDOUT
+                    and output.text.startswith(_PORT_LINE_PREFIX),
+                    timeout=_PORT_LINE_TIMEOUT_SECONDS,
                 )
+            except (EOFError, ProcessLineTimeoutError) as exc:
+                raise NapariLaunchError(
+                    "napari manager did not announce a port within "
+                    f"{_PORT_LINE_TIMEOUT_SECONDS:.0f}s"
+                ) from exc
 
             # Step 12: parse.
-            port = int(line.removeprefix(_PORT_LINE_PREFIX).strip())
+            port = int(event.text.removeprefix(_PORT_LINE_PREFIX).strip())
 
             # Step 13: connect; wrap AuthenticationError so the caller
             # sees a single failure type.
@@ -304,6 +302,11 @@ class NapariLauncher:
             self._env_path = str(env_path) if env_path else None
             self._pid = getattr(process, "pid", None)
         except Exception:
+            if process is not None:
+                try:
+                    process.close()
+                except Exception:  # noqa: BLE001
+                    _logger.exception("failed to clean up unsuccessful napari launch")
             # Any failure between the initial status and a successful connect
             # must flip the indicator back to "stopped" so the UI does
             # not stay stuck on the spinner.

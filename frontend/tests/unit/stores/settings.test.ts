@@ -350,7 +350,7 @@ describe('settings store', () => {
     const store = useSettingsStore()
     await store.fetchSettings()
     const p1 = store.updateSettings({ external_editor: 'vim' })
-    const p2 = store.updateSettings({ napari_env_path: '/n' })
+    const p2 = store.updateSettings({ update_mode: 'manual' })
 
     // Let the promise chain reach the first PATCH.
     await new Promise((r) => setTimeout(r, 0))
@@ -368,12 +368,12 @@ describe('settings store', () => {
       data: {
         deployment_mode: 'desktop',
         external_editor: 'vim',
-        napari_env_path: '/n',
+        update_mode: 'manual',
       },
     })
     await p2
     expect(store.settings?.external_editor).toBe('vim')
-    expect(store.settings?.napari_env_path).toBe('/n')
+    expect(store.settings?.update_mode).toBe('manual')
   })
 
   it('isLoaded stays false when fetchSettings fails', async () => {

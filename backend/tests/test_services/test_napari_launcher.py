@@ -13,9 +13,17 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from wetlands import (
+    EnvironmentNotReadyError,
+    EnvironmentSpec,
+    ManagedProcessResult,
+    OutputEvent,
+    OutputStream,
+    ProcessTimeoutError,
+)
 
 from bioimageflow_server.models.napari import NapariStatus
 from bioimageflow_server.services.napari_launcher import (
@@ -70,14 +78,22 @@ class _FakeConnection:
 def _alive_process(pid: int = 4242) -> MagicMock:
     proc = MagicMock(name="process")
     proc.pid = pid
-    proc.poll.return_value = None  # still running
+    proc.running = True
+    proc.wait_async = AsyncMock(
+        return_value=ManagedProcessResult(
+            argv=("python",),
+            returncode=0,
+            stdout="",
+            stderr="",
+            started_at=0,
+            ended_at=1,
+        )
+    )
     return proc
 
 
 def _make_launcher(*, connection_manager: Any = None) -> NapariLauncher:
-    return NapariLauncher(
-        napari_env_path=None, connection_manager=connection_manager
-    )
+    return NapariLauncher(connection_manager=connection_manager)
 
 
 def _attach_alive(launcher: NapariLauncher, *, conn: _FakeConnection | None = None,
@@ -110,7 +126,7 @@ def test_is_alive_true_when_process_running_and_connection_open() -> None:
 def test_is_alive_false_when_process_has_exited() -> None:
     launcher = _make_launcher()
     _attach_alive(launcher)
-    launcher._process.poll.return_value = 0  # type: ignore[union-attr]
+    launcher._process.running = False  # type: ignore[union-attr]
     assert launcher._is_alive() is False
 
 
@@ -159,14 +175,14 @@ def test_send_command_raises_napari_connection_error_on_broken_pipe() -> None:
         launcher._send_command({"action": "open", "paths": []})
 
 
-def test_send_command_resets_connection_and_process_on_connection_error() -> None:
+def test_send_command_resets_connection_but_retains_process_for_cleanup() -> None:
     launcher = _make_launcher()
     fake = _attach_alive(launcher)
     fake.send_exc = ConnectionResetError()
     with pytest.raises(NapariConnectionError):
         launcher._send_command({"action": "open", "paths": []})
     assert launcher._connection is None
-    assert launcher._process is None
+    assert launcher._process is not None
 
 
 def test_send_command_raises_timeout_when_poll_false() -> None:
@@ -394,27 +410,37 @@ async def test_shutdown_sends_shutdown_command_and_waits_for_exit() -> None:
     fake.responses.append({"status": "ok"})
     _attach_alive(launcher, conn=fake)
     proc = launcher._process
-    proc.wait.return_value = 0  # type: ignore[union-attr]
-
     await launcher.shutdown()
     assert fake.sent == [{"action": "shutdown"}]
-    proc.wait.assert_called_once()  # type: ignore[union-attr]
+    proc.wait_async.assert_awaited_once_with(5.0, check=False)  # type: ignore[union-attr]
+    proc.close.assert_called_once()  # type: ignore[union-attr]
     assert launcher._connection is None
     assert launcher._process is None
 
 
 async def test_shutdown_kills_process_if_no_exit_within_timeout() -> None:
-    import subprocess
-
     launcher = _make_launcher()
     fake = _FakeConnection()
     fake.responses.append({"status": "ok"})
     _attach_alive(launcher, conn=fake)
     proc = launcher._process
-    proc.wait.side_effect = subprocess.TimeoutExpired(cmd="napari", timeout=5)  # type: ignore[union-attr]
+    result = ManagedProcessResult(
+        argv=("python",),
+        returncode=-15,
+        stdout="",
+        stderr="",
+        started_at=0,
+        ended_at=5,
+    )
+    proc.wait_async.side_effect = ProcessTimeoutError(  # type: ignore[union-attr]
+        5.0,
+        result,
+        environment="napari",
+        generation_id="generation",
+    )
 
     await launcher.shutdown()
-    proc.kill.assert_called_once()  # type: ignore[union-attr]
+    proc.close.assert_called_once()  # type: ignore[union-attr]
     assert launcher._connection is None
     assert launcher._process is None
 
@@ -427,14 +453,23 @@ async def test_shutdown_is_noop_when_not_running() -> None:
     assert launcher._process is None
 
 
+async def test_shutdown_closes_process_after_connection_loss() -> None:
+    launcher = _make_launcher()
+    process = _alive_process()
+    launcher._process = process
+    launcher._connection = None
+
+    await launcher.shutdown()
+
+    process.close.assert_called_once_with()
+    assert launcher._process is None
+
+
 async def test_shutdown_is_idempotent() -> None:
     launcher = _make_launcher()
     fake = _FakeConnection()
     fake.responses.append({"status": "ok"})
     _attach_alive(launcher, conn=fake)
-    proc = launcher._process
-    proc.wait.return_value = 0  # type: ignore[union-attr]
-
     await launcher.shutdown()
     await launcher.shutdown()  # second call — must not raise / no-op
     # Only one shutdown command was sent.
@@ -450,8 +485,6 @@ async def test_shutdown_emits_environment_status_stopped_when_cm_provided() -> N
     fake = _FakeConnection()
     fake.responses.append({"status": "ok"})
     _attach_alive(launcher, conn=fake)
-    launcher._process.wait.return_value = 0  # type: ignore[union-attr]
-
     await launcher.shutdown()
     cm.publish_environment_status.assert_called_once_with("napari", "stopped")
     cm.publish_log.assert_called_with(
@@ -472,25 +505,36 @@ async def test_shutdown_emits_environment_status_stopped_when_cm_provided() -> N
 # ---------------------------------------------------------------------------
 
 
-class _FakeProcessLogger:
+class _FakeManagedProcess:
     def __init__(self, port_line: str | None = "Listening port 54321") -> None:
         self._port_line = port_line
         self.predicate_calls: list[Any] = []
+        self.pid = 9999
+        self.running = True
+        self.close_calls = 0
 
-    def wait_for_line(self, predicate, timeout=None, include_history=True):
+    def wait_for_line(self, predicate, timeout=None):
         self.predicate_calls.append(predicate)
         if self._port_line is None:
-            return None
-        if predicate(self._port_line):
-            return self._port_line
-        return None
+            raise EOFError("closed before readiness")
+        event = OutputEvent(0, 0.0, OutputStream.STDOUT, self._port_line)
+        assert predicate(event)
+        return event
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 class _FakeEnvironment:
-    def __init__(self, name: str, path: str) -> None:
+    def __init__(self, name: str, path: str, process: _FakeManagedProcess) -> None:
         self.name = name
-        from pathlib import Path as _P
-        self.path = _P(path)
+        self.path = Path(path)
+        self.process = process
+        self.spawn_calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def spawn(self, argv: list[str], **kwargs: Any) -> _FakeManagedProcess:
+        self.spawn_calls.append((argv, kwargs))
+        return self.process
 
 
 class _FakeEnvManager:
@@ -502,50 +546,25 @@ class _FakeEnvManager:
         port_line: str | None = "Listening port 54321",
         environment_installed: bool = False,
     ) -> None:
-        self.created: list[dict[str, Any]] = []
-        self.loaded: list[tuple[str, Any]] = []
-        self.executed: list[dict[str, Any]] = []
+        self.provisioned: list[tuple[str, EnvironmentSpec, bool]] = []
         self.environment_installed = environment_installed
-        self.settings_manager = MagicMock()
-        self.settings_manager.get_environment_path_from_name.return_value = Path(
-            "/envs/napari"
-        )
-        self.process = MagicMock()
-        self.process.pid = 9999
-        self.process.poll.return_value = None
-        self._logger = _FakeProcessLogger(port_line=port_line)
-        self._env = _FakeEnvironment("napari", "/envs/napari")
+        self.process = _FakeManagedProcess(port_line=port_line)
+        self._env = _FakeEnvironment("napari", "/envs/napari", self.process)
 
-    def environment_exists(self, environment_path: Path) -> bool:
-        return self.environment_installed
-
-    def create(self, name, dependencies=None, additional_install_commands=None):
-        self.created.append(
-            {
-                "name": name,
-                "dependencies": dependencies,
-            }
-        )
+    def environment(self, name: str) -> _FakeEnvironment:
+        if not self.environment_installed:
+            raise EnvironmentNotReadyError(f"{name} is not ready")
         return self._env
 
-    def load(self, name, environment_path):
-        self.loaded.append((name, environment_path))
-        return self._env
-
-    def execute_commands(self, environment, commands, *, popen_kwargs=None,
-                         **kwargs):
-        self.executed.append(
-            {
-                "environment": environment,
-                "commands": commands,
-                "popen_kwargs": popen_kwargs or {},
-                "kwargs": kwargs,
-            }
-        )
-        return self.process
-
-    def get_process_logger(self, process):
-        return self._logger
+    def provision(
+        self,
+        name: str,
+        spec: EnvironmentSpec,
+        *,
+        replace_existing: bool,
+    ) -> Any:
+        self.provisioned.append((name, spec, replace_existing))
+        return MagicMock(wait_for=MagicMock(return_value=self._env))
 
 
 def _patch_launch_deps(monkeypatch, *, env_manager: _FakeEnvManager,
@@ -560,7 +579,7 @@ def _patch_launch_deps(monkeypatch, *, env_manager: _FakeEnvManager,
     monkeypatch.setattr(nl_mod, "Client", client_factory)
 
 
-def test_launch_creates_environment_when_path_is_none(monkeypatch) -> None:
+def test_launch_provisions_managed_environment(monkeypatch) -> None:
     em = _FakeEnvManager()
     client_calls: list[tuple] = []
 
@@ -572,32 +591,17 @@ def test_launch_creates_environment_when_path_is_none(monkeypatch) -> None:
     launcher = _make_launcher()
     launcher._launch()
 
-    assert len(em.created) == 1
-    rec = em.created[0]
-    assert rec["name"] == "napari"
-    deps = rec["dependencies"]
-    assert deps["python"] == "3.12"
-    assert "conda-forge::napari" in deps["conda"]
-    assert "conda-forge::pyqt" in deps["conda"]
-    assert deps["pip"] == []
-
-
-def test_launch_loads_existing_environment_when_path_set(tmp_path, monkeypatch) -> None:
-    env_dir = tmp_path / "napari-env"
-    env_dir.mkdir()
-    em = _FakeEnvManager()
-
-    def _client(addr, *, authkey):
-        return _FakeConnection()
-
-    _patch_launch_deps(monkeypatch, env_manager=em, client_factory=_client)
-    launcher = NapariLauncher(napari_env_path=str(env_dir))
-    launcher._launch()
-    assert em.created == []
-    assert len(em.loaded) == 1
-    name, path = em.loaded[0]
-    assert name == "napari"
-    assert Path(str(path)).resolve() == env_dir.resolve()
+    assert em.provisioned == [
+        (
+            "napari",
+            EnvironmentSpec(
+                python="3.12.*",
+                conda=("napari", "pyqt"),
+                channels=("conda-forge",),
+            ),
+            True,
+        )
+    ]
 
 
 def test_launch_reads_port_from_stdout_via_predicate(monkeypatch) -> None:
@@ -614,7 +618,7 @@ def test_launch_reads_port_from_stdout_via_predicate(monkeypatch) -> None:
     launcher._launch()
     assert seen[0][0] == ("localhost", 54321)
     # Confirm a startswith-style predicate was used (not a string match).
-    assert callable(em._logger.predicate_calls[0])
+    assert callable(em.process.predicate_calls[0])
 
 
 def test_launch_passes_authkey_via_env_var(monkeypatch) -> None:
@@ -633,8 +637,8 @@ def test_launch_passes_authkey_via_env_var(monkeypatch) -> None:
     launcher = _make_launcher()
     launcher._launch()
 
-    rec = em.executed[0]
-    child_env = rec["popen_kwargs"]["env"]
+    _, options = em._env.spawn_calls[0]
+    child_env = options["env"]
     assert child_env["NAPARI_AUTHKEY"] == fake_authkey.hex()
     assert client_authkeys[0] == fake_authkey
 
@@ -650,11 +654,11 @@ def test_launch_strips_qt_api_from_subprocess_env(monkeypatch) -> None:
     launcher = _make_launcher()
     launcher._launch()
 
-    child_env = em.executed[0]["popen_kwargs"]["env"]
-    assert "QT_API" not in child_env
+    _, options = em._env.spawn_calls[0]
+    assert options["env"]["QT_API"] is None
 
 
-def test_launch_quotes_napari_manager_path(monkeypatch) -> None:
+def test_launch_uses_argv_for_napari_manager_path(monkeypatch) -> None:
     em = _FakeEnvManager()
 
     def _client(addr, *, authkey):
@@ -664,12 +668,10 @@ def test_launch_quotes_napari_manager_path(monkeypatch) -> None:
     launcher = _make_launcher()
     launcher._launch()
 
-    cmd = em.executed[0]["commands"]
-    assert isinstance(cmd, list) and len(cmd) == 1
-    cmd_str = cmd[0]
-    assert cmd_str.startswith("python -u ")
-    assert '"' in cmd_str  # path is double-quoted
-    assert "napari_manager.py" in cmd_str
+    argv, options = em._env.spawn_calls[0]
+    assert argv[:2] == ["python", "-u"]
+    assert Path(argv[2]).name == "napari_manager.py"
+    assert options["output_limit"] == 16 * 1024 * 1024
 
 
 def test_launch_raises_when_port_line_not_found(monkeypatch) -> None:
@@ -686,7 +688,6 @@ def test_launch_raises_when_port_line_not_found(monkeypatch) -> None:
 
 def test_launch_raises_when_process_exits_before_port(monkeypatch) -> None:
     em = _FakeEnvManager(port_line=None)
-    em.process.poll.return_value = 1  # already exited
 
     def _client(addr, *, authkey):
         return _FakeConnection()
@@ -709,6 +710,7 @@ def test_launch_wraps_authentication_error(monkeypatch) -> None:
     launcher = _make_launcher()
     with pytest.raises(NapariLaunchError, match="authkey"):
         launcher._launch()
+    assert em.process.close_calls == 1
 
 
 def test_launch_idempotent_when_already_alive(monkeypatch) -> None:
@@ -724,7 +726,7 @@ def test_launch_idempotent_when_already_alive(monkeypatch) -> None:
     launcher._launch()
     launcher._launch()  # second call — alive, no-op
     assert call_count["n"] == 1
-    assert len(em.executed) == 1
+    assert len(em._env.spawn_calls) == 1
 
 
 def test_launch_emits_creating_then_running_status(monkeypatch) -> None:

@@ -17,8 +17,8 @@ dependencies = [
     "tifffile>=2024.0",
     "keyring>=25.0",
     "bioimageflow-core>=0.1.7",
-    "bioimageflow[parsl,psij]>=0.5.0,<0.6",
-    "wetlands>=1.1.1",
+    "bioimageflow[parsl,psij]>=0.5.0,<0.7",
+    "wetlands>=2.4.0,<3",
     "mcp>=1.0",
 ]
 
@@ -94,5 +94,5 @@ dev = [
     "anyio[trio]>=4.0",
     "ruff>=0.9",
     "pywebview>=5.0",
-    "wetlands-launcher>=0.3.7",
+    "wetlands-launcher>=0.3.9",
 ]

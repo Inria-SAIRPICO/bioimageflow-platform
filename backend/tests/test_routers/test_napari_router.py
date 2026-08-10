@@ -296,21 +296,11 @@ def test_router_mounted_at_api_v1_napari_prefix() -> None:
     assert "/api/v1/napari/shutdown" in paths
 
 
-def test_create_app_constructs_default_napari_launcher_from_settings() -> None:
-    """When AppConfig.napari_launcher is None, create_app builds one
-    from Settings.napari_env_path and stores it on app.state.
-    """
-    from bioimageflow_server.models.settings import Settings
-
-    settings = Settings(
-        deployment_mode="desktop",
-        napari_env_path="/envs/napari",
-    )
-    config = AppConfig(settings=settings)
+def test_create_app_constructs_default_managed_napari_launcher() -> None:
+    config = AppConfig()
     app = create_app(config=config)
     launcher = app.state.napari_launcher
     assert isinstance(launcher, NapariLauncher)
-    assert launcher._napari_env_path == "/envs/napari"
 
 
 def test_create_app_passes_connection_manager_to_default_launcher() -> None:

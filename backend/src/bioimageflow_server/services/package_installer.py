@@ -2,18 +2,17 @@
 
 :class:`PackageInstallerService` is the abstract DI contract. The real
 implementation, :class:`PypiPackageInstaller`, delegates to
-:func:`bioimageflow.tool_loader.ensure_installed`, which runs
-``pip install --target <tool_store>/<pkg>/<version>/`` through Wetlands'
-shared pixi-backed :class:`EnvironmentManager` (no system ``uv`` or ``pip``
-required on ``PATH``). The registry is re-scanned on success.
+:func:`bioimageflow.tool_loader.ensure_installed`. The registry is re-scanned
+on success.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-import shlex
 import shutil
+import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
 from email.parser import Parser
@@ -105,13 +104,11 @@ def _classify_failure(message: str) -> type[Exception]:
 
 
 class PypiPackageInstaller(PackageInstallerService):
-    """Install/uninstall packages via bioimageflow's Wetlands-backed installer.
+    """Install and uninstall packages through BioImageFlow's tool loader.
 
     Delegates to :func:`bioimageflow.tool_loader.ensure_installed`, which
-    runs ``pip install --target <target>`` through the shared Wetlands pixi
-    :class:`~wetlands.environment_manager.EnvironmentManager`. This matches
-    the mechanism used by :func:`bioimageflow.tool_loader.load_versioned_package`
-    so installed packages are layout-compatible with the rest of the library.
+    uses the orchestrator interpreter and creates the layout consumed by
+    :func:`bioimageflow.tool_loader.load_versioned_package`.
     """
 
     def __init__(
@@ -320,27 +317,30 @@ def _discover_source_install(target: Path) -> PackageInstallResult:
 def _pip_install_source(source: str, target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
 
-    from bioimageflow.env_manager import get_shared_environment_manager
-
-    manager = get_shared_environment_manager()
-    executor = manager.command_executor
-    generator = manager.command_generator
-    conda_bin = manager.settings_manager.conda_bin
-
-    commands = generator.get_activate_conda_commands()
-    commands += [
-        f'{conda_bin} exec --spec "pip" -- '
-        f'pip install --target {shlex.quote(str(target))} {shlex.quote(source)}'
-    ]
-
     try:
-        executor.execute_commands_and_get_output(
-            commands, exit_if_command_error=True,
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--target",
+                str(target),
+                source,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
         )
-    except Exception as exc:
+    except (OSError, subprocess.CalledProcessError) as exc:
         shutil.rmtree(target, ignore_errors=True)
+        details = (
+            exc.stderr.strip()
+            if isinstance(exc, subprocess.CalledProcessError) and exc.stderr
+            else str(exc)
+        )
         raise RuntimeError(
-            f"Failed to install tool package source into tool store.\n{exc}"
+            f"Failed to install tool package source into tool store.\n{details}"
         ) from exc
 
 
