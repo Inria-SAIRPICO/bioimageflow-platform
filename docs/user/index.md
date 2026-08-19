@@ -1,43 +1,83 @@
-# User Guide
+# Getting Started
 
-BioImageFlow is a desktop application for assembling, running, and inspecting bioimage-analysis workflows without writing orchestration code.
-You build a workflow by placing tool nodes on a canvas, configuring their parameters, and connecting their inputs and outputs.
+> **Available in:** Desktop and browser.
 
-This guide is written for bioimage researchers.
-It assumes that you understand your images and analysis methods, but it does not assume experience with graph editors or Python.
+This walkthrough installs the desktop application and runs the bundled **Fish Analysis** demo.
+If your organization provides BioImageFlow in a browser, skip the installation steps and open its web address.
 
-## Start here
+## Desktop or browser?
 
-- [Install and launch BioImageFlow](installation.md) if this is your first session.
-- Follow the [quick start](quick-start.md) to run an example and inspect its results.
-- Read the [interface tour](interface.md) when you want to understand the panels and controls.
-- Use [Build a workflow](build-workflows.md) when creating an analysis of your own.
+Most workflow editing and execution works the same way in both modes.
 
-## Common tasks
+| Task | Desktop | Browser |
+|---|---|---|
+| Choose input data | Use local file and folder pickers, or drag local items onto the canvas. | Use managed files through the **Datasets** panel. |
+| Find the Datasets panel | The panel is not shown. | Open **View → Datasets Panel**. |
+| Use VS Code or a coding agent | Supported. | Not documented for browser deployments. |
+| Build a workflow from Python | Supported for trusted local source. | Not available. |
 
-- [Organize, import, export, and duplicate workflows](manage-workflows.md)
-- [Group and reuse workflows inside other workflows](nested-workflows.md)
-- [Run workflows and inspect tables, images, logs, and output files](run-and-results.md)
-- [Configure Parsl targets, cluster uploads, and submitted execution](distributed-execution.md)
-- [Upload datasets and manage analysis tools](data-and-tools.md)
-- [Configure storage, viewers, editors, examples, and OMERO](preferences.md)
-- [Build a saved workflow from trusted Python source](advanced-authoring.md)
-- [Resolve common problems and look up keyboard shortcuts](troubleshooting.md)
+See [Choose Input Data](choose-input-data.md) before adding your own files.
 
-```{toctree}
-:maxdepth: 2
-:hidden:
+## Install the desktop application
 
-installation
-quick-start
-interface
-build-workflows
-manage-workflows
-nested-workflows
-run-and-results
-distributed-execution
-data-and-tools
-preferences
-advanced-authoring
-troubleshooting
+1. Open the [BioImageFlow releases page](https://github.com/Inria-SAIRPICO/bioimageflow-platform/releases).
+2. Find the launcher download for your operating system in the latest release notes.
+3. Download and extract the launcher package, following the platform-specific instructions in those notes.
+4. Move the launcher to a stable location, such as **Applications** on macOS, and open it while connected to the internet.
+
+Do not download a source-code archive as a substitute for the launcher.
+
+```{note}
+The first launch can take several minutes while the launcher verifies the release, downloads the application, and prepares an isolated environment.
+Keep the launcher open while progress is displayed.
+Later launches normally reuse that environment and start faster.
 ```
+
+## Open a bundled demo
+
+BioImageFlow normally installs **Fish Analysis** and **Parameters Space Exploration** in the **Demo** folder when it creates a workspace.
+
+1. In the **Workflows** panel, expand **Demo**.
+2. Select **Fish Analysis** and read its description.
+3. Click **Open workflow**.
+
+If the **Demo** folder is missing, choose **Edit → Preferences...**, open **Storage**, and click **Install demos**.
+
+![The Fish Analysis demo open on the workflow canvas.](images/quick-start-demo.png)
+
+## Resolve its tools
+
+The demo refers to separately installed tool packages.
+If a dependency dialog appears, click **Install all missing packages** to install the requested versions.
+You can also click **Manage tools** in the **Tools** panel to inspect packages and environments individually.
+
+```{warning}
+Tool packages contain executable code.
+Install packages only from sources you trust.
+The first run can take longer while BioImageFlow prepares tool environments and downloads the demo's public input data.
+```
+
+## Run and inspect the demo
+
+1. Click **Run Workflow** in the upper-right corner.
+2. Follow node status on the canvas and messages in the **Logger** panel.
+3. Select a completed node.
+4. Open **View → Node Data** to inspect its table, image previews, and output paths.
+5. Select the saved workflow in **Workflows** and click **Open latest outputs** to reveal its latest successful files on desktop.
+
+The latest-output folder can combine the latest successful result from different runs.
+Use **Workflow → Export** when you need independent copies or one complete workflow-and-results bundle.
+
+## Make an editable copy
+
+Keep the bundled demo unchanged while you experiment.
+
+1. Select **Fish Analysis** in **Workflows**.
+2. Click **Duplicate workflow**, or choose **Workflow → Save As** while the demo is open.
+3. Enter a new workflow name and display name.
+4. Change a parameter or node, then choose **Workflow → Save**.
+
+Continue with [Interface Tour](interface.md) or [Build a Workflow](build-workflows.md).
+
+The launcher checks for application updates when it starts.
+Launcher version information and workspace storage are covered in [Settings, Storage, and Integrations](preferences.md).

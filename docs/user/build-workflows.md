@@ -1,91 +1,76 @@
 # Build a Workflow
 
-A workflow is a directed graph.
-Tool nodes perform analysis steps, edges move data between steps, and workflow nodes contain complete reusable workflows.
+> **Available in:** Desktop and browser. Input-data selection differs by mode; see [Choose Input Data](choose-input-data.md).
 
-## Create and save a workflow
+A workflow connects analysis tools on a canvas.
+Each node performs one task, and each edge sends data to another node.
 
-1. Choose **Workflow → New** or click **New workflow** in the **Workflows** panel.
-2. Enter a workspace name, display name, and optional description.
-3. Add and configure nodes.
-4. Choose **Workflow → Save** or press Ctrl/Cmd+S to publish the accepted draft to the saved workflow.
+## Create and save
 
-Canvas edits are synchronized to a durable draft after they are accepted.
-This protects in-progress work and lets the application recover it, but the saved `workflow.json` changes only when you explicitly save.
-An asterisk in the window or tab title indicates changes that have not been promoted to the saved workflow.
+1. Choose **Workflow → New**, or click **New workflow** in **Workflows**.
+2. Enter a workflow name, display name, and optional description.
+3. Add and connect nodes.
+4. Choose **Workflow → Save** or press Ctrl/Cmd+S.
 
-## Add tool nodes
+An asterisk in the workflow tab means that the canvas contains unsaved changes.
+BioImageFlow keeps accepted canvas changes available for recovery, but it updates the saved workflow only when you use **Save**.
 
-Search in the **Tools** panel, then drag a tool onto the canvas.
-You can also use the tool's add button.
-BioImageFlow assigns a unique node identity while showing the tool's readable name.
+## Add a tool
 
-Select the node to edit it in the **Nodes** panel.
-Double-click the displayed node name to rename the instance without changing which tool it runs.
-Disable a node when you want to keep it in the graph without scheduling it.
+1. Search in **Tools**.
+2. Read the tool information to confirm its purpose and inputs.
+3. Drag it onto the canvas or use its add action.
+4. Select the new node to edit it in **Nodes**.
+
+Double-click the displayed node name to rename that step without changing the tool it uses.
+Disable a node when you want to keep it on the canvas without running it.
+
+If the tool you need is missing, see [Find and Manage Tools](data-and-tools.md).
 
 ## Configure inputs
 
-The **Parameters** section uses controls that match each tool input, including text, numbers, choices, checkboxes, paths, and nullable values.
+The **Parameters** section uses controls suited to each input, such as text fields, number fields, choices, checkboxes, and paths.
 
-- **Reset to default** restores the tool-defined value.
-- **Set to null** deliberately passes no value when the input allows it.
-- **Add input pin** exposes a parameter as a connectable handle on the node.
-- **Expose as workflow input** makes the value part of the containing workflow's public interface.
+- **Reset to default** restores the value defined by the tool.
+- **Set to null** passes no value when the input permits it.
+- **Add input pin** makes the parameter connectable on the node.
+- **Expose as workflow input** makes the value available to a parent workflow.
 
-For file or folder parameters, use the picker button instead of typing a path when possible.
-In the desktop application, dropping local files or folders on the canvas creates a Files node that references them in place.
-No desktop drop is uploaded or copied.
-Managed datasets can populate compatible Files nodes from the **Datasets** panel in the web application.
-In the web application, **Select in Datasets panel** on a Files node reveals that panel so its selected managed files or folders can be applied as the node's explicit Files list.
+Use a **Files** node for a group of input files or one source directory.
+Desktop users can use local pickers or drag local items onto the canvas.
+Browser users select managed files in **Datasets**.
 
 ## Connect nodes
 
 Drag from an output handle to a compatible input handle.
-BioImageFlow supports two edge kinds:
+A field connection sends one named output into one input.
+A DataFrame connection sends a whole table.
 
-- a column edge carries one named output field into one input;
-- a DataFrame edge carries an entire table into a positional or named DataFrame input.
+BioImageFlow prevents obvious cycles and validates every connection before saving or running.
 
-Handle labels help you choose endpoints, but compatibility is validated from their underlying data roles.
-The application prevents obvious cycles immediately, and the backend performs authoritative recursive validation before accepting or running the graph.
+![A selected tool node with parameter controls and connections to other workflow steps.](images/node-editing.png)
 
-![A selected tool node, its parameter controls, and connected handles.](images/node-editing.png)
+## Choose outputs
 
-## Configure outputs
+The **Outputs** section lists what the selected tool produces.
+Use **Expose as workflow output** when a parent workflow should receive that value.
+Give each public output a clear name.
 
-The **Outputs** section lists the fields produced by the tool.
-You can expose an output as a workflow output and give the public port a readable name.
-Changing the name preserves existing connections because the port has a stable internal identity.
+For file outputs, enter a relative path that describes the result, such as `segmentation/masks.tif`.
+Keep output paths distinct when one tool writes several files.
 
-An output path template controls where a tool writes a file within workflow-managed storage.
-Use relative, meaningful paths and keep output names distinct when a tool produces several assets.
+## Group related steps
 
-## Edit the graph efficiently
+Select one or more nodes, right-click the selection, and choose **Group into workflow**.
+The grouped steps become one workflow node, and their outside connections become workflow inputs and outputs.
 
-- Shift-click to select several nodes.
-- Use Ctrl/Cmd+C and Ctrl/Cmd+V to copy and paste complete selections.
-- Use Delete or Backspace to delete the selection.
-- Use Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z for undo and redo.
-- Press F while the canvas is focused to fit the graph in view.
-- Press Ctrl/Cmd+A to select all nodes on the active canvas.
+See [Reuse and Nest Workflows](nested-workflows.md) to edit and reuse the group.
 
-Copying a workflow node includes its complete nested graph.
-Cross-workflow paste also stages the workflow-local tool sources required by the copied content.
+## Fix validation problems
 
-## Group nodes into a workflow
+Workflow-wide problems appear above the canvas.
+Node and parameter problems also appear on the affected item.
+Select the named node, correct its field or connection, and wait for synchronization to finish before saving or running.
 
-Select one or more nodes, right-click one of them, and choose **Group into workflow**.
-BioImageFlow replaces the selection with one workflow node in a single undoable change.
-Incoming and outgoing connections become workflow inputs and outputs, while internal and detached branches are preserved.
-
-See [Reuse and nest workflows](nested-workflows.md) for editing, saving, and updating the resulting workflow node.
-
-## Correct validation problems
-
-Global graph problems appear in a banner above the canvas.
-Node and parameter problems also appear on the affected node or field.
-Select the named node, correct the highlighted field or connection, and wait for draft synchronization to finish before saving or running.
-
-Validation paths can include nested workflow names, such as `segment_and_measure/cellpose_segmenter`.
-Use each part of the path to open the relevant nested editor and locate the failing tool.
+A path such as `segment_and_measure/cellpose_segmenter` points through a nested workflow.
+Open each named workflow node until you reach the affected tool.

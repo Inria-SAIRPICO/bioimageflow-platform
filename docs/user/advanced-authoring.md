@@ -1,16 +1,14 @@
-# Advanced Python Authoring
+# Build Workflows from Python
 
-A trusted desktop workflow can use `workflow.py` as an authoring source.
-This is useful when a technical collaborator wants to define a graph with the BioImageFlow Python library and hand the materialized result to GUI users.
+> **Available in:** Desktop only, for trusted local source.
 
-Python authoring is optional and is separate from workflow-local tool implementation.
+Use Python authoring when a technical collaborator wants to define a saved workflow with the BioImageFlow Python library and then hand it to canvas users.
+This is optional and is separate from [creating a workflow-local tool](create-custom-tools.md).
 
-## Authoring contract
+## Create the source
 
 Place `workflow.py` in the saved workflow's directory.
-It must export a no-argument function named `build_workflow` and return a standalone BioImageFlow `Workflow`.
-
-For example:
+It must define a no-argument function named `build_workflow` that returns a BioImageFlow `Workflow`.
 
 ```python
 from bioimageflow import Workflow
@@ -24,26 +22,23 @@ def build_workflow():
     )
 ```
 
-The authoring directory may contain local Python helper files imported by `workflow.py`.
-Do not use symlinks or references that escape the workflow directory.
+The directory can contain local Python helpers imported by `workflow.py`.
+Do not use links or imports that escape the workflow directory.
 
-## Build the GUI workflow
+```{warning}
+Building from Python executes local code.
+Use this command only for source you trust and have reviewed.
+```
+
+## Build the canvas workflow
 
 1. Open the saved workflow in BioImageFlow.
-2. Ensure its current GUI changes are saved.
+2. Save its current canvas changes.
 3. Choose **Workflow → Build from Python source**.
-4. Review the replacement and any destructive effects in the confirmation.
-5. Confirm to materialize and save the returned workflow.
+4. Review the replacement described by the confirmation.
+5. Confirm to build, validate, and save the returned workflow.
 
-BioImageFlow invokes `build_workflow` once in a fresh import context, converts the result into the same graph edited by the canvas, validates it, and stages its runtime source bundle.
-It records a hash covering the allowed Python files so a changed helper or source causes the apply step to conflict instead of saving stale output.
+After a successful build, edit the graph on the canvas or rebuild it after changing the Python source.
 
-After a successful build, edit the graph normally or rebuild it after changing the Python source.
-
-## Execution and sharing
-
-Python is an authoring input, not the saved execution model.
-Run, reopen, nest, copy, and export operations use the materialized graph and its staged runtime sources; they do not import `workflow.py` again.
-
-The build command accepts only the addressed workflow's own authoring source.
-It does not accept arbitrary file paths or module names, and it is unavailable outside trusted desktop mode.
+Python is an authoring source, not a requirement for later execution.
+Opening, running, copying, nesting, and exporting use the saved graph and its workflow-local sources without importing `workflow.py` again.

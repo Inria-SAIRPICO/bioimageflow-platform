@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Test lanes
 
 The root test runner gives humans, agents, and CI one vocabulary for focused feedback, ordinary completion checks, and comprehensive certification.

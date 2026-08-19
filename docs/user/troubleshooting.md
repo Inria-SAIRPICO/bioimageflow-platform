@@ -1,132 +1,76 @@
-# Troubleshooting and Reference
+# Troubleshooting
+
+> **Available in:** Desktop and browser. Launcher, local paths, and Napari apply to desktop only.
 
 Start with the message shown by BioImageFlow.
-Validation banners, persistence messages, toasts, execution details, and the error history usually identify the workflow, node, field, or environment that needs attention.
+Validation banners, save messages, notifications, **Execution**, and error history usually identify the workflow, node, field, or environment that needs attention.
 
-## Launcher or startup problems
+## The launcher does not start BioImageFlow
 
-If the launcher cannot prepare or start BioImageFlow:
+1. Confirm that the computer can reach GitHub and its release-download hosts.
+2. Keep the launcher open and inspect its progress and log.
+3. Retry after a temporary network failure.
+4. Use the launcher's reinstall action if it reports a damaged local environment.
+5. Download a new launcher only when release notes require it or the launcher itself is damaged.
 
-1. confirm that the computer can reach GitHub and its release-download hosts;
-2. keep the launcher open and inspect its progress or log view;
-3. retry after a transient network failure;
-4. use the launcher's reinstall action if it reports a corrupted local environment;
-5. download a new launcher only when the release notes publish a launcher update or the existing launcher itself is damaged.
+A corporate proxy or certificate policy can block release and environment downloads.
+Use the proxy dialog offered by the launcher or ask your administrator for the correct HTTPS proxy and certificate settings.
 
-A corporate proxy or custom certificate authority can prevent release and environment downloads.
-Use the proxy dialog offered by the launcher or ask your system administrator for the correct HTTPS proxy and certificate settings.
+## Run Workflow is unavailable
 
-## A workflow cannot run
+Check that:
 
-The run action is unavailable when:
-
-- no saved root workflow owns the active canvas;
-- a lifecycle operation, draft validation, start, stop, or another execution is in progress;
-- the active tab is a nested editor;
-- required tools or package versions are missing;
-- the accepted graph has validation errors.
+- the active canvas belongs to a saved root workflow;
+- no save, validation, start, stop, or other run is in progress;
+- the active tab is not a nested editor;
+- every required tool and package version is installed;
+- the workflow has no validation errors.
 
 Save a new workflow before its first run.
-For nested content, save the nested tab into its parent and run the owning root workflow.
+For nested content, save the nested tab into its parent and run the root workflow.
 
-## Missing tools or failed environments
+## A tool or environment is missing
 
-Open **Manage Tools**, locate the requested package version, and install it.
-If the package is installed but its environment is stopped or failed, use the environment action or the recovery dialog to restart or rebuild it.
-Tool and package downloads require network access.
+Open **Manage tools**, locate the requested package version, and install it.
+If its environment is stopped or failed, use the environment action or recovery dialog to restart or rebuild it.
 
-Do not substitute another version unless you intend to change the workflow dependency and rebuild affected nodes.
+Do not choose another version unless you intend to change the workflow dependency and review affected nodes.
+See [Find and Manage Tools](data-and-tools.md#resolve-missing-tools).
 
-## Validation errors
+## The workflow has validation errors
 
-Select the node named by the banner, field error, or error-history entry.
-Correct missing parameters, invalid paths, incompatible connections, duplicate identities, or unavailable tools, then wait for draft synchronization.
+Select the node named by the banner or error entry.
+Correct its missing parameter, invalid path, incompatible connection, or unavailable tool.
 
-For a path such as `outer_workflow/inner_workflow/tool`, open each workflow node in order until you reach the named tool.
-
-Containment-cycle errors mean the requested embed, paste, import, move, source update, or save would make a workflow contain itself recursively.
-Reorganize the workflow relationship instead of retrying the same action.
+For a path such as `outer_workflow/inner_workflow/tool`, open each workflow node in order.
+A cycle error means one workflow would contain itself; change how the workflows are grouped or reused.
 
 ## Changes could not be saved
 
-A red persistence message means synchronization failed but the latest canvas changes remain locally visible.
-Use **Retry** after correcting the underlying connection or server problem.
+A red save message means the canvas changes are still visible but synchronization failed.
+Correct the connection or server problem, then click **Retry**.
 
-An amber conflict means the same draft or nested snapshot changed elsewhere.
-Choose the action that matches your intent:
+If BioImageFlow reports that the workflow changed elsewhere, review both versions before choosing **Apply agent changes**, **Keep my canvas**, or **Save agent version as copy**.
+For a nested workflow, choose **Keep my changes** or **Use latest snapshot** only after checking which edits you need.
 
-- **Keep my changes** retries from your local nested canvas;
-- **Use latest snapshot** replaces local nested changes with the accepted remote snapshot;
-- **Apply agent changes** accepts an external workflow edit;
-- **Keep my canvas** preserves the current canvas version;
-- **Save agent version as copy** preserves both root versions as separate workflows.
+When a coding agent caused the conflict, ask it to re-read the active workflow before proposing another change.
+Never edit workflow JSON or `.bioimageflow/platform-source` to bypass the conflict.
 
-Review the named workflow and revision before choosing because conflict resolution can discard one version.
+## Outputs are missing or unexpected
 
-## An update from source is blocked
+The latest-output view chooses the latest successful result independently for each node.
+After partial, failed, cancelled, or overlapping runs, it can contain files from different runs.
 
-Save or discard any open editor at or below the workflow node you want to replace.
-Then request **Update from source** again so BioImageFlow can create a fresh preview.
+Check the selected nodes, node status, **Execution**, and **Node Data**.
+Use **Workflow with results** when every copied output must come from one successful run.
 
-If the source or parent changed after the preview, the apply step intentionally changes nothing.
-Review the new preview rather than repeating an old confirmation.
+If pointer files appear, open **Edit → Preferences... → Storage** and read **Latest output view**.
+Use an export when you need ordinary file copies.
 
-## Outputs are missing or surprising
+## A viewer is unavailable
 
-The `latest` output view is assembled independently per node and is not one execution snapshot.
-A selected, failed, cancelled, or cached run can therefore leave files from different successful executions in that view.
+For Napari, wait for the first-time environment preparation, retry, and inspect application logs for a launch error.
+For Avivator, confirm that the image format is supported and the application can reach the external viewer.
+On desktop, use the action that reveals the image in the file browser as a fallback.
 
-Check the active execution, selected nodes, node statuses, and Node Data before assuming that all files were produced together.
-Under **Preferences → Storage**, inspect the effective latest-output mode and warning.
-Pointer files are metadata and cannot be opened directly as images.
-Choose **Workflow → Export**, then **Latest results**, to materialize independent copies with the same mixed per-node semantics.
-Choose **Workflow → Export**, then **Workflow with results**, when the workflow, provenance, and every copied output must describe one successful run.
-
-## A viewer action is unavailable
-
-For Napari, retry the launch and inspect the backend logs for Wetlands provisioning or managed-process errors.
-The Napari environment is provisioned automatically and has no configurable environment path.
-For Avivator, confirm that the image format is supported and that the application can reach the external viewer service.
-Use **Reveal in file browser** as a local fallback.
-
-## Keyboard shortcuts
-
-Shortcuts act on the active canvas unless noted otherwise.
-Use Cmd in place of Ctrl on macOS.
-
-| Shortcut | Action |
-|---|---|
-| Ctrl/Cmd+S | Save the active root workflow, or apply the active nested snapshot to its parent |
-| Ctrl/Cmd+Z | Undo the latest active-canvas graph change |
-| Ctrl/Cmd+Shift+Z | Redo the latest active-canvas graph change |
-| Ctrl/Cmd+C | Copy selected nodes |
-| Ctrl/Cmd+V | Paste nodes |
-| Ctrl/Cmd+A | Select all nodes |
-| Delete or Backspace | Delete selected nodes or edges |
-| F | Fit the active graph in view |
-| Ctrl/Cmd+Enter | Flush pending active-canvas synchronization |
-| Cmd+, on macOS; Ctrl+, in the desktop app on Windows/Linux | Open Preferences |
-| Escape | Close an open node context menu |
-
-## Glossary
-
-**Accepted draft**
-: The latest graph revision stored by the backend for an open root workflow.
-
-**Cache**
-: Retained results that can let an unchanged node avoid repeated computation.
-
-**Column edge**
-: A connection carrying one named output field into one input.
-
-**DataFrame edge**
-: A connection carrying a complete table between nodes or workflow interfaces.
-
-**Provenance**
-: The optional record linking an embedded workflow snapshot to the saved workflow it came from.
-
-**Workflow interface**
-: The stable named inputs and outputs through which a workflow node connects to its parent graph.
-
-**Workflow-local tool**
-: Python tool source owned and exported by one saved workflow.
+See [Keyboard Shortcuts](keyboard-shortcuts.md) for canvas and save shortcuts.

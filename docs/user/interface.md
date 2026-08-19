@@ -1,85 +1,79 @@
 # Interface Tour
 
-BioImageFlow uses a dockable desktop layout built around a workflow canvas.
-Panels can be resized, rearranged, placed in tab groups, or reopened from the **View** menu.
+> **Available in:** Desktop and browser. The **Datasets** panel appears only in the browser.
 
-![The main BioImageFlow window with its primary panels.](images/interface-overview.png)
+The workflow canvas is the center of BioImageFlow.
+Panels around it let you find tools and workflows, edit the selected node, inspect results, and follow execution.
 
-## Menu and execution controls
+![The main BioImageFlow workspace, showing the Tools panel, workflow canvas, Nodes panel, Node Data, Logger, and run controls.](images/interface-overview.png)
 
-The menu bar contains five menus:
+## Menus and run controls
 
-- **Workflow** creates, opens, saves, imports, opens the workflow-and-results export dialog, builds, and deletes workflows.
-- **Edit** provides undo, redo, clipboard actions, selection, and Preferences.
-- **Execution** provides full, selected, retry, invalidation, recompute, and stop commands.
-- **View** shows or hides the main panels.
+- **Workflow** creates, opens, saves, imports, exports, and deletes workflows. **Build from Python source** appears on desktop.
+- **Edit** contains undo, redo, clipboard actions, selection, and **Preferences...**.
+- **Execution** runs the workflow or selected nodes, retries work, recomputes results, and stops the active run.
+- **View** shows or hides panels.
 - **Help** opens application information.
 
-The active workflow's display name appears on the right side of the menu bar.
-The adjacent pencil edits that display name without changing the workflow's workspace path.
-The error indicator opens persistent error history, the theme button selects light, dark, or system appearance, and the split **Run Workflow** button exposes execution alternatives.
+The active workflow name appears on the right of the menu bar.
+Use the pencil to change its display name.
+The error indicator opens error history, the theme button selects the appearance, and **Run Workflow** starts execution or opens additional run actions.
 
 ## Canvas and tabs
 
-Each opened root workflow has its own canvas tab.
-A workflow used as a node can open in another nested-editor tab.
-The active tab determines which graph the **Nodes**, **Node Data**, Save, undo, redo, and clipboard commands affect.
+Each open workflow has a canvas tab.
+Double-click a workflow node to open its contents in another tab.
+The active tab determines what **Nodes**, **Node Data**, Save, undo, redo, and clipboard actions affect.
 
 On the canvas you can:
 
 - drag nodes and connect their handles;
-- drag an empty area to pan and use the mouse wheel to zoom;
-- use the canvas controls to zoom or fit the graph;
-- click a node to select it, or hold Shift to select several nodes;
-- right-click a node for rename, enable, grouping, source, and delete actions;
-- double-click a workflow node to open it.
+- drag empty space to pan and use the mouse wheel to zoom;
+- Shift-click to select several nodes;
+- right-click a node for actions such as rename, disable, group, open source, and delete;
+- use the canvas controls to zoom and fit the graph.
 
-A thick-bordered node represents a workflow embedded inside another workflow.
+A thick border identifies a workflow nested inside another workflow.
 
-## Main panels
+## Panels
 
 ### Tools
 
-Search and browse available tools by category.
-Drag a tool onto the canvas or use its add action to create a node.
-Hover over a tool for documentation, source-editing, and environment actions.
-Use **Manage Tools** for package versions, environment state, and custom tool management.
+Search and browse tools by category.
+Drag a tool onto the canvas or use its add action.
+Click **Manage tools** for package versions and environments, or **Create Tool** for workflow-local Python code.
 
 ### Workflows
 
 Browse saved workflows and folders.
-The toolbar creates, saves, duplicates, imports, opens the export dialog, edits, and deletes items.
-Drag a saved workflow onto the canvas to embed a reusable snapshot.
+Use the toolbar to create, save, duplicate, import, export, edit, or delete items.
+Drag a saved workflow onto the canvas to reuse it inside the active workflow.
 
 ### Datasets
 
-This panel is available in the web application and hidden in the desktop application.
-Upload, organize, select, and delete managed input files for web workflows.
-Selected files can create a **Files** node or populate an existing selected Files node.
+In the browser, upload and organize managed input files.
+Selected files can create a **Files** node or fill one already selected on the canvas.
+Desktop users choose local files instead; see [Choose Input Data](choose-input-data.md).
 
 ### Nodes
 
-Select one canvas node to edit its name, enabled state, parameters, input pins, workflow interface exposure, resources, output templates, and node-scoped logs.
-With several nodes selected, the panel shows multi-selection information instead of editable fields.
+Select one canvas node to edit its name, enabled state, parameters, resources, input pins, public workflow ports, output paths, and node logs.
 
 ### Node Data
 
-Inspect completed outputs for the selected nodes.
-The table supports pagination, filtering, path actions, lazy image thumbnails, and viewer actions.
-The **View** menu calls this panel **Data Table**.
+Inspect completed tables, filter rows, preview images, and use path or viewer actions.
 
-### Logger
+### Execution and Logger
 
-Filter messages by severity, execution, node, and text.
-Auto-scope follows the selected node, while auto-scroll keeps the newest messages visible.
-Clearing this panel removes displayed log entries from the current interface; it does not delete workflow outputs.
+**Execution** shows current and previous runs and the status of each node.
+**Logger** filters application, workflow, and tool messages by severity, run, node, or text.
 
 ### Code Editor
 
-Displays workflow-local tool source through the configured embedded or external editor integration.
-Custom source belongs to its workflow so that exported workflows can carry the tools they need.
+Open workflow-local tool source in the embedded or configured external editor.
+Custom source stays with its workflow when the workflow is exported.
 
-## Appearance and layout
+## Rearrange your workspace
 
-Use the theme button near **Run Workflow** to choose **Light**, **Dark**, or **System**.
-Panel visibility and the theme are interface preferences; they do not change workflow results.
+Resize panels, move them, place them in tab groups, or reopen them from **View**.
+Use the theme control beside **Run Workflow** to choose **Light**, **Dark**, or **System**.

@@ -1,94 +1,59 @@
-# Manage Data and Tools
+# Find and Manage Tools
 
-BioImageFlow separates input data from analysis tools.
-The desktop application references local files directly, while the web application uses the **Datasets** panel to organize managed files that workflows can consume.
-The **Tools** panel manages the executable steps available to workflows in both versions.
+> **Available in:** Desktop and browser. Installing a package from a URL or ZIP file is a trusted desktop action unless a browser deployment explicitly enables it.
 
-## Upload and organize web datasets
+The **Tools** panel lists the analysis steps available to a workflow.
+Each installed package can provide several tools and one or more versions.
 
-In the web application, click **Upload files** in the Datasets panel and choose one or more files.
-Each upload shows progress and can be cancelled while active, retried after failure, or dismissed after completion.
-Use **Clear completed** to remove finished upload notifications without deleting uploaded files.
+## Find a tool
 
-The dataset tree supports folders, rename, deletion, search, and drag-and-drop moves.
-Use the checkboxes to select several files or folders.
-Selecting a folder includes its descendants; clearing one child leaves the parent visibly partially selected.
+1. Enter a name or technique in **Search tools...**.
+2. Expand a matching category.
+3. Open the tool information and read its inputs, outputs, and documentation.
+4. Drag the tool onto the canvas or use its add action.
 
-Before deletion, BioImageFlow previews the managed items that will be removed and identifies changed data if the dataset tree was updated elsewhere.
+An available tool may still need an environment to be prepared before its first run.
 
-## Put data into a workflow
+## Choose package versions
 
-After selecting managed data in the web application, use one of these actions:
+Click **Manage tools** at the top of **Tools**.
+The dialog lists known packages, available and installed versions, the tools in each version, and environment status.
 
-- **Create Files node** adds a Files node to the active canvas with the selected files resolved in tree order.
-- **Set files on “node name”** replaces the files on the selected compatible Files node.
-- dragging files or folders from the dataset tree onto the canvas creates or updates a compatible input flow.
+Use a version's row action to install, select, or uninstall it.
+A workflow uses one selected version of each package.
+If changing the selection affects existing nodes, BioImageFlow asks before updating their outputs.
 
-For a Files node in the desktop application, **Select files** fills its explicit Files list and **Select folder** fills its singular Directory source.
-Choosing either source clears the other because they are mutually exclusive.
-The Datasets panel is hidden in the desktop application.
-Dropping local files or folders on the desktop canvas creates a Files node without uploading or copying anything.
-A single folder fills Directory; a drop containing several folders or a mix of files and folders expands each folder's immediate files into the explicit Files list.
-In the web application, **Select in Datasets panel** reveals this panel instead; select any combination of managed files and folders, then use **Set files on “node name”**.
-Managed folders are expanded into an explicit ordered file list and do not become a Directory value.
+## Prepare environments
 
-In the web application, dropping local files anywhere on the application uploads them into managed dataset storage and selects them in the Datasets panel.
-After the upload completes, click **Create Files node** or drag the new dataset entry onto the canvas.
+The environment status shows whether a package environment is stopped, being created, running, ready, failed, or unavailable.
+Use the power action to start or stop an environment.
+Environment controls are unavailable during workflow execution.
 
-## Browse and add tools
+If a run cannot use an environment, follow the recovery dialog to restart or rebuild it, wait until it is ready, and retry the workflow.
 
-The Tools panel groups tools by their primary category.
-Search uses tool names and metadata, and matching categories expand automatically.
-Use the information action to read the tool's documentation before adding it.
+```{note}
+Installing a package or preparing its environment can download dependencies and take several minutes.
+```
 
-Drag a tool onto the canvas or use its add action.
-An available tool can still need an environment to be prepared before its first execution.
+## Resolve missing tools
 
-## Install and select package versions
+Imported and shared workflows can refer to packages or versions not installed on your system.
+BioImageFlow keeps those nodes visible and marks the missing tools, but it blocks execution until you resolve them.
 
-Open **Manage Tools** to see known and installed packages, their versions, the tools each version provides, and environment states.
+- Click **Install all missing packages** to install every requested version.
+- Open **Manage tools** to install versions one at a time.
+- Use **Use installed alternatives...** only when the versions already installed are acceptable replacements.
 
-For a known package, open its version list and use the row action to install, select, or uninstall a version.
-A workflow selects one version per package.
-Changing that selection can make existing nodes out of date, and BioImageFlow asks before rebuilding their outputs.
+Review replacements carefully because a different package version can change workflow behavior or outputs.
 
-For a package that is not in the known list, use the **Install tool package** footer.
+## Install a package from another source
+
+On trusted desktop installations, use **Install tool package** at the bottom of **Manage tools**.
 Enter a supported GitHub or GitLab package URL, or select a `.zip` package archive, then click **Install**.
-Package-source installation is a trusted desktop action: install code only from a source you trust.
 
-## Manage tool environments
+```{warning}
+Tool packages contain executable code.
+Install a package only when you trust its source and maintainer.
+```
 
-The environment badge reports states such as stopped, creating, running, ready, failed, or unavailable.
-Use the power action to start or stop a tool environment.
-Environment controls are disabled while workflow execution is active.
-
-If an execution cannot use an environment, BioImageFlow opens an environment recovery dialog.
-Choose the offered restart or rebuild action and wait for recovery before retrying the workflow.
-
-## Resolve missing dependencies
-
-A workflow can refer to a tool package or version that is not installed locally.
-BioImageFlow keeps the workflow structure visible, marks missing tools, and blocks execution until the dependency is resolved.
-
-Use **Install all missing packages** in the dependency dialog to install every requested version, or use Manage Tools to install versions individually.
-When every missing dependency has an installed alternative, **Use installed alternatives…** can rebind the workflow after confirmation.
-After importing a workflow, use the rebind action only when the locally available tools are the intended replacements.
-
-## Create workflow-local tools
-
-Workflow-local tools travel with their owning workflow archive and are appropriate for analysis code specific to that workflow.
-Use a packaged tool when the same implementation should be shared and versioned across many workflows.
-
-To create a local tool:
-
-1. save or open the workflow that will own the source;
-2. click **Create Tool** in the Tools panel;
-3. enter a name and choose **Processing Tool** or **DataFrame Tool**;
-4. click **Create**;
-5. complete the generated Python source in the embedded or configured external editor.
-
-The dialog converts a readable name into a valid Python class name and prevents collisions with existing tools.
-When a saved source file changes, hot reload refreshes the tool metadata and marks affected nodes out of date when necessary.
-
-Manage Tools also provides actions to open, rename, or delete editable workflow-local tools.
-Deletion identifies saved workflows that reference the tool and requires confirmation.
+To write analysis code yourself, see [Create Custom Tools](create-custom-tools.md).

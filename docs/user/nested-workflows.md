@@ -1,66 +1,59 @@
 # Reuse and Nest Workflows
 
-A workflow can appear as a node inside another workflow.
-The embedded node contains a complete executable snapshot, so a parent remains reproducible even if the saved source workflow later changes or is deleted.
+> **Available in:** Desktop and browser.
+
+A workflow can appear as one node inside another workflow.
+Use this to group a readable section of a large analysis or reuse a saved workflow.
 
 ## Create a nested workflow
 
-There are two common approaches:
+Choose one method:
 
-- select canvas nodes, right-click, and choose **Group into workflow**;
-- drag a saved workflow from the **Workflows** panel onto another workflow's canvas.
+- Select canvas nodes, right-click the selection, and choose **Group into workflow**.
+- Drag a saved workflow from **Workflows** onto another workflow's canvas.
 
-Grouping creates a new embedded graph from the selection.
-Dragging a saved workflow embeds its exact saved graph, its public inputs and outputs, and any workflow-local source files it needs.
+Grouping replaces the selection with one workflow node and preserves its connections.
+Dragging a saved workflow copies its saved graph, public inputs and outputs, and workflow-local tools into the parent.
 
-BioImageFlow rejects direct and indirect containment cycles.
-For example, workflow A cannot embed workflow B if B already contains A at any depth.
+BioImageFlow prevents a workflow from containing itself, directly or through other workflows.
 
-## Connect a workflow node
+## Define its connections
 
-Workflow nodes use a thick border.
-Their visible handles come from the embedded workflow's public interface.
+A thick border identifies a workflow node.
+Its handles come from the inputs and outputs exposed inside it.
 
-Inside the nested graph, expose a tool parameter with **Expose as workflow input** or an output with **Expose as workflow output**.
-Give each exposed port a clear name in the **Nodes** panel.
-Renaming a port preserves its parent connections, but removing or changing a connected port requires confirmation and removes incompatible edges or bindings atomically.
+1. Double-click the workflow node to open its graph.
+2. Select an internal tool.
+3. Use **Expose as workflow input** on a parameter or **Expose as workflow output** on a result.
+4. Give the exposed port a clear name.
+5. Save the nested tab into its parent.
+
+Renaming an exposed port keeps compatible parent connections.
+Removing or changing a connected port asks for confirmation before removing an incompatible connection.
 
 ## Edit nested content
 
 Double-click a workflow node, or right-click it and choose **Open workflow**.
-BioImageFlow opens the embedded graph in a nested editor tab using the same canvas and panels as a root workflow.
+BioImageFlow opens its graph in a nested editor tab.
 
-![A workflow node and its graph open in a nested editor tab.](images/nested-workflow.png)
+![A workflow node and its internal graph open in a nested editor tab.](images/nested-workflow.png)
 
-Nested edits are private to that editor until you save them back to the parent node.
-Press Ctrl/Cmd+S or choose **Workflow → Save** while the nested tab is active to apply the accepted snapshot.
-Saving preserves compatible parent edges and bindings by port identity.
+Choose **Workflow → Save** or press Ctrl/Cmd+S to apply the nested edits to the parent node.
+You cannot run a nested tab directly; save it and run the root workflow.
 
-Closing a dirty nested tab asks whether to discard its private changes.
-You cannot run a nested tab directly; save it into the parent and run the owning root workflow.
+If the parent changed while the nested tab was open, BioImageFlow refuses an outdated apply.
+Review the latest parent before choosing whether to keep your changes or use the latest nested content.
 
-If the parent node changed or disappeared after you opened the editor, applying reports a conflict and changes nothing.
-Choose the latest snapshot or keep your changes from the persistence message before continuing.
+## Update a reused workflow
 
-## Understand saved-source provenance
+A workflow dragged from **Workflows** remembers which saved workflow it came from.
+Editing the nested copy does not edit that saved source.
 
-A workflow dragged from the Workflows panel remembers which saved workflow and artifact produced the embedded snapshot.
-This provenance is informational until you request a source action.
-Editing the embedded copy never edits the saved source automatically.
+Right-click the workflow node to use:
 
-Right-click a workflow node with saved-source provenance to use:
+- **Open source workflow** to open the saved source in its own tab;
+- **Update from source** to preview and apply its latest saved content;
+- **Detach from source** to keep the nested content without its source link.
 
-- **Open source workflow**, which opens the saved source in its own root tab;
-- **Update from source**, which previews differences and replaces the embedded snapshot after confirmation;
-- **Detach from source**, which removes provenance while keeping the embedded content unchanged.
-
-An update checks the source and destination again when you confirm it.
-If either changed, or if an editor is open at or below the replacement target, BioImageFlow refuses the operation without making a partial change.
-
-Deleting, renaming, or editing a saved source does not silently mutate existing embedded copies.
-
-## Copy between workflows
-
-Copying a workflow node includes every nested graph below it.
-Pasting assigns new parent node and edge identities while preserving the public port identities inside the copied workflow.
-When the copied graph uses workflow-local tools, the destination receives content-addressed copies so same-named tools with different source can coexist.
+Save or close any nested editor at the update location before using **Update from source**.
+BioImageFlow does not silently change embedded copies when their saved source is edited, moved, or deleted.

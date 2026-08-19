@@ -2,7 +2,7 @@ project = "BioImageFlow Platform"
 copyright = "2026, BioImageFlow Contributors"
 author = "BioImageFlow Contributors"
 
-extensions = ["myst_parser"]
+extensions = ["myst_parser", "sphinx_reredirects"]
 
 source_suffix = {
     ".rst": "restructuredtext",
@@ -11,8 +11,13 @@ source_suffix = {
 
 myst_heading_anchors = 4
 root_doc = "index"
-exclude_patterns = ["_build", "build", "superpowers/**"]
+exclude_patterns = ["_build", "build", "superpowers/**", "agents/**"]
 language = "en"
+
+redirects = {
+    "user/installation": "index.html",
+    "user/quick-start": "index.html",
+}
 
 html_theme = "furo"
 html_title = "BioImageFlow Platform"

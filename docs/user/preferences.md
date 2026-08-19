@@ -1,84 +1,78 @@
-# Preferences and Integrations
+# Settings, Storage, and Integrations
 
-Open **Edit → Preferences…**.
-On macOS, Cmd+, also opens Preferences; in the desktop application on Windows or Linux, use Ctrl+,.
+> **Available in:** Desktop and browser. Workspace browsing and local editor actions are desktop-only; administrators can restrict browser settings.
 
-Settings are saved as you change them.
-If an update fails, BioImageFlow leaves the previous setting in effect and displays an error.
+Choose **Edit → Preferences...**.
+On macOS, Cmd+, also opens the dialog; use Ctrl+, in the desktop application on Windows or Linux.
+
+Changes are saved as you make them.
+If a change fails, BioImageFlow keeps the previous value and shows an error.
 
 ## External Editor
 
-Set the command used to open workflow-local source files.
-Include `{file_path}` where the selected source path should be inserted, for example `code {file_path}`.
-Leave the field empty to use the embedded editor behavior when available.
+Enter the command used to open workflow-local source files.
+Include `{file_path}` where the selected file path belongs, for example `code {file_path}`.
+Leave it empty to use the embedded editor when available.
 
-Tool source opens with the editor rooted at the workspace project while focusing the selected file.
-
-## Napari
-
-Choose a Python environment that already contains Napari, or enter its path.
-Leave the setting empty to disable the **Open in Napari** action in result tables.
-
-BioImageFlow starts Napari lazily when you first open an image and reports launch progress above the workspace.
-Closing BioImageFlow also shuts down the Napari process it manages.
+BioImageFlow opens the editor at the workspace root and focuses the selected source file.
+The same workspace root is used by the [coding-agent walkthrough](coding-agent.md).
 
 ## Execution
 
-This tab configures the default execution target, new-workflow scheduling, trusted Parsl configuration factories, and named distributed profiles.
-Desktop users can add and revise profiles.
-Web deployments expose administrator-provisioned profiles read-only.
+Choose the default execution target and how new workflows schedule independent nodes.
+Desktop users can add distributed profiles.
+Browser deployments can expose administrator-provided profiles as read-only.
 
-Remote profiles can attach an inline, local-file, or cluster-file pre-launch script for repeatable orchestrator initialization.
-See [Distributed execution](distributed-execution.md) for profile fields, upload semantics, and security boundaries.
+See [Distributed Execution](distributed-execution.md) before adding a remote target or startup script.
 
 ## Display
 
-Choose the default number of **Node Data rows per page** for newly inspected result tables.
-Individual tables can temporarily select a different page size without changing this default.
+Set **Node Data rows per page** for newly opened result tables.
+You can temporarily choose another page size in an individual table.
 
 ## Storage
 
-### Workspace
+### Workspace path
 
-The workspace contains the saved workflow tree and workflow-local tools.
-Use **Reveal** to open the current location in the file browser.
-In desktop mode, **Browse…** switches to another workspace.
+The workspace contains saved workflows and their workflow-local tools.
+Click **Reveal** to open the displayed location.
+On desktop, click **Browse...** to switch to another workspace.
 
 Changing the workspace does not move workflows from the previous location.
-If the selected workflow root already exists, BioImageFlow does not add examples merely because the root is empty.
-Each saved workflow owns its execution storage in `<workflow-directory>/results`.
-That location is derived from the workspace layout and is not a separate preference.
+Each workflow stores its managed execution results in its own `results` folder.
 
 ### Latest output view
 
-BioImageFlow automatically publishes the disposable `outputs/latest` projection with symbolic links when the filesystem supports them.
-It falls back to portable pointer files when symbolic links are unavailable.
-The displayed effective mode and warning explain what the current workflow filesystem supports.
-Click **Retest** after changing filesystem permissions or mount configuration.
+**Latest output view** reports whether BioImageFlow can use symbolic links or must use portable pointer files.
+Click **Retest** after changing filesystem permissions or mount settings.
 
-The projection is intentionally lightweight and is not configurable as copied files.
-Use the workflow export dialog to create ordinary independent file copies in a ZIP or desktop destination folder.
+This view is for convenient inspection, not backup.
+Use **Workflow → Export** to make independent file copies.
 
-### Tool store
+### Tool store path
 
-The read-only path identifies the shared versioned tool-package store.
-Its default is `~/.bioimageflow/tool_packages/`.
+**Tool store path** shows where shared, versioned tool packages are installed.
+The default is `~/.bioimageflow/tool_packages/`.
 
 ### Example workflows
 
-The status shows how many recognized bundled examples occupy their canonical locations under `Demo/`.
-Use **Install demos** to add missing examples without overwriting conflicts.
-Use **Remove demos** to remove only recognized canonical examples and their server-managed caches; unrelated children in the Demo folder are preserved.
-
-Renaming or moving an example detaches it from its canonical status, so a later install can create a fresh copy at the original location.
+Click **Install demos** to add missing bundled examples under **Demo** without overwriting other workflows.
+Click **Remove demos** to remove only recognized bundled examples and their managed caches.
 
 ## OMERO
 
-Add one row for each OMERO connection.
-Provide an optional unique display name, host, port, username, and password, then use the row's save action.
-BioImageFlow stores the password in the operating system's credential service and reports only whether a password is stored.
+Add an OMERO connection with a display name, host, port, username, and password.
+BioImageFlow stores the password in the operating system credential service and reports only whether one is stored.
 
-Duplicate a row when configuring a related account or endpoint.
-Removing a row also deletes its stored credential after confirmation.
+Removing a connection also removes its stored credential after confirmation.
+Tools that support OMERO let you choose one of these named connections in their own parameters.
 
-Workflow tools that support OMERO select these named instances through their own parameters or configuration.
+## Launcher version and updates
+
+The launcher log shows **Using version:** followed by the release it starts.
+BioImageFlow's packaged launcher is configured to select the latest verified application release automatically; keep using the same launcher to receive application updates.
+
+```{note}
+Launcher behavior belongs to the installed launcher, not the **Preferences...** dialog.
+Download a newer launcher only when the BioImageFlow release notes specifically require it.
+```

@@ -1,94 +1,74 @@
 # Manage Workflows
 
-The **Workflows** panel presents saved workflows as a folder tree under the active workspace.
-Workflow IDs are path-based, so moving a workflow into a folder changes its ID while preserving its saved content and known references.
+> **Available in:** Desktop and browser. Exporting results directly to a local folder is desktop-only.
 
-## Create folders and workflows
+Use **Workflows** to organize, copy, import, export, and delete saved workflows.
 
-Select a folder before clicking **New workflow** to create the workflow inside it.
-Use **New folder** to add another level to the tree.
-Items are sorted alphabetically inside each folder, and the search field filters the visible tree.
+## Organize workflows
 
-A workflow has three user-facing identifiers:
+Select a folder before clicking **New workflow** to create the workflow there.
+Use **New folder** to add another level.
+The search field filters the tree.
 
-- its workspace ID, such as `Segmentation/Nuclei`, determines its folder location;
-- its display name is the readable title shown in the application;
-- its optional description explains its purpose in the workflow detail area.
-
-Editing the display name does not move the workflow.
-Renaming or dragging the tree item changes its workspace path.
-
-## Open and close workflows
-
-Double-click a workflow row, press Enter on it, click **Open workflow** in its details, or choose **Workflow → Open**.
-Each opened workflow gets a root canvas tab.
-
-Closing a tab with unsaved changes offers three choices:
-
-- **Save** promotes the accepted draft and closes the tab;
-- **Discard** restores the last explicitly saved workflow and closes the tab;
-- **Cancel** keeps the tab and its current draft open.
-
-## Save, duplicate, and Save As
-
-Use **Save** to promote the active root draft.
-In a nested editor, the same command applies that editor's private snapshot to its parent node instead.
-
-Use **Save As** to create a new saved workflow from the active graph.
-Use **Duplicate workflow** in the Workflows panel to copy a saved workflow and its workflow-local tools without including unsaved draft edits.
-
-## Move and rename
+A workflow name such as `Segmentation/Nuclei` determines its folder location.
+Its display name is the readable title shown in BioImageFlow.
+Changing the display name does not move the workflow.
 
 Drag a workflow or folder onto another folder to move it.
-Use **Edit selected item** to change a folder name or the selected workflow's display name.
-Workspace moves update open drafts and saved-workflow provenance references as one coordinated operation.
+Use **Edit selected item** to rename a folder or edit a workflow's display name.
 
-BioImageFlow rejects a move that would make a workflow contain itself directly or through another workflow.
+## Open and save
 
-## Delete
+Double-click a workflow, press Enter while it is selected, click **Open workflow**, or choose **Workflow → Open**.
 
-Deleting a workflow removes its saved definition, workflow-local tools, and server-managed output caches after confirmation.
-If it is open with unsaved changes, the confirmation identifies that state.
+Choose **Workflow → Save** to save the active workflow.
+When a nested workflow tab is active, **Save** applies those edits to its parent node.
 
-When deleting a non-empty folder, choose whether to:
+When closing a tab with unsaved changes, choose:
 
-- delete the folder and all children;
-- move its children to the parent folder;
-- cancel without changing anything.
+- **Save** to keep the changes;
+- **Discard** to return to the last saved workflow;
+- **Cancel** to keep editing.
 
-These actions cannot be undone from the canvas undo stack.
-Export an important workflow first if you need a portable backup.
+## Make a copy
 
-## Import and export
+Choose **Workflow → Save As** to create a new saved workflow from the active canvas.
+Use **Duplicate workflow** in **Workflows** to copy an existing saved workflow and its local tools.
+Duplication does not include unsaved canvas changes.
 
-Choose **Workflow → Export** or click **Export workflow** in the panel to open the export dialog.
+## Import or export
 
-| Choice | What it contains | Best for |
-|---|---|---|
-| **Workflow only** | The reusable recursive workflow and its workflow-local tool sources, without results | Sharing, moving, or backing up a workflow |
-| **Latest results** | Ordinary copied files from the latest successful result of each node | Sending the current human-facing outputs to someone else |
-| **Workflow with results** | The workflow plus copied outputs and provenance from one latest successful run | Preserving a reproducible workflow/run snapshot |
-| **Export latest results to folder** | The per-node latest results as ordinary files in a new child folder | Opening or transferring results from the desktop application |
+Choose **Workflow → Export**, or click **Export workflow** in **Workflows**.
 
-Workflow-containing exports save unsaved changes before creating the download.
-Results-only exports do not save or alter the workflow.
-The latest-results choices may combine nodes from different executions; use **Workflow with results** when every output must belong to one successful run.
+| Export choice | Use it for |
+|---|---|
+| **Workflow only** | Share or back up the workflow and its workflow-local tools without results. |
+| **Latest results** | Copy the latest successful result of each node. These files can come from different runs. |
+| **Workflow with results** | Keep the workflow and the outputs from one successful run together. |
+| **Export latest results to folder** | Write the latest successful node results to a new local folder on desktop. |
 
-The folder choice is available only in the desktop application.
-Choose a parent directory and BioImageFlow creates a named child directory inside it.
-If that child already exists, replacement is offered only when it is a previous marked export of the same workflow; BioImageFlow never replaces the selected parent or an unrelated directory.
+Exporting a workflow saves its current changes first.
+A results-only export does not change the workflow.
 
-Choose **Workflow → Import** to add a library workflow archive to the workspace.
-If its suggested ID already exists, enter another name.
-After import, BioImageFlow reports missing tool packages and offers to rebind dependencies that are available locally.
+Choose **Workflow → Import** to add a workflow archive.
+If its name already exists, enter another name.
+After import, BioImageFlow shows missing tools and offers compatible versions already installed on your system.
 
-A **Workflow with results** bundle is an export artifact and cannot itself be imported as a workflow.
-To import from that bundle, extract and import the `.bioimageflow.zip` archive inside its `workflow/` directory.
-A platform workspace backup is likewise not interchangeable with a portable workflow archive.
+A **Workflow with results** bundle is not directly importable.
+Extract it and import the `.bioimageflow.zip` file inside its `workflow/` folder.
 
-## Open workflow files and outputs
+## Find output files
 
-The selected workflow's detail area shows its ID and output storage path.
-Use its folder action to reveal the workflow directory in the system file browser.
-Use **Open latest outputs** to reveal the disposable per-node latest-output view for that workflow.
-Use the export dialog when you need files that remain valid after they are moved away from workflow storage.
+Select a saved workflow and click **Open latest outputs** on desktop.
+This view is convenient for inspection but is not a portable backup.
+Use an export choice when files must remain valid after being moved.
+
+See [Run Workflows and Inspect Results](run-and-results.md) for tables, images, logs, and run-specific results.
+
+## Delete safely
+
+Deleting a workflow removes its saved definition, workflow-local tools, and managed output caches after confirmation.
+Export important work first.
+
+When deleting a non-empty folder, BioImageFlow lets you delete its contents, move them to the parent folder, or cancel.
+These actions cannot be undone from the canvas.
