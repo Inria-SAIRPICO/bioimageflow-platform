@@ -12,8 +12,12 @@ Enter the command used to open workflow-local source files.
 Include `{file_path}` where the selected file path belongs, for example `code {file_path}`.
 Leave it empty to use the embedded editor when available.
 
-BioImageFlow opens the editor at the workspace root and focuses the selected source file.
-The same workspace root is used by the [coding-agent walkthrough](coding-agent.md).
+The embedded editor shows two roots: **Workspace** for workflows and custom tools, and **Installed Tool Packages** for shared versioned packages.
+Installed package files are read-only because an update or reinstall may replace them.
+New terminals start in **Workspace**, and opening either kind of tool keeps the same editor project and existing terminal sessions.
+
+A configured external editor continues to use its command-defined project folder.
+The workspace root used by external editors is also used by the [coding-agent walkthrough](coding-agent.md).
 
 ## Execution
 

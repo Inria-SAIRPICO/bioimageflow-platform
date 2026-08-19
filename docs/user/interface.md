@@ -62,8 +62,9 @@ Inspect completed tables, filter rows, preview images, and use path or viewer ac
 
 ### Code Editor
 
-Open workflow-local tool source in the embedded or configured external editor.
+Open custom or installed tool source in the embedded or configured external editor.
 Custom source stays with its workflow when the workflow is exported.
+The embedded editor keeps the writable BioImageFlow workspace and read-only installed tool packages together as separate Explorer roots, so opening a package tool does not replace the workspace or close its terminals.
 
 ## Rearrange your workspace
 

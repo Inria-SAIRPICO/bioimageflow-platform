@@ -67,13 +67,10 @@ folder asks whether to delete children, move them up, or cancel. Creating a
 workflow while a folder is selected places it in that folder and the creation
 dialog includes an optional description field. The workflow detail panel shows
 the description with an edit action, the workflow id, output storage path, and
-a button that opens the workflow folder in the system file browser. Dragging a saved workflow onto the canvas embeds an executable snapshot with explicit source provenance, and any workflow may be grouped or opened recursively using the same interface model. Custom tools are created in the current workflow's `tools/` folder so a workflow
-archive carries the custom tool sources it uses. Tool source opening keeps VS
-Code or code-server rooted at the workspace project and focuses the selected
-tool file. Reusable tools shared across workflows should be distributed as tool
-packages; the Manage Tools dialog installs known packages from table rows and
-unknown GitHub/GitLab or `.zip` package sources from the inline **Install tool
-package** footer below the table.
+a button that opens the workflow folder in the system file browser. Dragging a saved workflow onto the canvas embeds an executable snapshot with explicit source provenance, and any workflow may be grouped or opened recursively using the same interface model.
+Custom tools are created in the current workflow's `tools/` folder so a workflow archive carries the custom tool sources it uses.
+Embedded tool source editing uses one multi-root VS Code workspace containing the writable BioImageFlow workspace and read-only installed packages.
+Reusable tools shared across workflows should be distributed as tool packages; the Manage Tools dialog installs known packages from table rows and unknown GitHub/GitLab or `.zip` package sources from the inline **Install tool package** footer below the table.
 
 ## Prerequisites
 

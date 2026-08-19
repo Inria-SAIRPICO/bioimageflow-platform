@@ -51,7 +51,7 @@ async function restoreEditor() {
 
 function shouldFocusPathAfterLoad(url: string | null, path: string | null): path is string {
   if (!url || !path) return false
-  return url.includes('folder=')
+  return url.includes('workspace=') || url.includes('folder=')
 }
 
 async function focusPathAfterLoad(event: Event) {
@@ -101,7 +101,7 @@ onMounted(async () => {
   if (codeEditorUrl.value || codeEditorOpening.value) return
   statusLoading.value = true
   try {
-    const status = await getEditorStatus({ launch: true })
+    const status = await getEditorStatus({ launch: true, workspace: true })
     if (status.available && status.url) {
       uiStore.setCodeEditorTarget(status.url, codeEditorPath.value ?? '')
       failed.value = false

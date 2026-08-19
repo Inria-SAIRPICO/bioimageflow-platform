@@ -96,6 +96,10 @@ Installed package tools are versioned dependencies resolved through the tool sto
 Workflow-local tools are owned source content that travels with the workflow when required.
 Recursive embedding, copying, import, export, and source update must preserve all required local sources without registry shadowing when same-named sources have different content.
 
+The embedded code editor uses a platform-generated multi-root VS Code workspace with the active BioImageFlow workspace first and the installed tool store second.
+The workspace root remains the integrated-terminal working directory, installed package sources are read-only in that editor, and focusing either a workflow-local or package tool must not replace the editor project.
+Configured external editors retain their command-defined project behavior.
+
 Trusted `workflow.py` files are authoring inputs only.
 Building from Python materializes a canonical graph and its allowed source bundle; running, nesting, copying, reopening, and exporting use the materialized graph and do not import the authoring source.
 

@@ -103,6 +103,23 @@ describe('editor api helpers', () => {
     })
   })
 
+  it('can request the managed workspace while starting the editor', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        available: true,
+        url: 'http://127.0.0.1:32344/?workspace=%2Fworkspace%2F.bioimageflow%2FBioImageFlow.code-workspace',
+        version: '4.106.2',
+        control_available: true,
+      },
+    })
+
+    await getEditorStatus({ launch: true, workspace: true })
+
+    expect(mockedGet).toHaveBeenCalledWith('/api/v1/editor/status', {
+      params: { launch: true, workspace: true },
+    })
+  })
+
   it('shows success for external editor responses', async () => {
     const toast = { add: vi.fn() }
     mockedPost.mockResolvedValueOnce({
@@ -362,6 +379,52 @@ describe('editor api helpers', () => {
         path: '/workspace/tools/new.py',
         message: null,
       },
+    })
+    window.removeEventListener('bif:open-code-editor', listener)
+  })
+
+  it('keeps the managed workspace mounted when switching tool roots', async () => {
+    const listener = vi.fn()
+    window.addEventListener('bif:open-code-editor', listener)
+    const workspaceFile = '/workspace/.bioimageflow/BioImageFlow.code-workspace'
+    const currentUrl = `http://127.0.0.1:32344/?workspace=${encodeURIComponent(workspaceFile)}`
+    useUIStore().setCodeEditorTarget(
+      currentUrl,
+      '/workspace/workflows/example/tools/custom.py',
+      workspaceFile,
+    )
+    mockedPost
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: currentUrl,
+          path: '/tool_packages/package/1.0/package/tool.py',
+          project_path: workspaceFile,
+          message: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          opened: true,
+          method: 'embedded',
+          url: 'http://127.0.0.1:32344',
+          path: '/tool_packages/package/1.0/package/tool.py',
+          message: null,
+        },
+      })
+
+    await openToolWithEditor('PackageTool', 'example')
+
+    expect(mockedPost).toHaveBeenNthCalledWith(2, '/api/v1/editor/open', {
+      path: '/tool_packages/package/1.0/package/tool.py',
+    })
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      url: currentUrl,
+      path: '/tool_packages/package/1.0/package/tool.py',
+      projectPath: workspaceFile,
+      requestId: expect.any(Number),
     })
     window.removeEventListener('bif:open-code-editor', listener)
   })

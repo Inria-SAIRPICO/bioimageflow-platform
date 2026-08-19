@@ -21,8 +21,11 @@ class _EditorStub:
     def __init__(self, response: EditorOpenResponse | None = None) -> None:
         self.response = response
         self.paths: list[str] = []
+        self.workspace_opens: list[bool] = []
+        self.status_workspace: list[bool] = []
 
-    def get_status(self, *, launch: bool = False) -> EditorStatus:
+    def get_status(self, *, launch: bool = False, workspace: bool = False) -> EditorStatus:
+        self.status_workspace.append(workspace)
         return EditorStatus(
             available=True,
             url="http://127.0.0.1:32344",
@@ -30,8 +33,15 @@ class _EditorStub:
             control_available=True,
         )
 
-    def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
+    def open_path(
+        self,
+        path: str,
+        focus_path: str | None = None,
+        *,
+        workspace: bool = False,
+    ) -> EditorOpenResponse:
         self.paths.append(path)
+        self.workspace_opens.append(workspace)
         if self.response is not None:
             return self.response
         return EditorOpenResponse(
@@ -50,7 +60,8 @@ async def _client(config: AppConfig) -> AsyncIterator[httpx.AsyncClient]:
 
 
 async def test_editor_status_endpoint_uses_service() -> None:
-    config = AppConfig(editor_service=_EditorStub())
+    editor = _EditorStub()
+    config = AppConfig(editor_service=editor)
     async for client in _client(config):
         response = await client.get("/api/v1/editor/status")
 
@@ -64,6 +75,20 @@ async def test_editor_status_endpoint_uses_service() -> None:
         "error_code": None,
         "error_detail": None,
     }
+    assert editor.status_workspace == [False]
+
+
+async def test_editor_status_can_request_managed_workspace() -> None:
+    editor = _EditorStub()
+    config = AppConfig(editor_service=editor)
+    async for client in _client(config):
+        response = await client.get(
+            "/api/v1/editor/status",
+            params={"launch": "true", "workspace": "true"},
+        )
+
+    assert response.status_code == 200
+    assert editor.status_workspace == [True]
 
 
 async def test_editor_routes_are_present_in_openapi() -> None:
@@ -185,6 +210,7 @@ async def test_editor_open_accepts_focus_path(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["path"] == str(tool)
     assert editor.paths == [str(workspace)]
+    assert editor.workspace_opens == [False]
 
 
 async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path: Path) -> None:
@@ -218,6 +244,7 @@ async def test_editor_open_tool_opens_workspace_root_and_focuses_source(tmp_path
     assert response.status_code == 200
     assert response.json()["path"] == str(tool)
     assert editor.paths == [str(workspace)]
+    assert editor.workspace_opens == [True]
 
 
 async def test_editor_open_package_tool_opens_tool_store_root(tmp_path: Path) -> None:
@@ -254,6 +281,7 @@ async def test_editor_open_package_tool_opens_tool_store_root(tmp_path: Path) ->
     assert response.status_code == 200
     assert response.json()["path"] == str(tool)
     assert editor.paths == [str(tool_store.resolve())]
+    assert editor.workspace_opens == [True]
 
 
 async def test_editor_open_symlinked_package_tool_opens_tool_store_root(
@@ -285,7 +313,7 @@ async def test_editor_open_symlinked_package_tool_opens_tool_store_root(
             editable=False,
         ),
     )
-    registry._sources["PackageTool"] = symlinked_tool
+    registry._sources["PackageTool"] = tool.resolve()
     editor = _EditorStub()
     config = AppConfig(tool_registry=registry, workflow_root=workspace, editor_service=editor)
     async for client in _client(config):
@@ -297,6 +325,7 @@ async def test_editor_open_symlinked_package_tool_opens_tool_store_root(
     assert response.status_code == 200
     assert response.json()["path"] == str(symlinked_tool)
     assert editor.paths == [str(tool_store.resolve())]
+    assert editor.workspace_opens == [True]
 
 
 async def test_editor_open_resolved_package_source_still_opens_tool_store_root(

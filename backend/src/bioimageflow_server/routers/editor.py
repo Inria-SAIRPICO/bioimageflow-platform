@@ -42,9 +42,12 @@ def get_editor_service() -> EditorService:  # pragma: no cover
 @router.get("/status", response_model=EditorStatus)
 async def get_editor_status(
     launch: bool = False,
+    workspace: bool = False,
     service: EditorService = Depends(get_editor_service),
 ) -> EditorStatus:
-    return await to_thread.run_sync(partial(service.get_status, launch=launch))
+    return await to_thread.run_sync(
+        partial(service.get_status, launch=launch, workspace=workspace)
+    )
 
 
 @router.post("/open", response_model=EditorOpenResponse)
@@ -121,9 +124,12 @@ async def open_tool_script(
             source_path,
         )
         response = await to_thread.run_sync(
-            service.open_path,
-            str(project_path),
-            str(source_path),
+            partial(
+                service.open_path,
+                str(project_path),
+                str(source_path),
+                workspace=True,
+            )
         )
         logger.info(
             "Editor open-tool completed: tool=%s method=%s opened=%s path=%s error_code=%s",

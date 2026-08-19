@@ -779,12 +779,17 @@ The backend manages Napari via `NapariLauncher` (using Wetlands). Napari runs in
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/editor/status` | Probe or launch embedded code-server; `workspace=true` with `launch=true` opens the managed multi-root workspace |
 | `POST` | `/editor/open` | Open a file/folder in the user's external editor |
-| `POST` | `/editor/open-tool` | Open the user's workspace as the editor project and focus a tool source file |
+| `POST` | `/editor/open-tool` | Open the appropriate editor project and focus a tool source file |
 
-The user specifies an external editor command in Settings (Section 3.12.1). The command may use `{workspace_path}` for the project folder and `{file_path}` for the focused file. For VS Code the recommended command is `code {workspace_path} --goto {file_path}`. If no external editor is configured, "Open in editor" copies the relevant path to the clipboard with a toast.
+The user specifies an external editor command in Settings (Section 3.12.1). The command may use `{workspace_path}` for the project folder and `{file_path}` for the focused file. For VS Code the recommended command is `code {workspace_path} --goto {file_path}`. If no external editor is configured, BioImageFlow uses embedded code-server when available and otherwise copies the relevant path to the clipboard with a toast.
 
-`/editor/open-tool` is used by tool rows and node source links. For a workflow-local custom tool, the backend opens the current workspace as the editor project and focuses the source below `workspace/workflows/<workflow-id>/tools/`. For an installed package tool, it opens the installed tool-store root when available and otherwise uses the source file's parent directory. v2 Section 2.2 defines the embedded-editor response contract.
+`/editor/open-tool` is used by tool rows and node source links. A configured external editor retains the existing project selection: a workflow-local custom tool uses the current workspace, while an installed package tool uses the installed tool-store root when available and otherwise the source file's parent directory.
+
+Embedded code-server instead uses the generated project `<workspace>/.bioimageflow/BioImageFlow.code-workspace`. This multi-root workspace contains the active BioImageFlow workspace as `Workspace` and the installed tool store as `Installed Tool Packages`; the workspace is first, is the integrated-terminal working directory, and the tool-store tree is marked read-only through VS Code workspace settings. Both custom and package tool opens retain this project and focus only the selected source, so switching tool kinds must not reload the workbench or terminate its terminals. Package sources installed through a tool-store symlink retain their lexical installed path when one can be identified so they remain navigable under the package root. `EditorOpenResponse.project_path` identifies the generated `.code-workspace` file for these embedded opens.
+
+Plain status probes remain side-effect free. `GET /editor/status?launch=true&workspace=true` lazily creates or refreshes the generated file atomically and returns a code-server URL with the encoded `workspace` query parameter. Generation failure returns an embedded-editor diagnostic without replacing an existing valid file. Changing the active BioImageFlow workspace changes the generated project and may reload the workbench; selecting another tool within the same active workspace does not.
 
 #### 2.4.10 Dataset Management
 

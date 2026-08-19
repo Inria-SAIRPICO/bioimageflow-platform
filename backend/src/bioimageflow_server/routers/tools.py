@@ -168,6 +168,10 @@ def resolve_tool_project_open_paths(
         workflow_store=workflow_store,
     )
     source_path = Path(source.path)
+    if source.source_kind != "custom":
+        tool = registry.get_tool(tool_name)
+        if tool is not None:
+            source_path = _installed_package_source_path(source_path, tool, registry)
     return (
         _project_root_for_source(
             source_path,
@@ -177,6 +181,43 @@ def resolve_tool_project_open_paths(
         ),
         source_path,
     )
+
+
+def _installed_package_source_path(
+    source_path: Path,
+    tool: ToolMetadata,
+    registry: ToolRegistryService,
+) -> Path:
+    """Prefer a lexical tool-store path for sources reached through symlinks."""
+    store_path = registry.tool_store_path()
+    if store_path is None:
+        return source_path
+    lexical_store = store_path.expanduser().absolute()
+    lexical_source = source_path.expanduser().absolute()
+    try:
+        lexical_source.relative_to(lexical_store)
+    except ValueError:
+        pass
+    else:
+        return lexical_source
+
+    canonical_source = source_path.expanduser().resolve(strict=False)
+    version_root = lexical_store / tool.package / tool.package_version
+    anchors = [version_root]
+    if version_root.is_dir():
+        try:
+            anchors.extend(child for child in version_root.iterdir() if child.is_symlink())
+        except OSError:
+            pass
+    for anchor in anchors:
+        try:
+            relative = canonical_source.relative_to(anchor.resolve(strict=False))
+        except (OSError, ValueError):
+            continue
+        candidate = anchor / relative
+        if candidate.exists():
+            return candidate.absolute()
+    return source_path
 
 
 # ---------------------------------------------------------------------------

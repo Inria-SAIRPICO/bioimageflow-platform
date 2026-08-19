@@ -47,7 +47,7 @@ describe('CodeEditorPanel', () => {
     expect(wrapper.find('[data-testid="code-editor-unavailable"]').text()).toContain(
       'code-server is not available. Configure an external editor in Settings.',
     )
-    expect(mockedGetEditorStatus).toHaveBeenCalledWith({ launch: true })
+    expect(mockedGetEditorStatus).toHaveBeenCalledWith({ launch: true, workspace: true })
   })
 
   it('shows startup diagnostics when code-server launch fails', async () => {
@@ -109,6 +109,22 @@ describe('CodeEditorPanel', () => {
 
     expect(wrapper.find('[data-testid="code-editor-iframe"]').attributes('src')).toBe(
       'http://127.0.0.1:32344',
+    )
+  })
+
+  it('focuses the requested file after a managed workspace iframe loads', async () => {
+    const store = useUIStore()
+    store.setCodeEditorTarget(
+      'http://127.0.0.1:32344/?workspace=%2Ftmp%2Fworkspace%2F.bioimageflow%2FBioImageFlow.code-workspace',
+      '/tmp/tool_packages/package/1.0/tool.py',
+    )
+
+    const wrapper = mount(CodeEditorPanel)
+    await wrapper.find('[data-testid="code-editor-iframe"]').trigger('load')
+    await flushPromises()
+
+    expect(mockedOpenEditorPath).toHaveBeenCalledWith(
+      '/tmp/tool_packages/package/1.0/tool.py',
     )
   })
 

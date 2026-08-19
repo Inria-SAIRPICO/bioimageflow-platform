@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import subprocess
 import threading
@@ -22,6 +23,7 @@ from bioimageflow_server.models.editor import (
     EditorStatus,
 )
 from bioimageflow_server.models.settings import Settings
+from bioimageflow_server.services.editor_workspace import ensure_editor_workspace
 
 CODE_SERVER_VERSION = "4.106.2"
 DEFAULT_EDITOR_URL = "http://127.0.0.1:32344"
@@ -34,6 +36,7 @@ EMBEDDED_OPENER_TIMEOUT = "embedded_opener_timeout"
 EMBEDDED_OPENER_TIMEOUT_DETAIL = (
     "code-server is running but the opener endpoint did not become available before timeout"
 )
+EMBEDDED_WORKSPACE_FAILED = "embedded_workspace_failed"
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ SettingsProvider = Callable[[], Settings]
 UrlProbe = Callable[[str], bool]
 OpenerCall = Callable[[str, dict[str, str]], bool]
 EnvironmentManagerProvider = Callable[[], Any]
+PathProvider = Callable[[], Path]
 
 
 def _default_process_launcher(args: list[str]) -> subprocess.Popen[Any]:
@@ -256,11 +260,12 @@ class EmbeddedCodeServerManager:
         *,
         opener: OpenerCall = _default_opener_call,
     ) -> EditorOpenResponse:
-        if path.is_dir():
+        if path.is_dir() or _is_workspace_file(path):
+            query_name = "workspace" if _is_workspace_file(path) else "folder"
             return EditorOpenResponse(
                 opened=True,
                 method=EditorOpenMethod.EMBEDDED,
-                url=f"{self.editor_url}/?{urlencode({'folder': str(path)})}",
+                url=f"{self.editor_url}/?{urlencode({query_name: str(path)})}",
                 path=str(focus_path or path),
                 project_path=str(path),
             )
@@ -292,12 +297,16 @@ class EditorService:
         embedded_manager: EmbeddedCodeServerManager | None = None,
         embedded_startup_timeout: float = 10.0,
         embedded_poll_interval: float = 0.2,
+        workspace_path_provider: PathProvider | None = None,
+        tool_store_path_provider: PathProvider | None = None,
     ) -> None:
         self._settings_provider = settings_provider
         self._process_launcher = process_launcher
         self._embedded = embedded_manager or EmbeddedCodeServerManager()
         self._embedded_startup_timeout = embedded_startup_timeout
         self._embedded_poll_interval = embedded_poll_interval
+        self._workspace_path_provider = workspace_path_provider
+        self._tool_store_path_provider = tool_store_path_provider
         self._embedded_lock = threading.RLock()
 
     async def shutdown(self) -> None:
@@ -308,19 +317,40 @@ class EditorService:
 
             await asyncio.to_thread(shutdown)
 
-    def get_status(self, *, launch: bool = False) -> EditorStatus:
+    def get_status(self, *, launch: bool = False, workspace: bool = False) -> EditorStatus:
+        workspace_path: Path | None = None
+        if launch and workspace:
+            try:
+                workspace_path = self._managed_workspace_path()
+            except Exception as exc:
+                logger.exception("Embedded editor workspace generation failed")
+                return EditorStatus(
+                    available=False,
+                    url=None,
+                    version=None,
+                    control_available=False,
+                    launch_attempted=True,
+                    error_code=EMBEDDED_WORKSPACE_FAILED,
+                    error_detail=_exception_summary(exc),
+                )
         status = self._embedded.status()
         if not launch or status.available:
-            return status
+            return _status_for_workspace(status, workspace_path)
 
         with self._embedded_lock:
             status = self._embedded.status()
             if status.available:
-                return status.model_copy(update={"launch_attempted": True})
+                return _status_for_workspace(
+                    status.model_copy(update={"launch_attempted": True}),
+                    workspace_path,
+                )
             if status.control_available:
                 status = self._wait_for_embedded_status()
                 if status.available:
-                    return status.model_copy(update={"launch_attempted": True})
+                    return _status_for_workspace(
+                        status.model_copy(update={"launch_attempted": True}),
+                        workspace_path,
+                    )
                 return status.model_copy(
                     update={
                         "launch_attempted": True,
@@ -345,7 +375,10 @@ class EditorService:
 
             status = self._wait_for_embedded_status()
             if status.available:
-                return status.model_copy(update={"launch_attempted": True})
+                return _status_for_workspace(
+                    status.model_copy(update={"launch_attempted": True}),
+                    workspace_path,
+                )
             return status.model_copy(
                 update={
                     "launch_attempted": True,
@@ -354,9 +387,19 @@ class EditorService:
                 }
             )
 
-    def open_path(self, path: str, focus_path: str | None = None) -> EditorOpenResponse:
+    def open_path(
+        self,
+        path: str,
+        focus_path: str | None = None,
+        *,
+        workspace: bool = False,
+    ) -> EditorOpenResponse:
         normalized = self._normalize_path(path)
-        normalized_focus = self._normalize_path(focus_path) if focus_path is not None else None
+        normalized_focus = (
+            self._normalize_path(focus_path, resolve_symlinks=False)
+            if focus_path is not None
+            else None
+        )
         logger.info(
             "Editor service opening path: project_path=%s focus_path=%s",
             normalized,
@@ -375,8 +418,20 @@ class EditorService:
                 project_path=str(normalized) if normalized.is_dir() else None,
             )
 
+        embedded_project = normalized
+        if workspace:
+            try:
+                embedded_project = self._managed_workspace_path()
+            except Exception as exc:
+                logger.exception("Embedded editor workspace generation failed")
+                return self._clipboard_response(
+                    normalized_focus or normalized,
+                    EMBEDDED_WORKSPACE_FAILED,
+                    _exception_summary(exc),
+                )
+
         with self._embedded_lock:
-            return self._open_path_embedded_locked(normalized, normalized_focus)
+            return self._open_path_embedded_locked(embedded_project, normalized_focus)
 
     def _open_path_embedded_locked(
         self,
@@ -557,11 +612,23 @@ class EditorService:
             last_status = self._embedded.status()
         return last_status
 
-    def _normalize_path(self, path: str) -> Path:
+    def _managed_workspace_path(self) -> Path:
+        if self._workspace_path_provider is None or self._tool_store_path_provider is None:
+            raise RuntimeError("embedded editor workspace providers are not configured")
+        return ensure_editor_workspace(
+            self._workspace_path_provider(),
+            self._tool_store_path_provider(),
+        )
+
+    def _normalize_path(self, path: str, *, resolve_symlinks: bool = True) -> Path:
         candidate = Path(path).expanduser()
         if not candidate.is_absolute():
             raise EditorPathError("path must be absolute")
-        candidate = candidate.resolve(strict=False)
+        candidate = (
+            candidate.resolve(strict=False)
+            if resolve_symlinks
+            else Path(os.path.abspath(candidate))
+        )
         if not candidate.exists():
             raise EditorPathNotFoundError(str(candidate))
         return candidate
@@ -600,9 +667,23 @@ def _exception_summary(exc: Exception) -> str:
 def _can_open_embedded(status: EditorStatus, path: Path, _focus_path: Path | None) -> bool:
     if not status.available:
         return False
-    if path.is_dir():
+    if path.is_dir() or _is_workspace_file(path):
         return True
     return status.control_available
+
+
+def _is_workspace_file(path: Path) -> bool:
+    return path.is_file() and path.suffix == ".code-workspace"
+
+
+def _status_for_workspace(status: EditorStatus, workspace_path: Path | None) -> EditorStatus:
+    if workspace_path is None or not status.available or status.url is None:
+        return status
+    return status.model_copy(
+        update={
+            "url": f"{status.url.rstrip('/')}/?{urlencode({'workspace': str(workspace_path)})}",
+        }
+    )
 
 
 def _embedded_diagnostics(embedded: object) -> dict[str, object] | None:

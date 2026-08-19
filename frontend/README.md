@@ -92,8 +92,8 @@ The Storage tab in Settings shows whether the two bundled demo workflows are ins
 
 The **Node Data** bottom panel inspects selected-node DataFrames with server-side pagination, sorting, filtering, CSV export, resizable columns, and viewport-triggered image thumbnails. Preferences → Display sets the default rows per page to one of 25, 50, 100, 250, or 500; the initial default is 250.
 
-The Tools panel opens source through the editor API that keeps VS Code or
-code-server rooted at the workspace project and focuses the selected tool file.
+The Tools panel opens source through the editor API.
+Embedded code-server uses one generated multi-root VS Code workspace containing the writable BioImageFlow workspace and the read-only installed tool store, while configured external editors retain their command-defined project behavior.
 
 ## Testing
 

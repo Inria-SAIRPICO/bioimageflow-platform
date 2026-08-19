@@ -52,9 +52,16 @@ export interface OpenPathWithEditorOptions {
   focusPath?: string
 }
 
-export async function getEditorStatus(options: { launch?: boolean } = {}): Promise<EditorStatus> {
-  const { data } = options.launch
-    ? await api.get<EditorStatus>('/api/v1/editor/status', { params: { launch: true } })
+export async function getEditorStatus(
+  options: { launch?: boolean, workspace?: boolean } = {},
+): Promise<EditorStatus> {
+  const { data } = options.launch || options.workspace
+    ? await api.get<EditorStatus>('/api/v1/editor/status', {
+        params: {
+          ...(options.launch ? { launch: true } : {}),
+          ...(options.workspace ? { workspace: true } : {}),
+        },
+      })
     : await api.get<EditorStatus>('/api/v1/editor/status')
   return data
 }
@@ -106,8 +113,8 @@ function editorProjectKey(url: string | null): string | null {
   if (!url) return null
   try {
     const parsed = new URL(url, window.location.href)
-    const folder = parsed.searchParams.get('folder')
-    return normalizedProjectPath(folder) ?? parsed.origin + parsed.pathname
+    const project = parsed.searchParams.get('workspace') ?? parsed.searchParams.get('folder')
+    return normalizedProjectPath(project) ?? parsed.origin + parsed.pathname
   } catch {
     return url
   }
@@ -121,18 +128,20 @@ function normalizedProjectPath(path: string | null | undefined): string | null {
 function projectPathFromEditorUrl(url: string | null): string | null {
   if (!url) return null
   try {
-    return normalizedProjectPath(new URL(url, window.location.href).searchParams.get('folder'))
+    const parameters = new URL(url, window.location.href).searchParams
+    return normalizedProjectPath(parameters.get('workspace') ?? parameters.get('folder'))
   } catch {
     return null
   }
 }
 
-function isFolderEditorUrl(url: string | null): boolean {
+function isProjectEditorUrl(url: string | null): boolean {
   if (!url) return false
   try {
-    return new URL(url, window.location.href).searchParams.has('folder')
+    const parameters = new URL(url, window.location.href).searchParams
+    return parameters.has('workspace') || parameters.has('folder')
   } catch {
-    return url.includes('folder=')
+    return url.includes('workspace=') || url.includes('folder=')
   }
 }
 
@@ -226,7 +235,7 @@ export async function handleEditorOpenResponse(
     )
     const currentProject = currentProjectPath ?? editorProjectKey(currentUrl)
     const nextProject = nextProjectPath ?? editorProjectKey(response.url)
-    const preserveCurrentEditorUrl = Boolean(currentUrl) && !isFolderEditorUrl(response.url)
+    const preserveCurrentEditorUrl = Boolean(currentUrl) && !isProjectEditorUrl(response.url)
     if (currentProject && nextProject && currentProject === nextProject) {
       if (currentPath === response.path && uiStore?.panels.codeEditor) {
         return

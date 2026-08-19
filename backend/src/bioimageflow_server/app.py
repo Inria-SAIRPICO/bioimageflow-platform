@@ -541,6 +541,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
 
     editor_service = config.editor_service or EditorService(
         settings_provider=_live_settings,
+        workspace_path_provider=lambda: _current_workspace_service().workspace_path(),
+        tool_store_path_provider=lambda: registry.tool_store_path() or tool_store_path,
     )
 
     ws_log_handler = None

@@ -159,6 +159,8 @@ def _service(
     launcher: _RecorderLauncher | None = None,
     embedded_startup_timeout: float = 10.0,
     embedded_poll_interval: float = 0.2,
+    workspace_path_provider=None,
+    tool_store_path_provider=None,
 ) -> EditorService:
     return EditorService(
         settings_provider=lambda: _settings(command),
@@ -166,6 +168,8 @@ def _service(
         embedded_manager=embedded or _Embedded(),
         embedded_startup_timeout=embedded_startup_timeout,
         embedded_poll_interval=embedded_poll_interval,
+        workspace_path_provider=workspace_path_provider,
+        tool_store_path_provider=tool_store_path_provider,
     )
 
 
@@ -507,6 +511,56 @@ def test_status_can_launch_default_embedded_editor() -> None:
     assert status.launch_attempted is True
 
 
+def test_plain_status_does_not_generate_managed_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    tool_store = tmp_path / "tool_packages"
+    workspace.mkdir()
+    tool_store.mkdir()
+    service = _service(
+        workspace_path_provider=lambda: workspace,
+        tool_store_path_provider=lambda: tool_store,
+    )
+
+    service.get_status()
+
+    assert not (workspace / ".bioimageflow" / "BioImageFlow.code-workspace").exists()
+
+
+def test_status_can_launch_managed_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    tool_store = tmp_path / "tool_packages"
+    workspace.mkdir()
+    tool_store.mkdir()
+    embedded = _LaunchableEmbedded()
+    service = _service(
+        embedded=embedded,
+        workspace_path_provider=lambda: workspace,
+        tool_store_path_provider=lambda: tool_store,
+    )
+
+    status = service.get_status(launch=True, workspace=True)
+
+    workspace_file = workspace / ".bioimageflow" / "BioImageFlow.code-workspace"
+    assert status.available is True
+    assert status.url == (
+        "http://127.0.0.1:32344/?workspace="
+        + str(workspace_file).replace("/", "%2F")
+    )
+
+
+def test_status_reports_managed_workspace_failure(tmp_path: Path) -> None:
+    service = _service(
+        workspace_path_provider=lambda: tmp_path / "missing",
+        tool_store_path_provider=lambda: tmp_path / "also-missing",
+    )
+
+    status = service.get_status(launch=True, workspace=True)
+
+    assert status.available is False
+    assert status.error_code == "embedded_workspace_failed"
+    assert "FileNotFoundError" in str(status.error_detail)
+
+
 def test_status_reports_embedded_launch_failure() -> None:
     class FailingEmbedded(_Embedded):
         def launch(self) -> None:
@@ -557,6 +611,48 @@ def test_default_embedded_editor_launches_when_not_already_running(tmp_path: Pat
     assert embedded.opened == [tool]
     assert response.method == EditorOpenMethod.EMBEDDED
     assert response.url == "http://127.0.0.1:32344"
+
+
+def test_embedded_tool_open_uses_managed_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    tool_store = tmp_path / "tool_packages"
+    tool = tool_store / "package" / "1.0" / "tool.py"
+    workspace.mkdir()
+    tool.parent.mkdir(parents=True)
+    tool.write_text("print('x')")
+    embedded = _LaunchableEmbedded()
+    service = _service(
+        embedded=embedded,
+        workspace_path_provider=lambda: workspace,
+        tool_store_path_provider=lambda: tool_store,
+    )
+
+    response = service.open_path(str(tool_store), str(tool), workspace=True)
+
+    workspace_file = workspace / ".bioimageflow" / "BioImageFlow.code-workspace"
+    assert embedded.opened == [workspace_file]
+    assert response.path == str(tool)
+
+
+def test_external_tool_open_does_not_generate_managed_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    tool_store = tmp_path / "tool_packages"
+    tool = tool_store / "package" / "1.0" / "tool.py"
+    workspace.mkdir()
+    tool.parent.mkdir(parents=True)
+    tool.write_text("print('x')")
+    launcher = _RecorderLauncher()
+    service = _service(
+        command="code {workspace_path} --goto {file_path}",
+        launcher=launcher,
+        workspace_path_provider=lambda: workspace,
+        tool_store_path_provider=lambda: tool_store,
+    )
+
+    service.open_path(str(tool_store), str(tool), workspace=True)
+
+    assert launcher.calls == [["code", str(tool_store), "--goto", str(tool)]]
+    assert not (workspace / ".bioimageflow" / "BioImageFlow.code-workspace").exists()
 
 
 def test_concurrent_embedded_opens_share_single_launch(tmp_path: Path) -> None:
@@ -943,3 +1039,19 @@ def test_embedded_manager_open_path_can_focus_file_inside_folder(tmp_path: Path)
     assert response.path == str(tool)
     assert f"folder={str(workspace).replace('/', '%2F')}" in response.url
     assert "file=" not in response.url
+
+
+def test_embedded_manager_open_path_can_focus_file_inside_workspace(tmp_path: Path) -> None:
+    manager = EmbeddedCodeServerManager()
+    workspace_file = tmp_path / "BioImageFlow.code-workspace"
+    workspace_file.write_text('{"folders": []}')
+    tool = tmp_path / "tool.py"
+    tool.write_text("print('x')")
+
+    response = manager.open_path(workspace_file, focus_path=tool)
+
+    assert response.method == EditorOpenMethod.EMBEDDED
+    assert response.path == str(tool)
+    assert response.project_path == str(workspace_file)
+    assert f"workspace={str(workspace_file).replace('/', '%2F')}" in str(response.url)
+    assert "folder=" not in str(response.url)
