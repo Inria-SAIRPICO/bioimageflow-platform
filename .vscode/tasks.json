@@ -9,25 +9,23 @@
                 "run",
                 "dev",
                 "--",
-                "--strictPort"
+                "--strictPort",
+                "--clearScreen=false"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/frontend"
             },
             "isBackground": true,
             "problemMatcher": {
-                "owner": "vite",
-                "pattern": {
-                    "regexp": "^.*$"
-                },
+                "base": "$tsc-watch",
                 "background": {
                     "activeOnStart": true,
                     "beginsPattern": ".*",
-                    "endsPattern": "Local:.*http://localhost:5173/"
+                    "endsPattern": "ready in"
                 }
             },
             "presentation": {
-                "reveal": "always",
+                "reveal": "silent",
                 "panel": "dedicated",
                 "focus": false
             }

@@ -41,9 +41,9 @@ def test_vscode_desktop_launch_profile_starts_vite_on_expected_port() -> None:
     assert frontend_task["options"]["cwd"] == "${workspaceFolder}/frontend"
     assert frontend_task["isBackground"] is True
     assert "--strictPort" in frontend_task["args"]
-    assert "localhost:5173" in frontend_task["problemMatcher"]["background"][
-        "endsPattern"
-    ]
+    assert "--clearScreen=false" in frontend_task["args"]
+    assert frontend_task["problemMatcher"]["base"] == "$tsc-watch"
+    assert frontend_task["problemMatcher"]["background"]["endsPattern"] == "ready in"
 
 
 def test_vite_backend_proxy_uses_ipv4_loopback() -> None:
